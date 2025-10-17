@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { LoadingSpinner } from "./LoadingSpinner.js";
 import { cn } from "../lib/utils.js";
 import type { FieldConfig } from "@opensaas/core";
 import type { ServerActionInput } from "../server/types.js";
@@ -177,8 +178,10 @@ export function ItemFormClient({
               "px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium",
               "hover:bg-primary/90 transition-colors",
               "disabled:opacity-50 disabled:cursor-not-allowed",
+              "flex items-center gap-2",
             )}
           >
+            {isPending && <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />}
             {isPending ? "Saving..." : mode === "create" ? "Create" : "Save"}
           </button>
           <button

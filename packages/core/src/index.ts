@@ -34,8 +34,9 @@ export type { PrismaClientLike } from "./context/index.js";
 // Utilities
 export { getDbKey, getUrlKey, getListKeyFromUrl, pascalToCamel, pascalToKebab, kebabToPascal, kebabToCamel } from "./lib/case-utils.js";
 
-// Hooks
+// Hooks and validation
 export { ValidationError } from "./hooks/index.js";
+export { validateWithZod, generateZodSchema } from "./validation/schema.js";
 
 // Generators (for CLI use)
 export {

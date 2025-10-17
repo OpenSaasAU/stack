@@ -7,6 +7,8 @@ export { ListViewClient } from './components/ListViewClient.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
 export { ConfirmDialog } from './components/ConfirmDialog.js'
+export { LoadingSpinner } from './components/LoadingSpinner.js'
+export { SkeletonLoader, TableSkeleton, FormSkeleton } from './components/SkeletonLoader.js'
 
 // Field components
 export {
@@ -29,6 +31,8 @@ export type { ListViewClientProps } from './components/ListViewClient.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
 export type { ConfirmDialogProps } from './components/ConfirmDialog.js'
+export type { LoadingSpinnerProps } from './components/LoadingSpinner.js'
+export type { SkeletonLoaderProps } from './components/SkeletonLoader.js'
 
 export type {
   TextFieldProps,

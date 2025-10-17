@@ -270,13 +270,13 @@ function createCreate<TPrisma extends PrismaClientLike>(
     });
 
     // 4. Field validation (isRequired, length, etc.)
-    const fieldErrors = validateFieldRules(
+    const validation = validateFieldRules(
       resolvedData,
       listConfig.fields,
       "create",
     );
-    if (fieldErrors.length > 0) {
-      throw new ValidationError(fieldErrors);
+    if (validation.errors.length > 0) {
+      throw new ValidationError(validation.errors, validation.fieldErrors);
     }
 
     // 5. Filter writable fields (field-level access control)
@@ -394,13 +394,13 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     });
 
     // 5. Field validation (isRequired, length, etc.)
-    const fieldErrors = validateFieldRules(
+    const validation = validateFieldRules(
       resolvedData,
       listConfig.fields,
       "update",
     );
-    if (fieldErrors.length > 0) {
-      throw new ValidationError(fieldErrors);
+    if (validation.errors.length > 0) {
+      throw new ValidationError(validation.errors, validation.fieldErrors);
     }
 
     // 6. Filter writable fields (field-level access control)

@@ -60,13 +60,13 @@ async function processNestedCreate(
       });
 
       // 4. Field validation
-      const fieldErrors = validateFieldRules(
+      const validation = validateFieldRules(
         resolvedData,
         relatedListConfig.fields,
         "create",
       );
-      if (fieldErrors.length > 0) {
-        throw new ValidationError(fieldErrors);
+      if (validation.errors.length > 0) {
+        throw new ValidationError(validation.errors, validation.fieldErrors);
       }
 
       // 5. Filter writable fields
@@ -206,13 +206,13 @@ async function processNestedUpdate(
       });
 
       // Field validation
-      const fieldErrors = validateFieldRules(
+      const validation = validateFieldRules(
         resolvedData,
         relatedListConfig.fields,
         "update",
       );
-      if (fieldErrors.length > 0) {
-        throw new ValidationError(fieldErrors);
+      if (validation.errors.length > 0) {
+        throw new ValidationError(validation.errors, validation.fieldErrors);
       }
 
       // Filter writable fields
