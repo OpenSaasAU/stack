@@ -9,13 +9,16 @@ A modern framework for building admin-heavy applications with Next.js App Router
 - ⚡ **Modern Next.js Integration**: Works seamlessly with App Router and Server Components
 - 🎯 **Type-Safe**: Full TypeScript support with generated types from schema
 - 🔄 **Prisma-Powered**: Built on Prisma for reliable database operations
+- 🧩 **Fully Extensible**: Custom field types without modifying core code
 
 ## Project Structure
 
 This is a monorepo containing:
 
 - **`packages/core`**: The core OpenSaaS framework
+- **`packages/ui`**: Admin UI components
 - **`examples/blog`**: A working blog example demonstrating the framework
+- **`examples/custom-field`**: Example demonstrating custom field components
 
 ## Quick Start
 
@@ -327,13 +330,25 @@ cd examples/blog
 pnpm dev
 ```
 
+## Extensibility
+
+### Custom Field Types
+
+OpenSaaS is designed to be fully extensible without modifying core code. Field types are self-contained with their own validation, schema generation, and UI components.
+
+See `examples/custom-field` for a complete working example with:
+- **ColorPickerField**: Custom color picker component (global registration)
+- **SlugField**: Auto-generating slug field (per-field override)
+
+Learn more in [CLAUDE.md](./CLAUDE.md#customizing-ui-components).
+
 ## Roadmap
 
 - [x] **Phase 1**: Core foundation (config, fields, generators)
 - [x] **Phase 2**: Access control engine
-- [ ] **Phase 3**: Hooks system (resolveInput, validateInput, etc.)
+- [x] **Phase 3**: Hooks system (resolveInput, validateInput, etc.)
 - [ ] **Phase 4**: CLI tooling (init, migrate commands)
-- [ ] **Phase 5**: Admin UI
+- [ ] **Phase 5**: Admin UI components
 - [ ] **Phase 6**: Better-auth integration
 
 ## Philosophy
