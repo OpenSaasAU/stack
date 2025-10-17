@@ -151,6 +151,8 @@ export default config({
 
 Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and TypeScript types.
 
+**Architecture:** Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic through `getPrismaType()` and `getTypeScriptType()` methods.
+
 ### Field Types
 
 **Key file:** `packages/core/src/fields/index.ts`
@@ -163,6 +165,16 @@ Available field types:
 - `password()` - String field (excluded from reads)
 - `select()` - Enum field with predefined options
 - `relationship()` - Foreign key relationship (one-to-one, one-to-many)
+
+**Field Builder Methods:**
+
+Each field builder function returns an object with these methods:
+
+1. **`getZodSchema(fieldName, operation)`** - Validation schema generation
+2. **`getPrismaType(fieldName)`** - Prisma type and modifiers (e.g., `{ type: "String", modifiers: "?" }`)
+3. **`getTypeScriptType()`** - TypeScript type and optionality (e.g., `{ type: "string", optional: true }`)
+
+This allows field types to be fully self-contained and extensible without modifying core framework code.
 
 ## Critical Patterns
 
@@ -256,10 +268,86 @@ Relationships use a `ref` format: `'ListName.fieldName'`
 
 ### Adding New Field Types
 
-1. Add type definition to `packages/core/src/config/types.ts`
-2. Add field builder function to `packages/core/src/fields/index.ts`
-3. Add Prisma generation logic to `packages/core/src/generator/prisma.ts`
-4. Update TypeScript generation in `packages/core/src/generator/types.ts`
+**IMPORTANT:** Field types are fully self-contained. Do NOT add switch statements to core or UI packages.
+
+1. **Define the field type** in `packages/core/src/config/types.ts`:
+   ```typescript
+   export type MyCustomField = BaseFieldConfig & {
+     type: "myCustom";
+     customOption?: string;
+   };
+   ```
+
+2. **Create the field builder** in `packages/core/src/fields/index.ts`:
+   ```typescript
+   export function myCustom(options?: Omit<MyCustomField, "type">): MyCustomField {
+     return {
+       type: "myCustom",
+       ...options,
+       getZodSchema: (fieldName, operation) => {
+         // Return Zod schema for validation
+         return z.string().optional();
+       },
+       getPrismaType: (fieldName) => {
+         // Return Prisma type and modifiers
+         return { type: "String", modifiers: "?" };
+       },
+       getTypeScriptType: () => {
+         // Return TypeScript type and optionality
+         return { type: "string", optional: true };
+       },
+     };
+   }
+   ```
+
+3. **Register UI component** (optional, for admin UI):
+   ```typescript
+   import { registerFieldComponent } from "@opensaas/ui";
+   import { MyCustomFieldComponent } from "./components/MyCustomField";
+
+   registerFieldComponent("myCustom", MyCustomFieldComponent);
+   ```
+
+**Key Principle:** The field config object drives ALL behavior. Generators, validators, and UI components delegate to field methods. Never add switch statements based on field type in core or UI packages.
+
+### Customizing UI Components
+
+The UI layer uses a component registry pattern to avoid switch statements and enable extensibility.
+
+**Two approaches for custom field components:**
+
+1. **Global Registration** - Register a component for reuse across multiple fields:
+   ```typescript
+   import { registerFieldComponent } from "@opensaas/ui";
+   import { ColorPickerField } from "./components/ColorPickerField";
+
+   // Register once at app startup
+   registerFieldComponent("color", ColorPickerField);
+
+   // Use in multiple fields by referencing the fieldType
+   fields: {
+     favoriteColor: text({ ui: { fieldType: "color" } }),
+     themeColor: text({ ui: { fieldType: "color" } }),
+   }
+   ```
+
+2. **Per-Field Override** - Pass a component directly for one-off customization:
+   ```typescript
+   import { SlugField } from "./components/SlugField";
+
+   fields: {
+     slug: text({
+       ui: { component: SlugField }  // Used only for this field
+     })
+   }
+   ```
+
+**Component Resolution Priority:**
+1. `ui.component` (per-field override) - highest priority
+2. `ui.fieldType` (global registry lookup by custom type name)
+3. `fieldConfig.type` (default registry lookup by field type)
+
+**See:** `examples/custom-field` for a complete working example demonstrating both patterns.
 
 ### Testing Access Control Changes
 
