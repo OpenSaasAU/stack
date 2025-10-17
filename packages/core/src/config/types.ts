@@ -1,4 +1,5 @@
 import type { AccessControl, FieldAccess } from "../access/types.js";
+import type { z } from "zod";
 
 /**
  * Field configuration types
@@ -17,6 +18,15 @@ export type BaseFieldConfig = {
   access?: FieldAccess;
   defaultValue?: any;
   ui?: Record<string, any>;
+  /**
+   * Generate Zod schema for this field
+   * @param fieldName - The name of the field (for error messages)
+   * @param operation - Whether this is a create or update operation
+   */
+  getZodSchema?: (
+    fieldName: string,
+    operation: "create" | "update",
+  ) => z.ZodTypeAny;
 };
 
 export type TextField = BaseFieldConfig & {

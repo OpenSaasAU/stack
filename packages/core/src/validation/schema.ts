@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FieldConfig } from "../config/types.js";
+import { text, integer, checkbox, timestamp, password, select } from "../fields/index.js";
 
 /**
  * Generate Zod schema from field configurations
@@ -18,136 +19,49 @@ export function generateZodSchema(
     ) {
       continue;
     }
-    // TODO: Make this not any
-    let schema: any;
 
-    switch (fieldConfig.type) {
-      case "text":
-      case "password": {
-        const validation = fieldConfig.validation;
-        const isRequired = validation?.isRequired;
+    // Use the field's schema generator if available
+    if (fieldConfig.getZodSchema) {
+      shape[fieldName] = fieldConfig.getZodSchema(fieldName, operation);
+    } else {
+      // Fallback: create a temporary field config with the schema generator
+      // This handles plain config objects (used in tests)
+      let tempField: FieldConfig;
 
-        if (isRequired && operation === "create") {
-          // Required in create mode: reject undefined and empty strings
-          schema = z
-            .string({
-              message: `${formatFieldName(fieldName)} must be text`,
-            })
-            .min(1, {
-              message: `${formatFieldName(fieldName)} is required`,
-            });
-        } else if (isRequired && operation === "update") {
-          // Required in update mode: if provided, reject empty strings
-          schema = z.union([
-            z.string().min(1, {
-              message: `${formatFieldName(fieldName)} is required`,
-            }),
-            z.undefined(),
-          ]);
-        } else {
-          // Not required: can be undefined or any string
-          schema = z
-            .string({
-              message: `${formatFieldName(fieldName)} must be text`,
-            })
-            .optional();
-        }
-
-        // Add length constraints
-        if (validation && "length" in validation && validation.length) {
-          const { min, max } = validation.length;
-          if (min !== undefined && schema.unwrap) {
-            const baseSchema = schema.unwrap() as z.ZodString;
-            schema = baseSchema
-              .min(min, {
-                message: `${formatFieldName(fieldName)} must be at least ${min} characters`,
-              })
-              .optional();
-          } else if (min !== undefined) {
-            schema = (schema as z.ZodString).min(min, {
-              message: `${formatFieldName(fieldName)} must be at least ${min} characters`,
-            });
-          }
-          if (max !== undefined && schema.unwrap) {
-            const baseSchema = schema.unwrap() as z.ZodString;
-            schema = baseSchema
-              .max(max, {
-                message: `${formatFieldName(fieldName)} must be at most ${max} characters`,
-              })
-              .optional();
-          } else if (max !== undefined) {
-            schema = (schema as z.ZodString).max(max, {
-              message: `${formatFieldName(fieldName)} must be at most ${max} characters`,
-            });
-          }
-        }
-        break;
+      switch (fieldConfig.type) {
+        case "text":
+          tempField = text({ validation: fieldConfig.validation, isIndexed: fieldConfig.isIndexed, ui: fieldConfig.ui, access: fieldConfig.access, defaultValue: fieldConfig.defaultValue });
+          break;
+        case "password":
+          tempField = password({ validation: fieldConfig.validation, access: fieldConfig.access, defaultValue: fieldConfig.defaultValue });
+          break;
+        case "integer":
+          tempField = integer({ validation: fieldConfig.validation, access: fieldConfig.access, defaultValue: fieldConfig.defaultValue });
+          break;
+        case "checkbox":
+          tempField = checkbox({ access: fieldConfig.access, defaultValue: fieldConfig.defaultValue });
+          break;
+        case "timestamp":
+          tempField = timestamp({ defaultValue: fieldConfig.defaultValue, access: fieldConfig.access });
+          break;
+        case "select":
+          tempField = select({ options: fieldConfig.options, validation: fieldConfig.validation, ui: fieldConfig.ui, access: fieldConfig.access, defaultValue: fieldConfig.defaultValue });
+          break;
+        default:
+          // Unknown field type
+          shape[fieldName] = z.any().optional();
+          continue;
       }
 
-      case "integer": {
-        schema = z.number({
-          message: `${formatFieldName(fieldName)} must be a number`,
-        });
-
-        // Add min/max constraints
-        if (fieldConfig.validation?.min !== undefined) {
-          schema = (schema as z.ZodNumber).min(fieldConfig.validation.min, {
-            message: `${formatFieldName(fieldName)} must be at least ${fieldConfig.validation.min}`,
-          });
-        }
-        if (fieldConfig.validation?.max !== undefined) {
-          schema = (schema as z.ZodNumber).max(fieldConfig.validation.max, {
-            message: `${formatFieldName(fieldName)} must be at most ${fieldConfig.validation.max}`,
-          });
-        }
-
-        // Make optional if not required or if update operation
-        if (!fieldConfig.validation?.isRequired || operation === "update") {
-          schema = schema.optional();
-        }
-        break;
+      if (tempField.getZodSchema) {
+        shape[fieldName] = tempField.getZodSchema(fieldName, operation);
+      } else {
+        shape[fieldName] = z.any().optional();
       }
-
-      case "checkbox": {
-        schema = z.boolean().optional();
-        break;
-      }
-
-      case "select": {
-        const values = fieldConfig.options.map((opt) => opt.value);
-        schema = z.enum(values as [string, ...string[]], {
-          message: `${formatFieldName(fieldName)} must be one of: ${values.join(", ")}`,
-        });
-
-        if (!fieldConfig.validation?.isRequired || operation === "update") {
-          schema = schema.optional();
-        }
-        break;
-      }
-
-      case "timestamp": {
-        schema = z.union([z.date(), z.string().datetime()]).optional();
-        break;
-      }
-
-      default:
-        schema = z.any().optional();
     }
-
-    shape[fieldName] = schema;
   }
 
   return z.object(shape);
-}
-
-/**
- * Format field name for display in error messages
- */
-function formatFieldName(fieldName: string): string {
-  return fieldName
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (str) => str.toUpperCase())
-    .trim();
 }
 
 /**
