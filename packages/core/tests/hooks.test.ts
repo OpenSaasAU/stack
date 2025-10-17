@@ -8,6 +8,7 @@ import {
   validateFieldRules,
 } from "../src/hooks/index.js";
 import type { Hooks } from "../src/config/types.js";
+import { text, integer, relationship } from "../src/fields/index.js";
 
 describe("Hooks", () => {
   const mockContext = {
@@ -257,12 +258,7 @@ describe("Hooks", () => {
     describe("required validation", () => {
       it("should add error when required field is missing on create", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
+          name: text({ validation: { isRequired: true } }),
         };
 
         const result = validateFieldRules({}, fieldConfigs, "create");
@@ -272,12 +268,7 @@ describe("Hooks", () => {
 
       it("should not add error when required field is present", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
+          name: text({ validation: { isRequired: true } }),
         };
 
         const result = validateFieldRules(
@@ -291,12 +282,7 @@ describe("Hooks", () => {
 
       it("should add error for empty string", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
+          name: text({ validation: { isRequired: true } }),
         };
 
         const result = validateFieldRules({ name: "" }, fieldConfigs, "create");
@@ -306,18 +292,8 @@ describe("Hooks", () => {
 
       it("should only validate updated fields on update", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
-          email: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
+          name: text({ validation: { isRequired: true } }),
+          email: text({ validation: { isRequired: true } }),
         };
 
         // Only updating name, not email
@@ -332,12 +308,7 @@ describe("Hooks", () => {
 
       it("should validate empty value on update if field is being updated", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-            },
-          },
+          name: text({ validation: { isRequired: true } }),
         };
 
         const result = validateFieldRules({ name: "" }, fieldConfigs, "update");
@@ -349,14 +320,7 @@ describe("Hooks", () => {
     describe("text length validation", () => {
       it("should add error when text is too short", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              length: {
-                min: 3,
-              },
-            },
-          },
+          name: text({ validation: { length: { min: 3 } } }),
         };
 
         const result = validateFieldRules({ name: "Jo" }, fieldConfigs);
@@ -366,14 +330,7 @@ describe("Hooks", () => {
 
       it("should add error when text is too long", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              length: {
-                max: 10,
-              },
-            },
-          },
+          name: text({ validation: { length: { max: 10 } } }),
         };
 
         const result = validateFieldRules(
@@ -386,15 +343,7 @@ describe("Hooks", () => {
 
       it("should pass when text length is within range", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              length: {
-                min: 3,
-                max: 10,
-              },
-            },
-          },
+          name: text({ validation: { length: { min: 3, max: 10 } } }),
         };
 
         const result = validateFieldRules({ name: "John" }, fieldConfigs);
@@ -406,12 +355,7 @@ describe("Hooks", () => {
     describe("integer validation", () => {
       it("should add error when integer is too small", () => {
         const fieldConfigs = {
-          age: {
-            type: "integer",
-            validation: {
-              min: 18,
-            },
-          },
+          age: integer({ validation: { min: 18 } }),
         };
 
         const result = validateFieldRules({ age: 15 }, fieldConfigs);
@@ -421,12 +365,7 @@ describe("Hooks", () => {
 
       it("should add error when integer is too large", () => {
         const fieldConfigs = {
-          age: {
-            type: "integer",
-            validation: {
-              max: 100,
-            },
-          },
+          age: integer({ validation: { max: 100 } }),
         };
 
         const result = validateFieldRules({ age: 150 }, fieldConfigs);
@@ -436,13 +375,7 @@ describe("Hooks", () => {
 
       it("should pass when integer is within range", () => {
         const fieldConfigs = {
-          age: {
-            type: "integer",
-            validation: {
-              min: 18,
-              max: 100,
-            },
-          },
+          age: integer({ validation: { min: 18, max: 100 } }),
         };
 
         const result = validateFieldRules({ age: 25 }, fieldConfigs);
@@ -454,9 +387,9 @@ describe("Hooks", () => {
     describe("skip validation", () => {
       it("should skip system fields", () => {
         const fieldConfigs = {
-          id: { type: "text" },
-          createdAt: { type: "timestamp" },
-          updatedAt: { type: "timestamp" },
+          id: text(),
+          createdAt: text(),
+          updatedAt: text(),
         };
 
         const result = validateFieldRules({}, fieldConfigs, "create");
@@ -466,13 +399,7 @@ describe("Hooks", () => {
 
       it("should skip relationship fields", () => {
         const fieldConfigs = {
-          author: {
-            type: "relationship",
-            ref: "User.posts",
-            validation: {
-              isRequired: true,
-            },
-          },
+          author: relationship({ ref: "User.posts" }),
         };
 
         const result = validateFieldRules({}, fieldConfigs, "create");
@@ -484,22 +411,10 @@ describe("Hooks", () => {
     describe("multiple errors", () => {
       it("should collect all validation errors", () => {
         const fieldConfigs = {
-          name: {
-            type: "text",
-            validation: {
-              isRequired: true,
-              length: {
-                min: 3,
-              },
-            },
-          },
-          age: {
-            type: "integer",
-            validation: {
-              isRequired: true,
-              min: 18,
-            },
-          },
+          name: text({
+            validation: { isRequired: true, length: { min: 3 } },
+          }),
+          age: integer({ validation: { isRequired: true, min: 18 } }),
         };
 
         const result = validateFieldRules(

@@ -1,15 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { generateZodSchema, validateWithZod } from "./schema.js";
 import type { FieldConfig } from "../config/types.js";
+import { text, integer, select } from "../fields/index.js";
 
 describe("Zod Schema Generation", () => {
   describe("generateZodSchema", () => {
     it("should generate schema for text field with required validation", () => {
       const fields: Record<string, FieldConfig> = {
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        name: text({ validation: { isRequired: true } }),
       };
 
       const schema = generateZodSchema(fields, "create");
@@ -18,13 +16,9 @@ describe("Zod Schema Generation", () => {
 
     it("should generate schema for text field with length validation", () => {
       const fields: Record<string, FieldConfig> = {
-        title: {
-          type: "text",
-          validation: {
-            isRequired: true,
-            length: { min: 3, max: 100 },
-          },
-        },
+        title: text({
+          validation: { isRequired: true, length: { min: 3, max: 100 } },
+        }),
       };
 
       const schema = generateZodSchema(fields, "create");
@@ -33,14 +27,7 @@ describe("Zod Schema Generation", () => {
 
     it("should generate schema for integer field with min/max validation", () => {
       const fields: Record<string, FieldConfig> = {
-        age: {
-          type: "integer",
-          validation: {
-            isRequired: true,
-            min: 0,
-            max: 120,
-          },
-        },
+        age: integer({ validation: { isRequired: true, min: 0, max: 120 } }),
       };
 
       const schema = generateZodSchema(fields, "create");
@@ -49,14 +36,13 @@ describe("Zod Schema Generation", () => {
 
     it("should generate schema for select field", () => {
       const fields: Record<string, FieldConfig> = {
-        status: {
-          type: "select",
+        status: select({
           options: [
             { label: "Active", value: "active" },
             { label: "Inactive", value: "inactive" },
           ],
           validation: { isRequired: true },
-        },
+        }),
       };
 
       const schema = generateZodSchema(fields, "create");
@@ -65,10 +51,7 @@ describe("Zod Schema Generation", () => {
 
     it("should make fields optional in update mode", () => {
       const fields: Record<string, FieldConfig> = {
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        name: text({ validation: { isRequired: true } }),
       };
 
       const schema = generateZodSchema(fields, "update");
@@ -79,10 +62,7 @@ describe("Zod Schema Generation", () => {
   describe("validateWithZod", () => {
     it("should pass validation for valid text field", () => {
       const fields: Record<string, FieldConfig> = {
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        name: text({ validation: { isRequired: true } }),
       };
 
       const result = validateWithZod({ name: "John Doe" }, fields, "create");
@@ -91,10 +71,7 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for missing required field", () => {
       const fields: Record<string, FieldConfig> = {
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        name: text({ validation: { isRequired: true } }),
       };
 
       const result = validateWithZod({}, fields, "create");
@@ -106,13 +83,9 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for text too short", () => {
       const fields: Record<string, FieldConfig> = {
-        title: {
-          type: "text",
-          validation: {
-            isRequired: true,
-            length: { min: 5 },
-          },
-        },
+        title: text({
+          validation: { isRequired: true, length: { min: 5 } },
+        }),
       };
 
       const result = validateWithZod({ title: "Hi" }, fields, "create");
@@ -124,12 +97,7 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for text too long", () => {
       const fields: Record<string, FieldConfig> = {
-        title: {
-          type: "text",
-          validation: {
-            length: { max: 10 },
-          },
-        },
+        title: text({ validation: { length: { max: 10 } } }),
       };
 
       const result = validateWithZod(
@@ -145,12 +113,7 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for integer below min", () => {
       const fields: Record<string, FieldConfig> = {
-        age: {
-          type: "integer",
-          validation: {
-            min: 18,
-          },
-        },
+        age: integer({ validation: { min: 18 } }),
       };
 
       const result = validateWithZod({ age: 15 }, fields, "create");
@@ -162,12 +125,7 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for integer above max", () => {
       const fields: Record<string, FieldConfig> = {
-        age: {
-          type: "integer",
-          validation: {
-            max: 120,
-          },
-        },
+        age: integer({ validation: { max: 120 } }),
       };
 
       const result = validateWithZod({ age: 150 }, fields, "create");
@@ -179,14 +137,13 @@ describe("Zod Schema Generation", () => {
 
     it("should fail validation for invalid select value", () => {
       const fields: Record<string, FieldConfig> = {
-        status: {
-          type: "select",
+        status: select({
           options: [
             { label: "Active", value: "active" },
             { label: "Inactive", value: "inactive" },
           ],
           validation: { isRequired: true },
-        },
+        }),
       };
 
       const result = validateWithZod({ status: "invalid" }, fields, "create");
@@ -198,11 +155,8 @@ describe("Zod Schema Generation", () => {
 
     it("should skip system fields in validation", () => {
       const fields: Record<string, FieldConfig> = {
-        id: { type: "text" },
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        id: text(),
+        name: text({ validation: { isRequired: true } }),
       };
 
       const result = validateWithZod({ name: "John" }, fields, "create");
@@ -211,10 +165,7 @@ describe("Zod Schema Generation", () => {
 
     it("should allow optional fields to be missing in update mode", () => {
       const fields: Record<string, FieldConfig> = {
-        name: {
-          type: "text",
-          validation: { isRequired: true },
-        },
+        name: text({ validation: { isRequired: true } }),
       };
 
       const result = validateWithZod({}, fields, "update");
