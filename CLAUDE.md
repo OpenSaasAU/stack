@@ -166,7 +166,38 @@ Available field types:
 
 ## Critical Patterns
 
-### 1. Creating Context in Applications
+### 1. Naming Conventions
+
+The framework uses consistent case conventions across different contexts:
+
+**List Names in Config:** Always use **PascalCase**
+```typescript
+lists: {
+  User: list({ ... }),        // Good
+  BlogPost: list({ ... }),    // Good
+  AuthUser: list({ ... }),    // Good
+
+  user: list({ ... }),        // Bad - don't use lowercase
+  blog_post: list({ ... }),   // Bad - don't use snake_case
+}
+```
+
+**Case Conversions:**
+- **Prisma Models:** PascalCase (e.g., `AuthUser`, `BlogPost`)
+- **Prisma Client Properties:** camelCase (e.g., `prisma.authUser`, `prisma.blogPost`)
+- **Context DB Properties:** camelCase (e.g., `context.db.authUser`, `context.db.blogPost`)
+- **Admin UI URLs:** kebab-case (e.g., `/admin/auth-user`, `/admin/blog-post`)
+
+**Utility Functions:**
+```typescript
+import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/core'
+
+getDbKey('AuthUser')           // 'authUser' - for accessing context.db and prisma
+getUrlKey('AuthUser')          // 'auth-user' - for constructing URLs
+getListKeyFromUrl('auth-user') // 'AuthUser' - for parsing URLs
+```
+
+### 2. Creating Context in Applications
 
 Applications must create a context wrapper for Prisma:
 
@@ -183,7 +214,7 @@ export async function getContextWithUser(userId: string) {
 }
 ```
 
-### 2. Silent Failures
+### 3. Silent Failures
 
 Access-controlled operations return `null` (single record) or `[]` (multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist.
 
@@ -196,7 +227,7 @@ if (!post) {
 }
 ```
 
-### 3. System Fields
+### 4. System Fields
 
 Fields `id`, `createdAt`, `updatedAt` are automatically:
 - Added to Prisma schema

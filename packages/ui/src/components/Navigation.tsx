@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
+import { getUrlKey } from "@opensaas/core";
 
 export interface NavigationProps {
   context: AdminContext;
@@ -50,11 +51,12 @@ export function Navigation({
                 </p>
               </div>
               {lists.map((listKey) => {
-                const isActive = currentPath.startsWith(`/${listKey}`);
+                const urlKey = getUrlKey(listKey);
+                const isActive = currentPath.startsWith(`/${urlKey}`);
                 return (
                   <Link
                     key={listKey}
-                    href={`${basePath}/${listKey}`}
+                    href={`${basePath}/${urlKey}`}
                     className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive
                         ? "bg-primary text-primary-foreground"

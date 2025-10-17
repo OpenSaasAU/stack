@@ -3,6 +3,7 @@ import { Dashboard } from "./Dashboard.js";
 import { ListView } from "./ListView.js";
 import { ItemForm } from "./ItemForm.js";
 import type { AdminContext, ServerActionInput } from "../server/types.js";
+import { getListKeyFromUrl } from "@opensaas/core";
 
 export interface AdminUIProps {
   context: AdminContext;
@@ -29,7 +30,10 @@ export function AdminUI({
   serverAction,
 }: AdminUIProps) {
   // Parse route from params
-  const [listKey, action] = params;
+  const [urlSegment, action] = params;
+
+  // Convert URL segment (kebab-case) to PascalCase listKey
+  const listKey = urlSegment ? getListKeyFromUrl(urlSegment) : undefined;
 
   // Determine current path for navigation highlighting
   const currentPath = params.length > 0 ? `/${params.join("/")}` : "";

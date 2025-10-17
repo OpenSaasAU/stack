@@ -10,6 +10,7 @@ export interface ListViewClientProps {
   fieldTypes: Record<string, string>;
   columns?: string[];
   listKey: string;
+  urlKey: string;
   basePath: string;
   page: number;
   pageSize: number;
@@ -25,6 +26,7 @@ export function ListViewClient({
   fieldTypes,
   columns,
   listKey,
+  urlKey,
   basePath,
   page,
   pageSize,
@@ -121,7 +123,7 @@ export function ListViewClient({
                     ))}
                     <td className="px-6 py-4 text-sm text-right">
                       <Link
-                        href={`${basePath}/${listKey}/${item.id}`}
+                        href={`${basePath}/${urlKey}/${item.id}`}
                         className="text-primary hover:underline"
                       >
                         Edit
@@ -145,7 +147,7 @@ export function ListViewClient({
           <div className="flex items-center space-x-2">
             <button
               onClick={() =>
-                router.push(`${basePath}/${listKey}?page=${page - 1}`)
+                router.push(`${basePath}/${urlKey}?page=${page - 1}`)
               }
               disabled={!hasPrevPage}
               className={cn(
@@ -162,7 +164,7 @@ export function ListViewClient({
             </span>
             <button
               onClick={() =>
-                router.push(`${basePath}/${listKey}?page=${page + 1}`)
+                router.push(`${basePath}/${urlKey}?page=${page + 1}`)
               }
               disabled={!hasNextPage}
               className={cn(

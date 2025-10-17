@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ListViewClient } from "./ListViewClient.js";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
-import { getDbKey } from "@opensaas/core";
+import { getDbKey, getUrlKey } from "@opensaas/core";
 
 export interface ListViewProps {
   context: AdminContext;
@@ -26,6 +26,7 @@ export async function ListView({
   pageSize = 50,
 }: ListViewProps) {
   const key = getDbKey(listKey);
+  const urlKey = getUrlKey(listKey);
   const listConfig = context.config.lists[listKey];
 
   if (!listConfig) {
@@ -73,7 +74,7 @@ export async function ListView({
           </p>
         </div>
         <Link
-          href={`${basePath}/${listKey}/create`}
+          href={`${basePath}/${urlKey}/create`}
           className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors"
         >
           <span className="mr-2">+</span>
@@ -92,6 +93,7 @@ export async function ListView({
         )}
         columns={columns}
         listKey={listKey}
+        urlKey={urlKey}
         basePath={basePath}
         page={page}
         pageSize={pageSize}

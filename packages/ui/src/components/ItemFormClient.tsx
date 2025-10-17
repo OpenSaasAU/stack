@@ -9,6 +9,7 @@ import type { ServerActionInput } from "../server/types.js";
 
 export interface ItemFormClientProps {
   listKey: string;
+  urlKey: string;
   mode: "create" | "edit";
   fields: Record<string, FieldConfig>;
   initialData?: Record<string, any>;
@@ -24,6 +25,7 @@ export interface ItemFormClientProps {
  */
 export function ItemFormClient({
   listKey,
+  urlKey,
   mode,
   fields,
   initialData = {},
@@ -95,7 +97,7 @@ export function ItemFormClient({
 
         if (result) {
           // Navigate back to list view
-          router.push(`${basePath}/${listKey}`);
+          router.push(`${basePath}/${urlKey}`);
           router.refresh();
         } else {
           setGeneralError("Access denied or operation failed");
@@ -120,7 +122,7 @@ export function ItemFormClient({
         });
 
         if (result) {
-          router.push(`${basePath}/${listKey}`);
+          router.push(`${basePath}/${urlKey}`);
           router.refresh();
         } else {
           setGeneralError("Access denied or failed to delete item");
@@ -181,7 +183,7 @@ export function ItemFormClient({
           </button>
           <button
             type="button"
-            onClick={() => router.push(`${basePath}/${listKey}`)}
+            onClick={() => router.push(`${basePath}/${urlKey}`)}
             disabled={isPending}
             className={cn(
               "px-4 py-2 bg-secondary text-secondary-foreground rounded-md font-medium",

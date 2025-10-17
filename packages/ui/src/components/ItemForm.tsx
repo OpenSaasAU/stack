@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ItemFormClient } from "./ItemFormClient.js";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext, ServerActionInput } from "../server/types.js";
-import { getDbKey } from "@opensaas/core";
+import { getDbKey, getUrlKey } from "@opensaas/core";
 
 export interface ItemFormProps {
   context: AdminContext;
@@ -27,6 +27,7 @@ export async function ItemForm({
   serverAction,
 }: ItemFormProps) {
   const listConfig = context.config.lists[listKey];
+  const urlKey = getUrlKey(listKey);
 
   if (!listConfig) {
     return (
@@ -58,7 +59,7 @@ export async function ItemForm({
                 access to it.
               </p>
               <Link
-                href={`${basePath}/${listKey}`}
+                href={`${basePath}/${urlKey}`}
                 className="inline-block mt-4 text-primary hover:underline"
               >
                 ← Back to {formatListName(listKey)}
@@ -114,7 +115,7 @@ export async function ItemForm({
       {/* Header */}
       <div className="mb-8">
         <Link
-          href={`${basePath}/${listKey}`}
+          href={`${basePath}/${urlKey}`}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
         >
           <svg
@@ -141,6 +142,7 @@ export async function ItemForm({
       <div className="bg-card border border-border rounded-lg p-6">
         <ItemFormClient
           listKey={listKey}
+          urlKey={urlKey}
           mode={mode}
           fields={Object.fromEntries(
             Object.entries(listConfig.fields).map(([key, field]) => [
