@@ -15,6 +15,7 @@ export interface ItemFormClientProps {
   itemId?: string;
   basePath: string;
   serverAction: (input: ServerActionInput) => Promise<any>;
+  relationshipData?: Record<string, Array<{ id: string; label: string }>>;
 }
 
 /**
@@ -29,6 +30,7 @@ export function ItemFormClient({
   itemId,
   basePath,
   serverAction,
+  relationshipData = {},
 }: ItemFormClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -56,10 +58,38 @@ export function ItemFormClient({
 
     startTransition(async () => {
       try {
+        // Transform relationship fields to Prisma format
+        const transformedData: Record<string, any> = {};
+        for (const [fieldName, value] of Object.entries(formData)) {
+          const fieldConfig = fields[fieldName];
+
+          // Transform relationship fields
+          if ((fieldConfig as any)?.type === "relationship") {
+            if ((fieldConfig as any).many) {
+              // Many relationship: use connect format
+              if (Array.isArray(value) && value.length > 0) {
+                transformedData[fieldName] = {
+                  connect: value.map((id: string) => ({ id })),
+                };
+              }
+            } else {
+              // Single relationship: use connect format
+              if (value) {
+                transformedData[fieldName] = {
+                  connect: { id: value },
+                };
+              }
+            }
+          } else {
+            // Non-relationship field: pass through
+            transformedData[fieldName] = value;
+          }
+        }
+
         const result = await serverAction({
           listKey,
           action: mode === "create" ? "create" : "update",
-          data: formData,
+          data: transformedData,
           id: itemId,
         });
 
@@ -103,7 +133,7 @@ export function ItemFormClient({
     });
   };
 
-  // Filter out system fields and relationship fields for now
+  // Filter out system fields
   const editableFields = Object.entries(fields).filter(
     ([key]) => !["id", "createdAt", "updatedAt"].includes(key),
   );
@@ -129,6 +159,8 @@ export function ItemFormClient({
             error={errors[fieldName]}
             disabled={isPending}
             mode="edit"
+            relationshipItems={relationshipData[fieldName] || []}
+            relationshipLoading={false}
           />
         ))}
       </div>

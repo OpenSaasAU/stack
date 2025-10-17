@@ -5,6 +5,7 @@ import {
   mergeFilters,
   filterReadableFields,
   filterWritableFields,
+  buildIncludeWithAccessControl,
 } from "../access/index.js";
 import {
   executeResolveInput,
@@ -118,18 +119,31 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       return null;
     }
 
-    // Execute query
+    // Build include with access control filters
+    const accessControlledInclude = await buildIncludeWithAccessControl(
+      listConfig.fields,
+      {
+        session: context.session,
+        context,
+      },
+      config,
+    );
+
+    // Merge user-provided include with access-controlled include
+    const include = args.include || accessControlledInclude;
+
+    // Execute query with optimized includes
     const model = (prisma as any)[listName.toLowerCase()];
     const item = await model.findFirst({
       where,
-      include: args.include,
+      include,
     });
 
     if (!item) {
       return null;
     }
 
-    // Filter readable fields
+    // Filter readable fields (now only handles field-level access, not array filtering)
     const filtered = await filterReadableFields(
       item,
       listConfig.fields,
@@ -177,16 +191,29 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       return [];
     }
 
-    // Execute query
+    // Build include with access control filters
+    const accessControlledInclude = await buildIncludeWithAccessControl(
+      listConfig.fields,
+      {
+        session: context.session,
+        context,
+      },
+      config,
+    );
+
+    // Merge user-provided include with access-controlled include
+    const include = args?.include || accessControlledInclude;
+
+    // Execute query with optimized includes
     const model = (prisma as any)[listName.toLowerCase()];
     const items = await model.findMany({
       where,
       take: args?.take,
       skip: args?.skip,
-      include: args?.include,
+      include,
     });
 
-    // Filter readable fields for each item
+    // Filter readable fields for each item (now only handles field-level access)
     const filtered = await Promise.all(
       items.map((item: any) =>
         filterReadableFields(

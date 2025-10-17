@@ -150,6 +150,7 @@ export function FieldRenderer({
           required={isRequired}
           mode={mode}
           isLoading={relationshipLoading}
+          many={(fieldConfig as any).many || false}
         />
       );
 

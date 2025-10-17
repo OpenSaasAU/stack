@@ -108,7 +108,7 @@ describe('Relationship Access Control', () => {
         expect(result.author?.name).toBe('John Doe')
       })
 
-      it('should filter out single relationship when access denied', async () => {
+      it('should filter out single relationship when access denied (via buildIncludeWithAccessControl)', async () => {
         const config: OpenSaaSConfig = {
           db: {
             provider: 'postgresql',
@@ -137,17 +137,10 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        const post = {
-          id: '1',
-          title: 'Test Post',
-          author: {
-            id: '1',
-            name: 'John Doe',
-          },
-        }
+        // Test that buildIncludeWithAccessControl excludes the denied relationship
+        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
 
-        const result = await filterReadableFields(
-          post,
+        const include = await buildIncludeWithAccessControl(
           config.lists.Post.fields,
           {
             session: null,
@@ -156,8 +149,9 @@ describe('Relationship Access Control', () => {
           config,
         )
 
-        expect(result.title).toBe('Test Post')
-        expect(result.author).toBeNull()
+        // When access is denied, the relationship should not be included
+        expect(include).toBeDefined()
+        expect(include?.author).toBeUndefined()
       })
 
       it('should apply field-level access to single relationship', async () => {
@@ -277,7 +271,7 @@ describe('Relationship Access Control', () => {
         expect(result.posts?.[1].title).toBe('Post 2')
       })
 
-      it('should filter items in many relationships based on query access', async () => {
+      it('should filter items in many relationships based on query access (via buildIncludeWithAccessControl)', async () => {
         const config: OpenSaaSConfig = {
           db: {
             provider: 'postgresql',
@@ -309,18 +303,10 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        const user = {
-          id: '1',
-          name: 'John Doe',
-          posts: [
-            { id: '1', title: 'Published Post', status: 'published' },
-            { id: '2', title: 'Draft Post', status: 'draft' },
-            { id: '3', title: 'Another Published', status: 'published' },
-          ],
-        }
+        // Test that buildIncludeWithAccessControl creates the right where clause
+        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
 
-        const result = await filterReadableFields(
-          user,
+        const include = await buildIncludeWithAccessControl(
           config.lists.User.fields,
           {
             session: null,
@@ -329,10 +315,10 @@ describe('Relationship Access Control', () => {
           config,
         )
 
-        // Should only include published posts
-        expect(result.posts).toHaveLength(2)
-        expect(result.posts?.[0].title).toBe('Published Post')
-        expect(result.posts?.[1].title).toBe('Another Published')
+        // Should include posts with a where filter
+        expect(include).toBeDefined()
+        expect(include?.posts).toBeDefined()
+        expect(include?.posts.where).toEqual({ status: { equals: 'published' } })
       })
 
       it('should apply field-level access to items in many relationships', async () => {
@@ -448,7 +434,7 @@ describe('Relationship Access Control', () => {
     })
 
     describe('session-based access for relationships', () => {
-      it('should apply session-based access to relationships', async () => {
+      it('should apply session-based access to relationships (via buildIncludeWithAccessControl)', async () => {
         const config: OpenSaaSConfig = {
           db: {
             provider: 'postgresql',
@@ -483,17 +469,10 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        const user = {
-          id: '1',
-          name: 'John Doe',
-          posts: [
-            { id: '1', title: 'My Post', authorId: '1' },
-            { id: '2', title: 'Someone Elses Post', authorId: '2' },
-          ],
-        }
+        // Test that buildIncludeWithAccessControl creates session-based where clause
+        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
 
-        const result = await filterReadableFields(
-          user,
+        const include = await buildIncludeWithAccessControl(
           config.lists.User.fields,
           {
             session: { userId: '1' },
@@ -502,9 +481,10 @@ describe('Relationship Access Control', () => {
           config,
         )
 
-        // Should only include user's own posts
-        expect(result.posts).toHaveLength(1)
-        expect(result.posts?.[0].title).toBe('My Post')
+        // Should include posts with session-based where filter
+        expect(include).toBeDefined()
+        expect(include?.posts).toBeDefined()
+        expect(include?.posts.where).toEqual({ authorId: { equals: '1' } })
       })
     })
 

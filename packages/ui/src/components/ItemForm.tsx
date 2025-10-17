@@ -79,6 +79,35 @@ export async function ItemForm({
     }
   }
 
+  // Fetch relationship options for all relationship fields
+  const relationshipData: Record<string, Array<{ id: string; label: string }>> = {};
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    if ((fieldConfig as any).type === "relationship") {
+      const ref = (fieldConfig as any).ref;
+      if (ref) {
+        // Parse ref format: "ListName.fieldName"
+        const relatedListName = ref.split(".")[0];
+        const relatedListConfig = context.config.lists[relatedListName];
+
+        if (relatedListConfig) {
+          try {
+            const dbContext = context.context as any;
+            const relatedItems = await dbContext[relatedListName.toLowerCase()].findMany({});
+
+            // Use 'name' field as label if it exists, otherwise use 'id'
+            relationshipData[fieldName] = relatedItems.map((item: any) => ({
+              id: item.id,
+              label: item.name || item.title || item.id,
+            }));
+          } catch (error) {
+            console.error(`Failed to fetch relationship items for ${fieldName}:`, error);
+            relationshipData[fieldName] = [];
+          }
+        }
+      }
+    }
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       {/* Header */}
@@ -121,6 +150,8 @@ export async function ItemForm({
                 options: (field as any).options,
                 validation: (field as any).validation,
                 defaultValue: (field as any).defaultValue,
+                ref: (field as any).ref,
+                many: (field as any).many,
               },
             ]),
           )}
@@ -128,6 +159,7 @@ export async function ItemForm({
           itemId={itemId}
           basePath={basePath}
           serverAction={serverAction}
+          relationshipData={relationshipData}
         />
       </div>
     </div>

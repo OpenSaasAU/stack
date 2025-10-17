@@ -14,4 +14,5 @@ export {
   isBoolean,
   isPrismaFilter,
   getRelatedListConfig,
+  buildIncludeWithAccessControl,
 } from "./engine.js";

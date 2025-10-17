@@ -171,6 +171,74 @@ function matchesFilter(item: any, filter: Record<string, any>): boolean {
 }
 
 /**
+ * Build Prisma include object with access control filters
+ * This allows us to filter relationships at the database level instead of in memory
+ */
+export async function buildIncludeWithAccessControl(
+  fieldConfigs: Record<string, FieldConfig>,
+  args: {
+    session: Session;
+    context: AccessContext;
+  },
+  config: OpenSaaSConfig,
+  depth: number = 0,
+): Promise<Record<string, any> | undefined> {
+  const MAX_DEPTH = 5;
+  if (depth >= MAX_DEPTH) {
+    return undefined;
+  }
+
+  const include: Record<string, any> = {};
+  let hasRelationships = false;
+
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (fieldConfig?.type === "relationship") {
+      hasRelationships = true;
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
+
+      if (relatedConfig) {
+        // Check query access for the related list
+        const queryAccess = relatedConfig.listConfig.access?.operation?.query;
+        const accessResult = await checkAccess(queryAccess, {
+          session: args.session,
+          context: args.context,
+        });
+
+        // If access is completely denied, exclude this relationship
+        if (accessResult === false) {
+          continue;
+        }
+
+        // Build the include entry
+        const includeEntry: Record<string, any> = {};
+
+        // If access returns a filter, add it to the where clause
+        if (typeof accessResult === "object") {
+          includeEntry.where = accessResult;
+        }
+
+        // Recursively build nested includes
+        const nestedInclude = await buildIncludeWithAccessControl(
+          relatedConfig.listConfig.fields,
+          args,
+          config,
+          depth + 1,
+        );
+
+        if (nestedInclude && Object.keys(nestedInclude).length > 0) {
+          includeEntry.include = nestedInclude;
+        }
+
+        // Add to include object
+        include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true;
+      }
+    }
+  }
+
+  return hasRelationships ? include : undefined;
+}
+
+/**
  * Filter fields from an object based on read access
  * Recursively applies access control to nested relationships
  */
@@ -206,7 +274,9 @@ export async function filterReadableFields<T extends Record<string, any>>(
       continue;
     }
 
-    // Handle relationship fields with nested access control
+    // Handle relationship fields - recursively filter fields within related items
+    // Note: Access control filtering is now done at database level via buildIncludeWithAccessControl
+    // This only handles field-level access (hiding sensitive fields)
     if (
       config &&
       fieldConfig?.type === "relationship" &&
@@ -217,84 +287,29 @@ export async function filterReadableFields<T extends Record<string, any>>(
       const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
 
       if (relatedConfig) {
-        // For many relationships (arrays)
+        // For many relationships (arrays) - recursively filter fields in each item
         if (Array.isArray(value)) {
-          const filteredArray = await Promise.all(
-            value.map(async (relatedItem) => {
-              // Check query access for the related list
-              const queryAccess = relatedConfig.listConfig.access?.operation?.query;
-              const accessResult = await checkAccess(queryAccess, {
-                session: args.session,
-                item: relatedItem,
-                context: args.context,
-              });
-
-              // If access denied, filter out this item
-              if (accessResult === false) {
-                return null;
-              }
-
-              // If access returns a filter, check if item matches
-              if (typeof accessResult === "object") {
-                if (!matchesFilter(relatedItem, accessResult)) {
-                  return null;
-                }
-              }
-
-              // Recursively filter readable fields on the related item
-              return await filterReadableFields(
+          filtered[fieldName] = await Promise.all(
+            value.map((relatedItem) =>
+              filterReadableFields(
                 relatedItem,
                 relatedConfig.listConfig.fields,
                 args,
                 config,
                 depth + 1,
-              );
-            }),
+              ),
+            ),
           );
-
-          // Remove null entries (items that were filtered out)
-          filtered[fieldName] = filteredArray.filter((item) => item !== null);
         }
-        // For single relationships (objects)
+        // For single relationships (objects) - recursively filter fields
         else if (typeof value === "object") {
-          // Check query access for the related list
-          const queryAccess = relatedConfig.listConfig.access?.operation?.query;
-          const accessResult = await checkAccess(queryAccess, {
-            session: args.session,
-            item: value,
-            context: args.context,
-          });
-
-          // If access denied, set to null
-          if (accessResult === false) {
-            filtered[fieldName] = null;
-          }
-          // If access returns a filter, check if item matches
-          else if (typeof accessResult === "object") {
-            if (!matchesFilter(value, accessResult)) {
-              filtered[fieldName] = null;
-            } else {
-              // Recursively filter readable fields on the related item
-              filtered[fieldName] = await filterReadableFields(
-                value,
-                relatedConfig.listConfig.fields,
-                args,
-                config,
-                depth + 1,
-              );
-            }
-          }
-          // Access granted (true)
-          else {
-            // Recursively filter readable fields on the related item
-            filtered[fieldName] = await filterReadableFields(
-              value,
-              relatedConfig.listConfig.fields,
-              args,
-              config,
-              depth + 1,
-            );
-          }
+          filtered[fieldName] = await filterReadableFields(
+            value,
+            relatedConfig.listConfig.fields,
+            args,
+            config,
+            depth + 1,
+          );
         }
       } else {
         // Related config not found, include the value as-is
