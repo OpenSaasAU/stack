@@ -8,7 +8,8 @@
     "start": "next start",
     "generate": "node ../../packages/core/bin/generate.cjs",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@opensaas/core": "workspace:*",
