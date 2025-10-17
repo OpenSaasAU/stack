@@ -2,7 +2,7 @@
   "name": "opensaas-framework",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.17.1",
+  "packageManager": "pnpm@10.18.3",
   "description": "A modern framework for building admin-heavy applications with Next.js App Router",
   "scripts": {
     "build": "pnpm -r build",
