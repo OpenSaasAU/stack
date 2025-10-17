@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 import { cn } from "../lib/utils.js";
 import type { FieldConfig } from "@opensaas/core";
 import type { ServerActionInput } from "../server/types.js";
@@ -112,6 +113,7 @@ export function ItemFormClient({
     if (!itemId) return;
 
     setGeneralError(null);
+    setShowDeleteConfirm(false);
 
     startTransition(async () => {
       try {
@@ -126,11 +128,9 @@ export function ItemFormClient({
           router.refresh();
         } else {
           setGeneralError("Access denied or failed to delete item");
-          setShowDeleteConfirm(false);
         }
       } catch (error: any) {
         setGeneralError(error.message || "Failed to delete item");
-        setShowDeleteConfirm(false);
       }
     });
   };
@@ -197,46 +197,32 @@ export function ItemFormClient({
 
         {/* Delete Button (Edit Mode Only) */}
         {mode === "edit" && itemId && (
-          <div>
-            {!showDeleteConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={isPending}
-                className={cn(
-                  "px-4 py-2 bg-destructive text-destructive-foreground rounded-md font-medium",
-                  "hover:bg-destructive/90 transition-colors",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-              >
-                Delete
-              </button>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-muted-foreground">
-                  Are you sure?
-                </span>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={isPending}
-                  className="px-3 py-1 bg-destructive text-destructive-foreground rounded text-sm font-medium hover:bg-destructive/90"
-                >
-                  Yes, delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  disabled={isPending}
-                  className="px-3 py-1 bg-secondary text-secondary-foreground rounded text-sm font-medium hover:bg-secondary/90"
-                >
-                  Cancel
-                </button>
-              </div>
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={isPending}
+            className={cn(
+              "px-4 py-2 bg-destructive text-destructive-foreground rounded-md font-medium",
+              "hover:bg-destructive/90 transition-colors",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
             )}
-          </div>
+          >
+            Delete
+          </button>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete Item"
+        message="Are you sure you want to delete this item? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </form>
   );
 }

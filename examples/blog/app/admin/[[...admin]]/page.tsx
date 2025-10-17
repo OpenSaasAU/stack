@@ -26,20 +26,23 @@ async function serverAction(props: ServerActionInput) {
 
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 /**
  * Main admin interface using catch-all route
  * Handles all admin routes: /admin, /admin/Post, /admin/Post/create, /admin/Post/[id]
  */
-export default async function AdminPage({ params }: AdminPageProps) {
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   const adminContext = await getAdminContext(config, prisma);
 
   return (
     <AdminUI
       context={adminContext}
       params={resolvedParams.admin}
+      searchParams={resolvedSearchParams}
       basePath="/admin"
       serverAction={serverAction}
     />

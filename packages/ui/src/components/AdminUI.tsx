@@ -8,6 +8,7 @@ import { getListKeyFromUrl } from "@opensaas/core";
 export interface AdminUIProps {
   context: AdminContext;
   params?: string[];
+  searchParams?: { [key: string]: string | string[] | undefined };
   basePath?: string;
   // Generic server action
   serverAction: (input: ServerActionInput) => Promise<any>;
@@ -26,6 +27,7 @@ export interface AdminUIProps {
 export function AdminUI({
   context,
   params = [],
+  searchParams = {},
   basePath = "/admin",
   serverAction,
 }: AdminUIProps) {
@@ -69,8 +71,17 @@ export function AdminUI({
     );
   } else {
     // List view
+    const search = typeof searchParams.search === 'string' ? searchParams.search : undefined;
+    const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1;
+
     content = (
-      <ListView context={context} listKey={listKey} basePath={basePath} />
+      <ListView
+        context={context}
+        listKey={listKey}
+        basePath={basePath}
+        search={search}
+        page={page}
+      />
     );
   }
 

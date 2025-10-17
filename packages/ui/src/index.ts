@@ -6,6 +6,7 @@ export { ListView } from './components/ListView.js'
 export { ListViewClient } from './components/ListViewClient.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
+export { ConfirmDialog } from './components/ConfirmDialog.js'
 
 // Field components
 export {
@@ -27,6 +28,7 @@ export type { ListViewProps } from './components/ListView.js'
 export type { ListViewClientProps } from './components/ListViewClient.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
+export type { ConfirmDialogProps } from './components/ConfirmDialog.js'
 
 export type {
   TextFieldProps,

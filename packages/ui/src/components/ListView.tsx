@@ -11,6 +11,7 @@ export interface ListViewProps {
   columns?: string[];
   page?: number;
   pageSize?: number;
+  search?: string;
 }
 
 /**
@@ -24,6 +25,7 @@ export async function ListView({
   columns,
   page = 1,
   pageSize = 50,
+  search,
 }: ListViewProps) {
   const key = getDbKey(listKey);
   const urlKey = getUrlKey(listKey);
@@ -47,17 +49,36 @@ export async function ListView({
 
   try {
     const dbContext = context.context.db;
-    console.log({ dbContext });
     if (!dbContext || !dbContext[key]) {
       throw new Error(`Context for ${listKey} not found`);
     }
 
+    // Build search filter if search term provided
+    let where: any = undefined;
+    if (search && search.trim()) {
+      // Find all text fields to search across
+      const searchableFields = Object.entries(listConfig.fields)
+        .filter(([_, field]) => (field as any).type === 'text')
+        .map(([fieldName]) => fieldName);
+
+      if (searchableFields.length > 0) {
+        where = {
+          OR: searchableFields.map(fieldName => ({
+            [fieldName]: {
+              contains: search.trim(),
+            },
+          })),
+        };
+      }
+    }
+
     [items, total] = await Promise.all([
       dbContext[key].findMany({
+        where,
         skip,
         take: pageSize,
       }),
-      dbContext[key].count(),
+      dbContext[key].count({ where }),
     ]);
   } catch (error) {
     console.error(`Failed to fetch ${listKey}:`, error);
@@ -98,6 +119,7 @@ export async function ListView({
         page={page}
         pageSize={pageSize}
         total={total || 0}
+        search={search}
       />
     </div>
   );

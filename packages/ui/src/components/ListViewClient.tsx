@@ -15,6 +15,7 @@ export interface ListViewClientProps {
   page: number;
   pageSize: number;
   total: number;
+  search?: string;
 }
 
 /**
@@ -31,10 +32,12 @@ export function ListViewClient({
   page,
   pageSize,
   total,
+  search: initialSearch,
 }: ListViewClientProps) {
   const router = useRouter();
   const [sortBy, setSortBy] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [searchInput, setSearchInput] = useState(initialSearch || "");
 
   // Determine which columns to show
   const displayColumns =
@@ -68,8 +71,62 @@ export function ListViewClient({
     }
   };
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (searchInput.trim()) {
+      params.set('search', searchInput.trim());
+    }
+    params.set('page', '1'); // Reset to page 1 on new search
+    router.push(`${basePath}/${urlKey}?${params.toString()}`);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    router.push(`${basePath}/${urlKey}`);
+  };
+
+  const buildPaginationUrl = (newPage: number) => {
+    const params = new URLSearchParams();
+    if (initialSearch) {
+      params.set('search', initialSearch);
+    }
+    params.set('page', newPage.toString());
+    return `${basePath}/${urlKey}?${params.toString()}`;
+  };
+
   return (
     <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="bg-card border border-border rounded-lg p-4">
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search..."
+              className="w-full h-10 px-4 pr-10 rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="px-4 h-10 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors"
+          >
+            Search
+          </button>
+        </form>
+      </div>
+
       {/* Table */}
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
@@ -146,9 +203,7 @@ export function ListViewClient({
           </p>
           <div className="flex items-center space-x-2">
             <button
-              onClick={() =>
-                router.push(`${basePath}/${urlKey}?page=${page - 1}`)
-              }
+              onClick={() => router.push(buildPaginationUrl(page - 1))}
               disabled={!hasPrevPage}
               className={cn(
                 "px-4 py-2 text-sm font-medium rounded-md border border-border",
@@ -163,9 +218,7 @@ export function ListViewClient({
               Page {page} of {totalPages}
             </span>
             <button
-              onClick={() =>
-                router.push(`${basePath}/${urlKey}?page=${page + 1}`)
-              }
+              onClick={() => router.push(buildPaginationUrl(page + 1))}
               disabled={!hasNextPage}
               className={cn(
                 "px-4 py-2 text-sm font-medium rounded-md border border-border",
