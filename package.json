@@ -1,0 +1,23 @@
+{
+  "name": "opensaas-framework",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A modern framework for building admin-heavy applications with Next.js App Router",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "clean": "pnpm -r clean"
+  },
+  "keywords": [
+    "nextjs",
+    "admin",
+    "prisma",
+    "framework"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3"
+  }
+}

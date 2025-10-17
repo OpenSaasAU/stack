@@ -1,0 +1,49 @@
+{
+  "name": "@opensaas/core",
+  "version": "0.1.0",
+  "description": "Core framework for OpenSaaS - schema definition, access control, and type generation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fields": {
+      "types": "./dist/fields/index.d.ts",
+      "default": "./dist/fields/index.js"
+    }
+  },
+  "bin": {
+    "opensaas": "./bin/generate.cjs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "opensaas",
+    "nextjs",
+    "prisma",
+    "admin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@prisma/client": "^6.17.0"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.17.1",
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
