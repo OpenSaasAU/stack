@@ -6,7 +6,7 @@
     "dev": "next dev -p 3001",
     "build": "pnpm generate && next build",
     "start": "next start -p 3001",
-    "generate": "node ../../packages/core/bin/generate.cjs",
+    "generate": "opensaas generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
@@ -20,6 +20,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@opensaas/cli": "workspace:*",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

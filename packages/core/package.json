@@ -15,9 +15,6 @@
       "default": "./dist/fields/index.js"
     }
   },
-  "bin": {
-    "opensaas": "./bin/generate.cjs"
-  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

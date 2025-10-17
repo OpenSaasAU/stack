@@ -3,7 +3,6 @@ import * as fs from "fs";
 import { execSync } from "child_process";
 import chalk from "chalk";
 import ora from "ora";
-import { writePrismaSchema, writeTypes } from "@opensaas/core";
 
 export async function generateCommand() {
   console.log(chalk.bold("\n🚀 OpenSaaS Generator\n"));
@@ -34,64 +33,41 @@ export async function generateCommand() {
       process.exit(1);
     }
 
-    // Create a temporary script to load and serialize the config
-    const loaderScript = `
-      const config = require('${configPath}');
-      const opensaasConfig = config.default || config;
-      console.log(JSON.stringify(opensaasConfig));
-    `;
+    // Create a temporary script that imports the config and runs generation
+    const generatorScript = `
+import config from './opensaas.config.ts';
+import { writePrismaSchema, writeTypes } from '@opensaas/core';
 
-    const loaderScriptPath = path.join(cwd, ".opensaas-loader.tmp.js");
-    fs.writeFileSync(loaderScriptPath, loaderScript);
+writePrismaSchema(config, './prisma/schema.prisma');
+writeTypes(config, './.opensaas/types.ts');
+`;
 
-    let configJson: string;
+    const scriptPath = path.join(cwd, ".opensaas-generator.tmp.ts");
+    fs.writeFileSync(scriptPath, generatorScript);
+
     try {
-      // Use tsx to execute the loader script
+      // Use tsx to run the generator script
       const tsxBin = path.join(cwd, "node_modules", ".bin", "tsx");
-      configJson = execSync(`"${tsxBin}" "${loaderScriptPath}"`, {
+      execSync(`"${tsxBin}" "${scriptPath}"`, {
         cwd,
         encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: "pipe",
       });
+
+      spinner.succeed(chalk.green("Generation complete"));
+      console.log(chalk.green("✅ Prisma schema generated"));
+      console.log(chalk.green("✅ TypeScript types generated"));
     } catch (err: any) {
-      spinner.fail(chalk.red("Failed to load configuration"));
-      console.error(chalk.red("\n❌ Error loading config:"), err.message);
-      // Cleanup
-      if (fs.existsSync(loaderScriptPath)) {
-        fs.unlinkSync(loaderScriptPath);
-      }
+      spinner.fail(chalk.red("Failed to generate"));
+      const errorOutput = err.stderr || err.stdout || err.message;
+      console.error(chalk.red("\n❌ Error:"), errorOutput);
       process.exit(1);
     } finally {
-      // Cleanup loader script
-      if (fs.existsSync(loaderScriptPath)) {
-        fs.unlinkSync(loaderScriptPath);
+      // Cleanup generator script
+      if (fs.existsSync(scriptPath)) {
+        fs.unlinkSync(scriptPath);
       }
     }
-
-    const opensaasConfig = JSON.parse(configJson);
-
-    if (!opensaasConfig || !opensaasConfig.lists) {
-      spinner.fail(chalk.red("Invalid configuration"));
-      console.error(
-        chalk.red("\n❌ Config must export a valid OpenSaaS config"),
-      );
-      console.error(chalk.gray("   Expected: export default config({ ... })"));
-      process.exit(1);
-    }
-
-    spinner.succeed(chalk.green("Configuration loaded"));
-
-    // Generate Prisma schema
-    spinner.start("Generating Prisma schema...");
-    const prismaSchemaPath = path.join(cwd, "prisma", "schema.prisma");
-    writePrismaSchema(opensaasConfig, prismaSchemaPath);
-    spinner.succeed(chalk.green("Prisma schema generated"));
-
-    // Generate TypeScript types
-    spinner.start("Generating TypeScript types...");
-    const typesPath = path.join(cwd, ".opensaas", "types.ts");
-    writeTypes(opensaasConfig, typesPath);
-    spinner.succeed(chalk.green("TypeScript types generated"));
 
     console.log(chalk.bold("\n✨ Generation complete!\n"));
     console.log(chalk.gray("Next steps:"));
