@@ -65,10 +65,11 @@ export default config({
         /**
          * GLOBAL FIELD TYPE EXAMPLE
          * Using the globally registered "color" field type
+         * Just specify the type - no need to pass component
          */
         favoriteColor: text({
           ui: {
-            component: ColorPickerField,
+            fieldType: "color",
           },
         }),
         posts: relationship({
@@ -118,10 +119,11 @@ export default config({
         /**
          * ANOTHER GLOBAL FIELD TYPE EXAMPLE
          * Using the color picker for theme color
+         * Demonstrating reusability of globally registered component
          */
         themeColor: text({
           ui: {
-            component: ColorPickerField,
+            fieldType: "color",
           },
         }),
         status: select({

@@ -39,9 +39,15 @@ export function FieldRenderer({
     return null;
   }
 
-  // Get component from config override or registry
+  // Get component from:
+  // 1. Per-field component override (ui.component)
+  // 2. Custom field type override (ui.fieldType) - uses global registry
+  // 3. Default field type (fieldConfig.type) - uses global registry
   const Component =
-    fieldConfig.ui?.component || getFieldComponent(fieldConfig.type);
+    fieldConfig.ui?.component ||
+    (fieldConfig.ui?.fieldType
+      ? getFieldComponent(fieldConfig.ui.fieldType)
+      : getFieldComponent(fieldConfig.type));
 
   if (!Component) {
     console.warn(`No component registered for field type: ${fieldConfig.type}`);

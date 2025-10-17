@@ -24,6 +24,11 @@ export type BaseFieldConfig = {
      */
     component?: any;
     /**
+     * Custom field type name to use from the global registry
+     * e.g., "color" to use a globally registered ColorPickerField
+     */
+    fieldType?: string;
+    /**
      * Additional UI-specific configuration
      */
     [key: string]: any;

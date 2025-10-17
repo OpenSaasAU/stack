@@ -18,13 +18,13 @@ import { ColorPickerField } from "./components/ColorPickerField";
 
 registerFieldComponent("color", ColorPickerField);
 
-// Use in field configs
+// Use in field configs - just specify the fieldType
 fields: {
   favoriteColor: text({
-    ui: { component: ColorPickerField }
+    ui: { fieldType: "color" }  // References the globally registered "color" component
   }),
   themeColor: text({
-    ui: { component: ColorPickerField }
+    ui: { fieldType: "color" }  // Reuse the same component
   })
 }
 ```
