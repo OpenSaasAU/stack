@@ -1,13 +1,7 @@
 "use client";
 
 import type { FieldConfig } from "@opensaas/core";
-import { TextField } from "./TextField.js";
-import { IntegerField } from "./IntegerField.js";
-import { CheckboxField } from "./CheckboxField.js";
-import { SelectField } from "./SelectField.js";
-import { TimestampField } from "./TimestampField.js";
-import { PasswordField } from "./PasswordField.js";
-import { RelationshipField } from "./RelationshipField.js";
+import { getFieldComponent } from "./registry.js";
 import { formatFieldName } from "../../lib/utils.js";
 
 export interface FieldRendererProps {
@@ -24,7 +18,7 @@ export interface FieldRendererProps {
 
 /**
  * Factory component that renders the appropriate field type
- * based on the field configuration
+ * based on the field configuration and component registry
  */
 export function FieldRenderer({
   fieldName,
@@ -45,126 +39,55 @@ export function FieldRenderer({
     return null;
   }
 
-  switch (fieldConfig.type) {
-    case "text":
-      return (
-        <TextField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-        />
-      );
+  // Get component from config override or registry
+  const Component =
+    fieldConfig.ui?.component || getFieldComponent(fieldConfig.type);
 
-    case "integer":
-      return (
-        <IntegerField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-        />
-      );
-
-    case "checkbox":
-      return (
-        <CheckboxField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          error={error}
-          disabled={disabled}
-          mode={mode}
-        />
-      );
-
-    case "select":
-      if (!fieldConfig.options) {
-        console.warn(`Select field "${fieldName}" is missing options`);
-        return null;
-      }
-      return (
-        <SelectField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          options={fieldConfig.options.map((opt: string | { label: string; value: string }) =>
-            typeof opt === "string" ? { label: opt, value: opt } : opt,
-          )}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-        />
-      );
-
-    case "timestamp":
-      return (
-        <TimestampField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-        />
-      );
-
-    case "password":
-      return (
-        <PasswordField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-          showConfirm={mode === "edit"}
-        />
-      );
-
-    case "relationship":
-      return (
-        <RelationshipField
-          name={fieldName}
-          value={value}
-          onChange={onChange}
-          label={label}
-          items={relationshipItems}
-          error={error}
-          disabled={disabled}
-          required={isRequired}
-          mode={mode}
-          isLoading={relationshipLoading}
-          many={(fieldConfig as any).many || false}
-        />
-      );
-
-    default:
-      console.warn(`Unknown field type: ${(fieldConfig as any).type}`);
-      return (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-muted-foreground">
-            {label}
-          </label>
-          <p className="text-sm text-muted-foreground">
-            Unsupported field type: {(fieldConfig as any).type}
-          </p>
-        </div>
-      );
+  if (!Component) {
+    console.warn(`No component registered for field type: ${fieldConfig.type}`);
+    return (
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-muted-foreground">
+          {label}
+        </label>
+        <p className="text-sm text-muted-foreground">
+          Unsupported field type: {fieldConfig.type}
+        </p>
+      </div>
+    );
   }
+
+  // Build props based on field type
+  const baseProps = {
+    name: fieldName,
+    value,
+    onChange,
+    label,
+    error,
+    disabled,
+    required: isRequired,
+    mode,
+  };
+
+  // Add field-type-specific props
+  const specificProps: Record<string, any> = {};
+
+  if (fieldConfig.type === "select" && fieldConfig.options) {
+    specificProps.options = fieldConfig.options.map(
+      (opt: string | { label: string; value: string }) =>
+        typeof opt === "string" ? { label: opt, value: opt } : opt,
+    );
+  }
+
+  if (fieldConfig.type === "password") {
+    specificProps.showConfirm = mode === "edit";
+  }
+
+  if (fieldConfig.type === "relationship") {
+    specificProps.items = relationshipItems;
+    specificProps.isLoading = relationshipLoading;
+    specificProps.many = (fieldConfig as any).many || false;
+  }
+
+  return <Component {...baseProps} {...specificProps} />;
 }

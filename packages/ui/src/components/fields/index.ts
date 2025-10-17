@@ -8,6 +8,13 @@ export { PasswordField } from './PasswordField.js'
 export { RelationshipField } from './RelationshipField.js'
 export { FieldRenderer } from './FieldRenderer.js'
 
+// Registry for custom field types
+export {
+  fieldComponentRegistry,
+  registerFieldComponent,
+  getFieldComponent,
+} from './registry.js'
+
 // Re-export types
 export type { TextFieldProps } from './TextField.js'
 export type { IntegerFieldProps } from './IntegerField.js'
@@ -17,3 +24,4 @@ export type { TimestampFieldProps } from './TimestampField.js'
 export type { PasswordFieldProps } from './PasswordField.js'
 export type { RelationshipFieldProps } from './RelationshipField.js'
 export type { FieldRendererProps } from './FieldRenderer.js'
+export type { FieldComponent, FieldComponentProps } from './registry.js'

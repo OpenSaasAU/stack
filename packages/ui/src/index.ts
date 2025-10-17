@@ -20,6 +20,9 @@ export {
   PasswordField,
   RelationshipField,
   FieldRenderer,
+  fieldComponentRegistry,
+  registerFieldComponent,
+  getFieldComponent,
 } from './components/fields/index.js'
 
 // Types
@@ -43,6 +46,8 @@ export type {
   PasswordFieldProps,
   RelationshipFieldProps,
   FieldRendererProps,
+  FieldComponent,
+  FieldComponentProps,
 } from './components/fields/index.js'
 
 // Utility functions

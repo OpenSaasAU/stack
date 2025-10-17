@@ -17,7 +17,17 @@ export type BaseFieldConfig = {
   type: FieldType;
   access?: FieldAccess;
   defaultValue?: any;
-  ui?: Record<string, any>;
+  ui?: {
+    /**
+     * Custom React component to render this field
+     * Overrides the default component for this field type
+     */
+    component?: any;
+    /**
+     * Additional UI-specific configuration
+     */
+    [key: string]: any;
+  };
   /**
    * Generate Zod schema for this field
    * @param fieldName - The name of the field (for error messages)
