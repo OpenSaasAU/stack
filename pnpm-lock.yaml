@@ -58,6 +58,46 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/custom-field:
+    dependencies:
+      '@opensaas/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@opensaas/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prisma/client':
+        specifier: ^6.17.1
+        version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
+      next:
+        specifier: ^15.5.5
+        version: 15.5.5(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      react:
+        specifier: ^19.2.0
+        version: 19.2.0
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.0(react@19.2.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.7.2
+        version: 24.8.1
+      '@types/react':
+        specifier: ^19.2.2
+        version: 19.2.2
+      '@types/react-dom':
+        specifier: ^19.2.2
+        version: 19.2.2(@types/react@19.2.2)
+      prisma:
+        specifier: ^6.17.1
+        version: 6.17.1(typescript@5.9.3)
+      tsx:
+        specifier: ^4.20.6
+        version: 4.20.6
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/cli:
     dependencies:
       '@opensaas/core':
