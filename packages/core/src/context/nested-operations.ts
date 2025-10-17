@@ -332,7 +332,8 @@ export async function processNestedOperations(
     }
 
     // Get related list config
-    const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
+    const relationshipField = fieldConfig as { type: "relationship"; ref: string };
+    const relatedConfig = getRelatedListConfig(relationshipField.ref, config);
     if (!relatedConfig) {
       processed[fieldName] = value;
       continue;
