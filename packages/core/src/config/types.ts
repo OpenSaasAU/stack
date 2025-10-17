@@ -42,6 +42,23 @@ export type BaseFieldConfig = {
     fieldName: string,
     operation: "create" | "update",
   ) => z.ZodTypeAny;
+  /**
+   * Get Prisma type and modifiers for schema generation
+   * @param fieldName - The name of the field (for generating modifiers)
+   * @returns Prisma type string and optional modifiers
+   */
+  getPrismaType?: (fieldName: string) => {
+    type: string;
+    modifiers?: string;
+  };
+  /**
+   * Get TypeScript type information for type generation
+   * @returns TypeScript type string and optionality
+   */
+  getTypeScriptType?: () => {
+    type: string;
+    optional: boolean;
+  };
 };
 
 export type TextField = BaseFieldConfig & {

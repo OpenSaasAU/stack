@@ -24,7 +24,7 @@ model Post {
   slug         String @unique
   content      String?
   themeColor   String?
-  status       String? @default("draft")
+  status       String @default("draft")
   publishedAt  DateTime?
   authorId     String?
   author       User?  @relation(fields: [authorId], references: [id])

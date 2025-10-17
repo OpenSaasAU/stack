@@ -9,40 +9,40 @@ import * as path from "path";
 /**
  * Map OpenSaaS field types to TypeScript types
  */
-function mapFieldTypeToTypeScript(field: FieldConfig): string {
-  switch (field.type) {
-    case "text":
-      return "string";
-    case "integer":
-      return "number";
-    case "checkbox":
-      return "boolean";
-    case "timestamp":
-      return "Date";
-    case "password":
-      return "string";
-    case "select":
-      // Generate union type from options
-      return field.options.map((opt) => `'${opt.value}'`).join(" | ");
-    case "relationship":
-      return ""; // Handled separately
-    default:
-      throw new Error(`Unknown field type: ${(field as any).type}`);
+function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
+  // Relationships are handled separately
+  if (field.type === "relationship") {
+    return null;
   }
+
+  // Use field's own TypeScript type generator if available
+  if (field.getTypeScriptType) {
+    const result = field.getTypeScriptType();
+    return result.type;
+  }
+
+  // Fallback for fields without generator methods
+  throw new Error(
+    `Field type "${field.type}" does not implement getTypeScriptType method`,
+  );
 }
 
 /**
  * Check if a field is optional in the type
  */
 function isFieldOptional(field: FieldConfig): boolean {
+  // Relationships are always nullable
   if (field.type === "relationship") {
     return true;
   }
 
-  if ("validation" in field && field.validation?.isRequired) {
-    return false;
+  // Use field's own TypeScript type generator if available
+  if (field.getTypeScriptType) {
+    const result = field.getTypeScriptType();
+    return result.optional;
   }
 
+  // Fallback: assume optional
   return true;
 }
 
@@ -71,6 +71,8 @@ function generateModelType(
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig);
+      if (!tsType) continue; // Skip if no type returned
+
       const optional = isFieldOptional(fieldConfig);
       const nullability = optional ? " | null" : "";
       lines.push(`  ${fieldName}: ${tsType}${nullability}`);
@@ -106,6 +108,8 @@ function generateCreateInputType(
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig);
+      if (!tsType) continue; // Skip if no type returned
+
       const required =
         !isFieldOptional(fieldConfig) && !fieldConfig.defaultValue;
       const optional = required ? "" : "?";
@@ -144,6 +148,8 @@ function generateUpdateInputType(
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig);
+      if (!tsType) continue; // Skip if no type returned
+
       lines.push(`  ${fieldName}?: ${tsType}`);
     }
   }
@@ -173,6 +179,8 @@ function generateWhereInputType(
       continue; // Skip for now
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig);
+      if (!tsType) continue; // Skip if no type returned
+
       lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`);
     }
   }

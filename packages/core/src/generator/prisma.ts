@@ -9,104 +9,49 @@ import * as path from "path";
 /**
  * Map OpenSaaS field types to Prisma field types
  */
-function mapFieldTypeToPrisma(field: FieldConfig): string {
-  switch (field.type) {
-    case "text":
-      return "String";
-    case "integer":
-      return "Int";
-    case "checkbox":
-      return "Boolean";
-    case "timestamp":
-      return "DateTime";
-    case "password":
-      return "String";
-    case "select":
-      return "String";
-    case "relationship":
-      // Relationships are handled separately
-      return "";
-    default:
-      throw new Error(`Unknown field type: ${(field as any).type}`);
-  }
-}
-
-/**
- * Check if a field is optional
- */
-function isFieldOptional(field: FieldConfig): boolean {
+function mapFieldTypeToPrisma(
+  fieldName: string,
+  field: FieldConfig,
+): string | null {
   // Relationships are handled separately
   if (field.type === "relationship") {
-    return true;
+    return null;
   }
 
-  // Check if field has required validation
-  if ("validation" in field && field.validation?.isRequired) {
-    return false;
+  // Use field's own Prisma type generator if available
+  if (field.getPrismaType) {
+    const result = field.getPrismaType(fieldName);
+    return result.type;
   }
 
-  // Checkbox with default value is not optional
-  if (field.type === "checkbox" && field.defaultValue !== undefined) {
-    return false;
-  }
-
-  // Timestamp with default value is not optional
-  if (field.type === "timestamp" && field.defaultValue !== undefined) {
-    return false;
-  }
-
-  // All other fields are optional by default
-  return true;
+  // Fallback for fields without generator methods
+  throw new Error(
+    `Field type "${field.type}" does not implement getPrismaType method`,
+  );
 }
 
 /**
  * Get field modifiers (?, @default, @unique, etc.)
  */
 function getFieldModifiers(fieldName: string, field: FieldConfig): string {
-  let modifiers = "";
-
   // Handle relationships separately
   if (field.type === "relationship") {
     const relField = field as RelationshipField;
     if (relField.many) {
-      modifiers = "[]";
+      return "[]";
     } else {
-      modifiers = "?";
-    }
-    return modifiers;
-  }
-
-  // Check if optional
-  if (isFieldOptional(field)) {
-    modifiers += "?";
-  }
-
-  // Handle defaults
-  if (field.defaultValue !== undefined) {
-    if (field.type === "checkbox" && typeof field.defaultValue === "boolean") {
-      modifiers += ` @default(${field.defaultValue})`;
-    } else if (
-      field.type === "select" &&
-      typeof field.defaultValue === "string"
-    ) {
-      modifiers += ` @default("${field.defaultValue}")`;
-    } else if (
-      field.type === "timestamp" &&
-      typeof field.defaultValue === "object" &&
-      field.defaultValue.kind === "now"
-    ) {
-      modifiers += " @default(now())";
+      return "?";
     }
   }
 
-  // Handle unique index
-  if (field.type === "text" && field.isIndexed === "unique") {
-    modifiers += " @unique";
-  } else if (field.type === "text" && field.isIndexed === true) {
-    modifiers += " @index";
+  // Use field's own Prisma type generator if available
+  if (field.getPrismaType) {
+    const result = field.getPrismaType(fieldName);
+    return result.modifiers || "";
   }
 
-  return modifiers;
+  // Fallback for fields without generator methods
+  return "";
 }
 
 /**
@@ -160,7 +105,9 @@ export function generatePrismaSchema(config: OpenSaaSConfig): string {
         continue;
       }
 
-      const prismaType = mapFieldTypeToPrisma(fieldConfig);
+      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig);
+      if (!prismaType) continue; // Skip if no type returned
+
       const modifiers = getFieldModifiers(fieldName, fieldConfig);
 
       // Format with proper spacing

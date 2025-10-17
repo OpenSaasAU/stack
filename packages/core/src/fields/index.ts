@@ -89,6 +89,37 @@ export function text(options?: Omit<TextField, "type">): TextField {
 
       return schema;
     },
+    getPrismaType: (fieldName: string) => {
+      const validation = options?.validation;
+      const isRequired = validation?.isRequired;
+      let modifiers = "";
+
+      // Optional modifier
+      if (!isRequired) {
+        modifiers += "?";
+      }
+
+      // Unique/index modifiers
+      if (options?.isIndexed === "unique") {
+        modifiers += " @unique";
+      } else if (options?.isIndexed === true) {
+        modifiers += " @index";
+      }
+
+      return {
+        type: "String",
+        modifiers: modifiers || undefined,
+      };
+    },
+    getTypeScriptType: () => {
+      const validation = options?.validation;
+      const isRequired = validation?.isRequired;
+
+      return {
+        type: "string",
+        optional: !isRequired,
+      };
+    },
   };
 }
 
@@ -123,6 +154,22 @@ export function integer(options?: Omit<IntegerField, "type">): IntegerField {
 
       return schema;
     },
+    getPrismaType: (fieldName: string) => {
+      const isRequired = options?.validation?.isRequired;
+
+      return {
+        type: "Int",
+        modifiers: isRequired ? undefined : "?",
+      };
+    },
+    getTypeScriptType: () => {
+      const isRequired = options?.validation?.isRequired;
+
+      return {
+        type: "number",
+        optional: !isRequired,
+      };
+    },
   };
 }
 
@@ -135,6 +182,25 @@ export function checkbox(options?: Omit<CheckboxField, "type">): CheckboxField {
     ...options,
     getZodSchema: (fieldName: string, operation: "create" | "update") => {
       return z.boolean().optional();
+    },
+    getPrismaType: (fieldName: string) => {
+      const hasDefault = options?.defaultValue !== undefined;
+      let modifiers = "";
+
+      if (hasDefault) {
+        modifiers = ` @default(${options.defaultValue})`;
+      }
+
+      return {
+        type: "Boolean",
+        modifiers: modifiers || undefined,
+      };
+    },
+    getTypeScriptType: () => {
+      return {
+        type: "boolean",
+        optional: options?.defaultValue === undefined,
+      };
     },
   };
 }
@@ -150,6 +216,34 @@ export function timestamp(
     ...options,
     getZodSchema: (fieldName: string, operation: "create" | "update") => {
       return z.union([z.date(), z.string().datetime()]).optional();
+    },
+    getPrismaType: (fieldName: string) => {
+      let modifiers = "?";
+
+      // Check for default value
+      if (
+        options?.defaultValue &&
+        typeof options.defaultValue === "object" &&
+        options.defaultValue.kind === "now"
+      ) {
+        modifiers = " @default(now())";
+      }
+
+      return {
+        type: "DateTime",
+        modifiers,
+      };
+    },
+    getTypeScriptType: () => {
+      const hasDefault =
+        options?.defaultValue &&
+        typeof options.defaultValue === "object" &&
+        options.defaultValue.kind === "now";
+
+      return {
+        type: "Date",
+        optional: !hasDefault,
+      };
     },
   };
 }
@@ -191,6 +285,22 @@ export function password(options?: Omit<PasswordField, "type">): PasswordField {
           .optional();
       }
     },
+    getPrismaType: (fieldName: string) => {
+      const isRequired = options?.validation?.isRequired;
+
+      return {
+        type: "String",
+        modifiers: isRequired ? undefined : "?",
+      };
+    },
+    getTypeScriptType: () => {
+      const isRequired = options?.validation?.isRequired;
+
+      return {
+        type: "string",
+        optional: !isRequired,
+      };
+    },
   };
 }
 
@@ -216,6 +326,28 @@ export function select(options: Omit<SelectField, "type">): SelectField {
       }
 
       return schema;
+    },
+    getPrismaType: (fieldName: string) => {
+      let modifiers = "?";
+
+      // Add default value if provided
+      if (options.defaultValue !== undefined) {
+        modifiers = ` @default("${options.defaultValue}")`;
+      }
+
+      return {
+        type: "String",
+        modifiers,
+      };
+    },
+    getTypeScriptType: () => {
+      // Generate union type from options
+      const unionType = options.options.map((opt) => `'${opt.value}'`).join(" | ");
+
+      return {
+        type: unionType,
+        optional: !options.validation?.isRequired || options.defaultValue !== undefined,
+      };
     },
   };
 }
