@@ -14,6 +14,7 @@ import {
   validateFieldRules,
   ValidationError,
 } from "../hooks/index.js";
+import { processNestedOperations } from "./nested-operations.js";
 
 /**
  * Prisma-like client type
@@ -47,12 +48,12 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
     const lowerListName = listName.toLowerCase();
 
     db[lowerListName] = {
-      findUnique: createFindUnique(listName, listConfig, prisma, context),
-      findMany: createFindMany(listName, listConfig, prisma, context),
-      create: createCreate(listName, listConfig, prisma, context),
-      update: createUpdate(listName, listConfig, prisma, context),
-      delete: createDelete(listName, listConfig, prisma, context),
-      count: createCount(listName, listConfig, prisma, context),
+      findUnique: createFindUnique(listName, listConfig, prisma, context, config),
+      findMany: createFindMany(listName, listConfig, prisma, context, config),
+      create: createCreate(listName, listConfig, prisma, context, config),
+      update: createUpdate(listName, listConfig, prisma, context, config),
+      delete: createDelete(listName, listConfig, prisma, context, config),
+      count: createCount(listName, listConfig, prisma, context, config),
     };
   }
 
@@ -251,7 +252,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     }
 
     // 5. Filter writable fields (field-level access control)
-    const data = await filterWritableFields(
+    const filteredData = await filterWritableFields(
       resolvedData,
       listConfig.fields,
       "create",
@@ -259,6 +260,15 @@ function createCreate<TPrisma extends PrismaClientLike>(
         session: context.session,
         context,
       },
+    );
+
+    // 5.5. Process nested relationship operations
+    const data = await processNestedOperations(
+      filteredData,
+      listConfig.fields,
+      config,
+      { ...context, prisma },
+      "create",
     );
 
     // 6. Execute beforeOperation hook
@@ -366,7 +376,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     }
 
     // 6. Filter writable fields (field-level access control)
-    const data = await filterWritableFields(
+    const filteredData = await filterWritableFields(
       resolvedData,
       listConfig.fields,
       "update",
@@ -375,6 +385,15 @@ function createUpdate<TPrisma extends PrismaClientLike>(
         item,
         context,
       },
+    );
+
+    // 6.5. Process nested relationship operations
+    const data = await processNestedOperations(
+      filteredData,
+      listConfig.fields,
+      config,
+      { ...context, prisma },
+      "update",
     );
 
     // 7. Execute beforeOperation hook
@@ -420,6 +439,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
+  config: OpenSaaSConfig,
 ) {
   return async (args: { where: { id: string } }) => {
     // 1. Fetch the item to pass to access control and hooks
@@ -486,6 +506,7 @@ function createCount<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
+  config: OpenSaaSConfig,
 ) {
   return async (args?: { where?: any }) => {
     // Check query access

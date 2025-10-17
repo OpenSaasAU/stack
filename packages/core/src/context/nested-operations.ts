@@ -1,0 +1,413 @@
+import type { OpenSaaSConfig, ListConfig, FieldConfig } from "../config/types.js";
+import type { AccessContext } from "../access/types.js";
+import {
+  checkAccess,
+  filterWritableFields,
+  getRelatedListConfig,
+} from "../access/index.js";
+import {
+  executeResolveInput,
+  executeValidateInput,
+  validateFieldRules,
+  ValidationError,
+} from "../hooks/index.js";
+
+/**
+ * Check if a field config is a relationship field
+ */
+function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
+  return fieldConfig?.type === "relationship";
+}
+
+/**
+ * Process nested create operations
+ * Applies hooks and access control to each item being created
+ */
+async function processNestedCreate(
+  items: any | any[],
+  relatedListConfig: ListConfig,
+  context: AccessContext,
+  config: OpenSaaSConfig,
+): Promise<any> {
+  const itemsArray = Array.isArray(items) ? items : [items];
+
+  const processedItems = await Promise.all(
+    itemsArray.map(async (item) => {
+      // 1. Check create access
+      const createAccess = relatedListConfig.access?.operation?.create;
+      const accessResult = await checkAccess(createAccess, {
+        session: context.session,
+        context,
+      });
+
+      if (accessResult === false) {
+        throw new Error("Access denied: Cannot create related item");
+      }
+
+      // 2. Execute resolveInput hook
+      let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
+        operation: "create",
+        resolvedData: item,
+        context,
+      });
+
+      // 3. Execute validateInput hook
+      await executeValidateInput(relatedListConfig.hooks, {
+        operation: "create",
+        resolvedData,
+        context,
+      });
+
+      // 4. Field validation
+      const fieldErrors = validateFieldRules(
+        resolvedData,
+        relatedListConfig.fields,
+        "create",
+      );
+      if (fieldErrors.length > 0) {
+        throw new ValidationError(fieldErrors);
+      }
+
+      // 5. Filter writable fields
+      const filtered = await filterWritableFields(
+        resolvedData,
+        relatedListConfig.fields,
+        "create",
+        {
+          session: context.session,
+          context,
+        },
+      );
+
+      // 6. Recursively process nested operations in this item
+      return await processNestedOperations(
+        filtered,
+        relatedListConfig.fields,
+        config,
+        context,
+        "create",
+      );
+    }),
+  );
+
+  return Array.isArray(items) ? processedItems : processedItems[0];
+}
+
+/**
+ * Process nested connect operations
+ * Verifies update access to the items being connected
+ */
+async function processNestedConnect(
+  connections: any | any[],
+  relatedListName: string,
+  relatedListConfig: ListConfig,
+  context: AccessContext,
+  prisma: any,
+): Promise<any> {
+  const connectionsArray = Array.isArray(connections) ? connections : [connections];
+
+  // Check update access for each item being connected
+  for (const connection of connectionsArray) {
+    const model = prisma[relatedListName.toLowerCase()];
+
+    // Fetch the item to check access
+    const item = await model.findUnique({
+      where: connection,
+    });
+
+    if (!item) {
+      throw new Error(`Cannot connect: Item not found`);
+    }
+
+    // Check update access (connecting modifies the relationship)
+    const updateAccess = relatedListConfig.access?.operation?.update;
+    const accessResult = await checkAccess(updateAccess, {
+      session: context.session,
+      item,
+      context,
+    });
+
+    if (accessResult === false) {
+      throw new Error("Access denied: Cannot connect to this item");
+    }
+
+    // If access returns a filter, check if item matches
+    if (typeof accessResult === "object") {
+      // Simple field matching
+      for (const [key, value] of Object.entries(accessResult)) {
+        if (typeof value === "object" && value !== null && "equals" in value) {
+          if (item[key] !== (value as any).equals) {
+            throw new Error("Access denied: Cannot connect to this item");
+          }
+        } else if (item[key] !== value) {
+          throw new Error("Access denied: Cannot connect to this item");
+        }
+      }
+    }
+  }
+
+  return connections;
+}
+
+/**
+ * Process nested update operations
+ * Applies hooks and access control to updates
+ */
+async function processNestedUpdate(
+  updates: any | any[],
+  relatedListName: string,
+  relatedListConfig: ListConfig,
+  context: AccessContext,
+  config: OpenSaaSConfig,
+  prisma: any,
+): Promise<any> {
+  const updatesArray = Array.isArray(updates) ? updates : [updates];
+
+  const processedUpdates = await Promise.all(
+    updatesArray.map(async (update) => {
+      const model = prisma[relatedListName.toLowerCase()];
+
+      // Fetch the existing item
+      const item = await model.findUnique({
+        where: update.where,
+      });
+
+      if (!item) {
+        throw new Error("Cannot update: Item not found");
+      }
+
+      // Check update access
+      const updateAccess = relatedListConfig.access?.operation?.update;
+      const accessResult = await checkAccess(updateAccess, {
+        session: context.session,
+        item,
+        context,
+      });
+
+      if (accessResult === false) {
+        throw new Error("Access denied: Cannot update related item");
+      }
+
+      // Execute resolveInput hook
+      let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
+        operation: "update",
+        resolvedData: update.data,
+        item,
+        context,
+      });
+
+      // Execute validateInput hook
+      await executeValidateInput(relatedListConfig.hooks, {
+        operation: "update",
+        resolvedData,
+        item,
+        context,
+      });
+
+      // Field validation
+      const fieldErrors = validateFieldRules(
+        resolvedData,
+        relatedListConfig.fields,
+        "update",
+      );
+      if (fieldErrors.length > 0) {
+        throw new ValidationError(fieldErrors);
+      }
+
+      // Filter writable fields
+      const filtered = await filterWritableFields(
+        resolvedData,
+        relatedListConfig.fields,
+        "update",
+        {
+          session: context.session,
+          item,
+          context,
+        },
+      );
+
+      // Recursively process nested operations
+      const processedData = await processNestedOperations(
+        filtered,
+        relatedListConfig.fields,
+        config,
+        context,
+        "update",
+      );
+
+      return {
+        where: update.where,
+        data: processedData,
+      };
+    }),
+  );
+
+  return Array.isArray(updates) ? processedUpdates : processedUpdates[0];
+}
+
+/**
+ * Process nested connectOrCreate operations
+ */
+async function processNestedConnectOrCreate(
+  operations: any | any[],
+  relatedListName: string,
+  relatedListConfig: ListConfig,
+  context: AccessContext,
+  config: OpenSaaSConfig,
+  prisma: any,
+): Promise<any> {
+  const operationsArray = Array.isArray(operations) ? operations : [operations];
+
+  const processedOps = await Promise.all(
+    operationsArray.map(async (op) => {
+      // Process the create portion through create hooks
+      const processedCreate = await processNestedCreate(
+        op.create,
+        relatedListConfig,
+        context,
+        config,
+      );
+
+      // Check access for the connect portion (try to find existing item)
+      try {
+        const model = prisma[relatedListName.toLowerCase()];
+        const existingItem = await model.findUnique({
+          where: op.where,
+        });
+
+        if (existingItem) {
+          // Check update access for connection
+          const updateAccess = relatedListConfig.access?.operation?.update;
+          const accessResult = await checkAccess(updateAccess, {
+            session: context.session,
+            item: existingItem,
+            context,
+          });
+
+          if (accessResult === false) {
+            throw new Error("Access denied: Cannot connect to existing item");
+          }
+        }
+      } catch (error) {
+        // Item doesn't exist, will use create (already processed)
+      }
+
+      return {
+        where: op.where,
+        create: processedCreate,
+      };
+    }),
+  );
+
+  return Array.isArray(operations) ? processedOps : processedOps[0];
+}
+
+/**
+ * Process all nested operations in a data payload
+ * Recursively handles relationship fields with nested writes
+ */
+export async function processNestedOperations(
+  data: Record<string, any>,
+  fieldConfigs: Record<string, FieldConfig>,
+  config: OpenSaaSConfig,
+  context: AccessContext & { prisma: any },
+  operation: "create" | "update",
+  depth: number = 0,
+): Promise<Record<string, any>> {
+  const MAX_DEPTH = 5;
+
+  if (depth >= MAX_DEPTH) {
+    return data;
+  }
+
+  const processed: Record<string, any> = {};
+
+  for (const [fieldName, value] of Object.entries(data)) {
+    const fieldConfig = fieldConfigs[fieldName];
+
+    // If not a relationship field or no value, pass through
+    if (!isRelationshipField(fieldConfig) || value === null || value === undefined) {
+      processed[fieldName] = value;
+      continue;
+    }
+
+    // Get related list config
+    const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
+    if (!relatedConfig) {
+      processed[fieldName] = value;
+      continue;
+    }
+
+    const { listName: relatedListName, listConfig: relatedListConfig } = relatedConfig;
+
+    // Process different nested operation types
+    const nestedOp: Record<string, any> = {};
+
+    if (value.create !== undefined) {
+      nestedOp.create = await processNestedCreate(
+        value.create,
+        relatedListConfig,
+        context,
+        config,
+      );
+    }
+
+    if (value.connect !== undefined) {
+      nestedOp.connect = await processNestedConnect(
+        value.connect,
+        relatedListName,
+        relatedListConfig,
+        context,
+        context.prisma,
+      );
+    }
+
+    if (value.connectOrCreate !== undefined) {
+      nestedOp.connectOrCreate = await processNestedConnectOrCreate(
+        value.connectOrCreate,
+        relatedListName,
+        relatedListConfig,
+        context,
+        config,
+        context.prisma,
+      );
+    }
+
+    if (value.update !== undefined) {
+      nestedOp.update = await processNestedUpdate(
+        value.update,
+        relatedListName,
+        relatedListConfig,
+        context,
+        config,
+        context.prisma,
+      );
+    }
+
+    // For other operations, pass through (disconnect, delete, set, etc.)
+    // These will be subject to Prisma's own constraints
+    if (value.disconnect !== undefined) {
+      nestedOp.disconnect = value.disconnect;
+    }
+
+    if (value.delete !== undefined) {
+      nestedOp.delete = value.delete;
+    }
+
+    if (value.deleteMany !== undefined) {
+      nestedOp.deleteMany = value.deleteMany;
+    }
+
+    if (value.set !== undefined) {
+      nestedOp.set = value.set;
+    }
+
+    if (value.updateMany !== undefined) {
+      nestedOp.updateMany = value.updateMany;
+    }
+
+    processed[fieldName] = nestedOp;
+  }
+
+  return processed;
+}

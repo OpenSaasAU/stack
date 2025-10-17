@@ -1,0 +1,632 @@
+import { describe, it, expect, vi } from 'vitest'
+import {
+  filterReadableFields,
+  getRelatedListConfig,
+} from '../src/access/engine.js'
+import type { OpenSaaSConfig, AccessContext } from '../src/index.js'
+
+describe('Relationship Access Control', () => {
+  const mockContext: AccessContext = {
+    session: null,
+    prisma: {},
+  }
+
+  describe('getRelatedListConfig', () => {
+    const config: OpenSaaSConfig = {
+      db: {
+        provider: 'postgresql',
+        url: 'postgresql://localhost:5432/test',
+      },
+      lists: {
+        User: {
+          fields: {
+            name: { type: 'text' },
+          },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' },
+          },
+        },
+      },
+    }
+
+    it('should parse relationship ref and return list config', () => {
+      const result = getRelatedListConfig('Post.author', config)
+
+      expect(result).toBeDefined()
+      expect(result?.listName).toBe('Post')
+      expect(result?.listConfig).toBeDefined()
+      expect(result?.listConfig.fields.title).toBeDefined()
+    })
+
+    it('should return null for invalid ref format', () => {
+      const result = getRelatedListConfig('InvalidRef', config)
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null for non-existent list', () => {
+      const result = getRelatedListConfig('NonExistent.field', config)
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('filterReadableFields with relationships', () => {
+    describe('single relationships', () => {
+      it('should apply access control to single relationship', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+              },
+              access: {
+                operation: {
+                  query: () => true, // Allow reading users
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: {
+                  type: 'relationship',
+                  ref: 'User.posts',
+                },
+              },
+            },
+          },
+        }
+
+        const post = {
+          id: '1',
+          title: 'Test Post',
+          author: {
+            id: '1',
+            name: 'John Doe',
+          },
+        }
+
+        const result = await filterReadableFields(
+          post,
+          config.lists.Post.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.title).toBe('Test Post')
+        expect(result.author).toBeDefined()
+        expect(result.author?.name).toBe('John Doe')
+      })
+
+      it('should filter out single relationship when access denied', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+              },
+              access: {
+                operation: {
+                  query: () => false, // Deny reading users
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: {
+                  type: 'relationship',
+                  ref: 'User.posts',
+                },
+              },
+            },
+          },
+        }
+
+        const post = {
+          id: '1',
+          title: 'Test Post',
+          author: {
+            id: '1',
+            name: 'John Doe',
+          },
+        }
+
+        const result = await filterReadableFields(
+          post,
+          config.lists.Post.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.title).toBe('Test Post')
+        expect(result.author).toBeNull()
+      })
+
+      it('should apply field-level access to single relationship', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                email: {
+                  type: 'text',
+                  access: {
+                    read: () => false, // Hide email
+                  },
+                },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: {
+                  type: 'relationship',
+                  ref: 'User.posts',
+                },
+              },
+            },
+          },
+        }
+
+        const post = {
+          id: '1',
+          title: 'Test Post',
+          author: {
+            id: '1',
+            name: 'John Doe',
+            email: 'john@example.com',
+          },
+        }
+
+        const result = await filterReadableFields(
+          post,
+          config.lists.Post.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.author).toBeDefined()
+        expect(result.author?.name).toBe('John Doe')
+        expect(result.author?.email).toBeUndefined()
+      })
+    })
+
+    describe('many relationships (arrays)', () => {
+      it('should apply access control to many relationships', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                status: { type: 'select', options: [] },
+              },
+              access: {
+                operation: {
+                  query: () => true, // Allow all posts
+                },
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: '1',
+          name: 'John Doe',
+          posts: [
+            { id: '1', title: 'Post 1', status: 'published' },
+            { id: '2', title: 'Post 2', status: 'draft' },
+          ],
+        }
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.posts).toHaveLength(2)
+        expect(result.posts?.[0].title).toBe('Post 1')
+        expect(result.posts?.[1].title).toBe('Post 2')
+      })
+
+      it('should filter items in many relationships based on query access', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                status: { type: 'select', options: [] },
+              },
+              access: {
+                operation: {
+                  // Only show published posts
+                  query: () => ({ status: { equals: 'published' } }),
+                },
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: '1',
+          name: 'John Doe',
+          posts: [
+            { id: '1', title: 'Published Post', status: 'published' },
+            { id: '2', title: 'Draft Post', status: 'draft' },
+            { id: '3', title: 'Another Published', status: 'published' },
+          ],
+        }
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        // Should only include published posts
+        expect(result.posts).toHaveLength(2)
+        expect(result.posts?.[0].title).toBe('Published Post')
+        expect(result.posts?.[1].title).toBe('Another Published')
+      })
+
+      it('should apply field-level access to items in many relationships', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                internalNotes: {
+                  type: 'text',
+                  access: {
+                    read: () => false, // Hide internal notes
+                  },
+                },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: '1',
+          name: 'John Doe',
+          posts: [
+            { id: '1', title: 'Post 1', internalNotes: 'Secret notes' },
+            { id: '2', title: 'Post 2', internalNotes: 'More secrets' },
+          ],
+        }
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.posts).toHaveLength(2)
+        expect(result.posts?.[0].title).toBe('Post 1')
+        expect(result.posts?.[0].internalNotes).toBeUndefined()
+        expect(result.posts?.[1].title).toBe('Post 2')
+        expect(result.posts?.[1].internalNotes).toBeUndefined()
+      })
+
+      it('should handle empty arrays', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: '1',
+          name: 'John Doe',
+          posts: [],
+        }
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.posts).toEqual([])
+      })
+    })
+
+    describe('session-based access for relationships', () => {
+      it('should apply session-based access to relationships', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                authorId: { type: 'text' },
+              },
+              access: {
+                operation: {
+                  // Only show posts owned by current user
+                  query: ({ session }) => {
+                    if (!session) return false
+                    return { authorId: { equals: session.userId } }
+                  },
+                },
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: '1',
+          name: 'John Doe',
+          posts: [
+            { id: '1', title: 'My Post', authorId: '1' },
+            { id: '2', title: 'Someone Elses Post', authorId: '2' },
+          ],
+        }
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: { userId: '1' },
+            context: mockContext,
+          },
+          config,
+        )
+
+        // Should only include user's own posts
+        expect(result.posts).toHaveLength(1)
+        expect(result.posts?.[0].title).toBe('My Post')
+      })
+    })
+
+    describe('depth limiting', () => {
+      it('should prevent infinite recursion with depth limit', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                posts: {
+                  type: 'relationship',
+                  ref: 'Post.author',
+                  many: true,
+                },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: {
+                  type: 'relationship',
+                  ref: 'User.posts',
+                },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        // Create circular reference structure
+        const user: any = {
+          id: '1',
+          name: 'John Doe',
+          posts: [],
+        }
+
+        const post: any = {
+          id: '1',
+          title: 'Test Post',
+          author: user,
+        }
+
+        user.posts = [post]
+
+        const result = await filterReadableFields(
+          user,
+          config.lists.User.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        // Should not throw stack overflow error
+        expect(result).toBeDefined()
+        expect(result.posts).toBeDefined()
+      })
+    })
+
+    describe('null and undefined relationships', () => {
+      it('should handle null single relationships', async () => {
+        const config: OpenSaaSConfig = {
+          db: {
+            provider: 'postgresql',
+            url: 'postgresql://localhost:5432/test',
+          },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                },
+              },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: {
+                  type: 'relationship',
+                  ref: 'User.posts',
+                },
+              },
+            },
+          },
+        }
+
+        const post = {
+          id: '1',
+          title: 'Test Post',
+          author: null,
+        }
+
+        const result = await filterReadableFields(
+          post,
+          config.lists.Post.fields,
+          {
+            session: null,
+            context: mockContext,
+          },
+          config,
+        )
+
+        expect(result.author).toBeNull()
+      })
+    })
+  })
+})
