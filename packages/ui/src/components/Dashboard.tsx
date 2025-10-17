@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
+import { getDbKey } from "@opensaas/core";
 
 export interface DashboardProps {
   context: AdminContext;
@@ -22,7 +23,7 @@ export async function Dashboard({
     lists.map(async (listKey) => {
       try {
         const dbContext = context.context as any;
-        const count = await dbContext.db[listKey.toLowerCase()]?.count();
+        const count = await dbContext.db[getDbKey(listKey)]?.count();
         return { listKey, count: count || 0 };
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error);

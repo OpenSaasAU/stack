@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ListViewClient } from "./ListViewClient.js";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
+import { getDbKey } from "@opensaas/core";
 
 export interface ListViewProps {
   context: AdminContext;
@@ -24,7 +25,7 @@ export async function ListView({
   page = 1,
   pageSize = 50,
 }: ListViewProps) {
-  const key = listKey.toLowerCase();
+  const key = getDbKey(listKey);
   const listConfig = context.config.lists[listKey];
 
   if (!listConfig) {

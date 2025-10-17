@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ItemFormClient } from "./ItemFormClient.js";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext, ServerActionInput } from "../server/types.js";
+import { getDbKey } from "@opensaas/core";
 
 export interface ItemFormProps {
   context: AdminContext;
@@ -43,7 +44,7 @@ export async function ItemForm({
   if (mode === "edit" && itemId) {
     try {
       const dbContext = context.context as any;
-      itemData = await dbContext.db[listKey.toLowerCase()].findUnique({
+      itemData = await dbContext.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
       });
 
@@ -92,7 +93,7 @@ export async function ItemForm({
         if (relatedListConfig) {
           try {
             const dbContext = context.context as any;
-            const relatedItems = await dbContext.db[relatedListName.toLowerCase()].findMany({});
+            const relatedItems = await dbContext.db[getDbKey(relatedListName)].findMany({});
 
             // Use 'name' field as label if it exists, otherwise use 'id'
             relationshipData[fieldName] = relatedItems.map((item: any) => ({

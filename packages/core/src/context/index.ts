@@ -16,6 +16,7 @@ import {
   ValidationError,
 } from "../hooks/index.js";
 import { processNestedOperations } from "./nested-operations.js";
+import { getDbKey } from "../lib/case-utils.js";
 
 /**
  * Prisma-like client type
@@ -46,9 +47,9 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
 
   // Create access-controlled operations for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const lowerListName = listName.toLowerCase();
+    const dbKey = getDbKey(listName);
 
-    db[lowerListName] = {
+    db[dbKey] = {
       findUnique: createFindUnique(listName, listConfig, prisma, context, config),
       findMany: createFindMany(listName, listConfig, prisma, context, config),
       create: createCreate(listName, listConfig, prisma, context, config),
@@ -65,7 +66,7 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
     data?: Record<string, any>;
     id?: string;
   }) {
-    const dbKey = props.listKey.toLowerCase();
+    const dbKey = getDbKey(props.listKey);
 
     if (props.action === "create") {
       return await db[dbKey].create({ data: props.data });
@@ -133,7 +134,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     const include = args.include || accessControlledInclude;
 
     // Execute query with optimized includes
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findFirst({
       where,
       include,
@@ -205,7 +206,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     const include = args?.include || accessControlledInclude;
 
     // Execute query with optimized includes
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const items = await model.findMany({
       where,
       take: args?.take,
@@ -305,7 +306,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     });
 
     // 7. Execute database create
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const item = await model.create({
       data,
     });
@@ -344,7 +345,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 ) {
   return async (args: { where: { id: string }; data: any }) => {
     // 1. Fetch the item to pass to access control and hooks
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findUnique({
       where: args.where,
     });
@@ -470,7 +471,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
 ) {
   return async (args: { where: { id: string } }) => {
     // 1. Fetch the item to pass to access control and hooks
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findUnique({
       where: args.where,
     });
@@ -554,7 +555,7 @@ function createCount<TPrisma extends PrismaClientLike>(
     }
 
     // Execute count
-    const model = (prisma as any)[listName.toLowerCase()];
+    const model = (prisma as any)[getDbKey(listName)];
     const count = await model.count({
       where,
     });

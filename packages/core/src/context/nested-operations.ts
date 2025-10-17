@@ -11,6 +11,7 @@ import {
   validateFieldRules,
   ValidationError,
 } from "../hooks/index.js";
+import { getDbKey } from "../lib/case-utils.js";
 
 /**
  * Check if a field config is a relationship field
@@ -108,7 +109,7 @@ async function processNestedConnect(
 
   // Check update access for each item being connected
   for (const connection of connectionsArray) {
-    const model = prisma[relatedListName.toLowerCase()];
+    const model = prisma[getDbKey(relatedListName)];
 
     // Fetch the item to check access
     const item = await model.findUnique({
@@ -165,7 +166,7 @@ async function processNestedUpdate(
 
   const processedUpdates = await Promise.all(
     updatesArray.map(async (update) => {
-      const model = prisma[relatedListName.toLowerCase()];
+      const model = prisma[getDbKey(relatedListName)];
 
       // Fetch the existing item
       const item = await model.findUnique({
@@ -270,7 +271,7 @@ async function processNestedConnectOrCreate(
 
       // Check access for the connect portion (try to find existing item)
       try {
-        const model = prisma[relatedListName.toLowerCase()];
+        const model = prisma[getDbKey(relatedListName)];
         const existingItem = await model.findUnique({
           where: op.where,
         });
