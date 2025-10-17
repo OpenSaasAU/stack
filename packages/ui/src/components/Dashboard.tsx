@@ -22,7 +22,7 @@ export async function Dashboard({
     lists.map(async (listKey) => {
       try {
         const dbContext = context.context as any;
-        const count = await dbContext[listKey]?.count();
+        const count = await dbContext.db[listKey.toLowerCase()]?.count();
         return { listKey, count: count || 0 };
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error);

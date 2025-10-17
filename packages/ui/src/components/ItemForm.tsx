@@ -43,7 +43,7 @@ export async function ItemForm({
   if (mode === "edit" && itemId) {
     try {
       const dbContext = context.context as any;
-      itemData = await dbContext[listKey].findUnique({
+      itemData = await dbContext.db[listKey.toLowerCase()].findUnique({
         where: { id: itemId },
       });
 
@@ -92,7 +92,7 @@ export async function ItemForm({
         if (relatedListConfig) {
           try {
             const dbContext = context.context as any;
-            const relatedItems = await dbContext[relatedListName.toLowerCase()].findMany({});
+            const relatedItems = await dbContext.db[relatedListName.toLowerCase()].findMany({});
 
             // Use 'name' field as label if it exists, otherwise use 'id'
             relationshipData[fieldName] = relatedItems.map((item: any) => ({
