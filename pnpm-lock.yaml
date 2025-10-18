@@ -31,7 +31,50 @@ importers:
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
       next:
         specifier: ^15.5.5
-        version: 15.5.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 15.5.5(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      react:
+        specifier: ^19.2.0
+        version: 19.2.0
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.0(react@19.2.0)
+    devDependencies:
+      '@opensaas/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@types/node':
+        specifier: ^24.7.2
+        version: 24.8.1
+      '@types/react':
+        specifier: ^19.2.2
+        version: 19.2.2
+      '@types/react-dom':
+        specifier: ^19.2.2
+        version: 19.2.2(@types/react@19.2.2)
+      prisma:
+        specifier: ^6.17.1
+        version: 6.17.1(typescript@5.9.3)
+      tsx:
+        specifier: ^4.20.6
+        version: 4.20.6
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  examples/composable-dashboard:
+    dependencies:
+      '@opensaas/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@opensaas/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prisma/client':
+        specifier: ^6.17.1
+        version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
+      next:
+        specifier: ^15.5.5
+        version: 15.5.5(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       react:
         specifier: ^19.2.0
         version: 19.2.0
@@ -74,7 +117,7 @@ importers:
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
       next:
         specifier: ^15.5.5
-        version: 15.5.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 15.5.5(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       react:
         specifier: ^19.2.0
         version: 19.2.0
@@ -4122,29 +4165,6 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  next@15.5.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0):
-    dependencies:
-      '@next/env': 15.5.5
-      '@swc/helpers': 0.5.15
-      caniuse-lite: 1.0.30001750
-      postcss: 8.4.31
-      react: 19.2.0
-      react-dom: 19.2.0(react@19.2.0)
-      styled-jsx: 5.1.6(react@19.2.0)
-    optionalDependencies:
-      '@next/swc-darwin-arm64': 15.5.5
-      '@next/swc-darwin-x64': 15.5.5
-      '@next/swc-linux-arm64-gnu': 15.5.5
-      '@next/swc-linux-arm64-musl': 15.5.5
-      '@next/swc-linux-x64-gnu': 15.5.5
-      '@next/swc-linux-x64-musl': 15.5.5
-      '@next/swc-win32-arm64-msvc': 15.5.5
-      '@next/swc-win32-x64-msvc': 15.5.5
-      sharp: 0.34.4
-    transitivePeerDependencies:
-      - '@babel/core'
-      - babel-plugin-macros
-
   node-fetch-native@1.6.7: {}
 
   node-releases@2.0.23: {}
@@ -4451,11 +4471,6 @@ snapshots:
       react: 19.2.0
     optionalDependencies:
       '@babel/core': 7.28.4
-
-  styled-jsx@5.1.6(react@19.2.0):
-    dependencies:
-      client-only: 0.0.1
-      react: 19.2.0
 
   tailwind-merge@3.3.1: {}
 
