@@ -5,13 +5,17 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "@opensaas/ui#build": {
+    "@opensaas/cli#build": {
       "dependsOn": ["@opensaas/core#build"],
+      "outputs": ["dist/**", "dist/styles/**"]
+    },
+    "@opensaas/ui#build": {
+      "dependsOn": ["@opensaas/cli#build"],
       "outputs": ["dist/**", "dist/styles/**"]
     },
     "build": {
       "dependsOn": ["@opensaas/ui#build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", ".next/**"]
     },
     "test": {
       "dependsOn": ["build"],
