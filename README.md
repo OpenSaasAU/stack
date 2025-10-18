@@ -10,14 +10,17 @@ A modern framework for building admin-heavy applications with Next.js App Router
 - 🎯 **Type-Safe**: Full TypeScript support with generated types from schema
 - 🔄 **Prisma-Powered**: Built on Prisma for reliable database operations
 - 🧩 **Fully Extensible**: Custom field types without modifying core code
+- 🎨 **Fully Composable UI**: Use primitives, fields, standalone components, or complete admin UI
+- ♿ **Accessible**: Built with Radix UI and shadcn/ui for production-ready components
 
 ## Project Structure
 
 This is a monorepo containing:
 
-- **`packages/core`**: The core OpenSaaS framework
-- **`packages/ui`**: Admin UI components
-- **`examples/blog`**: A working blog example demonstrating the framework
+- **`packages/core`**: The core OpenSaaS framework (config, fields, access control, generators)
+- **`packages/cli`**: CLI tools for code generation and development
+- **`packages/ui`**: Composable React UI components (primitives, fields, standalone components, full admin UI)
+- **`examples/blog`**: Working blog example demonstrating the framework
 - **`examples/custom-field`**: Example demonstrating custom field components
 
 ## Quick Start
@@ -342,13 +345,59 @@ See `examples/custom-field` for a complete working example with:
 
 Learn more in [CLAUDE.md](./CLAUDE.md#customizing-ui-components).
 
+## Composability
+
+OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
+
+### Level 1: Primitives
+```tsx
+import { Button, Input, Card, Table } from "@opensaas/ui/primitives"
+
+<Card>
+  <Input placeholder="Search..." />
+  <Button>Submit</Button>
+</Card>
+```
+
+### Level 2: Field Components
+```tsx
+import { TextField, SelectField } from "@opensaas/ui/fields"
+
+<form>
+  <TextField name="email" label="Email" value={email} onChange={setEmail} />
+  <SelectField name="role" label="Role" options={roles} />
+</form>
+```
+
+### Level 3: Standalone Components
+```tsx
+import { ItemCreateForm, ListTable, SearchBar } from "@opensaas/ui/standalone"
+
+<ItemCreateForm
+  fields={config.lists.Post.fields}
+  onSubmit={async (data) => {
+    const post = await createPost(data);
+    return { success: !!post };
+  }}
+/>
+```
+
+### Level 4: Full Admin UI
+```tsx
+import { AdminUI } from "@opensaas/ui"
+
+<AdminUI context={context} serverAction={handleAction} />
+```
+
+See [docs/COMPOSABILITY.md](./docs/COMPOSABILITY.md) for complete guide.
+
 ## Roadmap
 
 - [x] **Phase 1**: Core foundation (config, fields, generators)
 - [x] **Phase 2**: Access control engine
 - [x] **Phase 3**: Hooks system (resolveInput, validateInput, etc.)
-- [ ] **Phase 4**: CLI tooling (init, migrate commands)
-- [ ] **Phase 5**: Admin UI components
+- [x] **Phase 4**: CLI tooling (generate, dev watch mode)
+- [x] **Phase 5**: Composable UI (shadcn/ui primitives, standalone components)
 - [ ] **Phase 6**: Better-auth integration
 
 ## Philosophy
