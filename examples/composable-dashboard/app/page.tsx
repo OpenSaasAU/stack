@@ -10,10 +10,10 @@ export default async function HomePage() {
 
   // Get stats (using Prisma directly for counts is fine)
   const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
-    prisma.post.count(),
-    prisma.post.count({ where: { status: "published" } }),
-    prisma.post.count({ where: { status: "draft" } }),
-    prisma.user.count(),
+    context.db.post.count(),
+    context.db.post.count({ where: { status: "published" } }),
+    context.db.post.count({ where: { status: "draft" } }),
+    context.db.user.count(),
   ]);
 
   // Get recent posts using context (access control applied)
