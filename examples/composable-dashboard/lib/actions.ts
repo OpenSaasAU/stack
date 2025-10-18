@@ -2,34 +2,37 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getContext, getContextWithUser } from "./context";
+import { getContext, getContextWithUser, prisma } from "./context";
 
 // For demo purposes, we'll use a hardcoded user ID
 // In a real app, this would come from your auth session
 const DEMO_USER_ID = "demo-user-1";
 
 export async function createPost(data: any) {
-  const context = await getContextWithUser(DEMO_USER_ID);
+  try {
+    const context = await getContext(); // Use no auth for demo
 
-  const post = await context.db.post.create({
-    data: {
-      title: data.title,
-      slug: data.slug,
-      content: data.content,
-      status: data.status || "draft",
-      internalNotes: data.internalNotes,
-      publishedAt: data.publishedAt ? new Date(data.publishedAt) : undefined,
-      author: data.author?.connect || { connect: { id: DEMO_USER_ID } },
-    },
-  });
+    // Filter out relationship fields that require auth
+    const { author, ...postData } = data;
 
-  if (!post) {
-    return { success: false, error: "Failed to create post" };
+    const post = await context.db.post.create({
+      data: {
+        ...postData,
+        publishedAt: postData.publishedAt ? new Date(postData.publishedAt) : undefined,
+      },
+    });
+
+    if (!post) {
+      return { success: false, error: "Failed to create post" };
+    }
+
+    revalidatePath("/");
+    revalidatePath("/posts");
+    return { success: true, data: post };
+  } catch (error: any) {
+    console.error("Create post error:", error);
+    return { success: false, error: error.message || "Failed to create post" };
   }
-
-  revalidatePath("/");
-  revalidatePath("/posts");
-  return { success: true, data: post };
 }
 
 export async function updatePost(id: string, data: any) {
