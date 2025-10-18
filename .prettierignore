@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Generated files
+.opensaas/
+prisma/migrations/
+
+# Misc
+.DS_Store
+*.log
+pnpm-lock.yaml
