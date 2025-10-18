@@ -8,7 +8,7 @@ import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone";
 import { updatePost, deletePost } from "../../../lib/actions";
 import config from "../../../opensaas.config";
 
-export function PostEditor({ post }: { post: any }) {
+export function PostEditor({ post }: { post: Record<string, any> }) {
   const [editing, setEditing] = useState(false);
   const router = useRouter();
 

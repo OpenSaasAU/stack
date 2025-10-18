@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState } from "react";
 import { FieldRenderer } from "../fields/FieldRenderer.js";
 import { LoadingSpinner } from "../LoadingSpinner.js";
@@ -143,16 +144,13 @@ export function ItemEditForm({
       {/* Form Actions */}
       <div className="flex gap-3 pt-6 mt-6 border-t border-border">
         <Button type="submit" disabled={isPending} className="gap-2">
-          {isPending && <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />}
+          {isPending && (
+            <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
+          )}
           {isPending ? "Saving..." : submitLabel}
         </Button>
         {onCancel && (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onCancel}
-            disabled={isPending}
-          >
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={isPending}>
             {cancelLabel}
           </Button>
         )}

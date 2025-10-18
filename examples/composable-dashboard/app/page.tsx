@@ -62,9 +62,7 @@ export default async function HomePage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Published
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Published</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-green-600">{publishedPosts}</p>
@@ -73,9 +71,7 @@ export default async function HomePage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Drafts
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Drafts</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-yellow-600">{draftPosts}</p>
@@ -84,9 +80,7 @@ export default async function HomePage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Users
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Users</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">{totalUsers}</p>
@@ -128,7 +122,7 @@ export default async function HomePage() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {recentPosts.map((post: any) => (
+                  {recentPosts.map((post: Record<string, any>) => (
                     <Link
                       key={post.id}
                       href={`/posts/${post.id}`}

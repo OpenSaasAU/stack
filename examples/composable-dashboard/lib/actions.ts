@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getContext, getContextWithUser, prisma } from "./context";
+import { getContext, getContextWithUser } from "./context";
 
 // For demo purposes, we'll use a hardcoded user ID
 // In a real app, this would come from your auth session

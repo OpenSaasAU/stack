@@ -1,3 +1,4 @@
+import * as React from "react";
 import Link from "next/link";
 import { ItemFormClient } from "./ItemFormClient.js";
 import { formatListName } from "../lib/utils.js";
@@ -48,37 +49,34 @@ export async function ItemForm({
       itemData = await dbContext.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
       });
-
-      if (!itemData) {
-        return (
-          <div className="p-8">
-            <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-              <h2 className="text-lg font-semibold mb-2">Item not found</h2>
-              <p>
-                The item you're trying to edit doesn't exist or you don't have
-                access to it.
-              </p>
-              <Link
-                href={`${basePath}/${urlKey}`}
-                className="inline-block mt-4 text-primary hover:underline"
-              >
-                ← Back to {formatListName(listKey)}
-              </Link>
-            </div>
-          </div>
-        );
-      }
     } catch (error) {
       console.error(`Failed to fetch item ${itemId}:`, error);
+    }
+
+    if (!itemData) {
       return (
         <div className="p-8">
           <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-2">Error loading item</h2>
-            <p>Failed to load the item. Please try again.</p>
+            <h2 className="text-lg font-semibold mb-2">Item not found</h2>
+            <p>The item you're trying to edit doesn't exist or you don't have access to it.</p>
+            <Link
+              href={`${basePath}/${urlKey}`}
+              className="inline-block mt-4 text-primary hover:underline"
+            >
+              ← Back to {formatListName(listKey)}
+            </Link>
           </div>
         </div>
       );
     }
+    return (
+      <div className="p-8">
+        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
+          <h2 className="text-lg font-semibold mb-2">Error loading item</h2>
+          <p>Failed to load the item. Please try again.</p>
+        </div>
+      </div>
+    );
   }
 
   // Fetch relationship options for all relationship fields
@@ -118,12 +116,7 @@ export async function ItemForm({
           href={`${basePath}/${urlKey}`}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
         >
-          <svg
-            className="w-4 h-4 mr-1"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"

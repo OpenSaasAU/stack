@@ -4,9 +4,7 @@ import { ListTable, SearchBar } from "@opensaas/ui/standalone";
 import { getContext } from "../../lib/context";
 import { CreatePostDialog } from "../../components/CreatePostDialog";
 
-export default async function PostsPage(props: {
-  searchParams: Promise<{ search?: string }>;
-}) {
+export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
   const searchParams = await props.searchParams;
   const search = searchParams.search || "";
   const context = await getContext();
@@ -65,11 +63,11 @@ export default async function PostsPage(props: {
           <form method="GET" action="/posts">
             <SearchBar
               defaultValue={search}
-              onSearch={(query) => {
+              onSearch={(_query) => {
                 // Form will handle submission
               }}
               onClear={() => {
-                window.location.href = "/posts";
+                // window.location.href = "/posts";
               }}
               placeholder="Search posts by title or content..."
             />
@@ -91,8 +89,8 @@ export default async function PostsPage(props: {
                 createdAt: "timestamp",
               }}
               columns={["title", "authorName", "status", "createdAt"]}
-              onRowClick={(post) => {
-                window.location.href = `/posts/${post.id}`;
+              onRowClick={(_post) => {
+                // window.location.href = `/posts/${post.id}`;
               }}
               sortable
               emptyMessage={

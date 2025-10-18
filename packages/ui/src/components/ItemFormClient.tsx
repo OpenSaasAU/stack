@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
@@ -173,7 +174,12 @@ export function ItemFormClient({
       <div className="flex items-center justify-between pt-6 border-t border-border">
         <div className="flex gap-3">
           <Button type="submit" disabled={isPending} className="gap-2">
-            {isPending && <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />}
+            {isPending && (
+              <LoadingSpinner
+                size="sm"
+                className="border-primary-foreground border-t-transparent"
+              />
+            )}
             {isPending ? "Saving..." : mode === "create" ? "Create" : "Save"}
           </Button>
           <Button

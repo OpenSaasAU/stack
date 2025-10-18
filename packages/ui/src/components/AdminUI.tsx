@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Navigation } from "./Navigation.js";
 import { Dashboard } from "./Dashboard.js";
 import { ListView } from "./ListView.js";
@@ -71,8 +72,8 @@ export function AdminUI({
     );
   } else {
     // List view
-    const search = typeof searchParams.search === 'string' ? searchParams.search : undefined;
-    const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1;
+    const search = typeof searchParams.search === "string" ? searchParams.search : undefined;
+    const page = typeof searchParams.page === "string" ? parseInt(searchParams.page, 10) : 1;
 
     content = (
       <ListView
@@ -87,11 +88,7 @@ export function AdminUI({
 
   return (
     <div className="flex min-h-screen bg-background">
-      <Navigation
-        context={context}
-        basePath={basePath}
-        currentPath={currentPath}
-      />
+      <Navigation context={context} basePath={basePath} currentPath={currentPath} />
       <main className="flex-1 overflow-y-auto">{content}</main>
     </div>
   );

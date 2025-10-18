@@ -1,5 +1,5 @@
 "use client";
-
+import * as React from "react";
 import { useState } from "react";
 import { formatFieldName, getFieldDisplayValue } from "../../lib/utils.js";
 import {
@@ -55,9 +55,7 @@ export function ListTable({
   // Determine which columns to show
   const displayColumns =
     columns ||
-    Object.keys(fieldTypes).filter(
-      (key) => !["password", "createdAt", "updatedAt"].includes(key),
-    );
+    Object.keys(fieldTypes).filter((key) => !["password", "createdAt", "updatedAt"].includes(key));
 
   // Sort items if needed
   const sortedItems = [...items];
@@ -96,9 +94,7 @@ export function ListTable({
                   <div className="flex items-center space-x-1">
                     <span>{formatFieldName(column)}</span>
                     {sortable && sortBy === column && (
-                      <span className="text-primary">
-                        {sortOrder === "asc" ? "↑" : "↓"}
-                      </span>
+                      <span className="text-primary">{sortOrder === "asc" ? "↑" : "↓"}</span>
                     )}
                   </div>
                 </TableHead>
