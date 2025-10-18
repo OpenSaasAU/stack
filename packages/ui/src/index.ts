@@ -50,5 +50,22 @@ export type {
   FieldComponentProps,
 } from './components/fields/index.js'
 
+// Standalone composable components
+export {
+  ItemCreateForm,
+  ItemEditForm,
+  ListTable,
+  SearchBar,
+  DeleteButton,
+} from './components/standalone/index.js'
+
+export type {
+  ItemCreateFormProps,
+  ItemEditFormProps,
+  ListTableProps,
+  SearchBarProps,
+  DeleteButtonProps,
+} from './components/standalone/index.js'
+
 // Utility functions
 export { cn, formatListName, formatFieldName, getFieldDisplayValue } from './lib/utils.js'

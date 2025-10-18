@@ -18,6 +18,10 @@
       "types": "./dist/components/fields/index.d.ts",
       "default": "./dist/components/fields/index.js"
     },
+    "./standalone": {
+      "types": "./dist/components/standalone/index.d.ts",
+      "default": "./dist/components/standalone/index.js"
+    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
