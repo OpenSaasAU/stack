@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { Button } from "@opensaas/ui/primitives";
-import { getContext, prisma } from "../lib/context";
+import { getContext } from "../lib/context";
 import { CreatePostDialog } from "../components/CreatePostDialog";
+import { connection } from "next/server";
 
 export default async function HomePage() {
+  await connection();
   // Use context for access-controlled queries
   const context = await getContext();
 
