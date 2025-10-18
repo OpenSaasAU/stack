@@ -2,7 +2,7 @@ import type {
   OpenSaaSConfig,
   FieldConfig,
   RelationshipField,
-} from "../config/types.js";
+} from "@opensaas/core";
 import * as fs from "fs";
 import * as path from "path";
 

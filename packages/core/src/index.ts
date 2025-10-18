@@ -37,11 +37,3 @@ export { getDbKey, getUrlKey, getListKeyFromUrl, pascalToCamel, pascalToKebab, k
 // Hooks and validation
 export { ValidationError } from "./hooks/index.js";
 export { validateWithZod, generateZodSchema } from "./validation/schema.js";
-
-// Generators (for CLI use)
-export {
-  generatePrismaSchema,
-  writePrismaSchema,
-  generateTypes,
-  writeTypes,
-} from "./generator/index.js";

@@ -5,24 +5,8 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { Button } from "@opensaas/ui/primitives";
 import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone";
-import { text, select, timestamp, relationship } from "@opensaas/core/fields";
 import { updatePost, deletePost } from "../../../lib/actions";
-
-const postFields = {
-  title: text({ validation: { isRequired: true } }),
-  slug: text({ validation: { isRequired: true } }),
-  content: text(),
-  status: select({
-    options: [
-      { label: "Draft", value: "draft" },
-      { label: "Published", value: "published" },
-    ],
-    defaultValue: "draft",
-  }),
-  publishedAt: timestamp(),
-  internalNotes: text(),
-  author: relationship({ ref: "User.posts" }),
-};
+import config from "../../../opensaas.config";
 
 export function PostEditor({ post }: { post: any }) {
   const [editing, setEditing] = useState(false);
@@ -36,7 +20,7 @@ export function PostEditor({ post }: { post: any }) {
         </CardHeader>
         <CardContent>
           <ItemEditForm
-            fields={postFields}
+            fields={config.lists.Post.fields}
             initialData={post}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data);

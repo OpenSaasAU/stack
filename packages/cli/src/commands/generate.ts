@@ -36,7 +36,7 @@ export async function generateCommand() {
     // Create a temporary script that imports the config and runs generation
     const generatorScript = `
 import config from './opensaas.config.ts';
-import { writePrismaSchema, writeTypes } from '@opensaas/core';
+import { writePrismaSchema, writeTypes } from '@opensaas/cli/generator';
 
 writePrismaSchema(config, './prisma/schema.prisma');
 writeTypes(config, './.opensaas/types.ts');

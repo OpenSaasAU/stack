@@ -5,24 +5,8 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@opensaas/ui/primitives";
 import { Button } from "@opensaas/ui/primitives";
 import { ItemCreateForm } from "@opensaas/ui/standalone";
-import { text, select, timestamp, relationship } from "@opensaas/core/fields";
 import { createPost } from "../lib/actions";
-
-const postFields = {
-  title: text({ validation: { isRequired: true } }),
-  slug: text({ validation: { isRequired: true } }),
-  content: text(),
-  status: select({
-    options: [
-      { label: "Draft", value: "draft" },
-      { label: "Published", value: "published" },
-    ],
-    defaultValue: "draft",
-  }),
-  publishedAt: timestamp(),
-  internalNotes: text(),
-  author: relationship({ ref: "User.posts" }),
-};
+import config from "../opensaas.config";
 
 export function CreatePostDialog() {
   const [open, setOpen] = useState(false);
@@ -41,7 +25,7 @@ export function CreatePostDialog() {
           </DialogHeader>
 
           <ItemCreateForm
-            fields={postFields}
+            fields={config.lists.Post.fields}
             onSubmit={async (data) => {
               const result = await createPost(data);
 
