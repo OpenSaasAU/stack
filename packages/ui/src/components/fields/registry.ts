@@ -42,10 +42,7 @@ export const fieldComponentRegistry: Record<string, FieldComponent> = {
  * Register a custom field component for a field type
  * Useful for adding support for custom field types
  */
-export function registerFieldComponent(
-  fieldType: string,
-  component: FieldComponent,
-): void {
+export function registerFieldComponent(fieldType: string, component: FieldComponent): void {
   fieldComponentRegistry[fieldType] = component;
 }
 

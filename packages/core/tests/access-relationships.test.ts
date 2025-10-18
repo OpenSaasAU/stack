@@ -315,6 +315,7 @@ describe("Relationship Access Control", () => {
         // Should include posts with a where filter
         expect(include).toBeDefined();
         expect(include?.posts).toBeDefined();
+        // @ts-expect-error the test
         expect(include?.posts.where).toEqual({ status: { equals: "published" } });
       });
 
@@ -481,6 +482,7 @@ describe("Relationship Access Control", () => {
         // Should include posts with session-based where filter
         expect(include).toBeDefined();
         expect(include?.posts).toBeDefined();
+        // @ts-expect-error the test
         expect(include?.posts.where).toEqual({ authorId: { equals: "1" } });
       });
     });

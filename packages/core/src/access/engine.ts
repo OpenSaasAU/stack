@@ -1,9 +1,4 @@
-import type {
-  AccessControl,
-  Session,
-  AccessContext,
-  PrismaFilter,
-} from "./types.js";
+import type { AccessControl, Session, AccessContext, PrismaFilter } from "./types.js";
 import type { FieldAccess } from "./types.js";
 import type { OpenSaaSConfig, ListConfig, FieldConfig } from "../config/types.js";
 
@@ -182,14 +177,15 @@ export async function buildIncludeWithAccessControl(
   },
   config: OpenSaaSConfig,
   depth: number = 0,
-): Promise<Record<string, unknown> | undefined> {
+) {
   const MAX_DEPTH = 5;
   if (depth >= MAX_DEPTH) {
     return undefined;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const include: any = {};
+  type IncludeEntry = boolean | { where?: PrismaFilter; include?: Record<string, IncludeEntry> };
+   
+  const include: Record<string, IncludeEntry> = {};
   let hasRelationships = false;
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
