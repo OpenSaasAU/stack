@@ -1,9 +1,10 @@
 "use client";
 
+import * as React from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatFieldName, getFieldDisplayValue, cn } from "../lib/utils.js";
+import { formatFieldName, getFieldDisplayValue } from "../lib/utils.js";
 import {
   Table,
   TableBody,
@@ -37,7 +38,6 @@ export function ListViewClient({
   items,
   fieldTypes,
   columns,
-  listKey,
   urlKey,
   basePath,
   page,
@@ -53,9 +53,7 @@ export function ListViewClient({
   // Determine which columns to show
   const displayColumns =
     columns ||
-    Object.keys(fieldTypes).filter(
-      (key) => !["password", "createdAt", "updatedAt"].includes(key),
-    );
+    Object.keys(fieldTypes).filter((key) => !["password", "createdAt", "updatedAt"].includes(key));
 
   // Sort items if needed
   const sortedItems = [...items];
@@ -86,23 +84,23 @@ export function ListViewClient({
     e.preventDefault();
     const params = new URLSearchParams();
     if (searchInput.trim()) {
-      params.set('search', searchInput.trim());
+      params.set("search", searchInput.trim());
     }
-    params.set('page', '1'); // Reset to page 1 on new search
+    params.set("page", "1"); // Reset to page 1 on new search
     router.push(`${basePath}/${urlKey}?${params.toString()}`);
   };
 
   const handleClearSearch = () => {
-    setSearchInput('');
+    setSearchInput("");
     router.push(`${basePath}/${urlKey}`);
   };
 
   const buildPaginationUrl = (newPage: number) => {
     const params = new URLSearchParams();
     if (initialSearch) {
-      params.set('search', initialSearch);
+      params.set("search", initialSearch);
     }
-    params.set('page', newPage.toString());
+    params.set("page", newPage.toString());
     return `${basePath}/${urlKey}?${params.toString()}`;
   };
 
@@ -147,9 +145,7 @@ export function ListViewClient({
                   <div className="flex items-center space-x-1">
                     <span>{formatFieldName(column)}</span>
                     {sortBy === column && (
-                      <span className="text-primary">
-                        {sortOrder === "asc" ? "↑" : "↓"}
-                      </span>
+                      <span className="text-primary">{sortOrder === "asc" ? "↑" : "↓"}</span>
                     )}
                   </div>
                 </TableHead>
@@ -160,10 +156,7 @@ export function ListViewClient({
           <TableBody>
             {sortedItems.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={displayColumns.length + 1}
-                  className="h-24 text-center"
-                >
+                <TableCell colSpan={displayColumns.length + 1} className="h-24 text-center">
                   No items found
                 </TableCell>
               </TableRow>
@@ -194,8 +187,8 @@ export function ListViewClient({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {(page - 1) * pageSize + 1} to{" "}
-            {Math.min(page * pageSize, total)} of {total} results
+            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{" "}
+            results
           </p>
           <div className="flex items-center space-x-2">
             <Button

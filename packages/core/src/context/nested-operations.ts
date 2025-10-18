@@ -1,10 +1,6 @@
 import type { OpenSaaSConfig, ListConfig, FieldConfig } from "../config/types.js";
 import type { AccessContext } from "../access/types.js";
-import {
-  checkAccess,
-  filterWritableFields,
-  getRelatedListConfig,
-} from "../access/index.js";
+import { checkAccess, filterWritableFields, getRelatedListConfig } from "../access/index.js";
 import {
   executeResolveInput,
   executeValidateInput,
@@ -25,11 +21,11 @@ function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
  * Applies hooks and access control to each item being created
  */
 async function processNestedCreate(
-  items: any | any[],
+  items: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListConfig: ListConfig,
   context: AccessContext,
   config: OpenSaaSConfig,
-): Promise<any> {
+): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const itemsArray = Array.isArray(items) ? items : [items];
 
   const processedItems = await Promise.all(
@@ -60,11 +56,7 @@ async function processNestedCreate(
       });
 
       // 4. Field validation
-      const validation = validateFieldRules(
-        resolvedData,
-        relatedListConfig.fields,
-        "create",
-      );
+      const validation = validateFieldRules(resolvedData, relatedListConfig.fields, "create");
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors);
       }
@@ -99,17 +91,19 @@ async function processNestedCreate(
  * Verifies update access to the items being connected
  */
 async function processNestedConnect(
-  connections: any | any[],
+  connections: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
   relatedListConfig: ListConfig,
   context: AccessContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prisma: any,
-): Promise<any> {
+): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections];
 
   // Check update access for each item being connected
   for (const connection of connectionsArray) {
-    const model = prisma[getDbKey(relatedListName)];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const model = (prisma as any)[getDbKey(relatedListName)];
 
     // Fetch the item to check access
     const item = await model.findUnique({
@@ -137,7 +131,7 @@ async function processNestedConnect(
       // Simple field matching
       for (const [key, value] of Object.entries(accessResult)) {
         if (typeof value === "object" && value !== null && "equals" in value) {
-          if (item[key] !== (value as any).equals) {
+          if (item[key] !== (value as Record<string, unknown>).equals) {
             throw new Error("Access denied: Cannot connect to this item");
           }
         } else if (item[key] !== value) {
@@ -155,18 +149,20 @@ async function processNestedConnect(
  * Applies hooks and access control to updates
  */
 async function processNestedUpdate(
-  updates: any | any[],
+  updates: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
   relatedListConfig: ListConfig,
   context: AccessContext,
   config: OpenSaaSConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prisma: any,
-): Promise<any> {
+): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const updatesArray = Array.isArray(updates) ? updates : [updates];
 
   const processedUpdates = await Promise.all(
     updatesArray.map(async (update) => {
-      const model = prisma[getDbKey(relatedListName)];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (prisma as any)[getDbKey(relatedListName)];
 
       // Fetch the existing item
       const item = await model.findUnique({
@@ -190,9 +186,10 @@ async function processNestedUpdate(
       }
 
       // Execute resolveInput hook
+
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         operation: "update",
-        resolvedData: update.data,
+        resolvedData: (update as any).data,
         item,
         context,
       });
@@ -206,11 +203,7 @@ async function processNestedUpdate(
       });
 
       // Field validation
-      const validation = validateFieldRules(
-        resolvedData,
-        relatedListConfig.fields,
-        "update",
-      );
+      const validation = validateFieldRules(resolvedData, relatedListConfig.fields, "update");
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors);
       }
@@ -250,20 +243,22 @@ async function processNestedUpdate(
  * Process nested connectOrCreate operations
  */
 async function processNestedConnectOrCreate(
-  operations: any | any[],
+  operations: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
   relatedListConfig: ListConfig,
   context: AccessContext,
   config: OpenSaaSConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prisma: any,
-): Promise<any> {
+): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const operationsArray = Array.isArray(operations) ? operations : [operations];
 
   const processedOps = await Promise.all(
     operationsArray.map(async (op) => {
       // Process the create portion through create hooks
+
       const processedCreate = await processNestedCreate(
-        op.create,
+        (op as any).create,
         relatedListConfig,
         context,
         config,
@@ -271,9 +266,11 @@ async function processNestedConnectOrCreate(
 
       // Check access for the connect portion (try to find existing item)
       try {
-        const model = prisma[getDbKey(relatedListName)];
-        const existingItem = await model.findUnique({
-          where: op.where,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = (prisma as any)[getDbKey(relatedListName)];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const existingItem = await (model as any).findUnique({
+          where: (op as any).where,
         });
 
         if (existingItem) {
@@ -289,12 +286,12 @@ async function processNestedConnectOrCreate(
             throw new Error("Access denied: Cannot connect to existing item");
           }
         }
-      } catch (error) {
+      } catch {
         // Item doesn't exist, will use create (already processed)
       }
 
       return {
-        where: op.where,
+        where: (op as any).where,
         create: processedCreate,
       };
     }),
@@ -308,20 +305,21 @@ async function processNestedConnectOrCreate(
  * Recursively handles relationship fields with nested writes
  */
 export async function processNestedOperations(
-  data: Record<string, any>,
+  data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaaSConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: AccessContext & { prisma: any },
   operation: "create" | "update",
   depth: number = 0,
-): Promise<Record<string, any>> {
+): Promise<Record<string, unknown>> {
   const MAX_DEPTH = 5;
 
   if (depth >= MAX_DEPTH) {
     return data;
   }
 
-  const processed: Record<string, any> = {};
+  const processed: Record<string, unknown> = {};
 
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName];
@@ -343,20 +341,23 @@ export async function processNestedOperations(
     const { listName: relatedListName, listConfig: relatedListConfig } = relatedConfig;
 
     // Process different nested operation types
-    const nestedOp: Record<string, any> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nestedOp: any = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const valueAny = value as any;
 
-    if (value.create !== undefined) {
+    if (valueAny.create !== undefined) {
       nestedOp.create = await processNestedCreate(
-        value.create,
+        valueAny.create,
         relatedListConfig,
         context,
         config,
       );
     }
 
-    if (value.connect !== undefined) {
+    if (valueAny.connect !== undefined) {
       nestedOp.connect = await processNestedConnect(
-        value.connect,
+        valueAny.connect,
         relatedListName,
         relatedListConfig,
         context,
@@ -364,9 +365,9 @@ export async function processNestedOperations(
       );
     }
 
-    if (value.connectOrCreate !== undefined) {
+    if (valueAny.connectOrCreate !== undefined) {
       nestedOp.connectOrCreate = await processNestedConnectOrCreate(
-        value.connectOrCreate,
+        valueAny.connectOrCreate,
         relatedListName,
         relatedListConfig,
         context,
@@ -375,9 +376,9 @@ export async function processNestedOperations(
       );
     }
 
-    if (value.update !== undefined) {
+    if (valueAny.update !== undefined) {
       nestedOp.update = await processNestedUpdate(
-        value.update,
+        valueAny.update,
         relatedListName,
         relatedListConfig,
         context,
@@ -388,24 +389,24 @@ export async function processNestedOperations(
 
     // For other operations, pass through (disconnect, delete, set, etc.)
     // These will be subject to Prisma's own constraints
-    if (value.disconnect !== undefined) {
-      nestedOp.disconnect = value.disconnect;
+    if (valueAny.disconnect !== undefined) {
+      nestedOp.disconnect = valueAny.disconnect;
     }
 
-    if (value.delete !== undefined) {
-      nestedOp.delete = value.delete;
+    if (valueAny.delete !== undefined) {
+      nestedOp.delete = valueAny.delete;
     }
 
-    if (value.deleteMany !== undefined) {
-      nestedOp.deleteMany = value.deleteMany;
+    if (valueAny.deleteMany !== undefined) {
+      nestedOp.deleteMany = valueAny.deleteMany;
     }
 
-    if (value.set !== undefined) {
-      nestedOp.set = value.set;
+    if (valueAny.set !== undefined) {
+      nestedOp.set = valueAny.set;
     }
 
-    if (value.updateMany !== undefined) {
-      nestedOp.updateMany = value.updateMany;
+    if (valueAny.updateMany !== undefined) {
+      nestedOp.updateMany = valueAny.updateMany;
     }
 
     processed[fieldName] = nestedOp;

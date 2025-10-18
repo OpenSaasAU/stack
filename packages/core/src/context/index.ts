@@ -17,13 +17,30 @@ import {
 } from "../hooks/index.js";
 import { processNestedOperations } from "./nested-operations.js";
 import { getDbKey } from "../lib/case-utils.js";
+import type { PrismaClientLike } from "../access/types.js";
 
 /**
- * Prisma-like client type
- * This allows the context to work with any Prisma client without importing @prisma/client
+ * Map Prisma client to access-controlled database context
+ * Preserves Prisma's type information for each model
  */
-export type PrismaClientLike = {
-  [key: string]: any;
+type AccessControlledDB<TPrisma extends PrismaClientLike> = {
+  [K in keyof TPrisma]: TPrisma[K] extends {
+    findUnique: unknown;
+    findMany: unknown;
+    create: unknown;
+    update: unknown;
+    delete: unknown;
+    count: unknown;
+  }
+    ? {
+        findUnique: TPrisma[K]["findUnique"];
+        findMany: TPrisma[K]["findMany"];
+        create: TPrisma[K]["create"];
+        update: TPrisma[K]["update"];
+        delete: TPrisma[K]["delete"];
+        count: TPrisma[K]["count"];
+      }
+    : never;
 };
 
 /**
@@ -33,17 +50,29 @@ export type PrismaClientLike = {
  * @param prisma - Your Prisma client instance (pass as generic for type safety)
  * @param session - Current session object (or null if not authenticated)
  */
-export async function getContext<TPrisma extends PrismaClientLike = any>(
+export async function getContext<TPrisma extends PrismaClientLike = PrismaClientLike>(
   config: OpenSaaSConfig,
   prisma: TPrisma,
   session: Session,
-): Promise<any> {
+): Promise<{
+  db: AccessControlledDB<TPrisma>;
+  session: Session;
+  prisma: TPrisma;
+  serverAction: (props: {
+    listKey: string;
+    action: "create" | "update" | "delete";
+    data?: Record<string, unknown>;
+    id?: string;
+  }) => Promise<unknown>;
+}> {
   const context: AccessContext = {
     session,
-    prisma,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prisma: prisma as any,
   };
 
-  const db: Record<string, any> = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db: any = {};
 
   // Create access-controlled operations for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
@@ -54,8 +83,8 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
       findMany: createFindMany(listName, listConfig, prisma, context, config),
       create: createCreate(listName, listConfig, prisma, context, config),
       update: createUpdate(listName, listConfig, prisma, context, config),
-      delete: createDelete(listName, listConfig, prisma, context, config),
-      count: createCount(listName, listConfig, prisma, context, config),
+      delete: createDelete(listName, listConfig, prisma, context),
+      count: createCount(listName, listConfig, prisma, context),
     };
   }
 
@@ -63,20 +92,23 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
   async function serverAction(props: {
     listKey: string;
     action: "create" | "update" | "delete";
-    data?: Record<string, any>;
+    data?: Record<string, unknown>;
     id?: string;
   }) {
     const dbKey = getDbKey(props.listKey);
 
     if (props.action === "create") {
-      return await db[dbKey].create({ data: props.data });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (db[dbKey] as any).create({ data: props.data });
     } else if (props.action === "update") {
-      return await db[dbKey].update({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (db[dbKey] as any).update({
         where: { id: props.id },
         data: props.data,
       });
     } else if (props.action === "delete") {
-      return await db[dbKey].delete({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (db[dbKey] as any).delete({
         where: { id: props.id },
       });
     }
@@ -102,7 +134,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   context: AccessContext,
   config: OpenSaaSConfig,
 ) {
-  return async (args: { where: { id: string }; include?: any }) => {
+  return async (args: { where: { id: string }; include?: Record<string, unknown> }) => {
     // Check query access
     const queryAccess = listConfig.access?.operation?.query;
     const accessResult = await checkAccess(queryAccess, {
@@ -134,6 +166,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     const include = args.include || accessControlledInclude;
 
     // Execute query with optimized includes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findFirst({
       where,
@@ -170,10 +203,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
   config: OpenSaaSConfig,
 ) {
   return async (args?: {
-    where?: any;
+    where?: Record<string, unknown>;
     take?: number;
     skip?: number;
-    include?: any;
+    include?: Record<string, unknown>;
   }) => {
     // Check query access
     const queryAccess = listConfig.access?.operation?.query;
@@ -206,6 +239,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     const include = args?.include || accessControlledInclude;
 
     // Execute query with optimized includes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const items = await model.findMany({
       where,
@@ -216,7 +250,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
 
     // Filter readable fields for each item (now only handles field-level access)
     const filtered = await Promise.all(
-      items.map((item: any) =>
+      items.map((item: Record<string, unknown>) =>
         filterReadableFields(
           item,
           listConfig.fields,
@@ -243,7 +277,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
   context: AccessContext,
   config: OpenSaaSConfig,
 ) {
-  return async (args: { data: any }) => {
+  return async (args: { data: Record<string, unknown> }) => {
     // 1. Check create access
     const createAccess = listConfig.access?.operation?.create;
     const accessResult = await checkAccess(createAccess, {
@@ -270,32 +304,24 @@ function createCreate<TPrisma extends PrismaClientLike>(
     });
 
     // 4. Field validation (isRequired, length, etc.)
-    const validation = validateFieldRules(
-      resolvedData,
-      listConfig.fields,
-      "create",
-    );
+    const validation = validateFieldRules(resolvedData, listConfig.fields, "create");
     if (validation.errors.length > 0) {
       throw new ValidationError(validation.errors, validation.fieldErrors);
     }
 
     // 5. Filter writable fields (field-level access control)
-    const filteredData = await filterWritableFields(
-      resolvedData,
-      listConfig.fields,
-      "create",
-      {
-        session: context.session,
-        context,
-      },
-    );
+    const filteredData = await filterWritableFields(resolvedData, listConfig.fields, "create", {
+      session: context.session,
+      context,
+    });
 
     // 5.5. Process nested relationship operations
+
     const data = await processNestedOperations(
       filteredData,
       listConfig.fields,
       config,
-      { ...context, prisma },
+      { ...context, prisma: prisma as any },
       "create",
     );
 
@@ -306,6 +332,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     });
 
     // 7. Execute database create
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const item = await model.create({
       data,
@@ -343,8 +370,9 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   context: AccessContext,
   config: OpenSaaSConfig,
 ) {
-  return async (args: { where: { id: string }; data: any }) => {
+  return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
     // 1. Fetch the item to pass to access control and hooks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findUnique({
       where: args.where,
@@ -368,7 +396,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // If access returns a filter, check if item matches
     if (typeof accessResult === "object") {
-      const matchesFilter = await model.findFirst({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matchesFilter = await (model as any).findFirst({
         where: mergeFilters(args.where, accessResult),
       });
 
@@ -394,33 +423,25 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     });
 
     // 5. Field validation (isRequired, length, etc.)
-    const validation = validateFieldRules(
-      resolvedData,
-      listConfig.fields,
-      "update",
-    );
+    const validation = validateFieldRules(resolvedData, listConfig.fields, "update");
     if (validation.errors.length > 0) {
       throw new ValidationError(validation.errors, validation.fieldErrors);
     }
 
     // 6. Filter writable fields (field-level access control)
-    const filteredData = await filterWritableFields(
-      resolvedData,
-      listConfig.fields,
-      "update",
-      {
-        session: context.session,
-        item,
-        context,
-      },
-    );
+    const filteredData = await filterWritableFields(resolvedData, listConfig.fields, "update", {
+      session: context.session,
+      item,
+      context,
+    });
 
     // 6.5. Process nested relationship operations
+
     const data = await processNestedOperations(
       filteredData,
       listConfig.fields,
       config,
-      { ...context, prisma },
+      { ...context, prisma: prisma as any },
       "update",
     );
 
@@ -432,7 +453,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     });
 
     // 8. Execute database update
-    const updated = await model.update({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated = await (model as any).update({
       where: args.where,
       data,
     });
@@ -467,10 +489,10 @@ function createDelete<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
 ) {
   return async (args: { where: { id: string } }) => {
     // 1. Fetch the item to pass to access control and hooks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const item = await model.findUnique({
       where: args.where,
@@ -494,7 +516,8 @@ function createDelete<TPrisma extends PrismaClientLike>(
 
     // If access returns a filter, check if item matches
     if (typeof accessResult === "object") {
-      const matchesFilter = await model.findFirst({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matchesFilter = await (model as any).findFirst({
         where: mergeFilters(args.where, accessResult),
       });
 
@@ -511,7 +534,8 @@ function createDelete<TPrisma extends PrismaClientLike>(
     });
 
     // 4. Execute database delete
-    const deleted = await model.delete({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deleted = await (model as any).delete({
       where: args.where,
     });
 
@@ -534,9 +558,8 @@ function createCount<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
 ) {
-  return async (args?: { where?: any }) => {
+  return async (args?: { where?: Record<string, unknown> }) => {
     // Check query access
     const queryAccess = listConfig.access?.operation?.query;
     const accessResult = await checkAccess(queryAccess, {
@@ -555,6 +578,7 @@ function createCount<TPrisma extends PrismaClientLike>(
     }
 
     // Execute count
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)];
     const count = await model.count({
       where,

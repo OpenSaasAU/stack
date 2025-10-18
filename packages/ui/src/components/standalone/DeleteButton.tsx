@@ -64,8 +64,8 @@ export function DeleteButton({
       if (!result.success) {
         setError(result.error || `Failed to delete ${itemName}`);
       }
-    } catch (err: any) {
-      setError(err.message || `Failed to delete ${itemName}`);
+    } catch (err: unknown) {
+      setError((err as Error).message || `Failed to delete ${itemName}`);
     } finally {
       setIsPending(false);
     }

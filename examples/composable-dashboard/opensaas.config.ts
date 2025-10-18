@@ -153,6 +153,7 @@ export default config({
         validateInput: async ({ resolvedData, addValidationError }) => {
           if (
             resolvedData?.title &&
+            typeof resolvedData.title === "string" &&
             resolvedData.title.toLowerCase().includes("spam")
           ) {
             addValidationError('Title cannot contain the word "spam"');
@@ -164,7 +165,7 @@ export default config({
         },
         // Example afterOperation: log the result
         afterOperation: async ({ operation, item }) => {
-          console.log(`Successfully ${operation}d post:`, item.id);
+          console.log(`Successfully ${operation}d post:`, item?.id);
         },
       },
     }),

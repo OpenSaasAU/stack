@@ -29,7 +29,7 @@ export type {
 
 // Context
 export { getContext } from "./context/index.js";
-export type { PrismaClientLike } from "./context/index.js";
+export type { PrismaClientLike } from "./access/types.js";
 
 // Utilities
 export { getDbKey, getUrlKey, getListKeyFromUrl, pascalToCamel, pascalToKebab, kebabToPascal, kebabToCamel } from "./lib/case-utils.js";

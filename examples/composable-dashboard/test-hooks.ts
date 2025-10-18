@@ -107,6 +107,7 @@ async function test() {
       await context.db.post.create({
         data: {
           // Missing required 'title' field
+          title: '', // Empty string to test validation
           slug: 'no-title-post',
           content: 'This should fail',
           author: { connect: { id: alice.id } }

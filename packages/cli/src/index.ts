@@ -7,10 +7,7 @@ import { devCommand } from "./commands/dev.js";
 
 const program = new Command();
 
-program
-  .name("opensaas")
-  .description("OpenSaaS Framework CLI")
-  .version("0.1.0");
+program.name("opensaas").description("OpenSaaS Framework CLI").version("0.1.0");
 
 program
   .command("generate")
@@ -23,8 +20,8 @@ program
   .command("init [project-name]")
   .description("Create a new OpenSaaS project")
   .option("-t, --template <template>", "Project template to use")
-  .action(async (projectName, options) => {
-    await initCommand(projectName, options);
+  .action(async (projectName) => {
+    await initCommand(projectName);
   });
 
 program

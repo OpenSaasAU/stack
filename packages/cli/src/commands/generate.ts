@@ -12,12 +12,8 @@ export async function generateCommand() {
 
   // Check if config exists
   if (!fs.existsSync(configPath)) {
-    console.error(
-      chalk.red("❌ Error: opensaas.config.ts not found in current directory"),
-    );
-    console.error(
-      chalk.gray("   Please run this command from your project root"),
-    );
+    console.error(chalk.red("❌ Error: opensaas.config.ts not found in current directory"));
+    console.error(chalk.gray("   Please run this command from your project root"));
     process.exit(1);
   }
 
@@ -57,6 +53,7 @@ writeTypes(config, './.opensaas/types.ts');
       spinner.succeed(chalk.green("Generation complete"));
       console.log(chalk.green("✅ Prisma schema generated"));
       console.log(chalk.green("✅ TypeScript types generated"));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       spinner.fail(chalk.red("Failed to generate"));
       const errorOutput = err.stderr || err.stdout || err.message;
@@ -74,6 +71,7 @@ writeTypes(config, './.opensaas/types.ts');
     console.log(chalk.gray("  1. Run: npx prisma generate"));
     console.log(chalk.gray("  2. Run: npx prisma db push"));
     console.log(chalk.gray("  3. Start using your generated types!\n"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     spinner.fail(chalk.red("Generation failed"));
     console.error(chalk.red("\n❌ Error:"), error.message);

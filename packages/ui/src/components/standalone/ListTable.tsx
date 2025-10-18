@@ -12,14 +12,14 @@ import {
 } from "../../primitives/table.js";
 
 export interface ListTableProps {
-  items: any[];
+  items: Array<Record<string, unknown>>;
   fieldTypes: Record<string, string>;
   columns?: string[];
-  onRowClick?: (item: any) => void;
+  onRowClick?: (item: Record<string, unknown>) => void;
   sortable?: boolean;
   emptyMessage?: string;
   className?: string;
-  renderActions?: (item: any) => React.ReactNode;
+  renderActions?: (item: Record<string, unknown>) => React.ReactNode;
 }
 
 /**
@@ -64,7 +64,7 @@ export function ListTable({
       const aVal = a[sortBy];
       const bVal = b[sortBy];
       if (aVal === bVal) return 0;
-      const comparison = aVal > bVal ? 1 : -1;
+      const comparison = String(aVal) > String(bVal) ? 1 : -1;
       return sortOrder === "asc" ? comparison : -comparison;
     });
   }
@@ -115,7 +115,7 @@ export function ListTable({
             ) : (
               sortedItems.map((item) => (
                 <TableRow
-                  key={item.id}
+                  key={String(item.id)}
                   className={onRowClick ? "cursor-pointer" : ""}
                   onClick={() => onRowClick?.(item)}
                 >

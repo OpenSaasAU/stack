@@ -89,7 +89,7 @@ export function text(options?: Omit<TextField, "type">): TextField {
 
       return schema;
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       const validation = options?.validation;
       const isRequired = validation?.isRequired;
       let modifiers = "";
@@ -154,7 +154,7 @@ export function integer(options?: Omit<IntegerField, "type">): IntegerField {
 
       return schema;
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       const isRequired = options?.validation?.isRequired;
 
       return {
@@ -180,10 +180,10 @@ export function checkbox(options?: Omit<CheckboxField, "type">): CheckboxField {
   return {
     type: "checkbox",
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
+    getZodSchema: () => {
       return z.boolean().optional();
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       const hasDefault = options?.defaultValue !== undefined;
       let modifiers = "";
 
@@ -208,22 +208,21 @@ export function checkbox(options?: Omit<CheckboxField, "type">): CheckboxField {
 /**
  * Timestamp (DateTime) field
  */
-export function timestamp(
-  options?: Omit<TimestampField, "type">,
-): TimestampField {
+export function timestamp(options?: Omit<TimestampField, "type">): TimestampField {
   return {
     type: "timestamp",
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
+    getZodSchema: () => {
       return z.union([z.date(), z.string().datetime()]).optional();
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       let modifiers = "?";
 
       // Check for default value
       if (
         options?.defaultValue &&
         typeof options.defaultValue === "object" &&
+        "kind" in options.defaultValue &&
         options.defaultValue.kind === "now"
       ) {
         modifiers = " @default(now())";
@@ -238,6 +237,7 @@ export function timestamp(
       const hasDefault =
         options?.defaultValue &&
         typeof options.defaultValue === "object" &&
+        "kind" in options.defaultValue &&
         options.defaultValue.kind === "now";
 
       return {
@@ -285,7 +285,7 @@ export function password(options?: Omit<PasswordField, "type">): PasswordField {
           .optional();
       }
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       const isRequired = options?.validation?.isRequired;
 
       return {
@@ -327,7 +327,7 @@ export function select(options: Omit<SelectField, "type">): SelectField {
 
       return schema;
     },
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: () => {
       let modifiers = "?";
 
       // Add default value if provided
@@ -355,9 +355,7 @@ export function select(options: Omit<SelectField, "type">): SelectField {
 /**
  * Relationship field
  */
-export function relationship(
-  options: Omit<RelationshipField, "type">,
-): RelationshipField {
+export function relationship(options: Omit<RelationshipField, "type">): RelationshipField {
   if (!options.ref) {
     throw new Error("Relationship field must have a ref");
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import type { FieldConfig } from "@opensaas/core";
 import { getFieldComponent } from "./registry.js";
 import { formatFieldName } from "../../lib/utils.js";
@@ -7,8 +8,8 @@ import { formatFieldName } from "../../lib/utils.js";
 export interface FieldRendererProps {
   fieldName: string;
   fieldConfig: FieldConfig;
-  value: any;
-  onChange: (value: any) => void;
+  value: unknown;
+  onChange: (value: unknown) => void;
   error?: string;
   disabled?: boolean;
   mode?: "read" | "edit";
@@ -17,22 +18,73 @@ export interface FieldRendererProps {
 }
 
 /**
- * Factory component that renders the appropriate field type
- * based on the field configuration and component registry
+ * Internal component that receives the resolved Component
  */
-export function FieldRenderer({
+function FieldRendererInner({
+  Component,
   fieldName,
   fieldConfig,
   value,
   onChange,
   error,
   disabled,
-  mode = "edit",
-  relationshipItems = [],
-  relationshipLoading = false,
-}: FieldRendererProps) {
-  const label = (fieldConfig as any).label || formatFieldName(fieldName);
-  const isRequired = (fieldConfig as any).validation?.isRequired || false;
+  mode,
+  relationshipItems,
+  relationshipLoading,
+}: FieldRendererProps & { Component: React.ComponentType<any> }) {
+  const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName);
+  const isRequired =
+    (fieldConfig as Record<string, unknown>).validation &&
+    typeof (fieldConfig as Record<string, unknown>).validation === "object" &&
+    (fieldConfig as Record<string, unknown>).validation !== null &&
+    "isRequired" in ((fieldConfig as Record<string, unknown>).validation as Record<string, unknown>)
+      ? ((fieldConfig as Record<string, unknown>).validation as Record<string, unknown>).isRequired
+      : false;
+
+  // Build props based on field type
+  const baseProps = {
+    name: fieldName,
+    value,
+    onChange,
+    label,
+    error,
+    disabled,
+    required: isRequired,
+    mode,
+  };
+
+  // Add field-type-specific props
+  const specificProps: Record<string, unknown> = {};
+
+  if (fieldConfig.type === "select" && fieldConfig.options) {
+    specificProps.options = fieldConfig.options.map(
+      (opt: string | { label: string; value: string }) =>
+        typeof opt === "string" ? { label: opt, value: opt } : opt,
+    );
+  }
+
+  if (fieldConfig.type === "password") {
+    specificProps.showConfirm = mode === "edit";
+  }
+
+  if (fieldConfig.type === "relationship") {
+    specificProps.items = relationshipItems;
+    specificProps.isLoading = relationshipLoading;
+    specificProps.many = (fieldConfig as Record<string, unknown>).many || false;
+  }
+
+  const allProps = { ...baseProps, ...specificProps };
+  return <Component {...allProps} />;
+}
+
+/**
+ * Factory component that renders the appropriate field type
+ * based on the field configuration and component registry
+ */
+export function FieldRenderer(props: FieldRendererProps) {
+  const { fieldName, fieldConfig, mode = "edit" } = props;
+
+  const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName);
 
   // Skip rendering ID and timestamp fields in forms
   if (mode === "edit" && ["id", "createdAt", "updatedAt"].includes(fieldName)) {
@@ -53,47 +105,11 @@ export function FieldRenderer({
     console.warn(`No component registered for field type: ${fieldConfig.type}`);
     return (
       <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">
-          {label}
-        </label>
-        <p className="text-sm text-muted-foreground">
-          Unsupported field type: {fieldConfig.type}
-        </p>
+        <label className="text-sm font-medium text-muted-foreground">{String(label)}</label>
+        <p className="text-sm text-muted-foreground">Unsupported field type: {fieldConfig.type}</p>
       </div>
     );
   }
 
-  // Build props based on field type
-  const baseProps = {
-    name: fieldName,
-    value,
-    onChange,
-    label,
-    error,
-    disabled,
-    required: isRequired,
-    mode,
-  };
-
-  // Add field-type-specific props
-  const specificProps: Record<string, any> = {};
-
-  if (fieldConfig.type === "select" && fieldConfig.options) {
-    specificProps.options = fieldConfig.options.map(
-      (opt: string | { label: string; value: string }) =>
-        typeof opt === "string" ? { label: opt, value: opt } : opt,
-    );
-  }
-
-  if (fieldConfig.type === "password") {
-    specificProps.showConfirm = mode === "edit";
-  }
-
-  if (fieldConfig.type === "relationship") {
-    specificProps.items = relationshipItems;
-    specificProps.isLoading = relationshipLoading;
-    specificProps.many = (fieldConfig as any).many || false;
-  }
-
-  return <Component {...baseProps} {...specificProps} />;
+  return <FieldRendererInner {...props} Component={Component} />;
 }

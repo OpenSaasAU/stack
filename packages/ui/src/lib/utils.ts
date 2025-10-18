@@ -31,7 +31,7 @@ export function formatFieldName(name: string): string {
 /**
  * Get the display value for a field
  */
-export function getFieldDisplayValue(value: any, fieldType: string): string {
+export function getFieldDisplayValue(value: unknown, fieldType: string): string {
   if (value === null || value === undefined) {
     return '-'
   }
@@ -40,7 +40,7 @@ export function getFieldDisplayValue(value: any, fieldType: string): string {
     case 'checkbox':
       return value ? 'Yes' : 'No'
     case 'timestamp':
-      return new Date(value).toLocaleString()
+      return new Date(value as string | number | Date).toLocaleString()
     case 'password':
       return '••••••••'
     default:

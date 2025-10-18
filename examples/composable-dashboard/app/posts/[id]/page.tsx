@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Button } from "@opensaas/ui/primitives";
 import { getContext } from "../../../lib/context";
 import { PostEditor } from "./PostEditor";
+import type { Post } from "../../../.opensaas/types";
 
 export default async function PostDetailPage(props: {
   params: Promise<{ id: string }>;
@@ -10,10 +11,10 @@ export default async function PostDetailPage(props: {
   const params = await props.params;
   const context = await getContext();
 
-  const post = await context.db.post.findUnique({
+  const post = (await context.db.post.findUnique({
     where: { id: params.id },
     include: { author: true },
-  });
+  })) as Post | null;
 
   if (!post) {
     notFound();

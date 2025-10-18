@@ -15,7 +15,7 @@ export default async function UsersPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const usersWithPostCount = users.map((user: any) => ({
+  const usersWithPostCount = users.map((user) => ({
     ...user,
     postCount: user.posts?.length || 0,
   }));

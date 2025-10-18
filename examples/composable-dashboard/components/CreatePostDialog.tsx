@@ -7,6 +7,7 @@ import { Button } from "@opensaas/ui/primitives";
 import { ItemCreateForm } from "@opensaas/ui/standalone";
 import { createPost } from "../lib/actions";
 import config from "../opensaas.config";
+import type { PostCreateInput } from "../.opensaas/types";
 
 export function CreatePostDialog() {
   const [open, setOpen] = useState(false);
@@ -24,7 +25,7 @@ export function CreatePostDialog() {
             <DialogTitle>Create New Post</DialogTitle>
           </DialogHeader>
 
-          <ItemCreateForm
+          <ItemCreateForm<PostCreateInput>
             fields={config.lists.Post.fields}
             onSubmit={async (data) => {
               const result = await createPost(data);
@@ -35,7 +36,9 @@ export function CreatePostDialog() {
 
               setOpen(false);
               router.refresh();
-              router.push(`/posts/${result.data.id}`);
+              if (result.data?.id) {
+                router.push(`/posts/${result.data.id}`);
+              }
               return { success: true };
             }}
             onCancel={() => setOpen(false)}

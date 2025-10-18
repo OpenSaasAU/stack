@@ -7,8 +7,9 @@ import { Button } from "@opensaas/ui/primitives";
 import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone";
 import { updatePost, deletePost } from "../../../lib/actions";
 import config from "../../../opensaas.config";
+import type { Post } from "../../../.opensaas/types";
 
-export function PostEditor({ post }: { post: Record<string, any> }) {
+export function PostEditor({ post }: { post: Post }) {
   const [editing, setEditing] = useState(false);
   const router = useRouter();
 
@@ -19,7 +20,7 @@ export function PostEditor({ post }: { post: Record<string, any> }) {
           <CardTitle>Edit Post</CardTitle>
         </CardHeader>
         <CardContent>
-          <ItemEditForm
+          <ItemEditForm<Post>
             fields={config.lists.Post.fields}
             initialData={post}
             onSubmit={async (data) => {

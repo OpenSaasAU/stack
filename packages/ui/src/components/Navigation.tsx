@@ -78,15 +78,15 @@ export function Navigation({
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="text-sm font-medium">
-                {context.session.data?.name?.[0]?.toUpperCase() || "?"}
+                {String((context.session.data as Record<string, unknown>)?.name)?.[0]?.toUpperCase() || "?"}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">
-                {context.session.data?.name || "User"}
+                {String((context.session.data as Record<string, unknown>)?.name) || "User"}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                {context.session.data?.email || ""}
+                {String((context.session.data as Record<string, unknown>)?.email) || ""}
               </p>
             </div>
           </div>

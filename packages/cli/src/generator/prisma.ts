@@ -1,18 +1,11 @@
-import type {
-  OpenSaaSConfig,
-  FieldConfig,
-  RelationshipField,
-} from "@opensaas/core";
+import type { OpenSaaSConfig, FieldConfig, RelationshipField } from "@opensaas/core";
 import * as fs from "fs";
 import * as path from "path";
 
 /**
  * Map OpenSaaS field types to Prisma field types
  */
-function mapFieldTypeToPrisma(
-  fieldName: string,
-  field: FieldConfig,
-): string | null {
+function mapFieldTypeToPrisma(fieldName: string, field: FieldConfig): string | null {
   // Relationships are handled separately
   if (field.type === "relationship") {
     return null;
@@ -25,9 +18,7 @@ function mapFieldTypeToPrisma(
   }
 
   // Fallback for fields without generator methods
-  throw new Error(
-    `Field type "${field.type}" does not implement getPrismaType method`,
-  );
+  throw new Error(`Field type "${field.type}" does not implement getPrismaType method`);
 }
 
 /**
@@ -118,7 +109,7 @@ export function generatePrismaSchema(config: OpenSaaSConfig): string {
     // Add relationship fields
     for (const { name: fieldName, field: relField } of relationshipFields) {
       const { list: targetList } = parseRelationshipRef(relField.ref);
-      const modifiers = getFieldModifiers(fieldName, relField);
+      const _modifiers = getFieldModifiers(fieldName, relField);
       const paddedName = fieldName.padEnd(12);
 
       if (relField.many) {
@@ -150,10 +141,7 @@ export function generatePrismaSchema(config: OpenSaaSConfig): string {
 /**
  * Write Prisma schema to file
  */
-export function writePrismaSchema(
-  config: OpenSaaSConfig,
-  outputPath: string,
-): void {
+export function writePrismaSchema(config: OpenSaaSConfig, outputPath: string): void {
   const schema = generatePrismaSchema(config);
 
   // Ensure directory exists

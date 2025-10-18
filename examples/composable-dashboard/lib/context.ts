@@ -9,10 +9,13 @@ const globalForPrisma = globalThis as unknown as {
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
 export async function getContext() {
-  return await getOpensaasContext(config, prisma, null);
+  return await getOpensaasContext<typeof prisma>(config, prisma, null);
 }
+
 export async function getContextWithUser(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  return await getOpensaasContext(config, prisma, user);
+  return await getOpensaasContext<typeof prisma>(config, prisma, user);
 }

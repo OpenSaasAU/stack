@@ -1,41 +1,32 @@
-import type { OpenSaaSConfig, Session } from "@opensaas/core";
+import type { OpenSaaSConfig, Session, PrismaClientLike } from "@opensaas/core";
+
+/**
+ * Map Prisma client to access-controlled database context
+ * Preserves Prisma's type information for each model
+ */
+type AccessControlledDB<TPrisma extends PrismaClientLike> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in keyof TPrisma]: TPrisma[K] extends { findUnique: any; findMany: any; create: any; update: any; delete: any; count: any }
+    ? {
+        findUnique: TPrisma[K]["findUnique"];
+        findMany: TPrisma[K]["findMany"];
+        create: TPrisma[K]["create"];
+        update: TPrisma[K]["update"];
+        delete: TPrisma[K]["delete"];
+        count: TPrisma[K]["count"];
+      }
+    : never;
+};
 
 /**
  * Database context with access-controlled operations
  *
  * Each list in your config becomes a lowercase property on context.db
  * For example: config.lists.User becomes context.db.user
+ *
+ * @deprecated Use AccessControlledDB<TPrisma> for proper type inference
  */
-export interface DatabaseContext {
-  /**
-   * Database operations for each list
-   * Keys are lowercase versions of your config list names
-   *
-   * @example
-   * ```ts
-   * // If config has lists: { User: {...}, Post: {...} }
-   * // Then context.db has: { user: {...}, post: {...} }
-   * const user = await context.db.user.findUnique({ where: { id } })
-   * const posts = await context.db.post.findMany()
-   * ```
-   */
-  [listKey: string]: {
-    findUnique: (args: {
-      where: { id: string };
-      include?: any;
-    }) => Promise<any | null>;
-    findMany: (args?: {
-      where?: any;
-      take?: number;
-      skip?: number;
-      include?: any;
-    }) => Promise<any[]>;
-    create: (args: { data: any }) => Promise<any | null>;
-    update: (args: { where: { id: string }; data: any }) => Promise<any | null>;
-    delete: (args: { where: { id: string } }) => Promise<any | null>;
-    count: (args?: { where?: any }) => Promise<number>;
-  };
-}
+export type DatabaseContext = Record<string, unknown>;
 
 /**
  * Input for the generic server action
@@ -43,19 +34,20 @@ export interface DatabaseContext {
 export interface ServerActionInput {
   listKey: string;
   action: "create" | "update" | "delete";
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   id?: string;
 }
 
 /**
  * Access-controlled context returned by getContext()
  */
-export interface AccessControlledContext {
+export interface AccessControlledContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
   /**
    * Database operations with access control enforced
    * List keys are lowercase (e.g., "user", "post")
+   * Preserves Prisma's type information for full type safety
    */
-  db: DatabaseContext;
+  db: AccessControlledDB<TPrisma>;
 
   /**
    * Current user session
@@ -65,20 +57,20 @@ export interface AccessControlledContext {
   /**
    * Direct Prisma client access
    */
-  prisma: any;
+  prisma: TPrisma;
 
   /**
    * Generic server action handler
    * Handles create, update, and delete operations for any list
    */
-  serverAction: (input: ServerActionInput) => Promise<any | null>;
+  serverAction: (input: ServerActionInput) => Promise<unknown>;
 }
 
 /**
  * Admin context provided to UI components
  * Contains access-controlled database context, config, and session
  */
-export interface AdminContext {
+export interface AdminContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
   /**
    * Access-controlled database context
    * Use this for all database operations - it enforces access control
@@ -87,7 +79,7 @@ export interface AdminContext {
    * List keys are lowercase in context.db but capitalized in config.lists
    * For example: config.lists.User corresponds to context.db.user
    */
-  context: AccessControlledContext;
+  context: AccessControlledContext<TPrisma>;
 
   /**
    * OpenSaaS configuration
@@ -106,13 +98,13 @@ export interface AdminContext {
    * Use sparingly - bypasses access control
    * Prefer using context for database operations
    */
-  prisma: any;
+  prisma: TPrisma;
 }
 
 /**
  * Result of a server action
  */
-export interface ActionResult<T = any> {
+export interface ActionResult<T = Record<string, unknown>> {
   success: boolean;
   data?: T;
   error?: string;

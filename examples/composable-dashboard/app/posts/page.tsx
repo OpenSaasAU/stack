@@ -13,10 +13,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
   const posts = await context.db.post.findMany({
     where: search
       ? {
-          OR: [
-            { title: { contains: search, mode: "insensitive" } },
-            { content: { contains: search, mode: "insensitive" } },
-          ],
+          OR: [{ title: { contains: search } }, { content: { contains: search } }],
         }
       : undefined,
     include: { author: true },
@@ -24,7 +21,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
   });
 
   // Transform posts to include author name for display
-  const postsWithAuthorName = posts.map((post: any) => ({
+  const postsWithAuthorName = posts.map((post) => ({
     ...post,
     authorName: post.author?.name || "Unknown",
   }));

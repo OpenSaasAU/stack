@@ -1,5 +1,5 @@
 import { getContext } from "@opensaas/core";
-import type { OpenSaaSConfig } from "@opensaas/core";
+import type { OpenSaaSConfig, PrismaClientLike } from "@opensaas/core";
 import type { AdminContext } from "./types.js";
 
 /**
@@ -27,10 +27,10 @@ import type { AdminContext } from "./types.js";
  * }
  * ```
  */
-export async function getAdminContext(
+export async function getAdminContext<TPrisma extends PrismaClientLike>(
   config: OpenSaaSConfig,
-  prisma: any,
-): Promise<AdminContext> {
+  prisma: TPrisma,
+): Promise<AdminContext<TPrisma>> {
   // Get current session using config's session handler
   const session = config.session ? await config.session.getSession() : null;
 

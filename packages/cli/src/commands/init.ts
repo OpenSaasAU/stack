@@ -4,14 +4,7 @@ import chalk from "chalk";
 import ora from "ora";
 import prompts from "prompts";
 
-interface InitOptions {
-  template?: string;
-}
-
-export async function initCommand(
-  projectName: string | undefined,
-  options: InitOptions,
-) {
+export async function initCommand(projectName: string | undefined) {
   console.log(chalk.bold.cyan("\n🚀 Create OpenSaaS Project\n"));
 
   // Prompt for project name if not provided
@@ -96,10 +89,7 @@ export async function initCommand(
       },
     };
 
-    fs.writeFileSync(
-      path.join(projectPath, "package.json"),
-      JSON.stringify(packageJson, null, 2),
-    );
+    fs.writeFileSync(path.join(projectPath, "package.json"), JSON.stringify(packageJson, null, 2));
 
     // Create tsconfig.json
     const tsConfig = {
@@ -126,10 +116,7 @@ export async function initCommand(
       exclude: ["node_modules"],
     };
 
-    fs.writeFileSync(
-      path.join(projectPath, "tsconfig.json"),
-      JSON.stringify(tsConfig, null, 2),
-    );
+    fs.writeFileSync(path.join(projectPath, "tsconfig.json"), JSON.stringify(tsConfig, null, 2));
 
     // Create next.config.js
     const nextConfig = `/** @type {import('next').NextConfig} */
@@ -365,6 +352,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your app.
     console.log(chalk.cyan("  npm run db:push"));
     console.log(chalk.cyan("  npm run dev"));
     console.log();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     spinner.fail(chalk.red("Failed to create project"));
     console.error(chalk.red("\n❌ Error:"), error.message);

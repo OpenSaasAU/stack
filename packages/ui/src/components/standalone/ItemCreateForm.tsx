@@ -7,9 +7,9 @@ import { LoadingSpinner } from "../LoadingSpinner.js";
 import { Button } from "../../primitives/button.js";
 import type { FieldConfig } from "@opensaas/core";
 
-export interface ItemCreateFormProps {
+export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>;
-  onSubmit: (data: Record<string, any>) => Promise<{ success: boolean; error?: string }>;
+  onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>;
   onCancel?: () => void;
   relationshipData?: Record<string, Array<{ id: string; label: string }>>;
   submitLabel?: string;
@@ -33,7 +33,7 @@ export interface ItemCreateFormProps {
  * />
  * ```
  */
-export function ItemCreateForm({
+export function ItemCreateForm<TData = Record<string, unknown>>({
   fields,
   onSubmit,
   onCancel,
@@ -41,14 +41,14 @@ export function ItemCreateForm({
   submitLabel = "Create",
   cancelLabel = "Cancel",
   className,
-}: ItemCreateFormProps) {
+}: ItemCreateFormProps<TData>) {
   const [isPending, setIsPending] = useState(false);
-  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [formData, setFormData] = useState<Partial<TData>>({} as Partial<TData>);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
 
-  const handleFieldChange = (fieldName: string, value: any) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value }));
+  const handleFieldChange = (fieldName: string, value: unknown) => {
+    setFormData((prev) => ({ ...prev, [fieldName]: value } as Partial<TData>));
     // Clear error for this field when user starts typing
     if (errors[fieldName]) {
       setErrors((prev) => {
@@ -67,13 +67,13 @@ export function ItemCreateForm({
 
     try {
       // Transform relationship fields to Prisma format
-      const transformedData: Record<string, any> = {};
-      for (const [fieldName, value] of Object.entries(formData)) {
+      const transformedData: Record<string, unknown> = {};
+      for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
         const fieldConfig = fields[fieldName];
 
         // Transform relationship fields
-        if ((fieldConfig as any)?.type === "relationship") {
-          if ((fieldConfig as any).many) {
+        if ((fieldConfig as Record<string, unknown>)?.type === "relationship") {
+          if ((fieldConfig as Record<string, unknown>).many) {
             // Many relationship: use connect format
             if (Array.isArray(value) && value.length > 0) {
               transformedData[fieldName] = {
@@ -94,13 +94,13 @@ export function ItemCreateForm({
         }
       }
 
-      const result = await onSubmit(transformedData);
+      const result = await onSubmit(transformedData as TData);
 
       if (!result.success) {
         setGeneralError(result.error || "Failed to create item");
       }
-    } catch (error: any) {
-      setGeneralError(error.message || "Failed to create item");
+    } catch (error: unknown) {
+      setGeneralError((error as Error).message || "Failed to create item");
     } finally {
       setIsPending(false);
     }
@@ -127,7 +127,7 @@ export function ItemCreateForm({
             key={fieldName}
             fieldName={fieldName}
             fieldConfig={fieldConfig}
-            value={formData[fieldName]}
+            value={(formData as Record<string, unknown>)[fieldName]}
             onChange={(value) => handleFieldChange(fieldName, value)}
             error={errors[fieldName]}
             disabled={isPending}

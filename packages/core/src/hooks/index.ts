@@ -1,4 +1,6 @@
 import type { Hooks } from "../config/types.js";
+import type { AccessContext } from "../access/types.js";
+import type { FieldConfig } from "../config/types.js";
 import { validateWithZod } from "../validation/schema.js";
 
 /**
@@ -20,13 +22,13 @@ export class ValidationError extends Error {
  * Execute resolveInput hook
  * Allows modification of input data before validation
  */
-export async function executeResolveInput<T = any>(
+export async function executeResolveInput<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
     operation: "create" | "update";
     resolvedData: Partial<T>;
     item?: T;
-    context: any;
+    context: AccessContext;
   },
 ): Promise<Partial<T>> {
   if (!hooks?.resolveInput) {
@@ -41,13 +43,13 @@ export async function executeResolveInput<T = any>(
  * Execute validateInput hook
  * Allows custom validation logic
  */
-export async function executeValidateInput<T = any>(
+export async function executeValidateInput<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
     operation: "create" | "update";
     resolvedData: Partial<T>;
     item?: T;
-    context: any;
+    context: AccessContext;
   },
 ): Promise<void> {
   if (!hooks?.validateInput) {
@@ -74,12 +76,12 @@ export async function executeValidateInput<T = any>(
  * Execute beforeOperation hook
  * Runs before database operation (cannot modify data)
  */
-export async function executeBeforeOperation<T = any>(
+export async function executeBeforeOperation<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
     operation: "create" | "update" | "delete";
     item?: T;
-    context: any;
+    context: AccessContext;
   },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
@@ -93,12 +95,12 @@ export async function executeBeforeOperation<T = any>(
  * Execute afterOperation hook
  * Runs after database operation
  */
-export async function executeAfterOperation<T = any>(
+export async function executeAfterOperation<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
     operation: "create" | "update" | "delete";
     item: T;
-    context: any;
+    context: AccessContext;
   },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
@@ -113,8 +115,8 @@ export async function executeAfterOperation<T = any>(
  * Checks isRequired, length constraints, etc.
  */
 export function validateFieldRules(
-  data: Record<string, any>,
-  fieldConfigs: Record<string, any>,
+  data: Record<string, unknown>,
+  fieldConfigs: Record<string, FieldConfig>,
   operation: "create" | "update" = "create",
 ): { errors: string[]; fieldErrors: Record<string, string> } {
   const result = validateWithZod(data, fieldConfigs, operation);
@@ -124,9 +126,7 @@ export function validateFieldRules(
   }
 
   // Convert field errors to array of error messages
-  const errors = Object.entries(result.errors).map(
-    ([field, message]) => message,
-  );
+  const errors = Object.entries(result.errors).map(([_field, message]) => message);
 
   return { errors, fieldErrors: result.errors };
 }

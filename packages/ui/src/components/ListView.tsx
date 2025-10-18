@@ -36,7 +36,7 @@ export async function ListView({
       <div className="p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">List not found</h2>
-          <p>The list "{listKey}" does not exist in your configuration.</p>
+          <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
     );
@@ -58,12 +58,12 @@ export async function ListView({
     if (search && search.trim()) {
       // Find all text fields to search across
       const searchableFields = Object.entries(listConfig.fields)
-        .filter(([_, field]) => (field as any).type === 'text')
+        .filter(([_, field]) => (field as any).type === "text")
         .map(([fieldName]) => fieldName);
 
       if (searchableFields.length > 0) {
         where = {
-          OR: searchableFields.map(fieldName => ({
+          OR: searchableFields.map((fieldName) => ({
             [fieldName]: {
               contains: search.trim(),
             },
@@ -107,10 +107,7 @@ export async function ListView({
       <ListViewClient
         items={items || []}
         fieldTypes={Object.fromEntries(
-          Object.entries(listConfig.fields).map(([key, field]) => [
-            key,
-            (field as any).type,
-          ]),
+          Object.entries(listConfig.fields).map(([key, field]) => [key, (field as any).type]),
         )}
         columns={columns}
         listKey={listKey}

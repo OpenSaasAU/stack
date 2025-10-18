@@ -10,6 +10,7 @@ export function config(config: OpenSaaSConfig): OpenSaaSConfig {
 /**
  * Helper function to define a list with type safety
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function list<T = any>(config: ListConfig<T>): ListConfig<T> {
   return config;
 }

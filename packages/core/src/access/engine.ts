@@ -10,14 +10,14 @@ import type { OpenSaaSConfig, ListConfig, FieldConfig } from "../config/types.js
 /**
  * Check if access control result is a boolean
  */
-export function isBoolean(value: any): value is boolean {
+export function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
 
 /**
  * Check if access control result is a Prisma filter
  */
-export function isPrismaFilter(value: any): value is PrismaFilter {
+export function isPrismaFilter(value: unknown): value is PrismaFilter {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -52,7 +52,7 @@ export function getRelatedListConfig(
 /**
  * Execute an access control function
  */
-export async function checkAccess<T = any>(
+export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
     session: Session;
@@ -107,7 +107,7 @@ export async function checkFieldAccess(
   operation: "read" | "create" | "update",
   args: {
     session: Session;
-    item?: any;
+    item?: Record<string, unknown>;
     context: AccessContext;
   },
 ): Promise<boolean> {
@@ -146,7 +146,7 @@ export async function checkFieldAccess(
  * Simple filter matching for field-level access
  * Checks if an item matches a Prisma-like filter object
  */
-function matchesFilter(item: any, filter: Record<string, any>): boolean {
+function matchesFilter(item: Record<string, unknown>, filter: Record<string, unknown>): boolean {
   for (const [key, condition] of Object.entries(filter)) {
     if (typeof condition === "object" && condition !== null) {
       // Handle nested conditions like { equals: value }
@@ -182,13 +182,14 @@ export async function buildIncludeWithAccessControl(
   },
   config: OpenSaaSConfig,
   depth: number = 0,
-): Promise<Record<string, any> | undefined> {
+): Promise<Record<string, unknown> | undefined> {
   const MAX_DEPTH = 5;
   if (depth >= MAX_DEPTH) {
     return undefined;
   }
 
-  const include: Record<string, any> = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const include: any = {};
   let hasRelationships = false;
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
@@ -210,7 +211,7 @@ export async function buildIncludeWithAccessControl(
         }
 
         // Build the include entry
-        const includeEntry: Record<string, any> = {};
+        const includeEntry: Record<string, unknown> = {};
 
         // If access returns a filter, add it to the where clause
         if (typeof accessResult === "object") {
@@ -242,7 +243,7 @@ export async function buildIncludeWithAccessControl(
  * Filter fields from an object based on read access
  * Recursively applies access control to nested relationships
  */
-export async function filterReadableFields<T extends Record<string, any>>(
+export async function filterReadableFields<T extends Record<string, unknown>>(
   item: T,
   fieldConfigs: Record<string, FieldConfig>,
   args: {
@@ -252,7 +253,7 @@ export async function filterReadableFields<T extends Record<string, any>>(
   config?: OpenSaaSConfig,
   depth: number = 0,
 ): Promise<Partial<T>> {
-  const filtered: Record<string, any> = {};
+  const filtered: Record<string, unknown> = {};
   const MAX_DEPTH = 5; // Prevent infinite recursion
 
   for (const [fieldName, value] of Object.entries(item)) {
@@ -304,7 +305,7 @@ export async function filterReadableFields<T extends Record<string, any>>(
         // For single relationships (objects) - recursively filter fields
         else if (typeof value === "object") {
           filtered[fieldName] = await filterReadableFields(
-            value,
+            value as Record<string, unknown>,
             relatedConfig.listConfig.fields,
             args,
             config,
@@ -327,17 +328,17 @@ export async function filterReadableFields<T extends Record<string, any>>(
 /**
  * Filter fields from input data based on write access (create/update)
  */
-export async function filterWritableFields<T extends Record<string, any>>(
+export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<string, { access?: FieldAccess }>,
   operation: "create" | "update",
   args: {
     session: Session;
-    item?: any;
+    item?: Record<string, unknown>;
     context: AccessContext;
   },
 ): Promise<Partial<T>> {
-  const filtered: Record<string, any> = {};
+  const filtered: Record<string, unknown> = {};
 
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName];

@@ -35,7 +35,7 @@ export async function ItemForm({
       <div className="p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">List not found</h2>
-          <p>The list "{listKey}" does not exist in your configuration.</p>
+          <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
     );
@@ -58,7 +58,10 @@ export async function ItemForm({
         <div className="p-8">
           <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-2">Item not found</h2>
-            <p>The item you're trying to edit doesn't exist or you don't have access to it.</p>
+            <p>
+              The item you&apos;re trying to edit doesn&apos;t exist or you don&apos;t have access
+              to it.
+            </p>
             <Link
               href={`${basePath}/${urlKey}`}
               className="inline-block mt-4 text-primary hover:underline"

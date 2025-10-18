@@ -16,12 +16,13 @@ export type FieldType =
 export type BaseFieldConfig = {
   type: FieldType;
   access?: FieldAccess;
-  defaultValue?: any;
+  defaultValue?: unknown;
   ui?: {
     /**
      * Custom React component to render this field
      * Overrides the default component for this field type
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: any;
     /**
      * Custom field type name to use from the global registry
@@ -31,17 +32,14 @@ export type BaseFieldConfig = {
     /**
      * Additional UI-specific configuration
      */
-    [key: string]: any;
+    [key: string]: unknown;
   };
   /**
    * Generate Zod schema for this field
    * @param fieldName - The name of the field (for error messages)
    * @param operation - Whether this is a create or update operation
    */
-  getZodSchema?: (
-    fieldName: string,
-    operation: "create" | "update",
-  ) => z.ZodTypeAny;
+  getZodSchema?: (fieldName: string, operation: "create" | "update") => z.ZodTypeAny;
   /**
    * Get Prisma type and modifiers for schema generation
    * @param fieldName - The name of the field (for generating modifiers)
@@ -133,6 +131,7 @@ export type FieldConfig =
 /**
  * List configuration types
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type OperationAccess<T = any> = {
   query?: AccessControl<T>;
   create?: AccessControl<T>;
@@ -140,17 +139,15 @@ export type OperationAccess<T = any> = {
   delete?: AccessControl<T>;
 };
 
-export type HookArgs<T = any> = {
+export type HookArgs<T = Record<string, unknown>> = {
   operation: "create" | "update" | "delete";
   resolvedData?: Partial<T>;
   item?: T;
-  context: any;
+  context: import("../access/types.js").AccessContext;
 };
 
-export type Hooks<T = any> = {
-  resolveInput?: (
-    args: HookArgs<T> & { operation: "create" | "update" },
-  ) => Promise<Partial<T>>;
+export type Hooks<T = Record<string, unknown>> = {
+  resolveInput?: (args: HookArgs<T> & { operation: "create" | "update" }) => Promise<Partial<T>>;
   validateInput?: (
     args: HookArgs<T> & {
       operation: "create" | "update";
@@ -161,6 +158,7 @@ export type Hooks<T = any> = {
   afterOperation?: (args: HookArgs<T>) => Promise<void>;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ListConfig<T = any> = {
   fields: Record<string, FieldConfig>;
   access?: {
@@ -181,6 +179,7 @@ export type DatabaseConfig = {
  * Session configuration
  */
 export type SessionConfig = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSession: () => Promise<any>;
 };
 

@@ -124,7 +124,7 @@ export default async function HomePage() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {recentPosts.map((post: Record<string, any>) => (
+                  {recentPosts.map((post) => (
                     <Link
                       key={post.id}
                       href={`/posts/${post.id}`}
