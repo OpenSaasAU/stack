@@ -1,7 +1,7 @@
 {
   "name": "@opensaas/core",
   "version": "0.1.0",
-  "description": "Core framework for OpenSaaS - schema definition, access control, and type generation",
+  "description": "Core framework for OpenSaaS - schema definition, access control, and runtime utilities",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
