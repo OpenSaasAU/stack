@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { Button } from "@opensaas/ui/primitives";
-import { prisma } from "../lib/context";
+import { getContext, prisma } from "../lib/context";
 import { CreatePostDialog } from "../components/CreatePostDialog";
 
 export default async function HomePage() {
-  // Get stats
+  // Use context for access-controlled queries
+  const context = await getContext();
+
+  // Get stats (using Prisma directly for counts is fine)
   const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
     prisma.post.count(),
     prisma.post.count({ where: { status: "published" } }),
@@ -13,8 +16,8 @@ export default async function HomePage() {
     prisma.user.count(),
   ]);
 
-  // Get recent posts
-  const recentPosts = await prisma.post.findMany({
+  // Get recent posts using context (access control applied)
+  const recentPosts = await context.db.post.findMany({
     take: 5,
     orderBy: { createdAt: "desc" },
     include: { author: true },
@@ -125,7 +128,7 @@ export default async function HomePage() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {recentPosts.map((post) => (
+                  {recentPosts.map((post: any) => (
                     <Link
                       key={post.id}
                       href={`/posts/${post.id}`}

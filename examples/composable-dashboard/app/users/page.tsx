@@ -1,17 +1,19 @@
 import Link from "next/link";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { ListTable } from "@opensaas/ui/standalone";
-import { prisma } from "../../lib/context";
+import { getContext } from "../../lib/context";
 
 export default async function UsersPage() {
-  const users = await prisma.user.findMany({
+  const context = await getContext();
+
+  const users = await context.db.user.findMany({
     include: {
       posts: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
-  const usersWithPostCount = users.map((user) => ({
+  const usersWithPostCount = users.map((user: any) => ({
     ...user,
     postCount: user.posts?.length || 0,
   }));

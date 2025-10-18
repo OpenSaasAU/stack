@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@opensaas/ui/p
 import { Button } from "@opensaas/ui/primitives";
 import { ItemCreateForm } from "@opensaas/ui/standalone";
 import { text, select, timestamp, relationship } from "@opensaas/core/fields";
+import { createPost } from "../lib/actions";
 
 const postFields = {
   title: text({ validation: { isRequired: true } }),
@@ -42,26 +43,16 @@ export function CreatePostDialog() {
           <ItemCreateForm
             fields={postFields}
             onSubmit={async (data) => {
-              try {
-                const response = await fetch("/api/posts", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(data),
-                });
+              const result = await createPost(data);
 
-                if (!response.ok) {
-                  const error = await response.json();
-                  return { success: false, error: error.message || "Failed to create post" };
-                }
-
-                const post = await response.json();
-                setOpen(false);
-                router.refresh();
-                router.push(`/posts/${post.id}`);
-                return { success: true };
-              } catch (error: any) {
-                return { success: false, error: error.message || "Failed to create post" };
+              if (!result.success) {
+                return { success: false, error: result.error || "Failed to create post" };
               }
+
+              setOpen(false);
+              router.refresh();
+              router.push(`/posts/${result.data.id}`);
+              return { success: true };
             }}
             onCancel={() => setOpen(false)}
             submitLabel="Create Post"

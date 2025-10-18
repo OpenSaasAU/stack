@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@opensaas/ui/primitives";
-import { prisma } from "../../../lib/context";
+import { getContext } from "../../../lib/context";
 import { PostEditor } from "./PostEditor";
 
-export default async function PostDetailPage({
-  params,
-}: {
-  params: { id: string };
+export default async function PostDetailPage(props: {
+  params: Promise<{ id: string }>;
 }) {
-  const post = await prisma.post.findUnique({
+  const params = await props.params;
+  const context = await getContext();
+
+  const post = await context.db.post.findUnique({
     where: { id: params.id },
     include: { author: true },
   });

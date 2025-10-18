@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitive
 import { Button } from "@opensaas/ui/primitives";
 import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone";
 import { text, select, timestamp, relationship } from "@opensaas/core/fields";
+import { updatePost, deletePost } from "../../../lib/actions";
 
 const postFields = {
   title: text({ validation: { isRequired: true } }),
@@ -38,24 +39,15 @@ export function PostEditor({ post }: { post: any }) {
             fields={postFields}
             initialData={post}
             onSubmit={async (data) => {
-              try {
-                const response = await fetch(`/api/posts/${post.id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(data),
-                });
+              const result = await updatePost(post.id, data);
 
-                if (!response.ok) {
-                  const error = await response.json();
-                  return { success: false, error: error.message || "Failed to update post" };
-                }
-
-                setEditing(false);
-                router.refresh();
-                return { success: true };
-              } catch (error: any) {
-                return { success: false, error: error.message || "Failed to update post" };
+              if (!result.success) {
+                return { success: false, error: result.error || "Failed to update post" };
               }
+
+              setEditing(false);
+              router.refresh();
+              return { success: true };
             }}
             onCancel={() => setEditing(false)}
           />
@@ -92,21 +84,15 @@ export function PostEditor({ post }: { post: any }) {
               <Button onClick={() => setEditing(true)}>Edit</Button>
               <DeleteButton
                 onDelete={async () => {
-                  try {
-                    const response = await fetch(`/api/posts/${post.id}`, {
-                      method: "DELETE",
-                    });
+                  const result = await deletePost(post.id);
 
-                    if (!response.ok) {
-                      return { success: false, error: "Failed to delete post" };
-                    }
-
-                    router.push("/posts");
-                    router.refresh();
-                    return { success: true };
-                  } catch (error) {
-                    return { success: false, error: "Failed to delete post" };
+                  if (!result.success) {
+                    return { success: false, error: result.error || "Failed to delete post" };
                   }
+
+                  router.push("/posts");
+                  router.refresh();
+                  return { success: true };
                 }}
                 itemName="post"
                 buttonVariant="destructive"

@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { ListTable, SearchBar } from "@opensaas/ui/standalone";
-import { prisma } from "../../lib/context";
+import { getContext } from "../../lib/context";
 import { CreatePostDialog } from "../../components/CreatePostDialog";
 
-export default async function PostsPage({
-  searchParams,
-}: {
-  searchParams: { search?: string };
+export default async function PostsPage(props: {
+  searchParams: Promise<{ search?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   const search = searchParams.search || "";
+  const context = await getContext();
 
-  // Fetch posts with search
-  const posts = await prisma.post.findMany({
+  // Fetch posts with search using context (access control applied)
+  const posts = await context.db.post.findMany({
     where: search
       ? {
           OR: [
@@ -26,7 +26,7 @@ export default async function PostsPage({
   });
 
   // Transform posts to include author name for display
-  const postsWithAuthorName = posts.map((post) => ({
+  const postsWithAuthorName = posts.map((post: any) => ({
     ...post,
     authorName: post.author?.name || "Unknown",
   }));
