@@ -6,6 +6,7 @@ import { FieldRenderer } from "./fields/FieldRenderer.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { LoadingSpinner } from "./LoadingSpinner.js";
 import { cn } from "../lib/utils.js";
+import { Button } from "../primitives/button.js";
 import type { FieldConfig } from "@opensaas/core";
 import type { ServerActionInput } from "../server/types.js";
 
@@ -170,48 +171,31 @@ export function ItemFormClient({
 
       {/* Form Actions */}
       <div className="flex items-center justify-between pt-6 border-t border-border">
-        <div className="space-x-3">
-          <button
-            type="submit"
-            disabled={isPending}
-            className={cn(
-              "px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium",
-              "hover:bg-primary/90 transition-colors",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              "flex items-center gap-2",
-            )}
-          >
+        <div className="flex gap-3">
+          <Button type="submit" disabled={isPending} className="gap-2">
             {isPending && <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />}
             {isPending ? "Saving..." : mode === "create" ? "Create" : "Save"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => router.push(`${basePath}/${urlKey}`)}
             disabled={isPending}
-            className={cn(
-              "px-4 py-2 bg-secondary text-secondary-foreground rounded-md font-medium",
-              "hover:bg-secondary/90 transition-colors",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            )}
           >
             Cancel
-          </button>
+          </Button>
         </div>
 
         {/* Delete Button (Edit Mode Only) */}
         {mode === "edit" && itemId && (
-          <button
+          <Button
             type="button"
+            variant="destructive"
             onClick={() => setShowDeleteConfirm(true)}
             disabled={isPending}
-            className={cn(
-              "px-4 py-2 bg-destructive text-destructive-foreground rounded-md font-medium",
-              "hover:bg-destructive/90 transition-colors",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            )}
           >
             Delete
-          </button>
+          </Button>
         )}
       </div>
 

@@ -4,6 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatFieldName, getFieldDisplayValue, cn } from "../lib/utils.js";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../primitives/table.js";
+import { Input } from "../primitives/input.js";
+import { Button } from "../primitives/button.js";
+import { Card } from "../primitives/card.js";
 
 export interface ListViewClientProps {
   items: any[];
@@ -98,15 +109,15 @@ export function ListViewClient({
   return (
     <div className="space-y-4">
       {/* Search Bar */}
-      <div className="bg-card border border-border rounded-lg p-4">
+      <Card className="p-4">
         <form onSubmit={handleSearch} className="flex gap-2">
           <div className="flex-1 relative">
-            <input
+            <Input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search..."
-              className="w-full h-10 px-4 pr-10 rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="pr-10"
             />
             {searchInput && (
               <button
@@ -118,80 +129,65 @@ export function ListViewClient({
               </button>
             )}
           </div>
-          <button
-            type="submit"
-            className="px-4 h-10 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors"
-          >
-            Search
-          </button>
+          <Button type="submit">Search</Button>
         </form>
-      </div>
+      </Card>
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                {displayColumns.map((column) => (
-                  <th
-                    key={column}
-                    className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/70 transition-colors"
-                    onClick={() => handleSort(column)}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>{formatFieldName(column)}</span>
-                      {sortBy === column && (
-                        <span className="text-primary">
-                          {sortOrder === "asc" ? "↑" : "↓"}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                ))}
-                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {sortedItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={displayColumns.length + 1}
-                    className="px-6 py-12 text-center text-muted-foreground"
-                  >
-                    No items found
-                  </td>
-                </tr>
-              ) : (
-                sortedItems.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-muted/30 transition-colors"
-                  >
-                    {displayColumns.map((column) => (
-                      <td
-                        key={column}
-                        className="px-6 py-4 text-sm text-foreground"
-                      >
-                        {getFieldDisplayValue(item[column], fieldTypes[column])}
-                      </td>
-                    ))}
-                    <td className="px-6 py-4 text-sm text-right">
-                      <Link
-                        href={`${basePath}/${urlKey}/${item.id}`}
-                        className="text-primary hover:underline"
-                      >
-                        Edit
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {displayColumns.map((column) => (
+                <TableHead
+                  key={column}
+                  className="cursor-pointer hover:bg-muted/70 transition-colors"
+                  onClick={() => handleSort(column)}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>{formatFieldName(column)}</span>
+                    {sortBy === column && (
+                      <span className="text-primary">
+                        {sortOrder === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
+                  </div>
+                </TableHead>
+              ))}
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedItems.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={displayColumns.length + 1}
+                  className="h-24 text-center"
+                >
+                  No items found
+                </TableCell>
+              </TableRow>
+            ) : (
+              sortedItems.map((item) => (
+                <TableRow key={item.id}>
+                  {displayColumns.map((column) => (
+                    <TableCell key={column}>
+                      {getFieldDisplayValue(item[column], fieldTypes[column])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right">
+                    <Link
+                      href={`${basePath}/${urlKey}/${item.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      Edit
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
 
       {/* Pagination */}
@@ -202,33 +198,23 @@ export function ListViewClient({
             {Math.min(page * pageSize, total)} of {total} results
           </p>
           <div className="flex items-center space-x-2">
-            <button
+            <Button
+              variant="outline"
               onClick={() => router.push(buildPaginationUrl(page - 1))}
               disabled={!hasPrevPage}
-              className={cn(
-                "px-4 py-2 text-sm font-medium rounded-md border border-border",
-                hasPrevPage
-                  ? "bg-background hover:bg-accent text-foreground"
-                  : "bg-muted text-muted-foreground cursor-not-allowed",
-              )}
             >
               Previous
-            </button>
+            </Button>
             <span className="text-sm text-muted-foreground">
               Page {page} of {totalPages}
             </span>
-            <button
+            <Button
+              variant="outline"
               onClick={() => router.push(buildPaginationUrl(page + 1))}
               disabled={!hasNextPage}
-              className={cn(
-                "px-4 py-2 text-sm font-medium rounded-md border border-border",
-                hasNextPage
-                  ? "bg-background hover:bg-accent text-foreground"
-                  : "bg-muted text-muted-foreground cursor-not-allowed",
-              )}
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}

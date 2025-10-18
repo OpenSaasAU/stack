@@ -1,6 +1,7 @@
 "use client";
 
-import { cn } from "../../lib/utils.js";
+import { Checkbox } from "../../primitives/checkbox.js";
+import { Label } from "../../primitives/label.js";
 
 export interface CheckboxFieldProps {
   name: string;
@@ -24,9 +25,7 @@ export function CheckboxField({
   if (mode === "read") {
     return (
       <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">
-          {label}
-        </label>
+        <Label className="text-muted-foreground">{label}</Label>
         <p className="text-sm">{value ? "Yes" : "No"}</p>
       </div>
     );
@@ -35,26 +34,19 @@ export function CheckboxField({
   return (
     <div className="space-y-2">
       <div className="flex items-center space-x-2">
-        <input
+        <Checkbox
           id={name}
           name={name}
-          type="checkbox"
           checked={value || false}
-          onChange={(e) => onChange(e.target.checked)}
+          onCheckedChange={(checked) => onChange(checked === true)}
           disabled={disabled}
-          className={cn(
-            "h-4 w-4 rounded border-input text-primary",
-            "focus:ring-2 focus:ring-ring focus:ring-offset-2",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-            error && "border-destructive",
-          )}
         />
-        <label
+        <Label
           htmlFor={name}
-          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          className="leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
         >
           {label}
-        </label>
+        </Label>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>

@@ -1,6 +1,13 @@
 "use client";
 
-import { cn } from "../../lib/utils.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../primitives/select.js";
+import { Label } from "../../primitives/label.js";
 
 export interface SelectFieldProps {
   name: string;
@@ -29,9 +36,7 @@ export function SelectField({
     const selectedOption = options.find((opt) => opt.value === value);
     return (
       <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">
-          {label}
-        </label>
+        <Label className="text-muted-foreground">{label}</Label>
         <p className="text-sm">{selectedOption?.label || "-"}</p>
       </div>
     );
@@ -39,32 +44,27 @@ export function SelectField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium">
+      <Label htmlFor={name}>
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
-      </label>
-      <select
-        id={name}
-        name={name}
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value || null)}
+      </Label>
+      <Select
+        value={value || undefined}
+        onValueChange={(val) => onChange(val || null)}
         disabled={disabled}
         required={required}
-        className={cn(
-          "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-          "ring-offset-background",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          error && "border-destructive",
-        )}
       >
-        <option value="">Select an option...</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger id={name} className={error ? "border-destructive" : ""}>
+          <SelectValue placeholder="Select an option..." />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );

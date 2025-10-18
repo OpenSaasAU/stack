@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@opensaas/ui";
+import { cn } from "@opensaas/ui/lib/utils";
 
 export interface ColorPickerFieldProps {
   name: string;

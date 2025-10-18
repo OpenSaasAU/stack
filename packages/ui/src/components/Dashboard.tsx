@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
 import { getDbKey, getUrlKey } from "@opensaas/core";
+import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card.js";
 
 export interface DashboardProps {
   context: AdminContext;
@@ -40,73 +41,79 @@ export async function Dashboard({
       </div>
 
       {lists.length === 0 ? (
-        <div className="bg-card border border-border rounded-lg p-12 text-center">
+        <Card className="p-12 text-center">
           <p className="text-muted-foreground">
             No lists configured. Add lists to your opensaas.config.ts to get
             started.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {listCounts.map(({ listKey, count}) => {
+          {listCounts.map(({ listKey, count }) => {
             const urlKey = getUrlKey(listKey);
             return (
-            <Link
-              key={listKey}
-              href={`${basePath}/${urlKey}`}
-              className="group bg-card border border-border rounded-lg p-6 hover:border-primary transition-colors"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-semibold mb-1 group-hover:text-primary transition-colors">
-                    {formatListName(listKey)}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {count} {count === 1 ? "item" : "items"}
-                  </p>
-                </div>
-                <div className="text-2xl">📋</div>
-              </div>
-              <div className="flex items-center text-sm text-primary">
-                <span>View all</span>
-                <svg
-                  className="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
-              </div>
-            </Link>
-          )}
-          )}
+              <Link key={listKey} href={`${basePath}/${urlKey}`}>
+                <Card className="group hover:border-primary transition-colors cursor-pointer h-full">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-xl group-hover:text-primary transition-colors">
+                          {formatListName(listKey)}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {count} {count === 1 ? "item" : "items"}
+                        </p>
+                      </div>
+                      <div className="text-2xl">📋</div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center text-sm text-primary">
+                      <span>View all</span>
+                      <svg
+                        className="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
       )}
 
-      <div className="mt-12 bg-accent/50 border border-border rounded-lg p-6">
-        <h2 className="text-lg font-semibold mb-2">Quick Actions</h2>
-        <div className="space-y-2">
-          {lists.map((listKey) => {
-            const urlKey = getUrlKey(listKey);
-            return (
-            <Link
-              key={listKey}
-              href={`${basePath}/${urlKey}/create`}
-              className="inline-flex items-center text-sm text-primary hover:underline mr-4"
-            >
-              <span className="mr-1">+</span>
-              Create {formatListName(listKey)}
-            </Link>
-          )}
-          )}
-        </div>
-      </div>
+      <Card className="mt-12 bg-accent/50">
+        <CardHeader>
+          <CardTitle className="text-lg">Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {lists.map((listKey) => {
+              const urlKey = getUrlKey(listKey);
+              return (
+                <Link
+                  key={listKey}
+                  href={`${basePath}/${urlKey}/create`}
+                  className="inline-flex items-center text-sm text-primary hover:underline mr-4"
+                >
+                  <span className="mr-1">+</span>
+                  Create {formatListName(listKey)}
+                </Link>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

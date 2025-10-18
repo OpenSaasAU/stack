@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { cn } from "@opensaas/ui";
+import { cn } from "@opensaas/ui/lib/utils";
 
 export interface SlugFieldProps {
   name: string;

@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "../../primitives/input.js";
+import { Label } from "../../primitives/label.js";
 import { cn } from "../../lib/utils.js";
 import { useState } from "react";
 
@@ -34,9 +36,7 @@ export function PasswordField({
   if (mode === "read") {
     return (
       <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">
-          {label}
-        </label>
+        <Label className="text-muted-foreground">{label}</Label>
         <p className="text-sm">••••••••</p>
       </div>
     );
@@ -50,12 +50,12 @@ export function PasswordField({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <label htmlFor={name} className="text-sm font-medium">
+        <Label htmlFor={name}>
           {label}
           {required && <span className="text-destructive ml-1">*</span>}
-        </label>
+        </Label>
         <div className="relative">
-          <input
+          <Input
             id={name}
             name={name}
             type={showPassword ? "text" : "password"}
@@ -64,14 +64,7 @@ export function PasswordField({
             placeholder={placeholder}
             disabled={disabled}
             required={required}
-            className={cn(
-              "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-10",
-              "ring-offset-background",
-              "placeholder:text-muted-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              error && "border-destructive",
-            )}
+            className={cn("pr-10", error && "border-destructive")}
           />
           <button
             type="button"
@@ -86,11 +79,11 @@ export function PasswordField({
 
       {showConfirm && (
         <div className="space-y-2">
-          <label htmlFor={`${name}-confirm`} className="text-sm font-medium">
+          <Label htmlFor={`${name}-confirm`}>
             Confirm {label}
             {required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <input
+          </Label>
+          <Input
             id={`${name}-confirm`}
             name={`${name}-confirm`}
             type={showPassword ? "text" : "password"}
@@ -99,14 +92,7 @@ export function PasswordField({
             placeholder={`Confirm ${placeholder || label.toLowerCase()}`}
             disabled={disabled}
             required={required}
-            className={cn(
-              "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "ring-offset-background",
-              "placeholder:text-muted-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              confirmError && "border-destructive",
-            )}
+            className={cn(confirmError && "border-destructive")}
           />
           {confirmError && (
             <p className="text-sm text-destructive">{confirmError}</p>

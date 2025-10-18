@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "../../primitives/input.js";
+import { Label } from "../../primitives/label.js";
 import { cn } from "../../lib/utils.js";
 
 export interface TextFieldProps {
@@ -28,9 +30,7 @@ export function TextField({
   if (mode === "read") {
     return (
       <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">
-          {label}
-        </label>
+        <Label className="text-muted-foreground">{label}</Label>
         <p className="text-sm">{value || "-"}</p>
       </div>
     );
@@ -38,11 +38,11 @@ export function TextField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium">
+      <Label htmlFor={name}>
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
-      </label>
-      <input
+      </Label>
+      <Input
         id={name}
         name={name}
         type="text"
@@ -51,14 +51,7 @@ export function TextField({
         placeholder={placeholder}
         disabled={disabled}
         required={required}
-        className={cn(
-          "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-          "ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium",
-          "placeholder:text-muted-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          error && "border-destructive",
-        )}
+        className={cn(error && "border-destructive")}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
