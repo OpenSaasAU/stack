@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
 import { ListTable } from "@opensaas/ui/standalone";
 import { getContext } from "../../lib/context";
+import { connection } from "next/server";
 
 export default async function UsersPage() {
+  await connection();
   const context = await getContext();
 
   const users = await context.db.user.findMany({
