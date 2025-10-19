@@ -32,4 +32,7 @@ export type {
   DatabaseConfig,
   SessionConfig,
   UIConfig,
+  ThemeConfig,
+  ThemePreset,
+  ThemeColors,
 } from "./types.js";

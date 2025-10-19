@@ -35,15 +35,23 @@ export async function Dashboard<TPrisma>({
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">Manage your application data</p>
+      {/* Header with gradient */}
+      <div className="mb-8 relative">
+        <div className="absolute inset-0 bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] opacity-5 rounded-2xl" />
+        <div className="relative p-6">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] bg-clip-text text-transparent">
+            Dashboard
+          </h1>
+          <p className="text-muted-foreground">Manage your application data</p>
+        </div>
       </div>
 
       {lists.length === 0 ? (
-        <Card className="p-12 text-center">
-          <p className="text-muted-foreground">
-            No lists configured. Add lists to your opensaas.config.ts to get started.
+        <Card className="p-12 text-center border-2 border-dashed">
+          <div className="mb-4 text-4xl">📦</div>
+          <p className="text-muted-foreground mb-2 font-medium">No lists configured</p>
+          <p className="text-sm text-muted-foreground">
+            Add lists to your opensaas.config.ts to get started.
           </p>
         </Card>
       ) : (
@@ -52,22 +60,25 @@ export async function Dashboard<TPrisma>({
             const urlKey = getUrlKey(listKey);
             return (
               <Link key={listKey} href={`${basePath}/${urlKey}`}>
-                <Card className="group hover:border-primary transition-colors cursor-pointer h-full">
-                  <CardHeader>
+                <Card className="group hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 cursor-pointer h-full relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <CardHeader className="relative">
                     <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-xl group-hover:text-primary transition-colors">
                           {formatListName(listKey)}
                         </CardTitle>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1 font-medium">
                           {count} {count === 1 ? "item" : "items"}
                         </p>
                       </div>
-                      <div className="text-2xl">📋</div>
+                      <div className="text-3xl opacity-60 group-hover:opacity-100 transition-opacity">
+                        📋
+                      </div>
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center text-sm text-primary">
+                  <CardContent className="relative">
+                    <div className="flex items-center text-sm font-medium text-primary">
                       <span>View all</span>
                       <svg
                         className="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform"
@@ -91,28 +102,33 @@ export async function Dashboard<TPrisma>({
         </div>
       )}
 
-      <Card className="mt-12 bg-accent/50">
-        <CardHeader>
-          <CardTitle className="text-lg">Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {lists.map((listKey) => {
-              const urlKey = getUrlKey(listKey);
-              return (
-                <Link
-                  key={listKey}
-                  href={`${basePath}/${urlKey}/create`}
-                  className="inline-flex items-center text-sm text-primary hover:underline mr-4"
-                >
-                  <span className="mr-1">+</span>
-                  Create {formatListName(listKey)}
-                </Link>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      {lists.length > 0 && (
+        <Card className="mt-12 bg-gradient-to-br from-accent/10 to-primary/10 border-accent/20">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <span className="text-xl">⚡</span>
+              Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              {lists.map((listKey) => {
+                const urlKey = getUrlKey(listKey);
+                return (
+                  <Link
+                    key={listKey}
+                    href={`${basePath}/${urlKey}/create`}
+                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground font-medium text-sm transition-colors border border-primary/20"
+                  >
+                    <span className="text-lg">+</span>
+                    Create {formatListName(listKey)}
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

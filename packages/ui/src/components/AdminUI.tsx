@@ -5,6 +5,7 @@ import { ListView } from "./ListView.js";
 import { ItemForm } from "./ItemForm.js";
 import type { ServerActionInput } from "../server/types.js";
 import { AccessContext, getListKeyFromUrl, OpenSaaSConfig } from "@opensaas/core";
+import { generateThemeCSS } from "../lib/theme.js";
 
 export interface AdminUIProps<TPrisma> {
   context: AccessContext<TPrisma>;
@@ -91,10 +92,18 @@ export function AdminUI<TPrisma>({
     );
   }
 
+  // Generate theme styles if custom theme is configured
+  const themeStyles = config.ui?.theme ? generateThemeCSS(config.ui.theme) : null;
+
   return (
-    <div className="flex min-h-screen bg-background">
-      <Navigation context={context} config={config} basePath={basePath} currentPath={currentPath} />
-      <main className="flex-1 overflow-y-auto">{content}</main>
-    </div>
+    <>
+      {themeStyles && (
+        <style dangerouslySetInnerHTML={{ __html: themeStyles }} />
+      )}
+      <div className="flex min-h-screen bg-background">
+        <Navigation context={context} config={config} basePath={basePath} currentPath={currentPath} />
+        <main className="flex-1 overflow-y-auto">{content}</main>
+      </div>
+    </>
   );
 }

@@ -185,10 +185,71 @@ export type SessionConfig = {
 };
 
 /**
+ * Theme preset options
+ */
+export type ThemePreset = "modern" | "classic" | "neon";
+
+/**
+ * Custom theme colors (HSL values without hsl() wrapper)
+ * Format: "220 20% 97%" (hue saturation lightness)
+ */
+export type ThemeColors = {
+  background?: string;
+  foreground?: string;
+  card?: string;
+  cardForeground?: string;
+  popover?: string;
+  popoverForeground?: string;
+  primary?: string;
+  primaryForeground?: string;
+  secondary?: string;
+  secondaryForeground?: string;
+  muted?: string;
+  mutedForeground?: string;
+  accent?: string;
+  accentForeground?: string;
+  destructive?: string;
+  destructiveForeground?: string;
+  border?: string;
+  input?: string;
+  ring?: string;
+  gradientFrom?: string;
+  gradientTo?: string;
+};
+
+/**
+ * Theme configuration
+ */
+export type ThemeConfig = {
+  /**
+   * Preset theme to use
+   * @default "modern"
+   */
+  preset?: ThemePreset;
+  /**
+   * Custom color overrides for light mode
+   */
+  colors?: ThemeColors;
+  /**
+   * Custom color overrides for dark mode
+   */
+  darkColors?: ThemeColors;
+  /**
+   * Border radius in rem
+   * @default 0.75
+   */
+  radius?: number;
+};
+
+/**
  * UI configuration
  */
 export type UIConfig = {
   basePath?: string;
+  /**
+   * Theme configuration for the admin UI
+   */
+  theme?: ThemeConfig;
 };
 
 /**

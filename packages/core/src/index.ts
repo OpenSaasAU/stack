@@ -16,6 +16,9 @@ export type {
   DatabaseConfig,
   SessionConfig,
   UIConfig,
+  ThemeConfig,
+  ThemePreset,
+  ThemeColors,
 } from "./config/index.js";
 
 // Access control

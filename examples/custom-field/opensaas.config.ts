@@ -189,5 +189,17 @@ export default config({
 
   ui: {
     basePath: "/admin",
+    /**
+     * THEME CONFIGURATION
+     * Demonstrates the theming system with custom colors
+     */
+    theme: {
+      preset: "neon", // Use "neon" preset theme
+      // Optional: Override specific colors
+      // colors: {
+      //   primary: "280 100% 50%", // Custom magenta
+      // },
+      radius: 0.75, // Rounded corners
+    },
   },
 });

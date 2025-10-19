@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: 0 0% 100%;
-  --color-foreground: 222.2 84% 4.9%;
+  /* Modern theme with neon accents - Light mode */
+  --color-background: 220 20% 97%;
+  --color-foreground: 220 30% 10%;
   --color-card: 0 0% 100%;
-  --color-card-foreground: 222.2 84% 4.9%;
+  --color-card-foreground: 220 30% 10%;
   --color-popover: 0 0% 100%;
-  --color-popover-foreground: 222.2 84% 4.9%;
-  --color-primary: 221.2 83.2% 53.3%;
-  --color-primary-foreground: 210 40% 98%;
-  --color-secondary: 210 40% 96.1%;
-  --color-secondary-foreground: 222.2 47.4% 11.2%;
-  --color-muted: 210 40% 96.1%;
-  --color-muted-foreground: 215.4 16.3% 46.9%;
-  --color-accent: 210 40% 96.1%;
-  --color-accent-foreground: 222.2 47.4% 11.2%;
-  --color-destructive: 0 84.2% 60.2%;
-  --color-destructive-foreground: 210 40% 98%;
-  --color-border: 214.3 31.8% 91.4%;
-  --color-input: 214.3 31.8% 91.4%;
-  --color-ring: 221.2 83.2% 53.3%;
-  --radius: 0.5rem;
+  --color-popover-foreground: 220 30% 10%;
+
+  /* Neon cyan primary */
+  --color-primary: 190 95% 55%;
+  --color-primary-foreground: 220 30% 10%;
+
+  /* Subtle accents */
+  --color-secondary: 220 15% 94%;
+  --color-secondary-foreground: 220 30% 10%;
+  --color-muted: 220 15% 94%;
+  --color-muted-foreground: 220 15% 45%;
+  --color-accent: 280 85% 65%;
+  --color-accent-foreground: 0 0% 100%;
+
+  --color-destructive: 0 84% 60%;
+  --color-destructive-foreground: 0 0% 100%;
+  --color-border: 220 15% 88%;
+  --color-input: 220 15% 88%;
+  --color-ring: 190 95% 55%;
+  --radius: 0.75rem;
+
+  /* Gradient colors for modern effects */
+  --gradient-from: 190 95% 55%;
+  --gradient-to: 280 85% 65%;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-background: 220 25% 8%;
+    --color-foreground: 220 15% 95%;
+    --color-card: 220 20% 12%;
+    --color-card-foreground: 220 15% 95%;
+    --color-popover: 220 20% 12%;
+    --color-popover-foreground: 220 15% 95%;
+
+    /* Brighter neon in dark mode */
+    --color-primary: 190 100% 60%;
+    --color-primary-foreground: 220 30% 10%;
+
+    --color-secondary: 220 20% 18%;
+    --color-secondary-foreground: 220 15% 95%;
+    --color-muted: 220 20% 18%;
+    --color-muted-foreground: 220 10% 55%;
+    --color-accent: 280 90% 70%;
+    --color-accent-foreground: 220 30% 10%;
+
+    --color-destructive: 0 84% 65%;
+    --color-destructive-foreground: 0 0% 100%;
+    --color-border: 220 20% 22%;
+    --color-input: 220 20% 22%;
+    --color-ring: 190 100% 60%;
+
+    --gradient-from: 190 100% 60%;
+    --gradient-to: 280 90% 70%;
+  }
 }
 
 * {

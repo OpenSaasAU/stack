@@ -69,3 +69,6 @@ export type {
 
 // Utility functions
 export { cn, formatListName, formatFieldName, getFieldDisplayValue } from './lib/utils.js'
+
+// Theme utilities
+export { generateThemeCSS, getThemeStyleTag, presetThemes } from './lib/theme.js'

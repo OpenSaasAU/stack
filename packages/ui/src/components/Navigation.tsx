@@ -23,10 +23,13 @@ export function Navigation<TPrisma>({
 
   return (
     <nav className="w-64 border-r border-border bg-card h-screen sticky top-0 flex flex-col">
-      {/* Header */}
-      <div className="p-6 border-b border-border">
-        <Link href={basePath} className="block">
-          <h1 className="text-xl font-bold">OpenSaaS Admin</h1>
+      {/* Header with gradient */}
+      <div className="p-6 border-b border-border relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 opacity-50" />
+        <Link href={basePath} className="block relative">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] bg-clip-text text-transparent">
+            OpenSaaS Admin
+          </h1>
         </Link>
       </div>
 
@@ -35,13 +38,19 @@ export function Navigation<TPrisma>({
         <div className="space-y-1">
           <Link
             href={basePath}
-            className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative overflow-hidden group ${
               currentPath === ""
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                ? "bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25"
+                : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
             }`}
           >
-            Dashboard
+            {currentPath === "" && (
+              <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20 animate-pulse" />
+            )}
+            <span className="relative flex items-center gap-2">
+              <span className={currentPath === "" ? "text-lg" : "text-base"}>📊</span>
+              Dashboard
+            </span>
           </Link>
 
           {lists.length > 0 && (
@@ -58,13 +67,21 @@ export function Navigation<TPrisma>({
                   <Link
                     key={listKey}
                     href={`${basePath}/${urlKey}`}
-                    className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative overflow-hidden group ${
                       isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                        ? "bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25"
+                        : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
                     }`}
                   >
-                    {formatListName(listKey)}
+                    {isActive && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20 animate-pulse" />
+                    )}
+                    <span className="relative flex items-center gap-2">
+                      <span className="opacity-60 group-hover:opacity-100 transition-opacity">
+                        📁
+                      </span>
+                      {formatListName(listKey)}
+                    </span>
                   </Link>
                 );
               })}
@@ -75,10 +92,10 @@ export function Navigation<TPrisma>({
 
       {/* Footer */}
       {context.session && (
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-border bg-gradient-to-br from-primary/5 to-accent/5">
           <div className="flex items-center space-x-3">
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-sm font-medium">
+            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/25">
+              <span className="text-sm font-bold text-primary-foreground">
                 {String(
                   (context.session.data as Record<string, unknown>)?.name,
                 )?.[0]?.toUpperCase() || "?"}
