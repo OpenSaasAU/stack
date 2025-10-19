@@ -7,7 +7,7 @@ import { Button } from "@opensaas/ui/primitives";
 import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone";
 import { updatePost, deletePost } from "../../../lib/actions";
 import config from "../../../opensaas.config";
-import type { Post } from "../../../.opensaas/types";
+import type { Post, PostUpdateInput } from "../../../.opensaas/types";
 
 export function PostEditor({ post }: { post: Post }) {
   const [editing, setEditing] = useState(false);
@@ -20,9 +20,9 @@ export function PostEditor({ post }: { post: Post }) {
           <CardTitle>Edit Post</CardTitle>
         </CardHeader>
         <CardContent>
-          <ItemEditForm<Post>
+          <ItemEditForm<PostUpdateInput>
             fields={config.lists.Post.fields}
-            initialData={post}
+            initialData={post as unknown as PostUpdateInput}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data);
 

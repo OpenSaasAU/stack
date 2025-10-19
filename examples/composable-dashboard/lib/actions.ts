@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getContext, getContextWithUser } from "./context";
-import type { Post } from "@/.opensaas/types";
+import type { PostCreateInput, PostUpdateInput } from "@/.opensaas/types";
 
 // For demo purposes, we'll use a hardcoded user ID
 // In a real app, this would come from your auth session
 const DEMO_USER_ID = "demo-user-1";
 
-export async function createPost(data: Post) {
+export async function createPost(data: PostCreateInput) {
   try {
     const context = await getContext(); // Use no auth for demo
 
@@ -38,7 +38,7 @@ export async function createPost(data: Post) {
   }
 }
 
-export async function updatePost(id: string, data: Post) {
+export async function updatePost(id: string, data: PostUpdateInput) {
   const context = await getContextWithUser(DEMO_USER_ID);
 
   const post = await context.db.post.update({
