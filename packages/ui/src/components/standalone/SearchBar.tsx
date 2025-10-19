@@ -5,9 +5,10 @@ import { useState } from "react";
 import { Input } from "../../primitives/input.js";
 import { Button } from "../../primitives/button.js";
 import { Card } from "../../primitives/card.js";
+import { usePathname, useRouter } from "next/navigation";
 
 export interface SearchBarProps {
-  onSearch: (query: string) => void;
+  onSearch?: (query: string) => void;
   onClear?: () => void;
   placeholder?: string;
   defaultValue?: string;
@@ -42,11 +43,14 @@ export function SearchBar({
   searchLabel = "Search",
   className,
 }: SearchBarProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [searchInput, setSearchInput] = useState(defaultValue);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch(searchInput.trim());
+    if (onSearch) onSearch(searchInput.trim());
+    else router.push(`${pathname}?search=${searchInput.trim()}`);
   };
 
   const handleClear = () => {

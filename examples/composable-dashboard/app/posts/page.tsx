@@ -57,18 +57,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
 
         {/* Search Bar */}
         <div className="mb-6">
-          <form method="GET" action="/posts">
-            <SearchBar
-              defaultValue={search}
-              onSearch={(_query) => {
-                // Form will handle submission
-              }}
-              onClear={() => {
-                // window.location.href = "/posts";
-              }}
-              placeholder="Search posts by title or content..."
-            />
-          </form>
+          <SearchBar defaultValue={search} placeholder="Search posts by title or content..." />
         </div>
 
         {/* Posts Table */}
@@ -86,9 +75,6 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
                 createdAt: "timestamp",
               }}
               columns={["title", "authorName", "status", "createdAt"]}
-              onRowClick={(_post) => {
-                // window.location.href = `/posts/${post.id}`;
-              }}
               sortable
               emptyMessage={
                 search

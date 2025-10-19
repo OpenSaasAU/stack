@@ -43,3 +43,4 @@ pnpm-debug.log*
 
 # Turbo
 .turbo/
+.playwright-mcp

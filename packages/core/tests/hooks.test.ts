@@ -14,6 +14,7 @@ describe("Hooks", () => {
   const mockContext = {
     session: null,
     prisma: {},
+    db: {},
   };
 
   describe("ValidationError", () => {

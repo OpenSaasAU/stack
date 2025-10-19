@@ -6,6 +6,7 @@ describe("Relationship Access Control", () => {
   const mockContext: AccessContext = {
     session: null,
     prisma: {},
+    db: {},
   };
 
   describe("getRelatedListConfig", () => {
