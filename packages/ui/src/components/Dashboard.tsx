@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { formatListName } from "../lib/utils.js";
-import type { AdminContext } from "../server/types.js";
-import { getDbKey, getUrlKey } from "@opensaas/core";
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
 import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card.js";
 
-export interface DashboardProps {
-  context: AdminContext;
+export interface DashboardProps<TPrisma> {
+  context: AccessContext<TPrisma>;
+  config: OpenSaaSConfig;
   basePath?: string;
 }
 
@@ -13,18 +13,18 @@ export interface DashboardProps {
  * Dashboard landing page showing all available lists
  * Server Component
  */
-export async function Dashboard({
+export async function Dashboard<TPrisma>({
   context,
+  config,
   basePath = "/admin",
-}: DashboardProps) {
-  const lists = Object.keys(context.config.lists || {});
+}: DashboardProps<TPrisma>) {
+  const lists = Object.keys(config.lists || {});
 
   // Get counts for each list
   const listCounts = await Promise.all(
     lists.map(async (listKey) => {
       try {
-        const dbContext = context.context as any;
-        const count = await dbContext.db[getDbKey(listKey)]?.count();
+        const count = await context.db[getDbKey(listKey)]?.count();
         return { listKey, count: count || 0 };
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error);
@@ -43,8 +43,7 @@ export async function Dashboard({
       {lists.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-muted-foreground">
-            No lists configured. Add lists to your opensaas.config.ts to get
-            started.
+            No lists configured. Add lists to your opensaas.config.ts to get started.
           </p>
         </Card>
       ) : (

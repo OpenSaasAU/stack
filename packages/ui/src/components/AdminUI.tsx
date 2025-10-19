@@ -3,11 +3,12 @@ import { Navigation } from "./Navigation.js";
 import { Dashboard } from "./Dashboard.js";
 import { ListView } from "./ListView.js";
 import { ItemForm } from "./ItemForm.js";
-import type { AdminContext, ServerActionInput } from "../server/types.js";
-import { getListKeyFromUrl } from "@opensaas/core";
+import type { ServerActionInput } from "../server/types.js";
+import { AccessContext, getListKeyFromUrl, OpenSaaSConfig } from "@opensaas/core";
 
-export interface AdminUIProps {
-  context: AdminContext;
+export interface AdminUIProps<TPrisma> {
+  context: AccessContext<TPrisma>;
+  config: OpenSaaSConfig;
   params?: string[];
   searchParams?: { [key: string]: string | string[] | undefined };
   basePath?: string;
@@ -25,13 +26,14 @@ export interface AdminUIProps {
  * - [list, 'create'] → ItemForm (create)
  * - [list, id] → ItemForm (edit)
  */
-export function AdminUI({
+export function AdminUI<TPrisma>({
   context,
+  config,
   params = [],
   searchParams = {},
   basePath = "/admin",
   serverAction,
-}: AdminUIProps) {
+}: AdminUIProps<TPrisma>) {
   // Parse route from params
   const [urlSegment, action] = params;
 
@@ -46,12 +48,13 @@ export function AdminUI({
 
   if (!listKey) {
     // Dashboard
-    content = <Dashboard context={context} basePath={basePath} />;
+    content = <Dashboard context={context} config={config} basePath={basePath} />;
   } else if (action === "create") {
     // Create form
     content = (
       <ItemForm
         context={context}
+        config={config}
         listKey={listKey}
         mode="create"
         basePath={basePath}
@@ -63,6 +66,7 @@ export function AdminUI({
     content = (
       <ItemForm
         context={context}
+        config={config}
         listKey={listKey}
         mode="edit"
         itemId={action}
@@ -78,6 +82,7 @@ export function AdminUI({
     content = (
       <ListView
         context={context}
+        config={config}
         listKey={listKey}
         basePath={basePath}
         search={search}
@@ -88,7 +93,7 @@ export function AdminUI({
 
   return (
     <div className="flex min-h-screen bg-background">
-      <Navigation context={context} basePath={basePath} currentPath={currentPath} />
+      <Navigation context={context} config={config} basePath={basePath} currentPath={currentPath} />
       <main className="flex-1 overflow-y-auto">{content}</main>
     </div>
   );

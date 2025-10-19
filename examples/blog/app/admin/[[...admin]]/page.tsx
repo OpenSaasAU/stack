@@ -1,26 +1,12 @@
 import { AdminUI } from "@opensaas/ui";
-import { getAdminContext } from "@opensaas/ui/server";
 import type { ServerActionInput } from "@opensaas/ui/server";
-import { getContext } from "@opensaas/core";
-import { PrismaClient } from "@prisma/client";
 import config from "../../../opensaas.config";
-
-// Create Prisma client singleton
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
-
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+import { getContext } from "@/lib/context";
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   "use server";
-  const session = config.session ? await config.session.getSession() : null;
-  const context = await getContext(config, prisma, session);
+  const context = await getContext();
   return await context.serverAction(props);
 }
 
@@ -36,11 +22,11 @@ interface AdminPageProps {
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params;
   const resolvedSearchParams = await searchParams;
-  const adminContext = await getAdminContext(config, prisma);
 
   return (
     <AdminUI
-      context={adminContext}
+      context={await getContext()}
+      config={config}
       params={resolvedParams.admin}
       searchParams={resolvedSearchParams}
       basePath="/admin"

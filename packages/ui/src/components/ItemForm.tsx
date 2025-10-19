@@ -2,11 +2,12 @@ import * as React from "react";
 import Link from "next/link";
 import { ItemFormClient } from "./ItemFormClient.js";
 import { formatListName } from "../lib/utils.js";
-import type { AdminContext, ServerActionInput } from "../server/types.js";
-import { getDbKey, getUrlKey } from "@opensaas/core";
+import type { ServerActionInput } from "../server/types.js";
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
 
-export interface ItemFormProps {
-  context: AdminContext;
+export interface ItemFormProps<TPrisma> {
+  context: AccessContext<TPrisma>;
+  config: OpenSaaSConfig;
   listKey: string;
   mode: "create" | "edit";
   itemId?: string;
@@ -19,15 +20,16 @@ export interface ItemFormProps {
  * Item form component - create or edit an item
  * Server Component that fetches data and sets up actions
  */
-export async function ItemForm({
+export async function ItemForm<TPrisma>({
   context,
+  config,
   listKey,
   mode,
   itemId,
   basePath = "/admin",
   serverAction,
-}: ItemFormProps) {
-  const listConfig = context.config.lists[listKey];
+}: ItemFormProps<TPrisma>) {
+  const listConfig = config.lists[listKey];
   const urlKey = getUrlKey(listKey);
 
   if (!listConfig) {
@@ -90,12 +92,12 @@ export async function ItemForm({
       if (ref) {
         // Parse ref format: "ListName.fieldName"
         const relatedListName = ref.split(".")[0];
-        const relatedListConfig = context.config.lists[relatedListName];
+        const relatedListConfig = config.lists[relatedListName];
 
         if (relatedListConfig) {
           try {
-            const dbContext = context.context as any;
-            const relatedItems = await dbContext.db[getDbKey(relatedListName)].findMany({});
+            const dbContext = context.db;
+            const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({});
 
             // Use 'name' field as label if it exists, otherwise use 'id'
             relationshipData[fieldName] = relatedItems.map((item: any) => ({

@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { ListViewClient } from "./ListViewClient.js";
 import { formatListName } from "../lib/utils.js";
-import type { AdminContext } from "../server/types.js";
-import { getDbKey, getUrlKey, type PrismaClientLike } from "@opensaas/core";
+import {
+  AccessContext,
+  getDbKey,
+  getUrlKey,
+  OpenSaaSConfig,
+  type PrismaClientLike,
+} from "@opensaas/core";
 
 export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  context: AdminContext<TPrisma>;
+  context: AccessContext<TPrisma>;
+  config: OpenSaaSConfig;
   listKey: string;
   basePath?: string;
   columns?: string[];
@@ -20,6 +26,7 @@ export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLi
  */
 export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLike>({
   context,
+  config,
   listKey,
   basePath = "/admin",
   columns,
@@ -29,7 +36,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
 }: ListViewProps<TPrisma>) {
   const key = getDbKey(listKey);
   const urlKey = getUrlKey(listKey);
-  const listConfig = context.config.lists[listKey];
+  const listConfig = config.lists[listKey];
 
   if (!listConfig) {
     return (
@@ -48,7 +55,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
   let total = 0;
 
   try {
-    const dbContext = context.context.db;
+    const dbContext = context.db;
     if (!dbContext || !dbContext[key]) {
       throw new Error(`Context for ${listKey} not found`);
     }

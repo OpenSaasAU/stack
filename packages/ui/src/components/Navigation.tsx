@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { formatListName } from "../lib/utils.js";
-import type { AdminContext } from "../server/types.js";
-import { getUrlKey } from "@opensaas/core";
+import { AccessContext, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
 
-export interface NavigationProps {
-  context: AdminContext;
+export interface NavigationProps<TPrisma> {
+  context: AccessContext<TPrisma>;
+  config: OpenSaaSConfig;
   basePath?: string;
   currentPath?: string;
 }
@@ -13,12 +13,13 @@ export interface NavigationProps {
  * Navigation sidebar showing all lists
  * Server Component
  */
-export function Navigation({
+export function Navigation<TPrisma>({
   context,
+  config,
   basePath = "/admin",
   currentPath = "",
-}: NavigationProps) {
-  const lists = Object.keys(context.config.lists || {});
+}: NavigationProps<TPrisma>) {
+  const lists = Object.keys(config.lists || {});
 
   return (
     <nav className="w-64 border-r border-border bg-card h-screen sticky top-0 flex flex-col">
@@ -78,7 +79,9 @@ export function Navigation({
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="text-sm font-medium">
-                {String((context.session.data as Record<string, unknown>)?.name)?.[0]?.toUpperCase() || "?"}
+                {String(
+                  (context.session.data as Record<string, unknown>)?.name,
+                )?.[0]?.toUpperCase() || "?"}
               </span>
             </div>
             <div className="flex-1 min-w-0">
