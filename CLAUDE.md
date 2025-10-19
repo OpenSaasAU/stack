@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 OpenSaaS Framework is a Next.js-based framework for building admin-heavy applications with built-in access control. It uses a config-first approach similar to KeystoneJS but modernized for Next.js App Router and designed to be AI-agent-friendly with automatic security guardrails.
 
 This is a pnpm monorepo with:
-- `packages/core`: Core framework (config system, access control, generators)
-- `packages/cli`: CLI tools (planned)
-- `packages/ui`: Admin UI components (planned)
+- `packages/core`: Core framework (config system, access control)
+- `packages/cli`: CLI tools (planned, generators)
+- `packages/ui`: Admin UI components (UI components)
 - `examples/blog`: Working example demonstrating the framework
 
 ## Common Commands
@@ -395,10 +395,3 @@ Tests use Vitest. Run from core package:
 cd packages/core
 pnpm test
 ```
-
-## Current Phase
-
-The project is in Phase 3 (Hooks system complete). Next phases:
-- Phase 4: CLI tooling (`opensaas init`, `opensaas migrate`)
-- Phase 5: Admin UI components
-- Phase 6: Better-auth integration
