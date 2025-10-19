@@ -65,6 +65,9 @@ export function generatePrismaSchema(config: OpenSaaSConfig): string {
   // Generator and datasource
   lines.push("generator client {");
   lines.push('  provider = "prisma-client-js"');
+  if (config.db.prismaClientPath) {
+    lines.push(`  output   = "${config.db.prismaClientPath}"`);
+  }
   lines.push("}");
   lines.push("");
   lines.push("datasource db {");

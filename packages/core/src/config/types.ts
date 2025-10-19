@@ -173,6 +173,7 @@ export type ListConfig<T = any> = {
 export type DatabaseConfig = {
   provider: "postgresql" | "mysql" | "sqlite";
   url: string;
+  prismaClientPath?: string;
 };
 
 /**
