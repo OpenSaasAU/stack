@@ -4,6 +4,8 @@ export type {
   Session,
   AccessContext,
   PrismaFilter,
+  AccessControlledDB,
+  PrismaClientLike,
 } from "./types.js";
 export {
   checkAccess,

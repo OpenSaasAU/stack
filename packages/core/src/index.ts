@@ -25,6 +25,7 @@ export type {
   Session,
   AccessContext,
   PrismaFilter,
+  AccessControlledDB,
 } from "./access/index.js";
 
 // Context

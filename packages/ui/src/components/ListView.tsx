@@ -2,10 +2,10 @@ import Link from "next/link";
 import { ListViewClient } from "./ListViewClient.js";
 import { formatListName } from "../lib/utils.js";
 import type { AdminContext } from "../server/types.js";
-import { getDbKey, getUrlKey } from "@opensaas/core";
+import { getDbKey, getUrlKey, type PrismaClientLike } from "@opensaas/core";
 
-export interface ListViewProps {
-  context: AdminContext;
+export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
+  context: AdminContext<TPrisma>;
   listKey: string;
   basePath?: string;
   columns?: string[];
@@ -18,7 +18,7 @@ export interface ListViewProps {
  * List view component - displays items in a table
  * Server Component that fetches data and renders client table
  */
-export async function ListView({
+export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLike>({
   context,
   listKey,
   basePath = "/admin",
@@ -26,7 +26,7 @@ export async function ListView({
   page = 1,
   pageSize = 50,
   search,
-}: ListViewProps) {
+}: ListViewProps<TPrisma>) {
   const key = getDbKey(listKey);
   const urlKey = getUrlKey(listKey);
   const listConfig = context.config.lists[listKey];

@@ -1,12 +1,7 @@
 import { config, list } from "@opensaas/core";
-import {
-  text,
-  relationship,
-  select,
-  timestamp,
-  password,
-} from "@opensaas/core/fields";
+import { text, relationship, select, timestamp, password } from "@opensaas/core/fields";
 import type { AccessControl } from "@opensaas/core";
+import type { Post, User } from "@/.opensaas/types";
 
 /**
  * Access control helpers
@@ -41,7 +36,7 @@ export default config({
   },
 
   lists: {
-    User: list({
+    User: list<User>({
       fields: {
         name: text({
           validation: { isRequired: true },
@@ -72,7 +67,7 @@ export default config({
       },
     }),
 
-    Post: list({
+    Post: list<Post>({
       fields: {
         title: text({
           validation: { isRequired: true },
@@ -151,10 +146,7 @@ export default config({
         },
         // Example validation: title must not contain "spam"
         validateInput: async ({ resolvedData, addValidationError }) => {
-          if (
-            resolvedData?.title &&
-            resolvedData.title.toLowerCase().includes("spam")
-          ) {
+          if (resolvedData?.title && resolvedData.title.toLowerCase().includes("spam")) {
             addValidationError('Title cannot contain the word "spam"');
           }
         },
@@ -164,7 +156,7 @@ export default config({
         },
         // Example afterOperation: log the result
         afterOperation: async ({ operation, item }) => {
-          console.log(`Successfully ${operation}d post:`, item.id);
+          console.log(`Successfully ${operation}d post:`, item?.id);
         },
       },
     }),

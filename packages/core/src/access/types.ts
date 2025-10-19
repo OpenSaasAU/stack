@@ -27,18 +27,49 @@ export type PrismaModelDelegate = {
 export type PrismaClientLike = any;
 
 /**
+ * Map Prisma client to access-controlled database context
+ * Preserves Prisma's type information for each model
+ */
+export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in keyof TPrisma]: TPrisma[K] extends {
+    findUnique: any;
+    findMany: any;
+    create: any;
+    update: any;
+    delete: any;
+    count: any;
+  }
+    ? {
+        findUnique: TPrisma[K]["findUnique"];
+        findMany: TPrisma[K]["findMany"];
+        create: TPrisma[K]["create"];
+        update: TPrisma[K]["update"];
+        delete: TPrisma[K]["delete"];
+        count: TPrisma[K]["count"];
+      }
+    : never;
+} & {
+  // Add index signature for runtime string access
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+
+/**
  * Context type (simplified for access control)
  */
 export type AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> = {
   session: Session;
   prisma: TPrisma;
+  db: AccessControlledDB<TPrisma>;
   [key: string]: unknown;
 };
 
 /**
  * Prisma filter type - represents a where clause
+ * Uses Partial to allow filtering by any subset of fields
  */
-export type PrismaFilter<T = Record<string, unknown>> = Record<keyof T, unknown>;
+export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>;
 
 /**
  * Access control function type

@@ -1,5 +1,5 @@
 import type { OpenSaaSConfig, ListConfig } from "../config/types.js";
-import type { Session, AccessContext } from "../access/index.js";
+import type { Session, AccessContext, AccessControlledDB } from "../access/index.js";
 import {
   checkAccess,
   mergeFilters,
@@ -18,30 +18,6 @@ import {
 import { processNestedOperations } from "./nested-operations.js";
 import { getDbKey } from "../lib/case-utils.js";
 import type { PrismaClientLike } from "../access/types.js";
-
-/**
- * Map Prisma client to access-controlled database context
- * Preserves Prisma's type information for each model
- */
-type AccessControlledDB<TPrisma extends PrismaClientLike> = {
-  [K in keyof TPrisma]: TPrisma[K] extends {
-    findUnique: unknown;
-    findMany: unknown;
-    create: unknown;
-    update: unknown;
-    delete: unknown;
-    count: unknown;
-  }
-    ? {
-        findUnique: TPrisma[K]["findUnique"];
-        findMany: TPrisma[K]["findMany"];
-        create: TPrisma[K]["create"];
-        update: TPrisma[K]["update"];
-        delete: TPrisma[K]["delete"];
-        count: TPrisma[K]["count"];
-      }
-    : never;
-};
 
 /**
  * Create an access-controlled context
@@ -65,14 +41,16 @@ export async function getContext<TPrisma extends PrismaClientLike = PrismaClient
     id?: string;
   }) => Promise<unknown>;
 }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db: any = {};
+
+  // Create context with db reference (will be populated below)
   const context: AccessContext = {
     session,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma: prisma as any,
+    db,
   };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {};
 
   // Create access-controlled operations for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
