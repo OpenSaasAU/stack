@@ -1,0 +1,55 @@
+{
+  "name": "@opensaas/tiptap",
+  "version": "0.1.0",
+  "description": "Tiptap rich text editor integration for OpenSaaS Framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fields": {
+      "types": "./dist/fields/index.d.ts",
+      "default": "./dist/fields/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && npm run copy:css",
+    "copy:css": "mkdir -p dist/styles && cp src/styles/tiptap.css dist/styles/",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "opensaas",
+    "tiptap",
+    "rich-text",
+    "editor",
+    "nextjs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@opensaas/core": "workspace:*",
+    "@opensaas/ui": "workspace:*",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@tiptap/react": "^3.7.2",
+    "@tiptap/pm": "^3.7.2",
+    "@tiptap/starter-kit": "^3.7.2",
+    "@tiptap/extension-placeholder": "^3.7.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@opensaas/core": "workspace:*",
+    "@opensaas/ui": "workspace:*",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -189,7 +189,7 @@ export async function buildIncludeWithAccessControl(
   let hasRelationships = false;
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    if (fieldConfig?.type === "relationship") {
+    if (fieldConfig?.type === "relationship" && "ref" in fieldConfig && fieldConfig.ref) {
       hasRelationships = true;
       const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
 
@@ -277,6 +277,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     if (
       config &&
       fieldConfig?.type === "relationship" &&
+      "ref" in fieldConfig &&
+      fieldConfig.ref &&
       value !== null &&
       value !== undefined &&
       depth < MAX_DEPTH

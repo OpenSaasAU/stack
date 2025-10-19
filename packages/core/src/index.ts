@@ -4,6 +4,7 @@ export type {
   OpenSaaSConfig,
   ListConfig,
   FieldConfig,
+  BaseFieldConfig,
   TextField,
   IntegerField,
   CheckboxField,

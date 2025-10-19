@@ -11,10 +11,11 @@ export type FieldType =
   | "timestamp"
   | "password"
   | "select"
-  | "relationship";
+  | "relationship"
+  | string; // Allow custom field types from third-party packages
 
 export type BaseFieldConfig = {
-  type: FieldType;
+  type: string;
   access?: FieldAccess;
   defaultValue?: unknown;
   ui?: {
@@ -126,7 +127,8 @@ export type FieldConfig =
   | TimestampField
   | PasswordField
   | SelectField
-  | RelationshipField;
+  | RelationshipField
+  | BaseFieldConfig; // Allow any field extending BaseFieldConfig (for third-party fields)
 
 /**
  * List configuration types

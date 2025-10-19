@@ -57,7 +57,7 @@ function FieldRendererInner({
   // Add field-type-specific props
   const specificProps: Record<string, unknown> = {};
 
-  if (fieldConfig.type === "select" && fieldConfig.options) {
+  if (fieldConfig.type === "select" && "options" in fieldConfig && fieldConfig.options) {
     specificProps.options = fieldConfig.options.map(
       (opt: string | { label: string; value: string }) =>
         typeof opt === "string" ? { label: opt, value: opt } : opt,
@@ -72,6 +72,12 @@ function FieldRendererInner({
     specificProps.items = relationshipItems;
     specificProps.isLoading = relationshipLoading;
     specificProps.many = (fieldConfig as Record<string, unknown>).many || false;
+  }
+
+  // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
+  if (fieldConfig.ui) {
+    const { component, fieldType, ...uiOptions } = fieldConfig.ui;
+    Object.assign(specificProps, uiOptions);
   }
 
   const allProps = { ...baseProps, ...specificProps };
