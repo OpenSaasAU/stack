@@ -2,8 +2,7 @@ import { config, list } from "@opensaas/core";
 import { text, timestamp, relationship } from "@opensaas/core/fields";
 import { richText } from "@opensaas/tiptap/fields";
 import type { AccessControl } from "@opensaas/core";
-import { User } from "./prisma/__generated__/prisma-client";
-import { Post } from "@prisma/client";
+import type { User, Article } from "./prisma/__generated__/prisma-client";
 
 /**
  * Access control helpers
@@ -57,7 +56,7 @@ export default config({
       },
     }),
 
-    Article: list<Post>({
+    Article: list<Article>({
       fields: {
         title: text({
           validation: { isRequired: true },
