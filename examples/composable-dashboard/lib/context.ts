@@ -1,5 +1,5 @@
 import { getContext as getOpensaasContext } from "@opensaas/core";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@/prisma/__generated__/prisma-client";
 import config from "../opensaas.config";
 
 // Create Prisma client singleton

@@ -1,11 +1,5 @@
 import { config, list } from "@opensaas/core";
-import {
-  text,
-  relationship,
-  select,
-  timestamp,
-  password,
-} from "@opensaas/core/fields";
+import { text, relationship, select, timestamp, password } from "@opensaas/core/fields";
 import type { AccessControl } from "@opensaas/core";
 import { registerFieldComponent } from "@opensaas/ui";
 import { ColorPickerField } from "./components/ColorPickerField";
@@ -47,6 +41,7 @@ export default config({
   db: {
     provider: "sqlite",
     url: process.env.DATABASE_URL || "file:./dev.db",
+    prismaClientPath: "./__generated__/prisma-client",
   },
 
   lists: {
@@ -162,10 +157,7 @@ export default config({
           let result = { ...resolvedData };
 
           // Auto-set publishedAt when status changes to published
-          if (
-            result?.status === "published" &&
-            (!item?.publishedAt || operation === "create")
-          ) {
+          if (result?.status === "published" && (!item?.publishedAt || operation === "create")) {
             result.publishedAt = new Date();
           }
 
