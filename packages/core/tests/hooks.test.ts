@@ -24,9 +24,7 @@ describe("Hooks", () => {
       expect(error).toBeInstanceOf(Error);
       expect(error.name).toBe("ValidationError");
       expect(error.errors).toEqual(errors);
-      expect(error.message).toBe(
-        "Validation failed: Field is required, Invalid email",
-      );
+      expect(error.message).toBe("Validation failed: Field is required, Invalid email");
     });
   });
 
@@ -153,6 +151,7 @@ describe("Hooks", () => {
     });
 
     it("should pass addValidationError function to hook", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let addErrorFn: any;
 
       const hooks: Hooks = {
@@ -271,11 +270,7 @@ describe("Hooks", () => {
           name: text({ validation: { isRequired: true } }),
         };
 
-        const result = validateFieldRules(
-          { name: "John" },
-          fieldConfigs,
-          "create",
-        );
+        const result = validateFieldRules({ name: "John" }, fieldConfigs, "create");
 
         expect(result.errors).toHaveLength(0);
       });
@@ -297,11 +292,7 @@ describe("Hooks", () => {
         };
 
         // Only updating name, not email
-        const result = validateFieldRules(
-          { name: "John" },
-          fieldConfigs,
-          "update",
-        );
+        const result = validateFieldRules({ name: "John" }, fieldConfigs, "update");
 
         expect(result.errors).toHaveLength(0);
       });
@@ -333,10 +324,7 @@ describe("Hooks", () => {
           name: text({ validation: { length: { max: 10 } } }),
         };
 
-        const result = validateFieldRules(
-          { name: "This is a very long name" },
-          fieldConfigs,
-        );
+        const result = validateFieldRules({ name: "This is a very long name" }, fieldConfigs);
 
         expect(result.errors).toContain("Name must be at most 10 characters");
       });
@@ -417,11 +405,7 @@ describe("Hooks", () => {
           age: integer({ validation: { isRequired: true, min: 18 } }),
         };
 
-        const result = validateFieldRules(
-          { name: "Jo", age: 15 },
-          fieldConfigs,
-          "create",
-        );
+        const result = validateFieldRules({ name: "Jo", age: 15 }, fieldConfigs, "create");
 
         expect(result.errors).toHaveLength(2);
         expect(result.errors).toContain("Name must be at least 3 characters");

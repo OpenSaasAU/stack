@@ -31,6 +31,7 @@ function FieldRendererInner({
   mode,
   relationshipItems,
   relationshipLoading,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }: FieldRendererProps & { Component: React.ComponentType<any> }) {
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName);
   const isRequired =

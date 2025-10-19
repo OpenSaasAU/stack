@@ -528,13 +528,14 @@ describe("Relationship Access Control", () => {
         };
 
         // Create circular reference structure
-        const user: any = {
+        const user = {
           id: "1",
           name: "John Doe",
-          posts: [],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          posts: [] as any[],
         };
 
-        const post: any = {
+        const post = {
           id: "1",
           title: "Test Post",
           author: user,

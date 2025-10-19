@@ -6,7 +6,6 @@ import { SelectField } from "./SelectField.js";
 import { TimestampField } from "./TimestampField.js";
 import { PasswordField } from "./PasswordField.js";
 import { RelationshipField } from "./RelationshipField.js";
-import type { FieldRendererProps } from "./FieldRenderer.js";
 
 /**
  * Base props that all field components must accept
@@ -58,7 +57,7 @@ export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
 export function registerFieldComponent(
   fieldType: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  component: ComponentType<any>
+  component: ComponentType<any>,
 ): void {
   fieldComponentRegistry[fieldType] = component;
 }

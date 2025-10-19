@@ -100,11 +100,7 @@ describe("Zod Schema Generation", () => {
         title: text({ validation: { length: { max: 10 } } }),
       };
 
-      const result = validateWithZod(
-        { title: "This is a very long title" },
-        fields,
-        "create",
-      );
+      const result = validateWithZod({ title: "This is a very long title" }, fields, "create");
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errors.title).toContain("at most 10 characters");
@@ -163,7 +159,7 @@ describe("Zod Schema Generation", () => {
       expect(result.success).toBe(true);
     });
 
-    it("should allow optional fields to be missing in update mode", () => {
+    it("should allow required fields to be missing in update mode", () => {
       const fields: Record<string, FieldConfig> = {
         name: text({ validation: { isRequired: true } }),
       };
