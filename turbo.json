@@ -13,6 +13,10 @@
       "dependsOn": ["@opensaas/cli#build"],
       "outputs": ["dist/**", "dist/styles/**"]
     },
+    "opensaas-tiptap-demo#build": {
+      "dependsOn": ["@opensaas/tiptap#build"],
+      "outputs": ["dist/**", "styles/**"]
+    },
     "build": {
       "dependsOn": ["@opensaas/ui#build"],
       "outputs": ["dist/**", ".next/**"]
