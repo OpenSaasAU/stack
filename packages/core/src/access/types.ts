@@ -31,7 +31,7 @@ export type PrismaClientLike = any;
  * Preserves Prisma's type information for each model
  */
 export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   [K in keyof TPrisma]: TPrisma[K] extends {
     findUnique: any;
     findMany: any;

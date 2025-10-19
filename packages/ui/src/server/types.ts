@@ -1,10 +1,4 @@
-import type {
-  OpenSaaSConfig,
-  Session,
-  PrismaClientLike,
-  AccessContext,
-  AccessControlledDB,
-} from "@opensaas/core";
+import type { OpenSaaSConfig, Session, PrismaClientLike, AccessContext } from "@opensaas/core";
 
 /**
  * Database context with access-controlled operations

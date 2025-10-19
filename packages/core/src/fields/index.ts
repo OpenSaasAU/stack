@@ -29,65 +29,35 @@ export function text(options?: Omit<TextField, "type">): TextField {
     getZodSchema: (fieldName: string, operation: "create" | "update") => {
       const validation = options?.validation;
       const isRequired = validation?.isRequired;
+      const length = validation?.length;
+      const minLength = length?.min && length.min > 0 ? length.min : 1;
 
-      let schema: z.ZodTypeAny;
+      const baseSchema = z.string({
+        message: `${formatFieldName(fieldName)} must be text`,
+      });
 
-      if (isRequired && operation === "create") {
-        // Required in create mode: reject undefined and empty strings
-        schema = z
-          .string({
-            message: `${formatFieldName(fieldName)} must be text`,
-          })
-          .min(1, {
-            message: `${formatFieldName(fieldName)} is required`,
-          });
-      } else if (isRequired && operation === "update") {
-        // Required in update mode: if provided, reject empty strings
-        schema = z.union([
-          z.string().min(1, {
-            message: `${formatFieldName(fieldName)} is required`,
-          }),
-          z.undefined(),
-        ]);
-      } else {
-        // Not required: can be undefined or any string
-        schema = z
-          .string({
-            message: `${formatFieldName(fieldName)} must be text`,
-          })
-          .optional();
+      const withMin =
+        isRequired || length?.min !== undefined
+          ? baseSchema.min(minLength, {
+              message:
+                minLength > 1
+                  ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
+                  : `${formatFieldName(fieldName)} is required`,
+            })
+          : baseSchema;
+
+      const withMax =
+        length?.max !== undefined
+          ? withMin.max(length.max, {
+              message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
+            })
+          : withMin;
+
+      if (isRequired && operation === "update") {
+        return z.union([withMax, z.undefined()]);
       }
 
-      // Add length constraints
-      if (validation && "length" in validation && validation.length) {
-        const { min, max } = validation.length;
-        if (min !== undefined && (schema as any).unwrap) {
-          const baseSchema = (schema as any).unwrap() as z.ZodString;
-          schema = baseSchema
-            .min(min, {
-              message: `${formatFieldName(fieldName)} must be at least ${min} characters`,
-            })
-            .optional();
-        } else if (min !== undefined) {
-          schema = (schema as z.ZodString).min(min, {
-            message: `${formatFieldName(fieldName)} must be at least ${min} characters`,
-          });
-        }
-        if (max !== undefined && (schema as any).unwrap) {
-          const baseSchema = (schema as any).unwrap() as z.ZodString;
-          schema = baseSchema
-            .max(max, {
-              message: `${formatFieldName(fieldName)} must be at most ${max} characters`,
-            })
-            .optional();
-        } else if (max !== undefined) {
-          schema = (schema as z.ZodString).max(max, {
-            message: `${formatFieldName(fieldName)} must be at most ${max} characters`,
-          });
-        }
-      }
-
-      return schema;
+      return !isRequired ? withMax.optional() : withMax;
     },
     getPrismaType: () => {
       const validation = options?.validation;
@@ -131,28 +101,27 @@ export function integer(options?: Omit<IntegerField, "type">): IntegerField {
     type: "integer",
     ...options,
     getZodSchema: (fieldName: string, operation: "create" | "update") => {
-      let schema: z.ZodTypeAny = z.number({
+      const baseSchema = z.number({
         message: `${formatFieldName(fieldName)} must be a number`,
       });
 
-      // Add min/max constraints
-      if (options?.validation?.min !== undefined) {
-        schema = (schema as z.ZodNumber).min(options.validation.min, {
-          message: `${formatFieldName(fieldName)} must be at least ${options.validation.min}`,
-        });
-      }
-      if (options?.validation?.max !== undefined) {
-        schema = (schema as z.ZodNumber).max(options.validation.max, {
-          message: `${formatFieldName(fieldName)} must be at most ${options.validation.max}`,
-        });
-      }
+      const withMin =
+        options?.validation?.min !== undefined
+          ? baseSchema.min(options.validation.min, {
+              message: `${formatFieldName(fieldName)} must be at least ${options.validation.min}`,
+            })
+          : baseSchema;
 
-      // Make optional if not required or if update operation
-      if (!options?.validation?.isRequired || operation === "update") {
-        schema = schema.optional();
-      }
+      const withMax =
+        options?.validation?.max !== undefined
+          ? withMin.max(options.validation.max, {
+              message: `${formatFieldName(fieldName)} must be at most ${options.validation.max}`,
+            })
+          : withMin;
 
-      return schema;
+      return !options?.validation?.isRequired || operation === "update"
+        ? withMax.optional()
+        : withMax;
     },
     getPrismaType: () => {
       const isRequired = options?.validation?.isRequired;
@@ -213,7 +182,7 @@ export function timestamp(options?: Omit<TimestampField, "type">): TimestampFiel
     type: "timestamp",
     ...options,
     getZodSchema: () => {
-      return z.union([z.date(), z.string().datetime()]).optional();
+      return z.union([z.date(), z.iso.datetime()]).optional();
     },
     getPrismaType: () => {
       let modifiers = "?";
