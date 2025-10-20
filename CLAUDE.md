@@ -2,15 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation & Specifications
+
+- **Specifications and design docs:** All specs, design documents, and technical documentation should be saved to and read from the `specs/` directory
+- **CLAUDE.md:** This file contains general guidance and architectural patterns
+- **README files:** Each package and example has its own README for specific usage instructions
+
 ## Project Overview
 
 OpenSaaS Framework is a Next.js-based framework for building admin-heavy applications with built-in access control. It uses a config-first approach similar to KeystoneJS but modernized for Next.js App Router and designed to be AI-agent-friendly with automatic security guardrails.
 
 This is a pnpm monorepo with:
-- `packages/core`: Core framework (config system, access control)
-- `packages/cli`: CLI tools (planned, generators)
-- `packages/ui`: Admin UI components (UI components)
-- `examples/blog`: Working example demonstrating the framework
+- `packages/core`: Core framework (config system, access control, generators)
+- `packages/cli`: CLI tools (generators via bin scripts)
+- `packages/ui`: Admin UI components (composable React components)
+- `packages/tiptap`: Rich text editor integration (third-party field example)
+- `examples/blog`: Basic blog example
+- `examples/custom-field`: Custom field types demonstration
+- `examples/composable-dashboard`: Composable UI components
+- `examples/tiptap-demo`: Tiptap rich text editor integration
+- `specs/`: Design documents and specifications
 
 ## Common Commands
 
@@ -157,7 +168,7 @@ Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and 
 
 **Key file:** `packages/core/src/fields/index.ts`
 
-Available field types:
+**Core field types:**
 - `text()` - String field with validation (isRequired, length)
 - `integer()` - Number field with validation (isRequired, min, max)
 - `checkbox()` - Boolean field
@@ -165,6 +176,9 @@ Available field types:
 - `password()` - String field (excluded from reads)
 - `select()` - Enum field with predefined options
 - `relationship()` - Foreign key relationship (one-to-one, one-to-many)
+
+**Third-party field types:**
+- `richText()` from `@opensaas/tiptap/fields` - Rich text editor with JSON storage
 
 **Field Builder Methods:**
 
@@ -349,6 +363,95 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 
 **See:** `examples/custom-field` for a complete working example demonstrating both patterns.
 
+### Creating Third-Party Field Packages
+
+The framework supports third-party field packages as separate npm packages. This allows developers to add rich functionality without bloating the core framework.
+
+**Example:** `@opensaas/tiptap` - Rich text editor integration
+
+**Package Structure:**
+```
+packages/my-field/
+├── src/
+│   ├── fields/
+│   │   └── myField.ts          # Field builder with Zod/Prisma/TS generators
+│   ├── components/
+│   │   └── MyFieldComponent.tsx # React component (client-side)
+│   ├── styles/
+│   │   └── my-field.css        # Optional styles
+│   └── index.ts                # Public exports
+├── package.json
+└── README.md
+```
+
+**Key Requirements:**
+
+1. **Field Builder** - Must implement `BaseFieldConfig`:
+   ```typescript
+   import type { BaseFieldConfig } from "@opensaas/core";
+
+   export type MyField = BaseFieldConfig & {
+     type: "myField";
+     // Your custom options
+   };
+
+   export function myField(options?): MyField {
+     return {
+       type: "myField",
+       ...options,
+       getZodSchema: (fieldName, operation) => { /* ... */ },
+       getPrismaType: (fieldName) => { /* ... */ },
+       getTypeScriptType: () => { /* ... */ },
+     };
+   }
+   ```
+
+2. **React Component** - Must accept standard field props:
+   ```typescript
+   export interface MyFieldProps {
+     name: string;
+     value: any;
+     onChange: (value: any) => void;
+     label: string;
+     error?: string;
+     disabled?: boolean;
+     required?: boolean;
+     mode?: "read" | "edit";
+     // Your custom UI options from fieldConfig.ui
+   }
+   ```
+
+3. **Client-Side Registration** - Due to Next.js server/client boundaries:
+   ```typescript
+   // lib/register-fields.ts
+   "use client";
+
+   import { registerFieldComponent } from "@opensaas/ui";
+   import { MyFieldComponent } from "@my-org/my-field";
+
+   registerFieldComponent("myField", MyFieldComponent);
+   ```
+
+   Then import in admin page:
+   ```typescript
+   // app/admin/[[...admin]]/page.tsx
+   import "../../../lib/register-fields"; // Side-effect import
+   ```
+
+4. **FieldConfig Extensibility** - Core types support third-party fields:
+   ```typescript
+   // FieldConfig union includes BaseFieldConfig to allow custom types
+   export type FieldConfig =
+     | TextField
+     | IntegerField
+     | ...
+     | BaseFieldConfig; // Allows third-party fields
+   ```
+
+**See:**
+- `packages/tiptap/` - Complete reference implementation
+- `examples/tiptap-demo/` - Usage example with client-side registration
+
 ### Testing Access Control Changes
 
 The blog example's test script (README test code) exercises all access control paths:
@@ -380,6 +483,30 @@ The context uses generic typing to preserve Prisma Client types:
 const context = await getContext<typeof prisma>(config, prisma, session)
 // context.db operations are fully typed
 ```
+
+### UI Options Pass-Through
+
+The UI layer automatically passes custom UI options from field configs to components:
+
+```typescript
+// In config
+fields: {
+  content: richText({
+    ui: {
+      placeholder: "Write your content...",
+      minHeight: 300,
+      maxHeight: 800
+    }
+  })
+}
+
+// Component automatically receives these as props
+export function MyField({ placeholder, minHeight, maxHeight, ...baseProps }) {
+  // UI options are automatically passed through
+}
+```
+
+The `FieldRenderer` extracts `component` and `fieldType` from `ui` options, then passes all remaining options to the component. This allows field types to define custom UI behaviors without modifying core framework code.
 
 ### Generator Limitations
 
