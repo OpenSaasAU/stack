@@ -2,16 +2,6 @@ import { z } from "zod";
 import type { RichTextField } from "../config/types.js";
 
 /**
- * Format field name for display in error messages
- */
-function formatFieldName(fieldName: string): string {
-  return fieldName
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (str) => str.toUpperCase())
-    .trim();
-}
-
-/**
  * Rich text field using Tiptap editor
  * Stores content as JSON in the database
  *

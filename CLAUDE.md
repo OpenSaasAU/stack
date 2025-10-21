@@ -522,3 +522,15 @@ Tests use Vitest. Run from core package:
 cd packages/core
 pnpm test
 ```
+
+## Publishing Packages
+
+This monorepo uses changesets for versioning and publishing. Every change to a package must be accompanied by a new changeset file.
+1. Create a changeset:
+```bash
+pnpm changeset
+```
+Then follow the prompts to select packages and version bumps.
+
+2. Commit changes including the changeset file.
+Version bumping and publishing is handled automatically by changesets during release in a GitHub Action.

@@ -1,7 +1,7 @@
 import { config, list } from "@opensaas/core";
 import { text, relationship, select, timestamp, password } from "@opensaas/core/fields";
 import type { AccessControl } from "@opensaas/core";
-import type { Post, User } from "@/.opensaas/types";
+import type { Post, User } from "@/prisma/__generated__/prisma-client";
 
 /**
  * Access control helpers
