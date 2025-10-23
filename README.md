@@ -355,7 +355,6 @@ OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
 
 ```tsx
 import { Button, Input, Card, Table } from '@opensaas/ui/primitives'
-
 ;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
@@ -366,7 +365,6 @@ import { Button, Input, Card, Table } from '@opensaas/ui/primitives'
 
 ```tsx
 import { TextField, SelectField } from '@opensaas/ui/fields'
-
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} />
   <SelectField name="role" label="Role" options={roles} />
@@ -377,7 +375,6 @@ import { TextField, SelectField } from '@opensaas/ui/fields'
 
 ```tsx
 import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
-
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -391,7 +388,6 @@ import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
 
 ```tsx
 import { AdminUI } from '@opensaas/ui'
-
 ;<AdminUI context={context} serverAction={handleAction} />
 ```
 

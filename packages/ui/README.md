@@ -63,7 +63,6 @@ Low-level UI components based on Radix UI and shadcn/ui.
 
 ```tsx
 import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/ui/primitives'
-
 ;<Card>
   <CardHeader>
     <CardTitle>Welcome</CardTitle>
@@ -92,7 +91,6 @@ OpenSaaS-aware form fields with validation and access control.
 
 ```tsx
 import { TextField, SelectField } from '@opensaas/ui/fields'
-
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} required />
   <SelectField
@@ -118,7 +116,6 @@ Complete, reusable components for common admin tasks.
 
 ```tsx
 import { ItemCreateForm } from '@opensaas/ui/standalone'
-
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -133,7 +130,6 @@ import { ItemCreateForm } from '@opensaas/ui/standalone'
 
 ```tsx
 import { ItemEditForm } from '@opensaas/ui/standalone'
-
 ;<ItemEditForm
   fields={config.lists.Post.fields}
   initialData={post}
@@ -148,7 +144,6 @@ import { ItemEditForm } from '@opensaas/ui/standalone'
 
 ```tsx
 import { ListTable } from '@opensaas/ui/standalone'
-
 ;<ListTable
   items={posts}
   fieldTypes={{ title: 'text', status: 'select' }}
@@ -162,7 +157,6 @@ import { ListTable } from '@opensaas/ui/standalone'
 
 ```tsx
 import { SearchBar } from '@opensaas/ui/standalone'
-
 ;<SearchBar onSearch={(query) => fetchPosts({ search: query })} placeholder="Search posts..." />
 ```
 
@@ -170,7 +164,6 @@ import { SearchBar } from '@opensaas/ui/standalone'
 
 ```tsx
 import { DeleteButton } from '@opensaas/ui/standalone'
-
 ;<DeleteButton
   onDelete={async () => {
     await deletePost(postId)
@@ -186,7 +179,6 @@ Complete admin interface with routing and navigation.
 
 ```tsx
 import { AdminUI } from '@opensaas/ui'
-
 ;<AdminUI
   context={context}
   params={params?.admin}

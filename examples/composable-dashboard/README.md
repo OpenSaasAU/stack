@@ -125,7 +125,6 @@ import { CreatePostDialog } from "./components/CreatePostDialog"
 ```tsx
 import { Dialog, DialogContent } from '@opensaas/ui/primitives'
 import { ItemCreateForm } from '@opensaas/ui/standalone'
-
 ;<Dialog open={open} onOpenChange={setOpen}>
   <DialogContent>
     <ItemCreateForm

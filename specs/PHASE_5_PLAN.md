@@ -212,7 +212,6 @@ export interface ItemCreateFormProps {
 
 ```tsx
 import { FieldGroup, TextField, SelectField } from '@opensaas/ui/fields'
-
 ;<FieldGroup>
   <div className="grid grid-cols-2 gap-4">
     <TextField name="firstName" label="First Name" />
