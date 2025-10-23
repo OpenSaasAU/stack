@@ -9,6 +9,14 @@ import * as path from 'path'
  * that internally handles Prisma singleton and config imports.
  */
 export function generateContext(config: OpenSaaSConfig): string {
+  // Check if custom Prisma client constructor is provided
+  const hasCustomConstructor = !!config.db.prismaClientConstructor
+
+  // Generate the Prisma client instantiation code
+  const prismaInstantiation = hasCustomConstructor
+    ? `config.db.prismaClientConstructor!(PrismaClient)`
+    : `new PrismaClient()`
+
   return `/**
  * Auto-generated context factory
  *
@@ -24,7 +32,7 @@ import config from '../opensaas.config'
 
 // Internal Prisma singleton - managed automatically
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
-const prisma = globalForPrisma.prisma ?? new PrismaClient()
+const prisma = globalForPrisma.prisma ?? ${prismaInstantiation}
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 /**

@@ -243,20 +243,48 @@ getListKeyFromUrl('auth-user') // 'AuthUser' - for parsing URLs
 
 ### 2. Creating Context in Applications
 
-Applications must create a context wrapper for Prisma:
+The framework automatically generates a context factory in `.opensaas/context.ts` that abstracts away Prisma client management:
 
 ```typescript
-// lib/context.ts
-import { getContext } from '@opensaas/framework-core'
-import { PrismaClient } from '@prisma/client'
-import config from '../opensaas.config'
+// In your app code (e.g., server actions)
+import { getContext } from '@/.opensaas/context'
 
-export const prisma = new PrismaClient()
+// Anonymous access
+const context = await getContext()
+const posts = await context.db.post.findMany()
 
-export async function getContextWithUser(userId: string) {
-  return getContext(config, prisma, { userId })
-}
+// Authenticated access
+const context = await getContext({ userId: 'user-123' })
+const myPosts = await context.db.post.findMany()
 ```
+
+**Custom Prisma Client Constructors:**
+
+To use custom database drivers (e.g., Neon, Turso, PlanetScale), you can provide a `prismaClientConstructor` function in your config:
+
+```typescript
+// opensaas.config.ts
+import { PrismaNeon } from '@prisma/adapter-neon'
+import { neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
+
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+    prismaClientConstructor: (PrismaClient) => {
+      neonConfig.webSocketConstructor = ws
+      const adapter = new PrismaNeon({
+        connectionString: process.env.DATABASE_URL
+      })
+      return new PrismaClient({ adapter })
+    }
+  },
+  // ... rest of config
+})
+```
+
+The generated context will use your custom constructor instead of the default `new PrismaClient()`.
 
 ### 3. Silent Failures
 
@@ -280,7 +308,7 @@ Fields `id`, `createdAt`, `updatedAt` are automatically:
 - Excluded from access control (always readable)
 - Excluded from field-level write operations
 
-### 4. Relationship Patterns
+### 5. Relationship Patterns
 
 Relationships use a `ref` format: `'ListName.fieldName'`
 

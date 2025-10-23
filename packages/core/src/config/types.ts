@@ -248,6 +248,26 @@ export type ListConfig<T = any> = {
 export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
   url: string
+  /**
+   * Optional factory function to create a custom Prisma client instance
+   * Receives the PrismaClient class and returns a configured instance
+   *
+   * @example
+   * ```typescript
+   * import { PrismaNeon } from '@prisma/adapter-neon'
+   * import { neonConfig } from '@neondatabase/serverless'
+   * import ws from 'ws'
+   *
+   * prismaClientConstructor: (PrismaClient) => {
+   *   neonConfig.webSocketConstructor = ws
+   *   const adapter = new PrismaNeon({
+   *     connectionString: process.env.DATABASE_URL
+   *   })
+   *   return new PrismaClient({ adapter })
+   * }
+   * ```
+   */
+  prismaClientConstructor?: (PrismaClientClass: any) => any
 }
 
 /**
