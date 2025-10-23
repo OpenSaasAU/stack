@@ -30,6 +30,8 @@ export type {
   RelationshipField,
   OperationAccess,
   Hooks,
+  FieldHooks,
+  FieldHookArgs,
   DatabaseConfig,
   SessionConfig,
   UIConfig,

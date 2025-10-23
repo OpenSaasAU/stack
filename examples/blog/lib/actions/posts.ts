@@ -1,6 +1,6 @@
 'use server'
 
-import { getContext, getContextWithUser } from '../context'
+import { getContext } from '@/.opensaas/context'
 import { revalidatePath } from 'next/cache'
 import type { PostCreateInput, PostUpdateInput } from '../../.opensaas/types'
 
@@ -9,7 +9,7 @@ import type { PostCreateInput, PostUpdateInput } from '../../.opensaas/types'
  * Requires authentication (will return null if not authenticated)
  */
 export async function createPost(authorId: string, data: Omit<PostCreateInput, 'author'>) {
-  const context = await getContextWithUser(authorId)
+  const context = await getContext({ userId: authorId })
 
   const post = await context.db.post.create({
     data: {
@@ -31,7 +31,7 @@ export async function createPost(authorId: string, data: Omit<PostCreateInput, '
  * Only the author can update their own posts
  */
 export async function updatePost(userId: string, postId: string, data: PostUpdateInput) {
-  const context = await getContextWithUser(userId)
+  const context = await getContext({ userId })
 
   const post = await context.db.post.update({
     where: { id: postId },
@@ -50,7 +50,7 @@ export async function updatePost(userId: string, postId: string, data: PostUpdat
  * Publish a post (set status to published)
  */
 export async function publishPost(userId: string, postId: string) {
-  const context = await getContextWithUser(userId)
+  const context = await getContext({ userId })
 
   const post = await context.db.post.update({
     where: { id: postId },
@@ -73,7 +73,7 @@ export async function publishPost(userId: string, postId: string) {
  * Only the author can delete their own posts
  */
 export async function deletePost(userId: string, postId: string) {
-  const context = await getContextWithUser(userId)
+  const context = await getContext({ userId })
 
   const post = await context.db.post.delete({
     where: { id: postId },
@@ -105,7 +105,7 @@ export async function getPublishedPosts() {
  * Access control will determine what's visible
  */
 export async function getPost(postId: string, userId?: string) {
-  const context = userId ? await getContextWithUser(userId) : await getContext()
+  const context = await getContext({ userId })
 
   const post = await context.db.post.findUnique({
     where: { id: postId },
@@ -118,7 +118,7 @@ export async function getPost(postId: string, userId?: string) {
  * Get all posts for a user (including drafts)
  */
 export async function getUserPosts(userId: string) {
-  const context = await getContextWithUser(userId)
+  const context = await getContext({ userId })
 
   const posts = await context.db.post.findMany({
     where: { authorId: { equals: userId } },

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { getContext, getContextWithUser } from './context'
+import { getContext } from '@/.opensaas/context'
 import type { PostCreateInput, PostUpdateInput } from '@/.opensaas/types'
 
 // For demo purposes, we'll use a hardcoded user ID
@@ -39,7 +39,7 @@ export async function createPost(data: PostCreateInput) {
 }
 
 export async function updatePost(id: string, data: PostUpdateInput) {
-  const context = await getContextWithUser(DEMO_USER_ID)
+  const context = await getContext({ userId: DEMO_USER_ID })
 
   const post = await context.db.post.update({
     where: { id },
@@ -64,7 +64,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
 }
 
 export async function deletePost(id: string) {
-  const context = await getContextWithUser(DEMO_USER_ID)
+  const context = await getContext({ userId: DEMO_USER_ID })
 
   const post = await context.db.post.delete({
     where: { id },

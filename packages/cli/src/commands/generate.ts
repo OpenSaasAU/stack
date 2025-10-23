@@ -32,10 +32,11 @@ export async function generateCommand() {
     // Create a temporary script that imports the config and runs generation
     const generatorScript = `
 import config from './opensaas.config.ts';
-import { writePrismaSchema, writeTypes } from '@opensaas/cli/generator';
+import { writePrismaSchema, writeTypes, writeContext } from '@opensaas/cli/generator';
 
 writePrismaSchema(config, './prisma/schema.prisma');
 writeTypes(config, './.opensaas/types.ts');
+writeContext(config, './.opensaas/context.ts');
 `
 
     const scriptPath = path.join(cwd, '.opensaas-generator.tmp.ts')
@@ -50,9 +51,10 @@ writeTypes(config, './.opensaas/types.ts');
         stdio: 'pipe',
       })
 
-      spinner.succeed(chalk.green('Generation complete'))
+      spinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
       console.log(chalk.green('✅ TypeScript types generated'))
+      console.log(chalk.green('✅ Context factory generated'))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       spinner.fail(chalk.red('Failed to generate'))
@@ -66,11 +68,58 @@ writeTypes(config, './.opensaas/types.ts');
       }
     }
 
+    // Run Prisma generate to create the Prisma client
+    const prismaSpinner = ora('Generating Prisma client...').start()
+    try {
+      execSync('npx prisma generate', {
+        cwd,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+      prismaSpinner.succeed(chalk.green('Prisma client generated'))
+      console.log(chalk.green('✅ Prisma client generated'))
+    } catch (err: any) {
+      prismaSpinner.fail(chalk.red('Failed to generate Prisma client'))
+      console.error(chalk.red('\n❌ Error:'), err.message)
+      process.exit(1)
+    }
+
+    // Patch Prisma types with field transformations
+    const patchSpinner = ora('Patching Prisma types...').start()
+    try {
+      // Re-run the generator script to patch types (now that Prisma client exists)
+      const patchScript = `
+import config from './opensaas.config.ts';
+import { patchPrismaTypes } from '@opensaas/cli/generator';
+
+patchPrismaTypes(config, process.cwd());
+`
+      const patchScriptPath = path.join(cwd, '.opensaas-patcher.tmp.ts')
+      fs.writeFileSync(patchScriptPath, patchScript)
+
+      try {
+        const tsxBin = path.join(cwd, 'node_modules', '.bin', 'tsx')
+        execSync(`"${tsxBin}" "${patchScriptPath}"`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        })
+        patchSpinner.succeed(chalk.green('Type patching complete'))
+      } finally {
+        if (fs.existsSync(patchScriptPath)) {
+          fs.unlinkSync(patchScriptPath)
+        }
+      }
+    } catch (err: any) {
+      patchSpinner.fail(chalk.red('Failed to patch types'))
+      console.error(chalk.red('\n❌ Error:'), err.message)
+      process.exit(1)
+    }
+
     console.log(chalk.bold('\n✨ Generation complete!\n'))
     console.log(chalk.gray('Next steps:'))
-    console.log(chalk.gray('  1. Run: npx prisma generate'))
-    console.log(chalk.gray('  2. Run: npx prisma db push'))
-    console.log(chalk.gray('  3. Start using your generated types!\n'))
+    console.log(chalk.gray('  1. Run: npx prisma db push'))
+    console.log(chalk.gray('  2. Start using your generated types!\n'))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     spinner.fail(chalk.red('Generation failed'))

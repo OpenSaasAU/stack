@@ -2,7 +2,7 @@ import { config, list } from '@opensaas/core'
 import { text, timestamp, relationship } from '@opensaas/core/fields'
 import { richText } from '@opensaas/tiptap/fields'
 import type { AccessControl } from '@opensaas/core'
-import type { User, Article } from './prisma/__generated__/prisma-client'
+import type { User, Article } from '@/.opensaas/types'
 
 /**
  * Access control helpers
@@ -28,7 +28,6 @@ export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientPath: './__generated__/prisma-client',
   },
 
   lists: {

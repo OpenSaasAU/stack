@@ -1,6 +1,6 @@
 'use server'
 
-import { getContext, getContextWithUser } from '../context'
+import { getContext } from '@/.opensaas/context'
 import type { UserCreateInput } from '../../.opensaas/types'
 
 /**
@@ -38,7 +38,7 @@ export async function getUser(userId: string) {
  * Only the user themselves can update their own record
  */
 export async function updateUser(userId: string, data: { name?: string; email?: string }) {
-  const context = await getContextWithUser(userId)
+  const context = await getContext({ userId })
 
   const user = await context.db.user.update({
     where: { id: userId },

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
 import { ListTable } from '@opensaas/ui/standalone'
-import { getContext } from '../../lib/context'
+import { getContext } from '@/.opensaas/context'
 import { connection } from 'next/server'
 
 export default async function UsersPage() {
