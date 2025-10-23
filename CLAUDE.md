@@ -275,10 +275,10 @@ export default config({
     prismaClientConstructor: (PrismaClient) => {
       neonConfig.webSocketConstructor = ws
       const adapter = new PrismaNeon({
-        connectionString: process.env.DATABASE_URL
+        connectionString: process.env.DATABASE_URL,
       })
       return new PrismaClient({ adapter })
-    }
+    },
   },
   // ... rest of config
 })
