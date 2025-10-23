@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/core'
+import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/framework-core'
 import * as fs from 'fs'
 import * as path from 'path'
 

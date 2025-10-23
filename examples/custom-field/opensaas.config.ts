@@ -1,7 +1,7 @@
-import { config, list } from '@opensaas/core'
-import { text, relationship, select, timestamp, password } from '@opensaas/core/fields'
-import type { AccessControl } from '@opensaas/core'
-import { registerFieldComponent } from '@opensaas/ui'
+import { config, list } from '@opensaas/framework-core'
+import { text, relationship, select, timestamp, password } from '@opensaas/framework-core/fields'
+import type { AccessControl } from '@opensaas/framework-core'
+import { registerFieldComponent } from '@opensaas/framework-ui'
 import { ColorPickerField } from './components/ColorPickerField'
 import { SlugField } from './components/SlugField'
 
@@ -41,7 +41,6 @@ export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientPath: './__generated__/prisma-client',
   },
 
   lists: {

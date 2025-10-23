@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
-import { ListTable, SearchBar } from '@opensaas/ui/standalone'
-import { getContext } from '../../lib/context'
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/framework-ui/primitives'
+import { ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
+import { getContext } from '@/.opensaas/context'
 import { CreatePostDialog } from '../../components/CreatePostDialog'
 
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {

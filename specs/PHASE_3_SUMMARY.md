@@ -70,7 +70,7 @@ Automatic validation for:
 
 **Exports**:
 
-- Exported `ValidationError` from `@opensaas/core`
+- Exported `ValidationError` from `@opensaas/framework-core`
 - All hook functions available internally
 
 ## Example Usage

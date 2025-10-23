@@ -1,4 +1,4 @@
-import type { ThemeColors, ThemeConfig, ThemePreset } from '@opensaas/core'
+import type { ThemeColors, ThemeConfig, ThemePreset } from '@opensaas/framework-core'
 
 /**
  * Preset theme definitions

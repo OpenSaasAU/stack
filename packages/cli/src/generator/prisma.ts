@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/core'
+import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/framework-core'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -62,12 +62,12 @@ function parseRelationshipRef(ref: string): { list: string; field: string } {
 export function generatePrismaSchema(config: OpenSaaSConfig): string {
   const lines: string[] = []
 
+  const opensaasPath = config.opensaasPath || '.opensaas'
+
   // Generator and datasource
   lines.push('generator client {')
   lines.push('  provider = "prisma-client-js"')
-  if (config.db.prismaClientPath) {
-    lines.push(`  output   = "${config.db.prismaClientPath}"`)
-  }
+  lines.push(`  output   = "../${opensaasPath}/prisma-client"`)
   lines.push('}')
   lines.push('')
   lines.push('datasource db {')

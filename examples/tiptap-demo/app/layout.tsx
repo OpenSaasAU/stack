@@ -1,4 +1,4 @@
-import '@opensaas/ui/styles'
+import '@opensaas/framework-ui/styles'
 import React from 'react'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,13 +1,13 @@
-import { AdminUI } from '@opensaas/ui'
-import type { ServerActionInput } from '@opensaas/ui/server'
+import { AdminUI } from '@opensaas/framework-ui'
+import type { ServerActionInput } from '@opensaas/framework-ui/server'
 import config from '../../../opensaas.config'
-import { getAnonymousContext } from '@/lib/context'
+import { getContext } from '@/.opensaas/context'
 import { FieldRegistration } from './FieldRegistration'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getAnonymousContext()
+  const context = await getContext()
   return await context.serverAction(props)
 }
 
@@ -23,7 +23,7 @@ interface AdminPageProps {
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
-  const adminContext = await getAnonymousContext()
+  const adminContext = await getContext()
 
   return (
     <>

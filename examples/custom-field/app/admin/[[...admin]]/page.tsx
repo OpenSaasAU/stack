@@ -1,7 +1,7 @@
-import { AdminUI } from '@opensaas/ui'
-import type { ServerActionInput } from '@opensaas/ui/server'
+import { AdminUI } from '@opensaas/framework-ui'
+import type { ServerActionInput } from '@opensaas/framework-ui/server'
 import config from '../../../opensaas.config'
-import { getContext } from '@/lib/context'
+import { getContext } from '@/.opensaas/context'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {

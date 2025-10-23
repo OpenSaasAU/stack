@@ -1,5 +1,5 @@
 {
-  "name": "@opensaas/cli",
+  "name": "@opensaas/framework-cli",
   "version": "0.1.0",
   "description": "CLI tools for OpenSaaS Framework",
   "type": "module",
@@ -32,7 +32,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@opensaas/core": "workspace:*",
+    "@opensaas/framework-core": "workspace:*",
     "commander": "^14.0.1",
     "chalk": "^5.6.2",
     "ora": "^9.0.0",

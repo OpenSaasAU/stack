@@ -14,10 +14,83 @@ export type FieldType =
   | 'relationship'
   | string // Allow custom field types from third-party packages
 
+/**
+ * Field hook arguments
+ * Similar to list hooks but scoped to a single field value
+ */
+export type FieldHookArgs = {
+  operation: 'create' | 'update' | 'delete' | 'read'
+  value: unknown
+  fieldName: string
+  listName: string
+  item?: Record<string, unknown>
+  context: import('../access/types.js').AccessContext
+}
+
+/**
+ * Field-level hooks for data transformation
+ * Allows field types to define custom behavior during operations
+ */
+export type FieldHooks = {
+  /**
+   * Transform field value before database write
+   * Called during create/update operations after resolveInput and validation
+   *
+   * @example
+   * ```typescript
+   * beforeOperation: async ({ value, operation }) => {
+   *   if (operation === 'create' || operation === 'update') {
+   *     return await hashPassword(value)
+   *   }
+   *   return value
+   * }
+   * ```
+   */
+  beforeOperation?: (args: FieldHookArgs & { operation: 'create' | 'update' }) => Promise<unknown>
+
+  /**
+   * Transform field value after database read
+   * Called when returning results from query operations
+   *
+   * @example
+   * ```typescript
+   * afterOperation: ({ value }) => {
+   *   return new HashedPassword(value)
+   * }
+   * ```
+   */
+  afterOperation?: (args: FieldHookArgs & { operation: 'read' }) => unknown
+}
+
+/**
+ * Configuration for patching Prisma-generated types
+ * Allows fields to transform their types in query results
+ */
+export type TypePatchConfig = {
+  /**
+   * The TypeScript type to use in Prisma result types (e.g., Payload scalars)
+   * This is an import statement like: "import('@opensaas/framework-core').HashedPassword"
+   */
+  resultType: string
+  /**
+   * Optional: Where to apply the patch
+   * - 'scalars-only': Only patch in Payload scalars (default, safest)
+   * - 'all': Patch everywhere the field appears (including inputs)
+   */
+  patchScope?: 'scalars-only' | 'all'
+}
+
 export type BaseFieldConfig = {
   type: string
   access?: FieldAccess
   defaultValue?: unknown
+  hooks?: FieldHooks
+  /**
+   * Type patching configuration for Prisma-generated types
+   * When specified, the generator will patch Prisma's types to use
+   * the specified type in query results instead of the original type
+   */
+  typePatch?: TypePatchConfig
   ui?: {
     /**
      * Custom React component to render this field
@@ -175,7 +248,26 @@ export type ListConfig<T = any> = {
 export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
   url: string
-  prismaClientPath?: string
+  /**
+   * Optional factory function to create a custom Prisma client instance
+   * Receives the PrismaClient class and returns a configured instance
+   *
+   * @example
+   * ```typescript
+   * import { PrismaNeon } from '@prisma/adapter-neon'
+   * import { neonConfig } from '@neondatabase/serverless'
+   * import ws from 'ws'
+   *
+   * prismaClientConstructor: (PrismaClient) => {
+   *   neonConfig.webSocketConstructor = ws
+   *   const adapter = new PrismaNeon({
+   *     connectionString: process.env.DATABASE_URL
+   *   })
+   *   return new PrismaClient({ adapter })
+   * }
+   * ```
+   */
+  prismaClientConstructor?: (PrismaClientClass: any) => any
 }
 
 /**
@@ -262,4 +354,9 @@ export type OpenSaaSConfig = {
   lists: Record<string, ListConfig>
   session?: SessionConfig
   ui?: UIConfig
+  /**
+   * Path where OpenSaaS generates files (context, types, patched Prisma client)
+   * @default ".opensaas"
+   */
+  opensaasPath?: string
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import type { FieldConfig } from '@opensaas/core'
+import type { FieldConfig } from '@opensaas/framework-core'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
 
@@ -76,7 +76,7 @@ function FieldRendererInner({
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
-    const { component, fieldType, ...uiOptions } = fieldConfig.ui
+    const { _component, _fieldType, ...uiOptions } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
   }
 

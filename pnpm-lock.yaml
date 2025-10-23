@@ -50,10 +50,10 @@ importers:
 
   examples/blog:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -69,7 +69,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -93,10 +93,10 @@ importers:
 
   examples/composable-dashboard:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -112,7 +112,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -136,10 +136,10 @@ importers:
 
   examples/custom-field:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -155,7 +155,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -179,13 +179,13 @@ importers:
 
   examples/tiptap-demo:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
       '@opensaas/tiptap':
         specifier: workspace:*
         version: link:../../packages/tiptap
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -201,7 +201,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -225,7 +225,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
       chalk:
@@ -256,6 +256,9 @@ importers:
 
   packages/core:
     dependencies:
+      bcryptjs:
+        specifier: ^3.0.2
+        version: 3.0.2
       zod:
         specifier: ^4.1.12
         version: 4.1.12
@@ -263,6 +266,9 @@ importers:
       '@prisma/client':
         specifier: ^6.17.1
         version: 6.18.0(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
+      '@types/bcryptjs':
+        specifier: ^3.0.0
+        version: 3.0.0
       '@types/node':
         specifier: ^24.7.2
         version: 24.9.1
@@ -300,10 +306,10 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../ui
       '@types/node':
@@ -321,7 +327,7 @@ importers:
 
   packages/ui:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
       '@radix-ui/react-checkbox':
@@ -1826,6 +1832,10 @@ packages:
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
 
+  '@types/bcryptjs@3.0.0':
+    resolution: {integrity: sha512-WRZOuCuaz8UcZZE4R5HXTco2goQSI2XxjGY3hbM/xDvwmqFWd4ivooImsMx65OKM6CtNKbnZ5YL+YwAwK7c1dg==}
+    deprecated: This is a stub types definition. bcryptjs provides its own type definitions, so you do not need this installed.
+
   '@types/chai@5.2.2':
     resolution: {integrity: sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==}
 
@@ -2062,6 +2072,10 @@ packages:
 
   baseline-browser-mapping@2.8.16:
     resolution: {integrity: sha512-OMu3BGQ4E7P1ErFsIPpbJh0qvDudM/UuJeHgkAvfWe+0HFJCXh+t/l8L6fVLR55RI/UbKrVLnAXZSVwd9ysWYw==}
+    hasBin: true
+
+  bcryptjs@3.0.2:
+    resolution: {integrity: sha512-k38b3XOZKv60C4E2hVsXTolJWfkGRMbILBIe2IBITXciy5bOsTKot5kDrf3ZfufQtQOUN5mXceUEpU1rTl9Uog==}
     hasBin: true
 
   better-path-resolve@1.0.0:
@@ -5348,6 +5362,10 @@ snapshots:
     dependencies:
       '@babel/types': 7.28.4
 
+  '@types/bcryptjs@3.0.0':
+    dependencies:
+      bcryptjs: 3.0.2
+
   '@types/chai@5.2.2':
     dependencies:
       '@types/deep-eql': 4.0.2
@@ -5650,6 +5668,8 @@ snapshots:
   balanced-match@1.0.2: {}
 
   baseline-browser-mapping@2.8.16: {}
+
+  bcryptjs@3.0.2: {}
 
   better-path-resolve@1.0.0:
     dependencies:

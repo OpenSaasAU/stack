@@ -8,6 +8,7 @@ import type {
   SelectField,
   RelationshipField,
 } from '../config/types.js'
+import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 
 /**
  * Format field name for display in error messages
@@ -218,12 +219,101 @@ export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampFiel
 }
 
 /**
- * Password field (automatically hashed)
+ * Password field (automatically hashed using bcrypt)
+ *
+ * **Security Features:**
+ * - Passwords are automatically hashed during create/update operations
+ * - Uses bcrypt with cost factor 10 (good balance of security and performance)
+ * - Already-hashed passwords are not re-hashed (idempotent)
+ * - Password values in query results include a `compare()` method for authentication
+ *
+ * **Usage Example:**
+ * ```typescript
+ * // In opensaas.config.ts
+ * fields: {
+ *   password: password({
+ *     validation: { isRequired: true }
+ *   })
+ * }
+ *
+ * // Creating a user - password is automatically hashed
+ * const user = await context.db.user.create({
+ *   data: {
+ *     email: 'user@example.com',
+ *     password: 'plaintextPassword' // Automatically hashed before storage
+ *   }
+ * })
+ *
+ * // Authenticating - use the compare() method
+ * const user = await context.db.user.findUnique({
+ *   where: { email: 'user@example.com' }
+ * })
+ *
+ * if (user && await user.password.compare('plaintextPassword')) {
+ *   // Password is correct - login successful
+ * }
+ * ```
+ *
+ * **Important Notes:**
+ * - Password fields are excluded from read operations by default in access control
+ * - Always use the `compare()` method to verify passwords - never compare strings directly
+ * - The password field value has type `HashedPassword` which extends string with compare()
+ * - Empty strings and undefined values are skipped (not hashed) to allow partial updates
+ *
+ * **Implementation Details:**
+ * - Uses field-level hooks (`beforeOperation` and `afterOperation`) for automatic transformations
+ * - The hashing happens via `hooks.beforeOperation` during create/update operations
+ * - The wrapping happens via `hooks.afterOperation` during read operations
+ * - This pattern allows third-party field types to define their own transformations
+ *
+ * @param options - Field configuration options
+ * @returns Password field configuration
  */
 export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
   return {
     type: 'password',
     ...options,
+    typePatch: {
+      resultType: "import('@opensaas/framework-core').HashedPassword",
+      patchScope: 'scalars-only',
+    },
+    hooks: {
+      // Hash password before writing to database
+      beforeOperation: async ({ value, operation }) => {
+        // Skip if undefined or null (allows partial updates)
+        if (value === undefined || value === null) {
+          return value
+        }
+
+        // Skip if not a string
+        if (typeof value !== 'string') {
+          return value
+        }
+
+        // Skip empty strings (let validation handle this)
+        if (value.length === 0) {
+          return value
+        }
+
+        // Skip if already hashed (idempotent)
+        if (isHashedPassword(value)) {
+          return value
+        }
+
+        // Hash the password
+        return await hashPassword(value)
+      },
+      // Wrap password with HashedPassword class after reading from database
+      afterOperation: ({ value }) => {
+        // Only wrap string values (hashed passwords)
+        if (typeof value === 'string' && value.length > 0) {
+          return new HashedPassword(value)
+        }
+        return value
+      },
+      // Merge with user-provided hooks if any
+      ...options?.hooks,
+    },
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
       const isRequired = validation?.isRequired

@@ -1,4 +1,4 @@
-import type { BaseFieldConfig } from '@opensaas/core'
+import type { BaseFieldConfig } from '@opensaas/framework-core'
 
 /**
  * Rich text field configuration using Tiptap editor

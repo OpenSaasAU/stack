@@ -72,14 +72,14 @@ export async function initCommand(projectName: string | undefined) {
         'db:studio': 'prisma studio',
       },
       dependencies: {
-        '@opensaas/core': '^0.1.0',
+        '@opensaas/framework-core': '^0.1.0',
         '@prisma/client': '^5.7.1',
         next: '^14.0.4',
         react: '^18.2.0',
         'react-dom': '^18.2.0',
       },
       devDependencies: {
-        '@opensaas/cli': '^0.1.0',
+        '@opensaas/framework-cli': '^0.1.0',
         '@types/node': '^20.10.0',
         '@types/react': '^18.2.45',
         '@types/react-dom': '^18.2.18',
@@ -122,7 +122,7 @@ export async function initCommand(projectName: string | undefined) {
     const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', '@opensaas/core'],
+    serverComponentsExternalPackages: ['@prisma/client', '@opensaas/framework-core'],
   },
 }
 
@@ -184,9 +184,9 @@ prisma/dev.db-journal
     fs.writeFileSync(path.join(projectPath, '.gitignore'), gitignore)
 
     // Create opensaas.config.ts
-    const config = `import { config, list } from '@opensaas/core'
-import { text, relationship, password } from '@opensaas/core/fields'
-import type { AccessControl } from '@opensaas/core'
+    const config = `import { config, list } from '@opensaas/framework-core'
+import { text, relationship, password } from '@opensaas/framework-core/fields'
+import type { AccessControl } from '@opensaas/framework-core'
 
 // Access control helpers
 const isSignedIn: AccessControl = ({ session }) => {
@@ -228,7 +228,7 @@ export default config({
 
     // Create lib/context.ts
     const contextFile = `import { PrismaClient } from '@prisma/client'
-import { getContext as createContext } from '@opensaas/core'
+import { getContext as createContext } from '@opensaas/framework-core'
 import config from '../opensaas.config'
 import type { Context } from '../.opensaas/types'
 

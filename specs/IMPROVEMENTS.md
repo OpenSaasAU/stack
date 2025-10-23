@@ -30,7 +30,7 @@ Converted `getContext()` from using a direct `PrismaClient` import to a generic 
 **Problem Solved:**
 
 - The core package can now be built BEFORE running `prisma generate`
-- Eliminates circular dependency: OpenSaaS config → Prisma schema → @prisma/client → @opensaas/core
+- Eliminates circular dependency: OpenSaaS config → Prisma schema → @prisma/client → @opensaas/framework-core
 - More flexible architecture that doesn't tie the core to a specific Prisma version
 
 **Benefits:**
@@ -72,7 +72,7 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
 
 ```typescript
 import { PrismaClient } from '@prisma/client'
-import { getContext } from '@opensaas/core'
+import { getContext } from '@opensaas/framework-core'
 
 const prisma = new PrismaClient()
 const context = await getContext<PrismaClient>(config, prisma, session)

@@ -18,6 +18,81 @@ import {
 import { processNestedOperations } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
+import type { FieldConfig } from '../config/types.js'
+
+/**
+ * Execute field-level beforeOperation hooks
+ * Allows fields to transform their values before database write
+ */
+async function executeFieldBeforeOperationHooks(
+  data: Record<string, unknown>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update',
+  context: AccessContext,
+  listName: string,
+  item?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const result = { ...data }
+
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip if field not in data
+    if (!(fieldName in result)) continue
+
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.beforeOperation) continue
+
+    // Execute field hook
+    const transformedValue = await fieldConfig.hooks.beforeOperation({
+      value: result[fieldName],
+      operation,
+      fieldName,
+      listName,
+      item,
+      context,
+    })
+
+    result[fieldName] = transformedValue
+  }
+
+  return result
+}
+
+/**
+ * Execute field-level afterOperation hooks
+ * Allows fields to transform their values after database read
+ */
+function executeFieldAfterOperationHooks(
+  item: Record<string, unknown> | null,
+  fields: Record<string, FieldConfig>,
+  context: AccessContext,
+  listName: string,
+): Record<string, unknown> | null {
+  if (!item) return null
+
+  const result = { ...item }
+
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip if field not in result
+    if (!(fieldName in result)) continue
+
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.afterOperation) continue
+
+    // Execute field hook
+    const transformedValue = fieldConfig.hooks.afterOperation({
+      value: result[fieldName],
+      operation: 'read',
+      fieldName,
+      listName,
+      item,
+      context,
+    })
+
+    result[fieldName] = transformedValue
+  }
+
+  return result
+}
 
 /**
  * Create an access-controlled context
@@ -26,8 +101,11 @@ import type { PrismaClientLike } from '../access/types.js'
  * @param prisma - Your Prisma client instance (pass as generic for type safety)
  * @param session - Current session object (or null if not authenticated)
  */
-export async function getContext<TPrisma extends PrismaClientLike = PrismaClientLike>(
-  config: OpenSaaSConfig,
+export async function getContext<
+  TConfig extends OpenSaaSConfig,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
+>(
+  config: TConfig,
   prisma: TPrisma,
   session: Session,
 ): Promise<{
@@ -45,7 +123,7 @@ export async function getContext<TPrisma extends PrismaClientLike = PrismaClient
   const db: any = {}
 
   // Create context with db reference (will be populated below)
-  const context: AccessContext = {
+  const context: AccessContext<TPrisma> = {
     session,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma: prisma as any,
@@ -166,7 +244,8 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       config,
     )
 
-    return filtered
+    // Execute field afterOperation hooks (e.g., wrap password with HashedPassword)
+    return executeFieldAfterOperationHooks(filtered, listConfig.fields, context, listName)
   }
 }
 
@@ -241,7 +320,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       ),
     )
 
-    return filtered
+    // Execute field afterOperation hooks for each item
+    return filtered.map((item) =>
+      executeFieldAfterOperationHooks(item, listConfig.fields, context, listName),
+    )
   }
 }
 
@@ -273,6 +355,15 @@ function createCreate<TPrisma extends PrismaClientLike>(
       resolvedData: args.data,
       context,
     })
+
+    // 2.5. Execute field beforeOperation hooks (e.g., hash passwords)
+    resolvedData = await executeFieldBeforeOperationHooks(
+      resolvedData,
+      listConfig.fields,
+      'create',
+      context,
+      listName,
+    )
 
     // 3. Execute validateInput hook
     await executeValidateInput(listConfig.hooks, {
@@ -334,7 +425,8 @@ function createCreate<TPrisma extends PrismaClientLike>(
       config,
     )
 
-    return filtered
+    // Execute field afterOperation hooks (e.g., wrap password with HashedPassword)
+    return executeFieldAfterOperationHooks(filtered, listConfig.fields, context, listName)
   }
 }
 
@@ -391,6 +483,16 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       item,
       context,
     })
+
+    // 3.5. Execute field beforeOperation hooks (e.g., hash passwords)
+    resolvedData = await executeFieldBeforeOperationHooks(
+      resolvedData,
+      listConfig.fields,
+      'update',
+      context,
+      listName,
+      item,
+    )
 
     // 4. Execute validateInput hook
     await executeValidateInput(listConfig.hooks, {
@@ -455,7 +557,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       config,
     )
 
-    return filtered
+    // Execute field afterOperation hooks (e.g., wrap password with HashedPassword)
+    return executeFieldAfterOperationHooks(filtered, listConfig.fields, context, listName)
   }
 }
 

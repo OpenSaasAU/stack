@@ -1,11 +1,11 @@
-# @opensaas/ui
+# @opensaas/framework-ui
 
 Composable React UI components for OpenSaaS Framework, built with Radix UI and shadcn/ui.
 
 ## Installation
 
 ```bash
-pnpm add @opensaas/ui
+pnpm add @opensaas/framework-ui
 ```
 
 ## Features
@@ -21,30 +21,30 @@ pnpm add @opensaas/ui
 
 ```typescript
 // Primitives (shadcn/ui components)
-import { Button, Input, Card, Table, Dialog } from '@opensaas/ui/primitives'
+import { Button, Input, Card, Table, Dialog } from '@opensaas/framework-ui/primitives'
 
 // Field components (OpenSaaS-aware)
-import { TextField, SelectField, RelationshipField } from '@opensaas/ui/fields'
+import { TextField, SelectField, RelationshipField } from '@opensaas/framework-ui/fields'
 
 // Standalone components (complete features)
-import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
 
 // Full components (page-level)
-import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/ui'
+import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/framework-ui'
 
 // Server utilities
-import { getAdminContext } from '@opensaas/ui/server'
+import { getAdminContext } from '@opensaas/framework-ui/server'
 
 // Utility functions
-import { cn, formatListName, formatFieldName } from '@opensaas/ui/lib/utils'
+import { cn, formatListName, formatFieldName } from '@opensaas/framework-ui/lib/utils'
 
 // Styles
-import '@opensaas/ui/styles'
+import '@opensaas/framework-ui/styles'
 ```
 
 ## Architecture
 
-### Level 1: Primitives (`@opensaas/ui/primitives`)
+### Level 1: Primitives (`@opensaas/framework-ui/primitives`)
 
 Low-level UI components based on Radix UI and shadcn/ui.
 
@@ -62,7 +62,7 @@ Low-level UI components based on Radix UI and shadcn/ui.
 **Example:**
 
 ```tsx
-import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/ui/primitives'
+import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/framework-ui/primitives'
 ;<Card>
   <CardHeader>
     <CardTitle>Welcome</CardTitle>
@@ -73,7 +73,7 @@ import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/ui/p
 </Card>
 ```
 
-### Level 2: Fields (`@opensaas/ui/fields`)
+### Level 2: Fields (`@opensaas/framework-ui/fields`)
 
 OpenSaaS-aware form fields with validation and access control.
 
@@ -90,7 +90,7 @@ OpenSaaS-aware form fields with validation and access control.
 **Example:**
 
 ```tsx
-import { TextField, SelectField } from '@opensaas/ui/fields'
+import { TextField, SelectField } from '@opensaas/framework-ui/fields'
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} required />
   <SelectField
@@ -106,7 +106,7 @@ import { TextField, SelectField } from '@opensaas/ui/fields'
 </form>
 ```
 
-### Level 3: Standalone Components (`@opensaas/ui/standalone`)
+### Level 3: Standalone Components (`@opensaas/framework-ui/standalone`)
 
 Complete, reusable components for common admin tasks.
 
@@ -115,7 +115,7 @@ Complete, reusable components for common admin tasks.
 #### ItemCreateForm
 
 ```tsx
-import { ItemCreateForm } from '@opensaas/ui/standalone'
+import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -129,7 +129,7 @@ import { ItemCreateForm } from '@opensaas/ui/standalone'
 #### ItemEditForm
 
 ```tsx
-import { ItemEditForm } from '@opensaas/ui/standalone'
+import { ItemEditForm } from '@opensaas/framework-ui/standalone'
 ;<ItemEditForm
   fields={config.lists.Post.fields}
   initialData={post}
@@ -143,7 +143,7 @@ import { ItemEditForm } from '@opensaas/ui/standalone'
 #### ListTable
 
 ```tsx
-import { ListTable } from '@opensaas/ui/standalone'
+import { ListTable } from '@opensaas/framework-ui/standalone'
 ;<ListTable
   items={posts}
   fieldTypes={{ title: 'text', status: 'select' }}
@@ -156,14 +156,14 @@ import { ListTable } from '@opensaas/ui/standalone'
 #### SearchBar
 
 ```tsx
-import { SearchBar } from '@opensaas/ui/standalone'
+import { SearchBar } from '@opensaas/framework-ui/standalone'
 ;<SearchBar onSearch={(query) => fetchPosts({ search: query })} placeholder="Search posts..." />
 ```
 
 #### DeleteButton
 
 ```tsx
-import { DeleteButton } from '@opensaas/ui/standalone'
+import { DeleteButton } from '@opensaas/framework-ui/standalone'
 ;<DeleteButton
   onDelete={async () => {
     await deletePost(postId)
@@ -173,12 +173,12 @@ import { DeleteButton } from '@opensaas/ui/standalone'
 />
 ```
 
-### Level 4: Full Admin UI (`@opensaas/ui`)
+### Level 4: Full Admin UI (`@opensaas/framework-ui`)
 
 Complete admin interface with routing and navigation.
 
 ```tsx
-import { AdminUI } from '@opensaas/ui'
+import { AdminUI } from '@opensaas/framework-ui'
 ;<AdminUI
   context={context}
   params={params?.admin}
@@ -193,7 +193,7 @@ import { AdminUI } from '@opensaas/ui'
 Extend or override field components:
 
 ```tsx
-import { registerFieldComponent } from '@opensaas/ui'
+import { registerFieldComponent } from '@opensaas/framework-ui'
 import { ColorPickerField } from './components/ColorPickerField'
 
 // Register globally
@@ -220,7 +220,7 @@ All components use Tailwind CSS v4 with CSS variables:
 
 ```css
 /* app/globals.css */
-@import '@opensaas/ui/styles';
+@import '@opensaas/framework-ui/styles';
 
 :root {
   --background: 0 0% 100%;
@@ -266,7 +266,7 @@ import type {
   ItemCreateFormProps,
   ListTableProps,
   AdminUIProps,
-} from '@opensaas/ui'
+} from '@opensaas/framework-ui'
 ```
 
 ## Examples

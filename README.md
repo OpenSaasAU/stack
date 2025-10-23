@@ -170,9 +170,9 @@ npx tsx test.ts
 Create `opensaas.config.ts`:
 
 ```typescript
-import { config, list } from '@opensaas/core'
-import { text, relationship, select } from '@opensaas/core/fields'
-import type { AccessControl } from '@opensaas/core'
+import { config, list } from '@opensaas/framework-core'
+import { text, relationship, select } from '@opensaas/framework-core/fields'
+import type { AccessControl } from '@opensaas/framework-core'
 
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
@@ -354,7 +354,7 @@ OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
 ### Level 1: Primitives
 
 ```tsx
-import { Button, Input, Card, Table } from '@opensaas/ui/primitives'
+import { Button, Input, Card, Table } from '@opensaas/framework-ui/primitives'
 ;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
@@ -364,7 +364,7 @@ import { Button, Input, Card, Table } from '@opensaas/ui/primitives'
 ### Level 2: Field Components
 
 ```tsx
-import { TextField, SelectField } from '@opensaas/ui/fields'
+import { TextField, SelectField } from '@opensaas/framework-ui/fields'
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} />
   <SelectField name="role" label="Role" options={roles} />
@@ -374,7 +374,7 @@ import { TextField, SelectField } from '@opensaas/ui/fields'
 ### Level 3: Standalone Components
 
 ```tsx
-import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -387,7 +387,7 @@ import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
 ### Level 4: Full Admin UI
 
 ```tsx
-import { AdminUI } from '@opensaas/ui'
+import { AdminUI } from '@opensaas/framework-ui'
 ;<AdminUI context={context} serverAction={handleAction} />
 ```
 

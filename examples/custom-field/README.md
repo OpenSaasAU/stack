@@ -13,7 +13,7 @@ The `ColorPickerField` component is registered globally and used for multiple fi
 
 ```typescript
 // Register globally in opensaas.config.ts
-import { registerFieldComponent } from "@opensaas/ui";
+import { registerFieldComponent } from "@opensaas/framework-ui";
 import { ColorPickerField } from "./components/ColorPickerField";
 
 registerFieldComponent("color", ColorPickerField);
@@ -108,7 +108,7 @@ Adding a new custom field type requires:
 ### Type Safety
 
 ```typescript
-import type { FieldComponent } from "@opensaas/ui";
+import type { FieldComponent } from "@opensaas/framework-ui";
 
 // Your component automatically gets proper typing
 const MyField: FieldComponent = ({ name, value, onChange, ... }) => {

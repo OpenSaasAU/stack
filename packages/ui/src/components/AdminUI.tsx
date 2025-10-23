@@ -4,7 +4,7 @@ import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
 import type { ServerActionInput } from '../server/types.js'
-import { AccessContext, getListKeyFromUrl, OpenSaaSConfig } from '@opensaas/core'
+import { AccessContext, getListKeyFromUrl, OpenSaaSConfig } from '@opensaas/framework-core'
 import { generateThemeCSS } from '../lib/theme.js'
 
 export interface AdminUIProps<TPrisma> {

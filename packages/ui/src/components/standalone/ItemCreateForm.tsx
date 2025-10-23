@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
-import type { FieldConfig } from '@opensaas/core'
+import type { FieldConfig } from '@opensaas/framework-core'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>

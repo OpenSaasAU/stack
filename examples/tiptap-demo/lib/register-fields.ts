@@ -1,6 +1,6 @@
 'use client'
 
-import { registerFieldComponent } from '@opensaas/ui'
+import { registerFieldComponent } from '@opensaas/framework-ui'
 import { TiptapField } from '@opensaas/tiptap'
 
 // Register custom field components

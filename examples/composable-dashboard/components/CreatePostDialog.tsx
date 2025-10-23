@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@opensaas/ui/primitives'
-import { Button } from '@opensaas/ui/primitives'
-import { ItemCreateForm } from '@opensaas/ui/standalone'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@opensaas/framework-ui/primitives'
+import { Button } from '@opensaas/framework-ui/primitives'
+import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
 import { createPost } from '../lib/actions'
 import config from '../opensaas.config'
 import type { PostCreateInput } from '../.opensaas/types'
