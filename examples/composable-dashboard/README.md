@@ -123,15 +123,15 @@ import { CreatePostDialog } from "./components/CreatePostDialog"
 ### 2. ItemCreateForm in Dialog (components/CreatePostDialog.tsx)
 
 ```tsx
-import { Dialog, DialogContent } from "@opensaas/ui/primitives"
-import { ItemCreateForm } from "@opensaas/ui/standalone"
+import { Dialog, DialogContent } from '@opensaas/ui/primitives'
+import { ItemCreateForm } from '@opensaas/ui/standalone'
 
-<Dialog open={open} onOpenChange={setOpen}>
+;<Dialog open={open} onOpenChange={setOpen}>
   <DialogContent>
     <ItemCreateForm
       fields={config.lists.Post.fields}
       onSubmit={async (data) => {
-        await fetch("/api/posts", { method: "POST", body: JSON.stringify(data) })
+        await fetch('/api/posts', { method: 'POST', body: JSON.stringify(data) })
         return { success: true }
       }}
     />
@@ -161,24 +161,26 @@ import { ListTable, SearchBar } from "@opensaas/ui/standalone"
 ### 4. Inline Editing (app/posts/[id]/PostEditor.tsx)
 
 ```tsx
-import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone"
+import { ItemEditForm, DeleteButton } from '@opensaas/ui/standalone'
 
-{editing ? (
-  <ItemEditForm
-    fields={config.lists.Post.fields}
-    initialData={post}
-    onSubmit={async (data) => {
-      await fetch(`/api/posts/${post.id}`, { method: "PATCH" })
-      return { success: true }
-    }}
-  />
-) : (
-  <PostDetails post={post} />
-)}
+{
+  editing ? (
+    <ItemEditForm
+      fields={config.lists.Post.fields}
+      initialData={post}
+      onSubmit={async (data) => {
+        await fetch(`/api/posts/${post.id}`, { method: 'PATCH' })
+        return { success: true }
+      }}
+    />
+  ) : (
+    <PostDetails post={post} />
+  )
+}
 
-<DeleteButton
+;<DeleteButton
   onDelete={async () => {
-    await fetch(`/api/posts/${post.id}`, { method: "DELETE" })
+    await fetch(`/api/posts/${post.id}`, { method: 'DELETE' })
     return { success: true }
   }}
 />
@@ -186,21 +188,22 @@ import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone"
 
 ## Differences from Blog Example
 
-| Feature | Blog Example | Composable Dashboard |
-|---------|-------------|---------------------|
-| **Admin UI** | Uses full `<AdminUI>` | Custom pages with standalone components |
-| **Routing** | AdminUI handles routing | Custom Next.js routes |
-| **Navigation** | Built-in sidebar | Custom header navigation |
-| **Actions** | Server Actions | API Routes |
-| **Create** | AdminUI create page | Dialog with ItemCreateForm |
-| **Edit** | AdminUI edit page | Inline ItemEditForm |
-| **List** | AdminUI ListView | Custom page with ListTable |
-| **Search** | AdminUI built-in | SearchBar component |
-| **Delete** | AdminUI confirmation | DeleteButton component |
+| Feature        | Blog Example            | Composable Dashboard                    |
+| -------------- | ----------------------- | --------------------------------------- |
+| **Admin UI**   | Uses full `<AdminUI>`   | Custom pages with standalone components |
+| **Routing**    | AdminUI handles routing | Custom Next.js routes                   |
+| **Navigation** | Built-in sidebar        | Custom header navigation                |
+| **Actions**    | Server Actions          | API Routes                              |
+| **Create**     | AdminUI create page     | Dialog with ItemCreateForm              |
+| **Edit**       | AdminUI edit page       | Inline ItemEditForm                     |
+| **List**       | AdminUI ListView        | Custom page with ListTable              |
+| **Search**     | AdminUI built-in        | SearchBar component                     |
+| **Delete**     | AdminUI confirmation    | DeleteButton component                  |
 
 ## When to Use This Approach
 
 ✅ **Use Composable Dashboard when:**
+
 - You need custom layouts and branding
 - You want to embed admin features in your main app
 - You need multi-step workflows or wizards
@@ -208,6 +211,7 @@ import { ItemEditForm, DeleteButton } from "@opensaas/ui/standalone"
 - You're building a SaaS dashboard with custom features
 
 ✅ **Use Full AdminUI when:**
+
 - You need a quick admin panel
 - Standard CRUD operations are sufficient
 - You want zero configuration

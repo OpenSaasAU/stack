@@ -1,19 +1,19 @@
-import type { AccessControl, Session, AccessContext, PrismaFilter } from "./types.js";
-import type { FieldAccess } from "./types.js";
-import type { OpenSaaSConfig, ListConfig, FieldConfig } from "../config/types.js";
+import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
+import type { FieldAccess } from './types.js'
+import type { OpenSaaSConfig, ListConfig, FieldConfig } from '../config/types.js'
 
 /**
  * Check if access control result is a boolean
  */
 export function isBoolean(value: unknown): value is boolean {
-  return typeof value === "boolean";
+  return typeof value === 'boolean'
 }
 
 /**
  * Check if access control result is a Prisma filter
  */
 export function isPrismaFilter(value: unknown): value is PrismaFilter {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -29,19 +29,19 @@ export function getRelatedListConfig(
   config: OpenSaaSConfig,
 ): { listName: string; listConfig: ListConfig } | null {
   // Parse ref format: "ListName.fieldName"
-  const parts = relationshipRef.split(".");
+  const parts = relationshipRef.split('.')
   if (parts.length !== 2) {
-    return null;
+    return null
   }
 
-  const listName = parts[0];
-  const listConfig = config.lists[listName];
+  const listName = parts[0]
+  const listConfig = config.lists[listName]
 
   if (!listConfig) {
-    return null;
+    return null
   }
 
-  return { listName, listConfig };
+  return { listName, listConfig }
 }
 
 /**
@@ -50,20 +50,20 @@ export function getRelatedListConfig(
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
-    session: Session;
-    item?: T;
-    context: AccessContext;
+    session: Session
+    item?: T
+    context: AccessContext
   },
 ): Promise<boolean | PrismaFilter<T>> {
   // No access control means deny by default
   if (!accessControl) {
-    return false;
+    return false
   }
 
   // Execute the access control function
-  const result = await accessControl(args);
+  const result = await accessControl(args)
 
-  return result;
+  return result
 }
 
 /**
@@ -75,23 +75,23 @@ export function mergeFilters(
 ): PrismaFilter | null {
   // If access is denied, return null
   if (accessFilter === false) {
-    return null;
+    return null
   }
 
   // If access is fully granted, use user filter
   if (accessFilter === true) {
-    return userFilter || {};
+    return userFilter || {}
   }
 
   // Merge access filter with user filter
   if (!userFilter) {
-    return accessFilter;
+    return accessFilter
   }
 
   // Combine filters with AND
   return {
     AND: [accessFilter, userFilter],
-  };
+  }
 }
 
 /**
@@ -99,42 +99,42 @@ export function mergeFilters(
  */
 export async function checkFieldAccess(
   fieldAccess: FieldAccess | undefined,
-  operation: "read" | "create" | "update",
+  operation: 'read' | 'create' | 'update',
   args: {
-    session: Session;
-    item?: Record<string, unknown>;
-    context: AccessContext;
+    session: Session
+    item?: Record<string, unknown>
+    context: AccessContext
   },
 ): Promise<boolean> {
   if (!fieldAccess) {
-    return true; // No field access means allow
+    return true // No field access means allow
   }
 
-  const accessControl = fieldAccess[operation];
+  const accessControl = fieldAccess[operation]
   if (!accessControl) {
-    return true; // No specific access control means allow
+    return true // No specific access control means allow
   }
 
-  const result = await accessControl(args);
+  const result = await accessControl(args)
 
   // If result is false, deny access
   if (result === false) {
-    return false;
+    return false
   }
 
   // If result is true, allow access
   if (result === true) {
-    return true;
+    return true
   }
 
   // If result is a filter object, check if the item matches
   // For field-level access, we need to evaluate the filter against the item
-  if (typeof result === "object" && args.item) {
-    return matchesFilter(args.item, result);
+  if (typeof result === 'object' && args.item) {
+    return matchesFilter(args.item, result)
   }
 
   // Default to allowing access if we can't determine
-  return true;
+  return true
 }
 
 /**
@@ -143,26 +143,26 @@ export async function checkFieldAccess(
  */
 function matchesFilter(item: Record<string, unknown>, filter: Record<string, unknown>): boolean {
   for (const [key, condition] of Object.entries(filter)) {
-    if (typeof condition === "object" && condition !== null) {
+    if (typeof condition === 'object' && condition !== null) {
       // Handle nested conditions like { equals: value }
-      if ("equals" in condition) {
+      if ('equals' in condition) {
         if (item[key] !== condition.equals) {
-          return false;
+          return false
         }
-      } else if ("not" in condition) {
+      } else if ('not' in condition) {
         if (item[key] === condition.not) {
-          return false;
+          return false
         }
       }
       // Add more condition types as needed
     } else {
       // Direct equality check
       if (item[key] !== condition) {
-        return false;
+        return false
       }
     }
   }
-  return true;
+  return true
 }
 
 /**
@@ -172,46 +172,46 @@ function matchesFilter(item: Record<string, unknown>, filter: Record<string, unk
 export async function buildIncludeWithAccessControl(
   fieldConfigs: Record<string, FieldConfig>,
   args: {
-    session: Session;
-    context: AccessContext;
+    session: Session
+    context: AccessContext
   },
   config: OpenSaaSConfig,
   depth: number = 0,
 ) {
-  const MAX_DEPTH = 5;
+  const MAX_DEPTH = 5
   if (depth >= MAX_DEPTH) {
-    return undefined;
+    return undefined
   }
 
-  type IncludeEntry = boolean | { where?: PrismaFilter; include?: Record<string, IncludeEntry> };
-   
-  const include: Record<string, IncludeEntry> = {};
-  let hasRelationships = false;
+  type IncludeEntry = boolean | { where?: PrismaFilter; include?: Record<string, IncludeEntry> }
+
+  const include: Record<string, IncludeEntry> = {}
+  let hasRelationships = false
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    if (fieldConfig?.type === "relationship" && "ref" in fieldConfig && fieldConfig.ref) {
-      hasRelationships = true;
-      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
+    if (fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && fieldConfig.ref) {
+      hasRelationships = true
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
 
       if (relatedConfig) {
         // Check query access for the related list
-        const queryAccess = relatedConfig.listConfig.access?.operation?.query;
+        const queryAccess = relatedConfig.listConfig.access?.operation?.query
         const accessResult = await checkAccess(queryAccess, {
           session: args.session,
           context: args.context,
-        });
+        })
 
         // If access is completely denied, exclude this relationship
         if (accessResult === false) {
-          continue;
+          continue
         }
 
         // Build the include entry
-        const includeEntry: Record<string, unknown> = {};
+        const includeEntry: Record<string, unknown> = {}
 
         // If access returns a filter, add it to the where clause
-        if (typeof accessResult === "object") {
-          includeEntry.where = accessResult;
+        if (typeof accessResult === 'object') {
+          includeEntry.where = accessResult
         }
 
         // Recursively build nested includes
@@ -220,19 +220,19 @@ export async function buildIncludeWithAccessControl(
           args,
           config,
           depth + 1,
-        );
+        )
 
         if (nestedInclude && Object.keys(nestedInclude).length > 0) {
-          includeEntry.include = nestedInclude;
+          includeEntry.include = nestedInclude
         }
 
         // Add to include object
-        include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true;
+        include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
       }
     }
   }
 
-  return hasRelationships ? include : undefined;
+  return hasRelationships ? include : undefined
 }
 
 /**
@@ -243,32 +243,32 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   item: T,
   fieldConfigs: Record<string, FieldConfig>,
   args: {
-    session: Session;
-    context: AccessContext;
+    session: Session
+    context: AccessContext
   },
   config?: OpenSaaSConfig,
   depth: number = 0,
 ): Promise<Partial<T>> {
-  const filtered: Record<string, unknown> = {};
-  const MAX_DEPTH = 5; // Prevent infinite recursion
+  const filtered: Record<string, unknown> = {}
+  const MAX_DEPTH = 5 // Prevent infinite recursion
 
   for (const [fieldName, value] of Object.entries(item)) {
-    const fieldConfig = fieldConfigs[fieldName];
+    const fieldConfig = fieldConfigs[fieldName]
 
     // Always include id, createdAt, updatedAt
-    if (["id", "createdAt", "updatedAt"].includes(fieldName)) {
-      filtered[fieldName] = value;
-      continue;
+    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+      filtered[fieldName] = value
+      continue
     }
 
     // Check field access
-    const canRead = await checkFieldAccess(fieldConfig?.access, "read", {
+    const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
       ...args,
       item,
-    });
+    })
 
     if (!canRead) {
-      continue;
+      continue
     }
 
     // Handle relationship fields - recursively filter fields within related items
@@ -276,14 +276,14 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // This only handles field-level access (hiding sensitive fields)
     if (
       config &&
-      fieldConfig?.type === "relationship" &&
-      "ref" in fieldConfig &&
+      fieldConfig?.type === 'relationship' &&
+      'ref' in fieldConfig &&
       fieldConfig.ref &&
       value !== null &&
       value !== undefined &&
       depth < MAX_DEPTH
     ) {
-      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config);
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
 
       if (relatedConfig) {
         // For many relationships (arrays) - recursively filter fields in each item
@@ -298,29 +298,29 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 depth + 1,
               ),
             ),
-          );
+          )
         }
         // For single relationships (objects) - recursively filter fields
-        else if (typeof value === "object") {
+        else if (typeof value === 'object') {
           filtered[fieldName] = await filterReadableFields(
             value as Record<string, unknown>,
             relatedConfig.listConfig.fields,
             args,
             config,
             depth + 1,
-          );
+          )
         }
       } else {
         // Related config not found, include the value as-is
-        filtered[fieldName] = value;
+        filtered[fieldName] = value
       }
     } else {
       // Non-relationship field or no config provided
-      filtered[fieldName] = value;
+      filtered[fieldName] = value
     }
   }
 
-  return filtered as Partial<T>;
+  return filtered as Partial<T>
 }
 
 /**
@@ -329,32 +329,32 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<string, { access?: FieldAccess }>,
-  operation: "create" | "update",
+  operation: 'create' | 'update',
   args: {
-    session: Session;
-    item?: Record<string, unknown>;
-    context: AccessContext;
+    session: Session
+    item?: Record<string, unknown>
+    context: AccessContext
   },
 ): Promise<Partial<T>> {
-  const filtered: Record<string, unknown> = {};
+  const filtered: Record<string, unknown> = {}
 
   for (const [fieldName, value] of Object.entries(data)) {
-    const fieldConfig = fieldConfigs[fieldName];
+    const fieldConfig = fieldConfigs[fieldName]
 
     // Skip system fields
-    if (["id", "createdAt", "updatedAt"].includes(fieldName)) {
-      continue;
+    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+      continue
     }
 
     // Check field access
     const canWrite = await checkFieldAccess(fieldConfig?.access, operation, {
       ...args,
-    });
+    })
 
     if (canWrite) {
-      filtered[fieldName] = value;
+      filtered[fieldName] = value
     }
   }
 
-  return filtered as Partial<T>;
+  return filtered as Partial<T>
 }

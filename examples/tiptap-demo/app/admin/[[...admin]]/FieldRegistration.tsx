@@ -1,7 +1,7 @@
-"use client";
+'use client'
 
-import { useEffect } from "react";
-import "../../../lib/register-fields";
+import { useEffect } from 'react'
+import '../../../lib/register-fields'
 
 /**
  * Client component that ensures field registration happens on the client side
@@ -11,7 +11,7 @@ export function FieldRegistration() {
   useEffect(() => {
     // Registration happens when the module is imported
     // This effect just ensures the component mounted
-  }, []);
+  }, [])
 
-  return null;
+  return null
 }

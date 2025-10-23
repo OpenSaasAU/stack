@@ -1,30 +1,24 @@
-import type {
-  OpenSaaSConfig,
-  FieldConfig,
-  RelationshipField,
-} from "@opensaas/core";
-import * as fs from "fs";
-import * as path from "path";
+import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/core'
+import * as fs from 'fs'
+import * as path from 'path'
 
 /**
  * Map OpenSaaS field types to TypeScript types
  */
 function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
   // Relationships are handled separately
-  if (field.type === "relationship") {
-    return null;
+  if (field.type === 'relationship') {
+    return null
   }
 
   // Use field's own TypeScript type generator if available
   if (field.getTypeScriptType) {
-    const result = field.getTypeScriptType();
-    return result.type;
+    const result = field.getTypeScriptType()
+    return result.type
   }
 
   // Fallback for fields without generator methods
-  throw new Error(
-    `Field type "${field.type}" does not implement getTypeScriptType method`,
-  );
+  throw new Error(`Field type "${field.type}" does not implement getTypeScriptType method`)
 }
 
 /**
@@ -32,253 +26,238 @@ function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
  */
 function isFieldOptional(field: FieldConfig): boolean {
   // Relationships are always nullable
-  if (field.type === "relationship") {
-    return true;
+  if (field.type === 'relationship') {
+    return true
   }
 
   // Use field's own TypeScript type generator if available
   if (field.getTypeScriptType) {
-    const result = field.getTypeScriptType();
-    return result.optional;
+    const result = field.getTypeScriptType()
+    return result.optional
   }
 
   // Fallback: assume optional
-  return true;
+  return true
 }
 
 /**
  * Generate TypeScript interface for a model
  */
-function generateModelType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-): string {
-  const lines: string[] = [];
+function generateModelType(listName: string, fields: Record<string, FieldConfig>): string {
+  const lines: string[] = []
 
-  lines.push(`export type ${listName} = {`);
-  lines.push("  id: string");
+  lines.push(`export type ${listName} = {`)
+  lines.push('  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (fieldConfig.type === "relationship") {
-      const relField = fieldConfig as RelationshipField;
-      const [targetList] = relField.ref.split(".");
+    if (fieldConfig.type === 'relationship') {
+      const relField = fieldConfig as RelationshipField
+      const [targetList] = relField.ref.split('.')
 
       if (relField.many) {
-        lines.push(`  ${fieldName}: ${targetList}[]`);
+        lines.push(`  ${fieldName}: ${targetList}[]`)
       } else {
-        lines.push(`  ${fieldName}Id: string | null`);
-        lines.push(`  ${fieldName}: ${targetList} | null`);
+        lines.push(`  ${fieldName}Id: string | null`)
+        lines.push(`  ${fieldName}: ${targetList} | null`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig);
-      if (!tsType) continue; // Skip if no type returned
+      const tsType = mapFieldTypeToTypeScript(fieldConfig)
+      if (!tsType) continue // Skip if no type returned
 
-      const optional = isFieldOptional(fieldConfig);
-      const nullability = optional ? " | null" : "";
-      lines.push(`  ${fieldName}: ${tsType}${nullability}`);
+      const optional = isFieldOptional(fieldConfig)
+      const nullability = optional ? ' | null' : ''
+      lines.push(`  ${fieldName}: ${tsType}${nullability}`)
     }
   }
 
-  lines.push("  createdAt: Date");
-  lines.push("  updatedAt: Date");
-  lines.push("}");
+  lines.push('  createdAt: Date')
+  lines.push('  updatedAt: Date')
+  lines.push('}')
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Generate CreateInput type
  */
-function generateCreateInputType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-): string {
-  const lines: string[] = [];
+function generateCreateInputType(listName: string, fields: Record<string, FieldConfig>): string {
+  const lines: string[] = []
 
-  lines.push(`export type ${listName}CreateInput = {`);
+  lines.push(`export type ${listName}CreateInput = {`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (fieldConfig.type === "relationship") {
-      const relField = fieldConfig as RelationshipField;
+    if (fieldConfig.type === 'relationship') {
+      const relField = fieldConfig as RelationshipField
 
       if (relField.many) {
-        lines.push(`  ${fieldName}?: { connect: Array<{ id: string }> }`);
+        lines.push(`  ${fieldName}?: { connect: Array<{ id: string }> }`)
       } else {
-        lines.push(`  ${fieldName}?: { connect: { id: string } }`);
+        lines.push(`  ${fieldName}?: { connect: { id: string } }`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig);
-      if (!tsType) continue; // Skip if no type returned
+      const tsType = mapFieldTypeToTypeScript(fieldConfig)
+      if (!tsType) continue // Skip if no type returned
 
-      const required =
-        !isFieldOptional(fieldConfig) && !fieldConfig.defaultValue;
-      const optional = required ? "" : "?";
-      lines.push(`  ${fieldName}${optional}: ${tsType}`);
+      const required = !isFieldOptional(fieldConfig) && !fieldConfig.defaultValue
+      const optional = required ? '' : '?'
+      lines.push(`  ${fieldName}${optional}: ${tsType}`)
     }
   }
 
-  lines.push("}");
+  lines.push('}')
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Generate UpdateInput type
  */
-function generateUpdateInputType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-): string {
-  const lines: string[] = [];
+function generateUpdateInputType(listName: string, fields: Record<string, FieldConfig>): string {
+  const lines: string[] = []
 
-  lines.push(`export type ${listName}UpdateInput = {`);
+  lines.push(`export type ${listName}UpdateInput = {`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (fieldConfig.type === "relationship") {
-      const relField = fieldConfig as RelationshipField;
+    if (fieldConfig.type === 'relationship') {
+      const relField = fieldConfig as RelationshipField
 
       if (relField.many) {
         lines.push(
           `  ${fieldName}?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }`,
-        );
+        )
       } else {
-        lines.push(
-          `  ${fieldName}?: { connect: { id: string } } | { disconnect: true }`,
-        );
+        lines.push(`  ${fieldName}?: { connect: { id: string } } | { disconnect: true }`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig);
-      if (!tsType) continue; // Skip if no type returned
+      const tsType = mapFieldTypeToTypeScript(fieldConfig)
+      if (!tsType) continue // Skip if no type returned
 
-      lines.push(`  ${fieldName}?: ${tsType}`);
+      lines.push(`  ${fieldName}?: ${tsType}`)
     }
   }
 
-  lines.push("}");
+  lines.push('}')
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Generate WhereInput type (simplified)
  */
-function generateWhereInputType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-): string {
-  const lines: string[] = [];
+function generateWhereInputType(listName: string, fields: Record<string, FieldConfig>): string {
+  const lines: string[] = []
 
-  lines.push(`export type ${listName}WhereInput = {`);
-  lines.push("  id?: string");
-  lines.push("  AND?: Array<" + listName + "WhereInput>");
-  lines.push("  OR?: Array<" + listName + "WhereInput>");
-  lines.push("  NOT?: " + listName + "WhereInput");
+  lines.push(`export type ${listName}WhereInput = {`)
+  lines.push('  id?: string')
+  lines.push('  AND?: Array<' + listName + 'WhereInput>')
+  lines.push('  OR?: Array<' + listName + 'WhereInput>')
+  lines.push('  NOT?: ' + listName + 'WhereInput')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (fieldConfig.type === "relationship") {
-      continue; // Skip for now
+    if (fieldConfig.type === 'relationship') {
+      continue // Skip for now
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig);
-      if (!tsType) continue; // Skip if no type returned
+      const tsType = mapFieldTypeToTypeScript(fieldConfig)
+      if (!tsType) continue // Skip if no type returned
 
-      lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`);
+      lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`)
     }
   }
 
-  lines.push("}");
+  lines.push('}')
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Generate Context type with all operations
  */
 function generateContextType(config: OpenSaaSConfig): string {
-  const lines: string[] = [];
+  const lines: string[] = []
 
-  lines.push("export type Context = {");
-  lines.push("  db: {");
+  lines.push('export type Context = {')
+  lines.push('  db: {')
 
   for (const listName of Object.keys(config.lists)) {
-    const lowerName = listName.toLowerCase();
+    const lowerName = listName.toLowerCase()
 
-    lines.push(`    ${lowerName}: {`);
-    lines.push(`      findUnique: (args: {`);
-    lines.push(`        where: { id: string }`);
-    lines.push(`        include?: any`);
-    lines.push(`      }) => Promise<${listName} | null>`);
-    lines.push(`      findMany: (args?: {`);
-    lines.push(`        where?: ${listName}WhereInput`);
-    lines.push(`        take?: number`);
-    lines.push(`        skip?: number`);
-    lines.push(`        include?: any`);
-    lines.push(`      }) => Promise<${listName}[]>`);
-    lines.push(`      create: (args: {`);
-    lines.push(`        data: ${listName}CreateInput`);
-    lines.push(`      }) => Promise<${listName} | null>`);
-    lines.push(`      update: (args: {`);
-    lines.push(`        where: { id: string }`);
-    lines.push(`        data: ${listName}UpdateInput`);
-    lines.push(`      }) => Promise<${listName} | null>`);
-    lines.push(`      delete: (args: {`);
-    lines.push(`        where: { id: string }`);
-    lines.push(`      }) => Promise<${listName} | null>`);
-    lines.push(`      count: (args?: {`);
-    lines.push(`        where?: ${listName}WhereInput`);
-    lines.push(`      }) => Promise<number>`);
-    lines.push(`    }`);
+    lines.push(`    ${lowerName}: {`)
+    lines.push(`      findUnique: (args: {`)
+    lines.push(`        where: { id: string }`)
+    lines.push(`        include?: any`)
+    lines.push(`      }) => Promise<${listName} | null>`)
+    lines.push(`      findMany: (args?: {`)
+    lines.push(`        where?: ${listName}WhereInput`)
+    lines.push(`        take?: number`)
+    lines.push(`        skip?: number`)
+    lines.push(`        include?: any`)
+    lines.push(`      }) => Promise<${listName}[]>`)
+    lines.push(`      create: (args: {`)
+    lines.push(`        data: ${listName}CreateInput`)
+    lines.push(`      }) => Promise<${listName} | null>`)
+    lines.push(`      update: (args: {`)
+    lines.push(`        where: { id: string }`)
+    lines.push(`        data: ${listName}UpdateInput`)
+    lines.push(`      }) => Promise<${listName} | null>`)
+    lines.push(`      delete: (args: {`)
+    lines.push(`        where: { id: string }`)
+    lines.push(`      }) => Promise<${listName} | null>`)
+    lines.push(`      count: (args?: {`)
+    lines.push(`        where?: ${listName}WhereInput`)
+    lines.push(`      }) => Promise<number>`)
+    lines.push(`    }`)
   }
 
-  lines.push("  }");
-  lines.push("  session: any");
-  lines.push("  prisma: any  // Your PrismaClient instance");
-  lines.push("}");
+  lines.push('  }')
+  lines.push('  session: any')
+  lines.push('  prisma: any  // Your PrismaClient instance')
+  lines.push('}')
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Generate all TypeScript types from config
  */
 export function generateTypes(config: OpenSaaSConfig): string {
-  const lines: string[] = [];
+  const lines: string[] = []
 
   // Add header comment
-  lines.push("/**");
-  lines.push(" * Generated types from OpenSaaS configuration");
-  lines.push(" * DO NOT EDIT - This file is automatically generated");
-  lines.push(" */");
-  lines.push("");
+  lines.push('/**')
+  lines.push(' * Generated types from OpenSaaS configuration')
+  lines.push(' * DO NOT EDIT - This file is automatically generated')
+  lines.push(' */')
+  lines.push('')
 
   // Generate types for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    lines.push(generateModelType(listName, listConfig.fields));
-    lines.push("");
-    lines.push(generateCreateInputType(listName, listConfig.fields));
-    lines.push("");
-    lines.push(generateUpdateInputType(listName, listConfig.fields));
-    lines.push("");
-    lines.push(generateWhereInputType(listName, listConfig.fields));
-    lines.push("");
+    lines.push(generateModelType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateCreateInputType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateUpdateInputType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateWhereInputType(listName, listConfig.fields))
+    lines.push('')
   }
 
   // Generate Context type
-  lines.push(generateContextType(config));
+  lines.push(generateContextType(config))
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
  * Write TypeScript types to file
  */
 export function writeTypes(config: OpenSaaSConfig, outputPath: string): void {
-  const types = generateTypes(config);
+  const types = generateTypes(config)
 
   // Ensure directory exists
-  const dir = path.dirname(outputPath);
+  const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true })
   }
 
-  fs.writeFileSync(outputPath, types, "utf-8");
+  fs.writeFileSync(outputPath, types, 'utf-8')
 }

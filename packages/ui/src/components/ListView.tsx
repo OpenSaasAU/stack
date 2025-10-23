@@ -1,23 +1,23 @@
-import Link from "next/link";
-import { ListViewClient } from "./ListViewClient.js";
-import { formatListName } from "../lib/utils.js";
+import Link from 'next/link'
+import { ListViewClient } from './ListViewClient.js'
+import { formatListName } from '../lib/utils.js'
 import {
   AccessContext,
   getDbKey,
   getUrlKey,
   OpenSaaSConfig,
   type PrismaClientLike,
-} from "@opensaas/core";
+} from '@opensaas/core'
 
 export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  context: AccessContext<TPrisma>;
-  config: OpenSaaSConfig;
-  listKey: string;
-  basePath?: string;
-  columns?: string[];
-  page?: number;
-  pageSize?: number;
-  search?: string;
+  context: AccessContext<TPrisma>
+  config: OpenSaaSConfig
+  listKey: string
+  basePath?: string
+  columns?: string[]
+  page?: number
+  pageSize?: number
+  search?: string
 }
 
 /**
@@ -28,15 +28,15 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
   context,
   config,
   listKey,
-  basePath = "/admin",
+  basePath = '/admin',
   columns,
   page = 1,
   pageSize = 50,
   search,
 }: ListViewProps<TPrisma>) {
-  const key = getDbKey(listKey);
-  const urlKey = getUrlKey(listKey);
-  const listConfig = config.lists[listKey];
+  const key = getDbKey(listKey)
+  const urlKey = getUrlKey(listKey)
+  const listConfig = config.lists[listKey]
 
   if (!listConfig) {
     return (
@@ -46,27 +46,27 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
-    );
+    )
   }
 
   // Fetch items using access-controlled context
-  const skip = (page - 1) * pageSize;
-  let items: any[] = [];
-  let total = 0;
+  const skip = (page - 1) * pageSize
+  let items: any[] = []
+  let total = 0
 
   try {
-    const dbContext = context.db;
+    const dbContext = context.db
     if (!dbContext || !dbContext[key]) {
-      throw new Error(`Context for ${listKey} not found`);
+      throw new Error(`Context for ${listKey} not found`)
     }
 
     // Build search filter if search term provided
-    let where: any = undefined;
+    let where: any = undefined
     if (search && search.trim()) {
       // Find all text fields to search across
       const searchableFields = Object.entries(listConfig.fields)
-        .filter(([_, field]) => (field as any).type === "text")
-        .map(([fieldName]) => fieldName);
+        .filter(([_, field]) => (field as any).type === 'text')
+        .map(([fieldName]) => fieldName)
 
       if (searchableFields.length > 0) {
         where = {
@@ -75,20 +75,20 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
               contains: search.trim(),
             },
           })),
-        };
+        }
       }
     }
 
-    [items, total] = await Promise.all([
+    ;[items, total] = await Promise.all([
       dbContext[key].findMany({
         where,
         skip,
         take: pageSize,
       }),
       dbContext[key].count({ where }),
-    ]);
+    ])
   } catch (error) {
-    console.error(`Failed to fetch ${listKey}:`, error);
+    console.error(`Failed to fetch ${listKey}:`, error)
   }
 
   return (
@@ -98,7 +98,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         <div>
           <h1 className="text-3xl font-bold mb-2">{formatListName(listKey)}</h1>
           <p className="text-muted-foreground">
-            {total} {total === 1 ? "item" : "items"}
+            {total} {total === 1 ? 'item' : 'items'}
           </p>
         </div>
         <Link
@@ -126,5 +126,5 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         search={search}
       />
     </div>
-  );
+  )
 }

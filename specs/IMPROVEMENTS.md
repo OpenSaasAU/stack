@@ -28,11 +28,13 @@ Converted `getContext()` from using a direct `PrismaClient` import to a generic 
 ### Why This Matters
 
 **Problem Solved:**
+
 - The core package can now be built BEFORE running `prisma generate`
 - Eliminates circular dependency: OpenSaaS config → Prisma schema → @prisma/client → @opensaas/core
 - More flexible architecture that doesn't tie the core to a specific Prisma version
 
 **Benefits:**
+
 - ✅ No build-time dependency on generated Prisma client
 - ✅ Better type safety with explicit generic parameters
 - ✅ Backward compatible (generic has default value)
@@ -41,17 +43,19 @@ Converted `getContext()` from using a direct `PrismaClient` import to a generic 
 ### Code Changes
 
 **Before:**
+
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
 export async function getContext(
   config: OpenSaaSConfig,
   prisma: PrismaClient,
-  session: Session
+  session: Session,
 ): Promise<any>
 ```
 
 **After:**
+
 ```typescript
 export type PrismaClientLike = {
   [key: string]: any
@@ -60,11 +64,12 @@ export type PrismaClientLike = {
 export async function getContext<TPrisma extends PrismaClientLike = any>(
   config: OpenSaaSConfig,
   prisma: TPrisma,
-  session: Session
+  session: Session,
 ): Promise<any>
 ```
 
 **Usage Example:**
+
 ```typescript
 import { PrismaClient } from '@prisma/client'
 import { getContext } from '@opensaas/core'
@@ -90,6 +95,7 @@ const context = await getContext<PrismaClient>(config, prisma, session)
 ### Next Steps
 
 Users should:
+
 1. Update their context helpers to use `getContext<PrismaClient>()`
 2. Rebuild the core package: `cd packages/core && pnpm build`
 3. Regenerate types: `cd examples/blog && pnpm generate`

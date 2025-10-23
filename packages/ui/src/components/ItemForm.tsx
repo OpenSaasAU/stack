@@ -1,19 +1,19 @@
-import * as React from "react";
-import Link from "next/link";
-import { ItemFormClient } from "./ItemFormClient.js";
-import { formatListName } from "../lib/utils.js";
-import type { ServerActionInput } from "../server/types.js";
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
+import * as React from 'react'
+import Link from 'next/link'
+import { ItemFormClient } from './ItemFormClient.js'
+import { formatListName } from '../lib/utils.js'
+import type { ServerActionInput } from '../server/types.js'
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/core'
 
 export interface ItemFormProps<TPrisma> {
-  context: AccessContext<TPrisma>;
-  config: OpenSaaSConfig;
-  listKey: string;
-  mode: "create" | "edit";
-  itemId?: string;
-  basePath?: string;
+  context: AccessContext<TPrisma>
+  config: OpenSaaSConfig
+  listKey: string
+  mode: 'create' | 'edit'
+  itemId?: string
+  basePath?: string
   // Generic server action
-  serverAction: (input: ServerActionInput) => Promise<any>;
+  serverAction: (input: ServerActionInput) => Promise<any>
 }
 
 /**
@@ -26,11 +26,11 @@ export async function ItemForm<TPrisma>({
   listKey,
   mode,
   itemId,
-  basePath = "/admin",
+  basePath = '/admin',
   serverAction,
 }: ItemFormProps<TPrisma>) {
-  const listConfig = config.lists[listKey];
-  const urlKey = getUrlKey(listKey);
+  const listConfig = config.lists[listKey]
+  const urlKey = getUrlKey(listKey)
 
   if (!listConfig) {
     return (
@@ -40,19 +40,19 @@ export async function ItemForm<TPrisma>({
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
-    );
+    )
   }
 
   // Fetch item data if in edit mode
-  let itemData: any = {};
-  if (mode === "edit" && itemId) {
+  let itemData: any = {}
+  if (mode === 'edit' && itemId) {
     try {
-      const dbContext = context.context as any;
+      const dbContext = context.context as any
       itemData = await dbContext.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
-      });
+      })
     } catch (error) {
-      console.error(`Failed to fetch item ${itemId}:`, error);
+      console.error(`Failed to fetch item ${itemId}:`, error)
     }
 
     if (!itemData) {
@@ -72,7 +72,7 @@ export async function ItemForm<TPrisma>({
             </Link>
           </div>
         </div>
-      );
+      )
     }
     return (
       <div className="p-8">
@@ -81,32 +81,32 @@ export async function ItemForm<TPrisma>({
           <p>Failed to load the item. Please try again.</p>
         </div>
       </div>
-    );
+    )
   }
 
   // Fetch relationship options for all relationship fields
-  const relationshipData: Record<string, Array<{ id: string; label: string }>> = {};
+  const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if ((fieldConfig as any).type === "relationship") {
-      const ref = (fieldConfig as any).ref;
+    if ((fieldConfig as any).type === 'relationship') {
+      const ref = (fieldConfig as any).ref
       if (ref) {
         // Parse ref format: "ListName.fieldName"
-        const relatedListName = ref.split(".")[0];
-        const relatedListConfig = config.lists[relatedListName];
+        const relatedListName = ref.split('.')[0]
+        const relatedListConfig = config.lists[relatedListName]
 
         if (relatedListConfig) {
           try {
-            const dbContext = context.db;
-            const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({});
+            const dbContext = context.db
+            const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({})
 
             // Use 'name' field as label if it exists, otherwise use 'id'
             relationshipData[fieldName] = relatedItems.map((item: any) => ({
               id: item.id,
               label: item.name || item.title || item.id,
-            }));
+            }))
           } catch (error) {
-            console.error(`Failed to fetch relationship items for ${fieldName}:`, error);
-            relationshipData[fieldName] = [];
+            console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
+            relationshipData[fieldName] = []
           }
         }
       }
@@ -132,7 +132,7 @@ export async function ItemForm<TPrisma>({
           Back to {formatListName(listKey)}
         </Link>
         <h1 className="text-3xl font-bold">
-          {mode === "create" ? "Create" : "Edit"} {formatListName(listKey)}
+          {mode === 'create' ? 'Create' : 'Edit'} {formatListName(listKey)}
         </h1>
       </div>
 
@@ -164,5 +164,5 @@ export async function ItemForm<TPrisma>({
         />
       </div>
     </div>
-  );
+  )
 }

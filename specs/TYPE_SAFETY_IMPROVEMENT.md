@@ -10,7 +10,7 @@ import type { PrismaClient } from '@prisma/client'
 export async function getContext(
   config: OpenSaaSConfig,
   prisma: PrismaClient,
-  session: Session
+  session: Session,
 ): Promise<any>
 ```
 
@@ -28,7 +28,7 @@ export type PrismaClientLike = {
 export async function getContext<TPrisma extends PrismaClientLike = any>(
   config: OpenSaaSConfig,
   prisma: TPrisma,
-  session: Session
+  session: Session,
 ): Promise<any>
 ```
 
@@ -81,10 +81,10 @@ const prisma = new PrismaClient()
 
 export async function getContext(): Promise<Context> {
   const session = await getSession()
-  
+
   // Pass PrismaClient as generic for type safety
   const context = await createContext<PrismaClient>(config, prisma, session)
-  
+
   return context as Context
 }
 ```
@@ -98,16 +98,20 @@ The generated `.opensaas/types.ts` file no longer imports `PrismaClient`:
 import type { PrismaClient } from '@prisma/client'
 
 export type Context = {
-  db: { /* ... */ }
+  db: {
+    /* ... */
+  }
   session: any
   prisma: PrismaClient
 }
 
 // After
 export type Context = {
-  db: { /* ... */ }
+  db: {
+    /* ... */
+  }
   session: any
-  prisma: any  // Your PrismaClient instance
+  prisma: any // Your PrismaClient instance
 }
 ```
 
@@ -153,7 +157,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext
+  context: AccessContext,
 )
 ```
 

@@ -1,16 +1,16 @@
-"use client";
+'use client'
 
-import { Checkbox } from "../../primitives/checkbox.js";
-import { Label } from "../../primitives/label.js";
+import { Checkbox } from '../../primitives/checkbox.js'
+import { Label } from '../../primitives/label.js'
 
 export interface CheckboxFieldProps {
-  name: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-  label: string;
-  error?: string;
-  disabled?: boolean;
-  mode?: "read" | "edit";
+  name: string
+  value: boolean
+  onChange: (value: boolean) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  mode?: 'read' | 'edit'
 }
 
 export function CheckboxField({
@@ -20,15 +20,15 @@ export function CheckboxField({
   label,
   error,
   disabled,
-  mode = "edit",
+  mode = 'edit',
 }: CheckboxFieldProps) {
-  if (mode === "read") {
+  if (mode === 'read') {
     return (
       <div className="space-y-1">
         <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{value ? "Yes" : "No"}</p>
+        <p className="text-sm">{value ? 'Yes' : 'No'}</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -50,5 +50,5 @@ export function CheckboxField({
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
-  );
+  )
 }

@@ -6,28 +6,14 @@ import { TextField } from '../../src/components/fields/TextField.js'
 describe('TextField', () => {
   describe('edit mode', () => {
     it('should render text input with label', () => {
-      render(
-        <TextField
-          name="username"
-          value=""
-          onChange={vi.fn()}
-          label="Username"
-        />
-      )
+      render(<TextField name="username" value="" onChange={vi.fn()} label="Username" />)
 
       expect(screen.getByLabelText('Username')).toBeInTheDocument()
       expect(screen.getByRole('textbox')).toBeInTheDocument()
     })
 
     it('should display current value', () => {
-      render(
-        <TextField
-          name="username"
-          value="john"
-          onChange={vi.fn()}
-          label="Username"
-        />
-      )
+      render(<TextField name="username" value="john" onChange={vi.fn()} label="Username" />)
 
       const input = screen.getByRole('textbox')
       expect(input).toHaveValue('john')
@@ -37,14 +23,7 @@ describe('TextField', () => {
       const onChange = vi.fn()
       const user = userEvent.setup()
 
-      render(
-        <TextField
-          name="username"
-          value=""
-          onChange={onChange}
-          label="Username"
-        />
-      )
+      render(<TextField name="username" value="" onChange={onChange} label="Username" />)
 
       const input = screen.getByRole('textbox')
       await user.type(input, 't')
@@ -54,15 +33,7 @@ describe('TextField', () => {
     })
 
     it('should show required indicator when required', () => {
-      render(
-        <TextField
-          name="username"
-          value=""
-          onChange={vi.fn()}
-          label="Username"
-          required
-        />
-      )
+      render(<TextField name="username" value="" onChange={vi.fn()} label="Username" required />)
 
       expect(screen.getByText('*')).toBeInTheDocument()
     })
@@ -75,22 +46,14 @@ describe('TextField', () => {
           onChange={vi.fn()}
           label="Username"
           error="Username is required"
-        />
+        />,
       )
 
       expect(screen.getByText('Username is required')).toBeInTheDocument()
     })
 
     it('should be disabled when disabled prop is true', () => {
-      render(
-        <TextField
-          name="username"
-          value=""
-          onChange={vi.fn()}
-          label="Username"
-          disabled
-        />
-      )
+      render(<TextField name="username" value="" onChange={vi.fn()} label="Username" disabled />)
 
       const input = screen.getByRole('textbox')
       expect(input).toBeDisabled()
@@ -104,7 +67,7 @@ describe('TextField', () => {
           onChange={vi.fn()}
           label="Username"
           placeholder="Enter your username"
-        />
+        />,
       )
 
       expect(screen.getByPlaceholderText('Enter your username')).toBeInTheDocument()
@@ -114,13 +77,7 @@ describe('TextField', () => {
   describe('read mode', () => {
     it('should render value as text', () => {
       render(
-        <TextField
-          name="username"
-          value="john"
-          onChange={vi.fn()}
-          label="Username"
-          mode="read"
-        />
+        <TextField name="username" value="john" onChange={vi.fn()} label="Username" mode="read" />,
       )
 
       expect(screen.getByText('Username')).toBeInTheDocument()
@@ -129,15 +86,7 @@ describe('TextField', () => {
     })
 
     it('should show dash when value is empty', () => {
-      render(
-        <TextField
-          name="username"
-          value=""
-          onChange={vi.fn()}
-          label="Username"
-          mode="read"
-        />
-      )
+      render(<TextField name="username" value="" onChange={vi.fn()} label="Username" mode="read" />)
 
       expect(screen.getByText('-')).toBeInTheDocument()
     })

@@ -1,23 +1,23 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { Button } from "../../primitives/button.js";
-import { ConfirmDialog } from "../ConfirmDialog.js";
-import { LoadingSpinner } from "../LoadingSpinner.js";
+import { useState } from 'react'
+import { Button } from '../../primitives/button.js'
+import { ConfirmDialog } from '../ConfirmDialog.js'
+import { LoadingSpinner } from '../LoadingSpinner.js'
 
 export interface DeleteButtonProps {
-  onDelete: () => Promise<{ success: boolean; error?: string }>;
-  itemName?: string;
-  confirmTitle?: string;
-  confirmMessage?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  buttonLabel?: string;
-  variant?: "danger" | "warning";
-  buttonVariant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
-  size?: "default" | "sm" | "lg" | "icon";
-  className?: string;
-  disabled?: boolean;
+  onDelete: () => Promise<{ success: boolean; error?: string }>
+  itemName?: string
+  confirmTitle?: string
+  confirmMessage?: string
+  confirmLabel?: string
+  cancelLabel?: string
+  buttonLabel?: string
+  variant?: 'danger' | 'warning'
+  buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+  size?: 'default' | 'sm' | 'lg' | 'icon'
+  className?: string
+  disabled?: boolean
 }
 
 /**
@@ -38,38 +38,38 @@ export interface DeleteButtonProps {
  */
 export function DeleteButton({
   onDelete,
-  itemName = "item",
+  itemName = 'item',
   confirmTitle,
   confirmMessage,
-  confirmLabel = "Delete",
-  cancelLabel = "Cancel",
-  buttonLabel = "Delete",
-  variant = "danger",
-  buttonVariant = "destructive",
-  size = "default",
+  confirmLabel = 'Delete',
+  cancelLabel = 'Cancel',
+  buttonLabel = 'Delete',
+  variant = 'danger',
+  buttonVariant = 'destructive',
+  size = 'default',
   className,
   disabled = false,
 }: DeleteButtonProps) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [isPending, setIsPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleDelete = async () => {
-    setShowConfirm(false);
-    setIsPending(true);
-    setError(null);
+    setShowConfirm(false)
+    setIsPending(true)
+    setError(null)
 
     try {
-      const result = await onDelete();
+      const result = await onDelete()
       if (!result.success) {
-        setError(result.error || `Failed to delete ${itemName}`);
+        setError(result.error || `Failed to delete ${itemName}`)
       }
     } catch (err: unknown) {
-      setError((err as Error).message || `Failed to delete ${itemName}`);
+      setError((err as Error).message || `Failed to delete ${itemName}`)
     } finally {
-      setIsPending(false);
+      setIsPending(false)
     }
-  };
+  }
 
   return (
     <>
@@ -81,7 +81,12 @@ export function DeleteButton({
         disabled={disabled || isPending}
         className={className}
       >
-        {isPending && <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent mr-2" />}
+        {isPending && (
+          <LoadingSpinner
+            size="sm"
+            className="border-primary-foreground border-t-transparent mr-2"
+          />
+        )}
         {buttonLabel}
       </Button>
 
@@ -105,5 +110,5 @@ export function DeleteButton({
         onCancel={() => setShowConfirm(false)}
       />
     </>
-  );
+  )
 }

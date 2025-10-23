@@ -6,7 +6,7 @@ export type {
   PrismaFilter,
   AccessControlledDB,
   PrismaClientLike,
-} from "./types.js";
+} from './types.js'
 export {
   checkAccess,
   mergeFilters,
@@ -17,4 +17,4 @@ export {
   isPrismaFilter,
   getRelatedListConfig,
   buildIncludeWithAccessControl,
-} from "./engine.js";
+} from './engine.js'

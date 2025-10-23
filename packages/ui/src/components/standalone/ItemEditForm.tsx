@@ -1,21 +1,21 @@
-"use client";
+'use client'
 
-import * as React from "react";
-import { useState } from "react";
-import { FieldRenderer } from "../fields/FieldRenderer.js";
-import { LoadingSpinner } from "../LoadingSpinner.js";
-import { Button } from "../../primitives/button.js";
-import type { FieldConfig } from "@opensaas/core";
+import * as React from 'react'
+import { useState } from 'react'
+import { FieldRenderer } from '../fields/FieldRenderer.js'
+import { LoadingSpinner } from '../LoadingSpinner.js'
+import { Button } from '../../primitives/button.js'
+import type { FieldConfig } from '@opensaas/core'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
-  fields: Record<string, FieldConfig>;
-  initialData: TData;
-  onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>;
-  onCancel?: () => void;
-  relationshipData?: Record<string, Array<{ id: string; label: string }>>;
-  submitLabel?: string;
-  cancelLabel?: string;
-  className?: string;
+  fields: Record<string, FieldConfig>
+  initialData: TData
+  onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
+  onCancel?: () => void
+  relationshipData?: Record<string, Array<{ id: string; label: string }>>
+  submitLabel?: string
+  cancelLabel?: string
+  className?: string
 }
 
 /**
@@ -41,78 +41,78 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   onSubmit,
   onCancel,
   relationshipData = {},
-  submitLabel = "Save",
-  cancelLabel = "Cancel",
+  submitLabel = 'Save',
+  cancelLabel = 'Cancel',
   className,
 }: ItemEditFormProps<TData>) {
-  const [isPending, setIsPending] = useState(false);
-  const [formData, setFormData] = useState<TData>(initialData);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false)
+  const [formData, setFormData] = useState<TData>(initialData)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [generalError, setGeneralError] = useState<string | null>(null)
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value } as TData));
+    setFormData((prev) => ({ ...prev, [fieldName]: value }) as TData)
     // Clear error for this field when user starts typing
     if (errors[fieldName]) {
       setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[fieldName];
-        return newErrors;
-      });
+        const newErrors = { ...prev }
+        delete newErrors[fieldName]
+        return newErrors
+      })
     }
-  };
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrors({});
-    setGeneralError(null);
-    setIsPending(true);
+    e.preventDefault()
+    setErrors({})
+    setGeneralError(null)
+    setIsPending(true)
 
     try {
       // Transform relationship fields to Prisma format
-      const transformedData: Record<string, unknown> = {};
+      const transformedData: Record<string, unknown> = {}
       for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
-        const fieldConfig = fields[fieldName];
+        const fieldConfig = fields[fieldName]
 
         // Transform relationship fields
-        if ((fieldConfig as Record<string, unknown>)?.type === "relationship") {
+        if ((fieldConfig as Record<string, unknown>)?.type === 'relationship') {
           if ((fieldConfig as Record<string, unknown>).many) {
             // Many relationship: use connect format
             if (Array.isArray(value) && value.length > 0) {
               transformedData[fieldName] = {
                 connect: value.map((id: string) => ({ id })),
-              };
+              }
             }
           } else {
             // Single relationship: use connect format
             if (value) {
               transformedData[fieldName] = {
                 connect: { id: value },
-              };
+              }
             }
           }
         } else {
           // Non-relationship field: pass through
-          transformedData[fieldName] = value;
+          transformedData[fieldName] = value
         }
       }
 
-      const result = await onSubmit(transformedData as TData);
+      const result = await onSubmit(transformedData as TData)
 
       if (!result.success) {
-        setGeneralError(result.error || "Failed to update item");
+        setGeneralError(result.error || 'Failed to update item')
       }
     } catch (error: unknown) {
-      setGeneralError((error as Error).message || "Failed to update item");
-    } finally{
-      setIsPending(false);
+      setGeneralError((error as Error).message || 'Failed to update item')
+    } finally {
+      setIsPending(false)
     }
-  };
+  }
 
   // Filter out system fields
   const editableFields = Object.entries(fields).filter(
-    ([key]) => !["id", "createdAt", "updatedAt"].includes(key),
-  );
+    ([key]) => !['id', 'createdAt', 'updatedAt'].includes(key),
+  )
 
   return (
     <form onSubmit={handleSubmit} className={className}>
@@ -147,7 +147,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
           {isPending && (
             <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
           )}
-          {isPending ? "Saving..." : submitLabel}
+          {isPending ? 'Saving...' : submitLabel}
         </Button>
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={isPending}>
@@ -156,5 +156,5 @@ export function ItemEditForm<TData = Record<string, unknown>>({
         )}
       </div>
     </form>
-  );
+  )
 }

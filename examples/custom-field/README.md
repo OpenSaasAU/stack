@@ -30,6 +30,7 @@ fields: {
 ```
 
 **When to use:**
+
 - When you have a reusable field type used across multiple lists
 - When building a library of custom field components for your organization
 - When you want consistent behavior across similar fields
@@ -42,15 +43,16 @@ The `SlugField` component is used for a specific field, providing auto-generatio
 fields: {
   slug: text({
     validation: { isRequired: true },
-    isIndexed: "unique",
+    isIndexed: 'unique',
     ui: {
-      component: SlugField,  // Override for this specific field
+      component: SlugField, // Override for this specific field
     },
   })
 }
 ```
 
 **When to use:**
+
 - When you need custom behavior for a single field
 - When the field has unique requirements not shared by other fields
 - When prototyping before creating a reusable component
@@ -98,6 +100,7 @@ Then open [http://localhost:3001/admin](http://localhost:3001/admin)
 ### Extensibility
 
 Adding a new custom field type requires:
+
 1. Create React component matching `FieldComponentProps` interface
 2. Either register globally or pass as `ui.component`
 3. No changes to core framework code
@@ -116,6 +119,7 @@ const MyField: FieldComponent = ({ name, value, onChange, ... }) => {
 ### Flexibility
 
 Choose the right approach for your use case:
+
 - **Global registration**: Reusable components, consistent behavior
 - **Per-field override**: One-off customizations, rapid prototyping
 
@@ -130,6 +134,7 @@ Try creating your own custom field components:
 5. **Geolocation Picker** - Map-based location selection
 
 Each component just needs to:
+
 - Accept standard field props (`name`, `value`, `onChange`, `label`, etc.)
 - Handle both `read` and `edit` modes
 - Display validation errors

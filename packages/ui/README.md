@@ -21,25 +21,25 @@ pnpm add @opensaas/ui
 
 ```typescript
 // Primitives (shadcn/ui components)
-import { Button, Input, Card, Table, Dialog } from "@opensaas/ui/primitives"
+import { Button, Input, Card, Table, Dialog } from '@opensaas/ui/primitives'
 
 // Field components (OpenSaaS-aware)
-import { TextField, SelectField, RelationshipField } from "@opensaas/ui/fields"
+import { TextField, SelectField, RelationshipField } from '@opensaas/ui/fields'
 
 // Standalone components (complete features)
-import { ItemCreateForm, ListTable, SearchBar } from "@opensaas/ui/standalone"
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
 
 // Full components (page-level)
-import { Dashboard, ListView, ItemForm, AdminUI } from "@opensaas/ui"
+import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/ui'
 
 // Server utilities
-import { getAdminContext } from "@opensaas/ui/server"
+import { getAdminContext } from '@opensaas/ui/server'
 
 // Utility functions
-import { cn, formatListName, formatFieldName } from "@opensaas/ui/lib/utils"
+import { cn, formatListName, formatFieldName } from '@opensaas/ui/lib/utils'
 
 // Styles
-import "@opensaas/ui/styles"
+import '@opensaas/ui/styles'
 ```
 
 ## Architecture
@@ -49,6 +49,7 @@ import "@opensaas/ui/styles"
 Low-level UI components based on Radix UI and shadcn/ui.
 
 **Available Components:**
+
 - Button - Buttons with variants
 - Input - Text inputs
 - Label - Form labels
@@ -59,10 +60,11 @@ Low-level UI components based on Radix UI and shadcn/ui.
 - Checkbox - Checkboxes
 
 **Example:**
-```tsx
-import { Button, Card, CardHeader, CardTitle, CardContent } from "@opensaas/ui/primitives"
 
-<Card>
+```tsx
+import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/ui/primitives'
+
+;<Card>
   <CardHeader>
     <CardTitle>Welcome</CardTitle>
   </CardHeader>
@@ -77,6 +79,7 @@ import { Button, Card, CardHeader, CardTitle, CardContent } from "@opensaas/ui/p
 OpenSaaS-aware form fields with validation and access control.
 
 **Available Fields:**
+
 - TextField
 - IntegerField
 - CheckboxField
@@ -86,25 +89,20 @@ OpenSaaS-aware form fields with validation and access control.
 - RelationshipField
 
 **Example:**
-```tsx
-import { TextField, SelectField } from "@opensaas/ui/fields"
 
-<form>
-  <TextField
-    name="email"
-    label="Email"
-    value={email}
-    onChange={setEmail}
-    required
-  />
+```tsx
+import { TextField, SelectField } from '@opensaas/ui/fields'
+
+;<form>
+  <TextField name="email" label="Email" value={email} onChange={setEmail} required />
   <SelectField
     name="role"
     label="Role"
     value={role}
     onChange={setRole}
     options={[
-      { label: "Admin", value: "admin" },
-      { label: "User", value: "user" },
+      { label: 'Admin', value: 'admin' },
+      { label: 'User', value: 'user' },
     ]}
   />
 </form>
@@ -117,10 +115,11 @@ Complete, reusable components for common admin tasks.
 **Available Components:**
 
 #### ItemCreateForm
-```tsx
-import { ItemCreateForm } from "@opensaas/ui/standalone"
 
-<ItemCreateForm
+```tsx
+import { ItemCreateForm } from '@opensaas/ui/standalone'
+
+;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
     const post = await createPost(data)
@@ -131,10 +130,11 @@ import { ItemCreateForm } from "@opensaas/ui/standalone"
 ```
 
 #### ItemEditForm
-```tsx
-import { ItemEditForm } from "@opensaas/ui/standalone"
 
-<ItemEditForm
+```tsx
+import { ItemEditForm } from '@opensaas/ui/standalone'
+
+;<ItemEditForm
   fields={config.lists.Post.fields}
   initialData={post}
   onSubmit={async (data) => {
@@ -145,33 +145,33 @@ import { ItemEditForm } from "@opensaas/ui/standalone"
 ```
 
 #### ListTable
-```tsx
-import { ListTable } from "@opensaas/ui/standalone"
 
-<ListTable
+```tsx
+import { ListTable } from '@opensaas/ui/standalone'
+
+;<ListTable
   items={posts}
-  fieldTypes={{ title: "text", status: "select" }}
-  columns={["title", "status"]}
+  fieldTypes={{ title: 'text', status: 'select' }}
+  columns={['title', 'status']}
   onRowClick={(post) => router.push(`/posts/${post.id}`)}
   sortable
 />
 ```
 
 #### SearchBar
-```tsx
-import { SearchBar } from "@opensaas/ui/standalone"
 
-<SearchBar
-  onSearch={(query) => fetchPosts({ search: query })}
-  placeholder="Search posts..."
-/>
+```tsx
+import { SearchBar } from '@opensaas/ui/standalone'
+
+;<SearchBar onSearch={(query) => fetchPosts({ search: query })} placeholder="Search posts..." />
 ```
 
 #### DeleteButton
-```tsx
-import { DeleteButton } from "@opensaas/ui/standalone"
 
-<DeleteButton
+```tsx
+import { DeleteButton } from '@opensaas/ui/standalone'
+
+;<DeleteButton
   onDelete={async () => {
     await deletePost(postId)
     return { success: true }
@@ -185,9 +185,9 @@ import { DeleteButton } from "@opensaas/ui/standalone"
 Complete admin interface with routing and navigation.
 
 ```tsx
-import { AdminUI } from "@opensaas/ui"
+import { AdminUI } from '@opensaas/ui'
 
-<AdminUI
+;<AdminUI
   context={context}
   params={params?.admin}
   searchParams={searchParams}
@@ -201,23 +201,23 @@ import { AdminUI } from "@opensaas/ui"
 Extend or override field components:
 
 ```tsx
-import { registerFieldComponent } from "@opensaas/ui"
-import { ColorPickerField } from "./components/ColorPickerField"
+import { registerFieldComponent } from '@opensaas/ui'
+import { ColorPickerField } from './components/ColorPickerField'
 
 // Register globally
-registerFieldComponent("color", ColorPickerField)
+registerFieldComponent('color', ColorPickerField)
 
 // Use in config
 fields: {
   themeColor: text({
-    ui: { fieldType: "color" }
+    ui: { fieldType: 'color' },
   })
 }
 
 // Or override per-field
 fields: {
   slug: text({
-    ui: { component: SlugField }
+    ui: { component: SlugField },
   })
 }
 ```
@@ -228,7 +228,7 @@ All components use Tailwind CSS v4 with CSS variables:
 
 ```css
 /* app/globals.css */
-@import "@opensaas/ui/styles";
+@import '@opensaas/ui/styles';
 
 :root {
   --background: 0 0% 100%;
@@ -256,6 +256,7 @@ All components use Tailwind CSS v4 with CSS variables:
 ## Accessibility
 
 All components follow WAI-ARIA guidelines:
+
 - Proper semantic HTML
 - ARIA attributes
 - Keyboard navigation
@@ -273,7 +274,7 @@ import type {
   ItemCreateFormProps,
   ListTableProps,
   AdminUIProps,
-} from "@opensaas/ui"
+} from '@opensaas/ui'
 ```
 
 ## Examples

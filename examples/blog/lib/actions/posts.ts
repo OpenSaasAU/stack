@@ -14,8 +14,8 @@ export async function createPost(authorId: string, data: Omit<PostCreateInput, '
   const post = await context.db.post.create({
     data: {
       ...data,
-      author: { connect: { id: authorId } }
-    }
+      author: { connect: { id: authorId } },
+    },
   })
 
   if (!post) {
@@ -35,7 +35,7 @@ export async function updatePost(userId: string, postId: string, data: PostUpdat
 
   const post = await context.db.post.update({
     where: { id: postId },
-    data
+    data,
   })
 
   if (!post) {
@@ -56,8 +56,8 @@ export async function publishPost(userId: string, postId: string) {
     where: { id: postId },
     data: {
       status: 'published',
-      publishedAt: new Date()
-    }
+      publishedAt: new Date(),
+    },
   })
 
   if (!post) {
@@ -76,7 +76,7 @@ export async function deletePost(userId: string, postId: string) {
   const context = await getContextWithUser(userId)
 
   const post = await context.db.post.delete({
-    where: { id: postId }
+    where: { id: postId },
   })
 
   if (!post) {
@@ -94,7 +94,7 @@ export async function getPublishedPosts() {
   const context = await getContext()
 
   const posts = await context.db.post.findMany({
-    where: { status: { equals: 'published' } }
+    where: { status: { equals: 'published' } },
   })
 
   return posts
@@ -105,12 +105,10 @@ export async function getPublishedPosts() {
  * Access control will determine what's visible
  */
 export async function getPost(postId: string, userId?: string) {
-  const context = userId
-    ? await getContextWithUser(userId)
-    : await getContext()
+  const context = userId ? await getContextWithUser(userId) : await getContext()
 
   const post = await context.db.post.findUnique({
-    where: { id: postId }
+    where: { id: postId },
   })
 
   return post
@@ -123,7 +121,7 @@ export async function getUserPosts(userId: string) {
   const context = await getContextWithUser(userId)
 
   const posts = await context.db.post.findMany({
-    where: { authorId: { equals: userId } }
+    where: { authorId: { equals: userId } },
   })
 
   return posts

@@ -9,7 +9,7 @@ import { getContext, getContextWithUser } from './lib/context'
 
 async function test() {
   console.log('🧪 Testing OpenSaaS Framework Access Control\n')
-  console.log('=' .repeat(60))
+  console.log('='.repeat(60))
 
   try {
     // Clean up any existing data
@@ -24,8 +24,8 @@ async function test() {
       data: {
         name: 'Alice',
         email: 'alice@example.com',
-        password: 'hashed_password_here'
-      }
+        password: 'hashed_password_here',
+      },
     })
     console.log('✅ User created:', { id: alice.id, name: alice.name, email: alice.email })
 
@@ -40,8 +40,8 @@ async function test() {
         slug: 'my-first-post',
         content: 'Hello world! This is my first blog post.',
         internalNotes: 'Remember to add images later. Also fix typos.',
-        author: { connect: { id: alice.id } }
-      }
+        author: { connect: { id: alice.id } },
+      },
     })
 
     if (!post) {
@@ -51,7 +51,7 @@ async function test() {
     console.log('✅ Post created:', {
       id: post.id,
       title: post.title,
-      status: post.status
+      status: post.status,
     })
     console.log('   Internal notes visible to author:', post.internalNotes)
 
@@ -61,7 +61,7 @@ async function test() {
     console.log('\n📝 Test 3: Reading draft post as anonymous user...')
     const contextAnon = await getContext()
     const postAnon = await contextAnon.db.post.findUnique({
-      where: { id: post.id }
+      where: { id: post.id },
     })
 
     if (postAnon === null) {
@@ -85,8 +85,8 @@ async function test() {
       where: { id: post.id },
       data: {
         status: 'published',
-        publishedAt: new Date()
-      }
+        publishedAt: new Date(),
+      },
     })
 
     if (!publishedPost) {
@@ -100,7 +100,7 @@ async function test() {
     // ========================================
     console.log('\n📝 Test 6: Reading published post as anonymous user...')
     const postAnonPublished = await contextAnon.db.post.findUnique({
-      where: { id: post.id }
+      where: { id: post.id },
     })
 
     if (postAnonPublished) {
@@ -125,25 +125,25 @@ async function test() {
       data: {
         name: 'Bob',
         email: 'bob@example.com',
-        password: 'hashed_password_here'
-      }
+        password: 'hashed_password_here',
+      },
     })
     console.log('✅ User created:', { id: bob.id, name: bob.name })
 
     // ========================================
     // Test 8: Bob tries to update Alice's post
     // ========================================
-    console.log('\n📝 Test 8: Trying to update Alice\'s post as Bob (should fail)...')
+    console.log("\n📝 Test 8: Trying to update Alice's post as Bob (should fail)...")
     const contextBob = await getContextWithUser(bob.id)
     const updatedByBob = await contextBob.db.post.update({
       where: { id: post.id },
-      data: { title: 'Hacked by Bob!' }
+      data: { title: 'Hacked by Bob!' },
     })
 
     if (updatedByBob === null) {
-      console.log('✅ Access control working: Bob cannot update Alice\'s post (silent failure)')
+      console.log("✅ Access control working: Bob cannot update Alice's post (silent failure)")
     } else {
-      console.log('❌ FAILED: Bob should not be able to update Alice\'s post')
+      console.log("❌ FAILED: Bob should not be able to update Alice's post")
     }
 
     // ========================================
@@ -152,7 +152,7 @@ async function test() {
     console.log('\n📝 Test 9: Updating post as Alice (owner)...')
     const updatedByAlice = await contextAlice.db.post.update({
       where: { id: post.id },
-      data: { title: 'My Updated Post Title' }
+      data: { title: 'My Updated Post Title' },
     })
 
     if (updatedByAlice && updatedByAlice.title === 'My Updated Post Title') {
@@ -167,13 +167,13 @@ async function test() {
     console.log('\n📝 Test 10: Creating a post as Bob with internal notes...')
     const bobsPost = await contextBob.db.post.create({
       data: {
-        title: 'Bob\'s Post',
+        title: "Bob's Post",
         slug: 'bobs-post',
-        content: 'This is Bob\'s post',
+        content: "This is Bob's post",
         internalNotes: 'My secret notes',
         status: 'published',
-        author: { connect: { id: bob.id } }
-      }
+        author: { connect: { id: bob.id } },
+      },
     })
 
     if (bobsPost && bobsPost.internalNotes === 'My secret notes') {
@@ -185,15 +185,15 @@ async function test() {
     // ========================================
     // Test 11: Alice cannot see Bob's internal notes
     // ========================================
-    console.log('\n📝 Test 11: Alice tries to read Bob\'s post...')
+    console.log("\n📝 Test 11: Alice tries to read Bob's post...")
     const bobsPostAsAlice = await contextAlice.db.post.findUnique({
-      where: { id: bobsPost!.id }
+      where: { id: bobsPost!.id },
     })
 
     if (bobsPostAsAlice && bobsPostAsAlice.internalNotes === undefined) {
-      console.log('✅ Field-level access working: Alice cannot see Bob\'s internal notes')
+      console.log("✅ Field-level access working: Alice cannot see Bob's internal notes")
     } else {
-      console.log('❌ FAILED: Alice should not see Bob\'s internal notes')
+      console.log("❌ FAILED: Alice should not see Bob's internal notes")
       console.log('   Got:', bobsPostAsAlice?.internalNotes)
     }
 
@@ -218,8 +218,7 @@ async function test() {
     console.log('  ✅ Field-level access control (hiding internalNotes)')
     console.log('  ✅ Owner-based permissions (update/delete)')
     console.log('  ✅ Status-based visibility (draft vs published)')
-    console.log('=' .repeat(60))
-
+    console.log('='.repeat(60))
   } catch (error) {
     console.error('\n❌ Test failed with error:', error)
     throw error

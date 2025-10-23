@@ -1,19 +1,19 @@
-"use client";
+'use client'
 
-import * as React from "react";
-import { useState } from "react";
-import { Input } from "../../primitives/input.js";
-import { Button } from "../../primitives/button.js";
-import { Card } from "../../primitives/card.js";
-import { usePathname, useRouter } from "next/navigation";
+import * as React from 'react'
+import { useState } from 'react'
+import { Input } from '../../primitives/input.js'
+import { Button } from '../../primitives/button.js'
+import { Card } from '../../primitives/card.js'
+import { usePathname, useRouter } from 'next/navigation'
 
 export interface SearchBarProps {
-  onSearch?: (query: string) => void;
-  onClear?: () => void;
-  placeholder?: string;
-  defaultValue?: string;
-  searchLabel?: string;
-  className?: string;
+  onSearch?: (query: string) => void
+  onClear?: () => void
+  placeholder?: string
+  defaultValue?: string
+  searchLabel?: string
+  className?: string
 }
 
 /**
@@ -38,28 +38,28 @@ export interface SearchBarProps {
 export function SearchBar({
   onSearch,
   onClear,
-  placeholder = "Search...",
-  defaultValue = "",
-  searchLabel = "Search",
+  placeholder = 'Search...',
+  defaultValue = '',
+  searchLabel = 'Search',
   className,
 }: SearchBarProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [searchInput, setSearchInput] = useState(defaultValue);
+  const router = useRouter()
+  const pathname = usePathname()
+  const [searchInput, setSearchInput] = useState(defaultValue)
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onSearch) onSearch(searchInput.trim());
-    else router.push(`${pathname}?search=${searchInput.trim()}`);
-  };
+    e.preventDefault()
+    if (onSearch) onSearch(searchInput.trim())
+    else router.push(`${pathname}?search=${searchInput.trim()}`)
+  }
 
   const handleClear = () => {
-    setSearchInput("");
-    onClear?.();
-  };
+    setSearchInput('')
+    onClear?.()
+  }
 
   return (
-    <Card className={`p-4 ${className || ""}`}>
+    <Card className={`p-4 ${className || ''}`}>
       <form onSubmit={handleSubmit} className="flex gap-2">
         <div className="flex-1 relative">
           <Input
@@ -82,5 +82,5 @@ export function SearchBar({
         <Button type="submit">{searchLabel}</Button>
       </form>
     </Card>
-  );
+  )
 }

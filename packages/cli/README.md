@@ -19,12 +19,14 @@ opensaas generate
 ```
 
 **What it does:**
+
 1. Reads `opensaas.config.ts` from current directory
 2. Generates `prisma/schema.prisma` - Prisma schema
 3. Generates `.opensaas/types.ts` - TypeScript types
 4. Outputs success message with next steps
 
 **Output:**
+
 ```
 🚀 OpenSaaS Generator
 - Loading configuration...
@@ -40,6 +42,7 @@ Next steps:
 ```
 
 **Example package.json script:**
+
 ```json
 {
   "scripts": {
@@ -57,12 +60,14 @@ opensaas dev
 ```
 
 **What it does:**
+
 1. Runs initial generation
 2. Watches `opensaas.config.ts` for changes
 3. Automatically regenerates when file changes
 4. Runs until you press Ctrl+C
 
 **Output:**
+
 ```
 🚀 OpenSaaS Generator
 - Loading configuration...
@@ -75,6 +80,7 @@ Press Ctrl+C to stop
 ```
 
 When changes detected:
+
 ```
 Config changed, regenerating...
 
@@ -83,6 +89,7 @@ Config changed, regenerating...
 ```
 
 **Example package.json script:**
+
 ```json
 {
   "scripts": {
@@ -159,6 +166,7 @@ jobs:
 The CLI reads `opensaas.config.ts` from the current working directory.
 
 **Example config:**
+
 ```typescript
 // opensaas.config.ts
 import { config, list } from '@opensaas/core'
@@ -173,9 +181,9 @@ export default config({
     Post: list({
       fields: {
         title: text(),
-      }
-    })
-  }
+      },
+    }),
+  },
 })
 ```
 
@@ -184,6 +192,7 @@ export default config({
 ### Prisma Schema (`prisma/schema.prisma`)
 
 Generated Prisma schema with:
+
 - Database provider configuration
 - Models for each list
 - Field types and modifiers
@@ -191,6 +200,7 @@ Generated Prisma schema with:
 - Relationships
 
 **Example output:**
+
 ```prisma
 datasource db {
   provider = "postgresql"
@@ -212,25 +222,27 @@ model Post {
 ### TypeScript Types (`.opensaas/types.ts`)
 
 Generated TypeScript types for:
+
 - List items
 - Create/update input types
 - Context types
 
 **Example output:**
+
 ```typescript
 export type Post = {
-  id: string;
-  title: string;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  title: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 export type PostCreateInput = {
-  title: string;
+  title: string
 }
 
 export type PostUpdateInput = {
-  title?: string;
+  title?: string
 }
 ```
 

@@ -1,29 +1,29 @@
-import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
-import { Button } from "@opensaas/ui/primitives";
-import { getContext } from "../lib/context";
-import { CreatePostDialog } from "../components/CreatePostDialog";
-import { connection } from "next/server";
+import Link from 'next/link'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
+import { Button } from '@opensaas/ui/primitives'
+import { getContext } from '../lib/context'
+import { CreatePostDialog } from '../components/CreatePostDialog'
+import { connection } from 'next/server'
 
 export default async function HomePage() {
-  await connection();
+  await connection()
   // Use context for access-controlled queries
-  const context = await getContext();
+  const context = await getContext()
 
   // Get stats (using Prisma directly for counts is fine)
   const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
     context.db.post.count(),
-    context.db.post.count({ where: { status: "published" } }),
-    context.db.post.count({ where: { status: "draft" } }),
+    context.db.post.count({ where: { status: 'published' } }),
+    context.db.post.count({ where: { status: 'draft' } }),
     context.db.user.count(),
-  ]);
+  ])
 
   // Get recent posts using context (access control applied)
   const recentPosts = await context.db.post.findMany({
     take: 5,
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: 'desc' },
     include: { author: true },
-  });
+  })
 
   return (
     <div className="min-h-screen bg-background">
@@ -134,15 +134,15 @@ export default async function HomePage() {
                         <div className="flex-1">
                           <h3 className="font-semibold">{post.title}</h3>
                           <p className="text-sm text-muted-foreground mt-1">
-                            by {post.author?.name || "Unknown"} •{" "}
+                            by {post.author?.name || 'Unknown'} •{' '}
                             {new Date(post.createdAt).toLocaleDateString()}
                           </p>
                         </div>
                         <span
                           className={`px-2 py-1 text-xs font-medium rounded ${
-                            post.status === "published"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-yellow-100 text-yellow-800"
+                            post.status === 'published'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
                           {post.status}
@@ -157,5 +157,5 @@ export default async function HomePage() {
         </div>
       </main>
     </div>
-  );
+  )
 }

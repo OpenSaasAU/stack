@@ -1,15 +1,8 @@
 // Primitive components from shadcn/ui
-export { Button, buttonVariants, type ButtonProps } from "./button.js";
-export { Input, type InputProps } from "./input.js";
-export { Label } from "./label.js";
-export {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "./card.js";
+export { Button, buttonVariants, type ButtonProps } from './button.js'
+export { Input, type InputProps } from './input.js'
+export { Label } from './label.js'
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent } from './card.js'
 export {
   Table,
   TableHeader,
@@ -19,7 +12,7 @@ export {
   TableRow,
   TableCell,
   TableCaption,
-} from "./table.js";
+} from './table.js'
 export {
   Dialog,
   DialogPortal,
@@ -31,7 +24,7 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
-} from "./dialog.js";
+} from './dialog.js'
 export {
   Select,
   SelectGroup,
@@ -43,5 +36,5 @@ export {
   SelectSeparator,
   SelectScrollUpButton,
   SelectScrollDownButton,
-} from "./select.js";
-export { Checkbox } from "./checkbox.js";
+} from './select.js'
+export { Checkbox } from './checkbox.js'

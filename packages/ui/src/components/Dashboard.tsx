@@ -1,12 +1,12 @@
-import Link from "next/link";
-import { formatListName } from "../lib/utils.js";
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
-import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card.js";
+import Link from 'next/link'
+import { formatListName } from '../lib/utils.js'
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/core'
+import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 
 export interface DashboardProps<TPrisma> {
-  context: AccessContext<TPrisma>;
-  config: OpenSaaSConfig;
-  basePath?: string;
+  context: AccessContext<TPrisma>
+  config: OpenSaaSConfig
+  basePath?: string
 }
 
 /**
@@ -16,22 +16,22 @@ export interface DashboardProps<TPrisma> {
 export async function Dashboard<TPrisma>({
   context,
   config,
-  basePath = "/admin",
+  basePath = '/admin',
 }: DashboardProps<TPrisma>) {
-  const lists = Object.keys(config.lists || {});
+  const lists = Object.keys(config.lists || {})
 
   // Get counts for each list
   const listCounts = await Promise.all(
     lists.map(async (listKey) => {
       try {
-        const count = await context.db[getDbKey(listKey)]?.count();
-        return { listKey, count: count || 0 };
+        const count = await context.db[getDbKey(listKey)]?.count()
+        return { listKey, count: count || 0 }
       } catch (error) {
-        console.error(`Failed to get count for ${listKey}:`, error);
-        return { listKey, count: 0 };
+        console.error(`Failed to get count for ${listKey}:`, error)
+        return { listKey, count: 0 }
       }
     }),
-  );
+  )
 
   return (
     <div className="p-8">
@@ -57,7 +57,7 @@ export async function Dashboard<TPrisma>({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {listCounts.map(({ listKey, count }) => {
-            const urlKey = getUrlKey(listKey);
+            const urlKey = getUrlKey(listKey)
             return (
               <Link key={listKey} href={`${basePath}/${urlKey}`}>
                 <Card className="group hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 cursor-pointer h-full relative overflow-hidden">
@@ -69,7 +69,7 @@ export async function Dashboard<TPrisma>({
                           {formatListName(listKey)}
                         </CardTitle>
                         <p className="text-sm text-muted-foreground mt-1 font-medium">
-                          {count} {count === 1 ? "item" : "items"}
+                          {count} {count === 1 ? 'item' : 'items'}
                         </p>
                       </div>
                       <div className="text-3xl opacity-60 group-hover:opacity-100 transition-opacity">
@@ -97,7 +97,7 @@ export async function Dashboard<TPrisma>({
                   </CardContent>
                 </Card>
               </Link>
-            );
+            )
           })}
         </div>
       )}
@@ -113,7 +113,7 @@ export async function Dashboard<TPrisma>({
           <CardContent>
             <div className="flex flex-wrap gap-3">
               {lists.map((listKey) => {
-                const urlKey = getUrlKey(listKey);
+                const urlKey = getUrlKey(listKey)
                 return (
                   <Link
                     key={listKey}
@@ -123,12 +123,12 @@ export async function Dashboard<TPrisma>({
                     <span className="text-lg">+</span>
                     Create {formatListName(listKey)}
                   </Link>
-                );
+                )
               })}
             </div>
           </CardContent>
         </Card>
       )}
     </div>
-  );
+  )
 }

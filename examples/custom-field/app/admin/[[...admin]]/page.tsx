@@ -1,18 +1,18 @@
-import { AdminUI } from "@opensaas/ui";
-import type { ServerActionInput } from "@opensaas/ui/server";
-import config from "../../../opensaas.config";
-import { getContext } from "@/lib/context";
+import { AdminUI } from '@opensaas/ui'
+import type { ServerActionInput } from '@opensaas/ui/server'
+import config from '../../../opensaas.config'
+import { getContext } from '@/lib/context'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
-  "use server";
-  const context = await getContext();
-  return await context.serverAction(props);
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
 }
 
 interface AdminPageProps {
-  params: Promise<{ admin?: string[] }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
 /**
@@ -20,9 +20,9 @@ interface AdminPageProps {
  * Handles all admin routes: /admin, /admin/Post, /admin/Post/create, /admin/Post/[id]
  */
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
-  const resolvedParams = await params;
-  const resolvedSearchParams = await searchParams;
-  const adminContext = await getContext();
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  const adminContext = await getContext()
 
   return (
     <AdminUI
@@ -33,5 +33,5 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       basePath="/admin"
       serverAction={serverAction}
     />
-  );
+  )
 }

@@ -1,24 +1,24 @@
-import Link from "next/link";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
-import { ListTable } from "@opensaas/ui/standalone";
-import { getContext } from "../../lib/context";
-import { connection } from "next/server";
+import Link from 'next/link'
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
+import { ListTable } from '@opensaas/ui/standalone'
+import { getContext } from '../../lib/context'
+import { connection } from 'next/server'
 
 export default async function UsersPage() {
-  await connection();
-  const context = await getContext();
+  await connection()
+  const context = await getContext()
 
   const users = await context.db.user.findMany({
     include: {
       posts: true,
     },
-    orderBy: { createdAt: "desc" },
-  });
+    orderBy: { createdAt: 'desc' },
+  })
 
   const usersWithPostCount = users.map((user) => ({
     ...user,
     postCount: user.posts?.length || 0,
-  }));
+  }))
 
   return (
     <div className="min-h-screen bg-background">
@@ -56,12 +56,12 @@ export default async function UsersPage() {
             <ListTable
               items={usersWithPostCount}
               fieldTypes={{
-                name: "text",
-                email: "text",
-                postCount: "integer",
-                createdAt: "timestamp",
+                name: 'text',
+                email: 'text',
+                postCount: 'integer',
+                createdAt: 'timestamp',
               }}
-              columns={["name", "email", "postCount", "createdAt"]}
+              columns={['name', 'email', 'postCount', 'createdAt']}
               sortable
               emptyMessage="No users yet."
             />
@@ -69,5 +69,5 @@ export default async function UsersPage() {
         </Card>
       </main>
     </div>
-  );
+  )
 }

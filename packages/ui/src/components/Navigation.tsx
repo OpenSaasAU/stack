@@ -1,12 +1,12 @@
-import Link from "next/link";
-import { formatListName } from "../lib/utils.js";
-import { AccessContext, getUrlKey, OpenSaaSConfig } from "@opensaas/core";
+import Link from 'next/link'
+import { formatListName } from '../lib/utils.js'
+import { AccessContext, getUrlKey, OpenSaaSConfig } from '@opensaas/core'
 
 export interface NavigationProps<TPrisma> {
-  context: AccessContext<TPrisma>;
-  config: OpenSaaSConfig;
-  basePath?: string;
-  currentPath?: string;
+  context: AccessContext<TPrisma>
+  config: OpenSaaSConfig
+  basePath?: string
+  currentPath?: string
 }
 
 /**
@@ -16,10 +16,10 @@ export interface NavigationProps<TPrisma> {
 export function Navigation<TPrisma>({
   context,
   config,
-  basePath = "/admin",
-  currentPath = "",
+  basePath = '/admin',
+  currentPath = '',
 }: NavigationProps<TPrisma>) {
-  const lists = Object.keys(config.lists || {});
+  const lists = Object.keys(config.lists || {})
 
   return (
     <nav className="w-64 border-r border-border bg-card h-screen sticky top-0 flex flex-col">
@@ -39,16 +39,16 @@ export function Navigation<TPrisma>({
           <Link
             href={basePath}
             className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative overflow-hidden group ${
-              currentPath === ""
-                ? "bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25"
-                : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
+              currentPath === ''
+                ? 'bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25'
+                : 'text-foreground hover:bg-accent/50 hover:text-accent-foreground'
             }`}
           >
-            {currentPath === "" && (
+            {currentPath === '' && (
               <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20 animate-pulse" />
             )}
             <span className="relative flex items-center gap-2">
-              <span className={currentPath === "" ? "text-lg" : "text-base"}>📊</span>
+              <span className={currentPath === '' ? 'text-lg' : 'text-base'}>📊</span>
               Dashboard
             </span>
           </Link>
@@ -61,16 +61,16 @@ export function Navigation<TPrisma>({
                 </p>
               </div>
               {lists.map((listKey) => {
-                const urlKey = getUrlKey(listKey);
-                const isActive = currentPath.startsWith(`/${urlKey}`);
+                const urlKey = getUrlKey(listKey)
+                const isActive = currentPath.startsWith(`/${urlKey}`)
                 return (
                   <Link
                     key={listKey}
                     href={`${basePath}/${urlKey}`}
                     className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative overflow-hidden group ${
                       isActive
-                        ? "bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25"
-                        : "text-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                        ? 'bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg shadow-primary/25'
+                        : 'text-foreground hover:bg-accent/50 hover:text-accent-foreground'
                     }`}
                   >
                     {isActive && (
@@ -83,7 +83,7 @@ export function Navigation<TPrisma>({
                       {formatListName(listKey)}
                     </span>
                   </Link>
-                );
+                )
               })}
             </>
           )}
@@ -98,20 +98,20 @@ export function Navigation<TPrisma>({
               <span className="text-sm font-bold text-primary-foreground">
                 {String(
                   (context.session.data as Record<string, unknown>)?.name,
-                )?.[0]?.toUpperCase() || "?"}
+                )?.[0]?.toUpperCase() || '?'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">
-                {String((context.session.data as Record<string, unknown>)?.name) || "User"}
+                {String((context.session.data as Record<string, unknown>)?.name) || 'User'}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                {String((context.session.data as Record<string, unknown>)?.email) || ""}
+                {String((context.session.data as Record<string, unknown>)?.email) || ''}
               </p>
             </div>
           </div>
         </div>
       )}
     </nav>
-  );
+  )
 }

@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { RichTextField } from "../config/types.js";
+import { z } from 'zod'
+import type { RichTextField } from '../config/types.js'
 
 /**
  * Rich text field using Tiptap editor
@@ -20,44 +20,44 @@ import type { RichTextField } from "../config/types.js";
  * }
  * ```
  */
-export function richText(options?: Omit<RichTextField, "type">): RichTextField {
+export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
   return {
-    type: "richText",
+    type: 'richText',
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
-      const validation = options?.validation;
-      const isRequired = validation?.isRequired;
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
 
       // Accept any valid JSON structure from Tiptap
       // Tiptap outputs JSONContent which is a complex nested structure
-      const baseSchema = z.any();
+      const baseSchema = z.any()
 
-      if (isRequired && operation === "create") {
+      if (isRequired && operation === 'create') {
         // For create, reject undefined
-        return baseSchema;
-      } else if (isRequired && operation === "update") {
+        return baseSchema
+      } else if (isRequired && operation === 'update') {
         // For update, allow undefined (partial updates)
-        return z.union([baseSchema, z.undefined()]);
+        return z.union([baseSchema, z.undefined()])
       } else {
         // Not required
-        return baseSchema.optional();
+        return baseSchema.optional()
       }
     },
     getPrismaType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "Json",
-        modifiers: isRequired ? undefined : "?",
-      };
+        type: 'Json',
+        modifiers: isRequired ? undefined : '?',
+      }
     },
     getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "any",
+        type: 'any',
         optional: !isRequired,
-      };
+      }
     },
-  };
+  }
 }

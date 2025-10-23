@@ -148,7 +148,7 @@ async function test() {
   console.log('✅ Update successful:', updatedByAlice?.title)
 
   console.log('\n🎉 All tests passed!')
-  
+
   // Cleanup
   await prisma.post.deleteMany()
   await prisma.user.deleteMany()
@@ -212,8 +212,8 @@ export default config({
             return true
           },
           update: isAuthor, // Only author can update
-        }
-      }
+        },
+      },
     }),
   },
 })
@@ -226,6 +226,7 @@ pnpm generate
 ```
 
 This generates:
+
 - `prisma/schema.prisma` - Prisma schema
 - `.opensaas/types.ts` - TypeScript types
 
@@ -236,18 +237,18 @@ import { getContext } from './lib/context'
 
 export async function updatePost(postId: string, data: any) {
   const context = await getContext()
-  
+
   // Access control is automatically enforced
   const post = await context.db.post.update({
     where: { id: postId },
-    data
+    data,
   })
-  
+
   if (!post) {
     // Either doesn't exist or user doesn't have access
     return { error: 'Access denied' }
   }
-  
+
   return { post }
 }
 ```
@@ -286,9 +287,9 @@ Control access to individual fields:
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,   // Only author can see
+    read: isAuthor, // Only author can see
     update: isAuthor, // Only author can modify
-  }
+  },
 })
 ```
 
@@ -340,6 +341,7 @@ pnpm dev
 OpenSaaS is designed to be fully extensible without modifying core code. Field types are self-contained with their own validation, schema generation, and UI components.
 
 See `examples/custom-field` for a complete working example with:
+
 - **ColorPickerField**: Custom color picker component (global registration)
 - **SlugField**: Auto-generating slug field (per-field override)
 
@@ -350,43 +352,47 @@ Learn more in [CLAUDE.md](./CLAUDE.md#customizing-ui-components).
 OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
 
 ### Level 1: Primitives
-```tsx
-import { Button, Input, Card, Table } from "@opensaas/ui/primitives"
 
-<Card>
+```tsx
+import { Button, Input, Card, Table } from '@opensaas/ui/primitives'
+
+;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
 </Card>
 ```
 
 ### Level 2: Field Components
-```tsx
-import { TextField, SelectField } from "@opensaas/ui/fields"
 
-<form>
+```tsx
+import { TextField, SelectField } from '@opensaas/ui/fields'
+
+;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} />
   <SelectField name="role" label="Role" options={roles} />
 </form>
 ```
 
 ### Level 3: Standalone Components
-```tsx
-import { ItemCreateForm, ListTable, SearchBar } from "@opensaas/ui/standalone"
 
-<ItemCreateForm
+```tsx
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/ui/standalone'
+
+;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
-    const post = await createPost(data);
-    return { success: !!post };
+    const post = await createPost(data)
+    return { success: !!post }
   }}
 />
 ```
 
 ### Level 4: Full Admin UI
-```tsx
-import { AdminUI } from "@opensaas/ui"
 
-<AdminUI context={context} serverAction={handleAction} />
+```tsx
+import { AdminUI } from '@opensaas/ui'
+
+;<AdminUI context={context} serverAction={handleAction} />
 ```
 
 See [docs/COMPOSABILITY.md](./docs/COMPOSABILITY.md) for complete guide.

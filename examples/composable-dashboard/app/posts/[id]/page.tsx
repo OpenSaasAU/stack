@@ -1,23 +1,21 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { Button } from "@opensaas/ui/primitives";
-import { getContext } from "../../../lib/context";
-import { PostEditor } from "./PostEditor";
-import type { Post } from "../../../.opensaas/types";
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { Button } from '@opensaas/ui/primitives'
+import { getContext } from '../../../lib/context'
+import { PostEditor } from './PostEditor'
+import type { Post } from '../../../.opensaas/types'
 
-export default async function PostDetailPage(props: {
-  params: Promise<{ id: string }>;
-}) {
-  const params = await props.params;
-  const context = await getContext();
+export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
+  const context = await getContext()
 
   const post = (await context.db.post.findUnique({
     where: { id: params.id },
     include: { author: true },
-  })) as Post | null;
+  })) as Post | null
 
   if (!post) {
-    notFound();
+    notFound()
   }
 
   return (
@@ -55,5 +53,5 @@ export default async function PostDetailPage(props: {
         <PostEditor post={post} />
       </main>
     </div>
-  );
+  )
 }

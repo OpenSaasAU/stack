@@ -92,6 +92,7 @@ opensaas generate
 ```
 
 This creates:
+
 - `prisma/schema.prisma` - Prisma schema
 - `.opensaas/types.ts` - TypeScript types
 
@@ -164,7 +165,9 @@ text({
   },
   hooks: {
     resolveInput: async ({ resolvedData }) => resolvedData,
-    validateInput: async ({ resolvedData }) => { /* validate */ },
+    validateInput: async ({ resolvedData }) => {
+      /* validate */
+    },
   },
   ui: {
     fieldType: 'custom', // Reference global component
@@ -182,22 +185,22 @@ import type { BaseFieldConfig } from '@opensaas/core'
 import { z } from 'zod'
 
 export type MyCustomField = BaseFieldConfig & {
-  type: "myCustom";
-  customOption?: string;
+  type: 'myCustom'
+  customOption?: string
 }
 
-export function myCustom(options?: Omit<MyCustomField, "type">): MyCustomField {
+export function myCustom(options?: Omit<MyCustomField, 'type'>): MyCustomField {
   return {
-    type: "myCustom",
+    type: 'myCustom',
     ...options,
     getZodSchema: (fieldName, operation) => {
       return z.string().optional()
     },
     getPrismaType: (fieldName) => {
-      return { type: "String", modifiers: "?" }
+      return { type: 'String', modifiers: '?' }
     },
     getTypeScriptType: () => {
-      return { type: "string", optional: true }
+      return { type: 'string', optional: true }
     },
   }
 }
@@ -240,10 +243,10 @@ Control access to individual fields:
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,   // Only author can see
+    read: isAuthor, // Only author can see
     create: isAuthor, // Only author can set on create
     update: isAuthor, // Only author can modify
-  }
+  },
 })
 ```
 
@@ -254,7 +257,7 @@ Access-denied operations return `null` or `[]` instead of throwing:
 ```typescript
 const post = await context.db.post.update({
   where: { id: postId },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 if (!post) {
@@ -360,8 +363,8 @@ writeTypes(config, './.opensaas/types.ts')
 ```typescript
 import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/core'
 
-getDbKey('BlogPost')           // 'blogPost' - for context.db access
-getUrlKey('BlogPost')          // 'blog-post' - for URLs
+getDbKey('BlogPost') // 'blogPost' - for context.db access
+getUrlKey('BlogPost') // 'blog-post' - for URLs
 getListKeyFromUrl('blog-post') // 'BlogPost' - parse from URLs
 ```
 
@@ -374,7 +377,7 @@ text({
   validation: {
     isRequired: true,
     length: { min: 3, max: 100 },
-  }
+  },
 })
 
 integer({
@@ -382,7 +385,7 @@ integer({
     isRequired: true,
     min: 0,
     max: 1000,
-  }
+  },
 })
 ```
 
@@ -411,7 +414,7 @@ describe('Post access control', () => {
     const context = await getContext(config, prisma, { userId: authorId })
     const updated = await context.db.post.update({
       where: { id: postId },
-      data: { title: 'New Title' }
+      data: { title: 'New Title' },
     })
     expect(updated).toBeTruthy()
     expect(updated?.title).toBe('New Title')
@@ -421,7 +424,7 @@ describe('Post access control', () => {
     const context = await getContext(config, prisma, { userId: otherUserId })
     const updated = await context.db.post.update({
       where: { id: postId },
-      data: { title: 'Hacked!' }
+      data: { title: 'Hacked!' },
     })
     expect(updated).toBeNull() // Silent failure
   })

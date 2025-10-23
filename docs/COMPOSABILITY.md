@@ -36,10 +36,10 @@ Each level builds on the one below, providing progressively higher-level abstrac
 ### Example: Custom Login Form
 
 ```tsx
-import { Button } from "@opensaas/ui/primitives/button"
-import { Input } from "@opensaas/ui/primitives/input"
-import { Label } from "@opensaas/ui/primitives/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives/card"
+import { Button } from '@opensaas/ui/primitives/button'
+import { Input } from '@opensaas/ui/primitives/input'
+import { Label } from '@opensaas/ui/primitives/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives/card'
 
 export function LoginForm() {
   return (
@@ -57,7 +57,9 @@ export function LoginForm() {
             <Label htmlFor="password">Password</Label>
             <Input id="password" type="password" />
           </div>
-          <Button type="submit" className="w-full">Sign In</Button>
+          <Button type="submit" className="w-full">
+            Sign In
+          </Button>
         </form>
       </CardContent>
     </Card>
@@ -84,17 +86,17 @@ export function LoginForm() {
 ### Example: Custom Checkout Form
 
 ```tsx
-import { TextField, SelectField } from "@opensaas/ui/fields"
-import { Button } from "@opensaas/ui/primitives"
+import { TextField, SelectField } from '@opensaas/ui/fields'
+import { Button } from '@opensaas/ui/primitives'
 
 export function CheckoutForm() {
-  const [email, setEmail] = useState("")
-  const [plan, setPlan] = useState("")
+  const [email, setEmail] = useState('')
+  const [plan, setPlan] = useState('')
 
   const plans = [
-    { label: "Starter - $10/mo", value: "starter" },
-    { label: "Pro - $25/mo", value: "pro" },
-    { label: "Enterprise - $99/mo", value: "enterprise" },
+    { label: 'Starter - $10/mo', value: 'starter' },
+    { label: 'Pro - $25/mo', value: 'pro' },
+    { label: 'Enterprise - $99/mo', value: 'enterprise' },
   ]
 
   return (
@@ -130,14 +132,14 @@ All field components share a common interface:
 
 ```typescript
 interface FieldProps {
-  name: string;                    // Field name
-  value: any;                      // Current value
-  onChange: (value: any) => void;  // Change handler
-  label: string;                   // Display label
-  error?: string;                  // Validation error
-  disabled?: boolean;              // Disabled state
-  required?: boolean;              // Required indicator
-  mode?: "read" | "edit";          // Display mode
+  name: string // Field name
+  value: any // Current value
+  onChange: (value: any) => void // Change handler
+  label: string // Display label
+  error?: string // Validation error
+  disabled?: boolean // Disabled state
+  required?: boolean // Required indicator
+  mode?: 'read' | 'edit' // Display mode
 }
 ```
 
@@ -154,8 +156,8 @@ interface FieldProps {
 Standalone form for creating items with custom submission handling.
 
 ```tsx
-import { ItemCreateForm } from "@opensaas/ui/standalone"
-import config from "../opensaas.config"
+import { ItemCreateForm } from '@opensaas/ui/standalone'
+import config from '../opensaas.config'
 
 export function CreatePostPage() {
   const router = useRouter()
@@ -185,15 +187,16 @@ export function CreatePostPage() {
 ```
 
 **Props:**
+
 ```typescript
 interface ItemCreateFormProps {
-  fields: Record<string, FieldConfig>;
-  onSubmit: (data: Record<string, any>) => Promise<{ success: boolean; error?: string }>;
-  onCancel?: () => void;
-  relationshipData?: Record<string, Array<{ id: string; label: string }>>;
-  submitLabel?: string;
-  cancelLabel?: string;
-  className?: string;
+  fields: Record<string, FieldConfig>
+  onSubmit: (data: Record<string, any>) => Promise<{ success: boolean; error?: string }>
+  onCancel?: () => void
+  relationshipData?: Record<string, Array<{ id: string; label: string }>>
+  submitLabel?: string
+  cancelLabel?: string
+  className?: string
 }
 ```
 
@@ -202,7 +205,7 @@ interface ItemCreateFormProps {
 Standalone form for editing existing items.
 
 ```tsx
-import { ItemEditForm } from "@opensaas/ui/standalone"
+import { ItemEditForm } from '@opensaas/ui/standalone'
 
 export function EditPostPage({ post }) {
   return (
@@ -224,19 +227,19 @@ export function EditPostPage({ post }) {
 Standalone table for displaying lists with sorting and actions.
 
 ```tsx
-import { ListTable } from "@opensaas/ui/standalone"
+import { ListTable } from '@opensaas/ui/standalone'
 
 export function RecentPosts({ posts }) {
   return (
     <ListTable
       items={posts}
       fieldTypes={{
-        title: "text",
-        author: "relationship",
-        publishedAt: "timestamp",
-        status: "select",
+        title: 'text',
+        author: 'relationship',
+        publishedAt: 'timestamp',
+        status: 'select',
       }}
-      columns={["title", "author", "publishedAt", "status"]}
+      columns={['title', 'author', 'publishedAt', 'status']}
       onRowClick={(post) => router.push(`/posts/${post.id}`)}
       renderActions={(post) => (
         <DeleteButton
@@ -257,10 +260,10 @@ export function RecentPosts({ posts }) {
 Reusable search component with clear functionality.
 
 ```tsx
-import { SearchBar } from "@opensaas/ui/standalone"
+import { SearchBar } from '@opensaas/ui/standalone'
 
 export function PostsPage() {
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState('')
 
   return (
     <div>
@@ -270,7 +273,7 @@ export function PostsPage() {
           fetchPosts({ search: query })
         }}
         onClear={() => {
-          setSearch("")
+          setSearch('')
           fetchPosts({})
         }}
         placeholder="Search posts..."
@@ -286,14 +289,14 @@ export function PostsPage() {
 Delete button with built-in confirmation dialog.
 
 ```tsx
-import { DeleteButton } from "@opensaas/ui/standalone"
+import { DeleteButton } from '@opensaas/ui/standalone'
 
 export function PostActions({ postId }) {
   return (
     <DeleteButton
       onDelete={async () => {
         await deletePost(postId)
-        router.push("/posts")
+        router.push('/posts')
         return { success: true }
       }}
       itemName="post"
@@ -314,9 +317,9 @@ export function PostActions({ postId }) {
 
 ```tsx
 // app/admin/[[...admin]]/page.tsx
-import { AdminUI } from "@opensaas/ui"
-import { getAdminContext } from "@opensaas/ui/server"
-import config from "@/opensaas.config"
+import { AdminUI } from '@opensaas/ui'
+import { getAdminContext } from '@opensaas/ui/server'
+import config from '@/opensaas.config'
 
 export default async function AdminPage({ params, searchParams }) {
   const context = await getAdminContext(config, prisma, session)
@@ -334,6 +337,7 @@ export default async function AdminPage({ params, searchParams }) {
 ```
 
 This provides:
+
 - Dashboard with list cards
 - List views with search and pagination
 - Create/edit forms
@@ -351,7 +355,7 @@ Combine standalone components for complex workflows:
 ```tsx
 export function OnboardingWizard() {
   const [step, setStep] = useState(1)
-  const [userId, setUserId] = useState("")
+  const [userId, setUserId] = useState('')
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -374,7 +378,7 @@ export function OnboardingWizard() {
           initialData={{ userId }}
           onSubmit={async (data) => {
             await createSubscription(data)
-            router.push("/dashboard")
+            router.push('/dashboard')
             return { success: true }
           }}
           submitLabel="Complete Setup"
@@ -390,10 +394,10 @@ export function OnboardingWizard() {
 Build a custom dashboard using primitives and standalone components:
 
 ```tsx
-import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives"
-import { ListTable, SearchBar } from "@opensaas/ui/standalone"
-import { ItemCreateForm } from "@opensaas/ui/standalone"
-import { Dialog, DialogContent } from "@opensaas/ui/primitives"
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
+import { ListTable, SearchBar } from '@opensaas/ui/standalone'
+import { ItemCreateForm } from '@opensaas/ui/standalone'
+import { Dialog, DialogContent } from '@opensaas/ui/primitives'
 
 export function CustomDashboard() {
   const [showCreate, setShowCreate] = useState(false)
@@ -420,7 +424,7 @@ export function CustomDashboard() {
             <SearchBar onSearch={handleSearch} />
             <ListTable
               items={recentPosts}
-              fieldTypes={{ title: "text", createdAt: "timestamp" }}
+              fieldTypes={{ title: 'text', createdAt: 'timestamp' }}
               onRowClick={(post) => router.push(`/posts/${post.id}`)}
             />
           </CardContent>
@@ -480,14 +484,14 @@ export function PostDetailPage({ post }) {
 
 ## Choosing the Right Level
 
-| Use Case | Recommended Level | Why |
-|----------|------------------|-----|
-| Complete admin panel | Level 4 (AdminUI) | Out-of-the-box functionality |
-| Custom dashboard | Level 3 (Standalone) | Compose admin features |
-| Checkout flow | Level 2 (Fields) | Custom form layout |
-| Login page | Level 1 (Primitives) | Full design control |
-| Multi-step wizard | Level 3 (Standalone) | Reuse form logic |
-| Embedded forms | Level 3 (Standalone) | Drop-in components |
+| Use Case             | Recommended Level    | Why                          |
+| -------------------- | -------------------- | ---------------------------- |
+| Complete admin panel | Level 4 (AdminUI)    | Out-of-the-box functionality |
+| Custom dashboard     | Level 3 (Standalone) | Compose admin features       |
+| Checkout flow        | Level 2 (Fields)     | Custom form layout           |
+| Login page           | Level 1 (Primitives) | Full design control          |
+| Multi-step wizard    | Level 3 (Standalone) | Reuse form logic             |
+| Embedded forms       | Level 3 (Standalone) | Drop-in components           |
 
 ## Styling and Theming
 
@@ -507,14 +511,15 @@ Override colors in your `globals.css`:
 
 ```css
 :root {
-  --primary: 221.2 83.2% 53.3%;  /* Custom blue */
-  --destructive: 0 84.2% 60.2%;   /* Custom red */
+  --primary: 221.2 83.2% 53.3%; /* Custom blue */
+  --destructive: 0 84.2% 60.2%; /* Custom red */
 }
 ```
 
 ## Accessibility
 
 All primitives are built with Radix UI, providing:
+
 - ARIA attributes
 - Keyboard navigation
 - Focus management

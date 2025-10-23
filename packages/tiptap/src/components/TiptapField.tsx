@@ -1,23 +1,23 @@
-"use client";
+'use client'
 
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect } from "react";
-import "../styles/tiptap.css";
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import { useEffect } from 'react'
+import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
-  name: string;
-  value: any;
-  onChange: (value: any) => void;
-  label: string;
-  error?: string;
-  disabled?: boolean;
-  required?: boolean;
-  mode?: "read" | "edit";
-  placeholder?: string;
-  minHeight?: number;
-  maxHeight?: number;
+  name: string
+  value: any
+  onChange: (value: any) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  required?: boolean
+  mode?: 'read' | 'edit'
+  placeholder?: string
+  minHeight?: number
+  maxHeight?: number
 }
 
 /**
@@ -32,12 +32,12 @@ export function TiptapField({
   error,
   disabled,
   required,
-  mode = "edit",
-  placeholder = "Start writing...",
+  mode = 'edit',
+  placeholder = 'Start writing...',
   minHeight = 200,
   maxHeight,
 }: TiptapFieldProps) {
-  const isEditable = mode === "edit" && !disabled;
+  const isEditable = mode === 'edit' && !disabled
 
   const editor = useEditor({
     extensions: [
@@ -56,31 +56,31 @@ export function TiptapField({
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
       if (isEditable) {
-        onChange(editor.getJSON());
+        onChange(editor.getJSON())
       }
     },
     editorProps: {
       attributes: {
-        class: "tiptap",
+        class: 'tiptap',
       },
     },
-  });
+  })
 
   // Update content when value changes externally
   useEffect(() => {
     if (editor && value !== editor.getJSON()) {
-      editor.commands.setContent(value || "");
+      editor.commands.setContent(value || '')
     }
-  }, [editor, value]);
+  }, [editor, value])
 
   // Update editable state when mode or disabled changes
   useEffect(() => {
     if (editor) {
-      editor.setEditable(isEditable);
+      editor.setEditable(isEditable)
     }
-  }, [editor, isEditable]);
+  }, [editor, isEditable])
 
-  if (mode === "read") {
+  if (mode === 'read') {
     return (
       <div className="space-y-2">
         <label className="text-sm font-medium text-foreground">{label}</label>
@@ -88,21 +88,18 @@ export function TiptapField({
           <EditorContent editor={editor} />
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="space-y-2">
-      <label
-        htmlFor={name}
-        className="text-sm font-medium text-foreground flex items-center gap-1"
-      >
+      <label htmlFor={name} className="text-sm font-medium text-foreground flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
 
       {/* Editor with toolbar */}
-      <div className={`tiptap-editor ${error ? "border-destructive" : ""}`}>
+      <div className={`tiptap-editor ${error ? 'border-destructive' : ''}`}>
         {/* Toolbar */}
         {isEditable && editor && (
           <div className="tiptap-toolbar">
@@ -110,7 +107,7 @@ export function TiptapField({
               type="button"
               onClick={() => editor.chain().focus().toggleBold().run()}
               disabled={!editor.can().chain().focus().toggleBold().run()}
-              className={editor.isActive("bold") ? "is-active" : ""}
+              className={editor.isActive('bold') ? 'is-active' : ''}
             >
               <strong>Bold</strong>
             </button>
@@ -118,7 +115,7 @@ export function TiptapField({
               type="button"
               onClick={() => editor.chain().focus().toggleItalic().run()}
               disabled={!editor.can().chain().focus().toggleItalic().run()}
-              className={editor.isActive("italic") ? "is-active" : ""}
+              className={editor.isActive('italic') ? 'is-active' : ''}
             >
               <em>Italic</em>
             </button>
@@ -126,35 +123,29 @@ export function TiptapField({
               type="button"
               onClick={() => editor.chain().focus().toggleStrike().run()}
               disabled={!editor.can().chain().focus().toggleStrike().run()}
-              className={editor.isActive("strike") ? "is-active" : ""}
+              className={editor.isActive('strike') ? 'is-active' : ''}
             >
               <s>Strike</s>
             </button>
             <div className="tiptap-divider" />
             <button
               type="button"
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: 1 }).run()
-              }
-              className={editor.isActive("heading", { level: 1 }) ? "is-active" : ""}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+              className={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
             >
               H1
             </button>
             <button
               type="button"
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: 2 }).run()
-              }
-              className={editor.isActive("heading", { level: 2 }) ? "is-active" : ""}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              className={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
             >
               H2
             </button>
             <button
               type="button"
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: 3 }).run()
-              }
-              className={editor.isActive("heading", { level: 3 }) ? "is-active" : ""}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+              className={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
             >
               H3
             </button>
@@ -162,21 +153,21 @@ export function TiptapField({
             <button
               type="button"
               onClick={() => editor.chain().focus().toggleBulletList().run()}
-              className={editor.isActive("bulletList") ? "is-active" : ""}
+              className={editor.isActive('bulletList') ? 'is-active' : ''}
             >
               Bullet List
             </button>
             <button
               type="button"
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              className={editor.isActive("orderedList") ? "is-active" : ""}
+              className={editor.isActive('orderedList') ? 'is-active' : ''}
             >
               Ordered List
             </button>
             <button
               type="button"
               onClick={() => editor.chain().focus().toggleBlockquote().run()}
-              className={editor.isActive("blockquote") ? "is-active" : ""}
+              className={editor.isActive('blockquote') ? 'is-active' : ''}
             >
               Quote
             </button>
@@ -185,11 +176,11 @@ export function TiptapField({
 
         {/* Editor content */}
         <div
-          className={disabled ? "opacity-50 cursor-not-allowed" : ""}
+          className={disabled ? 'opacity-50 cursor-not-allowed' : ''}
           style={{
             minHeight: `${minHeight}px`,
             maxHeight: maxHeight ? `${maxHeight}px` : undefined,
-            overflowY: maxHeight ? "auto" : undefined,
+            overflowY: maxHeight ? 'auto' : undefined,
           }}
         >
           <EditorContent editor={editor} />
@@ -198,5 +189,5 @@ export function TiptapField({
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
-  );
+  )
 }

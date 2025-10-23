@@ -1,20 +1,20 @@
-import type { Hooks } from "../config/types.js";
-import type { AccessContext } from "../access/types.js";
-import type { FieldConfig } from "../config/types.js";
-import { validateWithZod } from "../validation/schema.js";
+import type { Hooks } from '../config/types.js'
+import type { AccessContext } from '../access/types.js'
+import type { FieldConfig } from '../config/types.js'
+import { validateWithZod } from '../validation/schema.js'
 
 /**
  * Validation error collection
  */
 export class ValidationError extends Error {
-  public errors: string[];
-  public fieldErrors: Record<string, string>;
+  public errors: string[]
+  public fieldErrors: Record<string, string>
 
   constructor(errors: string[], fieldErrors: Record<string, string> = {}) {
-    super(`Validation failed: ${errors.join(", ")}`);
-    this.name = "ValidationError";
-    this.errors = errors;
-    this.fieldErrors = fieldErrors;
+    super(`Validation failed: ${errors.join(', ')}`)
+    this.name = 'ValidationError'
+    this.errors = errors
+    this.fieldErrors = fieldErrors
   }
 }
 
@@ -25,18 +25,18 @@ export class ValidationError extends Error {
 export async function executeResolveInput<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
-    operation: "create" | "update";
-    resolvedData: Partial<T>;
-    item?: T;
-    context: AccessContext;
+    operation: 'create' | 'update'
+    resolvedData: Partial<T>
+    item?: T
+    context: AccessContext
   },
 ): Promise<Partial<T>> {
   if (!hooks?.resolveInput) {
-    return args.resolvedData;
+    return args.resolvedData
   }
 
-  const result = await hooks.resolveInput(args);
-  return result;
+  const result = await hooks.resolveInput(args)
+  return result
 }
 
 /**
@@ -46,29 +46,29 @@ export async function executeResolveInput<T = Record<string, unknown>>(
 export async function executeValidateInput<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
-    operation: "create" | "update";
-    resolvedData: Partial<T>;
-    item?: T;
-    context: AccessContext;
+    operation: 'create' | 'update'
+    resolvedData: Partial<T>
+    item?: T
+    context: AccessContext
   },
 ): Promise<void> {
   if (!hooks?.validateInput) {
-    return;
+    return
   }
 
-  const errors: string[] = [];
+  const errors: string[] = []
 
   const addValidationError = (msg: string) => {
-    errors.push(msg);
-  };
+    errors.push(msg)
+  }
 
   await hooks.validateInput({
     ...args,
     addValidationError,
-  });
+  })
 
   if (errors.length > 0) {
-    throw new ValidationError(errors);
+    throw new ValidationError(errors)
   }
 }
 
@@ -79,16 +79,16 @@ export async function executeValidateInput<T = Record<string, unknown>>(
 export async function executeBeforeOperation<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
-    operation: "create" | "update" | "delete";
-    item?: T;
-    context: AccessContext;
+    operation: 'create' | 'update' | 'delete'
+    item?: T
+    context: AccessContext
   },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
-    return;
+    return
   }
 
-  await hooks.beforeOperation(args);
+  await hooks.beforeOperation(args)
 }
 
 /**
@@ -98,16 +98,16 @@ export async function executeBeforeOperation<T = Record<string, unknown>>(
 export async function executeAfterOperation<T = Record<string, unknown>>(
   hooks: Hooks<T> | undefined,
   args: {
-    operation: "create" | "update" | "delete";
-    item: T;
-    context: AccessContext;
+    operation: 'create' | 'update' | 'delete'
+    item: T
+    context: AccessContext
   },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
-    return;
+    return
   }
 
-  await hooks.afterOperation(args);
+  await hooks.afterOperation(args)
 }
 
 /**
@@ -117,16 +117,16 @@ export async function executeAfterOperation<T = Record<string, unknown>>(
 export function validateFieldRules(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
-  operation: "create" | "update" = "create",
+  operation: 'create' | 'update' = 'create',
 ): { errors: string[]; fieldErrors: Record<string, string> } {
-  const result = validateWithZod(data, fieldConfigs, operation);
+  const result = validateWithZod(data, fieldConfigs, operation)
 
   if (result.success) {
-    return { errors: [], fieldErrors: {} };
+    return { errors: [], fieldErrors: {} }
   }
 
   // Convert field errors to array of error messages
-  const errors = Object.entries(result.errors).map(([_field, message]) => message);
+  const errors = Object.entries(result.errors).map(([_field, message]) => message)
 
-  return { errors, fieldErrors: result.errors };
+  return { errors, fieldErrors: result.errors }
 }

@@ -1,8 +1,8 @@
-import { config, list } from "@opensaas/core";
-import { text, timestamp, relationship } from "@opensaas/core/fields";
-import { richText } from "@opensaas/tiptap/fields";
-import type { AccessControl } from "@opensaas/core";
-import type { User, Article } from "./prisma/__generated__/prisma-client";
+import { config, list } from '@opensaas/core'
+import { text, timestamp, relationship } from '@opensaas/core/fields'
+import { richText } from '@opensaas/tiptap/fields'
+import type { AccessControl } from '@opensaas/core'
+import type { User, Article } from './prisma/__generated__/prisma-client'
 
 /**
  * Access control helpers
@@ -10,25 +10,25 @@ import type { User, Article } from "./prisma/__generated__/prisma-client";
 
 // Check if user is signed in
 const isSignedIn: AccessControl = ({ session }) => {
-  return !!session;
-};
+  return !!session
+}
 
 // Check if user is the author of an article
 const isAuthor: AccessControl = ({ session }) => {
-  if (!session) return false;
+  if (!session) return false
   return {
     authorId: { equals: session.userId },
-  };
-};
+  }
+}
 
 /**
  * OpenSaaS Configuration with Tiptap Rich Text Editor
  */
 export default config({
   db: {
-    provider: "sqlite",
-    url: process.env.DATABASE_URL || "file:./dev.db",
-    prismaClientPath: "./__generated__/prisma-client",
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientPath: './__generated__/prisma-client',
   },
 
   lists: {
@@ -39,10 +39,10 @@ export default config({
         }),
         email: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
         }),
         articles: relationship({
-          ref: "Article.author",
+          ref: 'Article.author',
           many: true,
         }),
       },
@@ -63,7 +63,7 @@ export default config({
         }),
         slug: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
         }),
         /**
          * Rich text content field using Tiptap
@@ -72,7 +72,7 @@ export default config({
         content: richText({
           validation: { isRequired: true },
           ui: {
-            placeholder: "Write your article content here...",
+            placeholder: 'Write your article content here...',
             minHeight: 300,
             maxHeight: 800,
           },
@@ -82,13 +82,13 @@ export default config({
          */
         excerpt: richText({
           ui: {
-            placeholder: "Write a brief excerpt...",
+            placeholder: 'Write a brief excerpt...',
             minHeight: 150,
           },
         }),
         publishedAt: timestamp(),
         author: relationship({
-          ref: "User.articles",
+          ref: 'User.articles',
         }),
       },
       access: {
@@ -101,20 +101,20 @@ export default config({
       },
       hooks: {
         resolveInput: async ({ operation, resolvedData }) => {
-          let result = { ...resolvedData };
+          let result = { ...resolvedData }
 
           // Auto-generate slug from title if not provided
-          if (operation === "create" && !result?.slug && result?.title) {
+          if (operation === 'create' && !result?.slug && result?.title) {
             const slug = (result.title as string)
               .toLowerCase()
-              .replace(/[^\w\s-]/g, "")
-              .replace(/\s+/g, "-")
-              .replace(/--+/g, "-")
-              .trim();
-            result.slug = slug;
+              .replace(/[^\w\s-]/g, '')
+              .replace(/\s+/g, '-')
+              .replace(/--+/g, '-')
+              .trim()
+            result.slug = slug
           }
 
-          return result;
+          return result
         },
       },
     }),
@@ -123,14 +123,14 @@ export default config({
   session: {
     getSession: async () => {
       // Mock session for demo
-      return null;
+      return null
     },
   },
 
   ui: {
-    basePath: "/admin",
+    basePath: '/admin',
     theme: {
-      preset: "modern",
+      preset: 'modern',
     },
   },
-});
+})

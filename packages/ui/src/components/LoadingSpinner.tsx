@@ -1,25 +1,25 @@
-import { cn } from "../lib/utils.js";
+import { cn } from '../lib/utils.js'
 
 export interface LoadingSpinnerProps {
-  size?: "sm" | "md" | "lg";
-  className?: string;
+  size?: 'sm' | 'md' | 'lg'
+  className?: string
 }
 
 /**
  * Loading spinner component
  * Used to indicate loading states
  */
-export function LoadingSpinner({ size = "md", className }: LoadingSpinnerProps) {
+export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) {
   const sizeClasses = {
-    sm: "h-4 w-4 border-2",
-    md: "h-8 w-8 border-2",
-    lg: "h-12 w-12 border-3",
-  };
+    sm: 'h-4 w-4 border-2',
+    md: 'h-8 w-8 border-2',
+    lg: 'h-12 w-12 border-3',
+  }
 
   return (
     <div
       className={cn(
-        "animate-spin rounded-full border-primary border-t-transparent",
+        'animate-spin rounded-full border-primary border-t-transparent',
         sizeClasses[size],
         className,
       )}
@@ -28,5 +28,5 @@ export function LoadingSpinner({ size = "md", className }: LoadingSpinnerProps) 
     >
       <span className="sr-only">Loading...</span>
     </div>
-  );
+  )
 }

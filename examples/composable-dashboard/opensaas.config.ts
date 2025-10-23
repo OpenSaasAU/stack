@@ -1,6 +1,6 @@
-import { config, list } from "@opensaas/core";
-import { text, relationship, select, timestamp, password } from "@opensaas/core/fields";
-import type { AccessControl } from "@opensaas/core";
+import { config, list } from '@opensaas/core'
+import { text, relationship, select, timestamp, password } from '@opensaas/core/fields'
+import type { AccessControl } from '@opensaas/core'
 
 /**
  * Access control helpers
@@ -8,31 +8,31 @@ import type { AccessControl } from "@opensaas/core";
 
 // Check if user is signed in
 const isSignedIn: AccessControl = ({ session }) => {
-  return !!session;
-};
+  return !!session
+}
 
 // Check if user is the author of a post
 const isAuthor: AccessControl = ({ session }) => {
-  if (!session) return false;
+  if (!session) return false
   return {
     authorId: { equals: session.userId },
-  };
-};
+  }
+}
 
 // Check if user is the owner of their own user record
 const isOwner: AccessControl = ({ session, item }) => {
-  if (!session) return false;
-  return session.userId === item?.id;
-};
+  if (!session) return false
+  return session.userId === item?.id
+}
 
 /**
  * OpenSaaS Configuration
  */
 export default config({
   db: {
-    provider: "sqlite",
-    url: process.env.DATABASE_URL || "file:./dev.db",
-    prismaClientPath: "./__generated__/prisma-client",
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientPath: './__generated__/prisma-client',
   },
 
   lists: {
@@ -43,13 +43,13 @@ export default config({
         }),
         email: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
         }),
         password: password({
           validation: { isRequired: true },
         }),
         posts: relationship({
-          ref: "Post.author",
+          ref: 'Post.author',
           many: true,
         }),
       },
@@ -79,10 +79,10 @@ export default config({
         }),
         slug: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
         }),
         content: text({
-          ui: { displayMode: "textarea" },
+          ui: { displayMode: 'textarea' },
           access: {
             read: () => true,
             create: isSignedIn,
@@ -90,7 +90,7 @@ export default config({
           },
         }),
         internalNotes: text({
-          ui: { displayMode: "textarea" },
+          ui: { displayMode: 'textarea' },
           // Only the author can read/write internal notes
           access: {
             read: isAuthor,
@@ -100,15 +100,15 @@ export default config({
         }),
         status: select({
           options: [
-            { label: "Draft", value: "draft" },
-            { label: "Published", value: "published" },
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
           ],
-          defaultValue: "draft",
-          ui: { displayMode: "segmented-control" },
+          defaultValue: 'draft',
+          ui: { displayMode: 'segmented-control' },
         }),
         publishedAt: timestamp(),
         author: relationship({
-          ref: "User.posts",
+          ref: 'User.posts',
         }),
       },
       access: {
@@ -117,9 +117,9 @@ export default config({
           // Authenticated users can see all posts
           query: ({ session }) => {
             if (!session) {
-              return { status: { equals: "published" } };
+              return { status: { equals: 'published' } }
             }
-            return true;
+            return true
           },
           // Must be signed in to create
           create: isSignedIn,
@@ -134,33 +134,33 @@ export default config({
         resolveInput: async ({ operation, resolvedData, item }) => {
           // If changing status to published and publishedAt isn't set yet
           if (
-            resolvedData?.status === "published" &&
-            (!item?.publishedAt || operation === "create")
+            resolvedData?.status === 'published' &&
+            (!item?.publishedAt || operation === 'create')
           ) {
             return {
               ...resolvedData,
               publishedAt: new Date(),
-            };
+            }
           }
-          return { ...resolvedData };
+          return { ...resolvedData }
         },
         // Example validation: title must not contain "spam"
         validateInput: async ({ resolvedData, addValidationError }) => {
           if (
             resolvedData?.title &&
-            typeof resolvedData.title === "string" &&
-            resolvedData.title.toLowerCase().includes("spam")
+            typeof resolvedData.title === 'string' &&
+            resolvedData.title.toLowerCase().includes('spam')
           ) {
-            addValidationError('Title cannot contain the word "spam"');
+            addValidationError('Title cannot contain the word "spam"')
           }
         },
         // Example beforeOperation: log the operation
         beforeOperation: async ({ operation, item }) => {
-          console.log(`About to ${operation} post:`, item?.id || "new");
+          console.log(`About to ${operation} post:`, item?.id || 'new')
         },
         // Example afterOperation: log the result
         afterOperation: async ({ operation, item }) => {
-          console.log(`Successfully ${operation}d post:`, item?.id);
+          console.log(`Successfully ${operation}d post:`, item?.id)
         },
       },
     }),
@@ -171,11 +171,11 @@ export default config({
       // This is a mock for the example
       // In a real app, this would integrate with your auth system
       // For now, return null (not authenticated)
-      return null;
+      return null
     },
   },
 
   ui: {
-    basePath: "/admin",
+    basePath: '/admin',
   },
-});
+})

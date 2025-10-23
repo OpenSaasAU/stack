@@ -10,7 +10,7 @@ export async function createUser(data: UserCreateInput) {
   const context = await getContext()
 
   const user = await context.db.user.create({
-    data
+    data,
   })
 
   if (!user) {
@@ -27,7 +27,7 @@ export async function getUser(userId: string) {
   const context = await getContext()
 
   const user = await context.db.user.findUnique({
-    where: { id: userId }
+    where: { id: userId },
   })
 
   return user
@@ -42,7 +42,7 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
 
   const user = await context.db.user.update({
     where: { id: userId },
-    data
+    data,
   })
 
   if (!user) {

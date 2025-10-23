@@ -17,6 +17,7 @@ OpenSaaS is a modern framework for building admin-heavy applications with Next.j
 The framework consists of three main packages:
 
 ### `@opensaas/core`
+
 - Schema definition and validation
 - Access control engine
 - Hooks system
@@ -25,6 +26,7 @@ The framework consists of three main packages:
 - Context/session management
 
 ### `@opensaas/admin`
+
 - Admin UI components (React)
 - Next.js App Router integration
 - Server Actions for mutations
@@ -32,6 +34,7 @@ The framework consists of three main packages:
 - Depends on `@opensaas/core`
 
 ### `@opensaas/cli`
+
 - Project scaffolding
 - Schema migration management
 - Type generation commands
@@ -69,8 +72,8 @@ export default config({
           create: true,
           update: ({ session, item }) => session?.userId === item.id,
           delete: ({ session, item }) => session?.userId === item.id,
-        }
-      }
+        },
+      },
     }),
 
     Post: list({
@@ -81,7 +84,7 @@ export default config({
             read: true,
             create: isSignedIn,
             update: isAuthor,
-          }
+          },
         }),
         slug: text({
           validation: { isRequired: true },
@@ -93,7 +96,7 @@ export default config({
             read: true,
             create: isSignedIn,
             update: isAuthor,
-          }
+          },
         }),
         internalNotes: text({
           // Only visible to author
@@ -101,7 +104,7 @@ export default config({
             read: isAuthor,
             create: isAuthor,
             update: isAuthor,
-          }
+          },
         }),
         status: select({
           options: [
@@ -124,7 +127,7 @@ export default config({
           create: isSignedIn,
           update: isAuthor,
           delete: isAuthor,
-        }
+        },
       },
       hooks: {
         resolveInput: async ({ operation, resolvedData, item, context }) => {
@@ -143,7 +146,7 @@ export default config({
         afterOperation: async ({ operation, item, context }) => {
           // After DB operation
         },
-      }
+      },
     }),
   },
 
@@ -153,12 +156,12 @@ export default config({
       // User implements this with their auth system (better-auth, next-auth, clerk, etc.)
       const session = await auth()
       return session ? { userId: session.user.id, user: session.user } : null
-    }
+    },
   },
 
   ui: {
     basePath: '/admin',
-  }
+  },
 })
 ```
 
@@ -184,10 +187,10 @@ export const isTeamMember: AccessControl = ({ session }) => {
     team: {
       members: {
         some: {
-          userId: { equals: session.userId }
-        }
-      }
-    }
+          userId: { equals: session.userId },
+        },
+      },
+    },
   }
 }
 ```
@@ -207,7 +210,7 @@ export const isTeamMember: AccessControl = ({ session }) => {
 ```typescript
 type AccessControl<T = any> = (args: {
   session: Session | null
-  item?: T  // Present for update/delete operations
+  item?: T // Present for update/delete operations
   context: Context
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
 ```
@@ -215,6 +218,7 @@ type AccessControl<T = any> = (args: {
 ### How It Works
 
 When a user calls `context.db.post.update()`:
+
 1. Check operation-level access (can this user update posts at all?)
 2. Apply access filter as Prisma where clause (which posts can they update?)
 3. Check field-level access (which fields can they modify?)
@@ -240,7 +244,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
   // Access control and hooks automatically applied
   const post = await context.db.post.update({
     where: { id },
-    data
+    data,
   })
 
   if (!post) {
@@ -314,10 +318,10 @@ export type PostWhereInput = {
 export type Context = {
   db: {
     post: {
-      findUnique: (args: { where: { id: string }, include?: any }) => Promise<Post | null>
-      findMany: (args: { where?: PostWhereInput, include?: any }) => Promise<Post[]>
+      findUnique: (args: { where: { id: string }; include?: any }) => Promise<Post | null>
+      findMany: (args: { where?: PostWhereInput; include?: any }) => Promise<Post[]>
       create: (args: { data: PostCreateInput }) => Promise<Post | null>
-      update: (args: { where: { id: string }, data: PostUpdateInput }) => Promise<Post | null>
+      update: (args: { where: { id: string }; data: PostUpdateInput }) => Promise<Post | null>
       delete: (args: { where: { id: string } }) => Promise<Post | null>
       count: (args: { where?: PostWhereInput }) => Promise<number>
     }
@@ -342,7 +346,7 @@ type Hooks<T> = {
   resolveInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Partial<T>
-    item?: T  // Present for update
+    item?: T // Present for update
     context: Context
   }) => Promise<Partial<T>>
 
@@ -451,6 +455,7 @@ export default async function AdminPage() {
 ```
 
 The admin UI provides:
+
 - List views with filtering, sorting, pagination
 - Detail views for create/edit
 - Relationship management
@@ -469,22 +474,25 @@ export default config({
     getSession: async () => {
       // Example with better-auth
       const session = await auth()
-      return session ? {
-        userId: session.user.id,
-        user: session.user
-      } : null
-    }
-  }
+      return session
+        ? {
+            userId: session.user.id,
+            user: session.user,
+          }
+        : null
+    },
+  },
 })
 ```
 
 Future plugin for better-auth:
+
 ```typescript
 // @opensaas/plugin-better-auth (future)
 import { opensaasPlugin } from '@opensaas/plugin-better-auth'
 
 export const auth = betterAuth({
-  plugins: [opensaasPlugin()]
+  plugins: [opensaasPlugin()],
 })
 ```
 
@@ -562,12 +570,24 @@ function wrapPrismaClient(prisma, config, session) {
         const accessFilter = await checkAccess('update', listConfig, session, args.where)
         if (accessFilter === false) return null
 
-        const item = await prisma[listKey].findFirst({ where: mergeFilters(args.where, accessFilter) })
+        const item = await prisma[listKey].findFirst({
+          where: mergeFilters(args.where, accessFilter),
+        })
         if (!item) return null
 
         // Run hooks
-        let data = await runHook('resolveInput', listConfig, { operation: 'update', resolvedData: args.data, item, context })
-        await runHook('validateInput', listConfig, { operation: 'update', resolvedData: data, item, context })
+        let data = await runHook('resolveInput', listConfig, {
+          operation: 'update',
+          resolvedData: args.data,
+          item,
+          context,
+        })
+        await runHook('validateInput', listConfig, {
+          operation: 'update',
+          resolvedData: data,
+          item,
+          context,
+        })
 
         // Check field-level access
         data = await checkFieldAccess(data, listConfig, session, 'update')
@@ -579,7 +599,7 @@ function wrapPrismaClient(prisma, config, session) {
         await runHook('afterOperation', listConfig, { operation: 'update', item: result, context })
 
         return filterFields(result, listConfig, session, 'read')
-      }
+      },
     }
   }
 
@@ -629,6 +649,7 @@ opensaas build                 # Build for production
 ## Prototype Roadmap
 
 ### Phase 1: Core Foundation (Start Here)
+
 1. **Config schema definition**
    - TypeScript types for config structure
    - Basic field types (text, relationship, select, timestamp)
@@ -644,6 +665,7 @@ opensaas build                 # Build for production
    - Create Context type with all operations
 
 ### Phase 2: Access Control Engine
+
 4. **Context creation with session**
    - getContext function
    - Session passing and validation
@@ -659,6 +681,7 @@ opensaas build                 # Build for production
    - Filter writable fields on input
 
 ### Phase 3: Hooks System
+
 7. **Basic hooks implementation**
    - resolveInput
    - validateInput
@@ -666,12 +689,14 @@ opensaas build                 # Build for production
    - afterOperation
 
 ### Phase 4: CLI Tooling
+
 8. **CLI scaffolding**
    - init command
    - generate command
    - Basic project structure
 
 ### Phase 5: Admin UI (Future)
+
 9. **Basic admin UI**
    - List view
    - Detail view (create/edit)
@@ -679,6 +704,7 @@ opensaas build                 # Build for production
    - Embed at /admin route
 
 ### Phase 6: Better-auth Integration (Future)
+
 10. **Better-auth plugin**
     - Example integration
     - Helper utilities
@@ -686,23 +712,27 @@ opensaas build                 # Build for production
 ## Technical Decisions
 
 ### Why Prisma First?
+
 - Mature ecosystem
 - Excellent TypeScript support
 - AI agents already understand it well
 - Easy migration path (can add Drizzle adapter later)
 
 ### Why Silent Failures on Access Denial?
+
 - Prevents information leakage
 - More secure default
 - Common pattern in multi-tenant systems
 - Can always add verbose mode for debugging
 
 ### Why Hooks Match KeystoneJS?
+
 - Proven patterns from years of use
 - Familiar to anyone who used KeystoneJS
 - Clear separation of concerns
 
 ### Why Multi-Package?
+
 - Users can use just what they need (headless API with just core)
 - Cleaner separation of concerns
 - Easier to maintain and test
@@ -731,6 +761,7 @@ The initial prototype should demonstrate:
 **Agent Task**: "Add a feature where users can publish their drafts"
 
 **Agent generates**:
+
 ```typescript
 // app/actions/publish-post.ts
 'use server'
@@ -745,7 +776,7 @@ export async function publishPost(postId: string) {
 
   const post = await context.db.post.update({
     where: { id: postId },
-    data: { status: 'published' }
+    data: { status: 'published' },
   })
 
   if (!post) {
@@ -758,6 +789,7 @@ export async function publishPost(postId: string) {
 ```
 
 **What makes this safe:**
+
 1. ✅ Access control ensures only author can update
 2. ✅ Hook automatically sets publishedAt timestamp
 3. ✅ Type-safe operations (can't set invalid fields)

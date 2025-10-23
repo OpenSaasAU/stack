@@ -43,3 +43,9 @@ jobs:
 
       - name: Run tests
         run: turbo run test
+
+      - name: Lint codebase
+        run: pnpm lint
+
+      - name: Check format
+        run: pnpm format

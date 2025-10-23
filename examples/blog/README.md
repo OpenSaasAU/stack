@@ -12,13 +12,15 @@ This example includes two models:
 ## Access Control Rules
 
 ### User Model
+
 - **Query**: Anyone can view users (to display author names)
 - **Create**: Anyone can create a user (sign up)
 - **Update**: Only the user themselves can update their record
 - **Delete**: Only the user themselves can delete their record
 
 ### Post Model
-- **Query**: 
+
+- **Query**:
   - Anonymous users: Only see published posts
   - Authenticated users: See all posts
 - **Create**: Must be signed in
@@ -28,6 +30,7 @@ This example includes two models:
 ### Field-Level Access
 
 The `internalNotes` field on Post:
+
 - **Read**: Only the author can see
 - **Create**: Only the author can set
 - **Update**: Only the author can modify
@@ -39,11 +42,13 @@ This demonstrates field-level access control - the field will be filtered out fo
 ### 1. Install Dependencies
 
 From the repository root:
+
 ```bash
 pnpm install
 ```
 
 Build the core package:
+
 ```bash
 cd packages/core
 pnpm build
@@ -66,6 +71,7 @@ pnpm generate
 ```
 
 This reads `opensaas.config.ts` and generates:
+
 - `prisma/schema.prisma` - Prisma schema
 - `.opensaas/types.ts` - TypeScript types for your models and context
 
@@ -98,8 +104,8 @@ async function test() {
     data: {
       name: 'Alice',
       email: 'alice@example.com',
-      password: 'hashed_password'
-    }
+      password: 'hashed_password',
+    },
   })
 
   // Get context as Alice
@@ -112,8 +118,8 @@ async function test() {
       slug: 'my-first-post',
       content: 'Hello world!',
       internalNotes: 'TODO: Add images',
-      author: { connect: { id: user.id } }
-    }
+      author: { connect: { id: user.id } },
+    },
   })
 
   console.log('Post created:', post)
@@ -122,7 +128,7 @@ async function test() {
   // Try to read as anonymous user
   const contextAnon = await getContext()
   const postAnon = await contextAnon.db.post.findUnique({
-    where: { id: post!.id }
+    where: { id: post!.id },
   })
 
   console.log('Post visible to anon (draft):', postAnon) // null
@@ -130,12 +136,12 @@ async function test() {
   // Publish the post
   await contextAlice.db.post.update({
     where: { id: post!.id },
-    data: { status: 'published' }
+    data: { status: 'published' },
   })
 
   // Now it's visible to anonymous users
   const postAnonPublished = await contextAnon.db.post.findUnique({
-    where: { id: post!.id }
+    where: { id: post!.id },
   })
 
   console.log('Post visible to anon (published):', postAnonPublished?.title)
@@ -146,10 +152,13 @@ async function test() {
   await prisma.user.deleteMany()
 }
 
-test().catch(console.error).finally(() => prisma.$disconnect())
+test()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect())
 ```
 
 Run with:
+
 ```bash
 npx tsx test.ts
 ```
@@ -166,7 +175,7 @@ import { createPost } from './lib/actions/posts'
 const result = await createPost(userId, {
   title: 'Hello World',
   slug: 'hello-world',
-  content: 'My first post'
+  content: 'My first post',
 })
 ```
 
@@ -176,7 +185,7 @@ const result = await createPost(userId, {
 import { updatePost } from './lib/actions/posts'
 
 const result = await updatePost(userId, postId, {
-  title: 'Updated Title'
+  title: 'Updated Title',
 })
 
 // Returns null if user is not the author (silent failure)
@@ -229,7 +238,7 @@ const isSignedIn: AccessControl = ({ session }) => {
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
   return {
-    authorId: { equals: session.userId }
+    authorId: { equals: session.userId },
   }
 }
 ```
@@ -260,7 +269,7 @@ internalNotes: text({
     read: isAuthor,
     create: isAuthor,
     update: isAuthor,
-  }
+  },
 })
 ```
 
@@ -269,7 +278,7 @@ internalNotes: text({
 ```typescript
 const post = await context.db.post.update({
   where: { id: postId },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 if (!post) {
@@ -290,11 +299,13 @@ if (!post) {
 ## Database Management
 
 View your data with Prisma Studio:
+
 ```bash
 pnpm db:studio
 ```
 
 Reset the database:
+
 ```bash
 rm dev.db
 pnpm db:push

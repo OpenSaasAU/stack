@@ -9,6 +9,7 @@ The complete hooks system has been implemented, matching KeystoneJS patterns and
 ### 1. Hooks Execution Engine (`packages/core/src/hooks/`)
 
 **New Module**: Complete hooks infrastructure with:
+
 - `executeResolveInput()` - Modify data before validation
 - `executeValidateInput()` - Custom validation with error collection
 - `executeBeforeOperation()` - Side effects before DB operations
@@ -30,6 +31,7 @@ hooks: {
 ### 3. Execution Order (Per Spec)
 
 For **Create/Update** operations:
+
 1. Access control check (operation-level)
 2. `resolveInput` hook - Transform input data
 3. `validateInput` hook - Custom validation
@@ -41,6 +43,7 @@ For **Create/Update** operations:
 9. Return result
 
 For **Delete** operations:
+
 1. Access control check (operation-level)
 2. `beforeOperation` hook
 3. Database operation
@@ -50,6 +53,7 @@ For **Delete** operations:
 ### 4. Built-in Field Validation
 
 Automatic validation for:
+
 - `isRequired` - Field must be present (only on create, or if field is in update data)
 - Text field `length.min` and `length.max`
 - Integer field `validation.min` and `validation.max`
@@ -59,11 +63,13 @@ Automatic validation for:
 ### 5. Integration Points
 
 **Updated Context Operations**:
+
 - `createCreate()` - Full hooks integration
 - `createUpdate()` - Full hooks integration
 - `createDelete()` - beforeOperation and afterOperation only
 
 **Exports**:
+
 - Exported `ValidationError` from `@opensaas/core`
 - All hook functions available internally
 
@@ -75,16 +81,13 @@ Automatic validation for:
 hooks: {
   resolveInput: async ({ operation, resolvedData, item }) => {
     // Auto-set publishedAt when status changes to published
-    if (
-      resolvedData.status === "published" &&
-      (!item?.publishedAt || operation === "create")
-    ) {
+    if (resolvedData.status === 'published' && (!item?.publishedAt || operation === 'create')) {
       return {
         ...resolvedData,
         publishedAt: new Date(),
-      };
+      }
     }
-    return resolvedData;
+    return resolvedData
   }
 }
 ```
@@ -94,12 +97,12 @@ hooks: {
 ```typescript
 hooks: {
   validateInput: async ({ resolvedData, addValidationError }) => {
-    if (resolvedData.title?.toLowerCase().includes("spam")) {
-      addValidationError('Title cannot contain the word "spam"');
+    if (resolvedData.title?.toLowerCase().includes('spam')) {
+      addValidationError('Title cannot contain the word "spam"')
     }
-    
+
     if (resolvedData.content?.length < 10) {
-      addValidationError('Content must be at least 10 characters');
+      addValidationError('Content must be at least 10 characters')
     }
   }
 }
@@ -113,7 +116,7 @@ hooks: {
     console.log(`About to ${operation}:`, item?.id);
     // Could send notifications, update cache, etc.
   },
-  
+
   afterOperation: async ({ operation, item }) => {
     console.log(`Successfully ${operation}d:`, item.id);
     // Could trigger webhooks, update search index, etc.
@@ -142,10 +145,12 @@ No regressions - all existing functionality continues to work.
 ## Files Created/Modified
 
 ### New Files
+
 - `packages/core/src/hooks/index.ts` - Complete hooks execution engine
 - `examples/blog/test-hooks.ts` - Comprehensive hooks test suite
 
 ### Modified Files
+
 - `packages/core/src/context/index.ts` - Integrated hooks into all operations
 - `packages/core/src/index.ts` - Exported ValidationError
 - `examples/blog/opensaas.config.ts` - Added hooks examples to Post model
@@ -158,7 +163,7 @@ No regressions - all existing functionality continues to work.
 ```typescript
 class ValidationError extends Error {
   public errors: string[]
-  
+
   constructor(errors: string[]) {
     super(`Validation failed: ${errors.join(', ')}`)
     this.errors = errors
@@ -185,9 +190,7 @@ The `validateFieldRules()` function is smart about update operations:
 ```typescript
 // For create: all required fields must be present
 // For update: only validate fields that are being updated
-const shouldValidate = 
-  operation === 'create' || 
-  (operation === 'update' && fieldName in data)
+const shouldValidate = operation === 'create' || (operation === 'update' && fieldName in data)
 ```
 
 This prevents false validation errors like "slug is required" when updating just the title.
@@ -195,6 +198,7 @@ This prevents false validation errors like "slug is required" when updating just
 ### 3. Hook Execution is Async
 
 All hooks support async/await, allowing:
+
 - Database queries
 - External API calls
 - File system operations
@@ -249,6 +253,7 @@ All hooks support async/await, allowing:
 ## Migration Guide
 
 If you have existing OpenSaaS code, no changes are required! Hooks are:
+
 - **Optional** - Only run if defined in config
 - **Backward compatible** - Existing configs work without hooks
 - **Non-breaking** - All existing functionality preserved
@@ -257,14 +262,19 @@ To add hooks to your lists:
 
 ```typescript
 Post: list({
-  fields: { /* ... */ },
-  access: { /* ... */ },
-  hooks: {  // Add this section
+  fields: {
+    /* ... */
+  },
+  access: {
+    /* ... */
+  },
+  hooks: {
+    // Add this section
     resolveInput: async ({ resolvedData }) => {
       // Transform data
       return resolvedData
-    }
-  }
+    },
+  },
 })
 ```
 

@@ -3,6 +3,7 @@
 ## Current State Analysis
 
 ### ✅ What we have:
+
 - Full admin UI implementation with 10+ components (Dashboard, ListView, ItemForm, Navigation, etc.)
 - Field component registry pattern for extensibility
 - Custom-built form inputs using plain Tailwind CSS
@@ -10,6 +11,7 @@
 - Working components: ConfirmDialog, LoadingSpinner, SkeletonLoader, etc.
 
 ### ❌ What's missing:
+
 - Polished, production-ready UI components (buttons, inputs, dialogs)
 - **Composable exports for custom pages**
 - **Standalone field components for custom forms**
@@ -19,6 +21,7 @@
 ## Proposed Migration to shadcn/ui + Composability
 
 ### Why shadcn/ui is perfect:
+
 1. **Not a dependency** - copies components into your codebase (fits our philosophy)
 2. **Tailwind CSS based** - already using Tailwind v4
 3. **Customizable** - components are yours to modify
@@ -30,6 +33,7 @@
 ### 1. Add shadcn/ui Base Components (`primitives/`)
 
 Create `packages/ui/src/primitives/` for core shadcn components:
+
 - **Button** - Replace custom button styling
 - **Input** - Enhance form inputs
 - **Label** - Accessible form labels
@@ -46,10 +50,10 @@ Make field components **standalone and reusable**:
 
 ```tsx
 // Current: Only works inside ItemForm
-import { ItemForm } from "@opensaas/ui"
+import { ItemForm } from '@opensaas/ui'
 
 // NEW: Composable fields for custom forms
-import { TextField, SelectField, Form } from "@opensaas/ui/fields"
+import { TextField, SelectField, Form } from '@opensaas/ui/fields'
 
 // Developer can build custom forms
 function CustomCheckoutForm() {
@@ -68,23 +72,25 @@ function CustomCheckoutForm() {
 Break down monolithic components into composable pieces:
 
 **Current:**
+
 ```tsx
 // Only option: Use entire admin UI
 <AdminUI context={context} />
 ```
 
 **NEW: Composable exports**
+
 ```tsx
 // Option 1: Full admin UI (existing)
-import { AdminUI } from "@opensaas/ui"
-<AdminUI context={context} />
+import { AdminUI } from '@opensaas/ui'
+;<AdminUI context={context} />
 
 // Option 2: Individual page components
-import { Dashboard, ListView, ItemDetail, ItemCreateForm } from "@opensaas/ui"
-<Dashboard context={context} />
+import { Dashboard, ListView, ItemDetail, ItemCreateForm } from '@opensaas/ui'
+;<Dashboard context={context} />
 
 // Option 3: Embed components in custom pages
-import { ItemCreateForm } from "@opensaas/ui"
+import { ItemCreateForm } from '@opensaas/ui'
 function CustomPage() {
   return (
     <div>
@@ -100,8 +106,8 @@ function CustomPage() {
 }
 
 // Option 4: Use primitives directly
-import { Button, Input, Card } from "@opensaas/ui/primitives"
-<Card>
+import { Button, Input, Card } from '@opensaas/ui/primitives'
+;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
 </Card>
@@ -110,6 +116,7 @@ import { Button, Input, Card } from "@opensaas/ui/primitives"
 ### 4. Enhanced Package Exports
 
 **New package.json exports:**
+
 ```json
 {
   "exports": {
@@ -135,38 +142,40 @@ import { Button, Input, Card } from "@opensaas/ui/primitives"
 ```
 
 **Usage patterns:**
+
 ```tsx
 // Primitives (shadcn components)
-import { Button, Input, Dialog } from "@opensaas/ui/primitives"
+import { Button, Input, Dialog } from '@opensaas/ui/primitives'
 
 // Field components (OpenSaaS-aware)
-import { TextField, RelationshipField } from "@opensaas/ui/fields"
+import { TextField, RelationshipField } from '@opensaas/ui/fields'
 
 // Full page components
-import { Dashboard, ListView, ItemForm } from "@opensaas/ui"
+import { Dashboard, ListView, ItemForm } from '@opensaas/ui'
 
 // Complete admin UI
-import { AdminUI } from "@opensaas/ui"
+import { AdminUI } from '@opensaas/ui'
 
 // Server utilities
-import { getAdminContext } from "@opensaas/ui/server"
+import { getAdminContext } from '@opensaas/ui/server'
 ```
 
 ### 5. New Composable Components
 
 #### ItemCreateForm (Standalone)
+
 ```tsx
 export interface ItemCreateFormProps {
-  listKey: string;
-  context: AdminContext;
-  onSuccess?: (item: any) => void;
-  onCancel?: () => void;
-  redirectOnSuccess?: string;
-  submitLabel?: string;
+  listKey: string
+  context: AdminContext
+  onSuccess?: (item: any) => void
+  onCancel?: () => void
+  redirectOnSuccess?: string
+  submitLabel?: string
 }
 
 // Usage in custom page
-<ItemCreateForm
+;<ItemCreateForm
   listKey="Post"
   context={context}
   onSuccess={(post) => {
@@ -177,31 +186,34 @@ export interface ItemCreateFormProps {
 ```
 
 #### ItemEditForm (Standalone)
+
 ```tsx
 <ItemEditForm
   listKey="Post"
   itemId="123"
   context={context}
-  fields={["title", "content", "status"]} // Optional: limit fields
+  fields={['title', 'content', 'status']} // Optional: limit fields
 />
 ```
 
 #### ListTable (Standalone)
+
 ```tsx
 <ListTable
   listKey="Post"
   context={context}
-  columns={["title", "author", "createdAt"]}
+  columns={['title', 'author', 'createdAt']}
   onRowClick={(item) => router.push(`/posts/${item.id}`)}
-  filters={{ status: "published" }}
+  filters={{ status: 'published' }}
 />
 ```
 
 #### FieldGroup (Custom field layouts)
-```tsx
-import { FieldGroup, TextField, SelectField } from "@opensaas/ui/fields"
 
-<FieldGroup>
+```tsx
+import { FieldGroup, TextField, SelectField } from '@opensaas/ui/fields'
+
+;<FieldGroup>
   <div className="grid grid-cols-2 gap-4">
     <TextField name="firstName" label="First Name" />
     <TextField name="lastName" label="Last Name" />
@@ -213,6 +225,7 @@ import { FieldGroup, TextField, SelectField } from "@opensaas/ui/fields"
 ## Real-World Use Cases
 
 ### Use Case 1: Multi-Model Form
+
 ```tsx
 // Checkout form that creates User + Subscription
 function CheckoutPage() {
@@ -242,32 +255,24 @@ function CheckoutPage() {
 ```
 
 ### Use Case 2: Custom Dashboard
+
 ```tsx
 function MyDashboard() {
   return (
     <div className="grid grid-cols-3 gap-6">
       <Card>
         <h2>Recent Posts</h2>
-        <ListTable
-          listKey="Post"
-          limit={5}
-          columns={["title", "createdAt"]}
-        />
+        <ListTable listKey="Post" limit={5} columns={['title', 'createdAt']} />
       </Card>
 
       <Card>
         <h2>Quick Actions</h2>
-        <Button onClick={() => setShowCreate(true)}>
-          Create Post
-        </Button>
+        <Button onClick={() => setShowCreate(true)}>Create Post</Button>
       </Card>
 
       {showCreate && (
         <Dialog open onClose={() => setShowCreate(false)}>
-          <ItemCreateForm
-            listKey="Post"
-            onSuccess={() => setShowCreate(false)}
-          />
+          <ItemCreateForm listKey="Post" onSuccess={() => setShowCreate(false)} />
         </Dialog>
       )}
     </div>
@@ -276,6 +281,7 @@ function MyDashboard() {
 ```
 
 ### Use Case 3: Inline Editing
+
 ```tsx
 function PostDetailPage({ id }) {
   const [editing, setEditing] = useState(false)
@@ -355,21 +361,25 @@ packages/ui/
 ## Migration Strategy
 
 ### Phase 1 - Add Primitives (No Breaking Changes)
+
 - Add shadcn components to `primitives/`
 - Export via `@opensaas/ui/primitives`
 - Update internal components to use primitives
 
 ### Phase 2 - Make Fields Composable
+
 - Enhance field components to work standalone
 - Export via `@opensaas/ui/fields`
 - Add FieldGroup wrapper
 
 ### Phase 3 - Extract Standalone Components
+
 - Create ItemCreateForm, ItemEditForm, ListTable
 - Add success/cancel callbacks
 - Export from main package
 
 ### Phase 4 - Documentation & Examples
+
 - Add example: Custom checkout flow
 - Add example: Embedded forms
 - Add example: Custom dashboard

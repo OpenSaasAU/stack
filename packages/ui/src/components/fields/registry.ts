@@ -1,26 +1,26 @@
-import type { ComponentType } from "react";
-import { TextField } from "./TextField.js";
-import { IntegerField } from "./IntegerField.js";
-import { CheckboxField } from "./CheckboxField.js";
-import { SelectField } from "./SelectField.js";
-import { TimestampField } from "./TimestampField.js";
-import { PasswordField } from "./PasswordField.js";
-import { RelationshipField } from "./RelationshipField.js";
+import type { ComponentType } from 'react'
+import { TextField } from './TextField.js'
+import { IntegerField } from './IntegerField.js'
+import { CheckboxField } from './CheckboxField.js'
+import { SelectField } from './SelectField.js'
+import { TimestampField } from './TimestampField.js'
+import { PasswordField } from './PasswordField.js'
+import { RelationshipField } from './RelationshipField.js'
 
 /**
  * Base props that all field components must accept
  * Field components can extend this with additional field-specific props
  */
 export type FieldComponentProps = {
-  name: string;
-  value: unknown;
-  onChange: (value: unknown) => void;
-  label: string;
-  error?: string;
-  disabled?: boolean;
-  required?: boolean;
-  mode?: "read" | "edit";
-};
+  name: string
+  value: unknown
+  onChange: (value: unknown) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  required?: boolean
+  mode?: 'read' | 'edit'
+}
 
 /**
  * Type for field component
@@ -29,7 +29,7 @@ export type FieldComponentProps = {
  * specific prop types (e.g., value: string vs value: number), but all
  * must include the base FieldComponentProps structure.
  */
-export type FieldComponent = ComponentType<FieldComponentProps & Record<string, unknown>>;
+export type FieldComponent = ComponentType<FieldComponentProps & Record<string, unknown>>
 
 /**
  * Registry mapping field types to their default UI components
@@ -45,7 +45,7 @@ export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
   timestamp: TimestampField,
   password: PasswordField,
   relationship: RelationshipField,
-};
+}
 
 /**
  * Register a custom field component for a field type
@@ -59,7 +59,7 @@ export function registerFieldComponent(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   component: ComponentType<any>,
 ): void {
-  fieldComponentRegistry[fieldType] = component;
+  fieldComponentRegistry[fieldType] = component
 }
 
 /**
@@ -68,5 +68,5 @@ export function registerFieldComponent(
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getFieldComponent(fieldType: string): ComponentType<any> | undefined {
-  return fieldComponentRegistry[fieldType];
+  return fieldComponentRegistry[fieldType]
 }

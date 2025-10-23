@@ -1,15 +1,15 @@
-import { config, list } from "@opensaas/core";
-import { text, relationship, select, timestamp, password } from "@opensaas/core/fields";
-import type { AccessControl } from "@opensaas/core";
-import { registerFieldComponent } from "@opensaas/ui";
-import { ColorPickerField } from "./components/ColorPickerField";
-import { SlugField } from "./components/SlugField";
+import { config, list } from '@opensaas/core'
+import { text, relationship, select, timestamp, password } from '@opensaas/core/fields'
+import type { AccessControl } from '@opensaas/core'
+import { registerFieldComponent } from '@opensaas/ui'
+import { ColorPickerField } from './components/ColorPickerField'
+import { SlugField } from './components/SlugField'
 
 /**
  * GLOBAL FIELD TYPE REGISTRATION
  * Register a custom field type that can be used across the entire application
  */
-registerFieldComponent("color", ColorPickerField);
+registerFieldComponent('color', ColorPickerField)
 
 /**
  * Access control helpers
@@ -17,31 +17,31 @@ registerFieldComponent("color", ColorPickerField);
 
 // Check if user is signed in
 const isSignedIn: AccessControl = ({ session }) => {
-  return !!session;
-};
+  return !!session
+}
 
 // Check if user is the author of a post
 const isAuthor: AccessControl = ({ session }) => {
-  if (!session) return false;
+  if (!session) return false
   return {
     authorId: { equals: session.userId },
-  };
-};
+  }
+}
 
 // Check if user is the owner of their own user record
 const isOwner: AccessControl = ({ session, item }) => {
-  if (!session) return false;
-  return session.userId === item?.id;
-};
+  if (!session) return false
+  return session.userId === item?.id
+}
 
 /**
  * OpenSaaS Configuration
  */
 export default config({
   db: {
-    provider: "sqlite",
-    url: process.env.DATABASE_URL || "file:./dev.db",
-    prismaClientPath: "./__generated__/prisma-client",
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientPath: './__generated__/prisma-client',
   },
 
   lists: {
@@ -52,7 +52,7 @@ export default config({
         }),
         email: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
         }),
         password: password({
           validation: { isRequired: true },
@@ -64,11 +64,11 @@ export default config({
          */
         favoriteColor: text({
           ui: {
-            fieldType: "color",
+            fieldType: 'color',
           },
         }),
         posts: relationship({
-          ref: "Post.author",
+          ref: 'Post.author',
           many: true,
         }),
       },
@@ -98,13 +98,13 @@ export default config({
          */
         slug: text({
           validation: { isRequired: true },
-          isIndexed: "unique",
+          isIndexed: 'unique',
           ui: {
             component: SlugField,
           },
         }),
         content: text({
-          ui: { displayMode: "textarea" },
+          ui: { displayMode: 'textarea' },
           access: {
             read: () => true,
             create: isSignedIn,
@@ -118,20 +118,20 @@ export default config({
          */
         themeColor: text({
           ui: {
-            fieldType: "color",
+            fieldType: 'color',
           },
         }),
         status: select({
           options: [
-            { label: "Draft", value: "draft" },
-            { label: "Published", value: "published" },
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
           ],
-          defaultValue: "draft",
-          ui: { displayMode: "segmented-control" },
+          defaultValue: 'draft',
+          ui: { displayMode: 'segmented-control' },
         }),
         publishedAt: timestamp(),
         author: relationship({
-          ref: "User.posts",
+          ref: 'User.posts',
         }),
       },
       access: {
@@ -140,9 +140,9 @@ export default config({
           // Authenticated users can see all posts
           query: ({ session }) => {
             if (!session) {
-              return { status: { equals: "published" } };
+              return { status: { equals: 'published' } }
             }
-            return true;
+            return true
           },
           // Must be signed in to create
           create: isSignedIn,
@@ -154,25 +154,25 @@ export default config({
       },
       hooks: {
         resolveInput: async ({ operation, resolvedData, item }) => {
-          let result = { ...resolvedData };
+          let result = { ...resolvedData }
 
           // Auto-set publishedAt when status changes to published
-          if (result?.status === "published" && (!item?.publishedAt || operation === "create")) {
-            result.publishedAt = new Date();
+          if (result?.status === 'published' && (!item?.publishedAt || operation === 'create')) {
+            result.publishedAt = new Date()
           }
 
           // Auto-generate slug from title if not provided
-          if (operation === "create" && !result?.slug && result?.title) {
+          if (operation === 'create' && !result?.slug && result?.title) {
             const slug = (result.title as string)
               .toLowerCase()
-              .replace(/[^\w\s-]/g, "")
-              .replace(/\s+/g, "-")
-              .replace(/--+/g, "-")
-              .trim();
-            result.slug = slug;
+              .replace(/[^\w\s-]/g, '')
+              .replace(/\s+/g, '-')
+              .replace(/--+/g, '-')
+              .trim()
+            result.slug = slug
           }
 
-          return result;
+          return result
         },
       },
     }),
@@ -183,18 +183,18 @@ export default config({
       // This is a mock for the example
       // In a real app, this would integrate with your auth system
       // For now, return null (not authenticated)
-      return null;
+      return null
     },
   },
 
   ui: {
-    basePath: "/admin",
+    basePath: '/admin',
     /**
      * THEME CONFIGURATION
      * Demonstrates the theming system with custom colors
      */
     theme: {
-      preset: "neon", // Use "neon" preset theme
+      preset: 'neon', // Use "neon" preset theme
       // Optional: Override specific colors
       // colors: {
       //   primary: "280 100% 50%", // Custom magenta
@@ -202,4 +202,4 @@ export default config({
       radius: 0.75, // Rounded corners
     },
   },
-});
+})

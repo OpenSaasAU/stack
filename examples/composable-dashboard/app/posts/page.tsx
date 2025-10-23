@@ -1,13 +1,13 @@
-import Link from "next/link";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives";
-import { ListTable, SearchBar } from "@opensaas/ui/standalone";
-import { getContext } from "../../lib/context";
-import { CreatePostDialog } from "../../components/CreatePostDialog";
+import Link from 'next/link'
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
+import { ListTable, SearchBar } from '@opensaas/ui/standalone'
+import { getContext } from '../../lib/context'
+import { CreatePostDialog } from '../../components/CreatePostDialog'
 
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
-  const searchParams = await props.searchParams;
-  const search = searchParams.search || "";
-  const context = await getContext();
+  const searchParams = await props.searchParams
+  const search = searchParams.search || ''
+  const context = await getContext()
 
   // Fetch posts with search using context (access control applied)
   const posts = await context.db.post.findMany({
@@ -17,14 +17,14 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
         }
       : undefined,
     include: { author: true },
-    orderBy: { createdAt: "desc" },
-  });
+    orderBy: { createdAt: 'desc' },
+  })
 
   // Transform posts to include author name for display
   const postsWithAuthorName = posts.map((post) => ({
     ...post,
-    authorName: post.author?.name || "Unknown",
-  }));
+    authorName: post.author?.name || 'Unknown',
+  }))
 
   return (
     <div className="min-h-screen bg-background">
@@ -69,22 +69,22 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
             <ListTable
               items={postsWithAuthorName}
               fieldTypes={{
-                title: "text",
-                authorName: "text",
-                status: "select",
-                createdAt: "timestamp",
+                title: 'text',
+                authorName: 'text',
+                status: 'select',
+                createdAt: 'timestamp',
               }}
-              columns={["title", "authorName", "status", "createdAt"]}
+              columns={['title', 'authorName', 'status', 'createdAt']}
               sortable
               emptyMessage={
                 search
                   ? `No posts found matching "${search}"`
-                  : "No posts yet. Create one to get started!"
+                  : 'No posts yet. Create one to get started!'
               }
             />
           </CardContent>
         </Card>
       </main>
     </div>
-  );
+  )
 }

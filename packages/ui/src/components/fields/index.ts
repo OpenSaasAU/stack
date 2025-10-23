@@ -9,11 +9,7 @@ export { RelationshipField } from './RelationshipField.js'
 export { FieldRenderer } from './FieldRenderer.js'
 
 // Registry for custom field types
-export {
-  fieldComponentRegistry,
-  registerFieldComponent,
-  getFieldComponent,
-} from './registry.js'
+export { fieldComponentRegistry, registerFieldComponent, getFieldComponent } from './registry.js'
 
 // Re-export types
 export type { TextFieldProps } from './TextField.js'

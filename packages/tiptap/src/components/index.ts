@@ -1,2 +1,2 @@
-export { TiptapField } from "./TiptapField.js";
-export type { TiptapFieldProps } from "./TiptapField.js";
+export { TiptapField } from './TiptapField.js'
+export type { TiptapFieldProps } from './TiptapField.js'

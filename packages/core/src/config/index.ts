@@ -1,10 +1,10 @@
-import type { OpenSaaSConfig, ListConfig } from "./types.js";
+import type { OpenSaaSConfig, ListConfig } from './types.js'
 
 /**
  * Helper function to define configuration with type safety
  */
 export function config(config: OpenSaaSConfig): OpenSaaSConfig {
-  return config;
+  return config
 }
 
 /**
@@ -12,7 +12,7 @@ export function config(config: OpenSaaSConfig): OpenSaaSConfig {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function list<T = any>(config: ListConfig<T>): ListConfig<T> {
-  return config;
+  return config
 }
 
 // Re-export all types
@@ -36,4 +36,4 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
-} from "./types.js";
+} from './types.js'

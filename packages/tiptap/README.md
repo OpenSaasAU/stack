@@ -21,6 +21,7 @@ pnpm add @opensaas/tiptap
 ```
 
 The following peer dependencies are required:
+
 - `@opensaas/core`
 - `@opensaas/ui`
 - `next`
@@ -35,12 +36,12 @@ The following peer dependencies are required:
 
 ```typescript
 // lib/register-fields.ts
-"use client";
+'use client'
 
-import { registerFieldComponent } from "@opensaas/ui";
-import { TiptapField } from "@opensaas/tiptap";
+import { registerFieldComponent } from '@opensaas/ui'
+import { TiptapField } from '@opensaas/tiptap'
 
-registerFieldComponent("richText", TiptapField);
+registerFieldComponent('richText', TiptapField)
 ```
 
 2. **Import the registration in your admin page**:
@@ -61,14 +62,14 @@ export default async function AdminPage() {
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from "@opensaas/core";
-import { text } from "@opensaas/core/fields";
-import { richText } from "@opensaas/tiptap/fields";
+import { config, list } from '@opensaas/core'
+import { text } from '@opensaas/core/fields'
+import { richText } from '@opensaas/tiptap/fields'
 
 export default config({
   db: {
-    provider: "sqlite",
-    url: "file:./dev.db",
+    provider: 'sqlite',
+    url: 'file:./dev.db',
   },
   lists: {
     Article: list({
@@ -80,7 +81,7 @@ export default config({
       },
     }),
   },
-});
+})
 ```
 
 4. Generate Prisma schema:
@@ -108,8 +109,8 @@ model Article {
 ```typescript
 content: richText({
   validation: {
-    isRequired: true  // Make field required
-  }
+    isRequired: true, // Make field required
+  },
 })
 ```
 
@@ -118,10 +119,10 @@ content: richText({
 ```typescript
 content: richText({
   ui: {
-    placeholder: "Start writing...",
-    minHeight: 200,     // Minimum editor height in pixels
-    maxHeight: 800,     // Maximum editor height (scrollable)
-  }
+    placeholder: 'Start writing...',
+    minHeight: 200, // Minimum editor height in pixels
+    maxHeight: 800, // Maximum editor height (scrollable)
+  },
 })
 ```
 
@@ -138,7 +139,7 @@ Article: list({
         read: () => true,
         create: isSignedIn,
         update: isAuthor,
-      }
+      },
     }),
   },
 })
@@ -149,33 +150,31 @@ Article: list({
 Content is stored as JSON and can be queried using Prisma's JSON operations:
 
 ```typescript
-import { prisma } from "./lib/context";
+import { prisma } from './lib/context'
 
 // Create article with rich text
 const article = await prisma.article.create({
   data: {
-    title: "My Article",
+    title: 'My Article',
     content: {
-      type: "doc",
+      type: 'doc',
       content: [
         {
-          type: "paragraph",
-          content: [
-            { type: "text", text: "Hello world!" }
-          ]
-        }
-      ]
-    }
-  }
-});
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Hello world!' }],
+        },
+      ],
+    },
+  },
+})
 
 // Query articles
 const articles = await prisma.article.findMany({
   select: {
     title: true,
     content: true,
-  }
-});
+  },
+})
 ```
 
 ## Component Features
@@ -183,21 +182,26 @@ const articles = await prisma.article.findMany({
 The `TiptapField` component includes:
 
 ### Text Formatting
+
 - **Bold**
-- *Italic*
+- _Italic_
 - ~~Strike-through~~
 
 ### Headings
+
 - H1, H2, H3
 
 ### Lists
+
 - Bullet lists
 - Ordered lists
 
 ### Blockquotes
+
 - Quote blocks
 
 ### Modes
+
 - **Edit mode**: Full toolbar with all formatting options
 - **Read mode**: Render-only view (no toolbar)
 
@@ -237,23 +241,23 @@ export function CustomTiptapField(props) {
 Then use it in your config:
 
 ```typescript
-import { registerFieldComponent } from "@opensaas/ui";
-import { CustomTiptapField } from "./components/CustomTiptapField";
+import { registerFieldComponent } from '@opensaas/ui'
+import { CustomTiptapField } from './components/CustomTiptapField'
 
 // Global registration
-registerFieldComponent("richTextExtended", CustomTiptapField);
+registerFieldComponent('richTextExtended', CustomTiptapField)
 
 // Use in config
 fields: {
   content: richText({
-    ui: { fieldType: "richTextExtended" }
+    ui: { fieldType: 'richTextExtended' },
   })
 }
 
 // Or per-field override
 fields: {
   content: richText({
-    ui: { component: CustomTiptapField }
+    ui: { component: CustomTiptapField },
   })
 }
 ```
@@ -280,6 +284,7 @@ This package follows OpenSaaS's extensibility pattern:
 ## Example
 
 See `examples/tiptap-demo` for a complete working example demonstrating:
+
 - Multiple rich text fields
 - Custom UI options
 - Access control integration
@@ -292,6 +297,7 @@ See `examples/tiptap-demo` for a complete working example demonstrating:
 Creates a rich text field configuration.
 
 **Options:**
+
 - `validation.isRequired` - Make field required (default: `false`)
 - `ui.placeholder` - Placeholder text (default: `"Start writing..."`)
 - `ui.minHeight` - Minimum editor height in pixels (default: `200`)
@@ -307,6 +313,7 @@ Creates a rich text field configuration.
 React component for rendering the Tiptap editor.
 
 **Props:**
+
 - `name: string` - Field name
 - `value: any` - JSON content value
 - `onChange: (value: any) => void` - Change handler

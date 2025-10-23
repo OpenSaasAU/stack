@@ -14,7 +14,7 @@
  * BlogPost -> blogPost
  */
 export function pascalToCamel(str: string): string {
-  return str.charAt(0).toLowerCase() + str.slice(1);
+  return str.charAt(0).toLowerCase() + str.slice(1)
 }
 
 /**
@@ -24,8 +24,8 @@ export function pascalToCamel(str: string): string {
  */
 export function pascalToKebab(str: string): string {
   return str.replace(/([A-Z])/g, (match, p1, offset) => {
-    return offset > 0 ? `-${p1.toLowerCase()}` : p1.toLowerCase();
-  });
+    return offset > 0 ? `-${p1.toLowerCase()}` : p1.toLowerCase()
+  })
 }
 
 /**
@@ -36,8 +36,8 @@ export function pascalToKebab(str: string): string {
 export function kebabToPascal(str: string): string {
   return str
     .split('-')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join('');
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('')
 }
 
 /**
@@ -46,7 +46,7 @@ export function kebabToPascal(str: string): string {
  * blog-post -> blogPost
  */
 export function kebabToCamel(str: string): string {
-  return str.replace(/-([a-z])/g, (match, p1) => p1.toUpperCase());
+  return str.replace(/-([a-z])/g, (match, p1) => p1.toUpperCase())
 }
 
 /**
@@ -54,7 +54,7 @@ export function kebabToCamel(str: string): string {
  * Used for accessing context.db and prisma client
  */
 export function getDbKey(listKey: string): string {
-  return pascalToCamel(listKey);
+  return pascalToCamel(listKey)
 }
 
 /**
@@ -62,7 +62,7 @@ export function getDbKey(listKey: string): string {
  * Used for constructing admin URLs
  */
 export function getUrlKey(listKey: string): string {
-  return pascalToKebab(listKey);
+  return pascalToKebab(listKey)
 }
 
 /**
@@ -70,5 +70,5 @@ export function getUrlKey(listKey: string): string {
  * Used for parsing admin URLs
  */
 export function getListKeyFromUrl(urlSegment: string): string {
-  return kebabToPascal(urlSegment);
+  return kebabToPascal(urlSegment)
 }

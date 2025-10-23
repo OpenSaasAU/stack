@@ -1,4 +1,4 @@
-import { TableSkeleton } from "@opensaas/ui";
+import { TableSkeleton } from '@opensaas/ui'
 
 /**
  * Loading UI for admin pages
@@ -28,5 +28,5 @@ export default function Loading() {
         <TableSkeleton rows={5} columns={4} />
       </main>
     </div>
-  );
+  )
 }

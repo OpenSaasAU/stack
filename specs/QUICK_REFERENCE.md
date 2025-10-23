@@ -23,7 +23,15 @@ npx tsx test-access-control.ts
 
 ```typescript
 import { config, list } from '@opensaas/core'
-import { text, relationship, select, timestamp, password, integer, checkbox } from '@opensaas/core/fields'
+import {
+  text,
+  relationship,
+  select,
+  timestamp,
+  password,
+  integer,
+  checkbox,
+} from '@opensaas/core/fields'
 import type { AccessControl } from '@opensaas/core'
 
 export default config({
@@ -31,79 +39,93 @@ export default config({
     provider: 'sqlite' | 'postgresql' | 'mysql',
     url: process.env.DATABASE_URL,
   },
-  
+
   lists: {
     ModelName: list({
-      fields: { /* ... */ },
-      access: { /* ... */ },
-      hooks: { /* ... */ }  // Not yet implemented
-    })
+      fields: {
+        /* ... */
+      },
+      access: {
+        /* ... */
+      },
+      hooks: {
+        /* ... */
+      }, // Not yet implemented
+    }),
   },
-  
+
   session: {
-    getSession: async () => { /* ... */ }
+    getSession: async () => {
+      /* ... */
+    },
   },
-  
+
   ui: {
-    basePath: '/admin'
-  }
+    basePath: '/admin',
+  },
 })
 ```
 
 ## Field Types
 
 ### text()
+
 ```typescript
 text({
   validation: {
     isRequired: boolean,
-    length: { min: number, max: number }
+    length: { min: number, max: number },
   },
   isIndexed: boolean | 'unique',
   defaultValue: string,
   access: FieldAccess,
-  ui: { displayMode: 'input' | 'textarea' }
+  ui: { displayMode: 'input' | 'textarea' },
 })
 ```
 
 ### integer()
+
 ```typescript
 integer({
   validation: {
     isRequired: boolean,
     min: number,
-    max: number
+    max: number,
   },
   defaultValue: number,
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
 ### checkbox()
+
 ```typescript
 checkbox({
   defaultValue: boolean,
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
 ### timestamp()
+
 ```typescript
 timestamp({
   defaultValue: { kind: 'now' } | Date,
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
 ### password()
+
 ```typescript
 password({
   validation: { isRequired: boolean },
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
 ### select()
+
 ```typescript
 select({
   options: [
@@ -113,17 +135,18 @@ select({
   defaultValue: string,
   validation: { isRequired: boolean },
   ui: { displayMode: 'select' | 'segmented-control' | 'radio' },
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
 ### relationship()
+
 ```typescript
 relationship({
-  ref: 'ListName.fieldName',  // Required
-  many: boolean,              // Default: false
+  ref: 'ListName.fieldName', // Required
+  many: boolean, // Default: false
   ui: { displayMode: 'select' | 'cards' },
-  access: FieldAccess
+  access: FieldAccess,
 })
 ```
 
@@ -170,7 +193,7 @@ const isSignedIn: AccessControl = ({ session }) => {
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
   return {
-    authorId: { equals: session.userId }
+    authorId: { equals: session.userId },
   }
 }
 
@@ -186,10 +209,7 @@ const canSee: AccessControl = ({ session }) => {
     return { status: { equals: 'published' } }
   }
   return {
-    OR: [
-      { status: { equals: 'published' } },
-      { authorId: { equals: session.userId } }
-    ]
+    OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
   }
 }
 ```
@@ -199,10 +219,10 @@ const canSee: AccessControl = ({ session }) => {
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,    // Only author can see
-    create: isAuthor,  // Only author can set
-    update: isAuthor   // Only author can modify
-  }
+    read: isAuthor, // Only author can see
+    create: isAuthor, // Only author can set
+    update: isAuthor, // Only author can modify
+  },
 })
 ```
 
@@ -216,7 +236,7 @@ import { PrismaClient } from '@prisma/client'
 import config from './opensaas.config'
 
 const prisma = new PrismaClient()
-const session = await getSession()  // Your auth system
+const session = await getSession() // Your auth system
 
 const context = await getContext(config, prisma, session)
 ```
@@ -270,7 +290,7 @@ author: { connect: { id: userId } }
 author: { disconnect: true }
 
 // Many relationship
-tags: { 
+tags: {
   connect: [{ id: tag1Id }, { id: tag2Id }],
   disconnect: [{ id: tag3Id }]
 }
@@ -312,46 +332,51 @@ npx prisma migrate deploy
 ### Adding a New Model
 
 1. Add to `opensaas.config.ts`:
+
 ```typescript
 Comment: list({
   fields: {
     text: text({ validation: { isRequired: true } }),
     post: relationship({ ref: 'Post.comments' }),
     author: relationship({ ref: 'User.comments' }),
-  }
+  },
 })
 ```
 
 2. Regenerate:
+
 ```bash
 pnpm generate
 npx prisma generate
 ```
 
 3. Use in code:
+
 ```typescript
 const comment = await context.db.comment.create({
   data: {
     text: 'Great post!',
     post: { connect: { id: postId } },
-    author: { connect: { id: userId } }
-  }
+    author: { connect: { id: userId } },
+  },
 })
 ```
 
 ### Adding a New Field
 
 1. Add to existing list in config:
+
 ```typescript
 Post: list({
   fields: {
     // ... existing fields
-    viewCount: integer({ defaultValue: 0 })
-  }
+    viewCount: integer({ defaultValue: 0 }),
+  },
 })
 ```
 
 2. Regenerate:
+
 ```bash
 pnpm generate
 npx prisma db push
@@ -361,10 +386,11 @@ npx prisma generate
 ### Changing Access Control
 
 Just edit the config and reload - no regeneration needed:
+
 ```typescript
 access: {
   operation: {
-    update: isAuthor  // Changed from true
+    update: isAuthor // Changed from true
   }
 }
 ```
@@ -377,7 +403,7 @@ access: {
 // Create context with specific user
 const mockSession = {
   userId: 'user123',
-  user: { id: 'user123', name: 'Test User' }
+  user: { id: 'user123', name: 'Test User' },
 }
 
 const context = await getContext(config, prisma, mockSession)
@@ -388,7 +414,7 @@ const context = await getContext(config, prisma, mockSession)
 ```typescript
 const result = await context.db.post.update({
   where: { id: postId },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 // Silent failure returns null
@@ -399,7 +425,7 @@ expect(result).toBe(null)
 
 ```typescript
 const post = await context.db.post.findUnique({
-  where: { id: postId }
+  where: { id: postId },
 })
 
 // Field should be undefined if access denied
@@ -409,6 +435,7 @@ expect(post?.internalNotes).toBe(undefined)
 ## Troubleshooting
 
 ### Types Not Found
+
 ```bash
 # Make sure core is built
 cd packages/core && pnpm build
@@ -421,11 +448,13 @@ npx prisma generate
 ```
 
 ### Access Control Not Working
+
 - Check session is being passed correctly
 - Check access control function returns correct type
 - Use `console.log()` to debug access control functions
 
 ### Database Out of Sync
+
 ```bash
 # Reset database
 rm dev.db
@@ -434,6 +463,7 @@ npx prisma generate
 ```
 
 ### Module Resolution Errors
+
 ```bash
 # Install workspace dependencies
 pnpm install
@@ -445,24 +475,28 @@ cd packages/core && pnpm build
 ## Best Practices
 
 ### Access Control
+
 - Always fail closed (no access by default)
 - Use filter-based access for performance
 - Keep access control functions pure
 - Don't throw errors in access control
 
 ### Schema Design
+
 - Use unique indexes for lookup fields
 - Set validation.isRequired on required fields
 - Use relationships instead of manual foreign keys
 - Keep field names consistent with Prisma conventions
 
 ### Sessions
+
 - Keep session objects small
 - Include only what's needed for access control
 - Cache session data when possible
 - Integrate with your existing auth system
 
 ### Type Safety
+
 - Import types from `.opensaas/types.ts`
 - Use the generated Context type
 - Let TypeScript guide you

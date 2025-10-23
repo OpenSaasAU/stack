@@ -1,124 +1,124 @@
-import type { AccessControl, FieldAccess } from "../access/types.js";
-import type { z } from "zod";
+import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { z } from 'zod'
 
 /**
  * Field configuration types
  */
 export type FieldType =
-  | "text"
-  | "integer"
-  | "checkbox"
-  | "timestamp"
-  | "password"
-  | "select"
-  | "relationship"
-  | string; // Allow custom field types from third-party packages
+  | 'text'
+  | 'integer'
+  | 'checkbox'
+  | 'timestamp'
+  | 'password'
+  | 'select'
+  | 'relationship'
+  | string // Allow custom field types from third-party packages
 
 export type BaseFieldConfig = {
-  type: string;
-  access?: FieldAccess;
-  defaultValue?: unknown;
+  type: string
+  access?: FieldAccess
+  defaultValue?: unknown
   ui?: {
     /**
      * Custom React component to render this field
      * Overrides the default component for this field type
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    component?: any;
+    component?: any
     /**
      * Custom field type name to use from the global registry
      * e.g., "color" to use a globally registered ColorPickerField
      */
-    fieldType?: string;
+    fieldType?: string
     /**
      * Additional UI-specific configuration
      */
-    [key: string]: unknown;
-  };
+    [key: string]: unknown
+  }
   /**
    * Generate Zod schema for this field
    * @param fieldName - The name of the field (for error messages)
    * @param operation - Whether this is a create or update operation
    */
-  getZodSchema?: (fieldName: string, operation: "create" | "update") => z.ZodTypeAny;
+  getZodSchema?: (fieldName: string, operation: 'create' | 'update') => z.ZodTypeAny
   /**
    * Get Prisma type and modifiers for schema generation
    * @param fieldName - The name of the field (for generating modifiers)
    * @returns Prisma type string and optional modifiers
    */
   getPrismaType?: (fieldName: string) => {
-    type: string;
-    modifiers?: string;
-  };
+    type: string
+    modifiers?: string
+  }
   /**
    * Get TypeScript type information for type generation
    * @returns TypeScript type string and optionality
    */
   getTypeScriptType?: () => {
-    type: string;
-    optional: boolean;
-  };
-};
+    type: string
+    optional: boolean
+  }
+}
 
 export type TextField = BaseFieldConfig & {
-  type: "text";
+  type: 'text'
   validation?: {
-    isRequired?: boolean;
+    isRequired?: boolean
     length?: {
-      min?: number;
-      max?: number;
-    };
-  };
-  isIndexed?: boolean | "unique";
+      min?: number
+      max?: number
+    }
+  }
+  isIndexed?: boolean | 'unique'
   ui?: {
-    displayMode?: "input" | "textarea";
-  };
-};
+    displayMode?: 'input' | 'textarea'
+  }
+}
 
 export type IntegerField = BaseFieldConfig & {
-  type: "integer";
+  type: 'integer'
   validation?: {
-    isRequired?: boolean;
-    min?: number;
-    max?: number;
-  };
-};
+    isRequired?: boolean
+    min?: number
+    max?: number
+  }
+}
 
 export type CheckboxField = BaseFieldConfig & {
-  type: "checkbox";
-};
+  type: 'checkbox'
+}
 
 export type TimestampField = BaseFieldConfig & {
-  type: "timestamp";
-  defaultValue?: { kind: "now" } | Date;
-};
+  type: 'timestamp'
+  defaultValue?: { kind: 'now' } | Date
+}
 
 export type PasswordField = BaseFieldConfig & {
-  type: "password";
+  type: 'password'
   validation?: {
-    isRequired?: boolean;
-  };
-};
+    isRequired?: boolean
+  }
+}
 
 export type SelectField = BaseFieldConfig & {
-  type: "select";
-  options: Array<{ label: string; value: string }>;
+  type: 'select'
+  options: Array<{ label: string; value: string }>
   validation?: {
-    isRequired?: boolean;
-  };
+    isRequired?: boolean
+  }
   ui?: {
-    displayMode?: "select" | "segmented-control" | "radio";
-  };
-};
+    displayMode?: 'select' | 'segmented-control' | 'radio'
+  }
+}
 
 export type RelationshipField = BaseFieldConfig & {
-  type: "relationship";
-  ref: string; // Format: 'ListName.fieldName'
-  many?: boolean;
+  type: 'relationship'
+  ref: string // Format: 'ListName.fieldName'
+  many?: boolean
   ui?: {
-    displayMode?: "select" | "cards";
-  };
-};
+    displayMode?: 'select' | 'cards'
+  }
+}
 
 export type FieldConfig =
   | TextField
@@ -128,96 +128,96 @@ export type FieldConfig =
   | PasswordField
   | SelectField
   | RelationshipField
-  | BaseFieldConfig; // Allow any field extending BaseFieldConfig (for third-party fields)
+  | BaseFieldConfig // Allow any field extending BaseFieldConfig (for third-party fields)
 
 /**
  * List configuration types
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type OperationAccess<T = any> = {
-  query?: AccessControl<T>;
-  create?: AccessControl<T>;
-  update?: AccessControl<T>;
-  delete?: AccessControl<T>;
-};
+  query?: AccessControl<T>
+  create?: AccessControl<T>
+  update?: AccessControl<T>
+  delete?: AccessControl<T>
+}
 
 export type HookArgs<T = Record<string, unknown>> = {
-  operation: "create" | "update" | "delete";
-  resolvedData?: Partial<T>;
-  item?: T;
-  context: import("../access/types.js").AccessContext;
-};
+  operation: 'create' | 'update' | 'delete'
+  resolvedData?: Partial<T>
+  item?: T
+  context: import('../access/types.js').AccessContext
+}
 
 export type Hooks<T = Record<string, unknown>> = {
-  resolveInput?: (args: HookArgs<T> & { operation: "create" | "update" }) => Promise<Partial<T>>;
+  resolveInput?: (args: HookArgs<T> & { operation: 'create' | 'update' }) => Promise<Partial<T>>
   validateInput?: (
     args: HookArgs<T> & {
-      operation: "create" | "update";
-      addValidationError: (msg: string) => void;
+      operation: 'create' | 'update'
+      addValidationError: (msg: string) => void
     },
-  ) => Promise<void>;
-  beforeOperation?: (args: HookArgs<T>) => Promise<void>;
-  afterOperation?: (args: HookArgs<T>) => Promise<void>;
-};
+  ) => Promise<void>
+  beforeOperation?: (args: HookArgs<T>) => Promise<void>
+  afterOperation?: (args: HookArgs<T>) => Promise<void>
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ListConfig<T = any> = {
-  fields: Record<string, FieldConfig>;
+  fields: Record<string, FieldConfig>
   access?: {
-    operation?: OperationAccess<T>;
-  };
-  hooks?: Hooks<T>;
-};
+    operation?: OperationAccess<T>
+  }
+  hooks?: Hooks<T>
+}
 
 /**
  * Database configuration
  */
 export type DatabaseConfig = {
-  provider: "postgresql" | "mysql" | "sqlite";
-  url: string;
-  prismaClientPath?: string;
-};
+  provider: 'postgresql' | 'mysql' | 'sqlite'
+  url: string
+  prismaClientPath?: string
+}
 
 /**
  * Session configuration
  */
 export type SessionConfig = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getSession: () => Promise<any>;
-};
+  getSession: () => Promise<any>
+}
 
 /**
  * Theme preset options
  */
-export type ThemePreset = "modern" | "classic" | "neon";
+export type ThemePreset = 'modern' | 'classic' | 'neon'
 
 /**
  * Custom theme colors (HSL values without hsl() wrapper)
  * Format: "220 20% 97%" (hue saturation lightness)
  */
 export type ThemeColors = {
-  background?: string;
-  foreground?: string;
-  card?: string;
-  cardForeground?: string;
-  popover?: string;
-  popoverForeground?: string;
-  primary?: string;
-  primaryForeground?: string;
-  secondary?: string;
-  secondaryForeground?: string;
-  muted?: string;
-  mutedForeground?: string;
-  accent?: string;
-  accentForeground?: string;
-  destructive?: string;
-  destructiveForeground?: string;
-  border?: string;
-  input?: string;
-  ring?: string;
-  gradientFrom?: string;
-  gradientTo?: string;
-};
+  background?: string
+  foreground?: string
+  card?: string
+  cardForeground?: string
+  popover?: string
+  popoverForeground?: string
+  primary?: string
+  primaryForeground?: string
+  secondary?: string
+  secondaryForeground?: string
+  muted?: string
+  mutedForeground?: string
+  accent?: string
+  accentForeground?: string
+  destructive?: string
+  destructiveForeground?: string
+  border?: string
+  input?: string
+  ring?: string
+  gradientFrom?: string
+  gradientTo?: string
+}
 
 /**
  * Theme configuration
@@ -227,39 +227,39 @@ export type ThemeConfig = {
    * Preset theme to use
    * @default "modern"
    */
-  preset?: ThemePreset;
+  preset?: ThemePreset
   /**
    * Custom color overrides for light mode
    */
-  colors?: ThemeColors;
+  colors?: ThemeColors
   /**
    * Custom color overrides for dark mode
    */
-  darkColors?: ThemeColors;
+  darkColors?: ThemeColors
   /**
    * Border radius in rem
    * @default 0.75
    */
-  radius?: number;
-};
+  radius?: number
+}
 
 /**
  * UI configuration
  */
 export type UIConfig = {
-  basePath?: string;
+  basePath?: string
   /**
    * Theme configuration for the admin UI
    */
-  theme?: ThemeConfig;
-};
+  theme?: ThemeConfig
+}
 
 /**
  * Main configuration type
  */
 export type OpenSaaSConfig = {
-  db: DatabaseConfig;
-  lists: Record<string, ListConfig>;
-  session?: SessionConfig;
-  ui?: UIConfig;
-};
+  db: DatabaseConfig
+  lists: Record<string, ListConfig>
+  session?: SessionConfig
+  ui?: UIConfig
+}

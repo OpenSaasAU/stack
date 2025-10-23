@@ -1,10 +1,10 @@
-"use client";
+'use client'
 
-import * as React from "react";
-import { useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { formatFieldName, getFieldDisplayValue } from "../lib/utils.js";
+import * as React from 'react'
+import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { formatFieldName, getFieldDisplayValue } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -12,22 +12,22 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../primitives/table.js";
-import { Input } from "../primitives/input.js";
-import { Button } from "../primitives/button.js";
-import { Card } from "../primitives/card.js";
+} from '../primitives/table.js'
+import { Input } from '../primitives/input.js'
+import { Button } from '../primitives/button.js'
+import { Card } from '../primitives/card.js'
 
 export interface ListViewClientProps {
-  items: any[];
-  fieldTypes: Record<string, string>;
-  columns?: string[];
-  listKey: string;
-  urlKey: string;
-  basePath: string;
-  page: number;
-  pageSize: number;
-  total: number;
-  search?: string;
+  items: any[]
+  fieldTypes: Record<string, string>
+  columns?: string[]
+  listKey: string
+  urlKey: string
+  basePath: string
+  page: number
+  pageSize: number
+  total: number
+  search?: string
 }
 
 /**
@@ -45,64 +45,64 @@ export function ListViewClient({
   total,
   search: initialSearch,
 }: ListViewClientProps) {
-  const router = useRouter();
-  const [sortBy, setSortBy] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [searchInput, setSearchInput] = useState(initialSearch || "");
+  const router = useRouter()
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [searchInput, setSearchInput] = useState(initialSearch || '')
 
   // Determine which columns to show
   const displayColumns =
     columns ||
-    Object.keys(fieldTypes).filter((key) => !["password", "createdAt", "updatedAt"].includes(key));
+    Object.keys(fieldTypes).filter((key) => !['password', 'createdAt', 'updatedAt'].includes(key))
 
   // Sort items if needed
-  const sortedItems = [...items];
+  const sortedItems = [...items]
   if (sortBy) {
     sortedItems.sort((a, b) => {
-      const aVal = a[sortBy];
-      const bVal = b[sortBy];
-      if (aVal === bVal) return 0;
-      const comparison = aVal > bVal ? 1 : -1;
-      return sortOrder === "asc" ? comparison : -comparison;
-    });
+      const aVal = a[sortBy]
+      const bVal = b[sortBy]
+      if (aVal === bVal) return 0
+      const comparison = aVal > bVal ? 1 : -1
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
   }
 
-  const totalPages = Math.ceil(total / pageSize);
-  const hasNextPage = page < totalPages;
-  const hasPrevPage = page > 1;
+  const totalPages = Math.ceil(total / pageSize)
+  const hasNextPage = page < totalPages
+  const hasPrevPage = page > 1
 
   const handleSort = (column: string) => {
     if (sortBy === column) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     } else {
-      setSortBy(column);
-      setSortOrder("asc");
+      setSortBy(column)
+      setSortOrder('asc')
     }
-  };
+  }
 
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const params = new URLSearchParams();
+    e.preventDefault()
+    const params = new URLSearchParams()
     if (searchInput.trim()) {
-      params.set("search", searchInput.trim());
+      params.set('search', searchInput.trim())
     }
-    params.set("page", "1"); // Reset to page 1 on new search
-    router.push(`${basePath}/${urlKey}?${params.toString()}`);
-  };
+    params.set('page', '1') // Reset to page 1 on new search
+    router.push(`${basePath}/${urlKey}?${params.toString()}`)
+  }
 
   const handleClearSearch = () => {
-    setSearchInput("");
-    router.push(`${basePath}/${urlKey}`);
-  };
+    setSearchInput('')
+    router.push(`${basePath}/${urlKey}`)
+  }
 
   const buildPaginationUrl = (newPage: number) => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams()
     if (initialSearch) {
-      params.set("search", initialSearch);
+      params.set('search', initialSearch)
     }
-    params.set("page", newPage.toString());
-    return `${basePath}/${urlKey}?${params.toString()}`;
-  };
+    params.set('page', newPage.toString())
+    return `${basePath}/${urlKey}?${params.toString()}`
+  }
 
   return (
     <div className="space-y-4">
@@ -145,7 +145,7 @@ export function ListViewClient({
                   <div className="flex items-center space-x-1">
                     <span>{formatFieldName(column)}</span>
                     {sortBy === column && (
-                      <span className="text-primary">{sortOrder === "asc" ? "↑" : "↓"}</span>
+                      <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </div>
                 </TableHead>
@@ -187,7 +187,7 @@ export function ListViewClient({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{" "}
+            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{' '}
             results
           </p>
           <div className="flex items-center space-x-2">
@@ -212,5 +212,5 @@ export function ListViewClient({
         </div>
       )}
     </div>
-  );
+  )
 }

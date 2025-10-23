@@ -14,21 +14,25 @@ This example demonstrates how to use the `@opensaas/tiptap` package to add rich 
 ## Getting Started
 
 1. Install dependencies:
+
    ```bash
    pnpm install
    ```
 
 2. Generate Prisma schema and types:
+
    ```bash
    pnpm generate
    ```
 
 3. Push schema to database:
+
    ```bash
    pnpm db:push
    ```
 
 4. Start development server:
+
    ```bash
    pnpm dev
    ```
@@ -50,19 +54,19 @@ This example demonstrates how to use the `@opensaas/tiptap` package to add rich 
 
 ```typescript
 // lib/register-fields.ts
-"use client";
+'use client'
 
-import { registerFieldComponent } from "@opensaas/ui";
-import { TiptapField } from "@opensaas/tiptap";
+import { registerFieldComponent } from '@opensaas/ui'
+import { TiptapField } from '@opensaas/tiptap'
 
-registerFieldComponent("richText", TiptapField);
+registerFieldComponent('richText', TiptapField)
 ```
 
 Then import in your admin page:
 
 ```typescript
 // app/admin/[[...admin]]/page.tsx
-import "../../../lib/register-fields"; // Triggers registration
+import '../../../lib/register-fields' // Triggers registration
 ```
 
 ### Step 2: Use in Config
@@ -72,7 +76,7 @@ import { richText } from '@opensaas/tiptap/fields'
 
 fields: {
   content: richText({
-    validation: { isRequired: true }
+    validation: { isRequired: true },
   })
 }
 ```
@@ -83,10 +87,10 @@ fields: {
 content: richText({
   validation: { isRequired: true },
   ui: {
-    placeholder: "Write your content here...",
+    placeholder: 'Write your content here...',
     minHeight: 300,
-    maxHeight: 800
-  }
+    maxHeight: 800,
+  },
 })
 ```
 
@@ -95,9 +99,9 @@ content: richText({
 ```typescript
 excerpt: richText({
   ui: {
-    placeholder: "Write a brief excerpt...",
-    minHeight: 150
-  }
+    placeholder: 'Write a brief excerpt...',
+    minHeight: 150,
+  },
 })
 ```
 
@@ -140,7 +144,7 @@ registerFieldComponent('richTextExtended', CustomTiptapField)
 // Use in config
 fields: {
   content: richText({
-    ui: { fieldType: 'richTextExtended' }
+    ui: { fieldType: 'richTextExtended' },
   })
 }
 ```

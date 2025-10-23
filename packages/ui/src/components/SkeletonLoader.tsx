@@ -1,33 +1,26 @@
-import { cn } from "../lib/utils.js";
+import { cn } from '../lib/utils.js'
 
 export interface SkeletonLoaderProps {
-  className?: string;
-  variant?: "text" | "circular" | "rectangular";
+  className?: string
+  variant?: 'text' | 'circular' | 'rectangular'
 }
 
 /**
  * Skeleton loader component for content placeholders
  */
-export function SkeletonLoader({
-  className,
-  variant = "rectangular"
-}: SkeletonLoaderProps) {
+export function SkeletonLoader({ className, variant = 'rectangular' }: SkeletonLoaderProps) {
   const variantClasses = {
-    text: "h-4 rounded",
-    circular: "rounded-full",
-    rectangular: "rounded-md",
-  };
+    text: 'h-4 rounded',
+    circular: 'rounded-full',
+    rectangular: 'rounded-md',
+  }
 
   return (
     <div
-      className={cn(
-        "animate-pulse bg-muted",
-        variantClasses[variant],
-        className,
-      )}
+      className={cn('animate-pulse bg-muted', variantClasses[variant], className)}
       aria-hidden="true"
     />
-  );
+  )
 }
 
 /**
@@ -61,7 +54,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
         </table>
       </div>
     </div>
-  );
+  )
 }
 
 /**
@@ -85,5 +78,5 @@ export function FormSkeleton({ fields = 4 }: { fields?: number }) {
         </div>
       </div>
     </div>
-  );
+  )
 }

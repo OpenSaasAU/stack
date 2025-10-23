@@ -20,29 +20,32 @@ The easiest way to theme your admin UI is to use one of the built-in presets:
 // opensaas.config.ts
 export default config({
   ui: {
-    basePath: "/admin",
+    basePath: '/admin',
     theme: {
-      preset: "modern", // Options: "modern" | "classic" | "neon"
+      preset: 'modern', // Options: "modern" | "classic" | "neon"
     },
   },
-});
+})
 ```
 
 ### Theme Presets
 
 #### Modern (Default)
+
 - **Primary Color**: Neon Cyan (`hsl(190, 95%, 55%)`)
 - **Accent Color**: Neon Purple (`hsl(280, 85%, 65%)`)
 - **Style**: Clean, contemporary design with gradient accents
 - **Best For**: SaaS products, modern web apps
 
 #### Classic
+
 - **Primary Color**: Classic Blue (`hsl(221.2, 83.2%, 53.3%)`)
 - **Accent Color**: Subtle Gray (`hsl(210, 40%, 96.1%)`)
 - **Style**: Traditional, professional appearance
 - **Best For**: Enterprise applications, conservative designs
 
 #### Neon
+
 - **Primary Color**: Hot Pink (`hsl(330, 100%, 50%)`)
 - **Accent Color**: Bright Green (`hsl(155, 100%, 50%)`)
 - **Style**: Bold, vibrant with high contrast
@@ -58,14 +61,14 @@ You can use a preset theme but override specific colors:
 export default config({
   ui: {
     theme: {
-      preset: "modern",
+      preset: 'modern',
       colors: {
-        primary: "280 100% 50%", // Custom magenta primary color
-        accent: "160 90% 55%",   // Custom teal accent
+        primary: '280 100% 50%', // Custom magenta primary color
+        accent: '160 90% 55%', // Custom teal accent
       },
     },
   },
-});
+})
 ```
 
 ### Full Custom Theme
@@ -77,25 +80,25 @@ export default config({
   ui: {
     theme: {
       colors: {
-        background: "0 0% 100%",
-        foreground: "240 10% 5%",
-        primary: "280 100% 50%",
-        primaryForeground: "0 0% 100%",
-        accent: "160 90% 55%",
-        accentForeground: "240 10% 5%",
+        background: '0 0% 100%',
+        foreground: '240 10% 5%',
+        primary: '280 100% 50%',
+        primaryForeground: '0 0% 100%',
+        accent: '160 90% 55%',
+        accentForeground: '240 10% 5%',
         // ... other colors
       },
       darkColors: {
-        background: "240 10% 5%",
-        foreground: "0 0% 98%",
-        primary: "280 100% 60%",
-        primaryForeground: "240 10% 5%",
+        background: '240 10% 5%',
+        foreground: '0 0% 98%',
+        primary: '280 100% 60%',
+        primaryForeground: '240 10% 5%',
         // ... other dark mode colors
       },
       radius: 0.5, // Border radius in rem
     },
   },
-});
+})
 ```
 
 ## Color Format
@@ -104,11 +107,11 @@ All colors use HSL (Hue, Saturation, Lightness) format **without** the `hsl()` w
 
 ```typescript
 // ✅ Correct
-primary: "190 95% 55%"
+primary: '190 95% 55%'
 
 // ❌ Wrong
-primary: "hsl(190, 95%, 55%)"
-primary: "#00bcd4"
+primary: 'hsl(190, 95%, 55%)'
+primary: '#00bcd4'
 ```
 
 This format allows Tailwind CSS to generate proper opacity variants automatically.
@@ -116,6 +119,7 @@ This format allows Tailwind CSS to generate proper opacity variants automaticall
 ## Available Color Variables
 
 ### Essential Colors
+
 - `background` - Main page background
 - `foreground` - Main text color
 - `primary` - Primary brand color (buttons, links, active states)
@@ -124,6 +128,7 @@ This format allows Tailwind CSS to generate proper opacity variants automaticall
 - `accentForeground` - Text color on accent background
 
 ### UI Elements
+
 - `card` - Card background
 - `cardForeground` - Text on cards
 - `border` - Border color
@@ -133,6 +138,7 @@ This format allows Tailwind CSS to generate proper opacity variants automaticall
 - `mutedForeground` - Muted text
 
 ### Special
+
 - `gradientFrom` - Start color for gradients
 - `gradientTo` - End color for gradients
 
@@ -166,6 +172,7 @@ theme: {
 ## Examples
 
 ### SaaS Product Theme
+
 ```typescript
 ui: {
   theme: {
@@ -179,6 +186,7 @@ ui: {
 ```
 
 ### Gaming Platform Theme
+
 ```typescript
 ui: {
   theme: {
@@ -193,6 +201,7 @@ ui: {
 ```
 
 ### Enterprise Theme
+
 ```typescript
 ui: {
   theme: {
@@ -207,16 +216,16 @@ ui: {
 You can also access theme utilities programmatically:
 
 ```typescript
-import { generateThemeCSS, presetThemes } from "@opensaas/ui";
+import { generateThemeCSS, presetThemes } from '@opensaas/ui'
 
 // Generate CSS for a theme
 const css = generateThemeCSS({
-  preset: "modern",
-  colors: { primary: "280 100% 50%" },
-});
+  preset: 'modern',
+  colors: { primary: '280 100% 50%' },
+})
 
 // Access preset definitions
-const modernTheme = presetThemes.modern;
+const modernTheme = presetThemes.modern
 ```
 
 ## Visual Components
@@ -244,13 +253,13 @@ The theming system automatically applies to:
 All theme configuration is fully typed:
 
 ```typescript
-import type { ThemeConfig, ThemePreset, ThemeColors } from "@opensaas/core";
+import type { ThemeConfig, ThemePreset, ThemeColors } from '@opensaas/core'
 
 const myTheme: ThemeConfig = {
-  preset: "modern", // Autocomplete works!
+  preset: 'modern', // Autocomplete works!
   colors: {
-    primary: "280 100% 50%",
+    primary: '280 100% 50%',
     // TypeScript will warn about invalid properties
   },
-};
+}
 ```

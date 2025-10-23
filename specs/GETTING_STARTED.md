@@ -4,7 +4,7 @@ This guide will walk you through building and testing the OpenSaaS Framework pro
 
 ## Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - pnpm (install with `npm install -g pnpm`)
 
 ## Step-by-Step Setup
@@ -49,6 +49,7 @@ pnpm generate
 ```
 
 You should see:
+
 - `prisma/schema.prisma` created
 - `.opensaas/types.ts` created
 
@@ -81,6 +82,7 @@ npx tsx test-access-control.ts
 ```
 
 You should see a comprehensive test output showing:
+
 - ✅ Users being created
 - ✅ Posts being created with internal notes
 - ✅ Anonymous users unable to see draft posts
@@ -101,8 +103,8 @@ Post: list({
     title: text(),
     internalNotes: text({
       access: {
-        read: isAuthor,  // Field-level access control
-      }
+        read: isAuthor, // Field-level access control
+      },
     }),
     // ... more fields
   },
@@ -113,9 +115,9 @@ Post: list({
         if (!session) return { status: { equals: 'published' } }
         return true
       },
-      update: isAuthor,  // Only author can update
-    }
-  }
+      update: isAuthor, // Only author can update
+    },
+  },
 })
 ```
 
@@ -136,6 +138,7 @@ const posts = await context.db.post.findMany()
 ```
 
 The context automatically:
+
 - Checks access control rules
 - Filters results based on session
 - Hides fields the user can't access
@@ -165,10 +168,7 @@ update: ({ session }) => session?.role === 'admin'
 
 // Complex filter
 query: ({ session }) => ({
-  OR: [
-    { status: { equals: 'published' } },
-    { authorId: { equals: session?.userId } }
-  ]
+  OR: [{ status: { equals: 'published' } }, { authorId: { equals: session?.userId } }],
 })
 ```
 
@@ -189,8 +189,8 @@ Comment: list({
       create: isSignedIn,
       update: isAuthor,
       delete: isAuthor,
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -211,6 +211,7 @@ This opens a browser-based GUI for your database.
 ### "Module not found" errors
 
 Make sure you've built the core package:
+
 ```bash
 cd packages/core && pnpm build
 ```
@@ -222,6 +223,7 @@ Make sure you're in the `examples/blog` directory when running `pnpm generate`.
 ### TypeScript errors in generated types
 
 This usually means the Prisma client hasn't been generated. Run:
+
 ```bash
 npx prisma generate
 ```
@@ -229,6 +231,7 @@ npx prisma generate
 ### Database errors
 
 Reset your database:
+
 ```bash
 rm dev.db
 pnpm db:push
@@ -279,7 +282,7 @@ You should be able to:
 
 1. ✅ Define a schema in `opensaas.config.ts`
 2. ✅ Run generator to create Prisma schema
-3. ✅ Run generator to create TypeScript types  
+3. ✅ Run generator to create TypeScript types
 4. ✅ Create context with session
 5. ✅ Perform CRUD operations through context
 6. ✅ See access control working (operations denied when they should be)

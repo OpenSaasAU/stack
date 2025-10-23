@@ -1,18 +1,18 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { cn } from "@opensaas/ui/lib/utils";
+import { useState, useEffect } from 'react'
+import { cn } from '@opensaas/ui/lib/utils'
 
 export interface SlugFieldProps {
-  name: string;
-  value: string;
-  onChange: (value: string) => void;
-  label: string;
-  error?: string;
-  disabled?: boolean;
-  required?: boolean;
-  mode?: "read" | "edit";
-  sourceField?: string; // Field to auto-generate slug from
+  name: string
+  value: string
+  onChange: (value: string) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  required?: boolean
+  mode?: 'read' | 'edit'
+  sourceField?: string // Field to auto-generate slug from
 }
 
 /**
@@ -27,9 +27,9 @@ export function SlugField({
   error,
   disabled,
   required,
-  mode = "edit",
+  mode = 'edit',
 }: SlugFieldProps) {
-  const [isAutoMode, setIsAutoMode] = useState(true);
+  const [isAutoMode, setIsAutoMode] = useState(true)
 
   // Auto-generate slug from title if in auto mode
   useEffect(() => {
@@ -37,36 +37,31 @@ export function SlugField({
       // In a real app, you'd listen to the title field changes
       // For now, this is just a demo
     }
-  }, [isAutoMode, value]);
+  }, [isAutoMode, value])
 
   const generateSlug = (text: string) => {
     return text
       .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/--+/g, "-")
-      .trim();
-  };
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/--+/g, '-')
+      .trim()
+  }
 
-  if (mode === "read") {
+  if (mode === 'read') {
     return (
       <div className="space-y-1">
         <label className="text-sm font-medium text-foreground">{label}</label>
         <div className="flex items-center gap-2">
-          <code className="text-sm bg-muted px-2 py-1 rounded">
-            /{value || "no-slug"}
-          </code>
+          <code className="text-sm bg-muted px-2 py-1 rounded">/{value || 'no-slug'}</code>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="space-y-2">
-      <label
-        htmlFor={name}
-        className="text-sm font-medium text-foreground flex items-center gap-1"
-      >
+      <label htmlFor={name} className="text-sm font-medium text-foreground flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
@@ -75,34 +70,32 @@ export function SlugField({
         <input
           id={name}
           type="text"
-          value={value || ""}
+          value={value || ''}
           onChange={(e) => {
-            setIsAutoMode(false);
-            onChange(generateSlug(e.target.value));
+            setIsAutoMode(false)
+            onChange(generateSlug(e.target.value))
           }}
           placeholder="auto-generated-slug"
           disabled={disabled}
           className={cn(
-            "flex-1 px-3 py-2 rounded-md border border-input font-mono text-sm",
-            "bg-background text-foreground",
-            "focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-            error && "border-destructive focus:ring-destructive",
-            isAutoMode && "bg-muted text-muted-foreground italic",
+            'flex-1 px-3 py-2 rounded-md border border-input font-mono text-sm',
+            'bg-background text-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            error && 'border-destructive focus:ring-destructive',
+            isAutoMode && 'bg-muted text-muted-foreground italic',
           )}
         />
         {isAutoMode && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Auto
-          </span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Auto</span>
         )}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <p className="text-xs text-muted-foreground">
         {isAutoMode
-          ? "Slug will be auto-generated from the title"
-          : "Manually set (only lowercase, numbers, and hyphens)"}
+          ? 'Slug will be auto-generated from the title'
+          : 'Manually set (only lowercase, numbers, and hyphens)'}
       </p>
     </div>
-  );
+  )
 }

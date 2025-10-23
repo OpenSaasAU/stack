@@ -1,17 +1,17 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@opensaas/ui/primitives";
-import { Button } from "@opensaas/ui/primitives";
-import { ItemCreateForm } from "@opensaas/ui/standalone";
-import { createPost } from "../lib/actions";
-import config from "../opensaas.config";
-import type { PostCreateInput } from "../.opensaas/types";
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@opensaas/ui/primitives'
+import { Button } from '@opensaas/ui/primitives'
+import { ItemCreateForm } from '@opensaas/ui/standalone'
+import { createPost } from '../lib/actions'
+import config from '../opensaas.config'
+import type { PostCreateInput } from '../.opensaas/types'
 
 export function CreatePostDialog() {
-  const [open, setOpen] = useState(false);
-  const router = useRouter();
+  const [open, setOpen] = useState(false)
+  const router = useRouter()
 
   return (
     <>
@@ -28,18 +28,18 @@ export function CreatePostDialog() {
           <ItemCreateForm<PostCreateInput>
             fields={config.lists.Post.fields}
             onSubmit={async (data) => {
-              const result = await createPost(data);
+              const result = await createPost(data)
 
               if (!result.success) {
-                return { success: false, error: result.error || "Failed to create post" };
+                return { success: false, error: result.error || 'Failed to create post' }
               }
 
-              setOpen(false);
-              router.refresh();
+              setOpen(false)
+              router.refresh()
               if (result.data?.id) {
-                router.push(`/posts/${result.data.id}`);
+                router.push(`/posts/${result.data.id}`)
               }
-              return { success: true };
+              return { success: true }
             }}
             onCancel={() => setOpen(false)}
             submitLabel="Create Post"
@@ -48,5 +48,5 @@ export function CreatePostDialog() {
         </DialogContent>
       </Dialog>
     </>
-  );
+  )
 }

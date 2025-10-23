@@ -54,10 +54,12 @@ opensaas-framework/
 **Purpose**: Define schema declaratively
 
 **Key Files**:
+
 - `types.ts`: Complete type definitions for all config structures
 - `index.ts`: `config()` and `list()` helper functions with validation
 
 **Features**:
+
 - Type-safe schema definition
 - Support for 7 field types (text, integer, checkbox, timestamp, password, select, relationship)
 - Access control at operation and field level
@@ -69,6 +71,7 @@ opensaas-framework/
 **Purpose**: Field definition functions
 
 **Implemented Fields**:
+
 - `text()` - String fields with validation, indexing
 - `integer()` - Number fields with min/max validation
 - `checkbox()` - Boolean fields
@@ -84,12 +87,14 @@ Each function returns a strongly-typed field configuration object.
 **Purpose**: Enforce security rules automatically
 
 **Key Features**:
+
 - **Operation-level access**: Control query, create, update, delete operations
 - **Field-level access**: Control read/write access per field
 - **Filter-based access**: Return Prisma where clauses for complex rules
 - **Silent failures**: Return null/[] on denial (no information leakage)
 
 **Implementation**:
+
 - `checkAccess()`: Execute access control functions
 - `mergeFilters()`: Combine user filters with access filters
 - `filterReadableFields()`: Remove fields user can't see
@@ -100,6 +105,7 @@ Each function returns a strongly-typed field configuration object.
 **Purpose**: Generate Prisma schema and TypeScript types from config
 
 **Prisma Generator** (`prisma.ts`):
+
 - Reads OpenSaaS config
 - Maps field types to Prisma types
 - Handles relationships correctly
@@ -108,6 +114,7 @@ Each function returns a strongly-typed field configuration object.
 - Outputs to `prisma/schema.prisma`
 
 **Type Generator** (`types.ts`):
+
 - Generates TypeScript interfaces for each model
 - Creates CreateInput, UpdateInput, WhereInput types
 - Generates full Context type with all operations
@@ -118,6 +125,7 @@ Each function returns a strongly-typed field configuration object.
 **Purpose**: Provide access-controlled database operations
 
 **Operations Implemented**:
+
 - `findUnique` - with access control and field filtering
 - `findMany` - with filter-based access and field filtering
 - `create` - with access control and field filtering
@@ -126,6 +134,7 @@ Each function returns a strongly-typed field configuration object.
 - `count` - with filter-based access
 
 **Access Control Flow**:
+
 ```
 User calls context.db.post.update()
     ↓
@@ -151,6 +160,7 @@ User calls context.db.post.update()
 **Usage**: `npx opensaas generate` or `pnpm generate`
 
 **What it does**:
+
 1. Locates `opensaas.config.ts`
 2. Loads config (using tsx for TypeScript support)
 3. Runs Prisma schema generator
@@ -162,10 +172,12 @@ User calls context.db.post.update()
 **Purpose**: Demonstrate framework capabilities
 
 **Models**:
+
 - **User**: name, email, password, posts relationship
 - **Post**: title, slug, content, internalNotes, status, publishedAt, author
 
 **Access Rules Demonstrated**:
+
 - Anonymous users only see published posts
 - Authenticated users see all posts
 - Only authors can update/delete their posts
@@ -177,23 +189,27 @@ User calls context.db.post.update()
 ## Technical Decisions
 
 ### Why Prisma First?
+
 - Mature ecosystem
 - Excellent TypeScript support
 - AI agents already understand it
 - Easy to add other ORMs later
 
 ### Why Silent Failures?
+
 - Prevents information leakage
 - More secure default
 - Common pattern in multi-tenant systems
 - Can add verbose mode later for debugging
 
 ### Why Field-Level Access?
+
 - Fine-grained control over sensitive data
 - Prevents accidental exposure
 - Follows principle of least privilege
 
 ### Type Safety Strategy
+
 - Heavy use of generics
 - Infer types from config
 - Generate concrete types for runtime
@@ -215,28 +231,33 @@ User calls context.db.post.update()
 ## What's Not Implemented (Future Phases)
 
 ❌ **Hooks System** (Phase 3):
+
 - resolveInput (modify data before save)
 - validateInput (custom validation)
 - beforeOperation (side effects before DB)
 - afterOperation (side effects after DB)
 
 ❌ **CLI Tooling** (Phase 4):
+
 - `opensaas init` command
 - `opensaas migrate` command
 - Watch mode for development
 - Better error messages
 
 ❌ **Admin UI** (Phase 5):
+
 - React components for CRUD
 - Embedded in Next.js app
 - Auto-generated from schema
 
 ❌ **Authentication Integration** (Phase 6):
+
 - Better-auth plugin
 - NextAuth integration
 - Clerk integration
 
 ❌ **Additional Features**:
+
 - File upload handling
 - Rich text editor support
 - More field types (JSON, etc.)
@@ -263,6 +284,7 @@ npx tsx test-access-control.ts
 ### Expected Output
 
 The test script will demonstrate:
+
 1. ✅ Creating users and posts
 2. ✅ Access control preventing unauthorized access
 3. ✅ Field-level filtering (hiding internalNotes)
@@ -292,15 +314,15 @@ export default config({
     Post: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        author: relationship({ ref: 'User.posts' })
+        author: relationship({ ref: 'User.posts' }),
       },
       access: {
         operation: {
-          update: ({ session, item }) => session?.userId === item.authorId
-        }
-      }
-    })
-  }
+          update: ({ session, item }) => session?.userId === item.authorId,
+        },
+      },
+    }),
+  },
 })
 ```
 
@@ -314,7 +336,7 @@ const context = await getContext()
 // Access control automatically applied
 const post = await context.db.post.update({
   where: { id: postId },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 if (!post) {
@@ -343,6 +365,7 @@ if (!post) {
 ## Next Steps for Development
 
 ### Phase 3: Hooks System
+
 1. Implement hook execution in context
 2. Add resolveInput for data transformation
 3. Add validateInput with error collection
@@ -350,6 +373,7 @@ if (!post) {
 5. Test hook execution order
 
 ### Phase 4: CLI Tooling
+
 1. Create proper CLI package
 2. Implement init command
 3. Implement migrate commands
@@ -357,6 +381,7 @@ if (!post) {
 5. Better error messages and validation
 
 ### Phase 5: Admin UI
+
 1. Create React component library
 2. List view with filtering/sorting
 3. Detail view for create/edit
@@ -378,15 +403,18 @@ The foundation is solid and ready for the next phases of development!
 ## Files to Review
 
 **Core Implementation**:
+
 - `packages/core/src/context/index.ts` - Access control implementation
 - `packages/core/src/generator/prisma.ts` - Schema generation
 - `packages/core/src/generator/types.ts` - Type generation
 
 **Example Usage**:
+
 - `examples/blog/opensaas.config.ts` - Schema definition
 - `examples/blog/test-access-control.ts` - Access control tests
 - `examples/blog/lib/actions/posts.ts` - Real-world usage
 
 **Documentation**:
+
 - `README.md` - Overview and features
 - `GETTING_STARTED.md` - Step-by-step setup guide

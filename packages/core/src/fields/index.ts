@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod'
 import type {
   TextField,
   IntegerField,
@@ -7,34 +7,34 @@ import type {
   PasswordField,
   SelectField,
   RelationshipField,
-} from "../config/types.js";
+} from '../config/types.js'
 
 /**
  * Format field name for display in error messages
  */
 function formatFieldName(fieldName: string): string {
   return fieldName
-    .replace(/([A-Z])/g, " $1")
+    .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (str) => str.toUpperCase())
-    .trim();
+    .trim()
 }
 
 /**
  * Text field
  */
-export function text(options?: Omit<TextField, "type">): TextField {
+export function text(options?: Omit<TextField, 'type'>): TextField {
   return {
-    type: "text",
+    type: 'text',
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
-      const validation = options?.validation;
-      const isRequired = validation?.isRequired;
-      const length = validation?.length;
-      const minLength = length?.min && length.min > 0 ? length.min : 1;
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
+      const length = validation?.length
+      const minLength = length?.min && length.min > 0 ? length.min : 1
 
       const baseSchema = z.string({
         message: `${formatFieldName(fieldName)} must be text`,
-      });
+      })
 
       const withMin =
         isRequired || length?.min !== undefined
@@ -44,191 +44,191 @@ export function text(options?: Omit<TextField, "type">): TextField {
                   ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
                   : `${formatFieldName(fieldName)} is required`,
             })
-          : baseSchema;
+          : baseSchema
 
       const withMax =
         length?.max !== undefined
           ? withMin.max(length.max, {
               message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
             })
-          : withMin;
+          : withMin
 
-      if (isRequired && operation === "update") {
-        return z.union([withMax, z.undefined()]);
+      if (isRequired && operation === 'update') {
+        return z.union([withMax, z.undefined()])
       }
 
-      return !isRequired ? withMax.optional() : withMax;
+      return !isRequired ? withMax.optional() : withMax
     },
     getPrismaType: () => {
-      const validation = options?.validation;
-      const isRequired = validation?.isRequired;
-      let modifiers = "";
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
+      let modifiers = ''
 
       // Optional modifier
       if (!isRequired) {
-        modifiers += "?";
+        modifiers += '?'
       }
 
       // Unique/index modifiers
-      if (options?.isIndexed === "unique") {
-        modifiers += " @unique";
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
       } else if (options?.isIndexed === true) {
-        modifiers += " @index";
+        modifiers += ' @index'
       }
 
       return {
-        type: "String",
+        type: 'String',
         modifiers: modifiers || undefined,
-      };
+      }
     },
     getTypeScriptType: () => {
-      const validation = options?.validation;
-      const isRequired = validation?.isRequired;
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
 
       return {
-        type: "string",
+        type: 'string',
         optional: !isRequired,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Integer field
  */
-export function integer(options?: Omit<IntegerField, "type">): IntegerField {
+export function integer(options?: Omit<IntegerField, 'type'>): IntegerField {
   return {
-    type: "integer",
+    type: 'integer',
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const baseSchema = z.number({
         message: `${formatFieldName(fieldName)} must be a number`,
-      });
+      })
 
       const withMin =
         options?.validation?.min !== undefined
           ? baseSchema.min(options.validation.min, {
               message: `${formatFieldName(fieldName)} must be at least ${options.validation.min}`,
             })
-          : baseSchema;
+          : baseSchema
 
       const withMax =
         options?.validation?.max !== undefined
           ? withMin.max(options.validation.max, {
               message: `${formatFieldName(fieldName)} must be at most ${options.validation.max}`,
             })
-          : withMin;
+          : withMin
 
-      return !options?.validation?.isRequired || operation === "update"
+      return !options?.validation?.isRequired || operation === 'update'
         ? withMax.optional()
-        : withMax;
+        : withMax
     },
     getPrismaType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "Int",
-        modifiers: isRequired ? undefined : "?",
-      };
+        type: 'Int',
+        modifiers: isRequired ? undefined : '?',
+      }
     },
     getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "number",
+        type: 'number',
         optional: !isRequired,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Checkbox (boolean) field
  */
-export function checkbox(options?: Omit<CheckboxField, "type">): CheckboxField {
+export function checkbox(options?: Omit<CheckboxField, 'type'>): CheckboxField {
   return {
-    type: "checkbox",
+    type: 'checkbox',
     ...options,
     getZodSchema: () => {
-      return z.boolean().optional();
+      return z.boolean().optional()
     },
     getPrismaType: () => {
-      const hasDefault = options?.defaultValue !== undefined;
-      let modifiers = "";
+      const hasDefault = options?.defaultValue !== undefined
+      let modifiers = ''
 
       if (hasDefault) {
-        modifiers = ` @default(${options.defaultValue})`;
+        modifiers = ` @default(${options.defaultValue})`
       }
 
       return {
-        type: "Boolean",
+        type: 'Boolean',
         modifiers: modifiers || undefined,
-      };
+      }
     },
     getTypeScriptType: () => {
       return {
-        type: "boolean",
+        type: 'boolean',
         optional: options?.defaultValue === undefined,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Timestamp (DateTime) field
  */
-export function timestamp(options?: Omit<TimestampField, "type">): TimestampField {
+export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampField {
   return {
-    type: "timestamp",
+    type: 'timestamp',
     ...options,
     getZodSchema: () => {
-      return z.union([z.date(), z.iso.datetime()]).optional();
+      return z.union([z.date(), z.iso.datetime()]).optional()
     },
     getPrismaType: () => {
-      let modifiers = "?";
+      let modifiers = '?'
 
       // Check for default value
       if (
         options?.defaultValue &&
-        typeof options.defaultValue === "object" &&
-        "kind" in options.defaultValue &&
-        options.defaultValue.kind === "now"
+        typeof options.defaultValue === 'object' &&
+        'kind' in options.defaultValue &&
+        options.defaultValue.kind === 'now'
       ) {
-        modifiers = " @default(now())";
+        modifiers = ' @default(now())'
       }
 
       return {
-        type: "DateTime",
+        type: 'DateTime',
         modifiers,
-      };
+      }
     },
     getTypeScriptType: () => {
       const hasDefault =
         options?.defaultValue &&
-        typeof options.defaultValue === "object" &&
-        "kind" in options.defaultValue &&
-        options.defaultValue.kind === "now";
+        typeof options.defaultValue === 'object' &&
+        'kind' in options.defaultValue &&
+        options.defaultValue.kind === 'now'
 
       return {
-        type: "Date",
+        type: 'Date',
         optional: !hasDefault,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Password field (automatically hashed)
  */
-export function password(options?: Omit<PasswordField, "type">): PasswordField {
+export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
   return {
-    type: "password",
+    type: 'password',
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
-      const validation = options?.validation;
-      const isRequired = validation?.isRequired;
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
 
-      if (isRequired && operation === "create") {
+      if (isRequired && operation === 'create') {
         // Required in create mode: reject undefined and empty strings
         return z
           .string({
@@ -236,109 +236,109 @@ export function password(options?: Omit<PasswordField, "type">): PasswordField {
           })
           .min(1, {
             message: `${formatFieldName(fieldName)} is required`,
-          });
-      } else if (isRequired && operation === "update") {
+          })
+      } else if (isRequired && operation === 'update') {
         // Required in update mode: if provided, reject empty strings
         return z.union([
           z.string().min(1, {
             message: `${formatFieldName(fieldName)} is required`,
           }),
           z.undefined(),
-        ]);
+        ])
       } else {
         // Not required: can be undefined or any string
         return z
           .string({
             message: `${formatFieldName(fieldName)} must be text`,
           })
-          .optional();
+          .optional()
       }
     },
     getPrismaType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "String",
-        modifiers: isRequired ? undefined : "?",
-      };
+        type: 'String',
+        modifiers: isRequired ? undefined : '?',
+      }
     },
     getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired;
+      const isRequired = options?.validation?.isRequired
 
       return {
-        type: "string",
+        type: 'string',
         optional: !isRequired,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Select field (enum-like)
  */
-export function select(options: Omit<SelectField, "type">): SelectField {
+export function select(options: Omit<SelectField, 'type'>): SelectField {
   if (!options.options || options.options.length === 0) {
-    throw new Error("Select field must have at least one option");
+    throw new Error('Select field must have at least one option')
   }
 
   return {
-    type: "select",
+    type: 'select',
     ...options,
-    getZodSchema: (fieldName: string, operation: "create" | "update") => {
-      const values = options.options.map((opt) => opt.value);
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const values = options.options.map((opt) => opt.value)
       let schema: z.ZodTypeAny = z.enum(values as [string, ...string[]], {
-        message: `${formatFieldName(fieldName)} must be one of: ${values.join(", ")}`,
-      });
+        message: `${formatFieldName(fieldName)} must be one of: ${values.join(', ')}`,
+      })
 
-      if (!options.validation?.isRequired || operation === "update") {
-        schema = schema.optional();
+      if (!options.validation?.isRequired || operation === 'update') {
+        schema = schema.optional()
       }
 
-      return schema;
+      return schema
     },
     getPrismaType: () => {
-      let modifiers = "?";
+      let modifiers = '?'
 
       // Add default value if provided
       if (options.defaultValue !== undefined) {
-        modifiers = ` @default("${options.defaultValue}")`;
+        modifiers = ` @default("${options.defaultValue}")`
       }
 
       return {
-        type: "String",
+        type: 'String',
         modifiers,
-      };
+      }
     },
     getTypeScriptType: () => {
       // Generate union type from options
-      const unionType = options.options.map((opt) => `'${opt.value}'`).join(" | ");
+      const unionType = options.options.map((opt) => `'${opt.value}'`).join(' | ')
 
       return {
         type: unionType,
         optional: !options.validation?.isRequired || options.defaultValue !== undefined,
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * Relationship field
  */
-export function relationship(options: Omit<RelationshipField, "type">): RelationshipField {
+export function relationship(options: Omit<RelationshipField, 'type'>): RelationshipField {
   if (!options.ref) {
-    throw new Error("Relationship field must have a ref");
+    throw new Error('Relationship field must have a ref')
   }
 
   // Validate ref format: 'ListName.fieldName'
-  const refParts = options.ref.split(".");
+  const refParts = options.ref.split('.')
   if (refParts.length !== 2) {
     throw new Error(
       `Invalid relationship ref format: "${options.ref}". Expected format: "ListName.fieldName"`,
-    );
+    )
   }
 
   return {
-    type: "relationship",
+    type: 'relationship',
     ...options,
-  };
+  }
 }
