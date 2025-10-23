@@ -1,6 +1,6 @@
-import { config, list } from '@opensaas/core'
-import { text, relationship, select, timestamp, password } from '@opensaas/core/fields'
-import type { AccessControl } from '@opensaas/core'
+import { config, list } from '@opensaas/framework-core'
+import { text, relationship, select, timestamp, password } from '@opensaas/framework-core/fields'
+import type { AccessControl } from '@opensaas/framework-core'
 import type { Post, User } from '@/.opensaas/types'
 
 /**

@@ -9,7 +9,7 @@ This is a **working prototype** (Phase 1-2) of the OpenSaaS Framework - a modern
 ```
 opensaas-framework/
 ├── packages/
-│   └── core/                          # @opensaas/core package
+│   └── core/                          # @opensaas/framework-core package
 │       ├── src/
 │       │   ├── config/               # Configuration system
 │       │   │   ├── types.ts          # Config type definitions
@@ -305,8 +305,8 @@ The test script will demonstrate:
 ### Defining a Schema
 
 ```typescript
-import { config, list } from '@opensaas/core'
-import { text, relationship } from '@opensaas/core/fields'
+import { config, list } from '@opensaas/framework-core'
+import { text, relationship } from '@opensaas/framework-core/fields'
 
 export default config({
   db: { provider: 'sqlite', url: 'file:./dev.db' },

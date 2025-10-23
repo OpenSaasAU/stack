@@ -22,7 +22,7 @@ npx tsx test-access-control.ts
 ## Config Structure
 
 ```typescript
-import { config, list } from '@opensaas/core'
+import { config, list } from '@opensaas/framework-core'
 import {
   text,
   relationship,
@@ -31,8 +31,8 @@ import {
   password,
   integer,
   checkbox,
-} from '@opensaas/core/fields'
-import type { AccessControl } from '@opensaas/core'
+} from '@opensaas/framework-core/fields'
+import type { AccessControl } from '@opensaas/framework-core'
 
 export default config({
   db: {
@@ -231,7 +231,7 @@ internalNotes: text({
 ### Get Context
 
 ```typescript
-import { getContext } from '@opensaas/core'
+import { getContext } from '@opensaas/framework-core'
 import { PrismaClient } from '@prisma/client'
 import config from './opensaas.config'
 

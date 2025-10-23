@@ -22,8 +22,8 @@ pnpm add @opensaas/tiptap
 
 The following peer dependencies are required:
 
-- `@opensaas/core`
-- `@opensaas/ui`
+- `@opensaas/framework-core`
+- `@opensaas/framework-ui`
 - `next`
 - `react`
 - `react-dom`
@@ -38,7 +38,7 @@ The following peer dependencies are required:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/ui'
+import { registerFieldComponent } from '@opensaas/framework-ui'
 import { TiptapField } from '@opensaas/tiptap'
 
 registerFieldComponent('richText', TiptapField)
@@ -48,7 +48,7 @@ registerFieldComponent('richText', TiptapField)
 
 ```typescript
 // app/admin/[[...admin]]/page.tsx
-import { AdminUI } from "@opensaas/ui";
+import { AdminUI } from "@opensaas/framework-ui";
 import config from "../../../opensaas.config";
 import "../../../lib/register-fields"; // Import to trigger registration
 
@@ -62,8 +62,8 @@ export default async function AdminPage() {
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from '@opensaas/core'
-import { text } from '@opensaas/core/fields'
+import { config, list } from '@opensaas/framework-core'
+import { text } from '@opensaas/framework-core/fields'
 import { richText } from '@opensaas/tiptap/fields'
 
 export default config({
@@ -241,7 +241,7 @@ export function CustomTiptapField(props) {
 Then use it in your config:
 
 ```typescript
-import { registerFieldComponent } from '@opensaas/ui'
+import { registerFieldComponent } from '@opensaas/framework-ui'
 import { CustomTiptapField } from './components/CustomTiptapField'
 
 // Global registration

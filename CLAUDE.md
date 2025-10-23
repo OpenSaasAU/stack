@@ -234,7 +234,7 @@ lists: {
 **Utility Functions:**
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/core'
+import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/framework-core'
 
 getDbKey('AuthUser') // 'authUser' - for accessing context.db and prisma
 getUrlKey('AuthUser') // 'auth-user' - for constructing URLs
@@ -247,7 +247,7 @@ Applications must create a context wrapper for Prisma:
 
 ```typescript
 // lib/context.ts
-import { getContext } from '@opensaas/core'
+import { getContext } from '@opensaas/framework-core'
 import { PrismaClient } from '@prisma/client'
 import config from '../opensaas.config'
 
@@ -340,7 +340,7 @@ Relationships use a `ref` format: `'ListName.fieldName'`
 3. **Register UI component** (optional, for admin UI):
 
    ```typescript
-   import { registerFieldComponent } from '@opensaas/ui'
+   import { registerFieldComponent } from '@opensaas/framework-ui'
    import { MyCustomFieldComponent } from './components/MyCustomField'
 
    registerFieldComponent('myCustom', MyCustomFieldComponent)
@@ -357,7 +357,7 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 1. **Global Registration** - Register a component for reuse across multiple fields:
 
    ```typescript
-   import { registerFieldComponent } from "@opensaas/ui";
+   import { registerFieldComponent } from "@opensaas/framework-ui";
    import { ColorPickerField } from "./components/ColorPickerField";
 
    // Register once at app startup
@@ -417,7 +417,7 @@ packages/my-field/
 1. **Field Builder** - Must implement `BaseFieldConfig`:
 
    ```typescript
-   import type { BaseFieldConfig } from '@opensaas/core'
+   import type { BaseFieldConfig } from '@opensaas/framework-core'
 
    export type MyField = BaseFieldConfig & {
      type: 'myField'
@@ -463,7 +463,7 @@ packages/my-field/
    // lib/register-fields.ts
    'use client'
 
-   import { registerFieldComponent } from '@opensaas/ui'
+   import { registerFieldComponent } from '@opensaas/framework-ui'
    import { MyFieldComponent } from '@my-org/my-field'
 
    registerFieldComponent('myField', MyFieldComponent)

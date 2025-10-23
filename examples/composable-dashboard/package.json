@@ -8,19 +8,18 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
-    "@opensaas/core": "workspace:*",
-    "@opensaas/ui": "workspace:*",
+    "@opensaas/framework-core": "workspace:*",
+    "@opensaas/framework-ui": "workspace:*",
     "@prisma/client": "^6.17.1",
     "next": "^15.5.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@opensaas/cli": "workspace:*",
+    "@opensaas/framework-cli": "workspace:*",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

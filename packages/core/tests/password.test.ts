@@ -196,7 +196,7 @@ describe('Password Utilities', () => {
       const wrapped = new HashedPassword(hash)
 
       // Should be usable as a string
-      expect(wrapped == hash).toBe(true)  
+      expect(wrapped == hash).toBe(true)
       expect(wrapped === hash).toBe(false) // Not strictly equal (different types)
 
       // Should work in object spread

@@ -1,11 +1,11 @@
-# @opensaas/cli
+# @opensaas/framework-cli
 
 Command-line tools for OpenSaaS Framework - code generation and development utilities.
 
 ## Installation
 
 ```bash
-pnpm add -D @opensaas/cli
+pnpm add -D @opensaas/framework-cli
 ```
 
 ## Commands
@@ -113,7 +113,7 @@ opensaas init my-project --template blog
 
 ```bash
 # Install CLI
-pnpm add -D @opensaas/cli
+pnpm add -D @opensaas/framework-cli
 
 # Add scripts to package.json
 {
@@ -169,8 +169,8 @@ The CLI reads `opensaas.config.ts` from the current working directory.
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from '@opensaas/core'
-import { text } from '@opensaas/core/fields'
+import { config, list } from '@opensaas/framework-core'
+import { text } from '@opensaas/framework-core/fields'
 
 export default config({
   db: {

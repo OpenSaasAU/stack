@@ -50,10 +50,10 @@ importers:
 
   examples/blog:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -69,7 +69,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -93,10 +93,10 @@ importers:
 
   examples/composable-dashboard:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -112,7 +112,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -136,10 +136,10 @@ importers:
 
   examples/custom-field:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -155,7 +155,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -179,13 +179,13 @@ importers:
 
   examples/tiptap-demo:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../../packages/core
       '@opensaas/tiptap':
         specifier: workspace:*
         version: link:../../packages/tiptap
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -201,7 +201,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/cli':
+      '@opensaas/framework-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -225,7 +225,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
       chalk:
@@ -306,10 +306,10 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
-      '@opensaas/ui':
+      '@opensaas/framework-ui':
         specifier: workspace:*
         version: link:../ui
       '@types/node':
@@ -327,7 +327,7 @@ importers:
 
   packages/ui:
     dependencies:
-      '@opensaas/core':
+      '@opensaas/framework-core':
         specifier: workspace:*
         version: link:../core
       '@radix-ui/react-checkbox':

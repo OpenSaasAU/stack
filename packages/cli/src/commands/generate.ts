@@ -32,7 +32,7 @@ export async function generateCommand() {
     // Create a temporary script that imports the config and runs generation
     const generatorScript = `
 import config from './opensaas.config.ts';
-import { writePrismaSchema, writeTypes, writeContext } from '@opensaas/cli/generator';
+import { writePrismaSchema, writeTypes, writeContext } from '@opensaas/framework-cli/generator';
 
 writePrismaSchema(config, './prisma/schema.prisma');
 writeTypes(config, './.opensaas/types.ts');
@@ -90,7 +90,7 @@ writeContext(config, './.opensaas/context.ts');
       // Re-run the generator script to patch types (now that Prisma client exists)
       const patchScript = `
 import config from './opensaas.config.ts';
-import { patchPrismaTypes } from '@opensaas/cli/generator';
+import { patchPrismaTypes } from '@opensaas/framework-cli/generator';
 
 patchPrismaTypes(config, process.cwd());
 `

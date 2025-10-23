@@ -1,4 +1,4 @@
-import '@opensaas/ui/styles'
+import '@opensaas/framework-ui/styles'
 import type { Metadata } from 'next'
 import React from 'react'
 

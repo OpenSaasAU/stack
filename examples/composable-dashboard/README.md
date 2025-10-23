@@ -103,7 +103,7 @@ Open [http://localhost:3002](http://localhost:3002)
 ### 1. Custom Dashboard (app/page.tsx)
 
 ```tsx
-import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/ui/primitives"
+import { Card, CardContent, CardHeader, CardTitle } from "@opensaas/framework-ui/primitives"
 import { CreatePostDialog } from "./components/CreatePostDialog"
 
 // Stats cards using primitives
@@ -123,8 +123,8 @@ import { CreatePostDialog } from "./components/CreatePostDialog"
 ### 2. ItemCreateForm in Dialog (components/CreatePostDialog.tsx)
 
 ```tsx
-import { Dialog, DialogContent } from '@opensaas/ui/primitives'
-import { ItemCreateForm } from '@opensaas/ui/standalone'
+import { Dialog, DialogContent } from '@opensaas/framework-ui/primitives'
+import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
 ;<Dialog open={open} onOpenChange={setOpen}>
   <DialogContent>
     <ItemCreateForm
@@ -141,7 +141,7 @@ import { ItemCreateForm } from '@opensaas/ui/standalone'
 ### 3. ListTable with SearchBar (app/posts/page.tsx)
 
 ```tsx
-import { ListTable, SearchBar } from "@opensaas/ui/standalone"
+import { ListTable, SearchBar } from "@opensaas/framework-ui/standalone"
 
 <SearchBar
   onSearch={(query) => /* handle search */}
@@ -160,7 +160,7 @@ import { ListTable, SearchBar } from "@opensaas/ui/standalone"
 ### 4. Inline Editing (app/posts/[id]/PostEditor.tsx)
 
 ```tsx
-import { ItemEditForm, DeleteButton } from '@opensaas/ui/standalone'
+import { ItemEditForm, DeleteButton } from '@opensaas/framework-ui/standalone'
 
 {
   editing ? (

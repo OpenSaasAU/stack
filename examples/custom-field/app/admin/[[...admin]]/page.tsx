@@ -1,5 +1,5 @@
-import { AdminUI } from '@opensaas/ui'
-import type { ServerActionInput } from '@opensaas/ui/server'
+import { AdminUI } from '@opensaas/framework-ui'
+import type { ServerActionInput } from '@opensaas/framework-ui/server'
 import config from '../../../opensaas.config'
 import { getContext } from '@/.opensaas/context'
 

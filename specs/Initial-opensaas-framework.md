@@ -16,7 +16,7 @@ OpenSaaS is a modern framework for building admin-heavy applications with Next.j
 
 The framework consists of three main packages:
 
-### `@opensaas/core`
+### `@opensaas/framework-core`
 
 - Schema definition and validation
 - Access control engine
@@ -31,9 +31,9 @@ The framework consists of three main packages:
 - Next.js App Router integration
 - Server Actions for mutations
 - File upload handling
-- Depends on `@opensaas/core`
+- Depends on `@opensaas/framework-core`
 
-### `@opensaas/cli`
+### `@opensaas/framework-cli`
 
 - Project scaffolding
 - Schema migration management
@@ -46,8 +46,8 @@ The framework consists of three main packages:
 ### File: `opensaas.config.ts`
 
 ```typescript
-import { config, list } from '@opensaas/core'
-import { text, relationship, select, timestamp, password } from '@opensaas/core/fields'
+import { config, list } from '@opensaas/framework-core'
+import { text, relationship, select, timestamp, password } from '@opensaas/framework-core/fields'
 
 export default config({
   db: {
@@ -169,7 +169,7 @@ export default config({
 
 ```typescript
 // access.ts
-import type { AccessControl } from '@opensaas/core'
+import type { AccessControl } from '@opensaas/framework-core'
 
 export const isSignedIn: AccessControl = ({ session }) => {
   return !!session
@@ -232,8 +232,8 @@ When a user calls `context.db.post.update()`:
 ### Usage in Application Code
 
 ```typescript
-import { getContext } from '@opensaas/core'
-import type { Context } from '@opensaas/core/types'
+import { getContext } from '@opensaas/framework-core'
+import type { Context } from '@opensaas/framework-core/types'
 import { auth } from '@/lib/auth'
 
 // In a Server Component or Server Action
@@ -613,7 +613,7 @@ function wrapPrismaClient(prisma, config, session) {
 
 ```bash
 # Create new project
-npx @opensaas/cli init my-app
+npx @opensaas/framework-cli init my-app
 
 # Generates:
 # - opensaas.config.ts (with example schema)
@@ -626,10 +626,10 @@ npx @opensaas/cli init my-app
 
 ```bash
 # Generate Prisma schema and types from config
-npx @opensaas/cli generate
+npx @opensaas/framework-cli generate
 
 # Run Prisma migrations
-npx @opensaas/cli migrate dev
+npx @opensaas/framework-cli migrate dev
 
 # Start Next.js dev server (with type watching)
 npm run dev
@@ -766,7 +766,7 @@ The initial prototype should demonstrate:
 // app/actions/publish-post.ts
 'use server'
 
-import { getContext } from '@opensaas/core'
+import { getContext } from '@opensaas/framework-core'
 import { auth } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 

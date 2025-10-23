@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/core'
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/framework-core'
 
 export interface ItemFormProps<TPrisma> {
   context: AccessContext<TPrisma>

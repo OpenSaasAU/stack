@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
-import { Button } from '@opensaas/ui/primitives'
-import { ItemEditForm, DeleteButton } from '@opensaas/ui/standalone'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/framework-ui/primitives'
+import { Button } from '@opensaas/framework-ui/primitives'
+import { ItemEditForm, DeleteButton } from '@opensaas/framework-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
 import config from '../../../opensaas.config'
 import type { Post, PostUpdateInput } from '../../../.opensaas/types'

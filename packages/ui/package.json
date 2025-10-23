@@ -1,5 +1,5 @@
 {
-  "name": "@opensaas/ui",
+  "name": "@opensaas/framework-ui",
   "version": "0.1.0",
   "description": "Composable React UI components for OpenSaaS Framework",
   "type": "module",
@@ -51,7 +51,7 @@
   "author": "",
   "license": "MIT",
   "peerDependencies": {
-    "@opensaas/core": "workspace:*",
+    "@opensaas/framework-core": "workspace:*",
     "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

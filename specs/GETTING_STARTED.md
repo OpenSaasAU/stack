@@ -21,7 +21,7 @@ This will install dependencies for all packages in the monorepo.
 
 ### 2. Build the Core Package
 
-The `@opensaas/core` package needs to be compiled before it can be used:
+The `@opensaas/framework-core` package needs to be compiled before it can be used:
 
 ```bash
 cd packages/core

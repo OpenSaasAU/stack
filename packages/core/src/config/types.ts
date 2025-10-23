@@ -69,7 +69,7 @@ export type FieldHooks = {
 export type TypePatchConfig = {
   /**
    * The TypeScript type to use in Prisma result types (e.g., Payload scalars)
-   * This is an import statement like: "import('@opensaas/core').HashedPassword"
+   * This is an import statement like: "import('@opensaas/framework-core').HashedPassword"
    */
   resultType: string
   /**

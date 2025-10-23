@@ -274,7 +274,7 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
     type: 'password',
     ...options,
     typePatch: {
-      resultType: "import('@opensaas/core').HashedPassword",
+      resultType: "import('@opensaas/framework-core').HashedPassword",
       patchScope: 'scalars-only',
     },
     hooks: {

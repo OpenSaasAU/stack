@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/ui/primitives'
-import { Button } from '@opensaas/ui/primitives'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/framework-ui/primitives'
+import { Button } from '@opensaas/framework-ui/primitives'
 import { getContext } from '@/.opensaas/context'
 import { CreatePostDialog } from '../components/CreatePostDialog'
 import { connection } from 'next/server'

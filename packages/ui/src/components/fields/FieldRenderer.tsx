@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import type { FieldConfig } from '@opensaas/core'
+import type { FieldConfig } from '@opensaas/framework-core'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
 

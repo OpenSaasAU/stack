@@ -1,4 +1,4 @@
-import { TableSkeleton } from '@opensaas/ui'
+import { TableSkeleton } from '@opensaas/framework-ui'
 
 /**
  * Loading UI for admin pages

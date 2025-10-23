@@ -7,7 +7,7 @@ import {
   getUrlKey,
   OpenSaaSConfig,
   type PrismaClientLike,
-} from '@opensaas/core'
+} from '@opensaas/framework-core'
 
 export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
   context: AccessContext<TPrisma>
