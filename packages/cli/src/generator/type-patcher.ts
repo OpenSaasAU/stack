@@ -87,5 +87,7 @@ export function patchPrismaTypes(config: OpenSaaSConfig, projectRoot: string): v
   // This directly modifies the Prisma-generated file with our type patches
   fs.writeFileSync(prismaIndexPath, patchedTypes, 'utf-8')
 
-  console.log(`✅ Patched Prisma types (${fieldPatches.length} field${fieldPatches.length === 1 ? '' : 's'})`)
+  console.log(
+    `✅ Patched Prisma types (${fieldPatches.length} field${fieldPatches.length === 1 ? '' : 's'})`,
+  )
 }

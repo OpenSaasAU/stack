@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { hashPassword, comparePassword, isHashedPassword, HashedPassword } from '../src/utils/password.js'
+import {
+  hashPassword,
+  comparePassword,
+  isHashedPassword,
+  HashedPassword,
+} from '../src/utils/password.js'
 
 describe('Password Utilities', () => {
   describe('hashPassword', () => {
@@ -173,13 +178,17 @@ describe('Password Utilities', () => {
 
     it('should throw error for invalid input', () => {
       // @ts-expect-error - Testing invalid input
-      expect(() => new HashedPassword(null)).toThrow('HashedPassword requires a non-empty hash string')
+      expect(() => new HashedPassword(null)).toThrow(
+        'HashedPassword requires a non-empty hash string',
+      )
       // @ts-expect-error - Testing invalid input
       expect(() => new HashedPassword(undefined)).toThrow(
         'HashedPassword requires a non-empty hash string',
       )
       // @ts-expect-error - Testing invalid input
-      expect(() => new HashedPassword('')).toThrow('HashedPassword requires a non-empty hash string')
+      expect(() => new HashedPassword('')).toThrow(
+        'HashedPassword requires a non-empty hash string',
+      )
     })
 
     it('should work in comparisons and object operations', async () => {
@@ -187,7 +196,7 @@ describe('Password Utilities', () => {
       const wrapped = new HashedPassword(hash)
 
       // Should be usable as a string
-      expect(wrapped == hash).toBe(true) // eslint-disable-line eqeqeq
+      expect(wrapped == hash).toBe(true)  
       expect(wrapped === hash).toBe(false) // Not strictly equal (different types)
 
       // Should work in object spread

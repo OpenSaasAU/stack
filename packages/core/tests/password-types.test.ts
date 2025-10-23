@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { config, list, getContext } from '../src/index.js'
 import { text, password } from '../src/fields/index.js'
 import { PrismaClient } from '@prisma/client'

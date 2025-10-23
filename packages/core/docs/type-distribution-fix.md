@@ -27,9 +27,9 @@ In `packages/core/src/access/types.ts`, the `TransformObject` type was delegatin
 type TransformObject<TConfig, TListKey, TObj> = {
   [K in keyof TObj]: K extends keyof TConfig['lists'][TListKey]['fields']
     ? TransformField<TConfig['lists'][TListKey]['fields'][K], TObj[K]>
-    //                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    //                This is a UNION of all field config types!
-    : TObj[K]
+    : //                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      //                This is a UNION of all field config types!
+      TObj[K]
 }
 ```
 
@@ -42,12 +42,11 @@ TextField | IntegerField | CheckboxField | TimestampField | PasswordField | ...
 This union type then **distributed** over the conditional type in `TransformField`:
 
 ```typescript
-type TransformField<TFieldConfig, TOriginal> =
-  TFieldConfig extends { type: infer TType }
-    ? 'password' extends TType  // Distributes over the union!
-      ? HashedPassword
-      : TOriginal
+type TransformField<TFieldConfig, TOriginal> = TFieldConfig extends { type: infer TType }
+  ? 'password' extends TType // Distributes over the union!
+    ? HashedPassword
     : TOriginal
+  : TOriginal
 
 // Becomes:
 // TransformField<TextField, string> | TransformField<PasswordField, string> | ...
@@ -90,6 +89,7 @@ By inlining the logic, TypeScript can:
 3. **Return** the appropriate type without creating a union
 
 The check `TConfig['lists'][TListKey]['fields'][K] extends { type: 'password' }` evaluates to:
+
 - `TextField extends { type: 'password' }` → `false` → return `TObj[K]` (preserve original)
 - `PasswordField extends { type: 'password' }` → `true` → return `HashedPassword`
 
@@ -100,6 +100,7 @@ No distribution occurs because we're not using a separate type alias that receiv
 ### Tests
 
 Created `tests/password-type-distribution.test.ts` with 3 tests:
+
 1. Verifies non-password fields remain `string`
 2. Verifies password field becomes `HashedPassword`
 3. Verifies TypeScript narrowing works correctly
@@ -113,10 +114,10 @@ const users = await context.db.user.findMany()
 const user = users[0]
 
 // These now compile correctly:
-const name: string = user.name           // ✅ string
-const email: string = user.email         // ✅ string
-const password: HashedPassword = user.password  // ✅ HashedPassword
-await password.compare('test')           // ✅ Has compare method
+const name: string = user.name // ✅ string
+const email: string = user.email // ✅ string
+const password: HashedPassword = user.password // ✅ HashedPassword
+await password.compare('test') // ✅ Has compare method
 ```
 
 ## Files Changed

@@ -76,7 +76,7 @@ function FieldRendererInner({
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
-    const { component, fieldType, ...uiOptions } = fieldConfig.ui
+    const { _component, _fieldType, ...uiOptions } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
   }
 

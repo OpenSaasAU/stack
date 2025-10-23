@@ -1,5 +1,5 @@
 {
-  "name": "@opensaas/core",
+  "name": "@opensaas/framework-core",
   "version": "0.1.0",
   "description": "Core framework for OpenSaaS - schema definition, access control, and runtime utilities",
   "type": "module",

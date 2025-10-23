@@ -6,12 +6,13 @@ import type { HashedPassword } from '../utils/password.js'
  * If the field has an afterOperation hook, infer its return type
  * Otherwise, use the original type
  */
-export type InferFieldReadType<TField extends FieldConfig, TOriginal> =
-  TField extends { hooks?: { afterOperation?: (...args: any[]) => infer R } }
-    ? R extends never
-      ? TOriginal // No hook defined
-      : R // Hook return type
-    : TOriginal // No hooks at all
+export type InferFieldReadType<TField extends FieldConfig, TOriginal> = TField extends {
+  hooks?: { afterOperation?: (...args: any[]) => infer R }
+}
+  ? R extends never
+    ? TOriginal // No hook defined
+    : R // Hook return type
+  : TOriginal // No hooks at all
 
 /**
  * Transform a Prisma model's field types based on OpenSaaS field configs
@@ -42,9 +43,10 @@ export type TransformResult<
   TConfig extends OpenSaaSConfig,
   TListKey extends keyof TConfig['lists'],
   TResult,
-> = TResult extends Record<string, any>
-  ? TransformModelFields<TResult, GetListFields<TConfig, TListKey>>
-  : TResult
+> =
+  TResult extends Record<string, any>
+    ? TransformModelFields<TResult, GetListFields<TConfig, TListKey>>
+    : TResult
 
 /**
  * Transform a Prisma operation's return type
@@ -54,15 +56,16 @@ export type TransformOperationResult<
   TConfig extends OpenSaaSConfig,
   TListKey extends keyof TConfig['lists'],
   TResult,
-> = TResult extends Promise<infer R>
-  ? Promise<
-      R extends Array<infer Item>
-        ? Array<TransformResult<TConfig, TListKey, Item>>
-        : R extends null
-          ? null
-          : TransformResult<TConfig, TListKey, R>
-    >
-  : never
+> =
+  TResult extends Promise<infer R>
+    ? Promise<
+        R extends Array<infer Item>
+          ? Array<TransformResult<TConfig, TListKey, Item>>
+          : R extends null
+            ? null
+            : TransformResult<TConfig, TListKey, R>
+      >
+    : never
 
 /**
  * Known field type mappings for afterOperation hooks

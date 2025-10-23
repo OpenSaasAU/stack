@@ -54,4 +54,9 @@ export { ValidationError } from './hooks/index.js'
 export { validateWithZod, generateZodSchema } from './validation/schema.js'
 
 // Password utilities
-export { hashPassword, comparePassword, isHashedPassword, HashedPassword } from './utils/password.js'
+export {
+  hashPassword,
+  comparePassword,
+  isHashedPassword,
+  HashedPassword,
+} from './utils/password.js'
