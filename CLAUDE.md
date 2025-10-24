@@ -193,7 +193,7 @@ Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and 
 
 **Third-party field types:**
 
-- `richText()` from `@opensaas/tiptap/fields` - Rich text editor with JSON storage
+- `richText()` from `@opensaas/framework-tiptap/fields` - Rich text editor with JSON storage
 
 **Field Builder Methods:**
 
@@ -422,7 +422,7 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 
 The framework supports third-party field packages as separate npm packages. This allows developers to add rich functionality without bloating the core framework.
 
-**Example:** `@opensaas/tiptap` - Rich text editor integration
+**Example:** `@opensaas/framework-tiptap` - Rich text editor integration
 
 **Package Structure:**
 

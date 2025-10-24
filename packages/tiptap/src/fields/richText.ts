@@ -7,7 +7,7 @@ import type { RichTextField } from '../config/types.js'
  *
  * @example
  * ```ts
- * import { richText } from '@opensaas/tiptap/fields'
+ * import { richText } from '@opensaas/framework-tiptap/fields'
  *
  * fields: {
  *   content: richText({

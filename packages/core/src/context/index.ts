@@ -101,14 +101,14 @@ function executeFieldAfterOperationHooks(
  * @param prisma - Your Prisma client instance (pass as generic for type safety)
  * @param session - Current session object (or null if not authenticated)
  */
-export async function getContext<
+export function getContext<
   TConfig extends OpenSaaSConfig,
   TPrisma extends PrismaClientLike = PrismaClientLike,
 >(
   config: TConfig,
   prisma: TPrisma,
   session: Session,
-): Promise<{
+): {
   db: AccessControlledDB<TPrisma>
   session: Session
   prisma: TPrisma
@@ -118,7 +118,7 @@ export async function getContext<
     data?: Record<string, unknown>
     id?: string
   }) => Promise<unknown>
-}> {
+} {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {}
 

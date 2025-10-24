@@ -1,4 +1,4 @@
-# @opensaas/tiptap
+# @opensaas/framework-tiptap
 
 Rich text editor integration for OpenSaaS Framework using [Tiptap](https://tiptap.dev).
 
@@ -17,7 +17,7 @@ Rich text editor integration for OpenSaaS Framework using [Tiptap](https://tipta
 This package is designed as a separate optional dependency to keep the core framework lightweight.
 
 ```bash
-pnpm add @opensaas/tiptap
+pnpm add @opensaas/framework-tiptap
 ```
 
 The following peer dependencies are required:
@@ -39,7 +39,7 @@ The following peer dependencies are required:
 'use client'
 
 import { registerFieldComponent } from '@opensaas/framework-ui'
-import { TiptapField } from '@opensaas/tiptap'
+import { TiptapField } from '@opensaas/framework-tiptap'
 
 registerFieldComponent('richText', TiptapField)
 ```
@@ -64,7 +64,7 @@ export default async function AdminPage() {
 // opensaas.config.ts
 import { config, list } from '@opensaas/framework-core'
 import { text } from '@opensaas/framework-core/fields'
-import { richText } from '@opensaas/tiptap/fields'
+import { richText } from '@opensaas/framework-tiptap/fields'
 
 export default config({
   db: {

@@ -1,6 +1,6 @@
 import { config, list } from '@opensaas/framework-core'
 import { text, timestamp, relationship } from '@opensaas/framework-core/fields'
-import { richText } from '@opensaas/tiptap/fields'
+import { richText } from '@opensaas/framework-tiptap/fields'
 import type { AccessControl } from '@opensaas/framework-core'
 import type { User, Article } from '@/.opensaas/types'
 

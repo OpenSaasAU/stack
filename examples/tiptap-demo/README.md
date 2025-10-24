@@ -1,6 +1,6 @@
 # Tiptap Rich Text Editor Demo
 
-This example demonstrates how to use the `@opensaas/tiptap` package to add rich text editing capabilities to your OpenSaaS application.
+This example demonstrates how to use the `@opensaas/framework-tiptap` package to add rich text editing capabilities to your OpenSaaS application.
 
 ## Features
 
@@ -57,7 +57,7 @@ This example demonstrates how to use the `@opensaas/tiptap` package to add rich 
 'use client'
 
 import { registerFieldComponent } from '@opensaas/framework-ui'
-import { TiptapField } from '@opensaas/tiptap'
+import { TiptapField } from '@opensaas/framework-tiptap'
 
 registerFieldComponent('richText', TiptapField)
 ```
@@ -72,7 +72,7 @@ import '../../../lib/register-fields' // Triggers registration
 ### Step 2: Use in Config
 
 ```typescript
-import { richText } from '@opensaas/tiptap/fields'
+import { richText } from '@opensaas/framework-tiptap/fields'
 
 fields: {
   content: richText({
@@ -135,7 +135,7 @@ The Tiptap editor includes:
 To add more Tiptap extensions, create a custom field component:
 
 ```typescript
-import { TiptapField } from '@opensaas/tiptap'
+import { TiptapField } from '@opensaas/framework-tiptap'
 import { registerFieldComponent } from '@opensaas/framework-ui'
 
 // Register custom editor with additional extensions
