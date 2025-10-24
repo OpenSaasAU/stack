@@ -279,7 +279,7 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
     },
     hooks: {
       // Hash password before writing to database
-      beforeOperation: async ({ value, operation }) => {
+      beforeOperation: async ({ value }) => {
         // Skip if undefined or null (allows partial updates)
         if (value === undefined || value === null) {
           return value

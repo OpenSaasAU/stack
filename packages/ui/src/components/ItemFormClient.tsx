@@ -15,10 +15,10 @@ export interface ItemFormClientProps {
   urlKey: string
   mode: 'create' | 'edit'
   fields: Record<string, FieldConfig>
-  initialData?: Record<string, any>
+  initialData?: Record<string, unknown>
   itemId?: string
   basePath: string
-  serverAction: (input: ServerActionInput) => Promise<any>
+  serverAction: (input: ServerActionInput) => Promise<unknown>
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
 }
 
@@ -39,12 +39,12 @@ export function ItemFormClient({
 }: ItemFormClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [formData, setFormData] = useState<Record<string, any>>(initialData)
+  const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [generalError, setGeneralError] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  const handleFieldChange = (fieldName: string, value: any) => {
+  const handleFieldChange = (fieldName: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }))
     // Clear error for this field when user starts typing
     if (errors[fieldName]) {
@@ -64,13 +64,14 @@ export function ItemFormClient({
     startTransition(async () => {
       try {
         // Transform relationship fields to Prisma format
-        const transformedData: Record<string, any> = {}
+        const transformedData: Record<string, unknown> = {}
         for (const [fieldName, value] of Object.entries(formData)) {
           const fieldConfig = fields[fieldName]
 
-          // Transform relationship fields
-          if ((fieldConfig as any)?.type === 'relationship') {
-            if ((fieldConfig as any).many) {
+          // Transform relationship fields - check discriminated union type
+          const fieldAny = fieldConfig as { type: string; many?: boolean }
+          if (fieldAny?.type === 'relationship') {
+            if (fieldAny.many) {
               // Many relationship: use connect format
               if (Array.isArray(value) && value.length > 0) {
                 transformedData[fieldName] = {
@@ -91,12 +92,19 @@ export function ItemFormClient({
           }
         }
 
-        const result = await serverAction({
-          listKey,
-          action: mode === 'create' ? 'create' : 'update',
-          data: transformedData,
-          id: itemId,
-        })
+        const result =
+          mode === 'create'
+            ? await serverAction({
+                listKey,
+                action: 'create',
+                data: transformedData,
+              })
+            : await serverAction({
+                listKey,
+                action: 'update',
+                id: itemId!,
+                data: transformedData,
+              })
 
         if (result) {
           // Navigate back to list view
@@ -105,8 +113,9 @@ export function ItemFormClient({
         } else {
           setGeneralError('Access denied or operation failed')
         }
-      } catch (error: any) {
-        setGeneralError(error.message || 'Failed to save item')
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save item'
+        setGeneralError(errorMessage)
       }
     })
   }
@@ -131,8 +140,9 @@ export function ItemFormClient({
         } else {
           setGeneralError('Access denied or failed to delete item')
         }
-      } catch (error: any) {
-        setGeneralError(error.message || 'Failed to delete item')
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to delete item'
+        setGeneralError(errorMessage)
       }
     })
   }

@@ -22,6 +22,8 @@ export type PrismaModelDelegate = {
 /**
  * Generic Prisma client type
  * This is intentionally permissive to allow actual PrismaClient types
+ * Uses `any` because Prisma generates highly complex client types that are difficult to constrain
+ * This type is used as a generic constraint and the actual type safety comes from TPrisma parameter
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type PrismaClientLike = any
@@ -32,11 +34,19 @@ export type PrismaClientLike = any
  */
 export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
   [K in keyof TPrisma]: TPrisma[K] extends {
+    // Uses `any` in conditional type checks to verify Prisma model shape
+    // This is a standard TypeScript pattern for checking if a property exists with any signature
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     findUnique: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     findMany: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     update: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     count: any
   }
     ? {
@@ -49,7 +59,8 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
       }
     : never
 } & {
-  // Add index signature for runtime string access
+  // Add index signature for runtime string access (e.g., db[getDbKey(listName)])
+  // Uses `any` because models can have any shape from Prisma schema
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }

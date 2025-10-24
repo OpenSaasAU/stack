@@ -7,7 +7,7 @@ import type { FieldConfig } from '../config/types.js'
 export function generateZodSchema(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
-): z.ZodObject<any> {
+): z.ZodObject {
   const shape: Record<string, z.ZodTypeAny> = {}
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
@@ -36,7 +36,7 @@ export function generateZodSchema(
  * Returns structured errors by field
  */
 export function validateWithZod(
-  data: Record<string, any>,
+  data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
 ): { success: true } | { success: false; errors: Record<string, string> } {

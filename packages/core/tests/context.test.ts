@@ -160,7 +160,7 @@ describe('getContext', () => {
       const context = getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
-        action: 'unknown' as any,
+        action: 'unknown' as unknown as 'create',
         data: {},
       })
 

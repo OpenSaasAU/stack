@@ -51,7 +51,7 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
  * const myPosts = await context.db.post.findMany()
  * \`\`\`
  */
-export function getContext(session?: any) {
+export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
   return getOpensaasContext(config, prisma, session ?? null)
 }
 

@@ -51,7 +51,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
 
   // Fetch items using access-controlled context
   const skip = (page - 1) * pageSize
-  let items: any[] = []
+  let items: Array<Record<string, unknown>> = []
   let total = 0
 
   try {
@@ -61,11 +61,11 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
     }
 
     // Build search filter if search term provided
-    let where: any = undefined
+    let where: Record<string, unknown> | undefined = undefined
     if (search && search.trim()) {
       // Find all text fields to search across
       const searchableFields = Object.entries(listConfig.fields)
-        .filter(([_, field]) => (field as any).type === 'text')
+        .filter(([_, field]) => (field as { type: string }).type === 'text')
         .map(([fieldName]) => fieldName)
 
       if (searchableFields.length > 0) {
@@ -114,7 +114,10 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
       <ListViewClient
         items={items || []}
         fieldTypes={Object.fromEntries(
-          Object.entries(listConfig.fields).map(([key, field]) => [key, (field as any).type]),
+          Object.entries(listConfig.fields).map(([key, field]) => [
+            key,
+            (field as { type: string }).type,
+          ]),
         )}
         columns={columns}
         listKey={listKey}

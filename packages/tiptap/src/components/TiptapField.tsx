@@ -1,6 +1,6 @@
 'use client'
 
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, UseEditorOptions } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect } from 'react'
@@ -8,8 +8,8 @@ import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
   name: string
-  value: any
-  onChange: (value: any) => void
+  value: UseEditorOptions['content']
+  onChange: UseEditorOptions['onUpdate']
   label: string
   error?: string
   disabled?: boolean
@@ -54,9 +54,9 @@ export function TiptapField({
     editable: isEditable,
     // Don't render immediately on the server to avoid SSR issues
     immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      if (isEditable) {
-        onChange(editor.getJSON())
+    onUpdate: (props) => {
+      if (isEditable && onChange) {
+        onChange(props)
       }
     },
     editorProps: {

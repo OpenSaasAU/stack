@@ -13,8 +13,8 @@ export interface AdminUIProps<TPrisma> {
   params?: string[]
   searchParams?: { [key: string]: string | string[] | undefined }
   basePath?: string
-  // Generic server action
-  serverAction: (input: ServerActionInput) => Promise<any>
+  // Server action can return any shape depending on the list item type
+  serverAction: (input: ServerActionInput) => Promise<unknown>
 }
 
 /**

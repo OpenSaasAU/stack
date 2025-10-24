@@ -37,6 +37,7 @@ export type {
 // Context
 export { getContext } from './context/index.js'
 export type { PrismaClientLike } from './access/types.js'
+export type { ServerActionProps } from './context/index.js'
 
 // Utilities
 export {

@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
+import type { createAuthClient } from 'better-auth/react'
 
 export type SignInFormProps = {
   /**
    * Better-auth client instance
+   * Created with createAuthClient from better-auth/react
    * Pass your client from lib/auth-client.ts
    */
-  authClient: any
+  authClient: ReturnType<typeof createAuthClient>
   /**
    * URL to redirect to after successful sign in
    * @default '/'

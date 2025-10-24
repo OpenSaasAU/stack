@@ -101,7 +101,7 @@ export async function getSessionFromAuth(
     }
 
     // Build session object with requested fields
-    const result: Record<string, any> = {}
+    const result: Record<string, unknown> = {}
 
     for (const field of sessionFields) {
       if (field === 'userId') {

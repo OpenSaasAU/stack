@@ -78,9 +78,10 @@ writeContext(config, './.opensaas/context.ts');
       })
       prismaSpinner.succeed(chalk.green('Prisma client generated'))
       console.log(chalk.green('✅ Prisma client generated'))
-    } catch (err: any) {
+    } catch (err) {
       prismaSpinner.fail(chalk.red('Failed to generate Prisma client'))
-      console.error(chalk.red('\n❌ Error:'), err.message)
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(chalk.red('\n❌ Error:'), message)
       process.exit(1)
     }
 
@@ -110,9 +111,10 @@ patchPrismaTypes(config, process.cwd());
           fs.unlinkSync(patchScriptPath)
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       patchSpinner.fail(chalk.red('Failed to patch types'))
-      console.error(chalk.red('\n❌ Error:'), err.message)
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(chalk.red('\n❌ Error:'), message)
       process.exit(1)
     }
 

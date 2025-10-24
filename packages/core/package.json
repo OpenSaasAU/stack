@@ -21,7 +21,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "clean": "rm -rf .turbo  dist"
+    "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo"
   },
   "keywords": [
     "opensaas",

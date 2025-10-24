@@ -1,12 +1,8 @@
 /**
  * Input for the generic server action
+ * Re-exported from @opensaas/framework-core for convenience
  */
-export interface ServerActionInput {
-  listKey: string
-  action: 'create' | 'update' | 'delete'
-  data?: Record<string, unknown>
-  id?: string
-}
+export type { ServerActionProps as ServerActionInput } from '@opensaas/framework-core'
 
 /**
  * Result of a server action

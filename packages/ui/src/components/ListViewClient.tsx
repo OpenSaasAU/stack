@@ -18,7 +18,7 @@ import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
 
 export interface ListViewClientProps {
-  items: any[]
+  items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
   columns?: string[]
   listKey: string
@@ -62,7 +62,10 @@ export function ListViewClient({
       const aVal = a[sortBy]
       const bVal = b[sortBy]
       if (aVal === bVal) return 0
-      const comparison = aVal > bVal ? 1 : -1
+      // Handle unknown types for comparison - convert to string for safety
+      const aStr = String(aVal ?? '')
+      const bStr = String(bVal ?? '')
+      const comparison = aStr > bStr ? 1 : -1
       return sortOrder === 'asc' ? comparison : -comparison
     })
   }
@@ -162,7 +165,7 @@ export function ListViewClient({
               </TableRow>
             ) : (
               sortedItems.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow key={String(item.id)}>
                   {displayColumns.map((column) => (
                     <TableCell key={column}>
                       {getFieldDisplayValue(item[column], fieldTypes[column])}

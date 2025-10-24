@@ -95,6 +95,7 @@ export type BaseFieldConfig = {
     /**
      * Custom React component to render this field
      * Overrides the default component for this field type
+     * Uses `any` to accept any React component type without overly complex generics
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: any
@@ -206,6 +207,8 @@ export type FieldConfig =
 /**
  * List configuration types
  */
+// Generic `any` default allows OperationAccess to work with any list item type
+// This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type OperationAccess<T = any> = {
   query?: AccessControl<T>
@@ -233,6 +236,8 @@ export type Hooks<T = Record<string, unknown>> = {
   afterOperation?: (args: HookArgs<T>) => Promise<void>
 }
 
+// Generic `any` default allows ListConfig to work with any list item type
+// This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ListConfig<T = any> = {
   fields: Record<string, FieldConfig>
@@ -267,6 +272,9 @@ export type DatabaseConfig = {
    * }
    * ```
    */
+  // Uses `any` for maximum flexibility with Prisma client constructors and adapters
+  // Different database adapters have varying type signatures that are hard to unify
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prismaClientConstructor?: (PrismaClientClass: any) => any
 }
 
@@ -274,6 +282,8 @@ export type DatabaseConfig = {
  * Session configuration
  */
 export type SessionConfig = {
+  // Uses `any` return type because session structure is user-defined and varies per application
+  // The framework doesn't enforce a specific session shape - users can use NextAuth, Clerk, etc.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSession: () => Promise<any>
 }

@@ -17,7 +17,7 @@ const isSignedIn: AccessControl = ({ session }) => {
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
   return {
-    authorId: { equals: (session as any).userId },
+    authorId: { equals: session.userId },
   }
 }
 

@@ -64,12 +64,16 @@ export function createUserList(config?: ExtendUserListConfig): ListConfig {
         // Only update your own user record
         update: ({ session, item }) => {
           if (!session) return false
-          return (session as any).userId === (item as any)?.id
+          const userId = (session as { userId?: string }).userId
+          const itemId = (item as { id?: string })?.id
+          return userId === itemId
         },
         // Only delete your own user record
         delete: ({ session, item }) => {
           if (!session) return false
-          return (session as any).userId === (item as any)?.id
+          const userId = (session as { userId?: string }).userId
+          const itemId = (item as { id?: string })?.id
+          return userId === itemId
         },
       },
     },
@@ -103,14 +107,17 @@ export function createSessionList(): ListConfig {
     access: {
       operation: {
         // Only the session owner can query their sessions
-        query: (({ session }: any) => {
+        query: ({ session }) => {
           if (!session) return false
+          const userId = (session as { userId?: string }).userId
+          if (!userId) return false
+          // Return Prisma filter for nested relationship
           return {
             user: {
-              id: { equals: session.userId },
+              id: { equals: userId },
             },
-          }
-        }) as any,
+          } as Record<string, unknown>
+        },
         // Better-auth handles session creation
         create: () => true,
         // No manual updates
@@ -118,7 +125,9 @@ export function createSessionList(): ListConfig {
         // Better-auth handles session deletion (logout)
         delete: ({ session, item }) => {
           if (!session) return false
-          return (session as any).userId === (item as any)?.user?.id
+          const userId = (session as { userId?: string }).userId
+          const itemUserId = (item as { user?: { id?: string } })?.user?.id
+          return userId === itemUserId
         },
       },
     },
@@ -157,25 +166,32 @@ export function createAccountList(): ListConfig {
     access: {
       operation: {
         // Only the account owner can query their accounts
-        query: (({ session }: any) => {
+        query: ({ session }) => {
           if (!session) return false
+          const userId = (session as { userId?: string }).userId
+          if (!userId) return false
+          // Return Prisma filter for nested relationship
           return {
             user: {
-              id: { equals: session.userId },
+              id: { equals: userId },
             },
-          }
-        }) as any,
+          } as Record<string, unknown>
+        },
         // Better-auth handles account creation
         create: () => true,
         // Better-auth handles account updates (token refresh)
         update: ({ session, item }) => {
           if (!session) return false
-          return (session as any).userId === (item as any)?.user?.id
+          const userId = (session as { userId?: string }).userId
+          const itemUserId = (item as { user?: { id?: string } })?.user?.id
+          return userId === itemUserId
         },
         // Account owner can delete their accounts
         delete: ({ session, item }) => {
           if (!session) return false
-          return (session as any).userId === (item as any)?.user?.id
+          const userId = (session as { userId?: string }).userId
+          const itemUserId = (item as { user?: { id?: string } })?.user?.id
+          return userId === itemUserId
         },
       },
     },

@@ -7,6 +7,9 @@ import type { HashedPassword } from '../utils/password.js'
  * Otherwise, use the original type
  */
 export type InferFieldReadType<TField extends FieldConfig, TOriginal> = TField extends {
+  // Generic `any` is required here for TypeScript's conditional type inference to work correctly
+  // This allows us to infer the exact return type `R` from hooks of any signature
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   hooks?: { afterOperation?: (...args: any[]) => infer R }
 }
   ? R extends never
@@ -19,6 +22,9 @@ export type InferFieldReadType<TField extends FieldConfig, TOriginal> = TField e
  * This applies afterOperation hook transformations to field types
  */
 export type TransformModelFields<
+  // Generic constraint requires `any` to allow indexing by string keys from Prisma models
+  // This is necessary for mapped types to work with Prisma's generated model types
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TModel extends Record<string, any>,
   TFields extends Record<string, FieldConfig>,
 > = {
@@ -44,6 +50,9 @@ export type TransformResult<
   TListKey extends keyof TConfig['lists'],
   TResult,
 > =
+  // Generic constraint requires `any` to check if TResult is an object type that can be transformed
+  // This pattern is standard in TypeScript for conditional types on object shapes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TResult extends Record<string, any>
     ? TransformModelFields<TResult, GetListFields<TConfig, TListKey>>
     : TResult

@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useState } from 'react'
+import type { createAuthClient } from 'better-auth/react'
 
 export type ForgotPasswordFormProps = {
   /**
    * Better-auth client instance
+   * Created with createAuthClient from better-auth/react
    */
-  authClient: any
+  authClient: ReturnType<typeof createAuthClient>
   /**
    * Custom CSS class for the form container
    */

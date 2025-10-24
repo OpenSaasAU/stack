@@ -12,8 +12,8 @@ export interface ItemFormProps<TPrisma> {
   mode: 'create' | 'edit'
   itemId?: string
   basePath?: string
-  // Generic server action
-  serverAction: (input: ServerActionInput) => Promise<any>
+  // Server action can return any shape depending on the list item type
+  serverAction: (input: ServerActionInput) => Promise<unknown>
 }
 
 /**
@@ -44,9 +44,11 @@ export async function ItemForm<TPrisma>({
   }
 
   // Fetch item data if in edit mode
-  let itemData: any = {}
+  let itemData: Record<string, unknown> = {}
   if (mode === 'edit' && itemId) {
     try {
+      // Access db from context - shape varies by OpenSaaS config
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dbContext = context.context as any
       itemData = await dbContext.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
@@ -87,8 +89,10 @@ export async function ItemForm<TPrisma>({
   // Fetch relationship options for all relationship fields
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if ((fieldConfig as any).type === 'relationship') {
-      const ref = (fieldConfig as any).ref
+    // Check if field is a relationship type by checking the discriminated union
+    const fieldConfigAny = fieldConfig as { type: string; ref?: string }
+    if (fieldConfigAny.type === 'relationship') {
+      const ref = fieldConfigAny.ref
       if (ref) {
         // Parse ref format: "ListName.fieldName"
         const relatedListName = ref.split('.')[0]
@@ -100,10 +104,12 @@ export async function ItemForm<TPrisma>({
             const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({})
 
             // Use 'name' field as label if it exists, otherwise use 'id'
-            relationshipData[fieldName] = relatedItems.map((item: any) => ({
-              id: item.id,
-              label: item.name || item.title || item.id,
-            }))
+            relationshipData[fieldName] = relatedItems.map(
+              (item: Record<string, unknown>) => ({
+                id: item.id as string,
+                label: ((item.name || item.title || item.id) as string) || '',
+              }),
+            )
           } catch (error) {
             console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
             relationshipData[fieldName] = []
@@ -142,20 +148,7 @@ export async function ItemForm<TPrisma>({
           listKey={listKey}
           urlKey={urlKey}
           mode={mode}
-          fields={Object.fromEntries(
-            Object.entries(listConfig.fields).map(([key, field]) => [
-              key,
-              {
-                type: (field as any).type,
-                label: (field as any).label,
-                options: (field as any).options,
-                validation: (field as any).validation,
-                defaultValue: (field as any).defaultValue,
-                ref: (field as any).ref,
-                many: (field as any).many,
-              },
-            ]),
-          )}
+          fields={listConfig.fields}
           initialData={JSON.parse(JSON.stringify(itemData))}
           itemId={itemId}
           basePath={basePath}

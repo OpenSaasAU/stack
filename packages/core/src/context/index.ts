@@ -93,7 +93,10 @@ function executeFieldAfterOperationHooks(
 
   return result
 }
-
+export type ServerActionProps =
+  | { listKey: string; action: 'create'; data: Record<string, unknown> }
+  | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
+  | { listKey: string; action: 'delete'; id: string }
 /**
  * Create an access-controlled context
  *
@@ -112,22 +115,17 @@ export function getContext<
   db: AccessControlledDB<TPrisma>
   session: Session
   prisma: TPrisma
-  serverAction: (props: {
-    listKey: string
-    action: 'create' | 'update' | 'delete'
-    data?: Record<string, unknown>
-    id?: string
-  }) => Promise<unknown>
+  serverAction: (props: ServerActionProps) => Promise<unknown>
 } {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {}
+  // Initialize db object - will be populated with access-controlled operations
+  // Type is intentionally broad to allow dynamic model access
+  const db: Record<string, unknown> = {}
 
   // Create context with db reference (will be populated below)
   const context: AccessContext<TPrisma> = {
     session,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma: prisma as any,
-    db,
+    prisma: prisma as TPrisma,
+    db: db as AccessControlledDB<TPrisma>,
   }
 
   // Create access-controlled operations for each list
@@ -144,27 +142,24 @@ export function getContext<
     }
   }
 
-  // Generic server action handler
-  async function serverAction(props: {
-    listKey: string
-    action: 'create' | 'update' | 'delete'
-    data?: Record<string, unknown>
-    id?: string
-  }) {
+  // Generic server action handler with discriminated union for type safety
+  async function serverAction(props: ServerActionProps): Promise<unknown> {
     const dbKey = getDbKey(props.listKey)
+    const model = db[dbKey] as {
+      create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+      update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
+      delete: (args: { where: { id: string } }) => Promise<unknown>
+    }
 
     if (props.action === 'create') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await (db[dbKey] as any).create({ data: props.data })
+      return await model.create({ data: props.data })
     } else if (props.action === 'update') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await (db[dbKey] as any).update({
+      return await model.update({
         where: { id: props.id },
         data: props.data,
       })
     } else if (props.action === 'delete') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await (db[dbKey] as any).delete({
+      return await model.delete({
         where: { id: props.id },
       })
     }
@@ -173,7 +168,7 @@ export function getContext<
   }
 
   return {
-    db,
+    db: db as AccessControlledDB<TPrisma>,
     session,
     prisma,
     serverAction,
@@ -222,6 +217,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     const include = args.include || accessControlledInclude
 
     // Execute query with optimized includes
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const item = await model.findFirst({
@@ -296,6 +292,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     const include = args?.include || accessControlledInclude
 
     // Execute query with optimized includes
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const items = await model.findMany({
@@ -385,12 +382,11 @@ function createCreate<TPrisma extends PrismaClientLike>(
     })
 
     // 5.5. Process nested relationship operations
-
     const data = await processNestedOperations(
       filteredData,
       listConfig.fields,
       config,
-      { ...context, prisma: prisma as any },
+      { ...context, prisma },
       'create',
     )
 
@@ -401,6 +397,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     })
 
     // 7. Execute database create
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const item = await model.create({
@@ -442,6 +439,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 ) {
   return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
     // 1. Fetch the item to pass to access control and hooks
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const item = await model.findUnique({
@@ -466,8 +464,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // If access returns a filter, check if item matches
     if (typeof accessResult === 'object') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const matchesFilter = await (model as any).findFirst({
+      const matchesFilter = await model.findFirst({
         where: mergeFilters(args.where, accessResult),
       })
 
@@ -516,12 +513,11 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     })
 
     // 6.5. Process nested relationship operations
-
     const data = await processNestedOperations(
       filteredData,
       listConfig.fields,
       config,
-      { ...context, prisma: prisma as any },
+      { ...context, prisma },
       'update',
     )
 
@@ -533,8 +529,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     })
 
     // 8. Execute database update
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updated = await (model as any).update({
+    const updated = await model.update({
       where: args.where,
       data,
     })
@@ -573,6 +568,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
 ) {
   return async (args: { where: { id: string } }) => {
     // 1. Fetch the item to pass to access control and hooks
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const item = await model.findUnique({
@@ -597,8 +593,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
 
     // If access returns a filter, check if item matches
     if (typeof accessResult === 'object') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const matchesFilter = await (model as any).findFirst({
+      const matchesFilter = await model.findFirst({
         where: mergeFilters(args.where, accessResult),
       })
 
@@ -615,8 +610,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
     })
 
     // 4. Execute database delete
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const deleted = await (model as any).delete({
+    const deleted = await model.delete({
       where: args.where,
     })
 
@@ -659,6 +653,7 @@ function createCount<TPrisma extends PrismaClientLike>(
     }
 
     // Execute count
+    // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
     const count = await model.count({
