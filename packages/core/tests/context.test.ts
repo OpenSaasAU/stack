@@ -70,7 +70,7 @@ describe('getContext', () => {
   })
 
   it('should create context with lowercase db keys', async () => {
-    const context = await getContext(config, mockPrisma, null)
+    const context = getContext(config, mockPrisma, null)
 
     expect(context.db).toBeDefined()
     expect(context.db.user).toBeDefined()
@@ -81,7 +81,7 @@ describe('getContext', () => {
 
   it('should include session when provided', async () => {
     const session = { userId: '123', role: 'admin' }
-    const context = await getContext(config, mockPrisma, session)
+    const context = getContext(config, mockPrisma, session)
 
     expect(context.session).toEqual(session)
   })
@@ -91,7 +91,7 @@ describe('getContext', () => {
       const mockCreatedUser = { id: '1', name: 'John', email: 'john@example.com' }
       mockPrisma.user.create.mockResolvedValue(mockCreatedUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
         action: 'create',
@@ -111,7 +111,7 @@ describe('getContext', () => {
       mockPrisma.user.findUnique.mockResolvedValue(existingUser)
       mockPrisma.user.update.mockResolvedValue(mockUpdatedUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
         action: 'update',
@@ -130,7 +130,7 @@ describe('getContext', () => {
       mockPrisma.user.findUnique.mockResolvedValue(mockDeletedUser)
       mockPrisma.user.delete.mockResolvedValue(mockDeletedUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
         action: 'delete',
@@ -146,7 +146,7 @@ describe('getContext', () => {
       const mockCreatedPost = { id: '1', title: 'Test Post' }
       mockPrisma.post.create.mockResolvedValue(mockCreatedPost)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       await context.serverAction({
         listKey: 'Post',
         action: 'create',
@@ -157,7 +157,7 @@ describe('getContext', () => {
     })
 
     it('should return null for unknown action', async () => {
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
         action: 'unknown' as any,
@@ -173,7 +173,7 @@ describe('getContext', () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
       mockPrisma.user.findFirst.mockResolvedValue(mockUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.findUnique({ where: { id: '1' } })
 
       expect(mockPrisma.user.findFirst).toHaveBeenCalled()
@@ -187,7 +187,7 @@ describe('getContext', () => {
       ]
       mockPrisma.user.findMany.mockResolvedValue(mockUsers)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.findMany()
 
       expect(mockPrisma.user.findMany).toHaveBeenCalled()
@@ -198,7 +198,7 @@ describe('getContext', () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
       mockPrisma.user.create.mockResolvedValue(mockUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.create({
         data: { name: 'John', email: 'john@example.com' },
       })
@@ -213,7 +213,7 @@ describe('getContext', () => {
       mockPrisma.user.findUnique.mockResolvedValue(existingUser)
       mockPrisma.user.update.mockResolvedValue(updatedUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.update({
         where: { id: '1' },
         data: { name: 'John Updated' },
@@ -228,7 +228,7 @@ describe('getContext', () => {
       mockPrisma.user.findUnique.mockResolvedValue(mockUser)
       mockPrisma.user.delete.mockResolvedValue(mockUser)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.delete({ where: { id: '1' } })
 
       expect(mockPrisma.user.delete).toHaveBeenCalled()
@@ -238,7 +238,7 @@ describe('getContext', () => {
     it('should delegate count to prisma with access control', async () => {
       mockPrisma.user.count.mockResolvedValue(5)
 
-      const context = await getContext(config, mockPrisma, null)
+      const context = getContext(config, mockPrisma, null)
       const result = await context.db.user.count()
 
       expect(mockPrisma.user.count).toHaveBeenCalled()

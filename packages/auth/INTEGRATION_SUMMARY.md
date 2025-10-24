@@ -32,6 +32,7 @@ This document summarizes the complete better-auth integration for the OpenSaaS F
 The package automatically creates four lists matching better-auth's schema:
 
 **User:**
+
 ```typescript
 {
   id: string
@@ -48,6 +49,7 @@ The package automatically creates four lists matching better-auth's schema:
 ```
 
 **Session:**
+
 ```typescript
 {
   id: string
@@ -63,6 +65,7 @@ The package automatically creates four lists matching better-auth's schema:
 ```
 
 **Account:**
+
 ```typescript
 {
   id: string
@@ -80,6 +83,7 @@ The package automatically creates four lists matching better-auth's schema:
 ```
 
 **Verification:**
+
 ```typescript
 {
   id: string
@@ -113,12 +117,14 @@ import { withAuth, authConfig } from '@opensaas/framework-auth'
 export default withAuth(
   config({
     db: { provider: 'sqlite', url: 'file:./dev.db' },
-    lists: { /* your custom lists */ },
+    lists: {
+      /* your custom lists */
+    },
   }),
   authConfig({
     emailAndPassword: { enabled: true },
     sessionFields: ['userId', 'email', 'name'],
-  })
+  }),
 )
 ```
 
@@ -169,12 +175,12 @@ lists: {
   Post: list({
     access: {
       operation: {
-        create: ({ session }) => !!session,  // ✅ session available!
+        create: ({ session }) => !!session, // ✅ session available!
         update: ({ session, item }) => {
           return session?.userId === item?.authorId
-        }
-      }
-    }
+        },
+      },
+    },
   })
 }
 ```
@@ -189,7 +195,7 @@ No manual User model, no manual session handling, no manual auth routes. Everyth
 
 ```typescript
 authConfig({
-  sessionFields: ['userId', 'email', 'name', 'role']
+  sessionFields: ['userId', 'email', 'name', 'role'],
 })
 
 // Session type is inferred:
@@ -237,7 +243,7 @@ authConfig({
   socialProviders: {
     github: { clientId: '...', clientSecret: '...' },
     google: { clientId: '...', clientSecret: '...' },
-  }
+  },
 })
 ```
 
@@ -246,6 +252,7 @@ authConfig({
 ### 1. Better-Auth vs NextAuth/Clerk
 
 **Why better-auth?**
+
 - TypeScript-first
 - Framework-agnostic (works with any React framework)
 - Simpler configuration
@@ -255,6 +262,7 @@ authConfig({
 ### 2. Auto-Generation vs Manual Setup
 
 The package auto-generates all auth tables to:
+
 - Reduce boilerplate
 - Ensure consistency with better-auth schema
 - Make updates easier (just update package version)
@@ -279,6 +287,7 @@ Sessions are automatically available in all access control functions. No manual 
 ### 5. Component Registry Pattern
 
 UI components follow the framework's registry pattern:
+
 - Pre-built components for common use cases
 - Fully replaceable for custom designs
 - Props-based customization for quick tweaks
@@ -359,8 +368,8 @@ Better-auth supports cookie caching to reduce database queries:
 // Future enhancement
 authConfig({
   session: {
-    cookieCaching: true  // Validate at cookie level
-  }
+    cookieCaching: true, // Validate at cookie level
+  },
 })
 ```
 
@@ -381,6 +390,7 @@ sessionFields: ['userId', 'email', 'name', 'bio', 'preferences', ...]
 ### Built-in Security
 
 Better-auth provides:
+
 - ✅ Bcrypt password hashing
 - ✅ CSRF protection
 - ✅ Secure session tokens
@@ -397,6 +407,7 @@ BETTER_AUTH_URL=https://your-domain.com
 ```
 
 Generate secrets with:
+
 ```bash
 openssl rand -base64 32
 ```

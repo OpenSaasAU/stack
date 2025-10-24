@@ -7,7 +7,7 @@ import { CreatePostDialog } from '../../components/CreatePostDialog'
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
   const searchParams = await props.searchParams
   const search = searchParams.search || ''
-  const context = await getContext()
+  const context = getContext()
 
   // Fetch posts with search using context (access control applied)
   const posts = await context.db.post.findMany({

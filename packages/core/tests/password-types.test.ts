@@ -59,7 +59,7 @@ describe('Password Field Type Safety', () => {
   })
 
   it('should transform password field to HashedPassword type in findUnique', async () => {
-    const context = await getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.findUnique({ where: { id: '1' } })
 
@@ -77,7 +77,7 @@ describe('Password Field Type Safety', () => {
   })
 
   it('should transform password field to HashedPassword type in findMany', async () => {
-    const context = await getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(testConfig, mockPrismaClient, null)
 
     const users = await context.db.user.findMany()
 
@@ -96,7 +96,7 @@ describe('Password Field Type Safety', () => {
   })
 
   it('should transform password field to HashedPassword type in create', async () => {
-    const context = await getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.create({
       data: {
@@ -114,7 +114,7 @@ describe('Password Field Type Safety', () => {
   })
 
   it('should transform password field to HashedPassword type in update', async () => {
-    const context = await getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.update({
       where: { id: '1' },
@@ -132,7 +132,7 @@ describe('Password Field Type Safety', () => {
   })
 
   it('should allow checking the HashedPassword type explicitly', async () => {
-    const context = await getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.findUnique({ where: { id: '1' } })
 

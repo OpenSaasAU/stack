@@ -6,7 +6,7 @@ import { connection } from 'next/server'
 
 export default async function UsersPage() {
   await connection()
-  const context = await getContext()
+  const context = getContext()
 
   const users = await context.db.user.findMany({
     include: {

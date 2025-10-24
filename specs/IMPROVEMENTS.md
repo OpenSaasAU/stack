@@ -75,7 +75,7 @@ import { PrismaClient } from '@prisma/client'
 import { getContext } from '@opensaas/framework-core'
 
 const prisma = new PrismaClient()
-const context = await getContext<PrismaClient>(config, prisma, session)
+const context = getContext<PrismaClient>(config, prisma, session)
 ```
 
 ### Documentation Added

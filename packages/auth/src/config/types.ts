@@ -1,4 +1,3 @@
-import type { FieldConfig } from '@opensaas/framework-core'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
 /**

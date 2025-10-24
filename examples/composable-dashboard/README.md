@@ -241,7 +241,7 @@ Update API routes to use OpenSaaS context:
 // app/api/posts/route.ts
 import { getContextWithUser } from '@/lib/context'
 
-const context = await getContextWithUser(session.userId)
+const context = getContextWithUser(session.userId)
 const post = await context.db.post.create({ data })
 // Access control automatically enforced!
 ```

@@ -238,7 +238,7 @@ import config from './opensaas.config'
 const prisma = new PrismaClient()
 const session = await getSession() // Your auth system
 
-const context = await getContext(config, prisma, session)
+const context = getContext(config, prisma, session)
 ```
 
 ### Operations
@@ -406,7 +406,7 @@ const mockSession = {
   user: { id: 'user123', name: 'Test User' },
 }
 
-const context = await getContext(config, prisma, mockSession)
+const context = getContext(config, prisma, mockSession)
 ```
 
 ### Test Access Denial

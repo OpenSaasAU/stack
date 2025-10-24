@@ -133,7 +133,7 @@ Post: list({
 Your application code uses the context to interact with the database:
 
 ```typescript
-const context = await getContext()
+const context = getContext()
 const posts = await context.db.post.findMany()
 ```
 

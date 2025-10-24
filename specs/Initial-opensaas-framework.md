@@ -239,7 +239,7 @@ import { auth } from '@/lib/auth'
 // In a Server Component or Server Action
 export async function updatePost(id: string, data: PostUpdateInput) {
   const session = await auth()
-  const context: Context = await getContext({ session })
+  const context: Context = getContext({ session })
 
   // Access control and hooks automatically applied
   const post = await context.db.post.update({
@@ -772,7 +772,7 @@ import { revalidatePath } from 'next/cache'
 
 export async function publishPost(postId: string) {
   const session = await auth()
-  const context = await getContext({ session })
+  const context = getContext({ session })
 
   const post = await context.db.post.update({
     where: { id: postId },

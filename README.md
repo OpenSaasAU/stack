@@ -82,7 +82,7 @@ async function test() {
 
   // Create a post as that user
   console.log('\n2. Creating a post as Alice...')
-  const contextAlice = await getContextWithUser(user.id)
+  const contextAlice = getContextWithUser(user.id)
   const post = await contextAlice.db.post.create({
     data: {
       title: 'My First Post',
@@ -97,7 +97,7 @@ async function test() {
 
   // Try to read as anonymous user
   console.log('\n3. Reading post as anonymous user...')
-  const contextAnon = await getContext()
+  const contextAnon = getContext()
   const postAnon = await contextAnon.db.post.findUnique({
     where: { id: post!.id }
   })
@@ -132,7 +132,7 @@ async function test() {
 
   // Try to update Alice's post as Bob
   console.log('\n7. Trying to update Alice\'s post as Bob...')
-  const contextBob = await getContextWithUser(bob.id)
+  const contextBob = getContextWithUser(bob.id)
   const updatedByBob = await contextBob.db.post.update({
     where: { id: post!.id },
     data: { title: 'Hacked!' }
@@ -236,7 +236,7 @@ This generates:
 import { getContext } from './lib/context'
 
 export async function updatePost(postId: string, data: any) {
-  const context = await getContext()
+  const context = getContext()
 
   // Access control is automatically enforced
   const post = await context.db.post.update({

@@ -16,8 +16,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
   const emailAndPassword = config.emailAndPassword?.enabled
     ? {
         enabled: true as const,
-        minPasswordLength:
-          (config.emailAndPassword as EmailPasswordConfig).minPasswordLength ?? 8,
+        minPasswordLength: (config.emailAndPassword as EmailPasswordConfig).minPasswordLength ?? 8,
         requireConfirmation:
           (config.emailAndPassword as EmailPasswordConfig).requireConfirmation ?? true,
       }
@@ -58,12 +57,14 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     session,
     sessionFields,
     extendUserList: config.extendUserList || {},
-    sendEmail: config.sendEmail || (async ({ to, subject, html }) => {
-      console.log('[Auth] Email not sent (no sendEmail configured):')
-      console.log(`To: ${to}`)
-      console.log(`Subject: ${subject}`)
-      console.log(`Body: ${html}`)
-    }),
+    sendEmail:
+      config.sendEmail ||
+      (async ({ to, subject, html }) => {
+        console.log('[Auth] Email not sent (no sendEmail configured):')
+        console.log(`To: ${to}`)
+        console.log(`Subject: ${subject}`)
+        console.log(`Body: ${html}`)
+      }),
   }
 }
 

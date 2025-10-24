@@ -331,7 +331,7 @@ export default config({
 ```typescript
 import { getContext } from './lib/context'
 
-const context = await getContext()
+const context = getContext()
 
 // Access control automatically applied
 const post = await context.db.post.update({

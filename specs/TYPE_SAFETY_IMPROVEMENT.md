@@ -51,7 +51,7 @@ const prisma = new PrismaClient()
 const session = await getSession()
 
 // Works without type parameter
-const context = await getContext(config, prisma, session)
+const context = getContext(config, prisma, session)
 ```
 
 ### With Explicit Type Parameter (Recommended)
@@ -65,7 +65,7 @@ const prisma = new PrismaClient()
 const session = await getSession()
 
 // Explicit type parameter for better type inference
-const context = await getContext<PrismaClient>(config, prisma, session)
+const context = getContext<PrismaClient>(config, prisma, session)
 ```
 
 ### In Your Context Helper
@@ -124,8 +124,8 @@ If you have existing code, no changes are required! The generic parameter has a 
 However, for better type safety, you can explicitly pass the `PrismaClient` type:
 
 ```diff
-- const context = await getContext(config, prisma, session)
-+ const context = await getContext<PrismaClient>(config, prisma, session)
+- const context = getContext(config, prisma, session)
++ const context = getContext<PrismaClient>(config, prisma, session)
 ```
 
 ## Technical Details

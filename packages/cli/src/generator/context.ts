@@ -43,11 +43,11 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
  * @example
  * \`\`\`typescript
  * // Anonymous access
- * const context = await getContext()
+ * const context = getContext()
  * const posts = await context.db.post.findMany()
  *
  * // Authenticated access
- * const context = await getContext({ userId: 'user-123' })
+ * const context = getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
  * \`\`\`
  */

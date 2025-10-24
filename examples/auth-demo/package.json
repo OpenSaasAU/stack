@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3003",
     "build": "pnpm generate && next build",
+    "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start -p 3003",
     "generate": "opensaas generate",
     "db:push": "prisma db push",

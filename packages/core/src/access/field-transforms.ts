@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, FieldConfig, FieldHooks } from '../config/types.js'
+import type { OpenSaaSConfig, FieldConfig } from '../config/types.js'
 import type { HashedPassword } from '../utils/password.js'
 
 /**

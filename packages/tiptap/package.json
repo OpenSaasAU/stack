@@ -19,7 +19,7 @@
     "build": "tsc && npm run copy:css",
     "copy:css": "mkdir -p dist/styles && cp src/styles/tiptap.css dist/styles/",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf .turbo  dist"
   },
   "keywords": [
     "opensaas",

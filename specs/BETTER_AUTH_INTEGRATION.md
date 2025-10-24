@@ -69,21 +69,25 @@ pnpm dev
 ### Exports
 
 **Main** (`@opensaas/framework-auth`):
+
 ```typescript
 import { withAuth, authConfig } from '@opensaas/framework-auth'
 ```
 
 **Server** (`@opensaas/framework-auth/server`):
+
 ```typescript
 import { createAuth } from '@opensaas/framework-auth/server'
 ```
 
 **Client** (`@opensaas/framework-auth/client`):
+
 ```typescript
 import { createClient } from '@opensaas/framework-auth/client'
 ```
 
 **UI** (`@opensaas/framework-auth/ui`):
+
 ```typescript
 import { SignInForm, SignUpForm, ForgotPasswordForm } from '@opensaas/framework-auth/ui'
 ```
@@ -95,22 +99,26 @@ import { SignInForm, SignUpForm, ForgotPasswordForm } from '@opensaas/framework-
 When you use `withAuth()`, four tables are automatically added:
 
 **User:**
+
 - `id`, `name`, `email` (unique), `emailVerified`, `image`
 - `sessions` (relationship), `accounts` (relationship)
 - Plus custom fields via `extendUserList`
 
 **Session:**
+
 - `id`, `token` (unique), `expiresAt`
 - `ipAddress`, `userAgent`
 - `user` (relationship to User)
 
 **Account:**
+
 - `id`, `accountId`, `providerId`
 - OAuth tokens: `accessToken`, `refreshToken`, etc.
 - `password` (for credential provider)
 - `user` (relationship to User)
 
 **Verification:**
+
 - `id`, `identifier`, `value`, `expiresAt`
 
 ### 2. Session Integration
@@ -250,10 +258,12 @@ export default withAuth(
     db: { provider: 'sqlite', url: 'file:./dev.db' },
     lists: {
       Post: list({
-        fields: { /* ... */ },
+        fields: {
+          /* ... */
+        },
         access: {
           operation: {
-            create: ({ session }) => !!session,  // ✅ session available!
+            create: ({ session }) => !!session, // ✅ session available!
           },
         },
       }),
@@ -268,7 +278,7 @@ export default withAuth(
         posts: relationship({ ref: 'Post.author', many: true }),
       },
     },
-  })
+  }),
 )
 ```
 
@@ -324,6 +334,7 @@ export default function SignInPage() {
 ### 2. Auto-Generation Pattern
 
 All auth tables are auto-generated to:
+
 - Reduce boilerplate
 - Ensure schema consistency with better-auth
 - Simplify updates (just upgrade package)
@@ -345,6 +356,7 @@ This balances convenience with performance.
 ### 4. Component Registry Pattern
 
 UI components follow the framework's registry pattern:
+
 - Pre-built for common use cases
 - Fully replaceable for custom designs
 - Props-based customization for quick tweaks
@@ -354,6 +366,7 @@ UI components follow the framework's registry pattern:
 ### Built-in Security Features
 
 Better-auth provides:
+
 - ✅ Bcrypt password hashing
 - ✅ CSRF protection
 - ✅ Secure session tokens

@@ -250,11 +250,11 @@ The framework automatically generates a context factory in `.opensaas/context.ts
 import { getContext } from '@/.opensaas/context'
 
 // Anonymous access
-const context = await getContext()
+const context = getContext()
 const posts = await context.db.post.findMany()
 
 // Authenticated access
-const context = await getContext({ userId: 'user-123' })
+const context = getContext({ userId: 'user-123' })
 const myPosts = await context.db.post.findMany()
 ```
 
@@ -553,7 +553,7 @@ The `session` object passed to access control functions is user-defined. The fra
 The context uses generic typing to preserve Prisma Client types:
 
 ```typescript
-const context = await getContext<typeof prisma>(config, prisma, session)
+const context = getContext<typeof prisma>(config, prisma, session)
 // context.db operations are fully typed
 ```
 

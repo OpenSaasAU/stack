@@ -7,7 +7,7 @@ import type { Post } from '../../../.opensaas/types'
 
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
-  const context = await getContext()
+  const context = getContext()
 
   const post = (await context.db.post.findUnique({
     where: { id: params.id },

@@ -6,7 +6,7 @@ import { getContext } from '@/.opensaas/context'
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getContext()
+  const context = getContext()
   return await context.serverAction(props)
 }
 
@@ -22,7 +22,7 @@ interface AdminPageProps {
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
-  const adminContext = await getContext()
+  const adminContext = getContext()
 
   return (
     <AdminUI

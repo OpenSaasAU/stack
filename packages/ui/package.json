@@ -33,13 +33,13 @@
     "./styles": "./dist/styles/globals.css"
   },
   "scripts": {
-    "build": "npm run clean && tsc && npm run build:css",
+    "build": "tsc && npm run build:css",
     "build:css": "mkdir -p dist/styles && postcss ./src/styles/globals.css -o ./dist/styles/globals.css",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf .turbo  dist"
   },
   "keywords": [
     "opensaas",
@@ -72,6 +72,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@opensaas/framework-core": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.1.0",

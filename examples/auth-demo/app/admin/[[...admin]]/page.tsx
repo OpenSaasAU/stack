@@ -7,7 +7,7 @@ import { getAuth } from '@/lib/auth'
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getContext()
+  const context = getContext()
   return await context.serverAction(props)
 }
 
@@ -37,7 +37,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   }
   return (
     <AdminUI
-      context={await getContext(session.user)}
+      context={getContext(session.user)}
       config={config}
       params={resolvedParams.admin}
       searchParams={resolvedSearchParams}

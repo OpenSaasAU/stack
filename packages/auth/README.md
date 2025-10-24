@@ -45,7 +45,7 @@ export default withAuth(
     emailVerification: { enabled: true },
     passwordReset: { enabled: true },
     sessionFields: ['userId', 'email', 'name'],
-  })
+  }),
 )
 ```
 
@@ -136,7 +136,7 @@ export default withAuth(
     emailAndPassword: { enabled: true },
     // Session will contain: { userId, email, name }
     sessionFields: ['userId', 'email', 'name'],
-  })
+  }),
 )
 ```
 
@@ -396,7 +396,7 @@ Access the session in server components or actions:
 import { getContext } from '@/.opensaas/context'
 
 async function myServerAction() {
-  const context = await getContext()
+  const context = getContext()
 
   if (!context.session) {
     throw new Error('Not authenticated')

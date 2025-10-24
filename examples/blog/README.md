@@ -109,7 +109,7 @@ async function test() {
   })
 
   // Get context as Alice
-  const contextAlice = await getContextWithUser(user.id)
+  const contextAlice = getContextWithUser(user.id)
 
   // Create a post as Alice
   const post = await contextAlice.db.post.create({
@@ -126,7 +126,7 @@ async function test() {
   console.log('Internal notes visible to author:', post?.internalNotes)
 
   // Try to read as anonymous user
-  const contextAnon = await getContext()
+  const contextAnon = getContext()
   const postAnon = await contextAnon.db.post.findUnique({
     where: { id: post!.id },
   })

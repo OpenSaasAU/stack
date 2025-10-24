@@ -8,7 +8,7 @@ import { connection } from 'next/server'
 export default async function HomePage() {
   await connection()
   // Use context for access-controlled queries
-  const context = await getContext()
+  const context = getContext()
 
   // Get stats (using Prisma directly for counts is fine)
   const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
