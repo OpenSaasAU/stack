@@ -310,6 +310,9 @@ importers:
       commander:
         specifier: ^14.0.1
         version: 14.0.1
+      jiti:
+        specifier: ^2.6.1
+        version: 2.6.1
       ora:
         specifier: ^9.0.0
         version: 9.0.0
@@ -435,7 +438,7 @@ importers:
         version: 4.1.0
       next:
         specifier: ^15.0.0 || ^16.0.0
-        version: 15.5.5(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 15.5.5(@babel/core@7.28.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       react:
         specifier: ^19.0.0
         version: 19.2.0
@@ -7626,6 +7629,29 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
+  next@15.5.5(@babel/core@7.28.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0):
+    dependencies:
+      '@next/env': 15.5.5
+      '@swc/helpers': 0.5.15
+      caniuse-lite: 1.0.30001750
+      postcss: 8.4.31
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+      styled-jsx: 5.1.6(@babel/core@7.28.5)(react@19.2.0)
+    optionalDependencies:
+      '@next/swc-darwin-arm64': 15.5.5
+      '@next/swc-darwin-x64': 15.5.5
+      '@next/swc-linux-arm64-gnu': 15.5.5
+      '@next/swc-linux-arm64-musl': 15.5.5
+      '@next/swc-linux-x64-gnu': 15.5.5
+      '@next/swc-linux-x64-musl': 15.5.5
+      '@next/swc-win32-arm64-msvc': 15.5.5
+      '@next/swc-win32-x64-msvc': 15.5.5
+      sharp: 0.34.4
+    transitivePeerDependencies:
+      - '@babel/core'
+      - babel-plugin-macros
+
   next@16.0.0(@babel/core@7.28.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0):
     dependencies:
       '@next/env': 16.0.0
@@ -8368,6 +8394,13 @@ snapshots:
       react: 19.2.0
     optionalDependencies:
       '@babel/core': 7.28.4
+
+  styled-jsx@5.1.6(@babel/core@7.28.5)(react@19.2.0):
+    dependencies:
+      client-only: 0.0.1
+      react: 19.2.0
+    optionalDependencies:
+      '@babel/core': 7.28.5
 
   supports-color@7.2.0:
     dependencies:

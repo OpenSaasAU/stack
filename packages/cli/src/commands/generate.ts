@@ -3,6 +3,9 @@ import * as fs from 'fs'
 import { execSync } from 'child_process'
 import chalk from 'chalk'
 import ora from 'ora'
+import { createJiti } from 'jiti'
+import { writePrismaSchema, writeTypes, writeContext, patchPrismaTypes } from '../generator/index.js'
+import type { OpenSaaSConfig } from '@opensaas/framework-core'
 
 export async function generateCommand() {
   console.log(chalk.bold('\n🚀 OpenSaaS Generator\n'))
@@ -20,52 +23,34 @@ export async function generateCommand() {
   const spinner = ora('Loading configuration...').start()
 
   try {
-    // Check if tsx is installed
-    const tsxPath = path.join(cwd, 'node_modules', 'tsx')
-    if (!fs.existsSync(tsxPath)) {
-      spinner.fail(chalk.red('Failed to load configuration'))
-      console.error(chalk.red('\n❌ tsx is not installed'))
-      console.error(chalk.gray('   Install it with: pnpm add -D tsx'))
-      process.exit(1)
-    }
+    // Load config using jiti (supports TypeScript)
+    const jiti = createJiti(cwd, {
+      interopDefault: true,
+    })
 
-    // Create a temporary script that imports the config and runs generation
-    const generatorScript = `
-import config from './opensaas.config.ts';
-import { writePrismaSchema, writeTypes, writeContext } from '@opensaas/framework-cli/generator';
+    const config = (await jiti.import(configPath)) as OpenSaaSConfig
 
-writePrismaSchema(config, './prisma/schema.prisma');
-writeTypes(config, './.opensaas/types.ts');
-writeContext(config, './.opensaas/context.ts');
-`
+    spinner.succeed(chalk.green('Configuration loaded'))
 
-    const scriptPath = path.join(cwd, '.opensaas-generator.tmp.ts')
-    fs.writeFileSync(scriptPath, generatorScript)
-
+    // Generate Prisma schema, types, and context
+    const generatorSpinner = ora('Generating schema and types...').start()
     try {
-      // Use tsx to run the generator script
-      const tsxBin = path.join(cwd, 'node_modules', '.bin', 'tsx')
-      execSync(`"${tsxBin}" "${scriptPath}"`, {
-        cwd,
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      })
+      writePrismaSchema(config, path.join(cwd, 'prisma', 'schema.prisma'))
+      writeTypes(config, path.join(cwd, '.opensaas', 'types.ts'))
+      writeContext(config, path.join(cwd, '.opensaas', 'context.ts'))
 
-      spinner.succeed(chalk.green('Schema generation complete'))
+      generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
       console.log(chalk.green('✅ TypeScript types generated'))
       console.log(chalk.green('✅ Context factory generated'))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-      spinner.fail(chalk.red('Failed to generate'))
-      const errorOutput = err.stderr || err.stdout || err.message
-      console.error(chalk.red('\n❌ Error:'), errorOutput)
-      process.exit(1)
-    } finally {
-      // Cleanup generator script
-      if (fs.existsSync(scriptPath)) {
-        fs.unlinkSync(scriptPath)
+      generatorSpinner.fail(chalk.red('Failed to generate'))
+      console.error(chalk.red('\n❌ Error:'), err.message)
+      if (err.stack) {
+        console.error(chalk.gray('\n' + err.stack))
       }
+      process.exit(1)
     }
 
     // Run Prisma generate to create the Prisma client
@@ -88,29 +73,8 @@ writeContext(config, './.opensaas/context.ts');
     // Patch Prisma types with field transformations
     const patchSpinner = ora('Patching Prisma types...').start()
     try {
-      // Re-run the generator script to patch types (now that Prisma client exists)
-      const patchScript = `
-import config from './opensaas.config.ts';
-import { patchPrismaTypes } from '@opensaas/framework-cli/generator';
-
-patchPrismaTypes(config, process.cwd());
-`
-      const patchScriptPath = path.join(cwd, '.opensaas-patcher.tmp.ts')
-      fs.writeFileSync(patchScriptPath, patchScript)
-
-      try {
-        const tsxBin = path.join(cwd, 'node_modules', '.bin', 'tsx')
-        execSync(`"${tsxBin}" "${patchScriptPath}"`, {
-          cwd,
-          encoding: 'utf-8',
-          stdio: 'pipe',
-        })
-        patchSpinner.succeed(chalk.green('Type patching complete'))
-      } finally {
-        if (fs.existsSync(patchScriptPath)) {
-          fs.unlinkSync(patchScriptPath)
-        }
-      }
+      patchPrismaTypes(config, cwd)
+      patchSpinner.succeed(chalk.green('Type patching complete'))
     } catch (err) {
       patchSpinner.fail(chalk.red('Failed to patch types'))
       const message = err instanceof Error ? err.message : String(err)
