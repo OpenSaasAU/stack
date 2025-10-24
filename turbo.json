@@ -1,24 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "@opensaas/framework-core#build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
-    },
-    "@opensaas/framework-cli#build": {
-      "dependsOn": ["@opensaas/framework-core#build"],
-      "outputs": ["dist/**", "dist/styles/**"]
-    },
-    "@opensaas/framework-ui#build": {
-      "dependsOn": ["@opensaas/framework-cli#build"],
-      "outputs": ["dist/**", "dist/styles/**"]
-    },
-    "opensaas-tiptap-demo#build": {
-      "dependsOn": ["@opensaas/framework-tiptap#build"],
-      "outputs": ["dist/**", "styles/**"]
-    },
     "build": {
-      "dependsOn": ["@opensaas/framework-ui#build"],
+      "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**"]
     },
     "test": {
