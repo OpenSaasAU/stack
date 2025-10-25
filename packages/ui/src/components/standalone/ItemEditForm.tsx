@@ -1,11 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
 import type { FieldConfig } from '@opensaas/stack-core'
+import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
@@ -45,6 +46,9 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   cancelLabel = 'Cancel',
   className,
 }: ItemEditFormProps<TData>) {
+  // Serialize field configs to remove non-serializable properties
+  const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
+
   const [isPending, setIsPending] = useState(false)
   const [formData, setFormData] = useState<TData>(initialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -72,11 +76,11 @@ export function ItemEditForm<TData = Record<string, unknown>>({
       // Transform relationship fields to Prisma format
       const transformedData: Record<string, unknown> = {}
       for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
-        const fieldConfig = fields[fieldName]
+        const fieldConfig = serializedFields[fieldName]
 
         // Transform relationship fields
-        if ((fieldConfig as Record<string, unknown>)?.type === 'relationship') {
-          if ((fieldConfig as Record<string, unknown>).many) {
+        if (fieldConfig?.type === 'relationship') {
+          if (fieldConfig.many) {
             // Many relationship: use connect format
             if (Array.isArray(value) && value.length > 0) {
               transformedData[fieldName] = {
@@ -110,7 +114,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   }
 
   // Filter out system fields
-  const editableFields = Object.entries(fields).filter(
+  const editableFields = Object.entries(serializedFields).filter(
     ([key]) => !['id', 'createdAt', 'updatedAt'].includes(key),
   )
 

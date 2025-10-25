@@ -7,14 +7,14 @@ import { FieldRenderer } from './fields/FieldRenderer.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
 import { Button } from '../primitives/button.js'
-import type { FieldConfig } from '@opensaas/stack-core'
 import type { ServerActionInput } from '../server/types.js'
+import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 
 export interface ItemFormClientProps {
   listKey: string
   urlKey: string
   mode: 'create' | 'edit'
-  fields: Record<string, FieldConfig>
+  fields: Record<string, SerializableFieldConfig>
   initialData?: Record<string, unknown>
   itemId?: string
   basePath: string

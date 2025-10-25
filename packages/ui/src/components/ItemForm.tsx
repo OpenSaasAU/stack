@@ -4,6 +4,7 @@ import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
 import { AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 
 export interface ItemFormProps<TPrisma> {
   context: AccessContext<TPrisma>
@@ -117,6 +118,9 @@ export async function ItemForm<TPrisma>({
     }
   }
 
+  // Serialize field configs to remove non-serializable properties
+  const serializableFields = serializeFieldConfigs(listConfig.fields)
+
   return (
     <div className="p-8 max-w-4xl">
       {/* Header */}
@@ -146,7 +150,7 @@ export async function ItemForm<TPrisma>({
           listKey={listKey}
           urlKey={urlKey}
           mode={mode}
-          fields={listConfig.fields}
+          fields={serializableFields}
           initialData={JSON.parse(JSON.stringify(itemData))}
           itemId={itemId}
           basePath={basePath}

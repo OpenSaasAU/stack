@@ -1,15 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
-import { registerFieldComponent } from '@opensaas/stack-ui'
-import { ColorPickerField } from './components/ColorPickerField'
-import { SlugField } from './components/SlugField'
-
-/**
- * GLOBAL FIELD TYPE REGISTRATION
- * Register a custom field type that can be used across the entire application
- */
-registerFieldComponent('color', ColorPickerField)
 
 /**
  * Access control helpers
@@ -92,14 +83,14 @@ export default config({
           },
         }),
         /**
-         * PER-FIELD OVERRIDE EXAMPLE
-         * Using a custom component for this specific field
+         * CUSTOM SLUG FIELD EXAMPLE
+         * Using a globally registered slug field type
          */
         slug: text({
           validation: { isRequired: true },
           isIndexed: 'unique',
           ui: {
-            component: SlugField,
+            fieldType: 'slug',
           },
         }),
         content: text({

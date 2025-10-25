@@ -1,13 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import type { FieldConfig } from '@opensaas/stack-core'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
+import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 
 export interface FieldRendererProps {
   fieldName: string
-  fieldConfig: FieldConfig
+  fieldConfig: SerializableFieldConfig
   value: unknown
   onChange: (value: unknown) => void
   error?: string

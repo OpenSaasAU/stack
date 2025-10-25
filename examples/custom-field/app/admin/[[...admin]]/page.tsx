@@ -2,6 +2,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import config from '../../../opensaas.config'
 import { getContext } from '@/.opensaas/context'
+import { FieldRegistration } from './FieldRegistration'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
@@ -25,13 +26,16 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const adminContext = getContext()
 
   return (
-    <AdminUI
-      context={adminContext}
-      config={config}
-      params={resolvedParams.admin}
-      searchParams={resolvedSearchParams}
-      basePath="/admin"
-      serverAction={serverAction}
-    />
+    <>
+      <FieldRegistration />
+      <AdminUI
+        context={adminContext}
+        config={config}
+        params={resolvedParams.admin}
+        searchParams={resolvedSearchParams}
+        basePath="/admin"
+        serverAction={serverAction}
+      />
+    </>
   )
 }
