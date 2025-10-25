@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
+import { getUrlKey } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 
 export interface FieldRendererProps {
@@ -15,6 +16,7 @@ export interface FieldRendererProps {
   mode?: 'read' | 'edit'
   relationshipItems?: Array<{ id: string; label: string }>
   relationshipLoading?: boolean
+  basePath?: string
 }
 
 /**
@@ -31,6 +33,7 @@ function FieldRendererInner({
   mode,
   relationshipItems,
   relationshipLoading,
+  basePath,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }: FieldRendererProps & { Component: React.ComponentType<any> }) {
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
@@ -71,7 +74,14 @@ function FieldRendererInner({
   if (fieldConfig.type === 'relationship') {
     specificProps.items = relationshipItems
     specificProps.isLoading = relationshipLoading
-    specificProps.many = (fieldConfig as Record<string, unknown>).many || false
+    specificProps.many = fieldConfig.many || false
+
+    // Extract related list key from ref (format: 'ListName.fieldName')
+    if (fieldConfig.ref) {
+      const [relatedListName] = fieldConfig.ref.split('.')
+      specificProps.relatedListKey = getUrlKey(relatedListName)
+      specificProps.basePath = basePath
+    }
   }
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)

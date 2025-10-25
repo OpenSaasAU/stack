@@ -175,6 +175,7 @@ export function ItemFormClient({
             mode="edit"
             relationshipItems={relationshipData[fieldName] || []}
             relationshipLoading={false}
+            basePath={basePath}
           />
         ))}
       </div>

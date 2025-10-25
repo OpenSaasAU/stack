@@ -48,10 +48,19 @@ export async function ItemForm<TPrisma>({
   let itemData: Record<string, unknown> = {}
   if (mode === 'edit' && itemId) {
     try {
-      // Access db from context - shape varies by OpenSaas config
+      // Build include object for relationships
+      const includeRelationships: Record<string, boolean> = {}
+      for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+        const fieldConfigAny = fieldConfig as { type: string }
+        if (fieldConfigAny.type === 'relationship') {
+          includeRelationships[fieldName] = true
+        }
+      }
 
+      // Fetch item with relationships included
       itemData = await context.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
+        ...(Object.keys(includeRelationships).length > 0 && { include: includeRelationships }),
       })
     } catch (error) {
       console.error(`Failed to fetch item ${itemId}:`, error)
@@ -112,6 +121,22 @@ export async function ItemForm<TPrisma>({
   // Serialize field configs to remove non-serializable properties
   const serializableFields = serializeFieldConfigs(listConfig.fields)
 
+  // Transform relationship data in itemData from objects to IDs for form
+  const formData = { ...itemData }
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    const fieldConfigAny = fieldConfig as { type: string; many?: boolean }
+    if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
+      const value = formData[fieldName]
+      if (fieldConfigAny.many && Array.isArray(value)) {
+        // Many relationship: extract IDs from array of objects
+        formData[fieldName] = value.map((item: Record<string, unknown>) => item.id as string)
+      } else if (value && typeof value === 'object' && 'id' in value) {
+        // Single relationship: extract ID from object
+        formData[fieldName] = (value as Record<string, unknown>).id as string
+      }
+    }
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       {/* Header */}
@@ -142,7 +167,7 @@ export async function ItemForm<TPrisma>({
           urlKey={urlKey}
           mode={mode}
           fields={serializableFields}
-          initialData={JSON.parse(JSON.stringify(itemData))}
+          initialData={JSON.parse(JSON.stringify(formData))}
           itemId={itemId}
           basePath={basePath}
           serverAction={serverAction}

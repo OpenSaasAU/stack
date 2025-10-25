@@ -17,6 +17,7 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
   submitLabel?: string
   cancelLabel?: string
   className?: string
+  basePath?: string
 }
 
 /**
@@ -45,6 +46,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   submitLabel = 'Save',
   cancelLabel = 'Cancel',
   className,
+  basePath = '/admin',
 }: ItemEditFormProps<TData>) {
   // Serialize field configs to remove non-serializable properties
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
@@ -141,6 +143,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
             mode="edit"
             relationshipItems={relationshipData[fieldName] || []}
             relationshipLoading={false}
+            basePath={basePath}
           />
         ))}
       </div>

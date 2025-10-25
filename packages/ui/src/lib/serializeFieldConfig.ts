@@ -16,6 +16,7 @@ export type SerializableFieldConfig = {
   }
   options?: Array<{ label: string; value: string }>
   many?: boolean
+  ref?: string
   ui?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
@@ -53,6 +54,11 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   // Extract many for relationship fields
   if ('many' in fieldConfig && fieldConfig.many !== undefined) {
     config.many = fieldConfig.many as boolean
+  }
+
+  // Extract ref for relationship fields
+  if ('ref' in fieldConfig && fieldConfig.ref !== undefined) {
+    config.ref = fieldConfig.ref as string
   }
 
   return config
