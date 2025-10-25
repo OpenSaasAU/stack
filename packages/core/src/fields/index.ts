@@ -261,9 +261,9 @@ export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampFiel
  * - Empty strings and undefined values are skipped (not hashed) to allow partial updates
  *
  * **Implementation Details:**
- * - Uses field-level hooks (`beforeOperation` and `afterOperation`) for automatic transformations
- * - The hashing happens via `hooks.beforeOperation` during create/update operations
- * - The wrapping happens via `hooks.afterOperation` during read operations
+ * - Uses field-level hooks (`resolveInput` and `resolveOutput`) for automatic transformations
+ * - The hashing happens via `hooks.resolveInput` during create/update operations
+ * - The wrapping happens via `hooks.resolveOutput` during read operations
  * - This pattern allows third-party field types to define their own transformations
  *
  * @param options - Field configuration options
@@ -283,37 +283,37 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
     },
     hooks: {
       // Hash password before writing to database
-      beforeOperation: async ({ value }) => {
+      resolveInput: async ({ inputValue }) => {
         // Skip if undefined or null (allows partial updates)
-        if (value === undefined || value === null) {
-          return value
+        if (inputValue === undefined || inputValue === null) {
+          return inputValue
         }
 
         // Skip if not a string
-        if (typeof value !== 'string') {
-          return value
+        if (typeof inputValue !== 'string') {
+          return inputValue
         }
 
         // Skip empty strings (let validation handle this)
-        if (value.length === 0) {
-          return value
+        if (inputValue.length === 0) {
+          return inputValue
         }
 
         // Skip if already hashed (idempotent)
-        if (isHashedPassword(value)) {
-          return value
+        if (isHashedPassword(inputValue)) {
+          return inputValue
         }
 
         // Hash the password
-        return await hashPassword(value)
+        return await hashPassword(inputValue)
       },
       // Wrap password with HashedPassword class after reading from database
-      afterOperation: ({ value }) => {
+      resolveOutput: ({ value }) => {
         // Only wrap string values (hashed passwords)
         if (typeof value === 'string' && value.length > 0) {
           return new HashedPassword(value)
         }
-        return value
+        return undefined
       },
       // Merge with user-provided hooks if any
       ...options?.hooks,

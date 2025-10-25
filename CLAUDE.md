@@ -120,28 +120,54 @@ The stack's primary innovation is its access control engine that automatically s
 - **Filter-based**: Returns Prisma filters to scope access (e.g., `{ authorId: { equals: userId } }`)
 - **Boolean**: Returns `true` (allow) or `false` (deny)
 
-### Hooks System (Phase 3)
+### Hooks System
 
-The hooks system allows data transformation and validation during database operations.
+The hooks system provides data transformation and side effects during database operations. Hooks are available at both the list level and field level.
 
-**Key file:** `packages/core/src/hooks/index.ts`
+**Key files:**
 
-**Hook execution order (create/update):**
+- `packages/core/src/hooks/index.ts` - List-level hooks
+- `packages/core/src/config/types.ts` - Field-level hook types
 
-1. `resolveInput` - Transform input data (e.g., auto-populate fields)
-2. `validateInput` - Custom validation logic
-3. Field validation - Built-in rules (isRequired, length, min/max)
-4. Field-level access control - Filter writable fields
-5. `beforeOperation` - Side effects before DB operation
-6. **Database operation**
-7. `afterOperation` - Side effects after DB operation
+**Hook Types:**
 
-**Example use cases:**
+- **Data Transformation Hooks**: `resolveInput` and `resolveOutput` - Transform data going in or out
+- **Side Effect Hooks**: `beforeOperation` and `afterOperation` - Perform actions without modifying data
+- **Validation Hooks**: `validateInput` - Custom validation logic
+
+**Hook execution order (write operations - create/update):**
+
+1. List-level `resolveInput` - Transform input data at list level
+2. Field-level `resolveInput` - Transform individual field values (e.g., hash passwords)
+3. List-level `validateInput` - Custom validation logic
+4. Field validation - Built-in rules (isRequired, length, min/max)
+5. Field-level access control - Filter writable fields
+6. Field-level `beforeOperation` - Side effects for individual fields
+7. List-level `beforeOperation` - Side effects at list level
+8. **Database operation**
+9. List-level `afterOperation` - Side effects at list level
+10. Field-level `afterOperation` - Side effects for individual fields
+
+**Hook execution order (read operations - query):**
+
+1. **Database operation**
+2. Field-level access control - Filter readable fields
+3. Field-level `resolveOutput` - Transform individual field values (e.g., wrap passwords)
+4. Field-level `afterOperation` - Side effects for individual fields
+
+**List-level hook use cases:**
 
 - `resolveInput`: Auto-set publishedAt when status changes to "published"
 - `validateInput`: Business logic validation (e.g., "title cannot contain spam")
-- `beforeOperation`: Logging, notifications
+- `beforeOperation`: Logging, sending notifications
 - `afterOperation`: Cache invalidation, webhooks
+
+**Field-level hook use cases:**
+
+- `resolveInput`: Hash passwords, normalize phone numbers, resize images
+- `resolveOutput`: Wrap passwords with HashedPassword class, format dates
+- `beforeOperation`: Log field changes, validate external constraints
+- `afterOperation`: Update search indexes, invalidate CDN caches
 
 ### Config System
 

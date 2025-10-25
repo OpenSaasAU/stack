@@ -15,51 +15,114 @@ export type FieldType =
   | string // Allow custom field types from third-party packages
 
 /**
- * Field hook arguments
- * Similar to list hooks but scoped to a single field value
- */
-export type FieldHookArgs = {
-  operation: 'create' | 'update' | 'delete' | 'read'
-  value: unknown
-  fieldName: string
-  listName: string
-  item?: Record<string, unknown>
-  context: import('../access/types.js').AccessContext
-}
-
-/**
- * Field-level hooks for data transformation
+ * Field-level hooks for data transformation and side effects
  * Allows field types to define custom behavior during operations
+ *
+ * @template TInput - Type of the input value (what goes into the database)
+ * @template TOutput - Type of the output value (what comes out of the database)
+ * @template TItem - Type of the parent item/record
  */
-export type FieldHooks = {
+export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
   /**
    * Transform field value before database write
-   * Called during create/update operations after resolveInput and validation
+   * Called during create/update operations after list-level resolveInput but before validation
+   * This is where you should transform input data (e.g., hash passwords, normalize values)
    *
    * @example
    * ```typescript
-   * beforeOperation: async ({ value, operation }) => {
-   *   if (operation === 'create' || operation === 'update') {
-   *     return await hashPassword(value)
+   * resolveInput: async ({ inputValue, operation }) => {
+   *   if (typeof inputValue === 'string' && !isHashedPassword(inputValue)) {
+   *     return await hashPassword(inputValue)
+   *   }
+   *   return inputValue
+   * }
+   * ```
+   */
+  resolveInput?: (args: {
+    operation: 'create' | 'update'
+    inputValue: TInput | undefined
+    item?: TItem
+    listKey: string
+    fieldName: string
+    context: import('../access/types.js').AccessContext
+  }) => Promise<TInput | undefined> | TInput | undefined
+
+  /**
+   * Perform side effects before database write
+   * Called during create/update/delete operations after validation and access control
+   * This should ONLY contain side effects (logging, notifications, etc.), not data transformation
+   *
+   * @example
+   * ```typescript
+   * beforeOperation: async ({ resolvedValue, operation, item }) => {
+   *   console.log(`About to ${operation} field with value:`, resolvedValue)
+   *   await sendAuditLog({ operation, item })
+   * }
+   * ```
+   */
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedValue: TInput | undefined
+    item?: TItem
+    listKey: string
+    fieldName: string
+    context: import('../access/types.js').AccessContext
+  }) => Promise<void> | void
+
+  /**
+   * Perform side effects after database operation
+   * Called after any database operation (create/update/delete/query)
+   * This should ONLY contain side effects (logging, cache invalidation, etc.), not data transformation
+   *
+   * @example
+   * ```typescript
+   * afterOperation: async ({ operation, value, item }) => {
+   *   await invalidateCache({ listKey, itemId: item.id })
+   *   await sendWebhook({ operation, item })
+   * }
+   * ```
+   */
+  afterOperation?: (
+    args: {
+      operation: 'create' | 'update' | 'delete'
+      value: TInput | undefined
+      item: TItem
+      listKey: string
+      fieldName: string
+      context: import('../access/types.js').AccessContext
+    } | {
+      operation: 'query'
+      value: TOutput | undefined
+      item: TItem
+      listKey: string
+      fieldName: string
+      context: import('../access/types.js').AccessContext
+    }
+  ) => Promise<void> | void
+
+  /**
+   * Transform field value after database read
+   * Called when returning results from query operations
+   * This is where you should transform output data (e.g., wrap passwords, format values)
+   *
+   * @example
+   * ```typescript
+   * resolveOutput: ({ value }) => {
+   *   if (typeof value === 'string' && value.length > 0) {
+   *     return new HashedPassword(value)
    *   }
    *   return value
    * }
    * ```
    */
-  beforeOperation?: (args: FieldHookArgs & { operation: 'create' | 'update' }) => Promise<unknown>
-
-  /**
-   * Transform field value after database read
-   * Called when returning results from query operations
-   *
-   * @example
-   * ```typescript
-   * afterOperation: ({ value }) => {
-   *   return new HashedPassword(value)
-   * }
-   * ```
-   */
-  afterOperation?: (args: FieldHookArgs & { operation: 'read' }) => unknown
+  resolveOutput?: (args: {
+    operation: 'query'
+    value: TInput | undefined
+    item: TItem
+    listKey: string
+    fieldName: string
+    context: import('../access/types.js').AccessContext
+  }) => TOutput | undefined
 }
 
 /**
@@ -80,11 +143,11 @@ export type TypePatchConfig = {
   patchScope?: 'scalars-only' | 'all'
 }
 
-export type BaseFieldConfig = {
+export type BaseFieldConfig<TInput = any, TOutput = TInput> = {
   type: string
   access?: FieldAccess
   defaultValue?: unknown
-  hooks?: FieldHooks
+  hooks?: FieldHooks<TInput, TOutput, any>
   /**
    * Type patching configuration for Prisma-generated types
    * When specified, the generator will patch Prisma's types to use
@@ -146,7 +209,7 @@ export type BaseFieldConfig = {
   }
 }
 
-export type TextField = BaseFieldConfig & {
+export type TextField = BaseFieldConfig<string, string> & {
   type: 'text'
   validation?: {
     isRequired?: boolean
@@ -161,7 +224,7 @@ export type TextField = BaseFieldConfig & {
   }
 }
 
-export type IntegerField = BaseFieldConfig & {
+export type IntegerField = BaseFieldConfig<number, number> & {
   type: 'integer'
   validation?: {
     isRequired?: boolean
@@ -170,23 +233,26 @@ export type IntegerField = BaseFieldConfig & {
   }
 }
 
-export type CheckboxField = BaseFieldConfig & {
+export type CheckboxField = BaseFieldConfig<boolean, boolean> & {
   type: 'checkbox'
 }
 
-export type TimestampField = BaseFieldConfig & {
+export type TimestampField = BaseFieldConfig<Date, Date> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
 }
 
-export type PasswordField = BaseFieldConfig & {
+export type PasswordField = BaseFieldConfig<
+  string,
+  import('../utils/password.js').HashedPassword
+> & {
   type: 'password'
   validation?: {
     isRequired?: boolean
   }
 }
 
-export type SelectField = BaseFieldConfig & {
+export type SelectField = BaseFieldConfig<string, string> & {
   type: 'select'
   options: Array<{ label: string; value: string }>
   validation?: {
@@ -197,7 +263,7 @@ export type SelectField = BaseFieldConfig & {
   }
 }
 
-export type RelationshipField = BaseFieldConfig & {
+export type RelationshipField = BaseFieldConfig<string | string[], string | string[]> & {
   type: 'relationship'
   ref: string // Format: 'ListName.fieldName'
   many?: boolean
@@ -219,6 +285,30 @@ export type FieldConfig =
 /**
  * List configuration types
  */
+
+/**
+ * Utility type to inject item type into a single field config
+ * Extracts TInput and TOutput from BaseFieldConfig<TInput, TOutput> and reconstructs with new hooks type
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WithItemType<TField extends FieldConfig, TItem> = TField extends BaseFieldConfig<
+  infer TInput,
+  infer TOutput
+>
+  ? Omit<TField, 'hooks'> & {
+      hooks?: FieldHooks<TInput, TOutput, TItem>
+    }
+  : TField
+
+/**
+ * Utility type to transform all fields in a record to inject item type
+ * Maps over each field and applies WithItemType transformation
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TItem = any> = {
+  [K in keyof TFields]: WithItemType<TFields[K], TItem>
+}
+
 // Generic `any` default allows OperationAccess to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,7 +342,9 @@ export type Hooks<T = Record<string, unknown>> = {
 // This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ListConfig<T = any> = {
-  fields: Record<string, FieldConfig>
+  // Field configs are automatically transformed to inject the item type T
+  // This enables proper typing in field hooks where item: TItem
+  fields: FieldsWithItemType<Record<string, FieldConfig>, T>
   access?: {
     operation?: OperationAccess<T>
   }

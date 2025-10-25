@@ -15,7 +15,6 @@ export type {
   OperationAccess,
   Hooks,
   FieldHooks,
-  FieldHookArgs,
   DatabaseConfig,
   SessionConfig,
   UIConfig,
