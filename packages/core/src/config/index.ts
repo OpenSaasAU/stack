@@ -33,15 +33,13 @@ export function config(config: OpenSaasConfig): OpenSaasConfig {
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function list<T = any>(
-  config: {
-    fields: Record<string, FieldConfig>
-    access?: {
-      operation?: OperationAccess<T>
-    }
-    hooks?: Hooks<T>
-  },
-): ListConfig<T> {
+export function list<T = any>(config: {
+  fields: Record<string, FieldConfig>
+  access?: {
+    operation?: OperationAccess<T>
+  }
+  hooks?: Hooks<T>
+}): ListConfig<T> {
   // At runtime, field configs are unchanged
   // At type level, they're transformed to inject T as the item type
   return config as ListConfig<T>

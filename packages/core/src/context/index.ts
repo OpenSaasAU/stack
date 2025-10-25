@@ -25,11 +25,13 @@ import type { FieldConfig } from '../config/types.js'
  * Allows fields to transform their input values before database write
  */
 async function executeFieldResolveInputHooks(
-  data: Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
   context: AccessContext,
   listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<Record<string, unknown>> {
   const result = { ...data }
@@ -44,9 +46,8 @@ async function executeFieldResolveInputHooks(
     // Execute field hook
     // Type assertion is safe here because hooks are typed correctly in field definitions
     // and we're working with runtime values that match those types
-    const transformedValue = await (
-      fieldConfig.hooks.resolveInput as (args: any) => Promise<unknown> | unknown
-    )({
+
+    const transformedValue = await fieldConfig.hooks.resolveInput({
       inputValue: result[fieldName],
       operation,
       fieldName,
@@ -66,11 +67,13 @@ async function executeFieldResolveInputHooks(
  * Allows fields to perform side effects before database write
  */
 async function executeFieldBeforeOperationHooks(
-  data: Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<void> {
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
@@ -80,7 +83,7 @@ async function executeFieldBeforeOperationHooks(
 
     // Execute field hook (side effects only, no return value used)
     // Type assertion is safe here because hooks are typed correctly in field definitions
-    await (fieldConfig.hooks.beforeOperation as (args: any) => Promise<void> | void)({
+    await fieldConfig.hooks.beforeOperation({
       resolvedValue: data[fieldName],
       operation,
       fieldName,
@@ -96,6 +99,7 @@ async function executeFieldBeforeOperationHooks(
  * Allows fields to perform side effects after database operations
  */
 async function executeFieldAfterOperationHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: any,
   data: Record<string, unknown> | undefined,
   fields: Record<string, FieldConfig>,
@@ -127,7 +131,8 @@ async function executeFieldAfterOperationHooks(
  * Allows fields to transform their output values after database read
  */
 function executeFieldResolveOutputHooks(
-  item: Record<string, unknown> | null,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: Record<string, any> | null,
   fields: Record<string, FieldConfig>,
   context: AccessContext,
   listKey: string,
@@ -145,7 +150,7 @@ function executeFieldResolveOutputHooks(
 
     // Execute field hook
     // Type assertion is safe here because hooks are typed correctly in field definitions
-    const transformedValue = (fieldConfig.hooks.resolveOutput as (args: any) => unknown)({
+    const transformedValue = fieldConfig.hooks.resolveOutput({
       value: result[fieldName],
       operation: 'query',
       fieldName,
@@ -310,7 +315,14 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     const resolved = executeFieldResolveOutputHooks(filtered, listConfig.fields, context, listName)
 
     // Execute field afterOperation hooks (side effects only)
-    await executeFieldAfterOperationHooks(resolved, undefined, listConfig.fields, 'query', context, listName)
+    await executeFieldAfterOperationHooks(
+      resolved,
+      undefined,
+      listConfig.fields,
+      'query',
+      context,
+      listName,
+    )
 
     return resolved
   }
@@ -396,7 +408,14 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Execute field afterOperation hooks for each item (side effects only)
     await Promise.all(
       resolved.map((item) =>
-        executeFieldAfterOperationHooks(item, undefined, listConfig.fields, 'query', context, listName),
+        executeFieldAfterOperationHooks(
+          item,
+          undefined,
+          listConfig.fields,
+          'query',
+          context,
+          listName,
+        ),
       ),
     )
 
@@ -471,13 +490,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     )
 
     // 6. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(
-      data,
-      listConfig.fields,
-      'create',
-      context,
-      listName,
-    )
+    await executeFieldBeforeOperationHooks(data, listConfig.fields, 'create', context, listName)
 
     // 7. Execute list-level beforeOperation hook
     await executeBeforeOperation(listConfig.hooks, {
@@ -726,14 +739,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
     }
 
     // 3. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(
-      {},
-      listConfig.fields,
-      'delete',
-      context,
-      listName,
-      item,
-    )
+    await executeFieldBeforeOperationHooks({}, listConfig.fields, 'delete', context, listName, item)
 
     // 4. Execute list-level beforeOperation hook
     await executeBeforeOperation(listConfig.hooks, {

@@ -55,9 +55,7 @@ export function ComboboxField({
 
   // Filter items based on search query
   const filteredItems = searchQuery
-    ? items.filter((item) =>
-        item.label.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
+    ? items.filter((item) => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
     : items
 
   const selectedItem = items.find((item) => item.id === value)
@@ -71,11 +69,7 @@ export function ComboboxField({
       <Combobox open={open} onOpenChange={setOpen}>
         <ComboboxTrigger disabled={disabled || isLoading}>
           <span className={!selectedItem ? 'text-muted-foreground' : ''}>
-            {isLoading
-              ? 'Loading...'
-              : selectedItem
-                ? selectedItem.label
-                : placeholder}
+            {isLoading ? 'Loading...' : selectedItem ? selectedItem.label : placeholder}
           </span>
         </ComboboxTrigger>
         <ComboboxContent>

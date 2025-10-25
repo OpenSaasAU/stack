@@ -38,7 +38,7 @@ export interface RelationshipManagerProps {
 }
 
 export function RelationshipManager({
-  name,
+  name: _name,
   value,
   onChange,
   label,
@@ -72,9 +72,7 @@ export function RelationshipManager({
 
   // Filter available items based on search
   const filteredAvailableItems = searchQuery
-    ? availableItems.filter((item) =>
-        item.label.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
+    ? availableItems.filter((item) => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
     : availableItems
 
   const handleRemove = (itemId: string) => {

@@ -56,9 +56,16 @@ export function ItemEditForm<TData = Record<string, unknown>>({
     const transformed = { ...initialData }
     for (const [fieldName, fieldConfig] of Object.entries(fields)) {
       const fieldConfigAny = fieldConfig as { ui?: Record<string, unknown> }
-      if (fieldConfigAny.ui?.valueForClientSerialization && typeof fieldConfigAny.ui.valueForClientSerialization === 'function') {
-        const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: { value: unknown }) => unknown
-        transformed[fieldName as keyof TData] = transformer({ value: transformed[fieldName as keyof TData] }) as TData[keyof TData]
+      if (
+        fieldConfigAny.ui?.valueForClientSerialization &&
+        typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
+      ) {
+        const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
+          value: unknown
+        }) => unknown
+        transformed[fieldName as keyof TData] = transformer({
+          value: transformed[fieldName as keyof TData],
+        }) as TData[keyof TData]
       }
     }
     return transformed

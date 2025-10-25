@@ -125,7 +125,11 @@ export async function ItemForm<TPrisma>({
   // Also apply valueForClientSerialization transformation
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    const fieldConfigAny = fieldConfig as { type: string; many?: boolean; ui?: Record<string, unknown> }
+    const fieldConfigAny = fieldConfig as {
+      type: string
+      many?: boolean
+      ui?: Record<string, unknown>
+    }
     if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
       const value = formData[fieldName]
       if (fieldConfigAny.many && Array.isArray(value)) {
@@ -138,8 +142,13 @@ export async function ItemForm<TPrisma>({
     }
 
     // Apply valueForClientSerialization if defined
-    if (fieldConfigAny.ui?.valueForClientSerialization && typeof fieldConfigAny.ui.valueForClientSerialization === 'function') {
-      const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: { value: unknown }) => unknown
+    if (
+      fieldConfigAny.ui?.valueForClientSerialization &&
+      typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
+    ) {
+      const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
+        value: unknown
+      }) => unknown
       formData[fieldName] = transformer({ value: formData[fieldName] })
     }
   }

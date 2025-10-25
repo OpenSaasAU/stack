@@ -22,6 +22,7 @@ export type FieldType =
  * @template TOutput - Type of the output value (what comes out of the database)
  * @template TItem - Type of the parent item/record
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
   /**
    * Transform field value before database write
@@ -83,21 +84,23 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
    * ```
    */
   afterOperation?: (
-    args: {
-      operation: 'create' | 'update' | 'delete'
-      value: TInput | undefined
-      item: TItem
-      listKey: string
-      fieldName: string
-      context: import('../access/types.js').AccessContext
-    } | {
-      operation: 'query'
-      value: TOutput | undefined
-      item: TItem
-      listKey: string
-      fieldName: string
-      context: import('../access/types.js').AccessContext
-    }
+    args:
+      | {
+          operation: 'create' | 'update' | 'delete'
+          value: TInput | undefined
+          item: TItem
+          listKey: string
+          fieldName: string
+          context: import('../access/types.js').AccessContext
+        }
+      | {
+          operation: 'query'
+          value: TOutput | undefined
+          item: TItem
+          listKey: string
+          fieldName: string
+          context: import('../access/types.js').AccessContext
+        },
   ) => Promise<void> | void
 
   /**
@@ -143,10 +146,12 @@ export type TypePatchConfig = {
   patchScope?: 'scalars-only' | 'all'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type BaseFieldConfig<TInput = any, TOutput = TInput> = {
   type: string
   access?: FieldAccess
   defaultValue?: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   hooks?: FieldHooks<TInput, TOutput, any>
   /**
    * Type patching configuration for Prisma-generated types
@@ -290,15 +295,12 @@ export type FieldConfig =
  * Utility type to inject item type into a single field config
  * Extracts TInput and TOutput from BaseFieldConfig<TInput, TOutput> and reconstructs with new hooks type
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WithItemType<TField extends FieldConfig, TItem> = TField extends BaseFieldConfig<
-  infer TInput,
-  infer TOutput
->
-  ? Omit<TField, 'hooks'> & {
-      hooks?: FieldHooks<TInput, TOutput, TItem>
-    }
-  : TField
+type WithItemType<TField extends FieldConfig, TItem> =
+  TField extends BaseFieldConfig<infer TInput, infer TOutput>
+    ? Omit<TField, 'hooks'> & {
+        hooks?: FieldHooks<TInput, TOutput, TItem>
+      }
+    : TField
 
 /**
  * Utility type to transform all fields in a record to inject item type

@@ -1,11 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
-import { Post, User } from './.opensaas/types'
-
-// Import generated types for type safety in hooks
-// After running `pnpm generate`, these types will be available
-// Uncomment after first generation:
-// import type { User, Post } from './.opensaas/types'
+import type { Post, User } from './.opensaas/types'
 
 /**
  * OpenSaas Configuration
@@ -54,7 +49,6 @@ export default config({
       },
     }),
 
-    // For full type safety in hooks, add type parameter after first generation:
     Post: list<Post>({
       fields: {
         title: text({
@@ -107,22 +101,16 @@ export default config({
       },
       hooks: {
         resolveInput: async ({ operation, resolvedData, item }) => {
-          // Type assertion needed until Post type parameter is added to list<Post>()
-          // After adding type parameter, resolvedData and item will be fully typed
           const result = { ...resolvedData }
-          const currentItem = item
 
           // Auto-set publishedAt when status changes to published
-          if (
-            result?.status === 'published' &&
-            (!currentItem?.publishedAt || operation === 'create')
-          ) {
+          if (result.status === 'published' && (!item?.publishedAt || operation === 'create')) {
             result.publishedAt = new Date()
           }
 
           // Auto-generate slug from title if not provided
-          if (operation === 'create' && !result?.slug && result?.title) {
-            const slug = (result.title as string)
+          if (operation === 'create' && !result.slug && result.title) {
+            const slug = result.title
               .toLowerCase()
               .replace(/[^\w\s-]/g, '')
               .replace(/\s+/g, '-')

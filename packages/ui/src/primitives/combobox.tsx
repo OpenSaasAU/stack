@@ -17,8 +17,18 @@ const ComboboxTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+    <svg
+      className="ml-2 h-4 w-4 shrink-0 opacity-50"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 9l4-4 4 4m0 6l-4 4-4-4"
+      />
     </svg>
   </PopoverPrimitive.Trigger>
 ))
@@ -77,32 +87,30 @@ const ComboboxSearch = React.forwardRef<
 ))
 ComboboxSearch.displayName = 'ComboboxSearch'
 
-const ComboboxList = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, children, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('max-h-[300px] overflow-y-auto overflow-x-hidden', className)}
-    {...props}
-  >
-    {children}
-  </div>
-))
+const ComboboxList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, children, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn('max-h-[300px] overflow-y-auto overflow-x-hidden', className)}
+      {...props}
+    >
+      {children}
+    </div>
+  ),
+)
 ComboboxList.displayName = 'ComboboxList'
 
-const ComboboxEmpty = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, children = 'No results found.', ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('py-6 text-center text-sm text-muted-foreground', className)}
-    {...props}
-  >
-    {children}
-  </div>
-))
+const ComboboxEmpty = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, children = 'No results found.', ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn('py-6 text-center text-sm text-muted-foreground', className)}
+      {...props}
+    >
+      {children}
+    </div>
+  ),
+)
 ComboboxEmpty.displayName = 'ComboboxEmpty'
 
 const ComboboxItem = React.forwardRef<
@@ -132,16 +140,11 @@ const ComboboxItem = React.forwardRef<
 ))
 ComboboxItem.displayName = 'ComboboxItem'
 
-const ComboboxSeparator = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-border', className)}
-    {...props}
-  />
-))
+const ComboboxSeparator = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('-mx-1 my-1 h-px bg-border', className)} {...props} />
+  ),
+)
 ComboboxSeparator.displayName = 'ComboboxSeparator'
 
 export {

@@ -28,6 +28,7 @@ type FieldHooks = {
 ```
 
 **Current execution order:**
+
 1. `resolveInput` (list-level only)
 2. `validateInput` (list-level only)
 3. Field validation (Zod schemas)
@@ -81,6 +82,7 @@ type FieldHooks<TValue = any, TItem = any> = {
 ### 2. Updated Execution Order
 
 **Write operations (create/update):**
+
 1. List-level `resolveInput`
 2. Field-level `resolveInput` - **NEW: data transformation**
 3. List-level `validateInput`
@@ -93,6 +95,7 @@ type FieldHooks<TValue = any, TItem = any> = {
 10. Field-level `afterOperation` - **CHANGED: side effects only** (only called if field was modified)
 
 **Read operations (query):**
+
 1. Database operation
 2. Field-level access control
 3. Field-level `resolveOutput` - **NEW: output transformation**
@@ -107,7 +110,7 @@ export type FieldHooks<TValue = any, TItem = any> = {
   resolveInput?: (args: {
     operation: 'create' | 'update'
     inputValue: TValue | undefined
-    item?: TItem  // ✅ Properly typed
+    item?: TItem // ✅ Properly typed
     listKey: string
     fieldName: string
     context: AccessContext
@@ -154,10 +157,10 @@ const userList = list<User>({
           }
 
           return await hashPassword(inputValue)
-        }
-      }
-    })
-  }
+        },
+      },
+    }),
+  },
 })
 ```
 
@@ -190,13 +193,12 @@ export type ListConfig<T = any> = {
 }
 
 // Builder function performs type transformation
-export function list<T = any>(
-  config: {
-    fields: Record<string, FieldConfig>  // Input: raw configs
-    access?: { operation?: OperationAccess<T> }
-    hooks?: Hooks<T>
-  }
-): ListConfig<T> {  // Output: transformed configs
+export function list<T = any>(config: {
+  fields: Record<string, FieldConfig> // Input: raw configs
+  access?: { operation?: OperationAccess<T> }
+  hooks?: Hooks<T>
+}): ListConfig<T> {
+  // Output: transformed configs
   return config as ListConfig<T>
 }
 ```
@@ -204,6 +206,7 @@ export function list<T = any>(
 ### 5. Password Field Refactor
 
 **Before (incorrect):**
+
 ```typescript
 hooks: {
   beforeOperation: async ({ value }) => {
@@ -224,6 +227,7 @@ hooks: {
 ```
 
 **After (correct):**
+
 ```typescript
 hooks: {
   resolveInput: async ({ inputValue }) => {

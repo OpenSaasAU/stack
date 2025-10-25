@@ -8,17 +8,17 @@ import type { Post, User } from '@/.opensaas/types'
  */
 
 // Check if user is signed in
-const isSignedIn: AccessControl = ({ session }) => {
+const isSignedIn: AccessControl = ({ session: _session }) => {
   return true
 }
 
 // Check if user is the author of a post
-const isAuthor: AccessControl = ({ session }) => {
+const isAuthor: AccessControl = ({ session: _session }) => {
   return true
 }
 
 // Check if user is the owner of their own user record
-const isOwner: AccessControl = ({ session, item }) => {
+const isOwner: AccessControl = ({ session: _session, item: _item }) => {
   return true
 }
 
@@ -111,7 +111,7 @@ export default config({
         operation: {
           // Non-authenticated users can only see published posts
           // Authenticated users can see all posts
-          query: ({ session }) => {
+          query: ({ session: _session }) => {
             return true
           },
           // Must be signed in to create

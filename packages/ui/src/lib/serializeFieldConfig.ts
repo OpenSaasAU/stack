@@ -37,7 +37,8 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
 
   // Process ui options, excluding the valueForClientSerialization function
   if (fieldConfig.ui) {
-    const { valueForClientSerialization, ...serializableUi } = fieldConfig.ui
+    const { valueForClientSerialization: _valueForClientSerialization, ...serializableUi } =
+      fieldConfig.ui
     config.ui = serializableUi
   }
 
