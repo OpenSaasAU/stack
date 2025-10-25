@@ -3,26 +3,26 @@
 @theme inline {
   /* Light mode colors */
   --color-background-light: oklch(0.97 0.01 264);
-  --color-foreground-light: oklch(0.20 0.02 264);
+  --color-foreground-light: oklch(0.2 0.02 264);
   --color-card-light: oklch(1 0 0);
-  --color-card-foreground-light: oklch(0.20 0.02 264);
+  --color-card-foreground-light: oklch(0.2 0.02 264);
   --color-popover-light: oklch(1 0 0);
-  --color-popover-foreground-light: oklch(0.20 0.02 264);
+  --color-popover-foreground-light: oklch(0.2 0.02 264);
 
   --color-primary-light: oklch(0.68 0.19 210);
-  --color-primary-foreground-light: oklch(0.20 0.02 264);
+  --color-primary-foreground-light: oklch(0.2 0.02 264);
 
   --color-secondary-light: oklch(0.95 0.01 264);
-  --color-secondary-foreground-light: oklch(0.20 0.02 264);
+  --color-secondary-foreground-light: oklch(0.2 0.02 264);
   --color-muted-light: oklch(0.95 0.01 264);
-  --color-muted-foreground-light: oklch(0.50 0.01 264);
-  --color-accent-light: oklch(0.70 0.21 320);
+  --color-muted-foreground-light: oklch(0.5 0.01 264);
+  --color-accent-light: oklch(0.7 0.21 320);
   --color-accent-foreground-light: oklch(1 0 0);
 
   --color-destructive-light: oklch(0.65 0.23 25);
   --color-destructive-foreground-light: oklch(1 0 0);
-  --color-border-light: oklch(0.90 0.01 264);
-  --color-input-light: oklch(0.90 0.01 264);
+  --color-border-light: oklch(0.9 0.01 264);
+  --color-input-light: oklch(0.9 0.01 264);
   --color-ring-light: oklch(0.68 0.19 210);
 
   /* Dark mode colors */
@@ -33,42 +33,63 @@
   --color-popover-dark: oklch(0.18 0.02 264);
   --color-popover-foreground-dark: oklch(0.95 0.01 264);
 
-  --color-primary-dark: oklch(0.72 0.20 210);
-  --color-primary-foreground-dark: oklch(0.20 0.02 264);
+  --color-primary-dark: oklch(0.72 0.2 210);
+  --color-primary-foreground-dark: oklch(0.2 0.02 264);
 
   --color-secondary-dark: oklch(0.25 0.02 264);
   --color-secondary-foreground-dark: oklch(0.95 0.01 264);
   --color-muted-dark: oklch(0.25 0.02 264);
-  --color-muted-foreground-dark: oklch(0.60 0.01 264);
+  --color-muted-foreground-dark: oklch(0.6 0.01 264);
   --color-accent-dark: oklch(0.75 0.22 320);
-  --color-accent-foreground-dark: oklch(0.20 0.02 264);
+  --color-accent-foreground-dark: oklch(0.2 0.02 264);
 
   --color-destructive-dark: oklch(0.68 0.24 25);
   --color-destructive-foreground-dark: oklch(1 0 0);
-  --color-border-dark: oklch(0.30 0.02 264);
-  --color-input-dark: oklch(0.30 0.02 264);
-  --color-ring-dark: oklch(0.72 0.20 210);
+  --color-border-dark: oklch(0.3 0.02 264);
+  --color-input-dark: oklch(0.3 0.02 264);
+  --color-ring-dark: oklch(0.72 0.2 210);
 
   /* Semantic tokens using light-dark() */
   --color-background: light-dark(var(--color-background-light), var(--color-background-dark));
   --color-foreground: light-dark(var(--color-foreground-light), var(--color-foreground-dark));
   --color-card: light-dark(var(--color-card-light), var(--color-card-dark));
-  --color-card-foreground: light-dark(var(--color-card-foreground-light), var(--color-card-foreground-dark));
+  --color-card-foreground: light-dark(
+    var(--color-card-foreground-light),
+    var(--color-card-foreground-dark)
+  );
   --color-popover: light-dark(var(--color-popover-light), var(--color-popover-dark));
-  --color-popover-foreground: light-dark(var(--color-popover-foreground-light), var(--color-popover-foreground-dark));
+  --color-popover-foreground: light-dark(
+    var(--color-popover-foreground-light),
+    var(--color-popover-foreground-dark)
+  );
 
   --color-primary: light-dark(var(--color-primary-light), var(--color-primary-dark));
-  --color-primary-foreground: light-dark(var(--color-primary-foreground-light), var(--color-primary-foreground-dark));
+  --color-primary-foreground: light-dark(
+    var(--color-primary-foreground-light),
+    var(--color-primary-foreground-dark)
+  );
 
   --color-secondary: light-dark(var(--color-secondary-light), var(--color-secondary-dark));
-  --color-secondary-foreground: light-dark(var(--color-secondary-foreground-light), var(--color-secondary-foreground-dark));
+  --color-secondary-foreground: light-dark(
+    var(--color-secondary-foreground-light),
+    var(--color-secondary-foreground-dark)
+  );
   --color-muted: light-dark(var(--color-muted-light), var(--color-muted-dark));
-  --color-muted-foreground: light-dark(var(--color-muted-foreground-light), var(--color-muted-foreground-dark));
+  --color-muted-foreground: light-dark(
+    var(--color-muted-foreground-light),
+    var(--color-muted-foreground-dark)
+  );
   --color-accent: light-dark(var(--color-accent-light), var(--color-accent-dark));
-  --color-accent-foreground: light-dark(var(--color-accent-foreground-light), var(--color-accent-foreground-dark));
+  --color-accent-foreground: light-dark(
+    var(--color-accent-foreground-light),
+    var(--color-accent-foreground-dark)
+  );
 
   --color-destructive: light-dark(var(--color-destructive-light), var(--color-destructive-dark));
-  --color-destructive-foreground: light-dark(var(--color-destructive-foreground-light), var(--color-destructive-foreground-dark));
+  --color-destructive-foreground: light-dark(
+    var(--color-destructive-foreground-light),
+    var(--color-destructive-foreground-dark)
+  );
   --color-border: light-dark(var(--color-border-light), var(--color-border-dark));
   --color-input: light-dark(var(--color-input-light), var(--color-input-dark));
   --color-ring: light-dark(var(--color-ring-light), var(--color-ring-dark));
@@ -77,8 +98,8 @@
 
   /* Gradient colors for modern effects */
   --gradient-from-light: oklch(0.68 0.19 210);
-  --gradient-to-light: oklch(0.70 0.21 320);
-  --gradient-from-dark: oklch(0.72 0.20 210);
+  --gradient-to-light: oklch(0.7 0.21 320);
+  --gradient-from-dark: oklch(0.72 0.2 210);
   --gradient-to-dark: oklch(0.75 0.22 320);
   --gradient-from: light-dark(var(--gradient-from-light), var(--gradient-from-dark));
   --gradient-to: light-dark(var(--gradient-to-light), var(--gradient-to-dark));

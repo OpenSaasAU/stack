@@ -113,7 +113,13 @@ export function DateTimePicker({
             >
               Cancel
             </Button>
-            <Button size="sm" onClick={handleConfirm} disabled={disabled} type="button" className="flex-1">
+            <Button
+              size="sm"
+              onClick={handleConfirm}
+              disabled={disabled}
+              type="button"
+              className="flex-1"
+            >
               Confirm
             </Button>
           </div>

@@ -1,7 +1,19 @@
 'use client'
 
 import * as React from 'react'
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, isToday } from 'date-fns'
+import {
+  format,
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  addDays,
+  isSameMonth,
+  isSameDay,
+  isToday,
+} from 'date-fns'
 import { cn } from '../lib/utils.js'
 import { Button } from './button.js'
 
@@ -62,7 +74,12 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
           className="h-8 w-8"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
         </Button>
         <div className="flex items-center gap-2">
@@ -124,7 +141,8 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
                       className={cn(
                         'h-9 w-9 p-0 font-normal hover:bg-accent',
                         !isCurrentMonth && 'text-muted-foreground opacity-50',
-                        isSelected && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                        isSelected &&
+                          'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
                         isDayToday && !isSelected && 'bg-accent',
                       )}
                     >
