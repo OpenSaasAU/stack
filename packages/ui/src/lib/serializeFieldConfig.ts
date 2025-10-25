@@ -28,12 +28,17 @@ export type SerializableFieldConfig = {
 /**
  * Extract only serializable properties from a single field config
  * Removes functions (getZodSchema, getPrismaType, getTypeScriptType)
- * and non-serializable properties (access, hooks, typePatch)
+ * and non-serializable properties (access, hooks, typePatch, valueForClientSerialization)
  */
 export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {
   const config: SerializableFieldConfig = {
     type: fieldConfig.type,
-    ui: fieldConfig.ui,
+  }
+
+  // Process ui options, excluding the valueForClientSerialization function
+  if (fieldConfig.ui) {
+    const { valueForClientSerialization, ...serializableUi } = fieldConfig.ui
+    config.ui = serializableUi
   }
 
   // Extract label if present

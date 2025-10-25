@@ -105,6 +105,18 @@ export type BaseFieldConfig = {
      */
     fieldType?: string
     /**
+     * Transform field value before sending to client (browser)
+     * Useful for sensitive fields (e.g., passwords) or complex data structures
+     * that shouldn't be serialized in their raw form
+     *
+     * @example
+     * ```typescript
+     * // Password field: send only whether it's set, not the hash
+     * valueForClientSerialization: ({ value }) => ({ isSet: !!value })
+     * ```
+     */
+    valueForClientSerialization?: (args: { value: unknown }) => unknown
+    /**
      * Additional UI-specific configuration
      */
     [key: string]: unknown

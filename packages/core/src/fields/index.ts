@@ -277,6 +277,10 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
       resultType: "import('@opensaas/stack-core').HashedPassword",
       patchScope: 'scalars-only',
     },
+    ui: {
+      ...options?.ui,
+      valueForClientSerialization: ({ value }) => ({ isSet: !!value }),
+    },
     hooks: {
       // Hash password before writing to database
       beforeOperation: async ({ value }) => {

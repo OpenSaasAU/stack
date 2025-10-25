@@ -64,9 +64,15 @@ export function ItemFormClient({
     startTransition(async () => {
       try {
         // Transform relationship fields to Prisma format
+        // Filter out password fields with isSet objects (unchanged passwords)
         const transformedData: Record<string, unknown> = {}
         for (const [fieldName, value] of Object.entries(formData)) {
           const fieldConfig = fields[fieldName]
+
+          // Skip password fields that have { isSet: boolean } value (not being changed)
+          if (typeof value === 'object' && value !== null && 'isSet' in value) {
+            continue
+          }
 
           // Transform relationship fields - check discriminated union type
           const fieldAny = fieldConfig as { type: string; many?: boolean }

@@ -51,8 +51,21 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   // Serialize field configs to remove non-serializable properties
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
 
+  // Apply valueForClientSerialization transformations to initial data
+  const transformedInitialData = useMemo(() => {
+    const transformed = { ...initialData }
+    for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+      const fieldConfigAny = fieldConfig as { ui?: Record<string, unknown> }
+      if (fieldConfigAny.ui?.valueForClientSerialization && typeof fieldConfigAny.ui.valueForClientSerialization === 'function') {
+        const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: { value: unknown }) => unknown
+        transformed[fieldName as keyof TData] = transformer({ value: transformed[fieldName as keyof TData] }) as TData[keyof TData]
+      }
+    }
+    return transformed
+  }, [initialData, fields])
+
   const [isPending, setIsPending] = useState(false)
-  const [formData, setFormData] = useState<TData>(initialData)
+  const [formData, setFormData] = useState<TData>(transformedInitialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [generalError, setGeneralError] = useState<string | null>(null)
 
@@ -76,9 +89,15 @@ export function ItemEditForm<TData = Record<string, unknown>>({
 
     try {
       // Transform relationship fields to Prisma format
+      // Filter out password fields with isSet objects (unchanged passwords)
       const transformedData: Record<string, unknown> = {}
       for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
         const fieldConfig = serializedFields[fieldName]
+
+        // Skip password fields that have { isSet: boolean } value (not being changed)
+        if (typeof value === 'object' && value !== null && 'isSet' in value) {
+          continue
+        }
 
         // Transform relationship fields
         if (fieldConfig?.type === 'relationship') {
