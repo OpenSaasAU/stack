@@ -1,6 +1,0 @@
----
-'@opensaas/stack-core': minor
-'@opensaas/stack-cli': minor
----
-
-Add bcrypt to password and further abstract prisma with some type overriding
