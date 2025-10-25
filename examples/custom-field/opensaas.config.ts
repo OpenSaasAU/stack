@@ -1,30 +1,5 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
-import type { AccessControl } from '@opensaas/stack-core'
-
-/**
- * Access control helpers
- */
-
-// Check if user is signed in
-const isSignedIn: AccessControl = ({ session }) => {
-  return !!session
-}
-
-// Check if user is the author of a post
-const isAuthor: AccessControl = ({ session }) => {
-  if (!session) return false
-  return {
-    authorId: { equals: session.userId },
-  }
-}
-
-// Check if user is the owner of their own user record
-const isOwner: AccessControl = ({ session, item }) => {
-  if (!session) return false
-  return session.userId === item?.id
-}
-
 /**
  * OpenSaas Configuration
  */
@@ -66,8 +41,8 @@ export default config({
         operation: {
           query: () => true,
           create: () => true,
-          update: isOwner,
-          delete: isOwner,
+          update: () => true,
+          delete: () => true,
         },
       },
     }),
@@ -76,11 +51,6 @@ export default config({
       fields: {
         title: text({
           validation: { isRequired: true },
-          access: {
-            read: () => true,
-            create: isSignedIn,
-            update: isAuthor,
-          },
         }),
         /**
          * CUSTOM SLUG FIELD EXAMPLE
@@ -95,11 +65,6 @@ export default config({
         }),
         content: text({
           ui: { displayMode: 'textarea' },
-          access: {
-            read: () => true,
-            create: isSignedIn,
-            update: isAuthor,
-          },
         }),
         /**
          * ANOTHER GLOBAL FIELD TYPE EXAMPLE
@@ -126,20 +91,10 @@ export default config({
       },
       access: {
         operation: {
-          // Non-authenticated users can only see published posts
-          // Authenticated users can see all posts
-          query: ({ session }) => {
-            if (!session) {
-              return { status: { equals: 'published' } }
-            }
-            return true
-          },
-          // Must be signed in to create
-          create: isSignedIn,
-          // Only author can update
-          update: isAuthor,
-          // Only author can delete
-          delete: isAuthor,
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
         },
       },
       hooks: {
