@@ -11,7 +11,7 @@ import type { Session } from 'better-auth/types'
  * ```typescript
  * // lib/auth-client.ts
  * 'use client'
- * import { createClient } from '@opensaas/framework-auth/client'
+ * import { createClient } from '@opensaas/stack-auth/client'
  *
  * export const authClient = createClient({
  *   baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'

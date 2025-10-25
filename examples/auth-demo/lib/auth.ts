@@ -1,4 +1,4 @@
-import { createAuth } from '@opensaas/framework-auth/server'
+import { createAuth } from '@opensaas/stack-auth/server'
 import config from '../opensaas.config'
 import { headers } from 'next/headers'
 import { rawOpensaasContext } from '@/.opensaas/context'

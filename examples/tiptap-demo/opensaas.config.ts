@@ -1,7 +1,7 @@
-import { config, list } from '@opensaas/framework-core'
-import { text, timestamp, relationship } from '@opensaas/framework-core/fields'
-import { richText } from '@opensaas/framework-tiptap/fields'
-import type { AccessControl } from '@opensaas/framework-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
+import { richText } from '@opensaas/stack-tiptap/fields'
+import type { AccessControl } from '@opensaas/stack-core'
 import type { User, Article } from '@/.opensaas/types'
 
 /**

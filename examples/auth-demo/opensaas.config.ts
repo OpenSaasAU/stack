@@ -1,7 +1,7 @@
-import { config, list } from '@opensaas/framework-core'
-import { text, relationship, select, timestamp } from '@opensaas/framework-core/fields'
-import { withAuth, authConfig } from '@opensaas/framework-auth'
-import type { AccessControl } from '@opensaas/framework-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship, select, timestamp } from '@opensaas/stack-core/fields'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
+import type { AccessControl } from '@opensaas/stack-core'
 import type { Post } from '@/.opensaas/types'
 
 /**

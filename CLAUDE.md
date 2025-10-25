@@ -10,11 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OpenSaaS Framework is a Next.js-based framework for building admin-heavy applications with built-in access control. It uses a config-first approach similar to KeystoneJS but modernized for Next.js App Router and designed to be AI-agent-friendly with automatic security guardrails.
+OpenSaaS Stack is a Next.js-based stack for building admin-heavy applications with built-in access control. It uses a config-first approach similar to KeystoneJS but modernized for Next.js App Router and designed to be AI-agent-friendly with automatic security guardrails.
 
 This is a pnpm monorepo with:
 
-- `packages/core`: Core framework (config system, access control, generators)
+- `packages/core`: Core stack (config system, access control, generators)
 - `packages/cli`: CLI tools (generators via bin scripts)
 - `packages/ui`: Admin UI components (composable React components)
 - `packages/tiptap`: Rich text editor integration (third-party field example)
@@ -96,7 +96,7 @@ npx tsx test.ts  # or any other .ts file
 
 ### Access Control System (Core Feature)
 
-The framework's primary innovation is its access control engine that automatically secures database operations. Understanding this is critical for working with the codebase.
+The stack's primary innovation is its access control engine that automatically secures database operations. Understanding this is critical for working with the codebase.
 
 **Key files:**
 
@@ -193,7 +193,7 @@ Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and 
 
 **Third-party field types:**
 
-- `richText()` from `@opensaas/framework-tiptap/fields` - Rich text editor with JSON storage
+- `richText()` from `@opensaas/stack-tiptap/fields` - Rich text editor with JSON storage
 
 **Field Builder Methods:**
 
@@ -203,13 +203,13 @@ Each field builder function returns an object with these methods:
 2. **`getPrismaType(fieldName)`** - Prisma type and modifiers (e.g., `{ type: "String", modifiers: "?" }`)
 3. **`getTypeScriptType()`** - TypeScript type and optionality (e.g., `{ type: "string", optional: true }`)
 
-This allows field types to be fully self-contained and extensible without modifying core framework code.
+This allows field types to be fully self-contained and extensible without modifying core stack code.
 
 ## Critical Patterns
 
 ### 1. Naming Conventions
 
-The framework uses consistent case conventions across different contexts:
+The stack uses consistent case conventions across different contexts:
 
 **List Names in Config:** Always use **PascalCase**
 
@@ -234,7 +234,7 @@ lists: {
 **Utility Functions:**
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/framework-core'
+import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
 
 getDbKey('AuthUser') // 'authUser' - for accessing context.db and prisma
 getUrlKey('AuthUser') // 'auth-user' - for constructing URLs
@@ -243,7 +243,7 @@ getListKeyFromUrl('auth-user') // 'AuthUser' - for parsing URLs
 
 ### 2. Creating Context in Applications
 
-The framework automatically generates a context factory in `.opensaas/context.ts` that abstracts away Prisma client management:
+The stack automatically generates a context factory in `.opensaas/context.ts` that abstracts away Prisma client management:
 
 ```typescript
 // In your app code (e.g., server actions)
@@ -368,7 +368,7 @@ Relationships use a `ref` format: `'ListName.fieldName'`
 3. **Register UI component** (optional, for admin UI):
 
    ```typescript
-   import { registerFieldComponent } from '@opensaas/framework-ui'
+   import { registerFieldComponent } from '@opensaas/stack-ui'
    import { MyCustomFieldComponent } from './components/MyCustomField'
 
    registerFieldComponent('myCustom', MyCustomFieldComponent)
@@ -385,7 +385,7 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 1. **Global Registration** - Register a component for reuse across multiple fields:
 
    ```typescript
-   import { registerFieldComponent } from "@opensaas/framework-ui";
+   import { registerFieldComponent } from "@opensaas/stack-ui";
    import { ColorPickerField } from "./components/ColorPickerField";
 
    // Register once at app startup
@@ -420,9 +420,9 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 
 ### Creating Third-Party Field Packages
 
-The framework supports third-party field packages as separate npm packages. This allows developers to add rich functionality without bloating the core framework.
+The stack supports third-party field packages as separate npm packages. This allows developers to add rich functionality without bloating the core stack.
 
-**Example:** `@opensaas/framework-tiptap` - Rich text editor integration
+**Example:** `@opensaas/stack-tiptap` - Rich text editor integration
 
 **Package Structure:**
 
@@ -445,7 +445,7 @@ packages/my-field/
 1. **Field Builder** - Must implement `BaseFieldConfig`:
 
    ```typescript
-   import type { BaseFieldConfig } from '@opensaas/framework-core'
+   import type { BaseFieldConfig } from '@opensaas/stack-core'
 
    export type MyField = BaseFieldConfig & {
      type: 'myField'
@@ -491,7 +491,7 @@ packages/my-field/
    // lib/register-fields.ts
    'use client'
 
-   import { registerFieldComponent } from '@opensaas/framework-ui'
+   import { registerFieldComponent } from '@opensaas/stack-ui'
    import { MyFieldComponent } from '@my-org/my-field'
 
    registerFieldComponent('myField', MyFieldComponent)
@@ -540,7 +540,7 @@ This project uses ESM (`"type": "module"` in package.json):
 
 ### Access Control Session Object
 
-The `session` object passed to access control functions is user-defined. The framework only requires it exists but doesn't enforce a structure. Common pattern:
+The `session` object passed to access control functions is user-defined. The stack only requires it exists but doesn't enforce a structure. Common pattern:
 
 ```typescript
 {
@@ -579,7 +579,7 @@ export function MyField({ placeholder, minHeight, maxHeight, ...baseProps }) {
 }
 ```
 
-The `FieldRenderer` extracts `component` and `fieldType` from `ui` options, then passes all remaining options to the component. This allows field types to define custom UI behaviors without modifying core framework code.
+The `FieldRenderer` extracts `component` and `fieldType` from `ui` options, then passes all remaining options to the component. This allows field types to define custom UI behaviors without modifying core stack code.
 
 ### Generator Limitations
 

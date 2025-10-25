@@ -69,7 +69,7 @@ export type FieldHooks = {
 export type TypePatchConfig = {
   /**
    * The TypeScript type to use in Prisma result types (e.g., Payload scalars)
-   * This is an import statement like: "import('@opensaas/framework-core').HashedPassword"
+   * This is an import statement like: "import('@opensaas/stack-core').HashedPassword"
    */
   resultType: string
   /**
@@ -283,7 +283,7 @@ export type DatabaseConfig = {
  */
 export type SessionConfig = {
   // Uses `any` return type because session structure is user-defined and varies per application
-  // The framework doesn't enforce a specific session shape - users can use NextAuth, Clerk, etc.
+  // The stack doesn't enforce a specific session shape - users can use NextAuth, Clerk, etc.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSession: () => Promise<any>
 }

@@ -1,7 +1,7 @@
 /**
- * @opensaas/framework-auth
+ * @opensaas/stack-auth
  *
- * Better-auth integration for OpenSaaS Framework
+ * Better-auth integration for OpenSaaS Stack
  *
  * This package provides:
  * - Auto-generated User, Session, Account, Verification lists
@@ -12,8 +12,8 @@
  * @example
  * ```typescript
  * // opensaas.config.ts
- * import { config } from '@opensaas/framework-core'
- * import { withAuth, authConfig } from '@opensaas/framework-auth'
+ * import { config } from '@opensaas/stack-core'
+ * import { withAuth, authConfig } from '@opensaas/stack-auth'
  *
  * export default withAuth(
  *   config({

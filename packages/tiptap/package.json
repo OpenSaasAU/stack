@@ -1,7 +1,7 @@
 {
-  "name": "@opensaas/framework-tiptap",
+  "name": "@opensaas/stack-tiptap",
   "version": "0.1.0",
-  "description": "Tiptap rich text editor integration for OpenSaaS Framework",
+  "description": "Tiptap rich text editor integration for OpenSaaS Stack",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,8 +31,8 @@
   "author": "",
   "license": "MIT",
   "peerDependencies": {
-    "@opensaas/framework-core": "workspace:*",
-    "@opensaas/framework-ui": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
     "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -45,8 +45,8 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@opensaas/framework-core": "workspace:*",
-    "@opensaas/framework-ui": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

@@ -1,8 +1,8 @@
 /**
  * Input for the generic server action
- * Re-exported from @opensaas/framework-core for convenience
+ * Re-exported from @opensaas/stack-core for convenience
  */
-export type { ServerActionProps as ServerActionInput } from '@opensaas/framework-core'
+export type { ServerActionProps as ServerActionInput } from '@opensaas/stack-core'
 
 /**
  * Result of a server action

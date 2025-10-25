@@ -1,4 +1,4 @@
-import { ForgotPasswordForm } from '@opensaas/framework-auth/ui'
+import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 import Link from 'next/link'
 

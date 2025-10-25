@@ -1,14 +1,14 @@
 # Better-Auth Integration - Complete Implementation
 
-This document summarizes the complete better-auth integration for OpenSaaS Framework.
+This document summarizes the complete better-auth integration for OpenSaaS Stack.
 
 ## ✅ What Was Implemented
 
-### 1. New Package: `@opensaas/framework-auth`
+### 1. New Package: `@opensaas/stack-auth`
 
 **Location:** `packages/auth/`
 
-A complete authentication package that integrates better-auth with OpenSaaS Framework, providing:
+A complete authentication package that integrates better-auth with OpenSaaS Stack, providing:
 
 - **Auto-generated auth tables** - User, Session, Account, Verification
 - **Session integration** - Sessions automatically available in access control
@@ -68,28 +68,28 @@ pnpm dev
 
 ### Exports
 
-**Main** (`@opensaas/framework-auth`):
+**Main** (`@opensaas/stack-auth`):
 
 ```typescript
-import { withAuth, authConfig } from '@opensaas/framework-auth'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
 ```
 
-**Server** (`@opensaas/framework-auth/server`):
+**Server** (`@opensaas/stack-auth/server`):
 
 ```typescript
-import { createAuth } from '@opensaas/framework-auth/server'
+import { createAuth } from '@opensaas/stack-auth/server'
 ```
 
-**Client** (`@opensaas/framework-auth/client`):
+**Client** (`@opensaas/stack-auth/client`):
 
 ```typescript
-import { createClient } from '@opensaas/framework-auth/client'
+import { createClient } from '@opensaas/stack-auth/client'
 ```
 
-**UI** (`@opensaas/framework-auth/ui`):
+**UI** (`@opensaas/stack-auth/ui`):
 
 ```typescript
-import { SignInForm, SignUpForm, ForgotPasswordForm } from '@opensaas/framework-auth/ui'
+import { SignInForm, SignUpForm, ForgotPasswordForm } from '@opensaas/stack-auth/ui'
 ```
 
 ## 🎯 Key Features
@@ -250,8 +250,8 @@ examples/auth-demo/
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from '@opensaas/framework-core'
-import { withAuth, authConfig } from '@opensaas/framework-auth'
+import { config, list } from '@opensaas/stack-core'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
 
 export default withAuth(
   config({
@@ -286,7 +286,7 @@ export default withAuth(
 
 ```typescript
 // lib/auth.ts
-import { createAuth } from '@opensaas/framework-auth/server'
+import { createAuth } from '@opensaas/stack-auth/server'
 import config from '../opensaas.config'
 
 export const auth = createAuth(config)
@@ -302,7 +302,7 @@ export { GET, POST } from '@/lib/auth'
 ```typescript
 // lib/auth-client.ts
 'use client'
-import { createClient } from '@opensaas/framework-auth/client'
+import { createClient } from '@opensaas/stack-auth/client'
 
 export const authClient = createClient({
   baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
@@ -313,7 +313,7 @@ export const authClient = createClient({
 
 ```typescript
 // app/sign-in/page.tsx
-import { SignInForm } from '@opensaas/framework-auth/ui'
+import { SignInForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 export default function SignInPage() {
@@ -355,7 +355,7 @@ This balances convenience with performance.
 
 ### 4. Component Registry Pattern
 
-UI components follow the framework's registry pattern:
+UI components follow the stack's registry pattern:
 
 - Pre-built for common use cases
 - Fully replaceable for custom designs
@@ -410,10 +410,10 @@ Potential additions:
 
 ## 🏁 Summary
 
-The `@opensaas/framework-auth` package provides a complete, production-ready authentication solution that:
+The `@opensaas/stack-auth` package provides a complete, production-ready authentication solution that:
 
-- Integrates seamlessly with OpenSaaS Framework's access control system
-- Follows the framework's config-first, type-safe design principles
+- Integrates seamlessly with OpenSaaS Stack's access control system
+- Follows the stack's config-first, type-safe design principles
 - Reduces authentication setup from hours to minutes
 - Provides excellent developer experience with pre-built components
 - Maintains security best practices throughout

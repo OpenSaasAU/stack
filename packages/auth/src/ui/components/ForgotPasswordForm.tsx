@@ -29,7 +29,7 @@ export type ForgotPasswordFormProps = {
  *
  * @example
  * ```typescript
- * import { ForgotPasswordForm } from '@opensaas/framework-auth/ui'
+ * import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
  * import { authClient } from '@/lib/auth-client'
  *
  * export default function ForgotPasswordPage() {

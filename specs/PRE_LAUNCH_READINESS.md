@@ -1,4 +1,4 @@
-# OpenSaaS Framework - Pre-Launch Readiness Assessment
+# OpenSaaS Stack - Pre-Launch Readiness Assessment
 
 **Date:** October 25, 2025
 **Status:** 95% Ready for Public Release
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The OpenSaaS Framework is **technically solid and production-ready**, with excellent architecture and comprehensive core features. The access control engine is well-designed, the field type system is extensible, and the developer experience is good.
+The OpenSaaS Stack is **technically solid and production-ready**, with excellent architecture and comprehensive core features. The access control engine is well-designed, the field type system is extensible, and the developer experience is good.
 
 **Major improvements completed (October 25, 2025):**
 - ✅ **Authentication integration** with better-auth fully implemented
@@ -65,7 +65,7 @@ The OpenSaaS Framework is **technically solid and production-ready**, with excel
 
 **Solution Implemented:**
 - Full better-auth integration with bcrypt password hashing
-- `@opensaas/framework-auth` package with secure password handling
+- `@opensaas/stack-auth` package with secure password handling
 - Better-auth handles all password operations (no plaintext storage)
 - Working auth demo at `examples/auth-demo`
 
@@ -77,7 +77,7 @@ The OpenSaaS Framework is **technically solid and production-ready**, with excel
 ### ✅ 2. Authentication Integration (COMPLETED)
 
 **Solution Implemented:**
-- Complete better-auth integration package (`@opensaas/framework-auth`)
+- Complete better-auth integration package (`@opensaas/stack-auth`)
 - Pre-built UI components: SignInForm, SignUpForm, ForgotPasswordForm
 - Helper functions: `withAuth()`, `createUserList()`, `createSessionList()`
 - Working example with OAuth providers (GitHub, Google)
@@ -123,7 +123,7 @@ The OpenSaaS Framework is **technically solid and production-ready**, with excel
 
 **Issue:**
 
-- Framework generates Prisma schema but schema changes require manual intervention
+- Stack generates Prisma schema but schema changes require manual intervention
 - No guidance on handling schema migrations in production
 - No migration templates or examples
 
@@ -218,7 +218,7 @@ The OpenSaaS Framework is **technically solid and production-ready**, with excel
 
 - [ ] **Add SECURITY.md** (1 hour)
   - Vulnerability reporting instructions
-  - Security best practices for using the framework
+  - Security best practices for using the stack
   - Known limitations and security considerations
 
 - [ ] **Add LICENSE file** (15 min)
@@ -352,7 +352,7 @@ The OpenSaaS Framework is **technically solid and production-ready**, with excel
 
 When announcing publicly, position as:
 
-> **OpenSaaS Framework v0.1.0 Beta** - A Next.js framework for building admin-heavy applications with automatic access control, built-in validation, and lifecycle hooks. Production-ready with full better-auth integration.
+> **OpenSaaS Stack v0.1.0 Beta** - A Next.js stack for building admin-heavy applications with automatic access control, built-in validation, and lifecycle hooks. Production-ready with full better-auth integration.
 >
 > **Key Features:**
 >
@@ -374,7 +374,7 @@ This showcases the completed critical features and production-ready security.
 
 ## Final Verdict
 
-**Technical Assessment:** The framework is well-architected with solid implementations of core features. The access control engine is genuinely innovative and the extensible field type system is excellent design. **Authentication integration and type safety are now production-ready.**
+**Technical Assessment:** The stack is well-architected with solid implementations of core features. The access control engine is genuinely innovative and the extensible field type system is excellent design. **Authentication integration and type safety are now production-ready.**
 
 **Readiness:** **95% ready for public release** ⬆️ (was 85%)
 
@@ -388,7 +388,7 @@ This showcases the completed critical features and production-ready security.
 **Remaining Before Launch:**
 - SECURITY.md, LICENSE, CHANGELOG.md (~4 hours)
 
-**Recommendation:** Complete remaining documentation files (~4 hours) before public announcement. The framework is now production-ready with secure authentication and excellent type safety. Phase 2 items (deployment guides, CLI init) can be completed while in beta.
+**Recommendation:** Complete remaining documentation files (~4 hours) before public announcement. The stack is now production-ready with secure authentication and excellent type safety. Phase 2 items (deployment guides, CLI init) can be completed while in beta.
 
 **Target Release Date:** This week (after completing documentation)
 

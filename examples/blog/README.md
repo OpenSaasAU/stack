@@ -1,6 +1,6 @@
 # OpenSaaS Blog Example
 
-This is a working example demonstrating the OpenSaaS framework with a simple blog application.
+This is a working example demonstrating the OpenSaaS stack with a simple blog application.
 
 ## Schema
 

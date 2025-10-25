@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import type { BetterAuthOptions } from 'better-auth'
-import type { OpenSaaSConfig, DatabaseConfig, AccessContext } from '@opensaas/framework-core'
+import type { OpenSaaSConfig, DatabaseConfig, AccessContext } from '@opensaas/stack-core'
 import type { NormalizedAuthConfig } from '../config/types.js'
 
 /**
@@ -23,7 +23,7 @@ function getDatabaseConfig(
  * @example
  * ```typescript
  * // lib/auth.ts
- * import { createAuth } from '@opensaas/framework-auth/server'
+ * import { createAuth } from '@opensaas/stack-auth/server'
  * import config from '../opensaas.config'
  *
  * export const auth = createAuth(config)

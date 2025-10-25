@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/framework-core'
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/stack-core'
 
 export interface ItemFormProps<TPrisma> {
   context: AccessContext<TPrisma>
@@ -104,12 +104,10 @@ export async function ItemForm<TPrisma>({
             const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({})
 
             // Use 'name' field as label if it exists, otherwise use 'id'
-            relationshipData[fieldName] = relatedItems.map(
-              (item: Record<string, unknown>) => ({
-                id: item.id as string,
-                label: ((item.name || item.title || item.id) as string) || '',
-              }),
-            )
+            relationshipData[fieldName] = relatedItems.map((item: Record<string, unknown>) => ({
+              id: item.id as string,
+              label: ((item.name || item.title || item.id) as string) || '',
+            }))
           } catch (error) {
             console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
             relationshipData[fieldName] = []

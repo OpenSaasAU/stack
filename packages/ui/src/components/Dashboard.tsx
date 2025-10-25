@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { formatListName } from '../lib/utils.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/framework-core'
+import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 
 export interface DashboardProps<TPrisma> {

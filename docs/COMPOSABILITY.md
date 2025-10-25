@@ -20,7 +20,7 @@ Each level builds on the one below, providing progressively higher-level abstrac
 
 **What:** Low-level UI components based on Radix UI and shadcn/ui
 **When to use:** Building completely custom UIs with full control
-**Import from:** `@opensaas/framework-ui/primitives`
+**Import from:** `@opensaas/stack-ui/primitives`
 
 ### Available Primitives
 
@@ -36,10 +36,10 @@ Each level builds on the one below, providing progressively higher-level abstrac
 ### Example: Custom Login Form
 
 ```tsx
-import { Button } from '@opensaas/framework-ui/primitives/button'
-import { Input } from '@opensaas/framework-ui/primitives/input'
-import { Label } from '@opensaas/framework-ui/primitives/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/framework-ui/primitives/card'
+import { Button } from '@opensaas/stack-ui/primitives/button'
+import { Input } from '@opensaas/stack-ui/primitives/input'
+import { Label } from '@opensaas/stack-ui/primitives/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives/card'
 
 export function LoginForm() {
   return (
@@ -71,7 +71,7 @@ export function LoginForm() {
 
 **What:** OpenSaaS-aware form fields with validation and field-level access control
 **When to use:** Building custom forms that integrate with OpenSaaS field configs
-**Import from:** `@opensaas/framework-ui/fields`
+**Import from:** `@opensaas/stack-ui/fields`
 
 ### Available Fields
 
@@ -86,8 +86,8 @@ export function LoginForm() {
 ### Example: Custom Checkout Form
 
 ```tsx
-import { TextField, SelectField } from '@opensaas/framework-ui/fields'
-import { Button } from '@opensaas/framework-ui/primitives'
+import { TextField, SelectField } from '@opensaas/stack-ui/fields'
+import { Button } from '@opensaas/stack-ui/primitives'
 
 export function CheckoutForm() {
   const [email, setEmail] = useState('')
@@ -147,7 +147,7 @@ interface FieldProps {
 
 **What:** Complete, reusable components for common admin tasks
 **When to use:** Embedding admin functionality in custom pages
-**Import from:** `@opensaas/framework-ui/standalone`
+**Import from:** `@opensaas/stack-ui/standalone`
 
 ### Available Components
 
@@ -156,7 +156,7 @@ interface FieldProps {
 Standalone form for creating items with custom submission handling.
 
 ```tsx
-import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
+import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import config from '../opensaas.config'
 
 export function CreatePostPage() {
@@ -205,7 +205,7 @@ interface ItemCreateFormProps {
 Standalone form for editing existing items.
 
 ```tsx
-import { ItemEditForm } from '@opensaas/framework-ui/standalone'
+import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 
 export function EditPostPage({ post }) {
   return (
@@ -227,7 +227,7 @@ export function EditPostPage({ post }) {
 Standalone table for displaying lists with sorting and actions.
 
 ```tsx
-import { ListTable } from '@opensaas/framework-ui/standalone'
+import { ListTable } from '@opensaas/stack-ui/standalone'
 
 export function RecentPosts({ posts }) {
   return (
@@ -260,7 +260,7 @@ export function RecentPosts({ posts }) {
 Reusable search component with clear functionality.
 
 ```tsx
-import { SearchBar } from '@opensaas/framework-ui/standalone'
+import { SearchBar } from '@opensaas/stack-ui/standalone'
 
 export function PostsPage() {
   const [search, setSearch] = useState('')
@@ -289,7 +289,7 @@ export function PostsPage() {
 Delete button with built-in confirmation dialog.
 
 ```tsx
-import { DeleteButton } from '@opensaas/framework-ui/standalone'
+import { DeleteButton } from '@opensaas/stack-ui/standalone'
 
 export function PostActions({ postId }) {
   return (
@@ -311,14 +311,14 @@ export function PostActions({ postId }) {
 
 **What:** Complete admin interface with routing, navigation, and CRUD operations
 **When to use:** When you need a full-featured admin panel out of the box
-**Import from:** `@opensaas/framework-ui`
+**Import from:** `@opensaas/stack-ui`
 
 ### Example: Complete Admin Route
 
 ```tsx
 // app/admin/[[...admin]]/page.tsx
-import { AdminUI } from '@opensaas/framework-ui'
-import { getAdminContext } from '@opensaas/framework-ui/server'
+import { AdminUI } from '@opensaas/stack-ui'
+import { getAdminContext } from '@opensaas/stack-ui/server'
 import config from '@/opensaas.config'
 
 export default async function AdminPage({ params, searchParams }) {
@@ -394,10 +394,10 @@ export function OnboardingWizard() {
 Build a custom dashboard using primitives and standalone components:
 
 ```tsx
-import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/framework-ui/primitives'
-import { ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
-import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
-import { Dialog, DialogContent } from '@opensaas/framework-ui/primitives'
+import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
+import { ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
+import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
+import { Dialog, DialogContent } from '@opensaas/stack-ui/primitives'
 
 export function CustomDashboard() {
   const [showCreate, setShowCreate] = useState(false)

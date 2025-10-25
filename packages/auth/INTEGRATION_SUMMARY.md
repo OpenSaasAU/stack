@@ -1,28 +1,28 @@
 # Better-Auth Integration Summary
 
-This document summarizes the complete better-auth integration for the OpenSaaS Framework.
+This document summarizes the complete better-auth integration for the OpenSaaS Stack.
 
 ## What Was Built
 
-### 1. Core Package (`@opensaas/framework-auth`)
+### 1. Core Package (`@opensaas/stack-auth`)
 
 **Location:** `packages/auth/`
 
 **Exports:**
 
-- **Main** (`@opensaas/framework-auth`):
+- **Main** (`@opensaas/stack-auth`):
   - `withAuth()` - Config wrapper that adds auth lists
   - `authConfig()` - Auth configuration builder
   - `getAuthLists()` - Get all auth list definitions
 
-- **Server** (`@opensaas/framework-auth/server`):
+- **Server** (`@opensaas/stack-auth/server`):
   - `createAuth()` - Creates better-auth instance
   - `getSessionFromAuth()` - Session extraction helper
 
-- **Client** (`@opensaas/framework-auth/client`):
+- **Client** (`@opensaas/stack-auth/client`):
   - `createClient()` - Creates better-auth React client
 
-- **UI** (`@opensaas/framework-auth/ui`):
+- **UI** (`@opensaas/stack-auth/ui`):
   - `<SignInForm />` - Pre-built sign in form
   - `<SignUpForm />` - Pre-built sign up form
   - `<ForgotPasswordForm />` - Pre-built password reset form
@@ -112,7 +112,7 @@ A complete working example showing:
 
 ```typescript
 // opensaas.config.ts
-import { withAuth, authConfig } from '@opensaas/framework-auth'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
 
 export default withAuth(
   config({
@@ -139,7 +139,7 @@ pnpm db:push   # Creates database with all tables
 
 ```typescript
 // lib/auth.ts
-import { createAuth } from '@opensaas/framework-auth/server'
+import { createAuth } from '@opensaas/stack-auth/server'
 export const auth = createAuth(config)
 export const GET = auth.handler
 export const POST = auth.handler
@@ -153,7 +153,7 @@ export { GET, POST } from '@/lib/auth'
 ```typescript
 // lib/auth-client.ts
 'use client'
-import { createClient } from '@opensaas/framework-auth/client'
+import { createClient } from '@opensaas/stack-auth/client'
 export const authClient = createClient({ baseURL: '...' })
 ```
 
@@ -161,7 +161,7 @@ export const authClient = createClient({ baseURL: '...' })
 
 ```typescript
 // app/sign-in/page.tsx
-import { SignInForm } from '@opensaas/framework-auth/ui'
+import { SignInForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 <SignInForm authClient={authClient} redirectTo="/admin" />
@@ -286,7 +286,7 @@ Sessions are automatically available in all access control functions. No manual 
 
 ### 5. Component Registry Pattern
 
-UI components follow the framework's registry pattern:
+UI components follow the stack's registry pattern:
 
 - Pre-built components for common use cases
 - Fully replaceable for custom designs
@@ -414,7 +414,7 @@ openssl rand -base64 32
 
 ## Conclusion
 
-The `@opensaas/framework-auth` package provides a complete, production-ready authentication solution for OpenSaaS Framework applications. It follows the framework's design principles:
+The `@opensaas/stack-auth` package provides a complete, production-ready authentication solution for OpenSaaS Stack applications. It follows the stack's design principles:
 
 - Config-first approach
 - Self-contained field/list definitions

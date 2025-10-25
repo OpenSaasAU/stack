@@ -1,4 +1,4 @@
-# OpenSaaS Framework - Quick Reference
+# OpenSaaS Stack - Quick Reference
 
 ## Installation & Setup
 
@@ -22,7 +22,7 @@ npx tsx test-access-control.ts
 ## Config Structure
 
 ```typescript
-import { config, list } from '@opensaas/framework-core'
+import { config, list } from '@opensaas/stack-core'
 import {
   text,
   relationship,
@@ -31,8 +31,8 @@ import {
   password,
   integer,
   checkbox,
-} from '@opensaas/framework-core/fields'
-import type { AccessControl } from '@opensaas/framework-core'
+} from '@opensaas/stack-core/fields'
+import type { AccessControl } from '@opensaas/stack-core'
 
 export default config({
   db: {
@@ -231,7 +231,7 @@ internalNotes: text({
 ### Get Context
 
 ```typescript
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import { PrismaClient } from '@prisma/client'
 import config from './opensaas.config'
 
@@ -507,6 +507,6 @@ cd packages/core && pnpm build
 - Main README: `README.md`
 - Getting Started Guide: `GETTING_STARTED.md`
 - Implementation Summary: `IMPLEMENTATION_SUMMARY.md`
-- Full Specification: `specs/Initial-opensaas-framework.md`
+- Full Specification: `specs/Initial-opensaas-stack.md`
 - Example Config: `examples/blog/opensaas.config.ts`
 - Test Suite: `examples/blog/test-access-control.ts`

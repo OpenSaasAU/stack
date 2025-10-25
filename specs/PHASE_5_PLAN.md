@@ -50,10 +50,10 @@ Make field components **standalone and reusable**:
 
 ```tsx
 // Current: Only works inside ItemForm
-import { ItemForm } from '@opensaas/framework-ui'
+import { ItemForm } from '@opensaas/stack-ui'
 
 // NEW: Composable fields for custom forms
-import { TextField, SelectField, Form } from '@opensaas/framework-ui/fields'
+import { TextField, SelectField, Form } from '@opensaas/stack-ui/fields'
 
 // Developer can build custom forms
 function CustomCheckoutForm() {
@@ -82,15 +82,15 @@ Break down monolithic components into composable pieces:
 
 ```tsx
 // Option 1: Full admin UI (existing)
-import { AdminUI } from '@opensaas/framework-ui'
+import { AdminUI } from '@opensaas/stack-ui'
 ;<AdminUI context={context} />
 
 // Option 2: Individual page components
-import { Dashboard, ListView, ItemDetail, ItemCreateForm } from '@opensaas/framework-ui'
+import { Dashboard, ListView, ItemDetail, ItemCreateForm } from '@opensaas/stack-ui'
 ;<Dashboard context={context} />
 
 // Option 3: Embed components in custom pages
-import { ItemCreateForm } from '@opensaas/framework-ui'
+import { ItemCreateForm } from '@opensaas/stack-ui'
 function CustomPage() {
   return (
     <div>
@@ -106,7 +106,7 @@ function CustomPage() {
 }
 
 // Option 4: Use primitives directly
-import { Button, Input, Card } from '@opensaas/framework-ui/primitives'
+import { Button, Input, Card } from '@opensaas/stack-ui/primitives'
 ;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
@@ -145,19 +145,19 @@ import { Button, Input, Card } from '@opensaas/framework-ui/primitives'
 
 ```tsx
 // Primitives (shadcn components)
-import { Button, Input, Dialog } from '@opensaas/framework-ui/primitives'
+import { Button, Input, Dialog } from '@opensaas/stack-ui/primitives'
 
 // Field components (OpenSaaS-aware)
-import { TextField, RelationshipField } from '@opensaas/framework-ui/fields'
+import { TextField, RelationshipField } from '@opensaas/stack-ui/fields'
 
 // Full page components
-import { Dashboard, ListView, ItemForm } from '@opensaas/framework-ui'
+import { Dashboard, ListView, ItemForm } from '@opensaas/stack-ui'
 
 // Complete admin UI
-import { AdminUI } from '@opensaas/framework-ui'
+import { AdminUI } from '@opensaas/stack-ui'
 
 // Server utilities
-import { getAdminContext } from '@opensaas/framework-ui/server'
+import { getAdminContext } from '@opensaas/stack-ui/server'
 ```
 
 ### 5. New Composable Components
@@ -211,7 +211,7 @@ export interface ItemCreateFormProps {
 #### FieldGroup (Custom field layouts)
 
 ```tsx
-import { FieldGroup, TextField, SelectField } from '@opensaas/framework-ui/fields'
+import { FieldGroup, TextField, SelectField } from '@opensaas/stack-ui/fields'
 ;<FieldGroup>
   <div className="grid grid-cols-2 gap-4">
     <TextField name="firstName" label="First Name" />
@@ -325,7 +325,7 @@ packages/ui/
 │   │   │   ├── TextField.tsx   # Now composable
 │   │   │   ├── SelectField.tsx
 │   │   │   ├── FieldGroup.tsx  # NEW: Field layout wrapper
-│   │   │   └── index.ts        # Export for @opensaas/framework-ui/fields
+│   │   │   └── index.ts        # Export for @opensaas/stack-ui/fields
 │   │   │
 │   │   ├── ItemCreateForm.tsx  # NEW: Standalone create form
 │   │   ├── ItemEditForm.tsx    # NEW: Standalone edit form
@@ -362,13 +362,13 @@ packages/ui/
 ### Phase 1 - Add Primitives (No Breaking Changes)
 
 - Add shadcn components to `primitives/`
-- Export via `@opensaas/framework-ui/primitives`
+- Export via `@opensaas/stack-ui/primitives`
 - Update internal components to use primitives
 
 ### Phase 2 - Make Fields Composable
 
 - Enhance field components to work standalone
-- Export via `@opensaas/framework-ui/fields`
+- Export via `@opensaas/stack-ui/fields`
 - Add FieldGroup wrapper
 
 ### Phase 3 - Extract Standalone Components

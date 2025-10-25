@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { formatListName } from '../lib/utils.js'
-import { AccessContext, getUrlKey, OpenSaaSConfig } from '@opensaas/framework-core'
+import { AccessContext, getUrlKey, OpenSaaSConfig } from '@opensaas/stack-core'
 
 export interface NavigationProps<TPrisma> {
   context: AccessContext<TPrisma>

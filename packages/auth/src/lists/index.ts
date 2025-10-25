@@ -1,6 +1,6 @@
-import { list } from '@opensaas/framework-core'
-import { text, timestamp, checkbox, relationship } from '@opensaas/framework-core/fields'
-import type { ListConfig, FieldConfig } from '@opensaas/framework-core'
+import { list } from '@opensaas/stack-core'
+import { text, timestamp, checkbox, relationship } from '@opensaas/stack-core/fields'
+import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
 
 /**
  * Configuration for extending the auto-generated User list

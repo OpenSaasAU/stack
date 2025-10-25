@@ -1,7 +1,7 @@
-import { config, list } from '@opensaas/framework-core'
-import { text, relationship, select, timestamp, password } from '@opensaas/framework-core/fields'
-import type { AccessControl } from '@opensaas/framework-core'
-import { registerFieldComponent } from '@opensaas/framework-ui'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
+import type { AccessControl } from '@opensaas/stack-core'
+import { registerFieldComponent } from '@opensaas/stack-ui'
 import { ColorPickerField } from './components/ColorPickerField'
 import { SlugField } from './components/SlugField'
 

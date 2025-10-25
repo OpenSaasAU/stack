@@ -1,6 +1,6 @@
 # Custom Field Components Example
 
-This example demonstrates how to use custom field components in OpenSaaS Framework using two different approaches:
+This example demonstrates how to use custom field components in OpenSaaS Stack using two different approaches:
 
 1. **Global field type registration** - Register a custom component that can be reused across your application
 2. **Per-field component override** - Override the default component for a specific field
@@ -13,7 +13,7 @@ The `ColorPickerField` component is registered globally and used for multiple fi
 
 ```typescript
 // Register globally in opensaas.config.ts
-import { registerFieldComponent } from "@opensaas/framework-ui";
+import { registerFieldComponent } from "@opensaas/stack-ui";
 import { ColorPickerField } from "./components/ColorPickerField";
 
 registerFieldComponent("color", ColorPickerField);
@@ -103,12 +103,12 @@ Adding a new custom field type requires:
 
 1. Create React component matching `FieldComponentProps` interface
 2. Either register globally or pass as `ui.component`
-3. No changes to core framework code
+3. No changes to core stack code
 
 ### Type Safety
 
 ```typescript
-import type { FieldComponent } from "@opensaas/framework-ui";
+import type { FieldComponent } from "@opensaas/stack-ui";
 
 // Your component automatically gets proper typing
 const MyField: FieldComponent = ({ name, value, onChange, ... }) => {

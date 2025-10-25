@@ -1,11 +1,11 @@
-# @opensaas/framework-ui
+# @opensaas/stack-ui
 
-Composable React UI components for OpenSaaS Framework, built with Radix UI and shadcn/ui.
+Composable React UI components for OpenSaaS Stack, built with Radix UI and shadcn/ui.
 
 ## Installation
 
 ```bash
-pnpm add @opensaas/framework-ui
+pnpm add @opensaas/stack-ui
 ```
 
 ## Features
@@ -21,30 +21,30 @@ pnpm add @opensaas/framework-ui
 
 ```typescript
 // Primitives (shadcn/ui components)
-import { Button, Input, Card, Table, Dialog } from '@opensaas/framework-ui/primitives'
+import { Button, Input, Card, Table, Dialog } from '@opensaas/stack-ui/primitives'
 
 // Field components (OpenSaaS-aware)
-import { TextField, SelectField, RelationshipField } from '@opensaas/framework-ui/fields'
+import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fields'
 
 // Standalone components (complete features)
-import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
 
 // Full components (page-level)
-import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/framework-ui'
+import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/stack-ui'
 
 // Server utilities
-import { getAdminContext } from '@opensaas/framework-ui/server'
+import { getAdminContext } from '@opensaas/stack-ui/server'
 
 // Utility functions
-import { cn, formatListName, formatFieldName } from '@opensaas/framework-ui/lib/utils'
+import { cn, formatListName, formatFieldName } from '@opensaas/stack-ui/lib/utils'
 
 // Styles
-import '@opensaas/framework-ui/styles'
+import '@opensaas/stack-ui/styles'
 ```
 
 ## Architecture
 
-### Level 1: Primitives (`@opensaas/framework-ui/primitives`)
+### Level 1: Primitives (`@opensaas/stack-ui/primitives`)
 
 Low-level UI components based on Radix UI and shadcn/ui.
 
@@ -62,7 +62,7 @@ Low-level UI components based on Radix UI and shadcn/ui.
 **Example:**
 
 ```tsx
-import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/framework-ui/primitives'
+import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/stack-ui/primitives'
 ;<Card>
   <CardHeader>
     <CardTitle>Welcome</CardTitle>
@@ -73,7 +73,7 @@ import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/fram
 </Card>
 ```
 
-### Level 2: Fields (`@opensaas/framework-ui/fields`)
+### Level 2: Fields (`@opensaas/stack-ui/fields`)
 
 OpenSaaS-aware form fields with validation and access control.
 
@@ -90,7 +90,7 @@ OpenSaaS-aware form fields with validation and access control.
 **Example:**
 
 ```tsx
-import { TextField, SelectField } from '@opensaas/framework-ui/fields'
+import { TextField, SelectField } from '@opensaas/stack-ui/fields'
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} required />
   <SelectField
@@ -106,7 +106,7 @@ import { TextField, SelectField } from '@opensaas/framework-ui/fields'
 </form>
 ```
 
-### Level 3: Standalone Components (`@opensaas/framework-ui/standalone`)
+### Level 3: Standalone Components (`@opensaas/stack-ui/standalone`)
 
 Complete, reusable components for common admin tasks.
 
@@ -115,7 +115,7 @@ Complete, reusable components for common admin tasks.
 #### ItemCreateForm
 
 ```tsx
-import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
+import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -129,7 +129,7 @@ import { ItemCreateForm } from '@opensaas/framework-ui/standalone'
 #### ItemEditForm
 
 ```tsx
-import { ItemEditForm } from '@opensaas/framework-ui/standalone'
+import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 ;<ItemEditForm
   fields={config.lists.Post.fields}
   initialData={post}
@@ -143,7 +143,7 @@ import { ItemEditForm } from '@opensaas/framework-ui/standalone'
 #### ListTable
 
 ```tsx
-import { ListTable } from '@opensaas/framework-ui/standalone'
+import { ListTable } from '@opensaas/stack-ui/standalone'
 ;<ListTable
   items={posts}
   fieldTypes={{ title: 'text', status: 'select' }}
@@ -156,14 +156,14 @@ import { ListTable } from '@opensaas/framework-ui/standalone'
 #### SearchBar
 
 ```tsx
-import { SearchBar } from '@opensaas/framework-ui/standalone'
+import { SearchBar } from '@opensaas/stack-ui/standalone'
 ;<SearchBar onSearch={(query) => fetchPosts({ search: query })} placeholder="Search posts..." />
 ```
 
 #### DeleteButton
 
 ```tsx
-import { DeleteButton } from '@opensaas/framework-ui/standalone'
+import { DeleteButton } from '@opensaas/stack-ui/standalone'
 ;<DeleteButton
   onDelete={async () => {
     await deletePost(postId)
@@ -173,12 +173,12 @@ import { DeleteButton } from '@opensaas/framework-ui/standalone'
 />
 ```
 
-### Level 4: Full Admin UI (`@opensaas/framework-ui`)
+### Level 4: Full Admin UI (`@opensaas/stack-ui`)
 
 Complete admin interface with routing and navigation.
 
 ```tsx
-import { AdminUI } from '@opensaas/framework-ui'
+import { AdminUI } from '@opensaas/stack-ui'
 ;<AdminUI
   context={context}
   params={params?.admin}
@@ -193,7 +193,7 @@ import { AdminUI } from '@opensaas/framework-ui'
 Extend or override field components:
 
 ```tsx
-import { registerFieldComponent } from '@opensaas/framework-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui'
 import { ColorPickerField } from './components/ColorPickerField'
 
 // Register globally
@@ -220,7 +220,7 @@ All components use Tailwind CSS v4 with CSS variables:
 
 ```css
 /* app/globals.css */
-@import '@opensaas/framework-ui/styles';
+@import '@opensaas/stack-ui/styles';
 
 :root {
   --background: 0 0% 100%;
@@ -266,7 +266,7 @@ import type {
   ItemCreateFormProps,
   ListTableProps,
   AdminUIProps,
-} from '@opensaas/framework-ui'
+} from '@opensaas/stack-ui'
 ```
 
 ## Examples
@@ -279,7 +279,7 @@ import type {
 
 - [Composability Guide](../../docs/COMPOSABILITY.md) - Complete guide to all four levels
 - [API Reference](../../docs/API.md) - Full API documentation
-- [OpenSaaS Framework](../../README.md) - Framework overview
+- [OpenSaaS Stack](../../README.md) - Stack overview
 
 ## License
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { createClient } from '@opensaas/framework-auth/client'
+import { createClient } from '@opensaas/stack-auth/client'
 
 /**
  * Better-auth client instance

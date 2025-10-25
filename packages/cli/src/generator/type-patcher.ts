@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig } from '@opensaas/framework-core'
+import type { OpenSaaSConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 

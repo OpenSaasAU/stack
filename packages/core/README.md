@@ -1,11 +1,11 @@
-# @opensaas/framework-core
+# @opensaas/stack-core
 
-Core OpenSaaS Framework - config system, field types, access control, and code generation.
+Core OpenSaaS Stack - config system, field types, access control, and code generation.
 
 ## Installation
 
 ```bash
-pnpm add @opensaas/framework-core
+pnpm add @opensaas/stack-core
 ```
 
 ## Features
@@ -24,9 +24,9 @@ pnpm add @opensaas/framework-core
 Create `opensaas.config.ts`:
 
 ```typescript
-import { config, list } from '@opensaas/framework-core'
-import { text, integer, select, relationship } from '@opensaas/framework-core/fields'
-import type { AccessControl } from '@opensaas/framework-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, integer, select, relationship } from '@opensaas/stack-core/fields'
+import type { AccessControl } from '@opensaas/stack-core'
 
 const isSignedIn: AccessControl = ({ session }) => !!session
 
@@ -100,7 +100,7 @@ This creates:
 
 ```typescript
 // lib/context.ts
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import { PrismaClient } from '@prisma/client'
 import config from '../opensaas.config'
 
@@ -181,7 +181,7 @@ text({
 Field types are fully self-contained:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/framework-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core'
 import { z } from 'zod'
 
 export type MyCustomField = BaseFieldConfig & {
@@ -317,7 +317,7 @@ hooks: {
 ### Creating Context
 
 ```typescript
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 
 // With session
 const context = getContext(config, prisma, { userId: '123' })
@@ -345,7 +345,7 @@ const post = await context.db.post.delete({ where: { id } })
 ### Prisma Schema
 
 ```typescript
-import { writePrismaSchema } from '@opensaas/framework-core'
+import { writePrismaSchema } from '@opensaas/stack-core'
 
 writePrismaSchema(config, './prisma/schema.prisma')
 ```
@@ -353,7 +353,7 @@ writePrismaSchema(config, './prisma/schema.prisma')
 ### TypeScript Types
 
 ```typescript
-import { writeTypes } from '@opensaas/framework-core'
+import { writeTypes } from '@opensaas/stack-core'
 
 writeTypes(config, './.opensaas/types.ts')
 ```
@@ -361,7 +361,7 @@ writeTypes(config, './.opensaas/types.ts')
 ### Utility Functions
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/framework-core'
+import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
 
 getDbKey('BlogPost') // 'blogPost' - for context.db access
 getUrlKey('BlogPost') // 'blog-post' - for URLs
@@ -406,7 +406,7 @@ hooks: {
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import config from './opensaas.config'
 
 describe('Post access control', () => {
@@ -439,7 +439,7 @@ describe('Post access control', () => {
 ## Learn More
 
 - [API Reference](../../docs/API.md) - Complete API documentation
-- [OpenSaaS Framework](../../README.md) - Framework overview
+- [OpenSaaS Stack](../../README.md) - Stack overview
 - [CLAUDE.md](../../CLAUDE.md) - Development guide
 
 ## License

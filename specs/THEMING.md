@@ -216,7 +216,7 @@ ui: {
 You can also access theme utilities programmatically:
 
 ```typescript
-import { generateThemeCSS, presetThemes } from '@opensaas/framework-ui'
+import { generateThemeCSS, presetThemes } from '@opensaas/stack-ui'
 
 // Generate CSS for a theme
 const css = generateThemeCSS({
@@ -253,7 +253,7 @@ The theming system automatically applies to:
 All theme configuration is fully typed:
 
 ```typescript
-import type { ThemeConfig, ThemePreset, ThemeColors } from '@opensaas/framework-core'
+import type { ThemeConfig, ThemePreset, ThemeColors } from '@opensaas/stack-core'
 
 const myTheme: ThemeConfig = {
   preset: 'modern', // Autocomplete works!

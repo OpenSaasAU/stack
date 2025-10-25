@@ -1,4 +1,4 @@
-import { SignInForm } from '@opensaas/framework-auth/ui'
+import { SignInForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 import Link from 'next/link'
 

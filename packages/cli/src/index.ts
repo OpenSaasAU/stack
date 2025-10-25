@@ -7,7 +7,7 @@ import { devCommand } from './commands/dev.js'
 
 const program = new Command()
 
-program.name('opensaas').description('OpenSaaS Framework CLI').version('0.1.0')
+program.name('opensaas').description('OpenSaaS Stack CLI').version('0.1.0')
 
 program
   .command('generate')

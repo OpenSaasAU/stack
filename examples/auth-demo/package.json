@@ -12,9 +12,9 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
-    "@opensaas/framework-core": "workspace:*",
-    "@opensaas/framework-auth": "workspace:*",
-    "@opensaas/framework-ui": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-auth": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
     "@prisma/client": "^6.17.1",
     "better-auth": "^1.3.29",
     "next": "^15.5.5",
@@ -22,7 +22,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@opensaas/framework-cli": "workspace:*",
+    "@opensaas/stack-cli": "workspace:*",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

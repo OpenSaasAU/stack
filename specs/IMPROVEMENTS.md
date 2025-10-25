@@ -1,4 +1,4 @@
-# OpenSaaS Framework - Improvements Summary
+# OpenSaaS Stack - Improvements Summary
 
 ## Generic PrismaClient Type Parameter
 
@@ -30,7 +30,7 @@ Converted `getContext()` from using a direct `PrismaClient` import to a generic 
 **Problem Solved:**
 
 - The core package can now be built BEFORE running `prisma generate`
-- Eliminates circular dependency: OpenSaaS config → Prisma schema → @prisma/client → @opensaas/framework-core
+- Eliminates circular dependency: OpenSaaS config → Prisma schema → @prisma/client → @opensaas/stack-core
 - More flexible architecture that doesn't tie the core to a specific Prisma version
 
 **Benefits:**
@@ -72,7 +72,7 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
 
 ```typescript
 import { PrismaClient } from '@prisma/client'
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 
 const prisma = new PrismaClient()
 const context = getContext<PrismaClient>(config, prisma, session)
@@ -112,7 +112,7 @@ Potential improvements building on this change:
 
 ## Summary
 
-This improvement makes the OpenSaaS Framework more robust and flexible by removing the direct dependency on the generated Prisma client at build time. The change is backward compatible while providing better type safety for users who opt in to explicit type parameters.
+This improvement makes the OpenSaaS Stack more robust and flexible by removing the direct dependency on the generated Prisma client at build time. The change is backward compatible while providing better type safety for users who opt in to explicit type parameters.
 
 **Impact:** Low-risk improvement that solves a real build-order problem and improves the developer experience.
 

@@ -1,8 +1,8 @@
-# OpenSaaS Framework - Technical Specification
+# OpenSaaS Stack - Technical Specification
 
 ## Project Overview
 
-OpenSaaS is a modern framework for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails. It provides a KeystoneJS-inspired configuration system with access control and hooks, but built for modern Next.js patterns with Server Components.
+OpenSaaS is a modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails. It provides a KeystoneJS-inspired configuration system with access control and hooks, but built for modern Next.js patterns with Server Components.
 
 ### Core Value Proposition
 
@@ -14,9 +14,9 @@ OpenSaaS is a modern framework for building admin-heavy applications with Next.j
 
 ## Package Architecture
 
-The framework consists of three main packages:
+The stack consists of three main packages:
 
-### `@opensaas/framework-core`
+### `@opensaas/stack-core`
 
 - Schema definition and validation
 - Access control engine
@@ -31,9 +31,9 @@ The framework consists of three main packages:
 - Next.js App Router integration
 - Server Actions for mutations
 - File upload handling
-- Depends on `@opensaas/framework-core`
+- Depends on `@opensaas/stack-core`
 
-### `@opensaas/framework-cli`
+### `@opensaas/stack-cli`
 
 - Project scaffolding
 - Schema migration management
@@ -46,8 +46,8 @@ The framework consists of three main packages:
 ### File: `opensaas.config.ts`
 
 ```typescript
-import { config, list } from '@opensaas/framework-core'
-import { text, relationship, select, timestamp, password } from '@opensaas/framework-core/fields'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 
 export default config({
   db: {
@@ -169,7 +169,7 @@ export default config({
 
 ```typescript
 // access.ts
-import type { AccessControl } from '@opensaas/framework-core'
+import type { AccessControl } from '@opensaas/stack-core'
 
 export const isSignedIn: AccessControl = ({ session }) => {
   return !!session
@@ -232,8 +232,8 @@ When a user calls `context.db.post.update()`:
 ### Usage in Application Code
 
 ```typescript
-import { getContext } from '@opensaas/framework-core'
-import type { Context } from '@opensaas/framework-core/types'
+import { getContext } from '@opensaas/stack-core'
+import type { Context } from '@opensaas/stack-core/types'
 import { auth } from '@/lib/auth'
 
 // In a Server Component or Server Action
@@ -465,7 +465,7 @@ The admin UI provides:
 
 ## Authentication Integration
 
-The framework is auth-system agnostic. Users provide their own session getter:
+The stack is auth-system agnostic. Users provide their own session getter:
 
 ```typescript
 // opensaas.config.ts
@@ -541,7 +541,7 @@ model Post {
 
 ### Client Wrapping
 
-The framework wraps Prisma client operations:
+The stack wraps Prisma client operations:
 
 ```typescript
 // Conceptual implementation
@@ -613,7 +613,7 @@ function wrapPrismaClient(prisma, config, session) {
 
 ```bash
 # Create new project
-npx @opensaas/framework-cli init my-app
+npx @opensaas/stack-cli init my-app
 
 # Generates:
 # - opensaas.config.ts (with example schema)
@@ -626,10 +626,10 @@ npx @opensaas/framework-cli init my-app
 
 ```bash
 # Generate Prisma schema and types from config
-npx @opensaas/framework-cli generate
+npx @opensaas/stack-cli generate
 
 # Run Prisma migrations
-npx @opensaas/framework-cli migrate dev
+npx @opensaas/stack-cli migrate dev
 
 # Start Next.js dev server (with type watching)
 npm run dev
@@ -766,7 +766,7 @@ The initial prototype should demonstrate:
 // app/actions/publish-post.ts
 'use server'
 
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import { auth } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 

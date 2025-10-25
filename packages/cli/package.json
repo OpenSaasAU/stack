@@ -1,7 +1,7 @@
 {
-  "name": "@opensaas/framework-cli",
+  "name": "@opensaas/stack-cli",
   "version": "0.1.0",
-  "description": "CLI tools for OpenSaaS Framework",
+  "description": "CLI tools for OpenSaaS Stack",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,7 +32,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@opensaas/framework-core": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
     "commander": "^14.0.1",
     "chalk": "^5.6.2",
     "ora": "^9.0.0",

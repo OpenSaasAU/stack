@@ -49,7 +49,7 @@ export type SignUpFormProps = {
  *
  * @example
  * ```typescript
- * import { SignUpForm } from '@opensaas/framework-auth/ui'
+ * import { SignUpForm } from '@opensaas/stack-auth/ui'
  * import { authClient } from '@/lib/auth-client'
  *
  * export default function SignUpPage() {

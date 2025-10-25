@@ -1,4 +1,4 @@
-import { SignUpForm } from '@opensaas/framework-auth/ui'
+import { SignUpForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 import Link from 'next/link'
 

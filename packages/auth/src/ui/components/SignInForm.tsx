@@ -45,7 +45,7 @@ export type SignInFormProps = {
  *
  * @example
  * ```typescript
- * import { SignInForm } from '@opensaas/framework-auth/ui'
+ * import { SignInForm } from '@opensaas/stack-auth/ui'
  * import { authClient } from '@/lib/auth-client'
  *
  * export default function SignInPage() {

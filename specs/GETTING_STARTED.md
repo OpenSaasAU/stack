@@ -1,6 +1,6 @@
-# Getting Started with OpenSaaS Framework
+# Getting Started with OpenSaaS Stack
 
-This guide will walk you through building and testing the OpenSaaS Framework prototype.
+This guide will walk you through building and testing the OpenSaaS Stack prototype.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ This will install dependencies for all packages in the monorepo.
 
 ### 2. Build the Core Package
 
-The `@opensaas/framework-core` package needs to be compiled before it can be used:
+The `@opensaas/stack-core` package needs to be compiled before it can be used:
 
 ```bash
 cd packages/core
@@ -293,7 +293,7 @@ If all these work, the prototype is successful! 🎉
 
 ## Learn More
 
-- Read the full specification: `specs/Initial-opensaas-framework.md`
+- Read the full specification: `specs/Initial-opensaas-stack.md`
 - Explore the core package: `packages/core/src/`
 - Check out the example: `examples/blog/`
 
@@ -308,4 +308,4 @@ This is a prototype. Areas that need work:
 - Documentation
 - Examples with different field types
 
-Feel free to experiment and extend the framework!
+Feel free to experiment and extend the stack!

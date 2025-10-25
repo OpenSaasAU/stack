@@ -1,6 +1,6 @@
-# @opensaas/framework-tiptap
+# @opensaas/stack-tiptap
 
-Rich text editor integration for OpenSaaS Framework using [Tiptap](https://tiptap.dev).
+Rich text editor integration for OpenSaaS Stack using [Tiptap](https://tiptap.dev).
 
 ## Features
 
@@ -14,16 +14,16 @@ Rich text editor integration for OpenSaaS Framework using [Tiptap](https://tipta
 
 ## Installation
 
-This package is designed as a separate optional dependency to keep the core framework lightweight.
+This package is designed as a separate optional dependency to keep the core stack lightweight.
 
 ```bash
-pnpm add @opensaas/framework-tiptap
+pnpm add @opensaas/stack-tiptap
 ```
 
 The following peer dependencies are required:
 
-- `@opensaas/framework-core`
-- `@opensaas/framework-ui`
+- `@opensaas/stack-core`
+- `@opensaas/stack-ui`
 - `next`
 - `react`
 - `react-dom`
@@ -38,8 +38,8 @@ The following peer dependencies are required:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/framework-ui'
-import { TiptapField } from '@opensaas/framework-tiptap'
+import { registerFieldComponent } from '@opensaas/stack-ui'
+import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
 ```
@@ -48,7 +48,7 @@ registerFieldComponent('richText', TiptapField)
 
 ```typescript
 // app/admin/[[...admin]]/page.tsx
-import { AdminUI } from "@opensaas/framework-ui";
+import { AdminUI } from "@opensaas/stack-ui";
 import config from "../../../opensaas.config";
 import "../../../lib/register-fields"; // Import to trigger registration
 
@@ -62,9 +62,9 @@ export default async function AdminPage() {
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from '@opensaas/framework-core'
-import { text } from '@opensaas/framework-core/fields'
-import { richText } from '@opensaas/framework-tiptap/fields'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { richText } from '@opensaas/stack-tiptap/fields'
 
 export default config({
   db: {
@@ -241,7 +241,7 @@ export function CustomTiptapField(props) {
 Then use it in your config:
 
 ```typescript
-import { registerFieldComponent } from '@opensaas/framework-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui'
 import { CustomTiptapField } from './components/CustomTiptapField'
 
 // Global registration
@@ -276,7 +276,7 @@ This package follows OpenSaaS's extensibility pattern:
    - SSR-safe with `immediatelyRender: false`
    - Supports edit and read modes
 
-3. **No Core Modifications** - Extends framework without changes
+3. **No Core Modifications** - Extends stack without changes
    - Uses `BaseFieldConfig` extension point
    - Compatible with access control system
    - Works with hooks and validation
@@ -328,7 +328,7 @@ React component for rendering the Tiptap editor.
 
 ## Contributing
 
-Contributions are welcome! This package is part of the OpenSaaS Framework monorepo.
+Contributions are welcome! This package is part of the OpenSaaS Stack monorepo.
 
 ## License
 

@@ -1,6 +1,6 @@
-# OpenSaaS Framework
+# OpenSaaS Stack
 
-A modern framework for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
+A modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
 
 ## Features
 
@@ -17,10 +17,10 @@ A modern framework for building admin-heavy applications with Next.js App Router
 
 This is a monorepo containing:
 
-- **`packages/core`**: The core OpenSaaS framework (config, fields, access control, generators)
+- **`packages/core`**: The core OpenSaaS stack (config, fields, access control, generators)
 - **`packages/cli`**: CLI tools for code generation and development
 - **`packages/ui`**: Composable React UI components (primitives, fields, standalone components, full admin UI)
-- **`examples/blog`**: Working blog example demonstrating the framework
+- **`examples/blog`**: Working blog example demonstrating the stack
 - **`examples/custom-field`**: Example demonstrating custom field components
 
 ## Quick Start
@@ -67,7 +67,7 @@ import { prisma } from './lib/context'
 import { getContext, getContextWithUser } from './lib/context'
 
 async function test() {
-  console.log('🧪 Testing OpenSaaS Framework\n')
+  console.log('🧪 Testing OpenSaaS Stack\n')
 
   // Create a user
   console.log('1. Creating a user...')
@@ -170,9 +170,9 @@ npx tsx test.ts
 Create `opensaas.config.ts`:
 
 ```typescript
-import { config, list } from '@opensaas/framework-core'
-import { text, relationship, select } from '@opensaas/framework-core/fields'
-import type { AccessControl } from '@opensaas/framework-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship, select } from '@opensaas/stack-core/fields'
+import type { AccessControl } from '@opensaas/stack-core'
 
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
@@ -354,7 +354,7 @@ OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
 ### Level 1: Primitives
 
 ```tsx
-import { Button, Input, Card, Table } from '@opensaas/framework-ui/primitives'
+import { Button, Input, Card, Table } from '@opensaas/stack-ui/primitives'
 ;<Card>
   <Input placeholder="Search..." />
   <Button>Submit</Button>
@@ -364,7 +364,7 @@ import { Button, Input, Card, Table } from '@opensaas/framework-ui/primitives'
 ### Level 2: Field Components
 
 ```tsx
-import { TextField, SelectField } from '@opensaas/framework-ui/fields'
+import { TextField, SelectField } from '@opensaas/stack-ui/fields'
 ;<form>
   <TextField name="email" label="Email" value={email} onChange={setEmail} />
   <SelectField name="role" label="Role" options={roles} />
@@ -374,7 +374,7 @@ import { TextField, SelectField } from '@opensaas/framework-ui/fields'
 ### Level 3: Standalone Components
 
 ```tsx
-import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/framework-ui/standalone'
+import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
 ;<ItemCreateForm
   fields={config.lists.Post.fields}
   onSubmit={async (data) => {
@@ -387,7 +387,7 @@ import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/framework-ui/sta
 ### Level 4: Full Admin UI
 
 ```tsx
-import { AdminUI } from '@opensaas/framework-ui'
+import { AdminUI } from '@opensaas/stack-ui'
 ;<AdminUI context={context} serverAction={handleAction} />
 ```
 

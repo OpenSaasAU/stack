@@ -1,9 +1,9 @@
 {
-  "name": "opensaas-framework",
+  "name": "opensaas-stack",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.19.0",
-  "description": "A modern framework for building admin-heavy applications with Next.js App Router",
+  "description": "A modern stack for building admin-heavy applications with Next.js App Router",
   "scripts": {
     "build": " pnpm turbo build",
     "dev": "pnpm -r --parallel dev",
@@ -18,7 +18,7 @@
     "nextjs",
     "admin",
     "prisma",
-    "framework"
+    "stack"
   ],
   "author": "",
   "license": "MIT",

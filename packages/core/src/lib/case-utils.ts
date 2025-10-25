@@ -1,5 +1,5 @@
 /**
- * Case conversion utilities for consistent naming across the framework
+ * Case conversion utilities for consistent naming across the stack
  *
  * - Config list names: PascalCase (e.g., "AuthUser", "BlogPost")
  * - Prisma models: PascalCase (e.g., "AuthUser", "BlogPost")

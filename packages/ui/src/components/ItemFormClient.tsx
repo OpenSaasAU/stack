@@ -7,7 +7,7 @@ import { FieldRenderer } from './fields/FieldRenderer.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
 import { Button } from '../primitives/button.js'
-import type { FieldConfig } from '@opensaas/framework-core'
+import type { FieldConfig } from '@opensaas/stack-core'
 import type { ServerActionInput } from '../server/types.js'
 
 export interface ItemFormClientProps {

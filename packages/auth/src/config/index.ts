@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig } from '@opensaas/framework-core'
+import type { OpenSaaSConfig } from '@opensaas/stack-core'
 import type {
   AuthConfig,
   NormalizedAuthConfig,
@@ -74,7 +74,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
  *
  * @example
  * ```typescript
- * import { authConfig } from '@opensaas/framework-auth'
+ * import { authConfig } from '@opensaas/stack-auth'
  *
  * const auth = authConfig({
  *   emailAndPassword: { enabled: true },
@@ -95,8 +95,8 @@ export function authConfig(config: AuthConfig): AuthConfig {
  *
  * @example
  * ```typescript
- * import { config } from '@opensaas/framework-core'
- * import { withAuth, authConfig } from '@opensaas/framework-auth'
+ * import { config } from '@opensaas/stack-core'
+ * import { withAuth, authConfig } from '@opensaas/stack-auth'
  *
  * export default withAuth(
  *   config({

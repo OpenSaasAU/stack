@@ -50,13 +50,13 @@ importers:
 
   examples/auth-demo:
     dependencies:
-      '@opensaas/framework-auth':
+      '@opensaas/stack-auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -75,7 +75,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/framework-cli':
+      '@opensaas/stack-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -99,10 +99,10 @@ importers:
 
   examples/blog:
     dependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -118,7 +118,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/framework-cli':
+      '@opensaas/stack-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -142,10 +142,10 @@ importers:
 
   examples/composable-dashboard:
     dependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -161,7 +161,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/framework-cli':
+      '@opensaas/stack-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -185,10 +185,10 @@ importers:
 
   examples/custom-field:
     dependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -204,7 +204,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/framework-cli':
+      '@opensaas/stack-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -228,13 +228,13 @@ importers:
 
   examples/tiptap-demo:
     dependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/framework-tiptap':
+      '@opensaas/stack-tiptap':
         specifier: workspace:*
         version: link:../../packages/tiptap
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@prisma/client':
@@ -250,7 +250,7 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
-      '@opensaas/framework-cli':
+      '@opensaas/stack-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/node':
@@ -274,7 +274,7 @@ importers:
 
   packages/auth:
     devDependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../core
       '@types/node':
@@ -298,7 +298,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../core
       chalk:
@@ -382,10 +382,10 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../core
-      '@opensaas/framework-ui':
+      '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../ui
       '@types/node':
@@ -452,7 +452,7 @@ importers:
         specifier: ^3.3.1
         version: 3.3.1
     devDependencies:
-      '@opensaas/framework-core':
+      '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../core
       '@tailwindcss/postcss':

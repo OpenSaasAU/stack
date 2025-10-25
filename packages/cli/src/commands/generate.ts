@@ -4,8 +4,13 @@ import { execSync } from 'child_process'
 import chalk from 'chalk'
 import ora from 'ora'
 import { createJiti } from 'jiti'
-import { writePrismaSchema, writeTypes, writeContext, patchPrismaTypes } from '../generator/index.js'
-import type { OpenSaaSConfig } from '@opensaas/framework-core'
+import {
+  writePrismaSchema,
+  writeTypes,
+  writeContext,
+  patchPrismaTypes,
+} from '../generator/index.js'
+import type { OpenSaaSConfig } from '@opensaas/stack-core'
 
 export async function generateCommand() {
   console.log(chalk.bold('\n🚀 OpenSaaS Generator\n'))

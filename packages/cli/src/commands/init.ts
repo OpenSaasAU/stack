@@ -72,14 +72,14 @@ export async function initCommand(projectName: string | undefined) {
         'db:studio': 'prisma studio',
       },
       dependencies: {
-        '@opensaas/framework-core': '^0.1.0',
+        '@opensaas/stack-core': '^0.1.0',
         '@prisma/client': '^5.7.1',
         next: '^14.0.4',
         react: '^18.2.0',
         'react-dom': '^18.2.0',
       },
       devDependencies: {
-        '@opensaas/framework-cli': '^0.1.0',
+        '@opensaas/stack-cli': '^0.1.0',
         '@types/node': '^20.10.0',
         '@types/react': '^18.2.45',
         '@types/react-dom': '^18.2.18',
@@ -122,7 +122,7 @@ export async function initCommand(projectName: string | undefined) {
     const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', '@opensaas/framework-core'],
+    serverComponentsExternalPackages: ['@prisma/client', '@opensaas/stack-core'],
   },
 }
 
@@ -184,9 +184,9 @@ prisma/dev.db-journal
     fs.writeFileSync(path.join(projectPath, '.gitignore'), gitignore)
 
     // Create opensaas.config.ts
-    const config = `import { config, list } from '@opensaas/framework-core'
-import { text, relationship, password } from '@opensaas/framework-core/fields'
-import type { AccessControl } from '@opensaas/framework-core'
+    const config = `import { config, list } from '@opensaas/stack-core'
+import { text, relationship, password } from '@opensaas/stack-core/fields'
+import type { AccessControl } from '@opensaas/stack-core'
 
 // Access control helpers
 const isSignedIn: AccessControl = ({ session }) => {
@@ -228,7 +228,7 @@ export default config({
 
     // Create lib/context.ts
     const contextFile = `import { PrismaClient } from '@prisma/client'
-import { getContext as createContext } from '@opensaas/framework-core'
+import { getContext as createContext } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import type { Context } from '../.opensaas/types'
 
@@ -298,7 +298,7 @@ export default function RootLayout({
     // Create README.md
     const readme = `# ${projectName}
 
-Built with [OpenSaaS Framework](https://github.com/your-org/opensaas-framework)
+Built with [OpenSaaS Stack](https://github.com/your-org/opensaas-stack)
 
 ## Getting Started
 
@@ -336,7 +336,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your app.
 
 ## Learn More
 
-- [OpenSaaS Documentation](https://github.com/your-org/opensaas-framework)
+- [OpenSaaS Documentation](https://github.com/your-org/opensaas-stack)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Prisma Documentation](https://www.prisma.io/docs)
 `

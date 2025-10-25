@@ -1,10 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: [
-    '@opensaas/framework-core',
-    '@opensaas/framework-ui',
-    '@opensaas/framework-tiptap',
-  ],
+  transpilePackages: ['@opensaas/stack-core', '@opensaas/stack-ui', '@opensaas/stack-tiptap'],
 }
 
 module.exports = nextConfig

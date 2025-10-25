@@ -1,15 +1,15 @@
-# OpenSaaS Framework - Implementation Summary
+# OpenSaaS Stack - Implementation Summary
 
 ## What Was Built
 
-This is a **working prototype** (Phase 1-2) of the OpenSaaS Framework - a modern, type-safe framework for building admin-heavy Next.js applications with built-in access control.
+This is a **working prototype** (Phase 1-2) of the OpenSaaS Stack - a modern, type-safe stack for building admin-heavy Next.js applications with built-in access control.
 
 ## Project Structure
 
 ```
-opensaas-framework/
+opensaas-stack/
 ├── packages/
-│   └── core/                          # @opensaas/framework-core package
+│   └── core/                          # @opensaas/stack-core package
 │       ├── src/
 │       │   ├── config/               # Configuration system
 │       │   │   ├── types.ts          # Config type definitions
@@ -169,7 +169,7 @@ User calls context.db.post.update()
 
 ### 7. Blog Example (`examples/blog/`)
 
-**Purpose**: Demonstrate framework capabilities
+**Purpose**: Demonstrate stack capabilities
 
 **Models**:
 
@@ -305,8 +305,8 @@ The test script will demonstrate:
 ### Defining a Schema
 
 ```typescript
-import { config, list } from '@opensaas/framework-core'
-import { text, relationship } from '@opensaas/framework-core/fields'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship } from '@opensaas/stack-core/fields'
 
 export default config({
   db: { provider: 'sqlite', url: 'file:./dev.db' },

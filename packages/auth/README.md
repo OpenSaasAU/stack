@@ -1,6 +1,6 @@
-# @opensaas/framework-auth
+# @opensaas/stack-auth
 
-Better-auth integration for OpenSaaS Framework - Add authentication to your app in minutes.
+Better-auth integration for OpenSaaS Stack - Add authentication to your app in minutes.
 
 ## Features
 
@@ -16,7 +16,7 @@ Better-auth integration for OpenSaaS Framework - Add authentication to your app 
 ## Installation
 
 ```bash
-pnpm add @opensaas/framework-auth better-auth
+pnpm add @opensaas/stack-auth better-auth
 ```
 
 ## Quick Start
@@ -27,8 +27,8 @@ Wrap your OpenSaaS config with `withAuth()`:
 
 ```typescript
 // opensaas.config.ts
-import { config } from '@opensaas/framework-core'
-import { withAuth, authConfig } from '@opensaas/framework-auth'
+import { config } from '@opensaas/stack-core'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
 
 export default withAuth(
   config({
@@ -60,7 +60,7 @@ pnpm db:push   # Push schema to database
 
 ```typescript
 // lib/auth.ts
-import { createAuth } from '@opensaas/framework-auth/server'
+import { createAuth } from '@opensaas/stack-auth/server'
 import config from '../opensaas.config'
 
 export const auth = createAuth(config)
@@ -83,7 +83,7 @@ export { GET, POST } from '@/lib/auth'
 // lib/auth-client.ts
 'use client'
 
-import { createClient } from '@opensaas/framework-auth/client'
+import { createClient } from '@opensaas/stack-auth/client'
 
 export const authClient = createClient({
   baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
@@ -94,7 +94,7 @@ export const authClient = createClient({
 
 ```typescript
 // app/sign-in/page.tsx
-import { SignInForm } from '@opensaas/framework-auth/ui'
+import { SignInForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 export default function SignInPage() {
@@ -112,7 +112,7 @@ Sessions are now automatically available in your access control functions:
 
 ```typescript
 // opensaas.config.ts
-import { withAuth, authConfig } from '@opensaas/framework-auth'
+import { withAuth, authConfig } from '@opensaas/stack-auth'
 
 export default withAuth(
   config({
@@ -207,7 +207,7 @@ authConfig({
 ### SignInForm
 
 ```typescript
-import { SignInForm } from '@opensaas/framework-auth/ui'
+import { SignInForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 <SignInForm
@@ -223,7 +223,7 @@ import { authClient } from '@/lib/auth-client'
 ### SignUpForm
 
 ```typescript
-import { SignUpForm } from '@opensaas/framework-auth/ui'
+import { SignUpForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 <SignUpForm
@@ -237,7 +237,7 @@ import { authClient } from '@/lib/auth-client'
 ### ForgotPasswordForm
 
 ```typescript
-import { ForgotPasswordForm } from '@opensaas/framework-auth/ui'
+import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
 import { authClient } from '@/lib/auth-client'
 
 <ForgotPasswordForm

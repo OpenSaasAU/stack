@@ -44,7 +44,7 @@ export async function getContext<TPrisma extends PrismaClientLike = any>(
 
 ```typescript
 import { PrismaClient } from '@prisma/client'
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import config from './opensaas.config'
 
 const prisma = new PrismaClient()
@@ -58,7 +58,7 @@ const context = getContext(config, prisma, session)
 
 ```typescript
 import { PrismaClient } from '@prisma/client'
-import { getContext } from '@opensaas/framework-core'
+import { getContext } from '@opensaas/stack-core'
 import config from './opensaas.config'
 
 const prisma = new PrismaClient()
@@ -73,7 +73,7 @@ const context = getContext<PrismaClient>(config, prisma, session)
 ```typescript
 // lib/context.ts
 import { PrismaClient } from '@prisma/client'
-import { getContext as createContext } from '@opensaas/framework-core'
+import { getContext as createContext } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import type { Context } from '../.opensaas/types'
 

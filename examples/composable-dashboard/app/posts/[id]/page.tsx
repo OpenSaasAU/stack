@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Button } from '@opensaas/framework-ui/primitives'
+import { Button } from '@opensaas/stack-ui/primitives'
 import { getContext } from '@/.opensaas/context'
 import { PostEditor } from './PostEditor'
 import type { Post } from '../../../.opensaas/types'

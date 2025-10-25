@@ -1,11 +1,11 @@
-# @opensaas/framework-cli
+# @opensaas/stack-cli
 
-Command-line tools for OpenSaaS Framework - code generation and development utilities.
+Command-line tools for OpenSaaS Stack - code generation and development utilities.
 
 ## Installation
 
 ```bash
-pnpm add -D @opensaas/framework-cli
+pnpm add -D @opensaas/stack-cli
 ```
 
 ## Commands
@@ -113,7 +113,7 @@ opensaas init my-project --template blog
 
 ```bash
 # Install CLI
-pnpm add -D @opensaas/framework-cli
+pnpm add -D @opensaas/stack-cli
 
 # Add scripts to package.json
 {
@@ -169,8 +169,8 @@ The CLI reads `opensaas.config.ts` from the current working directory.
 
 ```typescript
 // opensaas.config.ts
-import { config, list } from '@opensaas/framework-core'
-import { text } from '@opensaas/framework-core/fields'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 
 export default config({
   db: {
@@ -320,7 +320,7 @@ npx prisma studio
 ## Learn More
 
 - [Core Package](../core/README.md) - Config and field types
-- [OpenSaaS Framework](../../README.md) - Framework overview
+- [OpenSaaS Stack](../../README.md) - Stack overview
 - [Examples](../../examples) - Working examples
 
 ## License

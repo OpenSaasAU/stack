@@ -1,6 +1,6 @@
 # OpenSaaS Auth Demo
 
-A complete example demonstrating authentication integration with OpenSaaS Framework using `@opensaas/framework-auth` and better-auth.
+A complete example demonstrating authentication integration with OpenSaaS Stack using `@opensaas/stack-auth` and better-auth.
 
 ## Features
 

@@ -70,7 +70,7 @@ Automatic validation for:
 
 **Exports**:
 
-- Exported `ValidationError` from `@opensaas/framework-core`
+- Exported `ValidationError` from `@opensaas/stack-core`
 - All hook functions available internally
 
 ## Example Usage
@@ -241,7 +241,7 @@ All hooks support async/await, allowing:
 
 ## Next Steps
 
-**Phase 3 is complete!** The framework now has:
+**Phase 3 is complete!** The stack now has:
 
 1. ✅ **Phase 1** - Core foundation (config, fields, generators)
 2. ✅ **Phase 2** - Access control engine (operation + field level)
