@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type {
   AuthConfig,
   NormalizedAuthConfig,
@@ -90,7 +90,7 @@ export function authConfig(config: AuthConfig): AuthConfig {
 }
 
 /**
- * Wrap an OpenSaaS config with better-auth integration
+ * Wrap an OpenSaas config with better-auth integration
  * This merges the auth lists into the user's config and sets up session handling
  *
  * @example
@@ -111,7 +111,7 @@ export function authConfig(config: AuthConfig): AuthConfig {
  * )
  * ```
  */
-export function withAuth(opensaasConfig: OpenSaaSConfig, authConfig: AuthConfig): OpenSaaSConfig {
+export function withAuth(opensaasConfig: OpenSaasConfig, authConfig: AuthConfig): OpenSaasConfig {
   const normalized = normalizeAuthConfig(authConfig)
 
   // Get auth lists with user extensions
@@ -125,7 +125,7 @@ export function withAuth(opensaasConfig: OpenSaaSConfig, authConfig: AuthConfig)
 
   // Return merged config with auth config attached
   // Note: Session integration happens in the generator/context
-  const result: OpenSaaSConfig & { __authConfig?: NormalizedAuthConfig } = {
+  const result: OpenSaasConfig & { __authConfig?: NormalizedAuthConfig } = {
     ...opensaasConfig,
     lists: mergedLists,
   }

@@ -1,11 +1,11 @@
 /**
  * @opensaas/stack-auth
  *
- * Better-auth integration for OpenSaaS Stack
+ * Better-auth integration for OpenSaas Stack
  *
  * This package provides:
  * - Auto-generated User, Session, Account, Verification lists
- * - Session integration with OpenSaaS access control
+ * - Session integration with OpenSaas access control
  * - Pre-built auth UI components (SignIn, SignUp, ForgotPassword)
  * - Easy configuration with withAuth() wrapper
  *

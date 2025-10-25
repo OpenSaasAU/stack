@@ -15,7 +15,7 @@ export async function devCommand() {
     process.exit(1)
   }
 
-  console.log(chalk.bold.cyan('\nOpenSaaS Dev Mode\n'))
+  console.log(chalk.bold.cyan('\nOpenSaas Dev Mode\n'))
   console.log(chalk.gray('Watching for changes to opensaas.config.ts...\n'))
 
   // Run initial generation

@@ -1,7 +1,7 @@
 {
   "name": "@opensaas/stack-ui",
   "version": "0.1.0",
-  "description": "Composable React UI components for OpenSaaS Stack",
+  "description": "Composable React UI components for OpenSaas Stack",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

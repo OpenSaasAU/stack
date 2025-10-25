@@ -1,9 +1,9 @@
-import type { OpenSaaSConfig, FieldConfig, RelationshipField } from '@opensaas/stack-core'
+import type { OpenSaasConfig, FieldConfig, RelationshipField } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 
 /**
- * Map OpenSaaS field types to Prisma field types
+ * Map OpenSaas field types to Prisma field types
  */
 function mapFieldTypeToPrisma(fieldName: string, field: FieldConfig): string | null {
   // Relationships are handled separately
@@ -57,9 +57,9 @@ function parseRelationshipRef(ref: string): { list: string; field: string } {
 }
 
 /**
- * Generate Prisma schema from OpenSaaS config
+ * Generate Prisma schema from OpenSaas config
  */
-export function generatePrismaSchema(config: OpenSaaSConfig): string {
+export function generatePrismaSchema(config: OpenSaasConfig): string {
   const lines: string[] = []
 
   const opensaasPath = config.opensaasPath || '.opensaas'
@@ -144,7 +144,7 @@ export function generatePrismaSchema(config: OpenSaaSConfig): string {
 /**
  * Write Prisma schema to file
  */
-export function writePrismaSchema(config: OpenSaaSConfig, outputPath: string): void {
+export function writePrismaSchema(config: OpenSaasConfig, outputPath: string): void {
   const schema = generatePrismaSchema(config)
 
   // Ensure directory exists

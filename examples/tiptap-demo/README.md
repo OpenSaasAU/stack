@@ -1,6 +1,6 @@
 # Tiptap Rich Text Editor Demo
 
-This example demonstrates how to use the `@opensaas/stack-tiptap` package to add rich text editing capabilities to your OpenSaaS application.
+This example demonstrates how to use the `@opensaas/stack-tiptap` package to add rich text editing capabilities to your OpenSaas application.
 
 ## Features
 
@@ -152,5 +152,5 @@ fields: {
 ## Learn More
 
 - [Tiptap Documentation](https://tiptap.dev)
-- [OpenSaaS Documentation](https://github.com/opensaas/stack)
+- [OpenSaas Documentation](https://github.com/opensaas/stack)
 - [Custom Fields Guide](../custom-field/README.md)

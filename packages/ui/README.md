@@ -1,6 +1,6 @@
 # @opensaas/stack-ui
 
-Composable React UI components for OpenSaaS Stack, built with Radix UI and shadcn/ui.
+Composable React UI components for OpenSaas Stack, built with Radix UI and shadcn/ui.
 
 ## Installation
 
@@ -23,7 +23,7 @@ pnpm add @opensaas/stack-ui
 // Primitives (shadcn/ui components)
 import { Button, Input, Card, Table, Dialog } from '@opensaas/stack-ui/primitives'
 
-// Field components (OpenSaaS-aware)
+// Field components (OpenSaas-aware)
 import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fields'
 
 // Standalone components (complete features)
@@ -75,7 +75,7 @@ import { Button, Card, CardHeader, CardTitle, CardContent } from '@opensaas/stac
 
 ### Level 2: Fields (`@opensaas/stack-ui/fields`)
 
-OpenSaaS-aware form fields with validation and access control.
+OpenSaas-aware form fields with validation and access control.
 
 **Available Fields:**
 
@@ -279,7 +279,7 @@ import type {
 
 - [Composability Guide](../../docs/COMPOSABILITY.md) - Complete guide to all four levels
 - [API Reference](../../docs/API.md) - Full API documentation
-- [OpenSaaS Stack](../../README.md) - Stack overview
+- [OpenSaas Stack](../../README.md) - Stack overview
 
 ## License
 

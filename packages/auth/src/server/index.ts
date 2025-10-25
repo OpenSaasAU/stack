@@ -1,11 +1,11 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import type { BetterAuthOptions } from 'better-auth'
-import type { OpenSaaSConfig, DatabaseConfig, AccessContext } from '@opensaas/stack-core'
+import type { OpenSaasConfig, DatabaseConfig, AccessContext } from '@opensaas/stack-core'
 import type { NormalizedAuthConfig } from '../config/types.js'
 
 /**
- * Get better-auth database configuration from OpenSaaS config
+ * Get better-auth database configuration from OpenSaas config
  */
 function getDatabaseConfig(
   dbConfig: DatabaseConfig,
@@ -17,7 +17,7 @@ function getDatabaseConfig(
 }
 
 /**
- * Create a better-auth instance from OpenSaaS config
+ * Create a better-auth instance from OpenSaas config
  * This should be called once at app startup
  *
  * @example
@@ -30,7 +30,7 @@ function getDatabaseConfig(
  * ```
  */
 export function createAuth(
-  opensaasConfig: OpenSaaSConfig & { __authConfig?: NormalizedAuthConfig },
+  opensaasConfig: OpenSaasConfig & { __authConfig?: NormalizedAuthConfig },
   context: AccessContext,
 ) {
   // Extract auth config (added by withAuth)
@@ -84,7 +84,7 @@ export function createAuth(
 }
 
 /**
- * Get session from better-auth and transform it to OpenSaaS session format
+ * Get session from better-auth and transform it to OpenSaas session format
  * This is used internally by the generated context
  */
 export async function getSessionFromAuth(

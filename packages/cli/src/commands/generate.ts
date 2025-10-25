@@ -10,10 +10,10 @@ import {
   writeContext,
   patchPrismaTypes,
 } from '../generator/index.js'
-import type { OpenSaaSConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 
 export async function generateCommand() {
-  console.log(chalk.bold('\n🚀 OpenSaaS Generator\n'))
+  console.log(chalk.bold('\n🚀 OpenSaas Generator\n'))
 
   const cwd = process.cwd()
   const configPath = path.join(cwd, 'opensaas.config.ts')
@@ -33,7 +33,7 @@ export async function generateCommand() {
       interopDefault: true,
     })
 
-    const config = (await jiti.import(configPath)) as OpenSaaSConfig
+    const config = (await jiti.import(configPath)) as OpenSaasConfig
 
     spinner.succeed(chalk.green('Configuration loaded'))
 

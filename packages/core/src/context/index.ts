@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, ListConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB } from '../access/index.js'
 import {
   checkAccess,
@@ -100,12 +100,12 @@ export type ServerActionProps =
 /**
  * Create an access-controlled context
  *
- * @param config - OpenSaaS configuration
+ * @param config - OpenSaas configuration
  * @param prisma - Your Prisma client instance (pass as generic for type safety)
  * @param session - Current session object (or null if not authenticated)
  */
 export function getContext<
-  TConfig extends OpenSaaSConfig,
+  TConfig extends OpenSaasConfig,
   TPrisma extends PrismaClientLike = PrismaClientLike,
 >(
   config: TConfig,
@@ -183,7 +183,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ) {
   return async (args: { where: { id: string }; include?: Record<string, unknown> }) => {
     // Check query access
@@ -253,7 +253,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ) {
   return async (args?: {
     where?: Record<string, unknown>
@@ -332,7 +332,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ) {
   return async (args: { data: Record<string, unknown> }) => {
     // 1. Check create access
@@ -435,7 +435,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig,
   prisma: TPrisma,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ) {
   return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
     // 1. Fetch the item to pass to access control and hooks

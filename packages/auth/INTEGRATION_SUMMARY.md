@@ -1,6 +1,6 @@
 # Better-Auth Integration Summary
 
-This document summarizes the complete better-auth integration for the OpenSaaS Stack.
+This document summarizes the complete better-auth integration for the OpenSaas Stack.
 
 ## What Was Built
 
@@ -414,7 +414,7 @@ openssl rand -base64 32
 
 ## Conclusion
 
-The `@opensaas/stack-auth` package provides a complete, production-ready authentication solution for OpenSaaS Stack applications. It follows the stack's design principles:
+The `@opensaas/stack-auth` package provides a complete, production-ready authentication solution for OpenSaas Stack applications. It follows the stack's design principles:
 
 - Config-first approach
 - Self-contained field/list definitions

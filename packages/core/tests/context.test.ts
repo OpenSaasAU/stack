@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
-import type { OpenSaaSConfig } from '../src/config/types.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
 
 describe('getContext', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockPrisma: any
-  let config: OpenSaaSConfig
+  let config: OpenSaasConfig
 
   beforeEach(() => {
     // Mock Prisma client with all methods needed by context

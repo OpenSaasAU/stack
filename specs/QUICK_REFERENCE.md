@@ -1,4 +1,4 @@
-# OpenSaaS Stack - Quick Reference
+# OpenSaas Stack - Quick Reference
 
 ## Installation & Setup
 

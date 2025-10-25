@@ -1,9 +1,9 @@
-import type { OpenSaaSConfig, ListConfig } from './types.js'
+import type { OpenSaasConfig, ListConfig } from './types.js'
 
 /**
  * Helper function to define configuration with type safety
  */
-export function config(config: OpenSaaSConfig): OpenSaaSConfig {
+export function config(config: OpenSaasConfig): OpenSaasConfig {
   return config
 }
 
@@ -17,7 +17,7 @@ export function list<T = any>(config: ListConfig<T>): ListConfig<T> {
 
 // Re-export all types
 export type {
-  OpenSaaSConfig,
+  OpenSaasConfig,
   ListConfig,
   FieldConfig,
   BaseFieldConfig,

@@ -1,6 +1,6 @@
 # Better-Auth Integration - Complete Implementation
 
-This document summarizes the complete better-auth integration for OpenSaaS Stack.
+This document summarizes the complete better-auth integration for OpenSaas Stack.
 
 ## ✅ What Was Implemented
 
@@ -8,7 +8,7 @@ This document summarizes the complete better-auth integration for OpenSaaS Stack
 
 **Location:** `packages/auth/`
 
-A complete authentication package that integrates better-auth with OpenSaaS Stack, providing:
+A complete authentication package that integrates better-auth with OpenSaas Stack, providing:
 
 - **Auto-generated auth tables** - User, Session, Account, Verification
 - **Session integration** - Sessions automatically available in access control
@@ -392,7 +392,7 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com
 
 1. **Zero Boilerplate** - No manual User model, sessions, or routes needed
 2. **Type-Safe** - Full TypeScript support throughout
-3. **Framework-Aligned** - Follows OpenSaaS architectural patterns
+3. **Framework-Aligned** - Follows OpenSaas architectural patterns
 4. **Extensible** - Easy to customize and extend
 5. **Production-Ready** - Security best practices built-in
 6. **Developer Experience** - From zero to authenticated app in 5 steps
@@ -412,10 +412,10 @@ Potential additions:
 
 The `@opensaas/stack-auth` package provides a complete, production-ready authentication solution that:
 
-- Integrates seamlessly with OpenSaaS Stack's access control system
+- Integrates seamlessly with OpenSaas Stack's access control system
 - Follows the stack's config-first, type-safe design principles
 - Reduces authentication setup from hours to minutes
 - Provides excellent developer experience with pre-built components
 - Maintains security best practices throughout
 
-**Result:** Developers can build fully authenticated apps with OpenSaaS in under 5 minutes! 🎉
+**Result:** Developers can build fully authenticated apps with OpenSaas in under 5 minutes! 🎉

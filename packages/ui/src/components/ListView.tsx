@@ -5,13 +5,13 @@ import {
   AccessContext,
   getDbKey,
   getUrlKey,
-  OpenSaaSConfig,
+  OpenSaasConfig,
   type PrismaClientLike,
 } from '@opensaas/stack-core'
 
 export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
   context: AccessContext<TPrisma>
-  config: OpenSaaSConfig
+  config: OpenSaasConfig
   listKey: string
   basePath?: string
   columns?: string[]

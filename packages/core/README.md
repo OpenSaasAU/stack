@@ -1,6 +1,6 @@
 # @opensaas/stack-core
 
-Core OpenSaaS Stack - config system, field types, access control, and code generation.
+Core OpenSaas Stack - config system, field types, access control, and code generation.
 
 ## Installation
 
@@ -439,7 +439,7 @@ describe('Post access control', () => {
 ## Learn More
 
 - [API Reference](../../docs/API.md) - Complete API documentation
-- [OpenSaaS Stack](../../README.md) - Stack overview
+- [OpenSaas Stack](../../README.md) - Stack overview
 - [CLAUDE.md](../../CLAUDE.md) - Development guide
 
 ## License

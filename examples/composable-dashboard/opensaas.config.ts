@@ -26,7 +26,7 @@ const isOwner: AccessControl = ({ session, item }) => {
 }
 
 /**
- * OpenSaaS Configuration
+ * OpenSaas Configuration
  */
 export default config({
   db: {

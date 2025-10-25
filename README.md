@@ -1,4 +1,4 @@
-# OpenSaaS Stack
+# OpenSaas Stack
 
 A modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
 
@@ -17,7 +17,7 @@ A modern stack for building admin-heavy applications with Next.js App Router, de
 
 This is a monorepo containing:
 
-- **`packages/core`**: The core OpenSaaS stack (config, fields, access control, generators)
+- **`packages/core`**: The core OpenSaas stack (config, fields, access control, generators)
 - **`packages/cli`**: CLI tools for code generation and development
 - **`packages/ui`**: Composable React UI components (primitives, fields, standalone components, full admin UI)
 - **`examples/blog`**: Working blog example demonstrating the stack
@@ -67,7 +67,7 @@ import { prisma } from './lib/context'
 import { getContext, getContextWithUser } from './lib/context'
 
 async function test() {
-  console.log('🧪 Testing OpenSaaS Stack\n')
+  console.log('🧪 Testing OpenSaas Stack\n')
 
   // Create a user
   console.log('1. Creating a user...')
@@ -338,7 +338,7 @@ pnpm dev
 
 ### Custom Field Types
 
-OpenSaaS is designed to be fully extensible without modifying core code. Field types are self-contained with their own validation, schema generation, and UI components.
+OpenSaas is designed to be fully extensible without modifying core code. Field types are self-contained with their own validation, schema generation, and UI components.
 
 See `examples/custom-field` for a complete working example with:
 
@@ -349,7 +349,7 @@ Learn more in [CLAUDE.md](./CLAUDE.md#customizing-ui-components).
 
 ## Composability
 
-OpenSaaS UI offers four levels of abstraction - choose what fits your needs:
+OpenSaas UI offers four levels of abstraction - choose what fits your needs:
 
 ### Level 1: Primitives
 
@@ -406,7 +406,7 @@ See [docs/COMPOSABILITY.md](./docs/COMPOSABILITY.md) for complete guide.
 
 ### AI-Safe by Design
 
-OpenSaaS is designed to be safe for AI coding agents to work with:
+OpenSaas is designed to be safe for AI coding agents to work with:
 
 - **Clear patterns**: Simple, predictable APIs
 - **Access control first**: Security is automatic, not an afterthought
@@ -415,7 +415,7 @@ OpenSaaS is designed to be safe for AI coding agents to work with:
 
 ### Inspired by KeystoneJS
 
-OpenSaaS takes inspiration from KeystoneJS but modernized for:
+OpenSaas takes inspiration from KeystoneJS but modernized for:
 
 - Next.js App Router (not a separate GraphQL server)
 - Server Components and Server Actions

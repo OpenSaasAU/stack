@@ -1,6 +1,6 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
 import type { FieldAccess } from './types.js'
-import type { OpenSaaSConfig, ListConfig, FieldConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
 
 /**
  * Check if access control result is a boolean
@@ -21,12 +21,12 @@ export function isPrismaFilter(value: unknown): value is PrismaFilter {
  * Relationship refs are in the format "ListName.fieldName"
  *
  * @param relationshipRef - The ref string (e.g., "Post.author")
- * @param config - The OpenSaaS configuration
+ * @param config - The OpenSaas configuration
  * @returns The related list name and config, or null if not found
  */
 export function getRelatedListConfig(
   relationshipRef: string,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ): { listName: string; listConfig: ListConfig } | null {
   // Parse ref format: "ListName.fieldName"
   const parts = relationshipRef.split('.')
@@ -175,7 +175,7 @@ export async function buildIncludeWithAccessControl(
     session: Session
     context: AccessContext
   },
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   depth: number = 0,
 ) {
   const MAX_DEPTH = 5
@@ -246,7 +246,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     session: Session
     context: AccessContext
   },
-  config?: OpenSaaSConfig,
+  config?: OpenSaasConfig,
   depth: number = 0,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}

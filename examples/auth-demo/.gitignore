@@ -36,7 +36,7 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
-# OpenSaaS generated
+# OpenSaas generated
 .opensaas
 
 # Prisma

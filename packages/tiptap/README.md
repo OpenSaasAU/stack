@@ -1,6 +1,6 @@
 # @opensaas/stack-tiptap
 
-Rich text editor integration for OpenSaaS Stack using [Tiptap](https://tiptap.dev).
+Rich text editor integration for OpenSaas Stack using [Tiptap](https://tiptap.dev).
 
 ## Features
 
@@ -10,7 +10,7 @@ Rich text editor integration for OpenSaaS Stack using [Tiptap](https://tiptap.de
 - ✅ Edit and read-only modes
 - ✅ Customizable toolbar and UI options
 - ✅ Full TypeScript support
-- ✅ Integrates with OpenSaaS access control
+- ✅ Integrates with OpenSaas access control
 
 ## Installation
 
@@ -128,7 +128,7 @@ content: richText({
 
 ### Access Control
 
-Rich text fields work seamlessly with OpenSaaS access control:
+Rich text fields work seamlessly with OpenSaas access control:
 
 ```typescript
 Article: list({
@@ -264,7 +264,7 @@ fields: {
 
 ## Architecture
 
-This package follows OpenSaaS's extensibility pattern:
+This package follows OpenSaas's extensibility pattern:
 
 1. **Field Builder** (`richText()`) - Defines field configuration
    - Returns `RichTextField` type
@@ -328,7 +328,7 @@ React component for rendering the Tiptap editor.
 
 ## Contributing
 
-Contributions are welcome! This package is part of the OpenSaaS Stack monorepo.
+Contributions are welcome! This package is part of the OpenSaas Stack monorepo.
 
 ## License
 

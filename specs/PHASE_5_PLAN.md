@@ -147,7 +147,7 @@ import { Button, Input, Card } from '@opensaas/stack-ui/primitives'
 // Primitives (shadcn components)
 import { Button, Input, Dialog } from '@opensaas/stack-ui/primitives'
 
-// Field components (OpenSaaS-aware)
+// Field components (OpenSaas-aware)
 import { TextField, RelationshipField } from '@opensaas/stack-ui/fields'
 
 // Full page components

@@ -1,11 +1,11 @@
 # @opensaas/stack-auth
 
-Better-auth integration for OpenSaaS Stack - Add authentication to your app in minutes.
+Better-auth integration for OpenSaas Stack - Add authentication to your app in minutes.
 
 ## Features
 
 - **Auto-generated Auth Tables** - User, Session, Account, and Verification lists created automatically
-- **Session Integration** - Seamless integration with OpenSaaS access control system
+- **Session Integration** - Seamless integration with OpenSaas access control system
 - **Pre-built UI Components** - Sign in, sign up, and forgot password forms ready to use
 - **Multiple Auth Methods** - Email/password, OAuth providers (GitHub, Google, etc.)
 - **Email Verification** - Built-in email verification support
@@ -23,7 +23,7 @@ pnpm add @opensaas/stack-auth better-auth
 
 ### 1. Update Your Config
 
-Wrap your OpenSaaS config with `withAuth()`:
+Wrap your OpenSaas config with `withAuth()`:
 
 ```typescript
 // opensaas.config.ts

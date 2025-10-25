@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -12,7 +12,7 @@ import * as path from 'path'
  * The patched types are written to `.opensaas/prisma-client.d.ts` so users can
  * import from there to get the transformed types.
  */
-export function patchPrismaTypes(config: OpenSaaSConfig, projectRoot: string): void {
+export function patchPrismaTypes(config: OpenSaasConfig, projectRoot: string): void {
   const opensaasPath = config.opensaasPath || '.opensaas'
 
   // Prisma generates to opensaasPath/prisma-client

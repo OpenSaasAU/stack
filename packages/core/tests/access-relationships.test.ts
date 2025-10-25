@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { filterReadableFields, getRelatedListConfig } from '../src/access/engine.js'
-import type { OpenSaaSConfig, AccessContext } from '../src/index.js'
+import type { OpenSaasConfig, AccessContext } from '../src/index.js'
 
 describe('Relationship Access Control', () => {
   const mockContext: AccessContext = {
@@ -10,7 +10,7 @@ describe('Relationship Access Control', () => {
   }
 
   describe('getRelatedListConfig', () => {
-    const config: OpenSaaSConfig = {
+    const config: OpenSaasConfig = {
       db: {
         provider: 'postgresql',
         url: 'postgresql://localhost:5432/test',
@@ -54,7 +54,7 @@ describe('Relationship Access Control', () => {
   describe('filterReadableFields with relationships', () => {
     describe('single relationships', () => {
       it('should apply access control to single relationship', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -107,7 +107,7 @@ describe('Relationship Access Control', () => {
       })
 
       it('should filter out single relationship when access denied (via buildIncludeWithAccessControl)', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -153,7 +153,7 @@ describe('Relationship Access Control', () => {
       })
 
       it('should apply field-level access to single relationship', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -215,7 +215,7 @@ describe('Relationship Access Control', () => {
 
     describe('many relationships (arrays)', () => {
       it('should apply access control to many relationships', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -270,7 +270,7 @@ describe('Relationship Access Control', () => {
       })
 
       it('should filter items in many relationships based on query access (via buildIncludeWithAccessControl)', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -321,7 +321,7 @@ describe('Relationship Access Control', () => {
       })
 
       it('should apply field-level access to items in many relationships', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -383,7 +383,7 @@ describe('Relationship Access Control', () => {
       })
 
       it('should handle empty arrays', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -434,7 +434,7 @@ describe('Relationship Access Control', () => {
 
     describe('session-based access for relationships', () => {
       it('should apply session-based access to relationships (via buildIncludeWithAccessControl)', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -490,7 +490,7 @@ describe('Relationship Access Control', () => {
 
     describe('depth limiting', () => {
       it('should prevent infinite recursion with depth limit', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',
@@ -562,7 +562,7 @@ describe('Relationship Access Control', () => {
 
     describe('null and undefined relationships', () => {
       it('should handle null single relationships', async () => {
-        const config: OpenSaaSConfig = {
+        const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
             url: 'postgresql://localhost:5432/test',

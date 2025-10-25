@@ -1,8 +1,8 @@
-# OpenSaaS Stack - Technical Specification
+# OpenSaas Stack - Technical Specification
 
 ## Project Overview
 
-OpenSaaS is a modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails. It provides a KeystoneJS-inspired configuration system with access control and hooks, but built for modern Next.js patterns with Server Components.
+OpenSaas is a modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails. It provides a KeystoneJS-inspired configuration system with access control and hooks, but built for modern Next.js patterns with Server Components.
 
 ### Core Value Proposition
 

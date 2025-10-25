@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, ListConfig, FieldConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { checkAccess, filterWritableFields, getRelatedListConfig } from '../access/index.js'
 import {
@@ -24,7 +24,7 @@ async function processNestedCreate(
   items: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListConfig: ListConfig,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const itemsArray = Array.isArray(items) ? items : [items]
 
@@ -153,7 +153,7 @@ async function processNestedUpdate(
   relatedListName: string,
   relatedListConfig: ListConfig,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   prisma: unknown,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const updatesArray = Array.isArray(updates) ? updates : [updates]
@@ -247,7 +247,7 @@ async function processNestedConnectOrCreate(
   relatedListName: string,
   relatedListConfig: ListConfig,
   context: AccessContext,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   prisma: unknown,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const operationsArray = Array.isArray(operations) ? operations : [operations]
@@ -306,7 +306,7 @@ async function processNestedConnectOrCreate(
 export async function processNestedOperations(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   context: AccessContext & { prisma: unknown },
   operation: 'create' | 'update',
   depth: number = 0,

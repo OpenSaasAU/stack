@@ -22,7 +22,7 @@ const isAuthor: AccessControl = ({ session }) => {
 }
 
 /**
- * OpenSaaS Configuration with Tiptap Rich Text Editor
+ * OpenSaas Configuration with Tiptap Rich Text Editor
  */
 export default config({
   db: {

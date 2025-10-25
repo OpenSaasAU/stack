@@ -1,6 +1,6 @@
 # @opensaas/stack-cli
 
-Command-line tools for OpenSaaS Stack - code generation and development utilities.
+Command-line tools for OpenSaas Stack - code generation and development utilities.
 
 ## Installation
 
@@ -28,7 +28,7 @@ opensaas generate
 **Output:**
 
 ```
-🚀 OpenSaaS Generator
+🚀 OpenSaas Generator
 - Loading configuration...
 ✔ Generation complete
 ✅ Prisma schema generated
@@ -69,7 +69,7 @@ opensaas dev
 **Output:**
 
 ```
-🚀 OpenSaaS Generator
+🚀 OpenSaas Generator
 - Loading configuration...
 ✔ Generation complete
 ✅ Prisma schema generated
@@ -84,7 +84,7 @@ When changes detected:
 ```
 Config changed, regenerating...
 
-🚀 OpenSaaS Generator
+🚀 OpenSaas Generator
 ...
 ```
 
@@ -100,7 +100,7 @@ Config changed, regenerating...
 
 ### `opensaas init` (Coming Soon)
 
-Create a new OpenSaaS project with template.
+Create a new OpenSaas project with template.
 
 ```bash
 opensaas init my-project
@@ -320,7 +320,7 @@ npx prisma studio
 ## Learn More
 
 - [Core Package](../core/README.md) - Config and field types
-- [OpenSaaS Stack](../../README.md) - Stack overview
+- [OpenSaas Stack](../../README.md) - Stack overview
 - [Examples](../../examples) - Working examples
 
 ## License

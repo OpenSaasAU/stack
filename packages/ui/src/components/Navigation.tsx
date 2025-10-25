@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { formatListName } from '../lib/utils.js'
-import { AccessContext, getUrlKey, OpenSaaSConfig } from '@opensaas/stack-core'
+import { AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 
 export interface NavigationProps<TPrisma> {
   context: AccessContext<TPrisma>
-  config: OpenSaaSConfig
+  config: OpenSaasConfig
   basePath?: string
   currentPath?: string
 }
@@ -28,7 +28,7 @@ export function Navigation<TPrisma>({
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 opacity-50" />
         <Link href={basePath} className="block relative">
           <h1 className="text-xl font-bold bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] bg-clip-text text-transparent">
-            OpenSaaS Admin
+            OpenSaas Admin
           </h1>
         </Link>
       </div>

@@ -8,7 +8,7 @@ export default function SignUpPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold">Create Account</h1>
-          <p className="text-gray-600 mt-2">Get started with OpenSaaS Auth Demo</p>
+          <p className="text-gray-600 mt-2">Get started with OpenSaas Auth Demo</p>
         </div>
 
         <div className="bg-gray-600 rounded-lg shadow-md p-8">

@@ -1,6 +1,6 @@
-# Getting Started with OpenSaaS Stack
+# Getting Started with OpenSaas Stack
 
-This guide will walk you through building and testing the OpenSaaS Stack prototype.
+This guide will walk you through building and testing the OpenSaas Stack prototype.
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ You should see:
 - `prisma/schema.prisma` created
 - `.opensaas/types.ts` created
 
-Take a look at these generated files to see what OpenSaaS created from your config!
+Take a look at these generated files to see what OpenSaas created from your config!
 
 ### 5. Create the Database
 

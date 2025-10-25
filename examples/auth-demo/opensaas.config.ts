@@ -22,7 +22,7 @@ const isAuthor: AccessControl = ({ session }) => {
 }
 
 /**
- * OpenSaaS Configuration with Better-Auth
+ * OpenSaas Configuration with Better-Auth
  */
 export default withAuth(
   config({

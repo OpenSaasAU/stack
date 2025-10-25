@@ -252,7 +252,7 @@ All hooks support async/await, allowing:
 
 ## Migration Guide
 
-If you have existing OpenSaaS code, no changes are required! Hooks are:
+If you have existing OpenSaas code, no changes are required! Hooks are:
 
 - **Optional** - Only run if defined in config
 - **Backward compatible** - Existing configs work without hooks

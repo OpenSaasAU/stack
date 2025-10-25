@@ -5,7 +5,7 @@ import ora from 'ora'
 import prompts from 'prompts'
 
 export async function initCommand(projectName: string | undefined) {
-  console.log(chalk.bold.cyan('\n🚀 Create OpenSaaS Project\n'))
+  console.log(chalk.bold.cyan('\n🚀 Create OpenSaas Project\n'))
 
   // Prompt for project name if not provided
   if (!projectName) {
@@ -174,7 +174,7 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
-# OpenSaaS generated
+# OpenSaas generated
 .opensaas
 
 # Prisma
@@ -258,7 +258,7 @@ export async function getContext(): Promise<Context> {
     const page = `export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold mb-4">Welcome to OpenSaaS</h1>
+      <h1 className="text-4xl font-bold mb-4">Welcome to OpenSaas</h1>
       <p className="text-gray-600">Your project is ready to go!</p>
 
       <div className="mt-8 space-y-2">
@@ -278,7 +278,7 @@ export async function getContext(): Promise<Context> {
     // Create app/layout.tsx
     const layout = `export const metadata = {
   title: '${projectName}',
-  description: 'Built with OpenSaaS',
+  description: 'Built with OpenSaas',
 }
 
 export default function RootLayout({
@@ -298,7 +298,7 @@ export default function RootLayout({
     // Create README.md
     const readme = `# ${projectName}
 
-Built with [OpenSaaS Stack](https://github.com/your-org/opensaas-stack)
+Built with [OpenSaas Stack](https://github.com/your-org/opensaas-stack)
 
 ## Getting Started
 
@@ -336,7 +336,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your app.
 
 ## Learn More
 
-- [OpenSaaS Documentation](https://github.com/your-org/opensaas-stack)
+- [OpenSaas Documentation](https://github.com/your-org/opensaas-stack)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Prisma Documentation](https://www.prisma.io/docs)
 `

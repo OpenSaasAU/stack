@@ -3,11 +3,11 @@ import Link from 'next/link'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaaSConfig } from '@opensaas/stack-core'
+import { AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 
 export interface ItemFormProps<TPrisma> {
   context: AccessContext<TPrisma>
-  config: OpenSaaSConfig
+  config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
   itemId?: string
@@ -47,7 +47,7 @@ export async function ItemForm<TPrisma>({
   let itemData: Record<string, unknown> = {}
   if (mode === 'edit' && itemId) {
     try {
-      // Access db from context - shape varies by OpenSaaS config
+      // Access db from context - shape varies by OpenSaas config
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dbContext = context.context as any
       itemData = await dbContext.db[getDbKey(listKey)].findUnique({

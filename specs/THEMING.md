@@ -1,6 +1,6 @@
-# OpenSaaS Theming System
+# OpenSaas Theming System
 
-The OpenSaaS admin UI now includes a powerful theming system that makes it easy to customize the look and feel of your admin interface.
+The OpenSaas admin UI now includes a powerful theming system that makes it easy to customize the look and feel of your admin interface.
 
 ## Features
 

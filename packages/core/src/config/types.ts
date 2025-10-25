@@ -359,13 +359,13 @@ export type UIConfig = {
 /**
  * Main configuration type
  */
-export type OpenSaaSConfig = {
+export type OpenSaasConfig = {
   db: DatabaseConfig
   lists: Record<string, ListConfig>
   session?: SessionConfig
   ui?: UIConfig
   /**
-   * Path where OpenSaaS generates files (context, types, patched Prisma client)
+   * Path where OpenSaas generates files (context, types, patched Prisma client)
    * @default ".opensaas"
    */
   opensaasPath?: string

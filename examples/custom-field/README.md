@@ -1,6 +1,6 @@
 # Custom Field Components Example
 
-This example demonstrates how to use custom field components in OpenSaaS Stack using two different approaches:
+This example demonstrates how to use custom field components in OpenSaas Stack using two different approaches:
 
 1. **Global field type registration** - Register a custom component that can be reused across your application
 2. **Per-field component override** - Override the default component for a specific field
@@ -142,6 +142,6 @@ Each component just needs to:
 
 ## Learn More
 
-- [OpenSaaS Documentation](../../README.md)
+- [OpenSaas Documentation](../../README.md)
 - [Field Component API](../../packages/ui/src/components/fields/registry.ts)
 - [Blog Example](../blog) - Basic usage without custom components

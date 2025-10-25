@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import React from 'react'
 
 export const metadata: Metadata = {
-  title: 'OpenSaaS Blog Admin',
+  title: 'OpenSaas Blog Admin',
   description: 'Admin interface for blog management',
 }
 

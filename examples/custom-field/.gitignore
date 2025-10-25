@@ -36,5 +36,5 @@ yarn-error.log*
 prisma/*.db
 prisma/*.db-journal
 
-# OpenSaaS generated
+# OpenSaas generated
 .opensaas/

@@ -1,4 +1,4 @@
-import type { OpenSaaSConfig, FieldConfig } from '../config/types.js'
+import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { HashedPassword } from '../utils/password.js'
 
 /**
@@ -18,7 +18,7 @@ export type InferFieldReadType<TField extends FieldConfig, TOriginal> = TField e
   : TOriginal // No hooks at all
 
 /**
- * Transform a Prisma model's field types based on OpenSaaS field configs
+ * Transform a Prisma model's field types based on OpenSaas field configs
  * This applies afterOperation hook transformations to field types
  */
 export type TransformModelFields<
@@ -34,19 +34,19 @@ export type TransformModelFields<
 }
 
 /**
- * Get the field configs for a specific list from the OpenSaaS config
+ * Get the field configs for a specific list from the OpenSaas config
  */
 export type GetListFields<
-  TConfig extends OpenSaaSConfig,
+  TConfig extends OpenSaasConfig,
   TListKey extends keyof TConfig['lists'],
 > = TConfig['lists'][TListKey]['fields']
 
 /**
- * Transform a Prisma model result based on OpenSaaS config
+ * Transform a Prisma model result based on OpenSaas config
  * Applies field hooks transformations
  */
 export type TransformResult<
-  TConfig extends OpenSaaSConfig,
+  TConfig extends OpenSaasConfig,
   TListKey extends keyof TConfig['lists'],
   TResult,
 > =
@@ -62,7 +62,7 @@ export type TransformResult<
  * Handles single results, arrays, and null cases
  */
 export type TransformOperationResult<
-  TConfig extends OpenSaaSConfig,
+  TConfig extends OpenSaasConfig,
   TListKey extends keyof TConfig['lists'],
   TResult,
 > =

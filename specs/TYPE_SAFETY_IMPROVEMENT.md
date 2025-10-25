@@ -8,13 +8,13 @@ The original implementation imported `PrismaClient` from `@prisma/client` direct
 import type { PrismaClient } from '@prisma/client'
 
 export async function getContext(
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   prisma: PrismaClient,
   session: Session,
 ): Promise<any>
 ```
 
-**Issue**: The `@prisma/client` package doesn't exist until after you run `prisma generate`, which happens AFTER you've generated the schema from your OpenSaaS config. This creates a chicken-and-egg problem where the core package can't be built without Prisma being generated first.
+**Issue**: The `@prisma/client` package doesn't exist until after you run `prisma generate`, which happens AFTER you've generated the schema from your OpenSaas config. This creates a chicken-and-egg problem where the core package can't be built without Prisma being generated first.
 
 ## Solution
 
@@ -26,7 +26,7 @@ export type PrismaClientLike = {
 }
 
 export async function getContext<TPrisma extends PrismaClientLike = any>(
-  config: OpenSaaSConfig,
+  config: OpenSaasConfig,
   prisma: TPrisma,
   session: Session,
 ): Promise<any>

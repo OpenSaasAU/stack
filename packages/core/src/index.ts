@@ -1,7 +1,7 @@
 // Config system
 export { config, list } from './config/index.js'
 export type {
-  OpenSaaSConfig,
+  OpenSaasConfig,
   ListConfig,
   FieldConfig,
   BaseFieldConfig,

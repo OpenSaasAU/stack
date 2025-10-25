@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { config, list } from '../src/config/index.js'
-import type { OpenSaaSConfig, ListConfig } from '../src/config/types.js'
+import type { OpenSaasConfig, ListConfig } from '../src/config/types.js'
 import { select } from '../src/fields/index.js'
 
 describe('config helpers', () => {
   describe('config', () => {
     it('should return the same config object', () => {
-      const testConfig: OpenSaaSConfig = {
+      const testConfig: OpenSaasConfig = {
         db: {
           provider: 'postgresql',
           url: 'postgresql://localhost:5432/test',

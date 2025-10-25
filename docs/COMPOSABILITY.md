@@ -1,6 +1,6 @@
-# OpenSaaS UI Composability Guide
+# OpenSaas UI Composability Guide
 
-OpenSaaS provides a fully composable UI layer with four levels of abstraction. Choose the level that best fits your use case - from low-level primitives to a complete admin interface.
+OpenSaas provides a fully composable UI layer with four levels of abstraction. Choose the level that best fits your use case - from low-level primitives to a complete admin interface.
 
 ## The Four Levels
 
@@ -69,8 +69,8 @@ export function LoginForm() {
 
 ## Level 2: Field Components
 
-**What:** OpenSaaS-aware form fields with validation and field-level access control
-**When to use:** Building custom forms that integrate with OpenSaaS field configs
+**What:** OpenSaas-aware form fields with validation and field-level access control
+**When to use:** Building custom forms that integrate with OpenSaas field configs
 **Import from:** `@opensaas/stack-ui/fields`
 
 ### Available Fields

@@ -1,6 +1,6 @@
 # Composable Dashboard Example
 
-This example demonstrates building a custom admin interface using OpenSaaS standalone components instead of the full `AdminUI`. It showcases the composability of the UI layer.
+This example demonstrates building a custom admin interface using OpenSaas standalone components instead of the full `AdminUI`. It showcases the composability of the UI layer.
 
 ## What This Demonstrates
 
@@ -235,7 +235,7 @@ export function middleware(request) {
 
 ### Add Access Control
 
-Update API routes to use OpenSaaS context:
+Update API routes to use OpenSaas context:
 
 ```tsx
 // app/api/posts/route.ts
@@ -260,7 +260,7 @@ const post = await context.db.post.create({ data })
 - [Composability Guide](../../docs/COMPOSABILITY.md) - Complete guide to UI composability
 - [Blog Example](../blog) - Using full AdminUI
 - [Custom Field Example](../custom-field) - Custom field components
-- [OpenSaaS Stack](../../README.md) - Stack overview
+- [OpenSaas Stack](../../README.md) - Stack overview
 
 ## License
 

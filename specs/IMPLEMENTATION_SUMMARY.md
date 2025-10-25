@@ -1,8 +1,8 @@
-# OpenSaaS Stack - Implementation Summary
+# OpenSaas Stack - Implementation Summary
 
 ## What Was Built
 
-This is a **working prototype** (Phase 1-2) of the OpenSaaS Stack - a modern, type-safe stack for building admin-heavy Next.js applications with built-in access control.
+This is a **working prototype** (Phase 1-2) of the OpenSaas Stack - a modern, type-safe stack for building admin-heavy Next.js applications with built-in access control.
 
 ## Project Structure
 
@@ -106,7 +106,7 @@ Each function returns a strongly-typed field configuration object.
 
 **Prisma Generator** (`prisma.ts`):
 
-- Reads OpenSaaS config
+- Reads OpenSaas config
 - Maps field types to Prisma types
 - Handles relationships correctly
 - Adds automatic id, createdAt, updatedAt fields
