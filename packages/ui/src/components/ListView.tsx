@@ -79,17 +79,36 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
       }
     }
 
+    // Build include object for relationship fields
+    const include: Record<string, boolean> = {}
+    Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
+      if ((field as { type: string }).type === 'relationship') {
+        include[fieldName] = true
+      }
+    })
     ;[items, total] = await Promise.all([
       dbContext[key].findMany({
         where,
         skip,
         take: pageSize,
+        ...(Object.keys(include).length > 0 ? { include } : {}),
       }),
       dbContext[key].count({ where }),
     ])
   } catch (error) {
     console.error(`Failed to fetch ${listKey}:`, error)
   }
+
+  // Serialize items for client component (convert Dates, etc to JSON-safe format)
+  const serializedItems = JSON.parse(JSON.stringify(items))
+
+  // Extract only the relationship refs needed by client (don't send entire config)
+  const relationshipRefs: Record<string, string> = {}
+  Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
+    if ('type' in field && field.type === 'relationship' && 'ref' in field && field.ref) {
+      relationshipRefs[fieldName] = field.ref
+    }
+  })
 
   return (
     <div className="p-8">
@@ -112,13 +131,14 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
 
       {/* Client Table */}
       <ListViewClient
-        items={items || []}
+        items={serializedItems || []}
         fieldTypes={Object.fromEntries(
           Object.entries(listConfig.fields).map(([key, field]) => [
             key,
             (field as { type: string }).type,
           ]),
         )}
+        relationshipRefs={relationshipRefs}
         columns={columns}
         listKey={listKey}
         urlKey={urlKey}

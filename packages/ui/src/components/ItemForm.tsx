@@ -49,9 +49,8 @@ export async function ItemForm<TPrisma>({
   if (mode === 'edit' && itemId) {
     try {
       // Access db from context - shape varies by OpenSaas config
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dbContext = context.context as any
-      itemData = await dbContext.db[getDbKey(listKey)].findUnique({
+
+      itemData = await context.db[getDbKey(listKey)].findUnique({
         where: { id: itemId },
       })
     } catch (error) {
@@ -77,14 +76,6 @@ export async function ItemForm<TPrisma>({
         </div>
       )
     }
-    return (
-      <div className="p-8">
-        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-2">Error loading item</h2>
-          <p>Failed to load the item. Please try again.</p>
-        </div>
-      </div>
-    )
   }
 
   // Fetch relationship options for all relationship fields

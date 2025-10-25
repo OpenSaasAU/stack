@@ -43,7 +43,39 @@ export function getFieldDisplayValue(value: unknown, fieldType: string): string 
       return new Date(value as string | number | Date).toLocaleString()
     case 'password':
       return '••••••••'
+    case 'relationship':
+      return getRelationshipDisplayValue(value)
     default:
       return String(value)
   }
+}
+
+/**
+ * Get display value for a relationship field
+ * Tries to display: name → title → label → id
+ */
+function getRelationshipDisplayValue(value: unknown): string {
+  if (!value || typeof value !== 'object') {
+    return '-'
+  }
+
+  // Handle array of relationships (many: true)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-'
+    return value.map((item) => getRelationshipDisplayValue(item)).join(', ')
+  }
+
+  // Handle single relationship object
+  let displayValue: unknown
+  if ('name' in value) {
+    displayValue = value.name
+  } else if ('title' in value) {
+    displayValue = value.title
+  } else if ('label' in value) {
+    displayValue = value.label
+  } else if ('id' in value) {
+    displayValue = value.id
+  }
+
+  return displayValue ? String(displayValue) : '-'
 }

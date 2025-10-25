@@ -1,7 +1,9 @@
 'use client'
 import * as React from 'react'
 import { useState } from 'react'
+import Link from 'next/link'
 import { formatFieldName, getFieldDisplayValue } from '../../lib/utils.js'
+import { getUrlKey } from '@opensaas/stack-core'
 import {
   Table,
   TableBody,
@@ -14,6 +16,8 @@ import {
 export interface ListTableProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
+  relationshipRefs?: Record<string, string>
+  basePath?: string
   columns?: string[]
   onRowClick?: (item: Record<string, unknown>) => void
   sortable?: boolean
@@ -30,8 +34,9 @@ export interface ListTableProps {
  * ```tsx
  * <ListTable
  *   items={posts}
- *   fieldTypes={{ title: 'text', status: 'select', publishedAt: 'timestamp' }}
- *   columns={['title', 'status', 'publishedAt']}
+ *   fieldTypes={{ title: 'text', status: 'select', publishedAt: 'timestamp', author: 'relationship' }}
+ *   relationshipRefs={{ author: 'User.posts' }}
+ *   columns={['title', 'status', 'publishedAt', 'author']}
  *   onRowClick={(post) => router.push(`/posts/${post.id}`)}
  *   renderActions={(post) => (
  *     <Button onClick={() => deletePost(post.id)}>Delete</Button>
@@ -42,6 +47,8 @@ export interface ListTableProps {
 export function ListTable({
   items,
   fieldTypes,
+  relationshipRefs,
+  basePath = '/admin',
   columns,
   onRowClick,
   sortable = true,
@@ -51,6 +58,68 @@ export function ListTable({
 }: ListTableProps) {
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  /**
+   * Render a relationship field as a clickable link or links
+   */
+  const renderRelationshipCell = (value: unknown, fieldName: string) => {
+    if (!relationshipRefs) {
+      return getFieldDisplayValue(value, 'relationship')
+    }
+
+    const ref = relationshipRefs[fieldName]
+    if (!ref) {
+      return getFieldDisplayValue(value, 'relationship')
+    }
+
+    // Parse ref to get related list name
+    const [relatedListKey] = ref.split('.')
+    const relatedUrlKey = getUrlKey(relatedListKey)
+
+    if (!value || typeof value !== 'object') {
+      return <span className="text-muted-foreground">-</span>
+    }
+
+    // Handle array of relationships (many: true)
+    if (Array.isArray(value)) {
+      if (value.length === 0) return <span className="text-muted-foreground">-</span>
+      return (
+        <span className="flex flex-wrap gap-1">
+          {value.map((item, idx) => {
+            if (!item || typeof item !== 'object') return null
+            const displayValue = getFieldDisplayValue(item, 'relationship')
+            const itemId = 'id' in item ? item.id : null
+            const key = itemId || idx
+            return (
+              <React.Fragment key={key}>
+                {idx > 0 && <span className="text-muted-foreground">, </span>}
+                <Link
+                  href={`${basePath}/${relatedUrlKey}/${itemId}`}
+                  className="text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {displayValue}
+                </Link>
+              </React.Fragment>
+            )
+          })}
+        </span>
+      )
+    }
+
+    // Handle single relationship
+    const itemId = 'id' in value ? value.id : null
+    const displayValue = getFieldDisplayValue(value, 'relationship')
+    return (
+      <Link
+        href={`${basePath}/${relatedUrlKey}/${itemId}`}
+        className="text-primary hover:underline"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {displayValue}
+      </Link>
+    )
+  }
 
   // Determine which columns to show
   const displayColumns =
@@ -121,7 +190,9 @@ export function ListTable({
                 >
                   {displayColumns.map((column) => (
                     <TableCell key={column}>
-                      {getFieldDisplayValue(item[column], fieldTypes[column])}
+                      {fieldTypes[column] === 'relationship'
+                        ? renderRelationshipCell(item[column], column)
+                        : getFieldDisplayValue(item[column], fieldTypes[column])}
                     </TableCell>
                   ))}
                   {renderActions && (

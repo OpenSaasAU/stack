@@ -16,10 +16,12 @@ import {
 import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
+import { getUrlKey } from '@opensaas/stack-core'
 
 export interface ListViewClientProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
+  relationshipRefs: Record<string, string>
   columns?: string[]
   listKey: string
   urlKey: string
@@ -37,6 +39,7 @@ export interface ListViewClientProps {
 export function ListViewClient({
   items,
   fieldTypes,
+  relationshipRefs,
   columns,
   urlKey,
   basePath,
@@ -107,6 +110,64 @@ export function ListViewClient({
     return `${basePath}/${urlKey}?${params.toString()}`
   }
 
+  /**
+   * Render a relationship field as a clickable link or links
+   */
+  const renderRelationshipCell = (value: unknown, fieldName: string) => {
+    const ref = relationshipRefs[fieldName]
+    if (!ref) {
+      return getFieldDisplayValue(value, 'relationship')
+    }
+
+    // Parse ref to get related list name
+    const [relatedListKey] = ref.split('.')
+    const relatedUrlKey = getUrlKey(relatedListKey)
+
+    if (!value || typeof value !== 'object') {
+      return <span className="text-muted-foreground">-</span>
+    }
+
+    // Handle array of relationships (many: true)
+    if (Array.isArray(value)) {
+      if (value.length === 0) return <span className="text-muted-foreground">-</span>
+      return (
+        <span className="flex flex-wrap gap-1">
+          {value.map((item, idx) => {
+            if (!item || typeof item !== 'object') return null
+            const displayValue = getFieldDisplayValue(item, 'relationship')
+            const itemId = 'id' in item ? item.id : null
+            const key = itemId || idx
+            return (
+              <React.Fragment key={key}>
+                {idx > 0 && <span className="text-muted-foreground">, </span>}
+                <Link
+                  href={`${basePath}/${relatedUrlKey}/${itemId}`}
+                  className="text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {displayValue}
+                </Link>
+              </React.Fragment>
+            )
+          })}
+        </span>
+      )
+    }
+
+    // Handle single relationship
+    const itemId = 'id' in value ? value.id : null
+    const displayValue = getFieldDisplayValue(value, 'relationship')
+    return (
+      <Link
+        href={`${basePath}/${relatedUrlKey}/${itemId}`}
+        className="text-primary hover:underline"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {displayValue}
+      </Link>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Search Bar */}
@@ -168,7 +229,9 @@ export function ListViewClient({
                 <TableRow key={String(item.id)}>
                   {displayColumns.map((column) => (
                     <TableCell key={column}>
-                      {getFieldDisplayValue(item[column], fieldTypes[column])}
+                      {fieldTypes[column] === 'relationship'
+                        ? renderRelationshipCell(item[column], column)
+                        : getFieldDisplayValue(item[column], fieldTypes[column])}
                     </TableCell>
                   ))}
                   <TableCell className="text-right">

@@ -612,3 +612,6 @@ Then follow the prompts to select packages and version bumps.
 
 2. Commit changes including the changeset file.
    Version bumping and publishing is handled automatically by changesets during release in a GitHub Action.
+
+- Data passed in as props to a component that is marked with `"use client"` must be serialised and must only contain the minimum data required to make that component work
+- Avoid the use of the `any` type, and do not use type casting. All types must be strongly typed to ensure type satefy - the `unkown` and `any` types must never exposed as an exteral type and are only to be used internally (within a package) where absolutely necessary
