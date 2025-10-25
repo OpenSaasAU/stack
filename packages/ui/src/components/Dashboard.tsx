@@ -37,9 +37,9 @@ export async function Dashboard<TPrisma>({
     <div className="p-8">
       {/* Header with gradient */}
       <div className="mb-8 relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] opacity-5 rounded-2xl" />
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-accent/5 opacity-100 rounded-2xl" />
         <div className="relative p-6">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
             Dashboard
           </h1>
           <p className="text-muted-foreground">Manage your application data</p>

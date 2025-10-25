@@ -27,7 +27,7 @@ export function Navigation<TPrisma>({
       <div className="p-6 border-b border-border relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 opacity-50" />
         <Link href={basePath} className="block relative">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-[hsl(var(--gradient-from))] to-[hsl(var(--gradient-to))] bg-clip-text text-transparent">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
             OpenSaas Admin
           </h1>
         </Link>
