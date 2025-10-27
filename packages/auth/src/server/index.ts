@@ -78,6 +78,9 @@ export function createAuth(
         },
         {} as Record<string, { clientId: string; clientSecret: string }>,
       ),
+
+    // Pass through any additional Better Auth plugins
+    plugins: authConfig.betterAuthPlugins || [],
   }
 
   return betterAuth(betterAuthConfig)
