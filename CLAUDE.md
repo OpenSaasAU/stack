@@ -402,7 +402,67 @@ Relationships use a `ref` format: `'ListName.fieldName'`
 
 **Key Principle:** The field config object drives ALL behavior. Generators, validators, and UI components delegate to field methods. Never add switch statements based on field type in core or UI packages.
 
-### Customizing UI Components
+### UI Package Architecture & Composability
+
+The UI package (`@opensaas/stack-ui`) offers multiple levels of abstraction through specialized exports:
+
+#### Package Exports
+
+```typescript
+// Full admin UI (all-in-one solution)
+import { AdminUI } from '@opensaas/stack-ui'
+
+// Primitives (shadcn/ui components for custom UIs)
+import { Button, Input, Dialog, Card, Table } from '@opensaas/stack-ui/primitives'
+
+// Composable field components
+import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fields'
+
+// Standalone composable components
+import { ItemCreateForm, ItemEditForm, ListTable } from '@opensaas/stack-ui/standalone'
+
+// Server utilities
+import { getAdminContext } from '@opensaas/stack-ui/server'
+```
+
+#### Composability Patterns
+
+**1. Full AdminUI** - Complete admin interface with routing:
+```typescript
+<AdminUI context={context} config={config} />
+```
+
+**2. Standalone Components** - Drop-in CRUD components:
+```typescript
+import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone'
+
+// Create form in custom page
+<ItemCreateForm
+  listKey="Post"
+  context={context}
+  onSuccess={(item) => router.push(`/posts/${item.id}`)}
+/>
+
+// Table in custom layout
+<ListTable
+  listKey="Post"
+  context={context}
+  columns={['title', 'author', 'createdAt']}
+/>
+```
+
+**3. Primitives** - Build custom UIs with shadcn components:
+```typescript
+import { Card, Button, Dialog } from '@opensaas/stack-ui/primitives'
+
+<Card>
+  <Button onClick={handleAction}>Custom Action</Button>
+</Card>
+```
+
+**See:** `examples/composable-dashboard` for complete working examples of all composability patterns.
+
+### Customizing Field Components
 
 The UI layer uses a component registry pattern to avoid switch statements and enable extensibility.
 
