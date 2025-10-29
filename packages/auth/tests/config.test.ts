@@ -222,7 +222,9 @@ describe('withAuth', () => {
     ) as typeof baseConfig & { __authConfig?: unknown }
 
     expect(result.__authConfig).toBeDefined()
-    expect((result.__authConfig as { emailAndPassword: { enabled: boolean } }).emailAndPassword.enabled).toBe(true)
+    expect(
+      (result.__authConfig as { emailAndPassword: { enabled: boolean } }).emailAndPassword.enabled,
+    ).toBe(true)
   })
 
   it('should handle empty lists in base config', () => {

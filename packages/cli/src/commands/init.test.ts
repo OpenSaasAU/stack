@@ -93,7 +93,9 @@ describe('Init Command', () => {
       }
 
       const projectPath = path.join(tempDir, projectName)
-      const packageJson = JSON.parse(fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8'))
+      const packageJson = JSON.parse(
+        fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8'),
+      )
 
       expect(packageJson.name).toBe(projectName)
       expect(packageJson.scripts.generate).toBe('opensaas generate')

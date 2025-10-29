@@ -61,7 +61,7 @@ describe('Context Generator', () => {
       expect(context).toContain('const globalForPrisma')
       expect(context).toContain('globalThis as unknown as { prisma: PrismaClient | undefined }')
       expect(context).toContain('globalForPrisma.prisma')
-      expect(context).toContain('if (process.env.NODE_ENV !== \'production\')')
+      expect(context).toContain("if (process.env.NODE_ENV !== 'production')")
     })
 
     it('should include JSDoc comments', () => {
