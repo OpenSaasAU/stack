@@ -3,7 +3,7 @@
  * Creates MCP API handlers from OpenSaaS config at runtime
  */
 
-import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AccessContext, FieldConfig } from '@opensaas/stack-core'
 import { getDbKey } from '@opensaas/stack-core'
 import type { BetterAuthInstance, McpSession } from '../auth/index.js'
 
@@ -58,7 +58,6 @@ export function createMcpHandlers(options: {
     const session = await auth.api.getMcpSession({
       headers: req.headers,
     })
-
     if (!session) {
       return new Response(null, {
         status: 401,
@@ -70,22 +69,47 @@ export function createMcpHandlers(options: {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
-      const body = (await req.json()) as { method: string; params?: any }
+      const body = (await req.json()) as {
+        jsonrpc?: string
+        id?: number | string
+        method: string
+        params?: any
+      }
+
+      console.log('MCP session:', session)
+      console.log(' MCP method', body.method)
+      // Handle initialize
+      if (body.method === 'initialize') {
+        return handleInitialize(body.params, body.id)
+      }
+
+      // Handle notifications/initialized (sent by client after initialize response)
+      if (body.method === 'notifications/initialized') {
+        // Notifications don't require a response in JSON-RPC 2.0
+        return new Response(null, { status: 204 })
+      }
 
       // Handle tools/list
       if (body.method === 'tools/list') {
-        return handleToolsList(config)
+        return handleToolsList(config, body.id)
       }
 
       // Handle tools/call
       if (body.method === 'tools/call') {
-        return await handleToolsCall(body.params, session, config, getContext)
+        return await handleToolsCall(body.params, session, config, getContext, body.id)
       }
 
-      return new Response(JSON.stringify({ error: 'Unknown method' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: body.id ?? null,
+          error: { code: -32601, message: 'Method not found' },
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
     } catch (error) {
       return new Response(
         JSON.stringify({
@@ -121,9 +145,118 @@ type McpTool = {
 }
 
 /**
+ * Handle initialize request - respond with server capabilities
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Initialize params are from the client
+function handleInitialize(_params?: any, id?: number | string): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: id ?? null,
+      result: {
+        protocolVersion: '2024-11-05',
+        capabilities: {
+          tools: {},
+        },
+        serverInfo: {
+          name: 'opensaas-mcp-server',
+          version: '1.0.0',
+        },
+      },
+    }),
+    {
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
+}
+
+/**
+ * Convert field config to JSON schema property
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
+function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, unknown> {
+  const baseSchema: Record<string, unknown> = {}
+
+  switch (fieldConfig.type) {
+    case 'text':
+    case 'password':
+      baseSchema.type = 'string'
+      if (fieldConfig.validation?.length) {
+        if (fieldConfig.validation.length.min) baseSchema.minLength = fieldConfig.validation.length.min
+        if (fieldConfig.validation.length.max) baseSchema.maxLength = fieldConfig.validation.length.max
+      }
+      break
+    case 'integer':
+      baseSchema.type = 'number'
+      if (fieldConfig.validation?.min !== undefined) baseSchema.minimum = fieldConfig.validation.min
+      if (fieldConfig.validation?.max !== undefined) baseSchema.maximum = fieldConfig.validation.max
+      break
+    case 'checkbox':
+      baseSchema.type = 'boolean'
+      break
+    case 'timestamp':
+      baseSchema.type = 'string'
+      baseSchema.format = 'date-time'
+      break
+    case 'select':
+      baseSchema.type = 'string'
+      if (fieldConfig.options) {
+        baseSchema.enum = fieldConfig.options.map((opt: { value: string }) => opt.value)
+      }
+      break
+    case 'relationship':
+      // For relationships, expect an ID or connect object
+      baseSchema.type = 'object'
+      baseSchema.properties = {
+        connect: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      }
+      break
+    default:
+      // For custom field types, default to string
+      baseSchema.type = 'string'
+  }
+
+  return baseSchema
+}
+
+/**
+ * Generate field schemas for create/update operations
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
+function generateFieldSchemas(
+  fields: Record<string, any>,
+  operation: 'create' | 'update',
+): {
+  properties: Record<string, unknown>
+  required: string[]
+} {
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip system fields
+    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
+
+    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
+
+    // Add to required array if field is required for this operation
+    if (operation === 'create' && fieldConfig.validation?.isRequired) {
+      required.push(fieldName)
+    }
+  }
+
+  return { properties, required }
+}
+
+/**
  * Handle tools/list request - list all available tools
  */
-function handleToolsList(config: OpenSaasConfig): Response {
+function handleToolsList(config: OpenSaasConfig, id?: number | string): Response {
   const tools: McpTool[] = []
 
   // Generate CRUD tools for each list
@@ -165,6 +298,7 @@ function handleToolsList(config: OpenSaasConfig): Response {
 
     // Create tool
     if (enabledTools.create) {
+      const fieldSchemas = generateFieldSchemas(listConfig.fields, 'create')
       tools.push({
         name: `list_${dbKey}_create`,
         description: `Create a new ${listKey} record`,
@@ -173,7 +307,9 @@ function handleToolsList(config: OpenSaasConfig): Response {
           properties: {
             data: {
               type: 'object',
-              description: 'Record data',
+              description: 'Record data with the following fields',
+              properties: fieldSchemas.properties,
+              required: fieldSchemas.required,
             },
           },
           required: ['data'],
@@ -183,6 +319,7 @@ function handleToolsList(config: OpenSaasConfig): Response {
 
     // Update tool
     if (enabledTools.update) {
+      const fieldSchemas = generateFieldSchemas(listConfig.fields, 'update')
       tools.push({
         name: `list_${dbKey}_update`,
         description: `Update an existing ${listKey} record`,
@@ -200,6 +337,7 @@ function handleToolsList(config: OpenSaasConfig): Response {
             data: {
               type: 'object',
               description: 'Fields to update',
+              properties: fieldSchemas.properties,
             },
           },
           required: ['where', 'data'],
@@ -241,9 +379,16 @@ function handleToolsList(config: OpenSaasConfig): Response {
     }
   }
 
-  return new Response(JSON.stringify({ tools }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: id ?? null,
+      result: { tools },
+    }),
+    {
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
 }
 
 /**
@@ -255,15 +400,19 @@ async function handleToolsCall(
   session: McpSession,
   config: OpenSaasConfig,
   getContext: (session?: { userId: string }) => AccessContext,
+  id?: number | string,
 ): Promise<Response> {
   const toolName = params?.name
   const toolArgs = params?.arguments || {}
 
+  console.log('Handling tool call:', toolName, toolArgs)
+
   if (!toolName) {
     return new Response(
       JSON.stringify({
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Tool name required' }, null, 2) }],
-        isError: true,
+        jsonrpc: '2.0',
+        id: id ?? null,
+        error: { code: -32602, message: 'Invalid params: Tool name required' },
       }),
       {
         status: 400,
@@ -277,11 +426,11 @@ async function handleToolsCall(
 
   if (match) {
     const [, dbKey, operation] = match
-    return await handleCrudTool(dbKey, operation, toolArgs, session, config, getContext)
+    return await handleCrudTool(dbKey, operation, toolArgs, session, config, getContext, id)
   }
 
   // Handle custom tools
-  return await handleCustomTool(toolName, toolArgs, session, config, getContext)
+  return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
 /**
@@ -295,6 +444,7 @@ async function handleCrudTool(
   session: McpSession,
   config: OpenSaasConfig,
   getContext: (session?: { userId: string }) => AccessContext,
+  id?: number | string,
 ): Promise<Response> {
   // Create context with user session
   const context = getContext({ userId: session.userId })
@@ -311,19 +461,25 @@ async function handleCrudTool(
           skip: args.skip,
           orderBy: args.orderBy,
         })
-        return createSuccessResponse({
-          items: result,
-          count: result.length,
-        })
+        return createSuccessResponse(
+          {
+            items: result,
+            count: result.length,
+          },
+          id,
+        )
 
       case 'create':
         result = await context.db[dbKey].create({
           data: args.data,
         })
         if (!result) {
-          return createErrorResponse('Failed to create record. Access denied or validation failed.')
+          return createErrorResponse(
+            'Failed to create record. Access denied or validation failed.',
+            id,
+          )
         }
-        return createSuccessResponse({ success: true, item: result })
+        return createSuccessResponse({ success: true, item: result }, id)
 
       case 'update':
         result = await context.db[dbKey].update({
@@ -331,26 +487,32 @@ async function handleCrudTool(
           data: args.data,
         })
         if (!result) {
-          return createErrorResponse('Failed to update record. Access denied or record not found.')
+          return createErrorResponse(
+            'Failed to update record. Access denied or record not found.',
+            id,
+          )
         }
-        return createSuccessResponse({ success: true, item: result })
+        return createSuccessResponse({ success: true, item: result }, id)
 
       case 'delete':
         result = await context.db[dbKey].delete({
           where: args.where,
         })
         if (!result) {
-          return createErrorResponse('Failed to delete record. Access denied or record not found.')
+          return createErrorResponse(
+            'Failed to delete record. Access denied or record not found.',
+            id,
+          )
         }
-        return createSuccessResponse({ success: true, deletedId: args.where.id })
+        return createSuccessResponse({ success: true, deletedId: args.where.id }, id)
 
       default:
-        return createErrorResponse(`Unknown operation: ${operation}`)
+        return createErrorResponse(`Unknown operation: ${operation}`, id)
     }
   } catch (error) {
     return createErrorResponse(
-      'Operation failed',
-      error instanceof Error ? error.message : 'Unknown error',
+      'Operation failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+      id,
     )
   }
 }
@@ -365,6 +527,7 @@ async function handleCustomTool(
   session: McpSession,
   config: OpenSaasConfig,
   getContext: (session?: { userId: string }) => AccessContext,
+  id?: number | string,
 ): Promise<Response> {
   // Find custom tool in config
   for (const [_listKey, listConfig] of Object.entries(config.lists)) {
@@ -379,34 +542,32 @@ async function handleCustomTool(
           context,
         })
 
-        return new Response(
-          JSON.stringify({
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-          }),
-          {
-            headers: { 'Content-Type': 'application/json' },
-          },
-        )
+        return createSuccessResponse(result, id)
       } catch (error) {
         return createErrorResponse(
-          'Custom tool execution failed',
-          error instanceof Error ? error.message : 'Unknown error',
+          'Custom tool execution failed: ' +
+            (error instanceof Error ? error.message : 'Unknown error'),
+          id,
         )
       }
     }
   }
 
-  return createErrorResponse(`Unknown tool: ${toolName}`)
+  return createErrorResponse(`Unknown tool: ${toolName}`, id)
 }
 
 /**
  * Helper to create success response
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Response data structure is flexible per MCP protocol
-function createSuccessResponse(data: any): Response {
+function createSuccessResponse(data: any, id?: number | string): Response {
   return new Response(
     JSON.stringify({
-      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      jsonrpc: '2.0',
+      id: id ?? null,
+      result: {
+        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      },
     }),
     {
       headers: { 'Content-Type': 'application/json' },
@@ -417,16 +578,15 @@ function createSuccessResponse(data: any): Response {
 /**
  * Helper to create error response
  */
-function createErrorResponse(error: string, details?: string): Response {
+function createErrorResponse(message: string, id?: number | string): Response {
   return new Response(
     JSON.stringify({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ error, ...(details && { details }) }, null, 2),
-        },
-      ],
-      isError: true,
+      jsonrpc: '2.0',
+      id: id ?? null,
+      error: {
+        code: -32603,
+        message,
+      },
     }),
     {
       status: 400,

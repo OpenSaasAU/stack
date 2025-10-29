@@ -12,10 +12,10 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
-    "@opensaas/stack-core": "workspace:*",
-    "@opensaas/stack-ui": "workspace:*",
-    "@opensaas/stack-mcp": "workspace:*",
     "@opensaas/stack-auth": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-mcp": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
     "@prisma/client": "^6.17.1",
     "next": "^15.5.5",
     "react": "^19.2.0",
@@ -28,6 +28,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "prisma": "^6.17.1",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }
