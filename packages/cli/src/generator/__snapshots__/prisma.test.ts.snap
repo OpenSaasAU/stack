@@ -1,0 +1,182 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate basic schema with datasource and generator 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate many-to-one relationship 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name         String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  authorId     String?
+  author       User?  @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with basic fields 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name         String
+  email        String
+  age          Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with checkbox field 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  isPublished  Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with timestamp field 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  publishedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate multiple models 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name         String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should generate one-to-many relationship 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name         String?
+  posts        Post[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+"
+`;
+
+exports[`Prisma Schema Generator > generatePrismaSchema > should use custom opensaasPath for generator output 1`] = `
+"generator client {
+  provider = "prisma-client-js"
+  output   = "../.custom-path/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+"
+`;

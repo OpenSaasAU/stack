@@ -21,6 +21,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
     "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo"
   },
   "keywords": [
@@ -44,6 +47,8 @@
   "devDependencies": {
     "@types/node": "^24.7.2",
     "@types/prompts": "^2.4.9",
-    "typescript": "^5.9.3"
+    "@vitest/coverage-v8": "^4.0.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.3"
   }
 }
