@@ -215,6 +215,7 @@ describe('MCP Generator', () => {
                 {
                   name: 'user_verify_email',
                   description: 'Verify a user email address',
+                  inputSchema: {},
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   handler: async () => ({}) as any,
                 },

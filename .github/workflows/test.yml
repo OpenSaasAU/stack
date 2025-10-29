@@ -75,6 +75,13 @@ jobs:
           working-directory: ./packages/cli
           name: 'CLI Package Coverage'
 
+      - name: Report coverage for auth package
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          working-directory: ./packages/auth
+          name: 'Auth Package Coverage'
+
       - name: Lint codebase
         run: pnpm lint
 

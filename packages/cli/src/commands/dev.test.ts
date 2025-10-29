@@ -134,11 +134,12 @@ describe('Dev Command', () => {
 
       // Verify watcher was set up
       expect(mockWatch).toHaveBeenCalled()
+      expect(mockWatch.mock.calls.length).toBeGreaterThan(0)
 
-      const watchPath = mockWatch.mock.calls[0]?.[0]
+      const watchPath = mockWatch.mock.calls[0]![0]
       expect(watchPath).toContain('opensaas.config.ts')
 
-      const watchOptions = mockWatch.mock.calls[0]?.[1]
+      const watchOptions = mockWatch.mock.calls[0]![1]
       expect(watchOptions).toMatchObject({
         persistent: true,
         ignoreInitial: true,
