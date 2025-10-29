@@ -17,10 +17,14 @@ This is a pnpm monorepo with:
 - `packages/core`: Core stack (config system, access control, generators)
 - `packages/cli`: CLI tools (generators via bin scripts)
 - `packages/ui`: Admin UI components (composable React components)
+- `packages/auth`: Better-auth integration (authentication & sessions)
+- `packages/mcp`: Model Context Protocol server (AI assistant integration)
 - `packages/tiptap`: Rich text editor integration (third-party field example)
 - `examples/blog`: Basic blog example
 - `examples/custom-field`: Custom field types demonstration
 - `examples/composable-dashboard`: Composable UI components
+- `examples/auth-demo`: Authentication integration
+- `examples/mcp-demo`: MCP server integration
 - `examples/tiptap-demo`: Tiptap rich text editor integration
 - `specs/`: Design documents and specifications
 
@@ -230,6 +234,49 @@ Each field builder function returns an object with these methods:
 3. **`getTypeScriptType()`** - TypeScript type and optionality (e.g., `{ type: "string", optional: true }`)
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
+
+### Authentication System
+
+The stack provides optional Better-auth integration through `@opensaas/stack-auth`.
+
+**Key files:**
+
+- `packages/auth/src/config/index.ts` - Config wrapper `withAuth()` and `authConfig()`
+- `packages/auth/src/lists/index.ts` - Auto-generated auth lists (User, Session, Account, Verification)
+- `packages/auth/src/server/index.ts` - Better-auth server setup
+- `packages/auth/src/client/index.ts` - Client-side auth hooks
+- `packages/auth/src/ui/index.ts` - Pre-built UI components (SignInForm, SignUpForm, etc.)
+
+**How it works:**
+
+1. `withAuth()` wraps your config and merges in auth lists (User, Session, Account, Verification)
+2. `authConfig()` configures Better-auth plugins and session fields
+3. Generator creates Prisma schema with auth tables
+4. Better-auth handles OAuth flow and session management
+5. Context automatically includes session in all access control functions
+6. Session fields are configurable (e.g., `['userId', 'email', 'name', 'role']`)
+
+**See:** `packages/auth/CLAUDE.md` for detailed patterns and `examples/auth-demo` for usage.
+
+### MCP Server Integration
+
+The stack provides Model Context Protocol server integration through `@opensaas/stack-mcp`.
+
+**Key files:**
+
+- `packages/mcp/src/runtime/handler.ts` - MCP HTTP handlers
+- `packages/mcp/src/runtime/index.ts` - Tool generation from config
+- `packages/mcp/src/auth/better-auth.ts` - OAuth authentication
+
+**How it works:**
+
+1. Enable MCP in config with `mcp: { enabled: true, auth: { type: 'better-auth', loginPage: '/sign-in' } }`
+2. Runtime generates CRUD tools for each list (query, create, update, delete)
+3. Better-auth MCP plugin handles OAuth flow with AI assistants
+4. All tools respect existing access control rules
+5. Custom tools can be added per-list for specialized operations
+
+**See:** `packages/mcp/CLAUDE.md` for detailed patterns and `examples/mcp-demo` for usage.
 
 ## Critical Patterns
 
