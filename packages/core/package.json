@@ -42,6 +42,7 @@
     "@prisma/client": "^6.17.1",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^24.7.2",
+    "@vitest/coverage-v8": "^4.0.4",
     "typescript": "^5.9.3",
     "vitest": "^4.0.0"
   }
