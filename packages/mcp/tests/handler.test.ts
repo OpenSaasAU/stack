@@ -290,7 +290,9 @@ describe('createMcpHandlers', () => {
       const response = await handlers.POST(request)
       const body = await response.json()
 
-      const createTool = body.result.tools.find((t: { name: string }) => t.name === 'list_post_create')
+      const createTool = body.result.tools.find(
+        (t: { name: string }) => t.name === 'list_post_create',
+      )
       expect(createTool).toBeDefined()
       expect(createTool.inputSchema.properties.data.properties).toHaveProperty('title')
       expect(createTool.inputSchema.properties.data.properties).toHaveProperty('content')

@@ -475,11 +475,13 @@ import { getAdminContext } from '@opensaas/stack-ui/server'
 #### Composability Patterns
 
 **1. Full AdminUI** - Complete admin interface with routing:
+
 ```typescript
 <AdminUI context={context} config={config} />
 ```
 
 **2. Standalone Components** - Drop-in CRUD components:
+
 ```typescript
 import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone'
 
@@ -499,6 +501,7 @@ import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone'
 ```
 
 **3. Primitives** - Build custom UIs with shadcn components:
+
 ```typescript
 import { Card, Button, Dialog } from '@opensaas/stack-ui/primitives'
 

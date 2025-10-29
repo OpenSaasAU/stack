@@ -9,24 +9,30 @@ Exposes OpenSaas Stack data and operations as MCP tools consumable by AI assista
 ## Key Files & Exports
 
 ### Runtime (`src/runtime/index.ts`)
+
 - `createMcpServer(config, auth, getContext)` - Generates MCP server with CRUD tools
 - `getMcpTools(config)` - Returns array of tool definitions for all enabled lists
 
 ### Handler (`src/runtime/handler.ts`)
+
 - `createMcpHandlers({ config, auth, getContext })` - Creates Next.js route handlers
 - Returns `{ GET, POST, DELETE }` for `/api/mcp/[[...transport]]/route.ts`
 
 ### Auth (`src/auth/better-auth.ts`)
+
 - `createBetterAuthAdapter(auth)` - OAuth adapter for Better-auth MCP plugin
 - Validates access tokens and retrieves user sessions
 
 ### Main Export (`src/index.ts`)
+
 - Re-exports `createMcpHandlers` for easy import
 
 ## Architecture
 
 ### Tool Generation
+
 For each list with `mcp.enabled !== false`, four tools are created:
+
 - `list_{listKey}_query` - Query records with filters
 - `list_{listKey}_create` - Create new record
 - `list_{listKey}_update` - Update existing record
@@ -35,7 +41,9 @@ For each list with `mcp.enabled !== false`, four tools are created:
 Tool names use snake_case of camelCase list keys (e.g., `list_blog_post_query`).
 
 ### Access Control Integration
+
 All tool operations flow through context:
+
 ```typescript
 const context = getContext({ session }) // Session from OAuth token
 const result = await context.db.post.findMany(input)
@@ -43,6 +51,7 @@ const result = await context.db.post.findMany(input)
 ```
 
 ### OAuth Flow
+
 1. AI assistant initiates OAuth via Better-auth MCP plugin
 2. User signs in at `loginPage` (e.g., `/sign-in`)
 3. Access token issued and stored in AI assistant
@@ -53,6 +62,7 @@ const result = await context.db.post.findMany(input)
 ## Configuration Patterns
 
 ### Global MCP Config
+
 ```typescript
 config({
   mcp: {
@@ -60,19 +70,20 @@ config({
     basePath: '/api/mcp',
     auth: {
       type: 'better-auth',
-      loginPage: '/sign-in'
+      loginPage: '/sign-in',
     },
     defaultTools: {
       read: true,
       create: true,
       update: true,
-      delete: true
-    }
-  }
+      delete: true,
+    },
+  },
 })
 ```
 
 ### List-Level Config
+
 ```typescript
 Post: list({
   fields: {...},
@@ -102,20 +113,25 @@ Post: list({
 ## Integration Points
 
 ### With @opensaas/stack-core
+
 - Reads config to generate tools
 - Uses context for all database operations
 - Respects all access control and hooks
 
 ### With @opensaas/stack-auth
+
 - Requires Better-auth instance with MCP plugin
 - Requires `rawOpensaasContext` for session provider:
+
 ```typescript
 import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 ```
 
 ### With Next.js
+
 Route setup:
+
 ```typescript
 // app/api/mcp/[[...transport]]/route.ts
 import { createMcpHandlers } from '@opensaas/stack-mcp'
@@ -126,13 +142,14 @@ import { getContext } from '@/.opensaas/context'
 const { GET, POST, DELETE } = createMcpHandlers({
   config,
   auth,
-  getContext
+  getContext,
 })
 
 export { GET, POST, DELETE }
 ```
 
 OAuth discovery routes:
+
 ```typescript
 // app/.well-known/oauth-authorization-server/route.ts
 export async function GET(req: Request) {
@@ -150,6 +167,7 @@ export async function GET(req: Request) {
 ## Common Patterns
 
 ### Complete Setup
+
 ```typescript
 // 1. Config with MCP enabled
 export default withAuth(
@@ -180,7 +198,9 @@ export const { GET, POST, DELETE } = createMcpHandlers({
 ```
 
 ### Custom Tools
+
 Add specialized operations:
+
 ```typescript
 mcp: {
   customTools: [
@@ -188,26 +208,28 @@ mcp: {
       name: 'bulkPublishPosts',
       description: 'Publish multiple posts at once',
       inputSchema: z.object({
-        postIds: z.array(z.string())
+        postIds: z.array(z.string()),
       }),
       handler: async ({ input, context }) => {
         const results = await Promise.all(
-          input.postIds.map(id =>
+          input.postIds.map((id) =>
             context.db.post.update({
               where: { id },
-              data: { status: 'published', publishedAt: new Date() }
-            })
-          )
+              data: { status: 'published', publishedAt: new Date() },
+            }),
+          ),
         )
         return { published: results.filter(Boolean).length }
-      }
-    }
+      },
+    },
   ]
 }
 ```
 
 ### Tool Filtering by Access Control
+
 Tools automatically respect access rules:
+
 ```typescript
 Post: list({
   access: {
@@ -215,9 +237,9 @@ Post: list({
       query: () => true,
       create: ({ session }) => !!session,
       update: ({ session, item }) => session?.userId === item.authorId,
-      delete: ({ session }) => session?.role === 'admin'
-    }
-  }
+      delete: ({ session }) => session?.role === 'admin',
+    },
+  },
 })
 // MCP tools enforce these rules - non-admins can't delete via MCP
 ```
@@ -242,6 +264,7 @@ Post: list({
 ## Type Safety
 
 Tool schemas are generated from field types using Zod:
+
 - Input validation via `getZodSchema()` on field configs
 - Runtime type checking on all tool inputs
 - TypeScript types for custom tool handlers

@@ -26,6 +26,7 @@ pnpm generate
 ```
 
 This generates:
+
 - `prisma/schema.prisma` - Prisma schema
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
@@ -74,13 +75,15 @@ mcp: {
 
 ```typescript
 Post: list({
-  fields: { /* ... */ },
+  fields: {
+    /* ... */
+  },
   mcp: {
     tools: {
       read: true,
       create: true,
       update: true,
-      delete: true
+      delete: true,
     },
     customTools: [
       {
@@ -89,10 +92,10 @@ Post: list({
         inputSchema: z.object({ postId: z.string() }),
         handler: async ({ input, context }) => {
           // Custom logic with full access control
-        }
-      }
-    ]
-  }
+        },
+      },
+    ],
+  },
 })
 ```
 
@@ -101,6 +104,7 @@ Post: list({
 ### Post Tools
 
 - **list_post_query** - Query posts with filters
+
   ```json
   {
     "where": { "status": { "equals": "published" } },
@@ -110,6 +114,7 @@ Post: list({
   ```
 
 - **list_post_create** - Create a new post
+
   ```json
   {
     "data": {
@@ -122,6 +127,7 @@ Post: list({
   ```
 
 - **list_post_update** - Update an existing post
+
   ```json
   {
     "where": { "id": "post-id" },
@@ -130,6 +136,7 @@ Post: list({
   ```
 
 - **list_post_delete** - Delete a post
+
   ```json
   {
     "where": { "id": "post-id" }
@@ -137,6 +144,7 @@ Post: list({
   ```
 
 - **publishPost** (custom) - Publish a draft post
+
   ```json
   {
     "postId": "post-id"
@@ -210,8 +218,8 @@ title: text({
   access: {
     read: () => true,
     create: isSignedIn,
-    update: isAuthor
-  }
+    update: isAuthor,
+  },
 })
 ```
 

@@ -68,7 +68,6 @@ export function createMcpHandlers(options: {
     }
 
     try {
-       
       const body = (await req.json()) as {
         jsonrpc?: string
         id?: number | string
@@ -228,7 +227,7 @@ function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, 
 /**
  * Generate field schemas for create/update operations
  */
- 
+
 function generateFieldSchemas(
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',

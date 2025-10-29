@@ -9,23 +9,28 @@ Demonstrates how to create third-party field packages that extend OpenSaas Stack
 ## Key Files & Exports
 
 ### Field Builder (`src/fields/richText.ts`)
+
 - `richText(options?)` - Field builder function
 - Returns `RichTextField` type implementing `BaseFieldConfig`
 - Methods: `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()`
 
 ### Component (`src/components/TiptapField.tsx`)
+
 - `TiptapField` - React component (client component)
 - Uses Tiptap editor with StarterKit
 - Supports edit/read modes, custom toolbar
 
 ### Main Exports (`src/index.ts`)
+
 - Re-exports field builder and component
 - Separate exports for `/fields` and `/components`
 
 ## Architecture
 
 ### Self-Contained Field Pattern
+
 Complete third-party field implementation:
+
 ```typescript
 // Field builder
 export function richText(options) {
@@ -36,15 +41,17 @@ export function richText(options) {
     getTypeScriptType: () => ({ type: 'any', optional: !options?.validation?.isRequired }),
     getZodSchema: (fieldName, operation) => {
       return operation === 'create' && options?.validation?.isRequired
-        ? z.any().refine(val => val, 'Required')
+        ? z.any().refine((val) => val, 'Required')
         : z.any().optional()
-    }
+    },
   }
 }
 ```
 
 ### Client-Side Registration
+
 Due to Next.js server/client boundaries:
+
 ```typescript
 // lib/register-fields.ts
 'use client'
@@ -58,7 +65,9 @@ import '../../../lib/register-fields' // Side-effect import
 ```
 
 ### JSON Storage
+
 Content stored as Prisma `Json` type:
+
 ```prisma
 model Article {
   content Json  // Tiptap JSON structure
@@ -66,25 +75,29 @@ model Article {
 ```
 
 TypeScript type:
+
 ```typescript
 type Article = {
-  content: any  // JSON structure
+  content: any // JSON structure
 }
 ```
 
 ## Integration Points
 
 ### With @opensaas/stack-core
+
 - Implements `BaseFieldConfig` interface
 - Works with generator system (no core changes)
 - Compatible with access control and hooks
 
 ### With @opensaas/stack-ui
+
 - Uses component registry pattern
 - Receives UI options as props via pass-through
 - Follows field component prop interface
 
 ### With Tiptap
+
 - Uses `@tiptap/react` and `@tiptap/starter-kit`
 - SSR-safe with `immediatelyRender: false`
 - JSON content structure
@@ -92,6 +105,7 @@ type Article = {
 ## Common Patterns
 
 ### Basic Usage
+
 ```typescript
 // opensaas.config.ts
 import { richText } from '@opensaas/stack-tiptap/fields'
@@ -102,24 +116,26 @@ fields: {
     ui: {
       placeholder: 'Start writing...',
       minHeight: 200,
-      maxHeight: 800
-    }
+      maxHeight: 800,
+    },
   })
 }
 ```
 
 ### With Access Control
+
 ```typescript
 content: richText({
   access: {
     read: () => true,
     create: ({ session }) => !!session,
-    update: ({ session, item }) => session?.userId === item.authorId
-  }
+    update: ({ session, item }) => session?.userId === item.authorId,
+  },
 })
 ```
 
 ### Custom Extensions
+
 ```typescript
 // components/ExtendedTiptap.tsx
 'use client'
@@ -151,6 +167,7 @@ content: richText({ ui: { fieldType: 'richTextExtended' } })
 This package demonstrates all requirements for third-party fields:
 
 ### 1. Field Builder with Required Methods
+
 ```typescript
 export type RichTextField = BaseFieldConfig & {
   type: 'richText'
@@ -161,14 +178,21 @@ export function richText(options?): RichTextField {
   return {
     type: 'richText',
     ...options,
-    getZodSchema: (fieldName, operation) => { /* ... */ },
-    getPrismaType: (fieldName) => { /* ... */ },
-    getTypeScriptType: () => { /* ... */ }
+    getZodSchema: (fieldName, operation) => {
+      /* ... */
+    },
+    getPrismaType: (fieldName) => {
+      /* ... */
+    },
+    getTypeScriptType: () => {
+      /* ... */
+    },
   }
 }
 ```
 
 ### 2. React Component with Standard Props
+
 ```typescript
 export interface TiptapFieldProps {
   name: string
@@ -187,6 +211,7 @@ export interface TiptapFieldProps {
 ```
 
 ### 3. Client-Side Registration
+
 ```typescript
 'use client'
 import { registerFieldComponent } from '@opensaas/stack-ui'
@@ -196,16 +221,18 @@ registerFieldComponent('richText', TiptapField)
 ```
 
 ### 4. SSR Safety
+
 ```typescript
 const editor = useEditor({
   extensions: [StarterKit],
   content: value,
-  immediatelyRender: false,  // Critical for Next.js SSR
-  onUpdate: ({ editor }) => onChange(editor.getJSON())
+  immediatelyRender: false, // Critical for Next.js SSR
+  onUpdate: ({ editor }) => onChange(editor.getJSON()),
 })
 ```
 
 ## Package Structure
+
 ```
 packages/tiptap/
 ├── src/
@@ -221,6 +248,7 @@ packages/tiptap/
 ```
 
 ## Exports
+
 ```typescript
 // Main export
 import { richText, TiptapField } from '@opensaas/stack-tiptap'
@@ -231,6 +259,7 @@ import { TiptapField } from '@opensaas/stack-tiptap/components'
 ```
 
 ## Example
+
 See `examples/tiptap-demo` for complete working example.
 
 ## Key Principles

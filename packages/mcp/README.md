@@ -37,24 +37,26 @@ export default config({
     basePath: '/api/mcp',
     auth: {
       type: 'better-auth',
-      loginPage: '/sign-in'
-    }
+      loginPage: '/sign-in',
+    },
   },
 
   lists: {
     Post: list({
-      fields: { /* ... */ },
+      fields: {
+        /* ... */
+      },
       // Optional: customize MCP tools for this list
       mcp: {
         tools: {
           read: true,
           create: true,
           update: true,
-          delete: false // Disable delete tool
-        }
-      }
-    })
-  }
+          delete: false, // Disable delete tool
+        },
+      },
+    }),
+  },
 })
 ```
 
@@ -74,9 +76,9 @@ export default withAuth(
       basePath: '/api/mcp',
       auth: {
         type: 'better-auth',
-        loginPage: '/sign-in'
-      }
-    }
+        loginPage: '/sign-in',
+      },
+    },
   }),
   authConfig({
     emailAndPassword: { enabled: true },
@@ -84,11 +86,11 @@ export default withAuth(
       {
         name: 'mcp',
         config: {
-          loginPage: '/sign-in'
-        }
-      }
-    ]
-  })
+          loginPage: '/sign-in',
+        },
+      },
+    ],
+  }),
 )
 ```
 
@@ -115,7 +117,7 @@ import { getContext } from '@/.opensaas/context'
 const { GET, POST, DELETE } = createMcpHandlers({
   config,
   auth,
-  getContext
+  getContext,
 })
 
 export { GET, POST, DELETE }
@@ -175,6 +177,7 @@ Add to your Claude Desktop MCP configuration:
 For each list with MCP enabled, the following tools are generated:
 
 ### Read Tool
+
 ```typescript
 // Tool: list_post_query
 // Query posts with filters
@@ -186,15 +189,19 @@ For each list with MCP enabled, the following tools are generated:
 ```
 
 ### Create Tool
+
 ```typescript
 // Tool: list_post_create
 // Create a new post
 {
-  data: { /* field values */ }
+  data: {
+    /* field values */
+  }
 }
 ```
 
 ### Update Tool
+
 ```typescript
 // Tool: list_post_update
 // Update an existing post
@@ -205,11 +212,14 @@ For each list with MCP enabled, the following tools are generated:
 ```
 
 ### Delete Tool
+
 ```typescript
 // Tool: list_post_delete
 // Delete a post
 {
-  where: { id: string }
+  where: {
+    id: string
+  }
 }
 ```
 
@@ -222,25 +232,27 @@ Add custom tools to lists for specialized operations:
 import { z } from 'zod'
 
 Post: list({
-  fields: { /* ... */ },
+  fields: {
+    /* ... */
+  },
   mcp: {
     customTools: [
       {
         name: 'publishPost',
         description: 'Publish a draft post',
         inputSchema: z.object({
-          postId: z.string()
+          postId: z.string(),
         }),
         handler: async ({ input, context }) => {
           const post = await context.db.post.update({
             where: { id: input.postId },
-            data: { status: 'published', publishedAt: new Date() }
+            data: { status: 'published', publishedAt: new Date() },
           })
           return { success: !!post, post }
-        }
-      }
-    ]
-  }
+        },
+      },
+    ],
+  },
 })
 ```
 
@@ -296,15 +308,17 @@ Example:
 
 ```typescript
 Post: list({
-  fields: { /* ... */ },
+  fields: {
+    /* ... */
+  },
   access: {
     operation: {
-      query: () => true,                    // Anyone can query
-      create: isSignedIn,                   // Must be signed in to create
-      update: isAuthor,                     // Only author can update
-      delete: isAuthor                      // Only author can delete
-    }
-  }
+      query: () => true, // Anyone can query
+      create: isSignedIn, // Must be signed in to create
+      update: isAuthor, // Only author can update
+      delete: isAuthor, // Only author can delete
+    },
+  },
 })
 ```
 
