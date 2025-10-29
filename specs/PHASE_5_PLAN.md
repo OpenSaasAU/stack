@@ -371,6 +371,7 @@ packages/ui/
 - ✅ All Radix UI dependencies installed
 
 **Implemented Components:**
+
 - Button, Input, Label, Dialog, Table, Card, Select, Checkbox
 - Popover, Calendar, TimePicker, DateTimePicker, Combobox
 
@@ -382,6 +383,7 @@ packages/ui/
 - ✅ Proper TypeScript types exported
 
 **Enhanced Fields:**
+
 - TextField, IntegerField, CheckboxField, SelectField
 - TimestampField, PasswordField, RelationshipField, ComboboxField
 - RelationshipManager, FieldRenderer

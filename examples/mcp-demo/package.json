@@ -1,0 +1,34 @@
+{
+  "name": "opensaas-mcp-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "pnpm generate && next build",
+    "clean": "rm -rf .turbo .next .opensaas",
+    "start": "next start",
+    "generate": "opensaas generate",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@opensaas/stack-auth": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-mcp": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
+    "@prisma/client": "^6.17.1",
+    "next": "^15.5.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@opensaas/stack-cli": "workspace:*",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "prisma": "^6.17.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

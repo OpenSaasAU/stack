@@ -151,6 +151,22 @@ export type AuthConfig = {
    * ```
    */
   sendEmail?: (params: { to: string; subject: string; html: string }) => Promise<void>
+
+  /**
+   * Additional Better Auth plugins to enable
+   * Allows integrating any Better Auth plugin (MCP, 2FA, etc.)
+   *
+   * @example
+   * ```typescript
+   * import { mcp } from 'better-auth/plugins'
+   *
+   * betterAuthPlugins: [
+   *   mcp({ loginPage: '/sign-in' })
+   * ]
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
+  betterAuthPlugins?: any[]
 }
 
 /**
@@ -158,9 +174,11 @@ export type AuthConfig = {
  * Used after parsing user config
  */
 export type NormalizedAuthConfig = Required<
-  Omit<AuthConfig, 'emailAndPassword' | 'emailVerification' | 'passwordReset'>
+  Omit<AuthConfig, 'emailAndPassword' | 'emailVerification' | 'passwordReset' | 'betterAuthPlugins'>
 > & {
   emailAndPassword: Required<EmailPasswordConfig>
   emailVerification: Required<EmailVerificationConfig>
   passwordReset: Required<PasswordResetConfig>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
+  betterAuthPlugins: any[]
 }

@@ -351,6 +351,10 @@ export type ListConfig<T = any> = {
     operation?: OperationAccess<T>
   }
   hooks?: Hooks<T>
+  /**
+   * MCP server configuration for this list
+   */
+  mcp?: ListMcpConfig
 }
 
 /**
@@ -463,6 +467,162 @@ export type UIConfig = {
 }
 
 /**
+ * MCP (Model Context Protocol) configuration
+ */
+
+/**
+ * Configuration for which CRUD tools to enable for a list
+ */
+export type McpToolsConfig = {
+  /**
+   * Enable read/query tool
+   * @default true
+   */
+  read?: boolean
+  /**
+   * Enable create tool
+   * @default true
+   */
+  create?: boolean
+  /**
+   * Enable update tool
+   * @default true
+   */
+  update?: boolean
+  /**
+   * Enable delete tool
+   * @default true
+   */
+  delete?: boolean
+}
+
+/**
+ * Custom MCP tool definition
+ * Allows developers to add custom tools for specific lists
+ */
+export type McpCustomTool = {
+  /**
+   * Unique name for the tool
+   */
+  name: string
+  /**
+   * Description of what the tool does
+   */
+  description: string
+  /**
+   * Input schema (Zod schema)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputSchema: any
+  /**
+   * Handler function that executes the tool
+   */
+  handler: (args: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    input: any
+    context: import('../access/types.js').AccessContext
+  }) => Promise<unknown>
+}
+
+/**
+ * List-level MCP configuration
+ */
+export type ListMcpConfig = {
+  /**
+   * Enable MCP tools for this list
+   * @default true
+   */
+  enabled?: boolean
+  /**
+   * Configure which CRUD tools to enable
+   */
+  tools?: McpToolsConfig
+  /**
+   * Custom tools specific to this list
+   */
+  customTools?: McpCustomTool[]
+}
+
+/**
+ * Better Auth OAuth configuration for MCP
+ */
+export type McpAuthConfig = {
+  /**
+   * Authentication type - currently only Better Auth is supported
+   */
+  type: 'better-auth'
+  /**
+   * Path to login page for OAuth flow
+   */
+  loginPage: string
+  /**
+   * OAuth scopes to request
+   * @default ["openid", "profile", "email"]
+   */
+  scopes?: string[]
+  /**
+   * Optional OIDC configuration
+   */
+  oidcConfig?: {
+    /**
+     * Code expiration time in seconds
+     * @default 600
+     */
+    codeExpiresIn?: number
+    /**
+     * Access token expiration time in seconds
+     * @default 3600
+     */
+    accessTokenExpiresIn?: number
+    /**
+     * Refresh token expiration time in seconds
+     * @default 604800
+     */
+    refreshTokenExpiresIn?: number
+    /**
+     * Default scope for OAuth requests
+     * @default "openid"
+     */
+    defaultScope?: string
+    /**
+     * Additional scopes to support
+     */
+    scopes?: string[]
+  }
+}
+
+/**
+ * Global MCP server configuration
+ */
+export type McpConfig = {
+  /**
+   * Enable MCP server globally
+   * @default false
+   */
+  enabled?: boolean
+  /**
+   * Base path for MCP API routes
+   * @default "/api/mcp"
+   */
+  basePath?: string
+  /**
+   * Authentication configuration
+   * Required when MCP is enabled
+   */
+  auth?: McpAuthConfig
+  /**
+   * Default tool configuration for all lists
+   * Can be overridden per-list
+   */
+  defaultTools?: McpToolsConfig
+  /**
+   * Resource identifier for OAuth protected resource metadata
+   * @default "https://yourdomain.com"
+   */
+  resource?: string
+}
+
+/**
  * Main configuration type
  */
 export type OpenSaasConfig = {
@@ -470,6 +630,10 @@ export type OpenSaasConfig = {
   lists: Record<string, ListConfig>
   session?: SessionConfig
   ui?: UIConfig
+  /**
+   * MCP (Model Context Protocol) server configuration
+   */
+  mcp?: McpConfig
   /**
    * Path where OpenSaas generates files (context, types, patched Prisma client)
    * @default ".opensaas"

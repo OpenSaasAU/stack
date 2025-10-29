@@ -39,6 +39,7 @@ export function list<T = any>(config: {
     operation?: OperationAccess<T>
   }
   hooks?: Hooks<T>
+  mcp?: import('./types.js').ListMcpConfig
 }): ListConfig<T> {
   // At runtime, field configs are unchanged
   // At type level, they're transformed to inject T as the item type
@@ -68,4 +69,9 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
+  McpConfig,
+  McpToolsConfig,
+  McpAuthConfig,
+  ListMcpConfig,
+  McpCustomTool,
 } from './types.js'

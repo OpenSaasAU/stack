@@ -44,6 +44,30 @@ jobs:
       - name: Run tests
         run: turbo run test
 
+      - name: Run tests with coverage
+        run: turbo run test:coverage
+
+      - name: Report coverage for core package
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          working-directory: ./packages/core
+          name: 'Core Package Coverage'
+
+      - name: Report coverage for ui package
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          working-directory: ./packages/ui
+          name: 'UI Package Coverage'
+
+      - name: Report coverage for mcp package
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          working-directory: ./packages/mcp
+          name: 'MCP Package Coverage'
+
       - name: Lint codebase
         run: pnpm lint
 

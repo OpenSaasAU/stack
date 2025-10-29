@@ -7,6 +7,7 @@ import type {
   PasswordResetConfig,
 } from './types.js'
 import { getAuthLists } from '../lists/index.js'
+import { convertBetterAuthSchema } from '../server/schema-converter.js'
 
 /**
  * Normalize auth configuration with defaults
@@ -65,6 +66,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         console.log(`Subject: ${subject}`)
         console.log(`Body: ${html}`)
       }),
+    betterAuthPlugins: config.betterAuthPlugins || [],
   }
 }
 
@@ -114,8 +116,8 @@ export function authConfig(config: AuthConfig): AuthConfig {
 export function withAuth(opensaasConfig: OpenSaasConfig, authConfig: AuthConfig): OpenSaasConfig {
   const normalized = normalizeAuthConfig(authConfig)
 
-  // Get auth lists with user extensions
-  const authLists = getAuthLists(normalized.extendUserList)
+  // Get auth lists from plugins
+  const authLists = getAuthListsFromPlugins(normalized)
 
   // Merge auth lists with user lists (auth lists take priority)
   const mergedLists = {
@@ -134,6 +136,30 @@ export function withAuth(opensaasConfig: OpenSaasConfig, authConfig: AuthConfig)
   result.__authConfig = normalized
 
   return result
+}
+
+/**
+ * Get auth lists by extracting schemas from Better Auth plugins
+ * This inspects the plugin objects directly without requiring a database connection
+ */
+function getAuthListsFromPlugins(authConfig: NormalizedAuthConfig) {
+  // Start with base Better Auth tables (always required)
+  const authLists = getAuthLists(authConfig.extendUserList)
+
+  // Extract additional tables from plugins
+  for (const plugin of authConfig.betterAuthPlugins) {
+    if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
+      // Plugin has schema property - convert to OpenSaaS lists
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin schema types are dynamic
+      const pluginSchema = plugin.schema as any
+
+      // Convert plugin schema to OpenSaaS lists and merge
+      const pluginLists = convertBetterAuthSchema(pluginSchema)
+      Object.assign(authLists, pluginLists)
+    }
+  }
+
+  return authLists
 }
 
 export type { AuthConfig, NormalizedAuthConfig }
