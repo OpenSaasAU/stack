@@ -3,6 +3,19 @@ import type { FieldAccess } from './types.js'
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
 
 /**
+ * Runtime type for resolveOutput hooks
+ * Used when we need to call hooks generically without knowing the specific field type
+ */
+type ResolveOutputHookRuntime = (args: {
+  operation: 'query'
+  value: unknown
+  item: Record<string, unknown>
+  listKey: string
+  fieldName: string
+  context: AccessContext
+}) => unknown
+
+/**
  * Check if access control result is a boolean
  */
 export function isBoolean(value: unknown): value is boolean {
@@ -248,6 +261,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   },
   config?: OpenSaasConfig,
   depth: number = 0,
+  listKey?: string,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
   const MAX_DEPTH = 5 // Prevent infinite recursion
@@ -287,6 +301,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
       if (relatedConfig) {
         // For many relationships (arrays) - recursively filter fields in each item
+        // The recursive call already handles applying resolveOutput hooks
         if (Array.isArray(value)) {
           filtered[fieldName] = await Promise.all(
             value.map((relatedItem) =>
@@ -296,11 +311,13 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 args,
                 config,
                 depth + 1,
+                relatedConfig.listName,
               ),
             ),
           )
         }
         // For single relationships (objects) - recursively filter fields
+        // The recursive call already handles applying resolveOutput hooks
         else if (typeof value === 'object') {
           filtered[fieldName] = await filterReadableFields(
             value as Record<string, unknown>,
@@ -308,6 +325,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
             args,
             config,
             depth + 1,
+            relatedConfig.listName,
           )
         }
       } else {
@@ -315,8 +333,22 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         filtered[fieldName] = value
       }
     } else {
-      // Non-relationship field or no config provided
-      filtered[fieldName] = value
+      // Non-relationship field or no config provided - apply resolveOutput hook if present
+      if (fieldConfig?.hooks?.resolveOutput && listKey) {
+        // Cast to runtime type for generic execution
+        // At runtime, the hook will receive the correct value type for the field
+        const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
+        filtered[fieldName] = hook({
+          value,
+          operation: 'query',
+          fieldName,
+          listKey,
+          item,
+          context: args.context,
+        })
+      } else {
+        filtered[fieldName] = value
+      }
     }
   }
 

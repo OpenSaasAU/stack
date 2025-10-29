@@ -10,6 +10,45 @@ import {
 import { getDbKey } from '../lib/case-utils.js'
 
 /**
+ * Execute field-level resolveInput hooks
+ * Allows fields to transform their input values before database write
+ */
+async function executeFieldResolveInputHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<Record<string, unknown>> {
+  const result = { ...data }
+
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip if field not in data
+    if (!(fieldName in result)) continue
+
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.resolveInput) continue
+
+    // Execute field hook
+    const transformedValue = await fieldConfig.hooks.resolveInput({
+      inputValue: result[fieldName],
+      operation,
+      fieldName,
+      listKey,
+      item,
+      context,
+    })
+
+    result[fieldName] = transformedValue
+  }
+
+  return result
+}
+
+/**
  * Check if a field config is a relationship field
  */
 function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
@@ -41,12 +80,31 @@ async function processNestedCreate(
         throw new Error('Access denied: Cannot create related item')
       }
 
-      // 2. Execute resolveInput hook
+      // 2. Execute list-level resolveInput hook
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         operation: 'create',
         resolvedData: item,
         context,
       })
+
+      // 2.5. Execute field-level resolveInput hooks
+      // We need to get the list name for this related config
+      // Since we don't have it directly, we'll need to find it from the config
+      let relatedListName = ''
+      for (const [listKey, listCfg] of Object.entries(config.lists)) {
+        if (listCfg === relatedListConfig) {
+          relatedListName = listKey
+          break
+        }
+      }
+
+      resolvedData = await executeFieldResolveInputHooks(
+        resolvedData,
+        relatedListConfig.fields,
+        'create',
+        context,
+        relatedListName,
+      )
 
       // 3. Execute validateInput hook
       await executeValidateInput(relatedListConfig.hooks, {
@@ -185,7 +243,7 @@ async function processNestedUpdate(
         throw new Error('Access denied: Cannot update related item')
       }
 
-      // Execute resolveInput hook
+      // Execute list-level resolveInput hook
       const updateData = (update as Record<string, unknown>).data as Record<string, unknown>
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         operation: 'update',
@@ -193,6 +251,16 @@ async function processNestedUpdate(
         item,
         context,
       })
+
+      // Execute field-level resolveInput hooks
+      resolvedData = await executeFieldResolveInputHooks(
+        resolvedData,
+        relatedListConfig.fields,
+        'update',
+        context,
+        relatedListName,
+        item,
+      )
 
       // Execute validateInput hook
       await executeValidateInput(relatedListConfig.hooks, {

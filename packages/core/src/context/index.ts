@@ -126,44 +126,6 @@ async function executeFieldAfterOperationHooks(
   }
 }
 
-/**
- * Execute field-level resolveOutput hooks
- * Allows fields to transform their output values after database read
- */
-function executeFieldResolveOutputHooks(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  item: Record<string, any> | null,
-  fields: Record<string, FieldConfig>,
-  context: AccessContext,
-  listKey: string,
-): Record<string, unknown> | null {
-  if (!item) return null
-
-  const result = { ...item }
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip if field not in result
-    if (!(fieldName in result)) continue
-
-    // Skip if no hooks defined
-    if (!fieldConfig.hooks?.resolveOutput) continue
-
-    // Execute field hook
-    // Type assertion is safe here because hooks are typed correctly in field definitions
-    const transformedValue = fieldConfig.hooks.resolveOutput({
-      value: result[fieldName],
-      operation: 'query',
-      fieldName,
-      listKey,
-      item,
-      context,
-    })
-
-    result[fieldName] = transformedValue
-  }
-
-  return result
-}
 export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
@@ -300,7 +262,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       return null
     }
 
-    // Filter readable fields (now only handles field-level access, not array filtering)
+    // Filter readable fields and apply resolveOutput hooks (including nested relationships)
     const filtered = await filterReadableFields(
       item,
       listConfig.fields,
@@ -309,14 +271,13 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         context,
       },
       config,
+      0,
+      listName,
     )
-
-    // Execute field resolveOutput hooks (e.g., wrap password with HashedPassword)
-    const resolved = executeFieldResolveOutputHooks(filtered, listConfig.fields, context, listName)
 
     // Execute field afterOperation hooks (side effects only)
     await executeFieldAfterOperationHooks(
-      resolved,
+      filtered,
       undefined,
       listConfig.fields,
       'query',
@@ -324,7 +285,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       listName,
     )
 
-    return resolved
+    return filtered
   }
 }
 
@@ -385,7 +346,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       include,
     })
 
-    // Filter readable fields for each item (now only handles field-level access)
+    // Filter readable fields for each item and apply resolveOutput hooks (including nested relationships)
     const filtered = await Promise.all(
       items.map((item: Record<string, unknown>) =>
         filterReadableFields(
@@ -396,18 +357,15 @@ function createFindMany<TPrisma extends PrismaClientLike>(
             context,
           },
           config,
+          0,
+          listName,
         ),
       ),
     )
 
-    // Execute field resolveOutput hooks for each item
-    const resolved = filtered.map((item) =>
-      executeFieldResolveOutputHooks(item, listConfig.fields, context, listName),
-    )
-
     // Execute field afterOperation hooks for each item (side effects only)
     await Promise.all(
-      resolved.map((item) =>
+      filtered.map((item) =>
         executeFieldAfterOperationHooks(
           item,
           undefined,
@@ -419,7 +377,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       ),
     )
 
-    return resolved
+    return filtered
   }
 }
 
@@ -523,7 +481,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
       listName,
     )
 
-    // 11. Filter readable fields
+    // 11. Filter readable fields and apply resolveOutput hooks (including nested relationships)
     const filtered = await filterReadableFields(
       item,
       listConfig.fields,
@@ -532,12 +490,11 @@ function createCreate<TPrisma extends PrismaClientLike>(
         context,
       },
       config,
+      0,
+      listName,
     )
 
-    // 12. Execute field resolveOutput hooks (e.g., wrap password with HashedPassword)
-    const resolved = executeFieldResolveOutputHooks(filtered, listConfig.fields, context, listName)
-
-    return resolved
+    return filtered
   }
 }
 
@@ -675,7 +632,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       listName,
     )
 
-    // 12. Filter readable fields
+    // 12. Filter readable fields and apply resolveOutput hooks (including nested relationships)
     const filtered = await filterReadableFields(
       updated,
       listConfig.fields,
@@ -684,12 +641,11 @@ function createUpdate<TPrisma extends PrismaClientLike>(
         context,
       },
       config,
+      0,
+      listName,
     )
 
-    // 13. Execute field resolveOutput hooks (e.g., wrap password with HashedPassword)
-    const resolved = executeFieldResolveOutputHooks(filtered, listConfig.fields, context, listName)
-
-    return resolved
+    return filtered
   }
 }
 
