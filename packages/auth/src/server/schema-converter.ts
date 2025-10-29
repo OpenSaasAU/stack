@@ -4,7 +4,7 @@
  */
 
 import { list } from '@opensaas/stack-core'
-import { text, timestamp, checkbox, integer, relationship } from '@opensaas/stack-core/fields'
+import { text, timestamp, checkbox, integer } from '@opensaas/stack-core/fields'
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
 
 /**
@@ -235,7 +235,6 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
 export function convertTableToList(
   tableName: string,
   tableSchema: BetterAuthTableSchema,
-  allTables: Record<string, BetterAuthTableSchema>,
 ): ListConfig {
   const fields: Record<string, FieldConfig> = {}
 
@@ -271,34 +270,6 @@ export function convertTableToList(
 }
 
 /**
- * Get the OpenSaaS list key for a Better Auth model name
- */
-function getListKeyForModel(
-  modelName: string,
-  allTables: Record<string, BetterAuthTableSchema>,
-): string | null {
-  // Find table with matching modelName
-  for (const [tableName, schema] of Object.entries(allTables)) {
-    if (schema.modelName === modelName || tableName === modelName) {
-      return schema.modelName || toPascalCase(tableName)
-    }
-  }
-
-  // Common model name mappings
-  const mappings: Record<string, string> = {
-    user: 'User',
-    session: 'Session',
-    account: 'Account',
-    verification: 'Verification',
-    oauthApplication: 'OauthApplication',
-    oauthAccessToken: 'OauthAccessToken',
-    oauthConsent: 'OauthConsent',
-  }
-
-  return mappings[modelName] || null
-}
-
-/**
  * Convert all Better Auth tables to OpenSaaS list configs
  * This is called by withAuth() to generate lists from Better Auth + plugins
  */
@@ -310,7 +281,7 @@ export function convertBetterAuthSchema(
   for (const [tableName, tableSchema] of Object.entries(tables)) {
     // Convert table name to PascalCase for OpenSaaS list key
     const listKey = tableSchema.modelName || toPascalCase(tableName)
-    lists[listKey] = convertTableToList(tableName, tableSchema, tables)
+    lists[listKey] = convertTableToList(tableName, tableSchema)
   }
 
   return lists

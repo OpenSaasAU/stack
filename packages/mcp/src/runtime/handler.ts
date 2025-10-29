@@ -68,16 +68,15 @@ export function createMcpHandlers(options: {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
+       
       const body = (await req.json()) as {
         jsonrpc?: string
         id?: number | string
         method: string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
         params?: any
       }
 
-      console.log('MCP session:', session)
-      console.log(' MCP method', body.method)
       // Handle initialize
       if (body.method === 'initialize') {
         return handleInitialize(body.params, body.id)
@@ -182,8 +181,10 @@ function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, 
     case 'password':
       baseSchema.type = 'string'
       if (fieldConfig.validation?.length) {
-        if (fieldConfig.validation.length.min) baseSchema.minLength = fieldConfig.validation.length.min
-        if (fieldConfig.validation.length.max) baseSchema.maxLength = fieldConfig.validation.length.max
+        if (fieldConfig.validation.length.min)
+          baseSchema.minLength = fieldConfig.validation.length.min
+        if (fieldConfig.validation.length.max)
+          baseSchema.maxLength = fieldConfig.validation.length.max
       }
       break
     case 'integer':
@@ -227,9 +228,9 @@ function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, 
 /**
  * Generate field schemas for create/update operations
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
+ 
 function generateFieldSchemas(
-  fields: Record<string, any>,
+  fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
 ): {
   properties: Record<string, unknown>
@@ -245,7 +246,11 @@ function generateFieldSchemas(
     properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
 
     // Add to required array if field is required for this operation
-    if (operation === 'create' && fieldConfig.validation?.isRequired) {
+    if (
+      operation === 'create' &&
+      'validation' in fieldConfig &&
+      fieldConfig.validation?.isRequired
+    ) {
       required.push(fieldName)
     }
   }
