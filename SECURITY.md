@@ -86,8 +86,8 @@ fields: {
   email: text({
     validation: {
       isRequired: true,
-      match: { regex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Invalid email format' }
-    }
+      match: { regex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Invalid email format' },
+    },
   })
 }
 ```
