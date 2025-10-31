@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  name         String
+  metadata     Json?
+  settings     Json?
+  configuration Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Article {
+  id        String   @id @default(cuid())
+  title        String
+  content      Json?
+  taxonomy     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

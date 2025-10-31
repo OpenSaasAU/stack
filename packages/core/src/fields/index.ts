@@ -7,6 +7,7 @@ import type {
   PasswordField,
   SelectField,
   RelationshipField,
+  JsonField,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 
@@ -434,5 +435,89 @@ export function relationship(options: Omit<RelationshipField, 'type'>): Relation
   return {
     type: 'relationship',
     ...options,
+  }
+}
+
+/**
+ * JSON field for storing arbitrary JSON data
+ *
+ * **Features:**
+ * - Stores any valid JSON data (objects, arrays, primitives)
+ * - Stored as JSON type in database (PostgreSQL/MySQL) or TEXT in SQLite
+ * - Optional validation for required fields
+ * - UI options for formatting and display
+ *
+ * **Usage Example:**
+ * ```typescript
+ * // In opensaas.config.ts
+ * fields: {
+ *   metadata: json({
+ *     validation: { isRequired: false },
+ *     ui: {
+ *       placeholder: 'Enter JSON data...',
+ *       rows: 10,
+ *       formatted: true
+ *     }
+ *   }),
+ *   settings: json({
+ *     validation: { isRequired: true }
+ *   })
+ * }
+ *
+ * // Creating with JSON data
+ * const item = await context.db.item.create({
+ *   data: {
+ *     metadata: { key: 'value', nested: { data: [1, 2, 3] } }
+ *   }
+ * })
+ *
+ * // Querying returns parsed JSON
+ * const item = await context.db.item.findUnique({
+ *   where: { id: '...' }
+ * })
+ * console.log(item.metadata.key) // 'value'
+ * ```
+ *
+ * @param options - Field configuration options
+ * @returns JSON field configuration
+ */
+export function json(options?: Omit<JsonField, 'type'>): JsonField {
+  return {
+    type: 'json',
+    ...options,
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
+
+      // Accept any valid JSON value
+      const baseSchema = z.unknown()
+
+      if (isRequired && operation === 'create') {
+        // Required in create mode: value must be provided
+        return baseSchema
+      } else if (isRequired && operation === 'update') {
+        // Required in update mode: can be undefined for partial updates
+        return z.union([baseSchema, z.undefined()])
+      } else {
+        // Not required: can be undefined
+        return baseSchema.optional()
+      }
+    },
+    getPrismaType: () => {
+      const isRequired = options?.validation?.isRequired
+
+      return {
+        type: 'Json',
+        modifiers: isRequired ? undefined : '?',
+      }
+    },
+    getTypeScriptType: () => {
+      const isRequired = options?.validation?.isRequired
+
+      return {
+        type: 'unknown',
+        optional: !isRequired,
+      }
+    },
   }
 }

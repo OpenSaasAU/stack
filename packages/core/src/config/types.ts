@@ -277,6 +277,18 @@ export type RelationshipField = BaseFieldConfig<string | string[], string | stri
   }
 }
 
+export type JsonField = BaseFieldConfig<unknown, unknown> & {
+  type: 'json'
+  validation?: {
+    isRequired?: boolean
+  }
+  ui?: {
+    placeholder?: string
+    rows?: number
+    formatted?: boolean
+  }
+}
+
 export type FieldConfig =
   | TextField
   | IntegerField
@@ -285,6 +297,7 @@ export type FieldConfig =
   | PasswordField
   | SelectField
   | RelationshipField
+  | JsonField
   | BaseFieldConfig // Allow any field extending BaseFieldConfig (for third-party fields)
 
 /**

@@ -6,6 +6,7 @@ import { SelectField } from './SelectField.js'
 import { TimestampField } from './TimestampField.js'
 import { PasswordField } from './PasswordField.js'
 import { RelationshipField } from './RelationshipField.js'
+import { JsonField } from './JsonField.js'
 
 /**
  * Base props that all field components must accept
@@ -45,6 +46,7 @@ export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
   timestamp: TimestampField,
   password: PasswordField,
   relationship: RelationshipField,
+  json: JsonField,
 }
 
 /**

@@ -1,6 +1,7 @@
 // Primitive components from shadcn/ui
 export { Button, buttonVariants, type ButtonProps } from './button.js'
 export { Input, type InputProps } from './input.js'
+export { Textarea, type TextareaProps } from './textarea.js'
 export { Label } from './label.js'
 export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent } from './card.js'
 export {
