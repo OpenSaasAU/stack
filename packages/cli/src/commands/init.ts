@@ -81,8 +81,8 @@ export async function initCommand(projectName: string | undefined) {
       devDependencies: {
         '@opensaas/stack-cli': '^0.1.0',
         '@types/node': '^20.10.0',
-        '@types/react': '^18.2.45',
-        '@types/react-dom': '^18.2.18',
+        '@types/react': '^19.2.2',
+        '@types/react-dom': '^19.2.2',
         prisma: '^5.7.1',
         tsx: '^4.7.0',
         typescript: '^5.3.3',

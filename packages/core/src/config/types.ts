@@ -636,6 +636,20 @@ export type McpConfig = {
 }
 
 /**
+ * Storage configuration for file uploads
+ * Maps storage provider names to their configurations
+ *
+ * @example
+ * ```typescript
+ * storage: {
+ *   avatars: s3Storage({ bucket: 'my-avatars', region: 'us-east-1' }),
+ *   documents: localStorage({ uploadDir: './uploads', serveUrl: '/api/files' })
+ * }
+ * ```
+ */
+export type StorageConfig = Record<string, { type: string; [key: string]: unknown }>
+
+/**
  * Main configuration type
  */
 export type OpenSaasConfig = {
@@ -647,6 +661,11 @@ export type OpenSaasConfig = {
    * MCP (Model Context Protocol) server configuration
    */
   mcp?: McpConfig
+  /**
+   * Storage configuration for file/image uploads
+   * Maps named storage providers to their configurations
+   */
+  storage?: StorageConfig
   /**
    * Path where OpenSaas generates files (context, types, patched Prisma client)
    * @default ".opensaas"
