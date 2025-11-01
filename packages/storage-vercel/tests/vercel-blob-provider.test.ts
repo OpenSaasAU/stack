@@ -202,7 +202,11 @@ describe('VercelBlobStorageProvider', () => {
 
       await provider.upload(Buffer.from('test'), 'profile.jpg')
 
-      expect(put).toHaveBeenCalledWith('avatars/profile.jpg', expect.any(Buffer), expect.any(Object))
+      expect(put).toHaveBeenCalledWith(
+        'avatars/profile.jpg',
+        expect.any(Buffer),
+        expect.any(Object),
+      )
     })
 
     it('should use provided contentType', async () => {
@@ -307,7 +311,9 @@ describe('VercelBlobStorageProvider', () => {
       const provider = new VercelBlobStorageProvider(config)
       put.mockRejectedValueOnce(new Error('Upload failed'))
 
-      await expect(provider.upload(Buffer.from('test'), 'test.txt')).rejects.toThrow('Upload failed')
+      await expect(provider.upload(Buffer.from('test'), 'test.txt')).rejects.toThrow(
+        'Upload failed',
+      )
     })
   })
 
