@@ -14,32 +14,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
+      - name: Setup project
+        uses: ./.github/actions/setup
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Lint codebase
+        run: pnpm lint
 
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Turbo
-        run: pnpm add -g turbo
+      - name: Check format
+        run: pnpm format:check
 
       - name: Run tests
         run: turbo run test
@@ -47,43 +29,51 @@ jobs:
       - name: Run tests with coverage
         run: turbo run test:coverage
 
-      - name: Report coverage for core package
-        uses: davelosert/vitest-coverage-report-action@v2
+      - name: Upload coverage artifacts
         if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          working-directory: ./packages/core
-          name: 'Core Package Coverage'
+          name: coverage-reports
+          path: |
+            packages/*/coverage/
+          retention-days: 1
 
-      - name: Report coverage for ui package
+  coverage:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: test
+    strategy:
+      matrix:
+        package:
+          - { name: 'core', dir: './packages/core', label: 'Core Package Coverage' }
+          - { name: 'ui', dir: './packages/ui', label: 'UI Package Coverage' }
+          - { name: 'mcp', dir: './packages/mcp', label: 'MCP Package Coverage' }
+          - { name: 'cli', dir: './packages/cli', label: 'CLI Package Coverage' }
+          - { name: 'auth', dir: './packages/auth', label: 'Auth Package Coverage' }
+          - { name: 'storage', dir: './packages/storage', label: 'Storage Package Coverage' }
+          - {
+              name: 'storage-s3',
+              dir: './packages/storage-s3',
+              label: 'Storage S3 Package Coverage',
+            }
+          - {
+              name: 'storage-vercel',
+              dir: './packages/storage-vercel',
+              label: 'Storage Vercel Package Coverage',
+            }
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: packages/
+
+      - name: Report coverage for ${{ matrix.package.name }}
         uses: davelosert/vitest-coverage-report-action@v2
-        if: github.event_name == 'pull_request'
         with:
-          working-directory: ./packages/ui
-          name: 'UI Package Coverage'
-
-      - name: Report coverage for mcp package
-        uses: davelosert/vitest-coverage-report-action@v2
-        if: github.event_name == 'pull_request'
-        with:
-          working-directory: ./packages/mcp
-          name: 'MCP Package Coverage'
-
-      - name: Report coverage for cli package
-        uses: davelosert/vitest-coverage-report-action@v2
-        if: github.event_name == 'pull_request'
-        with:
-          working-directory: ./packages/cli
-          name: 'CLI Package Coverage'
-
-      - name: Report coverage for auth package
-        uses: davelosert/vitest-coverage-report-action@v2
-        if: github.event_name == 'pull_request'
-        with:
-          working-directory: ./packages/auth
-          name: 'Auth Package Coverage'
-
-      - name: Lint codebase
-        run: pnpm lint
-
-      - name: Check format
-        run: pnpm format:check
+          working-directory: ${{ matrix.package.dir }}
+          name: ${{ matrix.package.label }}

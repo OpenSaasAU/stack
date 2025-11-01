@@ -13,7 +13,10 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@opensaas/stack-storage": "workspace:*",
@@ -22,7 +25,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
-    "typescript": "^5.7.3"
+    "@vitest/coverage-v8": "^4.0.5",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.5"
   },
   "peerDependencies": {
     "@opensaas/stack-storage": "workspace:*"
