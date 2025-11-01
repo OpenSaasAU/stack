@@ -21,13 +21,11 @@ vi.mock('node:crypto', () => ({
 }))
 
 describe('LocalStorageProvider', () => {
-  let fs: any
-  let crypto: any
+  let fs: typeof import('node:fs/promises').default
 
   beforeEach(async () => {
     vi.clearAllMocks()
     fs = (await import('node:fs/promises')).default
-    crypto = await import('node:crypto')
 
     // Default mock implementations
     fs.access.mockResolvedValue(undefined)
@@ -161,11 +159,9 @@ describe('LocalStorageProvider', () => {
       }
       const provider = new LocalStorageProvider(config)
 
-      const result = await provider.upload(
-        Buffer.from('test'),
-        'test.txt',
-        { contentType: 'text/plain' },
-      )
+      const result = await provider.upload(Buffer.from('test'), 'test.txt', {
+        contentType: 'text/plain',
+      })
 
       expect(result.contentType).toBe('text/plain')
     })
@@ -179,11 +175,7 @@ describe('LocalStorageProvider', () => {
       const provider = new LocalStorageProvider(config)
       const metadata = { uploadedBy: 'user123', category: 'documents' }
 
-      const result = await provider.upload(
-        Buffer.from('test'),
-        'test.txt',
-        { metadata },
-      )
+      const result = await provider.upload(Buffer.from('test'), 'test.txt', { metadata })
 
       expect(result.metadata).toEqual(metadata)
     })
@@ -199,10 +191,7 @@ describe('LocalStorageProvider', () => {
 
       await provider.upload(uint8Array, 'binary.dat')
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
-        uint8Array,
-      )
+      expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), uint8Array)
     })
 
     it('should construct correct file path', async () => {
@@ -216,10 +205,7 @@ describe('LocalStorageProvider', () => {
 
       await provider.upload(Buffer.from('test'), 'test.txt')
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        'my-uploads/test.txt',
-        expect.any(Buffer),
-      )
+      expect(fs.writeFile).toHaveBeenCalledWith('my-uploads/test.txt', expect.any(Buffer))
     })
 
     it('should return correct URL', async () => {

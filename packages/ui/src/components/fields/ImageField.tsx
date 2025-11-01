@@ -111,7 +111,11 @@ export function ImageField({
 
   // Determine if value is File or ImageMetadata
   // Use duck typing instead of instanceof to support SSR
-  const isFile = value && typeof value === 'object' && 'arrayBuffer' in value && typeof (value as {arrayBuffer?: unknown}).arrayBuffer === 'function'
+  const isFile =
+    value &&
+    typeof value === 'object' &&
+    'arrayBuffer' in value &&
+    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
   const isImageMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
   // Read-only mode

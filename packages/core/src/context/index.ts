@@ -162,16 +162,24 @@ export function getContext<
     db: db as AccessControlledDB<TPrisma>,
     storage: {
       uploadFile: async () => {
-        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+        throw new Error(
+          'Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts',
+        )
       },
       uploadImage: async () => {
-        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+        throw new Error(
+          'Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts',
+        )
       },
       deleteFile: async () => {
-        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+        throw new Error(
+          'Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts',
+        )
       },
       deleteImage: async () => {
-        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+        throw new Error(
+          'Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts',
+        )
       },
     },
   }

@@ -119,14 +119,9 @@ export function file(options: Omit<FileFieldConfig, 'type'>): FileFieldConfig {
           const buffer = Buffer.from(arrayBuffer)
 
           // Upload file using context.storage utilities
-          const metadata = (await context.storage.uploadFile(
-            fieldConfig.storage,
-            fileObj,
-            buffer,
-            {
-              validation: fieldConfig.validation,
-            },
-          )) as FileMetadata
+          const metadata = (await context.storage.uploadFile(fieldConfig.storage, fileObj, buffer, {
+            validation: fieldConfig.validation,
+          })) as FileMetadata
 
           // If cleanupOnReplace is enabled and there was an old file, delete it
           if (fieldConfig.cleanupOnReplace && item && fieldName) {

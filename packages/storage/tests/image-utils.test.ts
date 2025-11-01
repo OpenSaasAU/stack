@@ -1,6 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getImageDimensions, transformImage, processImageTransformations } from '../src/utils/image.js'
+import {
+  getImageDimensions,
+  transformImage,
+  processImageTransformations,
+} from '../src/utils/image.js'
 import type { ImageTransformationConfig, StorageProvider } from '../src/config/types.js'
+
+// Type for mocked sharp instances
+interface MockSharpInstance {
+  metadata?: ReturnType<typeof vi.fn>
+  resize?: ReturnType<typeof vi.fn>
+  jpeg?: ReturnType<typeof vi.fn>
+  png?: ReturnType<typeof vi.fn>
+  webp?: ReturnType<typeof vi.fn>
+  avif?: ReturnType<typeof vi.fn>
+  toBuffer?: ReturnType<typeof vi.fn>
+}
 
 // Mock sharp
 vi.mock('sharp', () => {
@@ -45,10 +60,10 @@ describe('Image Utilities', () => {
 
     it('should return 0 dimensions when metadata is missing', async () => {
       const { default: sharp } = await import('sharp')
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         metadata: vi.fn().mockResolvedValue({}),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       const buffer = Buffer.from('fake-image-data')
       const dimensions = await getImageDimensions(buffer)
@@ -66,11 +81,11 @@ describe('Image Utilities', () => {
         height: 300,
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('resized-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       const result = await transformImage(buffer, transformation)
 
@@ -91,11 +106,11 @@ describe('Image Utilities', () => {
         width: 500,
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('resized-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -115,11 +130,11 @@ describe('Image Utilities', () => {
         fit: 'contain',
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('resized-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -137,11 +152,11 @@ describe('Image Utilities', () => {
         format: 'jpeg',
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('jpeg-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -155,11 +170,11 @@ describe('Image Utilities', () => {
         format: 'png',
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         png: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('png-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -173,11 +188,11 @@ describe('Image Utilities', () => {
         format: 'webp',
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         webp: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('webp-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -191,11 +206,11 @@ describe('Image Utilities', () => {
         format: 'avif',
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         avif: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('avif-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -210,11 +225,11 @@ describe('Image Utilities', () => {
         quality: 95,
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('high-quality-jpeg')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       await transformImage(buffer, transformation)
 
@@ -231,12 +246,12 @@ describe('Image Utilities', () => {
         quality: 90,
       }
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         webp: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('resized-webp')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       const result = await transformImage(buffer, transformation)
 
@@ -254,10 +269,10 @@ describe('Image Utilities', () => {
       const buffer = Buffer.from('original-image')
       const transformation: ImageTransformationConfig = {}
 
-      const mockInstance = {
+      const mockInstance: MockSharpInstance = {
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('unchanged-image')),
       }
-      vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
 
       const result = await transformImage(buffer, transformation)
 
@@ -276,7 +291,8 @@ describe('Image Utilities', () => {
       }
 
       const mockProvider: StorageProvider = {
-        upload: vi.fn()
+        upload: vi
+          .fn()
           .mockResolvedValueOnce({
             filename: 'photo.jpg-thumbnail.webp',
             url: 'https://example.com/photo-thumbnail.webp',
@@ -293,30 +309,30 @@ describe('Image Utilities', () => {
       }
 
       // Mock sharp instances for each transformation
-      const mockInstance1 = {
+      const mockInstance1: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         webp: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('thumbnail-data')),
         metadata: vi.fn().mockResolvedValue({ width: 100, height: 100 }),
       }
-      const mockInstance2 = {
+      const mockInstance2: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('medium-data')),
         metadata: vi.fn().mockResolvedValue({ width: 500, height: 500 }),
       }
-      const mockInstance3 = {
+      const mockInstance3: MockSharpInstance = {
         metadata: vi.fn().mockResolvedValue({ width: 100, height: 100 }),
       }
-      const mockInstance4 = {
+      const mockInstance4: MockSharpInstance = {
         metadata: vi.fn().mockResolvedValue({ width: 500, height: 500 }),
       }
 
       vi.mocked(sharp)
-        .mockReturnValueOnce(mockInstance1 as any)
-        .mockReturnValueOnce(mockInstance3 as any)
-        .mockReturnValueOnce(mockInstance2 as any)
-        .mockReturnValueOnce(mockInstance4 as any)
+        .mockReturnValueOnce(mockInstance1 as never)
+        .mockReturnValueOnce(mockInstance3 as never)
+        .mockReturnValueOnce(mockInstance2 as never)
+        .mockReturnValueOnce(mockInstance4 as never)
 
       const results = await processImageTransformations(
         buffer,
@@ -374,17 +390,17 @@ describe('Image Utilities', () => {
         getUrl: vi.fn(),
       }
 
-      const mockInstance1 = {
+      const mockInstance1: MockSharpInstance = {
         resize: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('resized-data')),
       }
-      const mockInstance2 = {
+      const mockInstance2: MockSharpInstance = {
         metadata: vi.fn().mockResolvedValue({ width: 300, height: 200 }),
       }
 
       vi.mocked(sharp)
-        .mockReturnValueOnce(mockInstance1 as any)
-        .mockReturnValueOnce(mockInstance2 as any)
+        .mockReturnValueOnce(mockInstance1 as never)
+        .mockReturnValueOnce(mockInstance2 as never)
 
       const results = await processImageTransformations(
         buffer,
@@ -394,11 +410,9 @@ describe('Image Utilities', () => {
         'image/jpeg',
       )
 
-      expect(mockProvider.upload).toHaveBeenCalledWith(
-        expect.any(Buffer),
-        'photo.jpg-resized',
-        { contentType: 'image/jpeg' },
-      )
+      expect(mockProvider.upload).toHaveBeenCalledWith(expect.any(Buffer), 'photo.jpg-resized', {
+        contentType: 'image/jpeg',
+      })
       expect(results.resized.width).toBe(300)
       expect(results.resized.height).toBe(200)
     })
@@ -434,7 +448,8 @@ describe('Image Utilities', () => {
       }
 
       const mockProvider: StorageProvider = {
-        upload: vi.fn()
+        upload: vi
+          .fn()
           .mockResolvedValueOnce({ filename: 'photo-webp.webp', url: 'url1', size: 1000 })
           .mockResolvedValueOnce({ filename: 'photo-png.png', url: 'url2', size: 2000 })
           .mockResolvedValueOnce({ filename: 'photo-avif.avif', url: 'url3', size: 3000 }),
@@ -445,14 +460,14 @@ describe('Image Utilities', () => {
 
       // Mock multiple sharp instances
       for (let i = 0; i < 6; i++) {
-        const mockInstance = {
+        const mockInstance: MockSharpInstance = {
           webp: vi.fn().mockReturnThis(),
           png: vi.fn().mockReturnThis(),
           avif: vi.fn().mockReturnThis(),
           toBuffer: vi.fn().mockResolvedValue(Buffer.from('data')),
           metadata: vi.fn().mockResolvedValue({ width: 100, height: 100 }),
         }
-        vi.mocked(sharp).mockReturnValueOnce(mockInstance as any)
+        vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
       }
 
       await processImageTransformations(
@@ -469,12 +484,9 @@ describe('Image Utilities', () => {
         'photo-webp.webp',
         { contentType: 'image/webp' },
       )
-      expect(mockProvider.upload).toHaveBeenNthCalledWith(
-        2,
-        expect.any(Buffer),
-        'photo-png.png',
-        { contentType: 'image/png' },
-      )
+      expect(mockProvider.upload).toHaveBeenNthCalledWith(2, expect.any(Buffer), 'photo-png.png', {
+        contentType: 'image/png',
+      })
       expect(mockProvider.upload).toHaveBeenNthCalledWith(
         3,
         expect.any(Buffer),

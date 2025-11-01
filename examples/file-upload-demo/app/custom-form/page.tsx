@@ -163,8 +163,14 @@ export default function CustomFormPage() {
                 {
                   title,
                   content,
-                  coverImage: (typeof File !== 'undefined' && coverImage instanceof File) ? 'File selected' : coverImage,
-                  attachment: (typeof File !== 'undefined' && attachment instanceof File) ? 'File selected' : attachment,
+                  coverImage:
+                    typeof File !== 'undefined' && coverImage instanceof File
+                      ? 'File selected'
+                      : coverImage,
+                  attachment:
+                    typeof File !== 'undefined' && attachment instanceof File
+                      ? 'File selected'
+                      : attachment,
                 },
                 null,
                 2,

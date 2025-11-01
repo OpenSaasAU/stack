@@ -90,7 +90,11 @@ export function FileField({
 
   // Determine if value is File or FileMetadata
   // Use duck typing instead of instanceof to support SSR
-  const isFile = value && typeof value === 'object' && 'arrayBuffer' in value && typeof (value as {arrayBuffer?: unknown}).arrayBuffer === 'function'
+  const isFile =
+    value &&
+    typeof value === 'object' &&
+    'arrayBuffer' in value &&
+    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
   const isFileMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
   // Read-only mode
