@@ -7,23 +7,15 @@ import type {
   ImageTransformationConfig,
 } from '../config/types.js'
 import { LocalStorageProvider } from '../providers/local.js'
-import {
-  validateFile,
-  getMimeType,
-  parseFileFromFormData,
-  type FileValidationOptions,
-} from '../utils/upload.js'
-import {
-  getImageDimensions,
-  processImageTransformations,
-} from '../utils/image.js'
+import { validateFile, getMimeType, type FileValidationOptions } from '../utils/upload.js'
+import { getImageDimensions, processImageTransformations } from '../utils/image.js'
 
 /**
  * Creates a storage provider instance from config
  */
 export function createStorageProvider(
   config: OpenSaasConfig,
-  providerName: string
+  providerName: string,
 ): StorageProvider {
   if (!config.storage || !config.storage[providerName]) {
     throw new Error(`Storage provider '${providerName}' not found in config`)
@@ -79,7 +71,7 @@ export async function uploadFile(
     file: File
     buffer: Buffer
   },
-  options?: UploadFileOptions
+  options?: UploadFileOptions,
 ): Promise<FileMetadata> {
   const { file, buffer } = data
 
@@ -91,7 +83,7 @@ export async function uploadFile(
         name: file.name,
         type: file.type,
       },
-      options.validation
+      options.validation,
     )
 
     if (!validation.valid) {
@@ -150,7 +142,7 @@ export async function uploadImage(
     file: File
     buffer: Buffer
   },
-  options?: UploadImageOptions
+  options?: UploadImageOptions,
 ): Promise<ImageMetadata> {
   const { file, buffer } = data
 
@@ -162,7 +154,7 @@ export async function uploadImage(
         name: file.name,
         type: file.type,
       },
-      options.validation
+      options.validation,
     )
 
     if (!validation.valid) {
@@ -186,14 +178,16 @@ export async function uploadImage(
   })
 
   // Process transformations if provided
-  let transformations: Record<string, any> | undefined
+  let transformations:
+    | Record<string, { url: string; width: number; height: number; size: number }>
+    | undefined
   if (options?.transformations) {
     transformations = await processImageTransformations(
       buffer,
       file.name,
       options.transformations,
       provider,
-      contentType
+      contentType,
     )
   }
 
@@ -219,7 +213,7 @@ export async function uploadImage(
 export async function deleteFile(
   config: OpenSaasConfig,
   storageProviderName: string,
-  filename: string
+  filename: string,
 ): Promise<void> {
   const provider = createStorageProvider(config, storageProviderName)
   await provider.delete(filename)
@@ -228,10 +222,7 @@ export async function deleteFile(
 /**
  * Deletes an image and all its transformations from storage
  */
-export async function deleteImage(
-  config: OpenSaasConfig,
-  metadata: ImageMetadata
-): Promise<void> {
+export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadata): Promise<void> {
   const provider = createStorageProvider(config, metadata.storageProvider)
 
   // Delete original image
@@ -250,4 +241,3 @@ export async function deleteImage(
 }
 
 export { parseFileFromFormData } from '../utils/upload.js'
-

@@ -47,7 +47,7 @@ export class LocalStorageProvider implements StorageProvider {
   async upload(
     file: Buffer | Uint8Array,
     filename: string,
-    options?: UploadOptions
+    options?: UploadOptions,
   ): Promise<UploadResult> {
     await this.ensureUploadDir()
 

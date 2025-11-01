@@ -7,8 +7,8 @@ import { revalidatePath } from 'next/cache'
 export async function createPost(data: {
   title: string
   content: string
-  coverImage: ImageMetadata | null
-  attachment: FileMetadata | null
+  coverImage: File | ImageMetadata | null
+  attachment: File | FileMetadata | null
 }) {
   try {
     const context = getContext()
@@ -17,8 +17,10 @@ export async function createPost(data: {
       data: {
         title: data.title,
         content: data.content,
-        coverImage: data.coverImage,
-        attachment: data.attachment,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        coverImage: (data.coverImage ?? undefined) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        attachment: (data.attachment ?? undefined) as any,
       },
     })
 

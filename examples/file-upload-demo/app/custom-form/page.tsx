@@ -7,6 +7,9 @@ import type { FileMetadata, ImageMetadata } from '@opensaas/stack-storage'
 import Link from 'next/link'
 import { createPost } from './actions'
 
+// Disable static prerendering for this page
+export const dynamic = 'force-dynamic'
+
 /**
  * Custom form demonstrating file and image upload fields
  *
@@ -16,56 +19,10 @@ import { createPost } from './actions'
 export default function CustomFormPage() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [coverImage, setCoverImage] = useState<ImageMetadata | null>(null)
-  const [attachment, setAttachment] = useState<FileMetadata | null>(null)
+  const [coverImage, setCoverImage] = useState<File | ImageMetadata | null>(null)
+  const [attachment, setAttachment] = useState<File | FileMetadata | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState<string | null>(null)
-
-  /**
-   * Upload handler for images
-   * This is called by the ImageField component when a file is selected
-   */
-  const handleImageUpload = async (file: File): Promise<ImageMetadata> => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('storage', 'avatars')
-    formData.append('fieldType', 'image')
-
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Upload failed')
-    }
-
-    return await response.json()
-  }
-
-  /**
-   * Upload handler for files
-   * This is called by the FileField component when a file is selected
-   */
-  const handleFileUpload = async (file: File): Promise<FileMetadata> => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('storage', 'documents')
-    formData.append('fieldType', 'file')
-
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Upload failed')
-    }
-
-    return await response.json()
-  }
 
   /**
    * Form submission handler
@@ -151,8 +108,7 @@ export default function CustomFormPage() {
               value={coverImage}
               onChange={setCoverImage}
               label="Cover Image"
-              helpText="Upload a cover image for your post (max 10MB, JPG/PNG/WebP)"
-              onUpload={handleImageUpload}
+              helpText="Upload a cover image for your post (max 10MB, JPG/PNG/WebP) - will upload on save"
               showPreview={true}
               previewSize={300}
             />
@@ -163,8 +119,7 @@ export default function CustomFormPage() {
               value={attachment}
               onChange={setAttachment}
               label="Attachment"
-              helpText="Upload a document (PDF or Word, max 10MB)"
-              onUpload={handleFileUpload}
+              helpText="Upload a document (PDF or Word, max 10MB) - will upload on save"
             />
 
             {/* Submit Button */}
@@ -208,8 +163,8 @@ export default function CustomFormPage() {
                 {
                   title,
                   content,
-                  coverImage,
-                  attachment,
+                  coverImage: (typeof File !== 'undefined' && coverImage instanceof File) ? 'File selected' : coverImage,
+                  attachment: (typeof File !== 'undefined' && attachment instanceof File) ? 'File selected' : attachment,
                 },
                 null,
                 2,

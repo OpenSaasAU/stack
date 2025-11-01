@@ -163,16 +163,17 @@ For local development, you can still use Vercel Blob:
 Alternatively, use a different storage provider for local development:
 
 ```typescript
-const storage = process.env.NODE_ENV === 'production'
-  ? {
-      avatars: vercelBlobStorage({ pathPrefix: 'avatars' }),
-    }
-  : {
-      avatars: localStorage({
-        uploadDir: './public/uploads',
-        serveUrl: '/uploads',
-      }),
-    }
+const storage =
+  process.env.NODE_ENV === 'production'
+    ? {
+        avatars: vercelBlobStorage({ pathPrefix: 'avatars' }),
+      }
+    : {
+        avatars: localStorage({
+          uploadDir: './public/uploads',
+          serveUrl: '/uploads',
+        }),
+      }
 
 export default config({
   storage,

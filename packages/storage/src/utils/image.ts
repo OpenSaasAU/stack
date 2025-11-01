@@ -9,7 +9,7 @@ import type {
  * Gets image dimensions from a buffer
  */
 export async function getImageDimensions(
-  buffer: Buffer | Uint8Array
+  buffer: Buffer | Uint8Array,
 ): Promise<{ width: number; height: number }> {
   const metadata = await sharp(buffer).metadata()
   return {
@@ -23,7 +23,7 @@ export async function getImageDimensions(
  */
 export async function transformImage(
   buffer: Buffer | Uint8Array,
-  transformation: ImageTransformationConfig
+  transformation: ImageTransformationConfig,
 ): Promise<Buffer> {
   let image = sharp(buffer)
 
@@ -70,7 +70,7 @@ export async function processImageTransformations(
   originalFilename: string,
   transformations: Record<string, ImageTransformationConfig>,
   storageProvider: StorageProvider,
-  contentType: string
+  contentType: string,
 ): Promise<Record<string, ImageTransformationResult>> {
   const results: Record<string, ImageTransformationResult> = {}
 
@@ -86,22 +86,18 @@ export async function processImageTransformations(
     const transformedFilename = `${originalFilename}-${name}${ext}`
 
     // Upload transformed image
-    const uploadResult = await storageProvider.upload(
-      transformedBuffer,
-      transformedFilename,
-      {
-        contentType:
-          config.format === 'jpeg'
-            ? 'image/jpeg'
-            : config.format === 'png'
-              ? 'image/png'
-              : config.format === 'webp'
-                ? 'image/webp'
-                : config.format === 'avif'
-                  ? 'image/avif'
-                  : contentType,
-      }
-    )
+    const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
+      contentType:
+        config.format === 'jpeg'
+          ? 'image/jpeg'
+          : config.format === 'png'
+            ? 'image/png'
+            : config.format === 'webp'
+              ? 'image/webp'
+              : config.format === 'avif'
+                ? 'image/avif'
+                : contentType,
+    })
 
     results[name] = {
       url: uploadResult.url,

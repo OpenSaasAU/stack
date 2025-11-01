@@ -4,7 +4,13 @@ import { useState, useMemo } from 'react'
 import { Label } from '@opensaas/stack-ui/primitives'
 import { Button } from '@opensaas/stack-ui/primitives'
 import { Input } from '@opensaas/stack-ui/primitives'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@opensaas/stack-ui/primitives'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@opensaas/stack-ui/primitives'
 import { cn } from '@opensaas/stack-ui/lib/utils'
 
 interface TaxonomyItem {
@@ -47,7 +53,7 @@ export function TaxonomyField({
           'type' in item &&
           'name' in item &&
           'value' in item &&
-          (item.type === 'tag' || item.type === 'category')
+          (item.type === 'tag' || item.type === 'category'),
       )
     } catch {
       return []
@@ -97,7 +103,7 @@ export function TaxonomyField({
                     'px-2 py-0.5 rounded text-xs font-medium',
                     item.type === 'tag'
                       ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                      : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                      : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
                   )}
                 >
                   {item.type}
@@ -137,7 +143,7 @@ export function TaxonomyField({
                   'px-2 py-0.5 rounded text-xs font-medium shrink-0',
                   item.type === 'tag'
                     ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
                 )}
               >
                 {item.type}

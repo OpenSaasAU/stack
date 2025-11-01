@@ -88,7 +88,11 @@ All storage backends implement `StorageProvider`:
 
 ```typescript
 interface StorageProvider {
-  upload(file: Buffer | Uint8Array, filename: string, options?: UploadOptions): Promise<UploadResult>
+  upload(
+    file: Buffer | Uint8Array,
+    filename: string,
+    options?: UploadOptions,
+  ): Promise<UploadResult>
   download(filename: string): Promise<Buffer>
   delete(filename: string): Promise<void>
   getUrl(filename: string): string
@@ -104,7 +108,7 @@ Storage config is added to `OpenSaasConfig` (similar to auth pattern):
 export type OpenSaasConfig = {
   db: DatabaseConfig
   lists: Record<string, ListConfig>
-  storage?: StorageConfig  // Maps names to provider configs
+  storage?: StorageConfig // Maps names to provider configs
   // ...
 }
 ```
@@ -133,6 +137,7 @@ resume: file({ storage: 'documents' }),
 Files and images store metadata as JSON (leveraging existing `json` field type):
 
 **Prisma schema:**
+
 ```prisma
 model User {
   avatar Json?  // ImageMetadata
@@ -141,41 +146,30 @@ model User {
 ```
 
 **Runtime types:**
+
 ```typescript
 user.avatar // ImageMetadata | null
 user.resume // FileMetadata | null
 ```
 
-### Developer-Controlled Upload Routes
+### Automatic Upload via Field Hooks
 
-Unlike some frameworks, OpenSaas Stack doesn't provide built-in upload routes. This gives developers:
+Files are uploaded automatically during form submission via `resolveInput` hooks. **No custom upload API routes are needed.**
 
-1. **Full control** over upload logic
-2. **Custom validation** per route
-3. **Access control** integration
-4. **Custom processing** (virus scanning, etc.)
+**How it works:**
 
-**Pattern:**
+1. User selects file in UI component
+2. File object stored in form state
+3. Form submitted with File object
+4. Field's `resolveInput` hook uploads file server-side
+5. Returns FileMetadata for database storage
 
-```typescript
-// app/api/upload/route.ts
-export async function POST(request: NextRequest) {
-  const formData = await request.formData()
-  const fileData = await parseFileFromFormData(formData)
+**This provides:**
 
-  // Custom validation/auth
-  const session = await getSession()
-  if (!session) return unauthorized()
-
-  // Upload with runtime utilities
-  const metadata = await uploadImage(config, 'avatars', fileData, {
-    validation: { maxFileSize: 5 * 1024 * 1024 },
-    transformations: { thumbnail: { width: 100, height: 100 } },
-  })
-
-  return NextResponse.json(metadata)
-}
-```
+1. **Atomic uploads** - files only saved if form submission succeeds
+2. **No orphaned files** - failed submissions don't leave files in storage
+3. **Automatic security** - uploads happen server-side with access control
+4. **Simpler code** - no custom upload routes needed
 
 ### Image Transformation Pipeline
 
@@ -212,7 +206,11 @@ export const fieldComponentRegistry = {
 }
 ```
 
-Components receive `onUpload` prop from parent forms. Forms must provide upload handler that calls developer's API route.
+Components accept `File | FileMetadata | null` as values:
+
+- New uploads: File object stored in form state
+- Existing files: FileMetadata from database
+- Deleted files: null
 
 ## Integration Points
 
@@ -288,41 +286,23 @@ storage: {
 }
 ```
 
-### Upload Route with Access Control
+### Automatic File Cleanup
+
+Enable automatic cleanup of files when records are deleted or files are replaced:
 
 ```typescript
-// app/api/upload/route.ts
-import { uploadImage } from '@opensaas/stack-storage/runtime'
-import { getContext } from '@/.opensaas/context'
-import config from '@/opensaas.config'
-
-export async function POST(request: NextRequest) {
-  const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const formData = await request.formData()
-  const fileData = await parseFileFromFormData(formData)
-
-  if (!fileData) {
-    return NextResponse.json({ error: 'No file' }, { status: 400 })
-  }
-
-  // Access control: users can only upload avatars for themselves
-  const listKey = formData.get('listKey') as string
-  const itemId = formData.get('itemId') as string
-
-  if (listKey === 'User' && itemId !== session.userId) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const metadata = await uploadImage(config, 'avatars', fileData, {
-    validation: { maxFileSize: 5 * 1024 * 1024 },
-  })
-
-  return NextResponse.json(metadata)
-}
+User: list({
+  fields: {
+    avatar: image({
+      storage: 'avatars',
+      cleanupOnDelete: true,     // Delete avatar when user deleted
+      cleanupOnReplace: true,    // Delete old avatar when new one uploaded
+      transformations: {
+        thumbnail: { width: 100, height: 100 },
+      },
+    }),
+  },
+}),
 ```
 
 ### Serving Private Files
@@ -332,10 +312,7 @@ export async function POST(request: NextRequest) {
 import { createStorageProvider } from '@opensaas/stack-storage/runtime'
 import config from '@/opensaas.config'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { filename: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { filename: string } }) {
   const session = await getSession()
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -371,24 +348,6 @@ avatar: image({
   validation: {
     maxFileSize: 10 * 1024 * 1024,
     acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-  },
-})
-```
-
-### Deleting Files with Hooks
-
-```typescript
-User: list({
-  fields: {
-    avatar: image({ storage: 'avatars' }),
-  },
-  hooks: {
-    afterOperation: async ({ operation, item, context }) => {
-      // Delete old avatar when user is deleted
-      if (operation === 'delete' && item.avatar) {
-        await deleteImage(config, item.avatar)
-      }
-    },
   },
 })
 ```

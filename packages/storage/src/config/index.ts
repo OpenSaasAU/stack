@@ -18,7 +18,8 @@ export * from './types.js'
  * ```
  */
 export function localStorage(
-  config: Pick<LocalStorageConfig, 'uploadDir' | 'serveUrl'> & Partial<Pick<LocalStorageConfig, 'generateUniqueFilenames'>>
+  config: Pick<LocalStorageConfig, 'uploadDir' | 'serveUrl'> &
+    Partial<Pick<LocalStorageConfig, 'generateUniqueFilenames'>>,
 ): LocalStorageConfig {
   return {
     type: 'local',

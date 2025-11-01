@@ -7,9 +7,7 @@ export default function HomePage() {
       <div className="max-w-2xl w-full mx-auto p-8">
         <div className="bg-white rounded-lg shadow-xl p-8 space-y-6">
           <div className="text-center space-y-2">
-            <h1 className="text-4xl font-bold text-gray-900">
-              File Upload Demo
-            </h1>
+            <h1 className="text-4xl font-bold text-gray-900">File Upload Demo</h1>
             <p className="text-gray-600">
               Demonstration of OpenSaas Stack file and image upload capabilities
             </p>
@@ -28,9 +26,7 @@ export default function HomePage() {
 
             <div className="border rounded-lg p-6 space-y-3">
               <h2 className="text-xl font-semibold">Custom Upload Form</h2>
-              <p className="text-gray-600">
-                See a custom form implementation with file uploads
-              </p>
+              <p className="text-gray-600">See a custom form implementation with file uploads</p>
               <Link href="/custom-form">
                 <Button variant="outline" className="w-full">
                   View Custom Form

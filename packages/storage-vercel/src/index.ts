@@ -1,10 +1,6 @@
-import { put, del, head } from '@vercel/blob'
+import { put, del, head, PutCommandOptions } from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
-import type {
-  StorageProvider,
-  UploadOptions,
-  UploadResult,
-} from '@opensaas/stack-storage'
+import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 /**
  * Configuration for Vercel Blob storage
@@ -20,7 +16,7 @@ export interface VercelBlobStorageConfig {
   /** Whether files should be publicly accessible (default: true) */
   public?: boolean
   /** Cache control header (default: 'public, max-age=31536000, immutable') */
-  cacheControl?: string
+  cacheControlMaxAge?: number
 }
 
 /**
@@ -35,7 +31,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
     // Validate token is available
     if (!config.token && !process.env.BLOB_READ_WRITE_TOKEN) {
       throw new Error(
-        'Vercel Blob token is required. Set config.token or BLOB_READ_WRITE_TOKEN environment variable.'
+        'Vercel Blob token is required. Set config.token or BLOB_READ_WRITE_TOKEN environment variable.',
       )
     }
   }
@@ -67,7 +63,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
   async upload(
     file: Buffer | Uint8Array,
     filename: string,
-    options?: UploadOptions
+    options?: UploadOptions,
   ): Promise<UploadResult> {
     const generatedFilename = this.generateFilename(filename)
     const pathname = this.getFullPath(generatedFilename)
@@ -76,7 +72,8 @@ export class VercelBlobStorageProvider implements StorageProvider {
     const buffer = Buffer.isBuffer(file) ? file : Buffer.from(file)
 
     // Upload to Vercel Blob
-    const uploadOptions: any = {
+    const uploadOptions: PutCommandOptions = {
+      access: 'public',
       token: this.config.token,
       contentType: options?.contentType,
     }
@@ -85,8 +82,8 @@ export class VercelBlobStorageProvider implements StorageProvider {
       uploadOptions.access = 'public'
     }
 
-    if (this.config.cacheControl) {
-      uploadOptions.cacheControlMaxAge = this.config.cacheControl
+    if (this.config.cacheControlMaxAge) {
+      uploadOptions.cacheControlMaxAge = this.config.cacheControlMaxAge
     }
 
     const blob = await put(pathname, buffer, uploadOptions)
@@ -166,7 +163,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
  * ```
  */
 export function vercelBlobStorage(
-  config: Omit<VercelBlobStorageConfig, 'type'>
+  config: Omit<VercelBlobStorageConfig, 'type'>,
 ): VercelBlobStorageConfig {
   return {
     type: 'vercel-blob',

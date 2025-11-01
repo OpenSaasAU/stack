@@ -20,6 +20,7 @@ This example uses local filesystem storage for simplicity. The config includes c
 ### Local Storage (Default)
 
 Files are stored in:
+
 - `public/uploads/avatars/` - Profile pictures
 - `public/uploads/documents/` - Document attachments
 
@@ -28,6 +29,7 @@ Files are stored in:
 For production, uncomment the S3 or Vercel Blob configuration in `opensaas.config.ts` and set environment variables:
 
 **AWS S3:**
+
 ```env
 AWS_BUCKET=your-bucket-name
 AWS_REGION=us-east-1
@@ -36,6 +38,7 @@ AWS_SECRET_ACCESS_KEY=your-secret-key
 ```
 
 **Vercel Blob:**
+
 ```env
 BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 ```
@@ -43,21 +46,25 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 2. Generate Prisma schema and types:
+
 ```bash
 pnpm generate
 ```
 
 3. Create the database:
+
 ```bash
 pnpm db:push
 ```
 
 4. Start the development server:
+
 ```bash
 pnpm dev
 ```
@@ -67,51 +74,36 @@ pnpm dev
 ## Pages
 
 ### Home Page (`/`)
+
 Introduction with links to admin and custom form demos.
 
 ### Admin Dashboard (`/admin`)
+
 Full admin UI with file upload fields integrated into forms:
+
 - Create/edit users with avatar uploads
 - Create/edit posts with cover images and attachments
 
 ### Custom Form (`/custom-form`)
+
 Custom implementation showing:
+
 - How to use `FileField` and `ImageField` components
-- Custom upload handlers
-- Form submission with file metadata
+- File objects stored in form state
+- Form submission with automatic server-side uploads
 
-## API Routes
-
-### Upload Endpoint (`/api/upload`)
-
-Handles file uploads with:
-- File validation (size, MIME type)
-- Storage provider selection
-- Image transformation (for image uploads)
-
-**Usage:**
-```typescript
-const formData = new FormData()
-formData.append('file', file)
-formData.append('storage', 'avatars') // or 'documents'
-formData.append('fieldType', 'image') // or 'file'
-
-const response = await fetch('/api/upload', {
-  method: 'POST',
-  body: formData,
-})
-
-const metadata = await response.json()
-```
+**Note:** Files are uploaded automatically during form submission via field hooks. No custom upload API routes are needed!
 
 ## Data Model
 
 ### User
+
 - `name` - Text
 - `email` - Text
 - `avatar` - Image with transformations (thumbnail: 100x100, profile: 400x400)
 
 ### Post
+
 - `title` - Text
 - `content` - Text
 - `coverImage` - Image with transformations (thumbnail: 300x200, large: 1200x800)
@@ -123,14 +115,17 @@ const metadata = await response.json()
 Images are automatically transformed on upload:
 
 **User Avatar:**
+
 - Thumbnail: 100x100px (WebP, cover fit)
 - Profile: 400x400px (WebP, cover fit)
 
 **Post Cover Image:**
+
 - Thumbnail: 300x200px (WebP, cover fit)
 - Large: 1200x800px (JPEG quality 90, cover fit)
 
 All transformations are stored in the database as URLs, accessible via:
+
 ```typescript
 user.avatar.transformations.thumbnail.url
 user.avatar.transformations.profile.url
@@ -141,6 +136,7 @@ user.avatar.transformations.profile.url
 Files and images store metadata as JSON in the database:
 
 **File Metadata:**
+
 ```json
 {
   "filename": "1234567890-abc123.pdf",
@@ -154,6 +150,7 @@ Files and images store metadata as JSON in the database:
 ```
 
 **Image Metadata:**
+
 ```json
 {
   "filename": "1234567890-abc123.jpg",
@@ -217,18 +214,42 @@ avatar: image({
 
 ### Custom Validation
 
-Add custom validation in the upload API route:
+File and image fields support built-in validation options:
 
 ```typescript
-// Scan for viruses
-if (needsVirusCheck) {
-  await scanFile(fileData.buffer)
-}
+attachment: file({
+  storage: 'documents',
+  validation: {
+    maxFileSize: 10 * 1024 * 1024, // 10MB
+    acceptedMimeTypes: ['application/pdf', 'application/msword'],
+  },
+})
+```
 
-// Check user quota
-if (userStorageUsed > userStorageLimit) {
-  throw new Error('Storage quota exceeded')
-}
+For advanced validation (virus scanning, quota checks), add custom logic in field hooks:
+
+```typescript
+attachment: file({
+  storage: 'documents',
+  hooks: {
+    resolveInput: async ({ inputValue, context }) => {
+      if (inputValue instanceof File) {
+        // Custom validation
+        const userQuota = await checkUserQuota(context.session.userId)
+        if (userQuota.exceeded) {
+          throw new Error('Storage quota exceeded')
+        }
+
+        // Virus scanning
+        const buffer = await inputValue.arrayBuffer()
+        await scanFileForViruses(Buffer.from(buffer))
+      }
+
+      // Continue with default upload behavior
+      return inputValue
+    },
+  },
+})
 ```
 
 ## Learn More

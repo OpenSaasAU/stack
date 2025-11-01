@@ -6,11 +6,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomBytes } from 'node:crypto'
-import type {
-  StorageProvider,
-  UploadOptions,
-  UploadResult,
-} from '@opensaas/stack-storage'
+import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 /**
  * Configuration for S3 storage
@@ -92,7 +88,7 @@ export class S3StorageProvider implements StorageProvider {
   async upload(
     file: Buffer | Uint8Array,
     filename: string,
-    options?: UploadOptions
+    options?: UploadOptions,
   ): Promise<UploadResult> {
     const generatedFilename = this.generateFilename(filename)
     const key = this.getFullKey(generatedFilename)
@@ -138,7 +134,7 @@ export class S3StorageProvider implements StorageProvider {
 
     // Convert stream to buffer
     const chunks: Uint8Array[] = []
-    const stream = response.Body as any
+    const stream = response.Body as AsyncIterable<Uint8Array>
 
     for await (const chunk of stream) {
       chunks.push(chunk)

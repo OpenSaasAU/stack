@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import type { ImageMetadata } from '@opensaas/stack-storage'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
@@ -10,8 +10,8 @@ import Image from 'next/image'
 
 export interface ImageFieldProps {
   name: string
-  value: ImageMetadata | null
-  onChange: (value: ImageMetadata | null) => void
+  value: File | ImageMetadata | null
+  onChange: (value: File | ImageMetadata | null) => void
   label?: string
   error?: string
   disabled?: boolean
@@ -21,16 +21,13 @@ export interface ImageFieldProps {
   placeholder?: string
   showPreview?: boolean
   previewSize?: number
-  // Upload handling (must be provided by developer)
-  onUpload?: (file: File) => Promise<ImageMetadata>
 }
 
 /**
  * Image upload field with preview, drag-and-drop, and transformation support
  *
- * This component provides the UI for image uploads with client-side preview.
- * Developers must implement the actual upload logic via the `onUpload` prop,
- * which should call their custom upload API route.
+ * Stores File objects in form state with client-side preview. The actual upload
+ * happens server-side during form submission via field hooks.
  */
 export function ImageField({
   name,
@@ -45,24 +42,14 @@ export function ImageField({
   placeholder = 'Choose an image or drag and drop',
   showPreview = true,
   previewSize = 200,
-  onUpload,
 }: ImageFieldProps) {
   const [isDragOver, setIsDragOver] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [uploadError, setUploadError] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const handleFileSelect = useCallback(
-    async (file: File) => {
-      if (!onUpload) {
-        console.error('ImageField: onUpload prop is required for image uploads')
-        return
-      }
-
+    (file: File) => {
       // Validate file is an image
       if (!file.type.startsWith('image/')) {
-        setUploadError('Please select an image file')
         return
       }
 
@@ -75,32 +62,11 @@ export function ImageField({
         reader.readAsDataURL(file)
       }
 
-      setIsUploading(true)
-      setUploadError(null)
-      setUploadProgress(0)
-
-      try {
-        // Simulate progress (real progress would need server support)
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => Math.min(prev + 10, 90))
-        }, 100)
-
-        const metadata = await onUpload(file)
-
-        clearInterval(progressInterval)
-        setUploadProgress(100)
-
-        onChange(metadata)
-        setPreviewUrl(null) // Clear client preview once uploaded
-      } catch (err) {
-        setUploadError(err instanceof Error ? err.message : 'Upload failed')
-        setPreviewUrl(null)
-      } finally {
-        setIsUploading(false)
-        setUploadProgress(0)
-      }
+      // Store File object in form state
+      // Upload will happen server-side during form submission
+      onChange(file)
     },
-    [onUpload, onChange, showPreview]
+    [onChange, showPreview],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -114,7 +80,7 @@ export function ImageField({
   }, [])
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
+    (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
 
@@ -122,26 +88,31 @@ export function ImageField({
 
       const files = Array.from(e.dataTransfer.files)
       if (files.length > 0) {
-        await handleFileSelect(files[0])
+        handleFileSelect(files[0])
       }
     },
-    [disabled, mode, handleFileSelect]
+    [disabled, mode, handleFileSelect],
   )
 
   const handleInputChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || [])
       if (files.length > 0) {
-        await handleFileSelect(files[0])
+        handleFileSelect(files[0])
       }
     },
-    [handleFileSelect]
+    [handleFileSelect],
   )
 
   const handleRemove = useCallback(() => {
     onChange(null)
     setPreviewUrl(null)
   }, [onChange])
+
+  // Determine if value is File or ImageMetadata
+  // Use duck typing instead of instanceof to support SSR
+  const isFile = value && typeof value === 'object' && 'arrayBuffer' in value && typeof (value as {arrayBuffer?: unknown}).arrayBuffer === 'function'
+  const isImageMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
   // Read-only mode
   if (mode === 'read') {
@@ -153,12 +124,12 @@ export function ImageField({
             {required && <span className="text-destructive ml-1">*</span>}
           </Label>
         )}
-        {value ? (
+        {isImageMetadata ? (
           <div className="space-y-2">
             <div className="relative inline-block">
               <Image
-                src={value.url}
-                alt={value.originalFilename}
+                src={(value as ImageMetadata).url}
+                alt={(value as ImageMetadata).originalFilename}
                 width={previewSize}
                 height={previewSize}
                 className="rounded-md object-cover border"
@@ -169,29 +140,38 @@ export function ImageField({
               />
             </div>
             <div className="text-xs text-muted-foreground">
-              {value.width} × {value.height}px • {formatFileSize(value.size)}
+              {(value as ImageMetadata).width} × {(value as ImageMetadata).height}px •{' '}
+              {formatFileSize((value as ImageMetadata).size)}
             </div>
-            {value.transformations && Object.keys(value.transformations).length > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium">Transformations:</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(value.transformations).map(([name, transform]) => {
-                    const t = transform as { url: string; width: number; height: number; size: number }
-                    return (
-                      <Button
-                        key={name}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => window.open(t.url, '_blank')}
-                      >
-                        {name} ({t.width}×{t.height})
-                      </Button>
-                    )
-                  })}
+            {(value as ImageMetadata).transformations &&
+              Object.keys((value as ImageMetadata).transformations!).length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">Transformations:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries((value as ImageMetadata).transformations!).map(
+                      ([name, transform]) => {
+                        const t = transform as {
+                          url: string
+                          width: number
+                          height: number
+                          size: number
+                        }
+                        return (
+                          <Button
+                            key={name}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(t.url, '_blank')}
+                          >
+                            {name} ({t.width}×{t.height})
+                          </Button>
+                        )
+                      },
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No image uploaded</p>
@@ -210,13 +190,13 @@ export function ImageField({
         </Label>
       )}
 
-      {value || previewUrl ? (
-        // Image uploaded or preview available - show preview
+      {isFile || isImageMetadata || previewUrl ? (
+        // Image selected/uploaded or preview available - show preview
         <div className="space-y-2">
           <div className="relative inline-block group">
             <Image
-              src={previewUrl || value!.url}
-              alt={value?.originalFilename || 'Preview'}
+              src={previewUrl || (isImageMetadata ? (value as ImageMetadata).url : '')}
+              alt={isImageMetadata ? (value as ImageMetadata).originalFilename : 'Preview'}
               width={previewSize}
               height={previewSize}
               className="rounded-md object-cover border"
@@ -225,72 +205,73 @@ export function ImageField({
                 maxHeight: `${previewSize}px`,
               }}
             />
-            {value && (
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {isImageMetadata && (
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => window.open(value.url, '_blank')}
+                  onClick={() => window.open((value as ImageMetadata).url, '_blank')}
                 >
                   <Eye className="h-3 w-3" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleRemove}
-                  disabled={disabled}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
+              )}
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleRemove}
+                disabled={disabled}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
 
-          {value && (
-            <>
-              <div className="text-xs text-muted-foreground">
-                {value.originalFilename} • {value.width} × {value.height}px •{' '}
-                {formatFileSize(value.size)}
-              </div>
-
-              {value.transformations && Object.keys(value.transformations).length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium">Transformations:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(value.transformations).map(([name, transform]) => {
-                      const t = transform as { url: string; width: number; height: number; size: number }
-                      return (
-                        <Button
-                          key={name}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => window.open(t.url, '_blank')}
-                        >
-                          {name} ({t.width}×{t.height})
-                        </Button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
+          {isFile && (
+            <div className="text-xs text-muted-foreground">
+              {(value as File).name} • {formatFileSize((value as File).size)} • Will upload on save
+            </div>
           )}
 
-          {isUploading && (
-            <div className="mt-2">
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+          {isImageMetadata && (
+            <>
+              <div className="text-xs text-muted-foreground">
+                {(value as ImageMetadata).originalFilename} • {(value as ImageMetadata).width} ×{' '}
+                {(value as ImageMetadata).height}px •{' '}
+                {formatFileSize((value as ImageMetadata).size)}
               </div>
-              <p className="text-xs text-center text-muted-foreground mt-1">
-                Uploading... {uploadProgress}%
-              </p>
-            </div>
+
+              {(value as ImageMetadata).transformations &&
+                Object.keys((value as ImageMetadata).transformations!).length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Transformations:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries((value as ImageMetadata).transformations!).map(
+                        ([name, transform]) => {
+                          const t = transform as {
+                            url: string
+                            width: number
+                            height: number
+                            size: number
+                          }
+                          return (
+                            <Button
+                              key={name}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(t.url, '_blank')}
+                            >
+                              {name} ({t.width}×{t.height})
+                            </Button>
+                          )
+                        },
+                      )}
+                    </div>
+                  </div>
+                )}
+            </>
           )}
         </div>
       ) : (
@@ -312,7 +293,7 @@ export function ImageField({
               type="file"
               accept="image/*"
               onChange={handleInputChange}
-              disabled={disabled || isUploading}
+              disabled={disabled}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
 
@@ -323,31 +304,13 @@ export function ImageField({
                 <Upload className="h-8 w-8 text-muted-foreground" />
               )}
               <p className="text-sm font-medium">{placeholder}</p>
-              {helpText && (
-                <p className="text-xs text-muted-foreground">{helpText}</p>
-              )}
+              {helpText && <p className="text-xs text-muted-foreground">{helpText}</p>}
             </div>
-
-            {isUploading && (
-              <div className="mt-4">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-center text-muted-foreground mt-2">
-                  Uploading... {uploadProgress}%
-                </p>
-              </div>
-            )}
           </div>
         </>
       )}
 
-      {(error || uploadError) && (
-        <p className="text-sm text-destructive">{error || uploadError}</p>
-      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }

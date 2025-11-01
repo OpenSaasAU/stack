@@ -25,7 +25,7 @@ export interface FileValidationResult {
  */
 export function validateFile(
   file: { size: number; name: string; type: string },
-  options?: FileValidationOptions
+  options?: FileValidationOptions,
 ): FileValidationResult {
   if (!options) {
     return { valid: true }
@@ -108,7 +108,7 @@ export async function fileToBuffer(file: Blob | File): Promise<Buffer> {
  */
 export async function parseFileFromFormData(
   formData: FormData,
-  fieldName: string = 'file'
+  fieldName: string = 'file',
 ): Promise<{ file: File; buffer: Buffer } | null> {
   const file = formData.get(fieldName)
 

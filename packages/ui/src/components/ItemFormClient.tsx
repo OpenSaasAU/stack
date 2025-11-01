@@ -65,6 +65,7 @@ export function ItemFormClient({
       try {
         // Transform relationship fields to Prisma format
         // Filter out password fields with isSet objects (unchanged passwords)
+        // File/Image fields: pass File objects through (Next.js will serialize them)
         const transformedData: Record<string, unknown> = {}
         for (const [fieldName, value] of Object.entries(formData)) {
           const fieldConfig = fields[fieldName]
@@ -93,7 +94,8 @@ export function ItemFormClient({
               }
             }
           } else {
-            // Non-relationship field: pass through
+            // Non-relationship field: pass through (including File objects for file/image fields)
+            // File objects will be serialized by Next.js server action
             transformedData[fieldName] = value
           }
         }

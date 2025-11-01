@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
     console.error('Upload error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Upload failed' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
@@ -336,17 +336,27 @@ Files and images store metadata as JSON in your database:
 import { uploadFile, uploadImage, deleteFile, deleteImage } from '@opensaas/stack-storage/runtime'
 
 // Upload file
-const metadata = await uploadFile(config, 'documents', { file, buffer }, {
-  validation: { maxFileSize: 10 * 1024 * 1024 },
-})
+const metadata = await uploadFile(
+  config,
+  'documents',
+  { file, buffer },
+  {
+    validation: { maxFileSize: 10 * 1024 * 1024 },
+  },
+)
 
 // Upload image with transformations
-const imageMetadata = await uploadImage(config, 'avatars', { file, buffer }, {
-  validation: { maxFileSize: 5 * 1024 * 1024 },
-  transformations: {
-    thumbnail: { width: 100, height: 100, fit: 'cover' },
+const imageMetadata = await uploadImage(
+  config,
+  'avatars',
+  { file, buffer },
+  {
+    validation: { maxFileSize: 5 * 1024 * 1024 },
+    transformations: {
+      thumbnail: { width: 100, height: 100, fit: 'cover' },
+    },
   },
-})
+)
 
 // Delete file
 await deleteFile(config, 'documents', metadata.filename)
@@ -362,7 +372,7 @@ import { validateFile, formatFileSize, getMimeType } from '@opensaas/stack-stora
 
 const validation = validateFile(
   { size: file.size, name: file.name, type: file.type },
-  { maxFileSize: 10 * 1024 * 1024, acceptedMimeTypes: ['application/pdf'] }
+  { maxFileSize: 10 * 1024 * 1024, acceptedMimeTypes: ['application/pdf'] },
 )
 
 if (!validation.valid) {
@@ -378,7 +388,11 @@ Implement the `StorageProvider` interface:
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 export class CustomStorageProvider implements StorageProvider {
-  async upload(file: Buffer | Uint8Array, filename: string, options?: UploadOptions): Promise<UploadResult> {
+  async upload(
+    file: Buffer | Uint8Array,
+    filename: string,
+    options?: UploadOptions,
+  ): Promise<UploadResult> {
     // Your upload logic
     return {
       filename: 'generated-filename.jpg',

@@ -155,10 +155,25 @@ export function getContext<
   const db: Record<string, unknown> = {}
 
   // Create context with db reference (will be populated below)
+  // Storage utilities are added by generated context in .opensaas/context.ts
   const context: AccessContext<TPrisma> = {
     session,
     prisma: prisma as TPrisma,
     db: db as AccessControlledDB<TPrisma>,
+    storage: {
+      uploadFile: async () => {
+        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+      },
+      uploadImage: async () => {
+        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+      },
+      deleteFile: async () => {
+        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+      },
+      deleteImage: async () => {
+        throw new Error('Storage utilities are not available. Make sure you are using the generated getContext() from .opensaas/context.ts')
+      },
+    },
   }
 
   // Create access-controlled operations for each list

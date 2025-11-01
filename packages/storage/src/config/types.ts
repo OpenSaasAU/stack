@@ -13,7 +13,7 @@ export interface StorageProvider {
   upload(
     file: Buffer | Uint8Array,
     filename: string,
-    options?: UploadOptions
+    options?: UploadOptions,
   ): Promise<UploadResult>
 
   /**
