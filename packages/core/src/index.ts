@@ -21,6 +21,9 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationResult,
 } from './config/index.js'
 
 // Access control

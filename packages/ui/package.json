@@ -52,15 +52,9 @@
   "license": "MIT",
   "peerDependencies": {
     "@opensaas/stack-core": "workspace:*",
-    "@opensaas/stack-storage": "workspace:*",
     "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@opensaas/stack-storage": {
-      "optional": true
-    }
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",
