@@ -50,6 +50,7 @@ describe('S3StorageProvider', () => {
     getSignedUrl = presignerModule.getSignedUrl as ReturnType<typeof vi.fn>
 
     // Get the shared mockSend function
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const S3ClientClass = s3Module.S3Client as any
     mockSend = new S3ClientClass().send
 
