@@ -194,12 +194,12 @@ export function ImageField({
         </Label>
       )}
 
-      {isFile || isImageMetadata || previewUrl ? (
+      {previewUrl || isImageMetadata ? (
         // Image selected/uploaded or preview available - show preview
         <div className="space-y-2">
           <div className="relative inline-block group">
             <Image
-              src={previewUrl || (isImageMetadata ? (value as ImageMetadata).url : '')}
+              src={previewUrl || (value as ImageMetadata).url}
               alt={isImageMetadata ? (value as ImageMetadata).originalFilename : 'Preview'}
               width={previewSize}
               height={previewSize}

@@ -113,30 +113,42 @@ export function file(options: Omit<FileFieldConfig, 'type'>): FileFieldConfig {
           'arrayBuffer' in inputValue &&
           typeof (inputValue as { arrayBuffer?: unknown }).arrayBuffer === 'function'
         ) {
-          // Convert File to buffer
-          const fileObj = inputValue as File
-          const arrayBuffer = await fileObj.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
+          try {
+            // Convert File to buffer
+            const fileObj = inputValue as File
+            const arrayBuffer = await fileObj.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
 
-          // Upload file using context.storage utilities
-          const metadata = (await context.storage.uploadFile(fieldConfig.storage, fileObj, buffer, {
-            validation: fieldConfig.validation,
-          })) as FileMetadata
+            // Upload file using context.storage utilities
+            const metadata = (await context.storage.uploadFile(
+              fieldConfig.storage,
+              fileObj,
+              buffer,
+              {
+                validation: fieldConfig.validation,
+              },
+            )) as FileMetadata
 
-          // If cleanupOnReplace is enabled and there was an old file, delete it
-          if (fieldConfig.cleanupOnReplace && item && fieldName) {
-            const oldMetadata = item[fieldName] as FileMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
-              } catch (error) {
-                // Log error but don't fail the operation
-                console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
+            // If cleanupOnReplace is enabled and there was an old file, delete it
+            if (fieldConfig.cleanupOnReplace && item && fieldName) {
+              const oldMetadata = item[fieldName] as FileMetadata | null
+              if (oldMetadata && oldMetadata.filename) {
+                try {
+                  await context.storage.deleteFile(
+                    oldMetadata.storageProvider,
+                    oldMetadata.filename,
+                  )
+                } catch (error) {
+                  // Log error but don't fail the operation
+                  console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
+                }
               }
             }
-          }
 
-          return metadata
+            return metadata
+          } catch (error) {
+            throw error
+          }
         }
 
         // Unknown type - return as-is and let validation catch it
@@ -165,7 +177,7 @@ export function file(options: Omit<FileFieldConfig, 'type'>): FileFieldConfig {
       const fileMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
-        url: z.string().url(),
+        url: z.string(), // Accept both absolute URLs and relative paths
         mimeType: z.string(),
         size: z.number(),
         uploadedAt: z.string(),
@@ -246,36 +258,40 @@ export function image(options: Omit<ImageFieldConfig, 'type'>): ImageFieldConfig
           'arrayBuffer' in inputValue &&
           typeof (inputValue as { arrayBuffer?: unknown }).arrayBuffer === 'function'
         ) {
-          // Convert File to buffer
-          const fileObj = inputValue as File
-          const arrayBuffer = await fileObj.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
+          try {
+            // Convert File to buffer
+            const fileObj = inputValue as File
+            const arrayBuffer = await fileObj.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
 
-          // Upload image using context.storage utilities
-          const metadata = (await context.storage.uploadImage(
-            fieldConfig.storage,
-            fileObj,
-            buffer,
-            {
-              validation: fieldConfig.validation,
-              transformations: fieldConfig.transformations,
-            },
-          )) as ImageMetadata
+            // Upload image using context.storage utilities
+            const metadata = (await context.storage.uploadImage(
+              fieldConfig.storage,
+              fileObj,
+              buffer,
+              {
+                validation: fieldConfig.validation,
+                transformations: fieldConfig.transformations,
+              },
+            )) as ImageMetadata
 
-          // If cleanupOnReplace is enabled and there was an old file, delete it
-          if (fieldConfig.cleanupOnReplace && item && fieldName) {
-            const oldMetadata = item[fieldName] as ImageMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                await context.storage.deleteImage(oldMetadata)
-              } catch (error) {
-                // Log error but don't fail the operation
-                console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
+            // If cleanupOnReplace is enabled and there was an old file, delete it
+            if (fieldConfig.cleanupOnReplace && item && fieldName) {
+              const oldMetadata = item[fieldName] as ImageMetadata | null
+              if (oldMetadata && oldMetadata.filename) {
+                try {
+                  await context.storage.deleteImage(oldMetadata)
+                } catch (error) {
+                  // Log error but don't fail the operation
+                  console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
+                }
               }
             }
-          }
 
-          return metadata
+            return metadata
+          } catch (error) {
+            throw error
+          }
         }
 
         // Unknown type - return as-is and let validation catch it
@@ -304,7 +320,7 @@ export function image(options: Omit<ImageFieldConfig, 'type'>): ImageFieldConfig
       const imageMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
-        url: z.string().url(),
+        url: z.string(), // Accept both absolute URLs and relative paths
         mimeType: z.string(),
         size: z.number(),
         width: z.number(),
@@ -316,7 +332,7 @@ export function image(options: Omit<ImageFieldConfig, 'type'>): ImageFieldConfig
           .record(
             z.string(),
             z.object({
-              url: z.string().url(),
+              url: z.string(), // Accept both absolute URLs and relative paths
               width: z.number(),
               height: z.number(),
               size: z.number(),

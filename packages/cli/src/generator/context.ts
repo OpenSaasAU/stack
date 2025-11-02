@@ -122,11 +122,7 @@ ${storageUtilities}
  * \`\`\`
  */
 export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
-  const baseContext = getOpensaasContext(config, prisma, session ?? null)
-  return {
-    ...baseContext,
-    storage,
-  }
+  return getOpensaasContext(config, prisma, session ?? null, storage)
 }
 
 export const rawOpensaasContext = getContext()
