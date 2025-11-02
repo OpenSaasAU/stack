@@ -139,7 +139,9 @@ describe('Context Generator', () => {
 
       const context = generateContext(config)
 
-      expect(context).toContain('return getOpensaasContext(config, prisma, session ?? null)')
+      expect(context).toContain(
+        'const baseContext = getOpensaasContext(config, prisma, session ?? null)',
+      )
     })
   })
 })

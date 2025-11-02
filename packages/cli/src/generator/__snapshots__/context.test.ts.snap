@@ -20,6 +20,24 @@ const prisma = globalForPrisma.prisma ?? config.db.prismaClientConstructor!(Pris
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 /**
+ * Storage utilities (not configured)
+ */
+const storage = {
+  uploadFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  uploadImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+}
+
+/**
  * Get OpenSaas context with optional session
  *
  * @param session - Optional session object (structure defined by your application)
@@ -36,7 +54,11 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
  * \`\`\`
  */
 export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
-  return getOpensaasContext(config, prisma, session ?? null)
+  const baseContext = getOpensaasContext(config, prisma, session ?? null)
+  return {
+    ...baseContext,
+    storage,
+  }
 }
 
 export const rawOpensaasContext = getContext()
@@ -63,6 +85,24 @@ const prisma = globalForPrisma.prisma ?? new PrismaClient()
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 /**
+ * Storage utilities (not configured)
+ */
+const storage = {
+  uploadFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  uploadImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+}
+
+/**
  * Get OpenSaas context with optional session
  *
  * @param session - Optional session object (structure defined by your application)
@@ -79,7 +119,11 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
  * \`\`\`
  */
 export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
-  return getOpensaasContext(config, prisma, session ?? null)
+  const baseContext = getOpensaasContext(config, prisma, session ?? null)
+  return {
+    ...baseContext,
+    storage,
+  }
 }
 
 export const rawOpensaasContext = getContext()
