@@ -1,4 +1,6 @@
-# OpenSaas Stack - Technical Specification
+# OpenSaas Stack - Original Design Specification
+
+> **Note**: This is the original design specification document from the initial development of OpenSaas Stack. It provides valuable historical context about the project's design rationale and architectural decisions. For current architecture and implementation details, see the main [CLAUDE.md](../CLAUDE.md) file in the repository root.
 
 ## Project Overview
 
