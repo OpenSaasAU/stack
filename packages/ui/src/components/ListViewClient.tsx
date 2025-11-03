@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import { useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link.js'
+import { useRouter } from 'next/navigation.js'
 import { formatFieldName, getFieldDisplayValue } from '../lib/utils.js'
 import {
   Table,
