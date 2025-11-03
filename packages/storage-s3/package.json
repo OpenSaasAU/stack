@@ -24,7 +24,7 @@
     "@aws-sdk/s3-request-presigner": "^3.709.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.0.5",
     "typescript": "^5.7.3",
     "vitest": "^4.0.5"
