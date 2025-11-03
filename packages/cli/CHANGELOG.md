@@ -1,5 +1,13 @@
 # @opensaas/stack-cli
 
+## 0.1.2
+
+### Patch Changes
+
+- 7bb96e6: Fix up init command to work
+  - @opensaas/stack-core@0.1.2
+  - @opensaas/stack-mcp@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

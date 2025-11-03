@@ -1,5 +1,12 @@
 # @opensaas/stack-tiptap
 
+## 0.1.2
+
+### Patch Changes
+
+- @opensaas/stack-core@0.1.2
+- @opensaas/stack-ui@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes
