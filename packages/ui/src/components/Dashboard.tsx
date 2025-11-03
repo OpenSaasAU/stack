@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
 import { AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'

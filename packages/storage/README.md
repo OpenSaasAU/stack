@@ -92,7 +92,7 @@ export default config({
 
 ```typescript
 // app/api/upload/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server.js'
 import config from '@/opensaas.config'
 import { uploadFile, uploadImage, parseFileFromFormData } from '@opensaas/stack-storage/runtime'
 

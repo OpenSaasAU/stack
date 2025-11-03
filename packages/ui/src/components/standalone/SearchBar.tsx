@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Input } from '../../primitives/input.js'
 import { Button } from '../../primitives/button.js'
 import { Card } from '../../primitives/card.js'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation.js'
 
 export interface SearchBarProps {
   onSearch?: (query: string) => void

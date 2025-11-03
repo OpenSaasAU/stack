@@ -1,7 +1,7 @@
 'use client'
 import * as React from 'react'
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from 'next/link.js'
 import { formatFieldName, getFieldDisplayValue } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import {

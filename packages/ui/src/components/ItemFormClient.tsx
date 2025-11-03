@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation.js'
 import { FieldRenderer } from './fields/FieldRenderer.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'

@@ -6,7 +6,7 @@ import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Label } from '../../primitives/label.js'
 import { Upload, X, Eye, ImageIcon } from 'lucide-react'
-import Image from 'next/image'
+import Image from 'next/image.js'
 
 export interface ImageFieldProps {
   name: string

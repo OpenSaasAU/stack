@@ -1,5 +1,5 @@
 import * as React from 'react'
-import Link from 'next/link'
+import Link from 'next/link.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
