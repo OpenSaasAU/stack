@@ -1,5 +1,12 @@
 # @opensaas/stack-storage
 
+## 0.1.3
+
+### Patch Changes
+
+- efe2357: fix getting started package imports
+  - @opensaas/stack-core@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
