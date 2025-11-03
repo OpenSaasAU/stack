@@ -18,7 +18,7 @@
   "dependencies": {
     "prompts": "^2.4.2",
     "chalk": "^5.3.0",
-    "ora": "^8.0.1"
+    "ora": "^9.0.0"
   },
   "devDependencies": {
     "@types/prompts": "^2.4.9",
