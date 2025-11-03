@@ -36,7 +36,6 @@
   "license": "MIT",
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
-    "@opensaas/stack-mcp": "workspace:*",
     "commander": "^14.0.1",
     "chalk": "^5.6.2",
     "ora": "^9.0.0",
