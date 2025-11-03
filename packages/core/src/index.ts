@@ -34,6 +34,7 @@ export type {
   AccessContext,
   PrismaFilter,
   AccessControlledDB,
+  StorageUtils,
 } from './access/index.js'
 
 // Context

@@ -97,7 +97,9 @@ const storage = {
  */
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
+import type { Session as OpensaasSession } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client'
+import type { Context } from './types'
 import config from '../opensaas.config'
 
 // Internal Prisma singleton - managed automatically
@@ -119,10 +121,15 @@ ${storageUtilities}
  * // Authenticated access
  * const context = getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
+ *
+ * // With custom session type
+ * type CustomSession = { userId: string; email: string; role: string } | null
+ * const context = getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
+ * // context.session is now typed as CustomSession
  * \`\`\`
  */
-export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
-  return getOpensaasContext(config, prisma, session ?? null, storage)
+export function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Context<TSession> {
+  return getOpensaasContext(config, prisma, session ?? null, storage) as Context<TSession>
 }
 
 export const rawOpensaasContext = getContext()
