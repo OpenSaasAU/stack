@@ -1,5 +1,11 @@
 # @opensaas/stack-mcp
 
+## 0.1.3
+
+### Patch Changes
+
+- @opensaas/stack-core@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
