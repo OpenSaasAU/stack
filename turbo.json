@@ -1,6 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "opensaas-composable-dashboard-example#build": {
+      "outputs": [".next/**"]
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "tsconfig.tsbuildinfo"]

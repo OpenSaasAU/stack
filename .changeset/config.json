@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["opensaas-*-example"]
+  "ignore": ["opensaas-*-example", "opensaas-stack-docs"]
 }

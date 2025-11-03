@@ -756,6 +756,8 @@ Then follow the prompts to select packages and version bumps.
 
 - when installing packages first check if the package is in use in another package or example and then make sure the versions match across all packages and examples to avoid multiple versions of the same package being installed
 
-- when adding a new exmaple always copy the @examples/blog and then modify as needed to ensure consistency across all examples
+- when adding a new exmaple always use the `@openaas/cli init` script - this will ensure the example is setup correctly and that the init script is kept up to date with any changes
 
 - Always run `pnpm lint` and `pnpm format` to ensure code quality and consistency before committing any changes
+
+- The repo URL is `https://github.com/OpenSaasAU/stack` and the docs site is `https://stack.opensaas.au/`
