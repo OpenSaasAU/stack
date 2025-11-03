@@ -1,8 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['localhost'],
     remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+      },
       {
         protocol: 'https',
         hostname: '**.s3.amazonaws.com',
@@ -13,14 +16,7 @@ const nextConfig = {
       },
     ],
   },
-  // Externalize sharp to avoid webpack bundling issues
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals = config.externals || []
-      config.externals.push('sharp')
-    }
-    return config
-  },
+  serverExternalPackages: ['sharp'],
 }
 
 export default nextConfig

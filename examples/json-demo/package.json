@@ -15,7 +15,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/client": "^6.17.1",
-    "next": "^15.5.5",
+    "next": "^16.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-json-view-lite": "^2.5.0"
