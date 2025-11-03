@@ -1,0 +1,9 @@
+# @opensaas/stack-storage-vercel
+
+## 0.1.1
+
+### Patch Changes
+
+- 045c071: Add field and image upload
+- Updated dependencies [045c071]
+  - @opensaas/stack-storage@0.1.1
