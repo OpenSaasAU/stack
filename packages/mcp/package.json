@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP (Model Context Protocol) server integration for OpenSaas Stack",
   "type": "module",
   "main": "./dist/index.js",
