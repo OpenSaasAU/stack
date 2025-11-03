@@ -44,7 +44,10 @@ export function parseMarkdoc(content: string) {
 /**
  * Render Markdoc AST to React
  */
-export function renderMarkdoc(content: string, components?: Record<string, any>) {
+export function renderMarkdoc(
+  content: string,
+  components?: Record<string, React.ComponentType<unknown>>
+) {
   const transformed = parseMarkdoc(content)
   return Markdoc.renderers.react(transformed, React, { components })
 }
@@ -54,7 +57,7 @@ export function renderMarkdoc(content: string, components?: Record<string, any>)
  */
 export async function highlightCode(
   code: string,
-  language: string = 'typescript'
+  language: string = 'typescript',
 ): Promise<string> {
   try {
     const html = await codeToHtml(code, {

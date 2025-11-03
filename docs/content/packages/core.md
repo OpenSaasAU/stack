@@ -27,7 +27,15 @@ import { config, list } from '@opensaas/stack-core/config'
 ### Fields
 
 ```typescript
-import { text, integer, checkbox, timestamp, password, select, relationship } from '@opensaas/stack-core/fields'
+import {
+  text,
+  integer,
+  checkbox,
+  timestamp,
+  password,
+  select,
+  relationship,
+} from '@opensaas/stack-core/fields'
 ```
 
 ### Context

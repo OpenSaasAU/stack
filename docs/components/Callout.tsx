@@ -1,3 +1,4 @@
+import React from 'react'
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 
 interface CalloutProps {

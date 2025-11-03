@@ -19,11 +19,7 @@ function NavItemComponent({ item, level = 0 }: { item: NavItem; level?: number }
           onClick={() => setIsOpen(!isOpen)}
           className="flex items-center gap-2 w-full text-left font-semibold text-sm py-2 hover:text-primary transition-colors"
         >
-          {isOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           {item.title}
         </button>
         {isOpen && (

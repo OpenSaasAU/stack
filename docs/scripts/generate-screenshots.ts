@@ -65,7 +65,7 @@ async function generateScreenshots() {
       const placeholderPath = join(SCREENSHOTS_DIR, `${screenshot.name}.txt`)
       writeFileSync(
         placeholderPath,
-        `Screenshot: ${screenshot.name}\nURL: ${screenshot.url}\nDescription: ${screenshot.description}\n`
+        `Screenshot: ${screenshot.name}\nURL: ${screenshot.url}\nDescription: ${screenshot.description}\n`,
       )
     } catch (error) {
       console.error(`   ❌ Failed to capture ${screenshot.name}:`, error)

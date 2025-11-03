@@ -1,3 +1,4 @@
+import React from 'react'
 import Link from 'next/link'
 import { Code2, Github, Menu } from 'lucide-react'
 import { Sidebar } from './Sidebar'

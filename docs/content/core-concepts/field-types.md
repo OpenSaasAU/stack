@@ -30,6 +30,7 @@ fields: {
 ```
 
 **Options:**
+
 - `validation.isRequired`: Boolean
 - `validation.length.min`: Minimum length
 - `validation.length.max`: Maximum length
@@ -61,6 +62,7 @@ fields: {
 ```
 
 **Options:**
+
 - `validation.isRequired`: Boolean
 - `validation.min`: Minimum value
 - `validation.max`: Maximum value
@@ -82,6 +84,7 @@ fields: {
 ```
 
 **Options:**
+
 - `defaultValue`: Boolean default value
 
 ### Timestamp Field
@@ -103,6 +106,7 @@ fields: {
 ```
 
 **Options:**
+
 - `defaultValue.kind`: `'now'` for current timestamp
 - `db.updatedAt`: Boolean - auto-update on record changes
 
@@ -124,6 +128,7 @@ fields: {
 ```
 
 **Options:**
+
 - `validation.isRequired`: Boolean
 - `validation.length.min`: Minimum length
 - `validation.length.max`: Maximum length
@@ -158,6 +163,7 @@ fields: {
 ```
 
 **Options:**
+
 - `options`: Array of `{ label, value }` pairs
 - `defaultValue`: Default selected value
 - `validation.isRequired`: Boolean
@@ -190,6 +196,7 @@ fields: {
 ```
 
 **Options:**
+
 - `ref`: String in format `'ListName.fieldName'`
 - `many`: Boolean - true for one-to-many relationships
 
@@ -297,7 +304,10 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
     type: 'slug',
     ...options,
     getZodSchema: (fieldName, operation) => {
-      return z.string().regex(/^[a-z0-9-]+$/).optional()
+      return z
+        .string()
+        .regex(/^[a-z0-9-]+$/)
+        .optional()
     },
     getPrismaType: (fieldName) => {
       return { type: 'String', modifiers: '?' }
@@ -333,6 +343,7 @@ integer({
 ```
 
 Validation errors are thrown during create/update operations and include:
+
 - Field name
 - Error type
 - Validation rule that failed

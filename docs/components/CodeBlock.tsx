@@ -26,11 +26,7 @@ export function CodeBlock({ language = 'typescript', content }: CodeBlockProps) 
           className="p-2 bg-muted hover:bg-muted/80 rounded-lg transition-colors"
           title="Copy code"
         >
-          {copied ? (
-            <Check className="h-4 w-4 text-green-600" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
+          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
         </button>
       </div>
       <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b text-xs text-muted-foreground">

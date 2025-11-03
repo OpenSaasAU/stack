@@ -1,8 +1,12 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --font-family-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-family-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-family-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
 
   --color-primary: #3b82f6;
   --color-background: #ffffff;
@@ -31,7 +35,9 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
   }
 }
 
@@ -108,5 +114,37 @@
 
   .prose img {
     @apply rounded-lg my-4;
+  }
+
+  /* Shiki syntax highlighting */
+  .shiki-wrapper {
+    @apply my-6 rounded-lg overflow-hidden;
+    background-color: #f6f8fa;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .shiki-wrapper {
+      background-color: #0d1117;
+    }
+  }
+
+  .shiki-wrapper pre {
+    @apply p-4 overflow-x-auto;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Light/dark theme switching for Shiki dual themes */
+  .shiki-wrapper .shiki,
+  .shiki-wrapper .shiki span {
+    color: var(--shiki-light);
+    background-color: transparent;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .shiki-wrapper .shiki,
+    .shiki-wrapper .shiki span {
+      color: var(--shiki-dark) !important;
+    }
   }
 }

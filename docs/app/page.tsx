@@ -67,8 +67,8 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-semibold mb-2">Config-First Development</h3>
             <p className="text-muted-foreground">
-              Define your schema, fields, and access rules in one place. Generate Prisma schemas
-              and TypeScript types automatically.
+              Define your schema, fields, and access rules in one place. Generate Prisma schemas and
+              TypeScript types automatically.
             </p>
           </div>
 

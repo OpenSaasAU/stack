@@ -5,6 +5,7 @@ The hooks system provides data transformation and side effects during database o
 ## Overview
 
 Hooks allow you to:
+
 - Transform data before it's saved to the database
 - Transform data before it's returned to the user
 - Perform validation beyond basic field rules
@@ -18,7 +19,9 @@ Defined at the list level, these hooks run for all operations on the list:
 
 ```typescript
 Post: list({
-  fields: { /* ... */ },
+  fields: {
+    /* ... */
+  },
   hooks: {
     resolveInput: async ({ resolvedData, operation, context }) => {
       // Transform input data before database operation

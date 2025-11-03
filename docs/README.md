@@ -84,7 +84,7 @@ Code blocks automatically include syntax highlighting and a copy button:
 
 ````markdown
 ```typescript
-const example = "Hello, World!"
+const example = 'Hello, World!'
 ```
 ````
 

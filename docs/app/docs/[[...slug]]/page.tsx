@@ -4,7 +4,7 @@ import React from 'react'
 import { getDocBySlug, getAllDocSlugs } from '@/lib/content'
 import { markdocConfig } from '@/lib/markdoc'
 import { DocLayout } from '@/components/DocLayout'
-import { CodeBlock } from '@/components/CodeBlock'
+import { CodeBlockServer } from '@/components/CodeBlockServer'
 import { Callout } from '@/components/Callout'
 
 interface DocPageProps {
@@ -34,7 +34,7 @@ export default async function DocPage({ params }: DocPageProps) {
 
   // Custom components for Markdoc
   const components = {
-    CodeBlock,
+    CodeBlock: CodeBlockServer,
     Callout,
   }
 

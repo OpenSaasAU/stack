@@ -139,7 +139,7 @@ query: ({ session }) => ({
     {
       OR: [{ publishedAt: { lte: new Date() } }, { authorId: { equals: session?.userId } }],
     },
-  ]
+  ],
 })
 ```
 

@@ -23,11 +23,13 @@ import { withAuth, authConfig } from '@opensaas/stack-auth/config'
 export default withAuth(
   config({
     db: { provider: 'sqlite', url: 'file:./dev.db' },
-    lists: { /* your lists */ },
+    lists: {
+      /* your lists */
+    },
   }),
   authConfig({
     sessionFields: ['userId', 'email', 'name', 'role'],
-  })
+  }),
 )
 ```
 

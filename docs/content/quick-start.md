@@ -76,6 +76,7 @@ pnpm opensaas generate
 ```
 
 This creates:
+
 - `prisma/schema.prisma` - Database schema
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
