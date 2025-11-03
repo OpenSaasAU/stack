@@ -18,10 +18,14 @@ program
 
 program
   .command('init [project-name]')
-  .description('Create a new OpenSaas project')
-  .option('-t, --template <template>', 'Project template to use')
-  .action(async (projectName) => {
-    await initCommand(projectName)
+  .description('Create a new OpenSaas project (delegates to create-opensaas-app)')
+  .option('--with-auth', 'Include authentication (Better-auth)')
+  .allowUnknownOption() // Allow passing through other options
+  .action(async (projectName, options) => {
+    const args = []
+    if (projectName) args.push(projectName)
+    if (options.withAuth) args.push('--with-auth')
+    await initCommand(args)
   })
 
 program

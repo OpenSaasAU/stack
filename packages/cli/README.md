@@ -98,18 +98,78 @@ Config changed, regenerating...
 }
 ```
 
-### `opensaas init` (Coming Soon)
+### `opensaas init`
 
-Create a new OpenSaas project with template.
+Create a new OpenSaas Stack project.
+
+**Note:** This command delegates to `create-opensaas-app` for scaffolding. It's kept for backwards compatibility.
 
 ```bash
-opensaas init my-project
-opensaas init my-project --template blog
+npx @opensaas/stack-cli init my-project
+```
+
+**Recommended:** Use `npm create opensaas-app` instead:
+
+```bash
+npm create opensaas-app@latest my-project
+```
+
+**Options:**
+
+- `project-name` - Name of your project (lowercase, numbers, hyphens only)
+- `--with-auth` - Include Better-auth integration
+
+**Examples:**
+
+```bash
+# Basic project
+npx @opensaas/stack-cli init my-app
+
+# With authentication
+npx @opensaas/stack-cli init my-app --with-auth
+```
+
+**What happens:**
+
+This command runs `npx create-opensaas-app@latest` with the provided arguments. See the [create-opensaas-app package](../create-opensaas-app) for full details.
+
+**After init:**
+
+```bash
+cd my-project
+pnpm install
+pnpm generate    # Generate Prisma schema and types
+pnpm db:push     # Create database
+pnpm dev         # Start dev server
 ```
 
 ## Usage in Projects
 
-### Basic Setup
+### Quick Start (New Projects)
+
+**Recommended:** Use `create-opensaas-app`:
+
+```bash
+npm create opensaas-app@latest my-project
+cd my-project
+pnpm install
+pnpm generate
+pnpm db:push
+pnpm dev
+```
+
+**Alternative:** Via CLI package:
+
+```bash
+npx @opensaas/stack-cli init my-project
+cd my-project
+pnpm install
+pnpm generate
+pnpm db:push
+pnpm dev
+```
+
+### Manual Setup (Existing Projects)
 
 ```bash
 # Install CLI

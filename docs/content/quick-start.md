@@ -1,30 +1,63 @@
 # Quick Start
 
-Get up and running with OpenSaaS Stack in 5 minutes.
+Get up and running with OpenSaaS Stack in 5 minutes. Deploy to production in 30 minutes.
 
 ## Prerequisites
 
 - Node.js 18+ installed
-- pnpm package manager
+- pnpm package manager (install with `npm install -g pnpm`)
 - Basic knowledge of Next.js and TypeScript
 
-## Installation
+## Two Ways to Get Started
 
-### 1. Create a New Project
+Choose the method that works best for you:
+
+### Option 1: Use the CLI (Recommended)
+
+The fastest way to scaffold a new project with everything configured:
+
+```bash
+npm create opensaas-app@latest my-app
+cd my-app
+pnpm install
+```
+
+**Optional:** Add `--with-auth` flag to include Better-auth:
+
+```bash
+npm create opensaas-app@latest my-app --with-auth
+```
+
+This creates a complete Next.js project with:
+
+- OpenSaaS Stack pre-configured
+- User & Post models with relationships
+- Admin UI at `/admin`
+- All necessary dependencies
+- Proper TypeScript configuration
+- Ready to generate and run
+
+**Skip to [Step 4: Generate Prisma Schema](#4-generate-prisma-schema)**
+
+### Option 2: Manual Setup
+
+Add OpenSaaS Stack to an existing Next.js project:
+
+#### 1. Create a New Project (if needed)
 
 ```bash
 npx create-next-app@latest my-app
 cd my-app
 ```
 
-### 2. Install OpenSaaS Stack
+#### 2. Install OpenSaaS Stack
 
 ```bash
 pnpm add @opensaas/stack-core
 pnpm add -D prisma
 ```
 
-### 3. Create Your Config
+#### 3. Create Your Config
 
 Create `opensaas.config.ts` in your project root:
 
@@ -139,10 +172,24 @@ export default async function HomePage() {
 }
 ```
 
+## 8. Deploy to Production
+
+Ready to deploy your app? Follow our comprehensive deployment guide:
+
+**[Deploy to Vercel + Neon →](/docs/guides/deployment)**
+
+The deployment process takes ~10-15 minutes and includes:
+
+- Setting up a production PostgreSQL database (Neon)
+- Configuring environment variables
+- Deploying to Vercel
+- Running database migrations
+
 ## What's Next?
 
 Now that you have a basic setup, explore these topics:
 
+- **[Deployment Guide](/docs/guides/deployment)** - Deploy your app to production
 - **[Access Control](/docs/core-concepts/access-control)** - Learn how to secure your data
 - **[Field Types](/docs/core-concepts/field-types)** - Explore all available field types
 - **[Hooks](/docs/core-concepts/hooks)** - Add data transformation and side effects

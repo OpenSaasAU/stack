@@ -1,0 +1,46 @@
+{
+  "name": "create-opensaas-app",
+  "version": "0.1.0",
+  "description": "Create a new OpenSaas Stack application",
+  "type": "module",
+  "bin": {
+    "create-opensaas-app": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc && pnpm copy-templates",
+    "copy-templates": "node dist/copy-templates.js",
+    "clean": "rm -rf dist templates"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/prompts": "^2.4.9",
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3",
+    "fs-extra": "^11.2.0",
+    "@types/fs-extra": "^11.0.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/create-opensaas-app"
+  },
+  "keywords": [
+    "opensaas",
+    "nextjs",
+    "prisma",
+    "admin",
+    "crud",
+    "starter",
+    "template"
+  ],
+  "author": "OpenSaas",
+  "license": "MIT"
+}

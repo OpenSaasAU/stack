@@ -1,8 +1,8 @@
 # OpenSaas Stack
 
-> **⚠️ Work in Progress - Alpha Stage**
+> **🚀 Production Ready**
 >
-> This project is currently in active development and is in an alpha state. APIs may change, and some features are still being implemented. Use in production at your own risk.
+> Build and deploy admin-heavy applications in minutes. Zero to production in under 30 minutes with Vercel + Neon.
 
 A modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
 
@@ -50,20 +50,62 @@ This is a monorepo containing:
 
 ## Quick Start
 
-### 1. Install Dependencies
+### New Project (Recommended)
+
+Get started with a new project in 5 minutes:
+
+```bash
+# Create a new project
+npm create opensaas-app@latest my-app
+cd my-app
+
+# Install dependencies
+pnpm install
+
+# Generate Prisma schema and types
+pnpm generate
+
+# Create database
+pnpm db:push
+
+# Start dev server
+pnpm dev
+```
+
+**With authentication:**
+
+```bash
+npm create opensaas-app@latest my-app --with-auth
+```
+
+Your app is now running at [http://localhost:3000](http://localhost:3000)!
+
+Visit `/admin` to see your auto-generated admin UI.
+
+### Deploy to Production
+
+Ready to deploy? Follow our [Deployment Guide](https://stack.opensaas.au/docs/guides/deployment) to deploy to Vercel + Neon in ~15 minutes.
+
+---
+
+### Monorepo Development
+
+Working on the OpenSaas Stack itself? Here's how to get started:
+
+#### 1. Install Dependencies
 
 ```bash
 pnpm install
 ```
 
-### 2. Build All Packages
+#### 2. Build All Packages
 
 ```bash
 # Build all packages in the monorepo
 pnpm build
 ```
 
-### 3. Try an Example
+#### 3. Try an Example
 
 Choose one of the examples to get started:
 
