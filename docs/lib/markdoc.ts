@@ -46,7 +46,7 @@ export function parseMarkdoc(content: string) {
  */
 export function renderMarkdoc(
   content: string,
-  components?: Record<string, React.ComponentType<unknown>>
+  components?: Record<string, React.ComponentType<unknown>>,
 ) {
   const transformed = parseMarkdoc(content)
   return Markdoc.renderers.react(transformed, React, { components })

@@ -378,6 +378,7 @@ Low-level shadcn/ui components for building custom interfaces.
 ### Available Primitives
 
 **Form Controls:**
+
 - `Input` - Text input
 - `Textarea` - Multi-line text input
 - `Label` - Form label
@@ -387,14 +388,17 @@ Low-level shadcn/ui components for building custom interfaces.
 - `Combobox` - Searchable select with autocomplete
 
 **Layout:**
+
 - `Card`, `CardHeader`, `CardContent`, `CardFooter` - Card components
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter` - Modal dialogs
 - `Popover`, `PopoverTrigger`, `PopoverContent` - Popover components
 
 **Data Display:**
+
 - `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableCell` - Table components
 
 **Date/Time:**
+
 - `Calendar` - Calendar component
 - `TimePicker` - Time picker component
 - `DateTimePicker` - Combined date and time picker
