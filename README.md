@@ -1,8 +1,8 @@
 # OpenSaas Stack
 
-> **🚀 Production Ready**
+> **⚠️ Work in Progress - Alpha Stage**
 >
-> Build and deploy admin-heavy applications in minutes. Zero to production in under 30 minutes with Vercel + Neon.
+> This project is currently in active development and is in an alpha state. APIs may change in patches, and some features are still being implemented. Use in production at your own risk.
 
 A modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
 
