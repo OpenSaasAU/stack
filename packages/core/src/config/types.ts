@@ -636,6 +636,70 @@ export type McpConfig = {
 }
 
 /**
+ * Storage configuration for file uploads
+ * Maps storage provider names to their configurations
+ *
+ * @example
+ * ```typescript
+ * storage: {
+ *   avatars: s3Storage({ bucket: 'my-avatars', region: 'us-east-1' }),
+ *   documents: localStorage({ uploadDir: './uploads', serveUrl: '/api/files' })
+ * }
+ * ```
+ */
+/**
+ * File metadata stored in the database (as JSON)
+ * Used by file upload fields to track uploaded files
+ */
+export interface FileMetadata {
+  /** Generated filename in storage */
+  filename: string
+  /** Original filename from upload */
+  originalFilename: string
+  /** Public URL to access the file */
+  url: string
+  /** MIME type */
+  mimeType: string
+  /** File size in bytes */
+  size: number
+  /** Upload timestamp */
+  uploadedAt: string
+  /** Storage provider name */
+  storageProvider: string
+  /** Additional provider-specific metadata */
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Image-specific metadata (extends FileMetadata)
+ * Includes dimensions and optional transformations
+ */
+export interface ImageMetadata extends FileMetadata {
+  /** Image width in pixels */
+  width: number
+  /** Image height in pixels */
+  height: number
+  /** Generated image transformations/variants */
+  transformations?: Record<string, ImageTransformationResult>
+}
+
+/**
+ * Result of an image transformation
+ */
+export interface ImageTransformationResult {
+  /** URL to the transformed image */
+  url: string
+  /** Width in pixels */
+  width: number
+  /** Height in pixels */
+  height: number
+  /** File size in bytes */
+  size: number
+}
+
+export type StorageConfig = Record<string, { type: string; [key: string]: unknown }>
+
+/**
  * Main configuration type
  */
 export type OpenSaasConfig = {
@@ -647,6 +711,11 @@ export type OpenSaasConfig = {
    * MCP (Model Context Protocol) server configuration
    */
   mcp?: McpConfig
+  /**
+   * Storage configuration for file/image uploads
+   * Maps named storage providers to their configurations
+   */
+  storage?: StorageConfig
   /**
    * Path where OpenSaas generates files (context, types, patched Prisma client)
    * @default ".opensaas"

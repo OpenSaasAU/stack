@@ -74,4 +74,7 @@ export type {
   McpAuthConfig,
   ListMcpConfig,
   McpCustomTool,
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationResult,
 } from './types.js'

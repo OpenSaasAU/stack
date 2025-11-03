@@ -1,5 +1,9 @@
 # OpenSaas Stack
 
+> **⚠️ Work in Progress - Alpha Stage**
+>
+> This project is currently in active development and is in an alpha state. APIs may change, and some features are still being implemented. Use in production at your own risk.
+
 A modern stack for building admin-heavy applications with Next.js App Router, designed to be AI-agent-friendly with built-in security guardrails.
 
 ## Features
@@ -12,16 +16,37 @@ A modern stack for building admin-heavy applications with Next.js App Router, de
 - 🧩 **Fully Extensible**: Custom field types without modifying core code
 - 🎨 **Fully Composable UI**: Use primitives, fields, standalone components, or complete admin UI
 - ♿ **Accessible**: Built with Radix UI and shadcn/ui for production-ready components
+- 🔐 **Authentication Ready**: Optional Better-auth integration with OAuth support
+- 🤖 **AI Assistant Integration**: MCP server for seamless AI assistant access
+- 📁 **File Storage**: Abstract storage interface with S3 and Vercel Blob adapters
+- 📝 **Rich Text Editing**: Tiptap integration for advanced content editing
 
 ## Project Structure
 
 This is a monorepo containing:
 
+### Packages
+
 - **`packages/core`**: The core OpenSaas stack (config, fields, access control, generators)
 - **`packages/cli`**: CLI tools for code generation and development
 - **`packages/ui`**: Composable React UI components (primitives, fields, standalone components, full admin UI)
-- **`examples/blog`**: Working blog example demonstrating the stack
-- **`examples/custom-field`**: Example demonstrating custom field components
+- **`packages/auth`**: Better-auth integration for authentication and sessions
+- **`packages/mcp`**: Model Context Protocol server for AI assistant integration
+- **`packages/tiptap`**: Rich text editor integration (third-party field example)
+- **`packages/storage`**: Abstract storage interface for file uploads
+- **`packages/storage-s3`**: S3-compatible storage adapter (AWS S3, R2, MinIO, etc.)
+- **`packages/storage-vercel`**: Vercel Blob storage adapter
+
+### Examples
+
+- **`examples/blog`**: Basic blog example demonstrating the stack
+- **`examples/custom-field`**: Custom field types demonstration
+- **`examples/composable-dashboard`**: Composable UI components examples
+- **`examples/auth-demo`**: Authentication integration with Better-auth
+- **`examples/mcp-demo`**: MCP server integration for AI assistants
+- **`examples/tiptap-demo`**: Tiptap rich text editor integration
+- **`examples/json-demo`**: JSON field type demonstration
+- **`examples/file-upload-demo`**: File upload and image handling with storage adapters
 
 ## Quick Start
 
@@ -31,14 +56,18 @@ This is a monorepo containing:
 pnpm install
 ```
 
-### 2. Build the Core Package
+### 2. Build All Packages
 
 ```bash
-cd packages/core
+# Build all packages in the monorepo
 pnpm build
 ```
 
-### 3. Try the Blog Example
+### 3. Try an Example
+
+Choose one of the examples to get started:
+
+#### Blog Example (Basic)
 
 ```bash
 cd examples/blog
@@ -52,8 +81,40 @@ pnpm generate
 # Push schema to database (creates SQLite file)
 pnpm db:push
 
-# Generate Prisma Client
-npx prisma generate
+# Start development server
+pnpm dev
+```
+
+#### Auth Demo (with Better-auth)
+
+```bash
+cd examples/auth-demo
+
+# Copy environment file
+cp .env.example .env
+
+# Generate and setup database
+pnpm generate
+pnpm db:push
+
+# Start development server
+pnpm dev
+```
+
+#### File Upload Demo (with storage adapters)
+
+```bash
+cd examples/file-upload-demo
+
+# Copy environment file and configure storage
+cp .env.example .env
+
+# Generate and setup database
+pnpm generate
+pnpm db:push
+
+# Start development server
+pnpm dev
 ```
 
 ### 4. Test the Example
@@ -340,6 +401,25 @@ pnpm dev
 
 OpenSaas is designed to be fully extensible without modifying core code. Field types are self-contained with their own validation, schema generation, and UI components.
 
+**Built-in field types:**
+
+- `text()` - String field with validation
+- `integer()` - Number field with validation
+- `checkbox()` - Boolean field
+- `timestamp()` - Date/time field with auto-now support
+- `password()` - String field (excluded from reads)
+- `select()` - Enum field with predefined options
+- `relationship()` - Foreign key relationship
+- `json()` - JSON data storage
+- `image()` - Image upload with storage adapters
+- `file()` - File upload with storage adapters
+
+**Third-party field packages:**
+
+- `richText()` from `@opensaas/stack-tiptap` - Rich text editor with Tiptap
+
+**Create your own:**
+
 See `examples/custom-field` for a complete working example with:
 
 - **ColorPickerField**: Custom color picker component (global registration)
@@ -393,6 +473,49 @@ import { AdminUI } from '@opensaas/stack-ui'
 
 See [docs/COMPOSABILITY.md](./docs/COMPOSABILITY.md) for complete guide.
 
+## File Storage
+
+OpenSaas provides abstract file storage through the `@opensaas/stack-storage` package with multiple adapters:
+
+### Storage Adapters
+
+- **S3-Compatible** (`@opensaas/stack-storage-s3`): Works with AWS S3, Cloudflare R2, MinIO, and other S3-compatible services
+- **Vercel Blob** (`@opensaas/stack-storage-vercel`): Optimized for Vercel deployments
+
+### Usage
+
+```typescript
+import { config } from '@opensaas/stack-core'
+import { image, file } from '@opensaas/stack-core/fields'
+import { s3Storage } from '@opensaas/stack-storage-s3'
+
+export default config({
+  storage: s3Storage({
+    bucket: process.env.S3_BUCKET!,
+    region: process.env.S3_REGION!,
+    endpoint: process.env.S3_ENDPOINT, // Optional for R2/MinIO
+    credentials: {
+      accessKeyId: process.env.S3_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
+    },
+  }),
+  lists: {
+    Post: list({
+      fields: {
+        coverImage: image({
+          storage: { maxFileSize: 5 * 1024 * 1024 }, // 5MB
+        }),
+        attachment: file({
+          storage: { maxFileSize: 10 * 1024 * 1024 }, // 10MB
+        }),
+      },
+    }),
+  },
+})
+```
+
+See `examples/file-upload-demo` for complete working example.
+
 ## Roadmap
 
 - [x] **Phase 1**: Core foundation (config, fields, generators)
@@ -400,7 +523,13 @@ See [docs/COMPOSABILITY.md](./docs/COMPOSABILITY.md) for complete guide.
 - [x] **Phase 3**: Hooks system (resolveInput, validateInput, etc.)
 - [x] **Phase 4**: CLI tooling (generate, dev watch mode)
 - [x] **Phase 5**: Composable UI (shadcn/ui primitives, standalone components)
-- [ ] **Phase 6**: Better-auth integration
+- [x] **Phase 6**: Better-auth integration
+- [x] **Phase 7**: MCP server for AI assistant integration
+- [x] **Phase 8**: File storage abstraction and adapters
+- [x] **Phase 9**: Third-party field packages (Tiptap, JSON)
+- [ ] **Phase 10**: Documentation and guides
+- [ ] **Phase 11**: Testing utilities and helpers
+- [ ] **Phase 12**: Beta release and stability improvements
 
 ## Philosophy
 

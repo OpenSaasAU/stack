@@ -12,10 +12,80 @@ export function generateContext(config: OpenSaasConfig): string {
   // Check if custom Prisma client constructor is provided
   const hasCustomConstructor = !!config.db.prismaClientConstructor
 
+  // Check if storage is configured
+  const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
+
   // Generate the Prisma client instantiation code
   const prismaInstantiation = hasCustomConstructor
     ? `config.db.prismaClientConstructor!(PrismaClient)`
     : `new PrismaClient()`
+
+  // Generate storage utilities if storage is configured
+  const storageUtilities = hasStorage
+    ? `
+/**
+ * Lazy-loaded storage runtime functions
+ * Prevents sharp and other storage dependencies from being bundled in client code
+ */
+let storageRuntime: typeof import('@opensaas/stack-storage/runtime') | null = null
+
+async function getStorageRuntime() {
+  if (!storageRuntime) {
+    try {
+      storageRuntime = await import('@opensaas/stack-storage/runtime')
+    } catch (error) {
+      throw new Error(
+        'Failed to load @opensaas/stack-storage/runtime. Make sure @opensaas/stack-storage is installed.'
+      )
+    }
+  }
+  return storageRuntime
+}
+
+/**
+ * Storage utilities for file/image uploads
+ */
+const storage = {
+  uploadFile: async (providerName: string, file: File, buffer: Buffer, options?: unknown) => {
+    const runtime = await getStorageRuntime()
+    return runtime.uploadFile(config, providerName, { file, buffer }, options as any)
+  },
+
+  uploadImage: async (providerName: string, file: File, buffer: Buffer, options?: unknown) => {
+    const runtime = await getStorageRuntime()
+    return runtime.uploadImage(config, providerName, { file, buffer }, options as any)
+  },
+
+  deleteFile: async (providerName: string, filename: string) => {
+    const runtime = await getStorageRuntime()
+    return runtime.deleteFile(config, providerName, filename)
+  },
+
+  deleteImage: async (metadata: unknown) => {
+    const runtime = await getStorageRuntime()
+    return runtime.deleteImage(config, metadata as any)
+  },
+}
+`
+    : `
+/**
+ * Storage utilities (not configured)
+ */
+const storage = {
+  uploadFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  uploadImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+}
+`
 
   return `/**
  * Auto-generated context factory
@@ -27,14 +97,16 @@ export function generateContext(config: OpenSaasConfig): string {
  */
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
+import type { Session as OpensaasSession } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client'
+import type { Context } from './types'
 import config from '../opensaas.config'
 
 // Internal Prisma singleton - managed automatically
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
 const prisma = globalForPrisma.prisma ?? ${prismaInstantiation}
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
-
+${storageUtilities}
 /**
  * Get OpenSaas context with optional session
  *
@@ -49,10 +121,15 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
  * // Authenticated access
  * const context = getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
+ *
+ * // With custom session type
+ * type CustomSession = { userId: string; email: string; role: string } | null
+ * const context = getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
+ * // context.session is now typed as CustomSession
  * \`\`\`
  */
-export function getContext(session?: { userId?: string; [key: string]: unknown } | null) {
-  return getOpensaasContext(config, prisma, session ?? null)
+export function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Context<TSession> {
+  return getOpensaasContext(config, prisma, session ?? null, storage) as Context<TSession>
 }
 
 export const rawOpensaasContext = getContext()

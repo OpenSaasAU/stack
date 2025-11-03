@@ -125,7 +125,8 @@ describe('Context Generator', () => {
 
       const context = generateContext(config)
 
-      expect(context).toContain('session?: { userId?: string; [key: string]: unknown } | null')
+      expect(context).toContain('session?: TSession')
+      expect(context).toContain('<TSession extends OpensaasSession = OpensaasSession>')
     })
 
     it('should call getOpensaasContext with correct arguments', () => {
@@ -138,8 +139,7 @@ describe('Context Generator', () => {
       }
 
       const context = generateContext(config)
-
-      expect(context).toContain('return getOpensaasContext(config, prisma, session ?? null)')
+      expect(context).toContain('getOpensaasContext(config, prisma, session ?? null, storage)')
     })
   })
 })

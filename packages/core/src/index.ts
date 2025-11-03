@@ -21,6 +21,9 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationResult,
 } from './config/index.js'
 
 // Access control
@@ -31,6 +34,7 @@ export type {
   AccessContext,
   PrismaFilter,
   AccessControlledDB,
+  StorageUtils,
 } from './access/index.js'
 
 // Context

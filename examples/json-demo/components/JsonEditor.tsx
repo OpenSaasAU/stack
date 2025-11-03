@@ -95,7 +95,8 @@ export function JsonEditor({
       <div className="space-y-2">
         <Label className="text-muted-foreground">{label}</Label>
         <div className="border rounded-md p-4 bg-muted/30">
-          {parsedValue !== null && (typeof parsedValue === 'object' || Array.isArray(parsedValue)) ? (
+          {parsedValue !== null &&
+          (typeof parsedValue === 'object' || Array.isArray(parsedValue)) ? (
             <JsonView
               data={parsedValue as object | unknown[]}
               shouldExpandNode={allExpanded}
@@ -158,7 +159,9 @@ export function JsonEditor({
               'min-h-[200px] max-h-[400px]',
             )}
           >
-            {parsedValue !== null && !parseError && (typeof parsedValue === 'object' || Array.isArray(parsedValue)) ? (
+            {parsedValue !== null &&
+            !parseError &&
+            (typeof parsedValue === 'object' || Array.isArray(parsedValue)) ? (
               <JsonView
                 data={parsedValue as object | unknown[]}
                 shouldExpandNode={allExpanded}

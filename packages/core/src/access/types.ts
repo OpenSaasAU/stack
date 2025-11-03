@@ -66,12 +66,59 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
 }
 
 /**
+ * Storage utilities for file/image uploads
+ */
+export type StorageUtils = {
+  /**
+   * Upload a file to storage
+   * @param providerName - Name of storage provider from config
+   * @param file - File object
+   * @param buffer - File contents as Buffer
+   * @param options - Upload options (validation, metadata)
+   */
+  uploadFile: (
+    providerName: string,
+    file: File,
+    buffer: Buffer,
+    options?: unknown,
+  ) => Promise<unknown>
+
+  /**
+   * Upload an image with transformations
+   * @param providerName - Name of storage provider from config
+   * @param file - File object
+   * @param buffer - File contents as Buffer
+   * @param options - Upload options (validation, transformations, metadata)
+   */
+  uploadImage: (
+    providerName: string,
+    file: File,
+    buffer: Buffer,
+    options?: unknown,
+  ) => Promise<unknown>
+
+  /**
+   * Delete a file from storage
+   * @param providerName - Name of storage provider from config
+   * @param filename - Name of file to delete
+   */
+  deleteFile: (providerName: string, filename: string) => Promise<void>
+
+  /**
+   * Delete an image and all its transformations
+   * @param metadata - Image metadata containing storage provider and filename
+   */
+  deleteImage: (metadata: unknown) => Promise<void>
+}
+
+/**
  * Context type (simplified for access control)
  */
 export type AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> = {
   session: Session
   prisma: TPrisma
   db: AccessControlledDB<TPrisma>
+  storage: StorageUtils
   [key: string]: unknown
 }
 

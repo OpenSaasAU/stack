@@ -167,6 +167,7 @@ interface TaxonomyItem {
 ```
 
 Example stored JSON:
+
 ```json
 [
   { "type": "tag", "name": "author", "value": "john-doe" },

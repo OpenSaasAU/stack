@@ -6,6 +6,7 @@ export type {
   PrismaFilter,
   AccessControlledDB,
   PrismaClientLike,
+  StorageUtils,
 } from './types.js'
 export {
   checkAccess,

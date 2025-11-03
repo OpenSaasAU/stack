@@ -1,5 +1,5 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
-import type { Session, AccessContext, AccessControlledDB } from '../access/index.js'
+import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import {
   checkAccess,
   mergeFilters,
@@ -136,6 +136,7 @@ export type ServerActionProps =
  * @param config - OpenSaas configuration
  * @param prisma - Your Prisma client instance (pass as generic for type safety)
  * @param session - Current session object (or null if not authenticated)
+ * @param storage - Optional storage utilities (uploadFile, uploadImage, deleteFile, deleteImage)
  */
 export function getContext<
   TConfig extends OpenSaasConfig,
@@ -144,10 +145,12 @@ export function getContext<
   config: TConfig,
   prisma: TPrisma,
   session: Session,
+  storage?: StorageUtils,
 ): {
   db: AccessControlledDB<TPrisma>
   session: Session
   prisma: TPrisma
+  storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
 } {
   // Initialize db object - will be populated with access-controlled operations
@@ -155,10 +158,33 @@ export function getContext<
   const db: Record<string, unknown> = {}
 
   // Create context with db reference (will be populated below)
+  // Storage utilities can be provided via parameter or use default stubs
   const context: AccessContext<TPrisma> = {
     session,
     prisma: prisma as TPrisma,
     db: db as AccessControlledDB<TPrisma>,
+    storage: storage ?? {
+      uploadFile: async () => {
+        throw new Error(
+          'No storage providers configured. Add storage providers to your opensaas.config.ts',
+        )
+      },
+      uploadImage: async () => {
+        throw new Error(
+          'No storage providers configured. Add storage providers to your opensaas.config.ts',
+        )
+      },
+      deleteFile: async () => {
+        throw new Error(
+          'No storage providers configured. Add storage providers to your opensaas.config.ts',
+        )
+      },
+      deleteImage: async () => {
+        throw new Error(
+          'No storage providers configured. Add storage providers to your opensaas.config.ts',
+        )
+      },
+    },
   }
 
   // Create access-controlled operations for each list
@@ -204,6 +230,7 @@ export function getContext<
     db: db as AccessControlledDB<TPrisma>,
     session,
     prisma,
+    storage: context.storage,
     serverAction,
   }
 }

@@ -1,0 +1,50 @@
+{
+  "name": "@opensaas/stack-storage",
+  "version": "0.1.0",
+  "description": "File and image upload field types with pluggable storage providers for OpenSaas Stack",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fields": {
+      "types": "./dist/fields/index.d.ts",
+      "default": "./dist/fields/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "default": "./dist/providers/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@opensaas/stack-core": "workspace:*",
+    "mime-types": "^3.0.1",
+    "sharp": "^0.34.4",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/mime-types": "^3.0.1",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.2.2",
+    "@vitest/coverage-v8": "^4.0.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  },
+  "peerDependencies": {
+    "@opensaas/stack-core": "workspace:*"
+  }
+}

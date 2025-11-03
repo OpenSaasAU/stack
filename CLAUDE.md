@@ -751,3 +751,11 @@ Then follow the prompts to select packages and version bumps.
 
 - Data passed in as props to a component that is marked with `"use client"` must be serialised and must only contain the minimum data required to make that component work
 - Avoid the use of the `any` type, and do not use type casting. All types must be strongly typed to ensure type satefy - the `unkown` and `any` types must never exposed as an exteral type and are only to be used internally (within a package) where absolutely necessary
+
+- All new exmaples must have a package name of `opensaas-,<example-name>-example` to ensure consistency across the monorepo
+
+- when installing packages first check if the package is in use in another package or example and then make sure the versions match across all packages and examples to avoid multiple versions of the same package being installed
+
+- when adding a new exmaple always copy the @examples/blog and then modify as needed to ensure consistency across all examples
+
+- Always run `pnpm lint` and `pnpm format` to ensure code quality and consistency before committing any changes
