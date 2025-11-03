@@ -12,6 +12,7 @@ build/
 # Generated files
 .opensaas/
 prisma/migrations/
+next-env.d.ts
 
 # Misc
 .DS_Store

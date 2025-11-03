@@ -18,6 +18,7 @@ Unlike the old `opensaas init` which used template strings, this package **copie
 4. **User Flow**: CLI copies template and customizes it
 
 **Benefits:**
+
 - Templates are always tested (they're real working examples)
 - No template string maintenance
 - Changes to examples automatically propagate
@@ -57,6 +58,7 @@ packages/create-opensaas-app/
 ### `src/index.ts`
 
 Main CLI logic with:
+
 - Interactive prompts (project name, auth yes/no)
 - CLI flag parsing (`--with-auth`)
 - Input validation (lowercase, numbers, hyphens only)
@@ -69,6 +71,7 @@ Main CLI logic with:
 ### `src/copy-templates.ts`
 
 Build-time script that:
+
 - Copies `examples/starter` → `templates/basic`
 - Copies `examples/starter-auth` → `templates/with-auth`
 - Excludes build artifacts (node_modules, .next, etc.)
@@ -77,15 +80,16 @@ Build-time script that:
 ### `package.json`
 
 **Important fields:**
+
 ```json
 {
-  "type": "module",                    // ESM modules
+  "type": "module", // ESM modules
   "bin": {
-    "create-opensaas-app": "./dist/index.js"  // Points directly to compiled TS
+    "create-opensaas-app": "./dist/index.js" // Points directly to compiled TS
   },
   "files": [
-    "dist",      // Compiled TypeScript
-    "templates"  // Embedded templates
+    "dist", // Compiled TypeScript
+    "templates" // Embedded templates
   ]
 }
 ```
@@ -99,6 +103,7 @@ Build-time script that:
 **Source:** `examples/starter`
 
 **Includes:**
+
 - User + Post models with relationships
 - Admin UI at `/admin`
 - SQLite database (easy local setup)
@@ -110,6 +115,7 @@ Build-time script that:
 **Source:** `examples/starter-auth`
 
 **Includes:**
+
 - Everything from basic template
 - Better-auth integration
 - Sign in/sign up pages
@@ -142,6 +148,7 @@ After copying the template, the CLI customizes:
 2. **README.md**: Replaces first h1 with project name
 
 **Files NOT customized** (kept as-is from template):
+
 - `opensaas.config.ts` - User will customize themselves
 - `.env` / `.env.example` - Template values are appropriate
 - All other files
@@ -165,10 +172,12 @@ When copying templates, these are excluded:
 ### When to Rebuild Templates
 
 Run `pnpm build` after updating:
+
 - `examples/starter` (source for basic template)
 - `examples/starter-auth` (source for auth template)
 
 **Before publishing:**
+
 ```bash
 cd packages/create-opensaas-app
 pnpm build  # Ensures templates are fresh
@@ -209,6 +218,7 @@ The build script runs `chmod +x dist/index.js` to ensure the file is executable 
 ### Module System
 
 Uses ESM modules (`"type": "module"`):
+
 - All imports use `.js` extensions (not `.ts`)
 - Works with `import` syntax
 - Compatible with modern Node.js
@@ -261,11 +271,13 @@ pnpm changeset
 Project names must match: `/^[a-z0-9-]+$/`
 
 **Valid:**
+
 - `my-app`
 - `my-saas-2024`
 - `company-admin`
 
 **Invalid:**
+
 - `My-App` (uppercase)
 - `my_app` (underscores)
 - `my app` (spaces)
@@ -273,6 +285,7 @@ Project names must match: `/^[a-z0-9-]+$/`
 ### Prompts
 
 Uses `prompts` library for interactive input:
+
 ```typescript
 const response = await prompts({
   type: 'confirm',
@@ -287,6 +300,7 @@ Supports cancellation (Ctrl+C) with graceful exit.
 ### File Operations
 
 Uses `fs-extra` for:
+
 - `fs.copy()` - Copy template directory
 - `fs.pathExists()` - Check if directory exists
 - `fs.readJSON()` / `fs.writeJSON()` - Parse and update package.json
@@ -311,6 +325,7 @@ Uses `fs-extra` for:
 ### Common Errors
 
 **Directory already exists:**
+
 ```typescript
 if (await fs.pathExists(targetDir)) {
   spinner.fail(`Directory ${projectName} already exists`)
@@ -319,6 +334,7 @@ if (await fs.pathExists(targetDir)) {
 ```
 
 **Template not found:**
+
 ```typescript
 if (!(await fs.pathExists(templateDir))) {
   spinner.fail(`Template ${template} not found`)
@@ -328,6 +344,7 @@ if (!(await fs.pathExists(templateDir))) {
 ```
 
 **Invalid project name:**
+
 ```typescript
 if (!/^[a-z0-9-]+$/.test(projectName)) {
   console.error('Project name must only contain lowercase letters...')
