@@ -46,5 +46,14 @@
   },
   "peerDependencies": {
     "@opensaas/stack-core": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/storage"
+  },
+  "homepage": "https://stack.opensaas.au",
+  "bugs": {
+    "url": "https://github.com/OpenSaasAU/stack/issues"
   }
 }

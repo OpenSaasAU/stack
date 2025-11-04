@@ -34,6 +34,15 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://stack.opensaas.au",
+  "bugs": {
+    "url": "https://github.com/OpenSaasAU/stack/issues"
+  },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
     "commander": "^14.0.1",
