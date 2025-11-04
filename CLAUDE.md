@@ -824,7 +824,7 @@ Then follow the prompts to select packages and version bumps.
 
 - when installing packages first check if the package is in use in another package or example and then make sure the versions match across all packages and examples to avoid multiple versions of the same package being installed
 
-- when adding a new exmaple always use the `create-opensaas-app` script - this will ensure the example is setup correctly and that the init script is kept up to date with any changes
+- when adding a new exmaple always use the `create-opensaas-app` script from @packages/create-opensaas-app - this will ensure the example is setup correctly and that the init script is kept up to date with any changes
 
 - Always run `pnpm lint` and `pnpm format` to ensure code quality and consistency before committing any changes
 
