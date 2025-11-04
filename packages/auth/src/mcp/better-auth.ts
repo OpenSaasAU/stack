@@ -93,7 +93,7 @@ export function withMcpAuth(
  * @example
  * ```typescript
  * const mcpSession = await auth.api.getMcpSession({ headers: req.headers })
- * const context = getContext(mcpSessionToContextSession(mcpSession))
+ * const context = await getContext(mcpSessionToContextSession(mcpSession))
  * const posts = await context.db.post.findMany()
  * ```
  */

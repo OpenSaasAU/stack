@@ -11,7 +11,7 @@ const DEMO_USER_ID = 'demo-user-1'
 
 export async function createPost(data: PostCreateInput) {
   try {
-    const context = getContext() // Use no auth for demo
+    const context = await getContext() // Use no auth for demo
 
     // Filter out relationship fields that require auth
     const { author: _author, ...postData } = data
@@ -39,7 +39,7 @@ export async function createPost(data: PostCreateInput) {
 }
 
 export async function updatePost(id: string, data: PostUpdateInput) {
-  const context = getContext({ userId: DEMO_USER_ID })
+  const context = await getContext({ userId: DEMO_USER_ID })
 
   const post = await context.db.post.update({
     where: { id },
@@ -64,7 +64,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
 }
 
 export async function deletePost(id: string) {
-  const context = getContext({ userId: DEMO_USER_ID })
+  const context = await getContext({ userId: DEMO_USER_ID })
 
   const post = await context.db.post.delete({
     where: { id },

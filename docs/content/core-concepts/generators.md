@@ -74,7 +74,7 @@ Auto-generated context creation function:
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
-const context = getContext({ userId: '123' })
+const context = await getContext({ userId: '123' })
 ```
 
 ## Generator Architecture

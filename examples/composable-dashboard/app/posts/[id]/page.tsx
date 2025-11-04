@@ -2,17 +2,19 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@opensaas/stack-ui/primitives'
 import { getContext } from '@/.opensaas/context'
+import type { Post } from '@/.opensaas/types'
 import { PostEditor } from './PostEditor'
-import type { Post } from '../../../.opensaas/types'
+import config from '@/opensaas.config'
 
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
-  const context = getContext()
+  const context = await getContext()
+  const fields = (await config).lists.Post.fields
 
   const post = (await context.db.post.findUnique({
     where: { id: params.id },
     include: { author: true },
-  })) as Post | null
+  })) as Post
 
   if (!post) {
     notFound()
@@ -50,7 +52,7 @@ export default async function PostDetailPage(props: { params: Promise<{ id: stri
           </Link>
         </div>
 
-        <PostEditor post={post} />
+        <PostEditor post={post} fields={fields} />
       </main>
     </div>
   )

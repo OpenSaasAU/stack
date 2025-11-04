@@ -11,6 +11,21 @@ const MODEL_DIMENSIONS: Record<OpenAIEmbeddingModel, number> = {
 }
 
 /**
+ * Type for OpenAI client (avoids direct dependency)
+ */
+type OpenAIClient = {
+  embeddings: {
+    create: (params: {
+      model: string
+      input: string | string[]
+      encoding_format: string
+    }) => Promise<{
+      data: Array<{ embedding: number[] }>
+    }>
+  }
+}
+
+/**
  * OpenAI embedding provider
  * Requires the `openai` package to be installed
  */
@@ -19,7 +34,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly model: string
   readonly dimensions: number
 
-  private client: unknown // OpenAI client instance
+  private client: OpenAIClient
   private config: OpenAIEmbeddingConfig
 
   constructor(config: OpenAIEmbeddingConfig) {
@@ -27,20 +42,20 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     this.model = config.model || 'text-embedding-3-small'
     this.dimensions = MODEL_DIMENSIONS[this.model as OpenAIEmbeddingModel] || 1536
 
-    // Lazy-load OpenAI client
-    this.initializeClient()
+    // Initialize OpenAI client
+    this.client = this.initializeClient()
   }
 
-  private initializeClient() {
+  private initializeClient(): OpenAIClient {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { OpenAI } = require('openai')
 
-      this.client = new OpenAI({
+      return new OpenAI({
         apiKey: this.config.apiKey,
         organization: this.config.organization,
         baseURL: this.config.baseURL,
-      })
+      }) as OpenAIClient
     } catch (error) {
       throw new Error(
         'OpenAI package not found. Install it with: npm install openai\n' +

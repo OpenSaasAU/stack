@@ -4,6 +4,13 @@ import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
 /**
+ * Type for Prisma model with findMany method
+ */
+type PrismaModel = {
+  findMany: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
+}
+
+/**
  * JSON-based vector storage
  * Stores vectors as JSON in the database and performs similarity search in JavaScript
  * Good for development and small datasets, doesn't require special database extensions
@@ -23,7 +30,7 @@ export class JsonVectorStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as Record<string, unknown>)[dbKey]
+    const model = context.db[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)

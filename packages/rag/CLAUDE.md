@@ -188,7 +188,7 @@ const provider = createEmbeddingProvider({
 const vector = await provider.embed('Hello world')
 
 // Store manually
-const context = getContext()
+const context = await getContext()
 await context.db.article.create({
   data: {
     title: 'Hello',
@@ -215,7 +215,7 @@ import config from '@/opensaas.config'
 
 // Server action or API route
 export async function searchArticles(query: string) {
-  const context = getContext()
+  const context = await getContext()
 
   // Generate query embedding
   const provider = createEmbeddingProvider({
@@ -335,7 +335,7 @@ All searches use the access-controlled context:
 
 ```typescript
 // Search respects access control
-const context = getContext({ userId: 'user-123' })
+const context = await getContext({ userId: 'user-123' })
 
 const results = await storage.search('Article', 'contentEmbedding', queryVector, {
   context, // Access control applied

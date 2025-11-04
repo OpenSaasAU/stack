@@ -95,9 +95,9 @@ describe('Context Generator', () => {
       const context = generateContext(config)
 
       expect(context).toContain('// Anonymous access')
-      expect(context).toContain('const context = getContext()')
+      expect(context).toContain('const context = await getContext()')
       expect(context).toContain('// Authenticated access')
-      expect(context).toContain("const context = getContext({ userId: 'user-123' })")
+      expect(context).toContain("const context = await getContext({ userId: 'user-123' })")
     })
 
     it('should export rawOpensaasContext', () => {
@@ -111,7 +111,7 @@ describe('Context Generator', () => {
 
       const context = generateContext(config)
 
-      expect(context).toContain('export const rawOpensaasContext = getContext()')
+      expect(context).toContain('export const rawOpensaasContext = await getContext()')
     })
 
     it('should type session parameter correctly', () => {

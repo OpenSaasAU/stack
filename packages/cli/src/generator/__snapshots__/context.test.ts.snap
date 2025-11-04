@@ -47,16 +47,16 @@ const storage = {
  * @example
  * \`\`\`typescript
  * // Anonymous access
- * const context = getContext()
+ * const context = await getContext()
  * const posts = await context.db.post.findMany()
  *
  * // Authenticated access
- * const context = getContext({ userId: 'user-123' })
+ * const context = await getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
  *
  * // With custom session type
  * type CustomSession = { userId: string; email: string; role: string } | null
- * const context = getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
+ * const context = await getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
  * // context.session is now typed as CustomSession
  * \`\`\`
  */
@@ -64,7 +64,7 @@ export function getContext<TSession extends OpensaasSession = OpensaasSession>(s
   return getOpensaasContext(config, prisma, session ?? null, storage) as Context<TSession>
 }
 
-export const rawOpensaasContext = getContext()
+export const rawOpensaasContext = await getContext()
 "
 `;
 
@@ -115,16 +115,16 @@ const storage = {
  * @example
  * \`\`\`typescript
  * // Anonymous access
- * const context = getContext()
+ * const context = await getContext()
  * const posts = await context.db.post.findMany()
  *
  * // Authenticated access
- * const context = getContext({ userId: 'user-123' })
+ * const context = await getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
  *
  * // With custom session type
  * type CustomSession = { userId: string; email: string; role: string } | null
- * const context = getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
+ * const context = await getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
  * // context.session is now typed as CustomSession
  * \`\`\`
  */
@@ -132,6 +132,6 @@ export function getContext<TSession extends OpensaasSession = OpensaasSession>(s
   return getOpensaasContext(config, prisma, session ?? null, storage) as Context<TSession>
 }
 
-export const rawOpensaasContext = getContext()
+export const rawOpensaasContext = await getContext()
 "
 `;

@@ -28,7 +28,7 @@ OpenSaas Stack's primary security feature is its automatic access control system
 
 ```typescript
 // ✅ Good - Access control enforced
-const context = getContext({ userId })
+const context = await getContext({ userId })
 const posts = await context.db.post.findMany()
 
 // ❌ Bad - Bypasses access control

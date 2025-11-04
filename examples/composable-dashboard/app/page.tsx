@@ -1,14 +1,14 @@
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { Button } from '@opensaas/stack-ui/primitives'
-import { getContext } from '@/.opensaas/context'
+import { config, getContext } from '@/.opensaas/context'
 import { CreatePostDialog } from '../components/CreatePostDialog'
 import { connection } from 'next/server'
 
 export default async function HomePage() {
   await connection()
   // Use context for access-controlled queries
-  const context = getContext()
+  const context = await getContext()
 
   // Get stats (using Prisma directly for counts is fine)
   const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
@@ -98,7 +98,7 @@ export default async function HomePage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <CreatePostDialog />
+              <CreatePostDialog fields={(await config).lists.Post.fields} />
               <Link href="/posts" className="block">
                 <Button variant="outline" className="w-full">
                   View All Posts

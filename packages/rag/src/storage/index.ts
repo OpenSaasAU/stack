@@ -18,13 +18,13 @@ storageFactories.set('pgvector', (config) => {
   if (config.type !== 'pgvector') {
     throw new Error('Invalid config type for pgvector storage')
   }
-  return createPgVectorStorage(config)
+  return createPgVectorStorage(config as import('../config/types.js').PgVectorStorageConfig)
 })
 storageFactories.set('sqlite-vss', (config) => {
   if (config.type !== 'sqlite-vss') {
     throw new Error('Invalid config type for sqlite-vss storage')
   }
-  return createSqliteVssStorage(config)
+  return createSqliteVssStorage(config as import('../config/types.js').SqliteVssStorageConfig)
 })
 
 /**

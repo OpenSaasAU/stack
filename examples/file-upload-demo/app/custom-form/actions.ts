@@ -11,7 +11,7 @@ export async function createPost(data: {
   attachment: File | FileMetadata | null
 }) {
   try {
-    const context = getContext()
+    const context = await getContext()
 
     const post = await context.db.post.create({
       data: {

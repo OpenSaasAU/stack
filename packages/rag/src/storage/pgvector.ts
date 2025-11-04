@@ -5,6 +5,20 @@ import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
 /**
+ * Type for Prisma model with findMany method
+ */
+type PrismaModel = {
+  findMany: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
+}
+
+/**
+ * Type for raw Prisma client
+ */
+type PrismaClient = {
+  $queryRawUnsafe: <T = unknown>(query: string) => Promise<T>
+}
+
+/**
  * pgvector storage backend
  * Uses PostgreSQL with pgvector extension for efficient vector similarity search
  * Requires: CREATE EXTENSION vector;
@@ -65,7 +79,7 @@ export class PgVectorStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as Record<string, unknown>)[dbKey]
+    const model = context.db[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)
@@ -87,9 +101,7 @@ export class PgVectorStorage implements VectorStorage {
       // Get the underlying Prisma client
       // Note: This bypasses access control for the similarity search,
       // but we enforce it in the second query
-      const prisma =
-        (context as Record<string, unknown>)._prisma ||
-        (context.db as Record<string, unknown>)._prisma
+      const prisma = context.prisma
 
       if (!prisma) {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
@@ -104,7 +116,7 @@ export class PgVectorStorage implements VectorStorage {
       // Raw query to get IDs and distances
       // We extract the vector from the JSON field and cast it to vector type
       const tableName = listKey.toLowerCase() // Prisma table names are lowercase
-      const results: Array<{ id: string; distance: number }> = await prisma.$queryRawUnsafe(`
+      const results = (await prisma.$queryRawUnsafe(`
         SELECT id,
                (("${fieldName}"->>'vector')::vector ${distanceOp} '${vectorString}'::vector) as distance
         FROM "${tableName}"
@@ -112,7 +124,7 @@ export class PgVectorStorage implements VectorStorage {
           AND "${fieldName}"->>'vector' IS NOT NULL
         ORDER BY distance
         LIMIT ${limit * 2}
-      `)
+      `)) as Array<{ id: string; distance: string }>
 
       // Get IDs of items within score threshold
       const itemIds = results
@@ -142,7 +154,9 @@ export class PgVectorStorage implements VectorStorage {
       // Match items with their scores and sort by score
       const searchResults: SearchResult<T>[] = []
       for (const idInfo of itemIds) {
-        const item = items.find((i: { id: string }) => i.id === idInfo.id)
+        const item = items.find(
+          (i: Record<string, unknown>) => (i as { id: string }).id === idInfo.id,
+        )
         if (item) {
           searchResults.push({
             item: item as T,

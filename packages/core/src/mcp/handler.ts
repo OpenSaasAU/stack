@@ -32,7 +32,7 @@ import type { McpSession, McpSessionProvider } from './types.js'
 export function createMcpHandlers(options: {
   config: OpenSaasConfig
   getSession: McpSessionProvider
-  getContext: (session?: { userId: string }) => AccessContext
+  getContext: (session?: { userId: string }) => Promise<AccessContext>
 }): {
   GET: (req: Request) => Promise<Response>
   POST: (req: Request) => Promise<Response>
@@ -403,7 +403,7 @@ async function handleToolsCall(
   params: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => AccessContext,
+  getContext: (session?: { userId: string }) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
   const toolName = params?.name
@@ -447,11 +447,11 @@ async function handleCrudTool(
   args: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => AccessContext,
+  getContext: (session?: { userId: string }) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
   // Create context with user session
-  const context = getContext({ userId: session.userId })
+  const context = await getContext({ userId: session.userId })
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
@@ -530,7 +530,7 @@ async function handleCustomTool(
   args: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => AccessContext,
+  getContext: (session?: { userId: string }) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
   // Find custom tool in config
@@ -538,7 +538,7 @@ async function handleCustomTool(
     const customTool = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
 
     if (customTool) {
-      const context = getContext({ userId: session.userId })
+      const context = await getContext({ userId: session.userId })
 
       try {
         const result = await customTool.handler({

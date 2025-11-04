@@ -77,7 +77,7 @@ pnpm db:push
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
-const context = getContext()
+const context = await getContext()
 
 // Embedding is automatically generated from content
 await context.db.article.create({
@@ -95,7 +95,7 @@ await context.db.article.create({
 import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
 
 export async function searchArticles(query: string) {
-  const context = getContext()
+  const context = await getContext()
 
   // Generate embedding for search query
   const provider = createEmbeddingProvider({

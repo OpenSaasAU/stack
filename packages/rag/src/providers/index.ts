@@ -16,13 +16,13 @@ providerFactories.set('openai', (config) => {
   if (config.type !== 'openai') {
     throw new Error('Invalid config type for OpenAI provider')
   }
-  return createOpenAIProvider(config)
+  return createOpenAIProvider(config as import('../config/types.js').OpenAIEmbeddingConfig)
 })
 providerFactories.set('ollama', (config) => {
   if (config.type !== 'ollama') {
     throw new Error('Invalid config type for Ollama provider')
   }
-  return createOllamaProvider(config)
+  return createOllamaProvider(config as import('../config/types.js').OllamaEmbeddingConfig)
 })
 
 /**

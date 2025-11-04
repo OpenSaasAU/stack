@@ -391,11 +391,11 @@ The stack automatically generates a context factory in `.opensaas/context.ts` th
 import { getContext } from '@/.opensaas/context'
 
 // Anonymous access
-const context = getContext()
+const context = await getContext()
 const posts = await context.db.post.findMany()
 
 // Authenticated access
-const context = getContext({ userId: 'user-123' })
+const context = await getContext({ userId: 'user-123' })
 const myPosts = await context.db.post.findMany()
 ```
 
@@ -757,7 +757,7 @@ The `session` object passed to access control functions is user-defined. The sta
 The context uses generic typing to preserve Prisma Client types:
 
 ```typescript
-const context = getContext<typeof prisma>(config, prisma, session)
+const context = await getContext<typeof prisma>(config, prisma, session)
 // context.db operations are fully typed
 ```
 
@@ -824,7 +824,7 @@ Then follow the prompts to select packages and version bumps.
 
 - when installing packages first check if the package is in use in another package or example and then make sure the versions match across all packages and examples to avoid multiple versions of the same package being installed
 
-- when adding a new exmaple always use the `@openaas/cli init` script - this will ensure the example is setup correctly and that the init script is kept up to date with any changes
+- when adding a new exmaple always use the `create-opensaas-app` script - this will ensure the example is setup correctly and that the init script is kept up to date with any changes
 
 - Always run `pnpm lint` and `pnpm format` to ensure code quality and consistency before committing any changes
 

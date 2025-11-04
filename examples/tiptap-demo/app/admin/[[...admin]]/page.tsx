@@ -21,7 +21,7 @@ interface AdminPageProps {
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
-  const adminContext = getContext()
+  const adminContext = await getContext()
   return (
     <>
       <FieldRegistration />

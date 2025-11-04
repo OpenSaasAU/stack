@@ -109,8 +109,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                     // Update record with new embedding
                     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    await (args.context.db as any)[dbKey].update({
+                    await args.context.db[dbKey].update({
                       where: { id: args.item.id },
                       data: {
                         [fieldName]: {
@@ -184,8 +183,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 // Note: This is a simplified implementation
                 // Full implementation would use VectorStorage interface
                 const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const allItems = await (context.db as any)[dbKey].findMany()
+                const allItems = await context.db[dbKey].findMany()
 
                 // Calculate cosine similarity for each item
                 const results = allItems

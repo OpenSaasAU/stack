@@ -5,6 +5,13 @@ import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
 /**
+ * Type for Prisma model with findMany method
+ */
+type PrismaModel = {
+  findMany: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
+}
+
+/**
  * SQLite VSS storage backend
  * Uses sqlite-vss extension for vector similarity search
  * Requires: sqlite-vss extension to be loaded
@@ -42,7 +49,7 @@ export class SqliteVssStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as Record<string, unknown>)[dbKey]
+    const model = context.db[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)
@@ -50,9 +57,7 @@ export class SqliteVssStorage implements VectorStorage {
 
     try {
       // Get the underlying Prisma client
-      const prisma =
-        (context as Record<string, unknown>)._prisma ||
-        (context.db as Record<string, unknown>)._prisma
+      const prisma = context.prisma
 
       if (!prisma) {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
@@ -92,7 +97,10 @@ export class SqliteVssStorage implements VectorStorage {
       const results: Array<{ item: T; score: number; distance: number }> = []
 
       for (const item of items) {
-        const embeddingData = item[fieldName]
+        const embeddingData = item[fieldName] as
+          | import('../config/types.js').StoredEmbedding
+          | null
+          | undefined
 
         if (!embeddingData || !embeddingData.vector) {
           continue
