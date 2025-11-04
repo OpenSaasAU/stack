@@ -1,5 +1,11 @@
 # @opensaas/stack-core
 
+## 0.1.5
+
+### Patch Changes
+
+- 17eaafb: Update package urls
+
 ## 0.1.4
 
 ### Patch Changes
