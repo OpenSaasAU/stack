@@ -1,5 +1,12 @@
 # @opensaas/stack-storage
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [d013859]
+  - @opensaas/stack-core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
