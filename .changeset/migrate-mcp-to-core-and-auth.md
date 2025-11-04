@@ -1,7 +1,6 @@
 ---
 '@opensaas/stack-core': patch
 '@opensaas/stack-auth': patch
-'@opensaas/stack-mcp': patch
 ---
 
 **BREAKING CHANGE**: Migrate MCP functionality into core and auth packages
