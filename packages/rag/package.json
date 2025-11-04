@@ -1,0 +1,82 @@
+{
+  "name": "@opensaas/stack-rag",
+  "version": "0.1.0",
+  "description": "RAG and AI embeddings integration for OpenSaas Stack",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fields": {
+      "types": "./dist/fields/index.d.ts",
+      "default": "./dist/fields/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "default": "./dist/providers/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "default": "./dist/storage/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "default": "./dist/mcp/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo",
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "opensaas",
+    "rag",
+    "embeddings",
+    "vector-search",
+    "ai",
+    "semantic-search"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/rag"
+  },
+  "homepage": "https://stack.opensaas.au",
+  "bugs": {
+    "url": "https://github.com/OpenSaasAU/stack/issues"
+  },
+  "peerDependencies": {
+    "@opensaas/stack-core": "workspace:*",
+    "openai": "^6.8.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@opensaas/stack-core": "workspace:*",
+    "@types/node": "^24.7.2",
+    "@vitest/coverage-v8": "^4.0.4",
+    "@vitest/ui": "^4.0.0",
+    "openai": "^4.80.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}
