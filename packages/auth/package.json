@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-auth",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Better-auth integration for OpenSaas Stack",
   "type": "module",
   "main": "./dist/index.js",
