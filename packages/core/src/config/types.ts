@@ -557,52 +557,65 @@ export type ListMcpConfig = {
 }
 
 /**
- * Better Auth OAuth configuration for MCP
+ * OAuth configuration for MCP authentication
+ * Supports Better Auth and custom auth providers
  */
-export type McpAuthConfig = {
-  /**
-   * Authentication type - currently only Better Auth is supported
-   */
-  type: 'better-auth'
-  /**
-   * Path to login page for OAuth flow
-   */
-  loginPage: string
-  /**
-   * OAuth scopes to request
-   * @default ["openid", "profile", "email"]
-   */
-  scopes?: string[]
-  /**
-   * Optional OIDC configuration
-   */
-  oidcConfig?: {
-    /**
-     * Code expiration time in seconds
-     * @default 600
-     */
-    codeExpiresIn?: number
-    /**
-     * Access token expiration time in seconds
-     * @default 3600
-     */
-    accessTokenExpiresIn?: number
-    /**
-     * Refresh token expiration time in seconds
-     * @default 604800
-     */
-    refreshTokenExpiresIn?: number
-    /**
-     * Default scope for OAuth requests
-     * @default "openid"
-     */
-    defaultScope?: string
-    /**
-     * Additional scopes to support
-     */
-    scopes?: string[]
-  }
-}
+export type McpAuthConfig =
+  | {
+      /**
+       * Authentication type - Better Auth integration
+       */
+      type: 'better-auth'
+      /**
+       * Path to login page for OAuth flow
+       */
+      loginPage: string
+      /**
+       * OAuth scopes to request
+       * @default ["openid", "profile", "email"]
+       */
+      scopes?: string[]
+      /**
+       * Optional OIDC configuration
+       */
+      oidcConfig?: {
+        /**
+         * Code expiration time in seconds
+         * @default 600
+         */
+        codeExpiresIn?: number
+        /**
+         * Access token expiration time in seconds
+         * @default 3600
+         */
+        accessTokenExpiresIn?: number
+        /**
+         * Refresh token expiration time in seconds
+         * @default 604800
+         */
+        refreshTokenExpiresIn?: number
+        /**
+         * Default scope for OAuth requests
+         * @default "openid"
+         */
+        defaultScope?: string
+        /**
+         * Additional scopes to support
+         */
+        scopes?: string[]
+      }
+    }
+  | {
+      /**
+       * Authentication type - custom auth provider
+       */
+      type: string
+      /**
+       * Additional auth-specific configuration
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Allows custom auth provider configuration
+      [key: string]: any
+    }
 
 /**
  * Global MCP server configuration

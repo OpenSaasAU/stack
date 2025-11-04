@@ -45,7 +45,6 @@ jobs:
         package:
           - { name: 'core', dir: './packages/core', label: 'Core Package Coverage' }
           - { name: 'ui', dir: './packages/ui', label: 'UI Package Coverage' }
-          - { name: 'mcp', dir: './packages/mcp', label: 'MCP Package Coverage' }
           - { name: 'cli', dir: './packages/cli', label: 'CLI Package Coverage' }
           - { name: 'auth', dir: './packages/auth', label: 'Auth Package Coverage' }
           - { name: 'storage', dir: './packages/storage', label: 'Storage Package Coverage' }

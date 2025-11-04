@@ -18,7 +18,7 @@ This is a pnpm monorepo with:
 - `packages/cli`: CLI tools (generators via bin scripts)
 - `packages/ui`: Admin UI components (composable React components)
 - `packages/auth`: Better-auth integration (authentication & sessions)
-- `packages/mcp`: Model Context Protocol server (AI assistant integration)
+- `packages/mcp`: **DEPRECATED** - MCP functionality moved to core and auth packages
 - `packages/tiptap`: Rich text editor integration (third-party field example)
 - `examples/blog`: Basic blog example
 - `examples/custom-field`: Custom field types demonstration
@@ -260,23 +260,25 @@ The stack provides optional Better-auth integration through `@opensaas/stack-aut
 
 ### MCP Server Integration
 
-The stack provides Model Context Protocol server integration through `@opensaas/stack-mcp`.
+The stack provides Model Context Protocol server integration through `@opensaas/stack-core/mcp` and `@opensaas/stack-auth/mcp`.
 
 **Key files:**
 
-- `packages/mcp/src/runtime/handler.ts` - MCP HTTP handlers
-- `packages/mcp/src/runtime/index.ts` - Tool generation from config
-- `packages/mcp/src/auth/better-auth.ts` - OAuth authentication
+- `packages/core/src/mcp/handler.ts` - Auth-agnostic MCP HTTP handlers
+- `packages/core/src/mcp/types.ts` - MCP session types
+- `packages/auth/src/mcp/better-auth.ts` - Better-auth OAuth adapter
 
 **How it works:**
 
 1. Enable MCP in config with `mcp: { enabled: true, auth: { type: 'better-auth', loginPage: '/sign-in' } }`
-2. Runtime generates CRUD tools for each list (query, create, update, delete)
-3. Better-auth MCP plugin handles OAuth flow with AI assistants
+2. Core runtime generates CRUD tools for each list (query, create, update, delete)
+3. Auth adapter provides session from Better-auth OAuth flow with AI assistants
 4. All tools respect existing access control rules
 5. Custom tools can be added per-list for specialized operations
 
-**See:** `packages/mcp/CLAUDE.md` for detailed patterns and `examples/mcp-demo` for usage.
+**Migration Note:** The `@opensaas/stack-mcp` package is deprecated. Use `@opensaas/stack-core/mcp` for MCP handlers and `@opensaas/stack-auth/mcp` for Better-auth integration.
+
+**See:** `packages/core/CLAUDE.md` and `packages/auth/CLAUDE.md` for detailed patterns, and `examples/mcp-demo` for usage.
 
 ## Critical Patterns
 

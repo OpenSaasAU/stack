@@ -13,6 +13,10 @@
     "./fields": {
       "types": "./dist/fields/index.d.ts",
       "default": "./dist/fields/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "default": "./dist/mcp/index.js"
     }
   },
   "scripts": {

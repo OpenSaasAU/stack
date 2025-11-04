@@ -3,9 +3,10 @@
  * Creates MCP API handlers from OpenSaaS config at runtime
  */
 
-import type { OpenSaasConfig, AccessContext, FieldConfig } from '@opensaas/stack-core'
-import { getDbKey } from '@opensaas/stack-core'
-import type { BetterAuthInstance, McpSession } from '../auth/index.js'
+import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
+import type { AccessContext } from '../access/types.js'
+import { getDbKey } from '../lib/case-utils.js'
+import type { McpSession, McpSessionProvider } from './types.js'
 
 /**
  * Create MCP route handlers
@@ -13,14 +14,15 @@ import type { BetterAuthInstance, McpSession } from '../auth/index.js'
  * @example
  * ```typescript
  * // app/api/mcp/[[...transport]]/route.ts
- * import { createMcpHandlers } from '@opensaas/stack-mcp'
+ * import { createMcpHandlers } from '@opensaas/stack-core/mcp'
+ * import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
  * import config from '@/opensaas.config'
  * import { auth } from '@/lib/auth'
  * import { getContext } from '@/.opensaas/context'
  *
  * const { GET, POST, DELETE } = createMcpHandlers({
  *   config,
- *   auth,
+ *   getSession: createBetterAuthMcpAdapter(auth),
  *   getContext
  * })
  *
@@ -29,14 +31,14 @@ import type { BetterAuthInstance, McpSession } from '../auth/index.js'
  */
 export function createMcpHandlers(options: {
   config: OpenSaasConfig
-  auth: BetterAuthInstance
+  getSession: McpSessionProvider
   getContext: (session?: { userId: string }) => AccessContext
 }): {
   GET: (req: Request) => Promise<Response>
   POST: (req: Request) => Promise<Response>
   DELETE: (req: Request) => Promise<Response>
 } {
-  const { config, auth, getContext } = options
+  const { config, getSession, getContext } = options
 
   // Validate MCP is enabled
   if (!config.mcp?.enabled) {
@@ -54,10 +56,8 @@ export function createMcpHandlers(options: {
    * Main MCP request handler
    */
   const handler = async (req: Request): Promise<Response> => {
-    // Authenticate with Better Auth
-    const session = await auth.api.getMcpSession({
-      headers: req.headers,
-    })
+    // Authenticate using provided session provider
+    const session = await getSession(req.headers)
     if (!session) {
       return new Response(null, {
         status: 401,

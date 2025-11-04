@@ -3,17 +3,7 @@
  * Provides session handling and authentication utilities
  */
 
-/**
- * MCP session extracted from Better Auth access token
- */
-export type McpSession = {
-  userId: string
-  scopes?: string[]
-  accessToken?: string
-  expiresAt?: Date
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Allows additional session properties from Better Auth plugins
-  [key: string]: any
-}
+import type { McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
 
 /**
  * Better Auth instance type (flexible)
@@ -27,12 +17,39 @@ export type BetterAuthInstance = {
 }
 
 /**
+ * Create Better Auth MCP session adapter
+ * Converts Better Auth instance into MCP session provider
+ *
+ * @example
+ * ```typescript
+ * import { createMcpHandlers } from '@opensaas/stack-core/mcp'
+ * import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
+ * import config from '@/opensaas.config'
+ * import { auth } from '@/lib/auth'
+ * import { getContext } from '@/.opensaas/context'
+ *
+ * const { GET, POST, DELETE } = createMcpHandlers({
+ *   config,
+ *   getSession: createBetterAuthMcpAdapter(auth),
+ *   getContext
+ * })
+ *
+ * export { GET, POST, DELETE }
+ * ```
+ */
+export function createBetterAuthMcpAdapter(auth: BetterAuthInstance): McpSessionProvider {
+  return async (headers: Headers): Promise<McpSession | null> => {
+    return await auth.api.getMcpSession({ headers })
+  }
+}
+
+/**
  * Create MCP request handler with Better Auth OAuth authentication
  * Wraps an MCP handler to automatically authenticate and inject session
  *
  * @example
  * ```typescript
- * import { withMcpAuth } from '@opensaas/stack-mcp/auth'
+ * import { withMcpAuth } from '@opensaas/stack-auth/mcp'
  * import { auth } from '@/lib/auth'
  * import { createMcpServer } from '@/.opensaas/mcp/server'
  *

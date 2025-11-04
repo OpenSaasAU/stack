@@ -9,7 +9,6 @@ import {
   writeTypes,
   writeContext,
   patchPrismaTypes,
-  writeMcp,
 } from '../generator/index.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 
@@ -45,16 +44,10 @@ export async function generateCommand() {
       writeTypes(config, path.join(cwd, '.opensaas', 'types.ts'))
       writeContext(config, path.join(cwd, '.opensaas', 'context.ts'))
 
-      // Generate MCP metadata if enabled
-      const mcpGenerated = writeMcp(config, cwd)
-
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
       console.log(chalk.green('✅ TypeScript types generated'))
       console.log(chalk.green('✅ Context factory generated'))
-      if (mcpGenerated) {
-        console.log(chalk.green('✅ MCP metadata generated'))
-      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       generatorSpinner.fail(chalk.red('Failed to generate'))

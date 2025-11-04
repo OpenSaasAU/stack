@@ -172,7 +172,7 @@ function generateWhereInputType(listName: string, fields: Record<string, FieldCo
 /**
  * Generate Context type with all operations
  */
-function generateContextType(config: OpenSaasConfig): string {
+function generateContextType(): string {
   const lines: string[] = []
 
   lines.push('export type Context<TSession extends OpensaasSession = OpensaasSession> = {')
@@ -220,7 +220,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   }
 
   // Generate Context type
-  lines.push(generateContextType(config))
+  lines.push(generateContextType())
 
   return lines.join('\n')
 }

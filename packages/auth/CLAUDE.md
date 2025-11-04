@@ -110,9 +110,12 @@ authConfig({
 - Session flows through context to all access control functions
 - Generator creates Prisma schema with auth tables
 
-### With @opensaas/stack-mcp
+### With MCP (Model Context Protocol)
 
+- Auth provides Better Auth MCP adapter via `@opensaas/stack-auth/mcp`
 - MCP plugin enables OAuth for AI assistants
+- `createBetterAuthMcpAdapter()` converts Better Auth instance to session provider
+- Works with core MCP runtime from `@opensaas/stack-core/mcp`
 - Requires `rawOpensaasContext` from `.opensaas/context.ts`:
 
 ```typescript

@@ -1,8 +1,10 @@
 /**
- * Better Auth integration exports
+ * Better Auth MCP integration
+ * OAuth authentication adapter for MCP servers
  */
 
 export {
+  createBetterAuthMcpAdapter,
   withMcpAuth,
   mcpSessionToContextSession,
   hasScopes,
@@ -11,4 +13,4 @@ export {
   createOAuthProtectedResourceHandler,
 } from './better-auth.js'
 
-export type { McpSession, BetterAuthInstance } from './better-auth.js'
+export type { BetterAuthInstance } from './better-auth.js'
