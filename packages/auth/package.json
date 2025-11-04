@@ -47,6 +47,15 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/auth"
+  },
+  "homepage": "https://stack.opensaas.au",
+  "bugs": {
+    "url": "https://github.com/OpenSaasAU/stack/issues"
+  },
   "peerDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "better-auth": "^1.3.29",

@@ -31,5 +31,14 @@
   },
   "peerDependencies": {
     "@opensaas/stack-storage": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack.git",
+    "directory": "packages/storage-s3"
+  },
+  "homepage": "https://stack.opensaas.au",
+  "bugs": {
+    "url": "https://github.com/OpenSaasAU/stack/issues"
   }
 }
