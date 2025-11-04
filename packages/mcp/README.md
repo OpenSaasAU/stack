@@ -1,5 +1,16 @@
 # @opensaas/stack-mcp
 
+> **⚠️ DEPRECATED:** This package has been migrated into `@opensaas/stack-core/mcp` and `@opensaas/stack-auth/mcp`.
+>
+> Please update your imports:
+>
+> - `@opensaas/stack-mcp` → `@opensaas/stack-core/mcp` (MCP runtime and handlers)
+> - `@opensaas/stack-mcp/auth` → `@opensaas/stack-auth/mcp` (Better Auth adapter)
+>
+> See the [Migration Guide](#migration-guide) below for detailed instructions.
+
+---
+
 MCP (Model Context Protocol) server integration for OpenSaaS Stack with Better Auth OAuth authentication.
 
 ## Overview
@@ -349,6 +360,63 @@ The generated MCP tools will automatically enforce these rules.
 │  (Context + DB) │
 └─────────────────┘
 ```
+
+## Migration Guide
+
+### Updating from `@opensaas/stack-mcp`
+
+The MCP functionality has been split into two packages for better separation of concerns:
+
+**Before:**
+
+```typescript
+// app/api/mcp/[[...transport]]/route.ts
+import { createMcpHandlers } from '@opensaas/stack-mcp'
+import config from '@/opensaas.config'
+import { auth } from '@/lib/auth'
+import { getContext } from '@/.opensaas/context'
+
+const { GET, POST, DELETE } = createMcpHandlers({
+  config,
+  auth,
+  getContext,
+})
+
+export { GET, POST, DELETE }
+```
+
+**After:**
+
+```typescript
+// app/api/mcp/[[...transport]]/route.ts
+import { createMcpHandlers } from '@opensaas/stack-core/mcp'
+import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
+import config from '@/opensaas.config'
+import { auth } from '@/lib/auth'
+import { getContext } from '@/.opensaas/context'
+
+const { GET, POST, DELETE } = createMcpHandlers({
+  config,
+  getSession: createBetterAuthMcpAdapter(auth),
+  getContext,
+})
+
+export { GET, POST, DELETE }
+```
+
+**Key changes:**
+
+1. Import `createMcpHandlers` from `@opensaas/stack-core/mcp` instead of `@opensaas/stack-mcp`
+2. Import `createBetterAuthMcpAdapter` from `@opensaas/stack-auth/mcp`
+3. Replace `auth` parameter with `getSession: createBetterAuthMcpAdapter(auth)`
+4. Remove `@opensaas/stack-mcp` from your package.json dependencies
+
+**Why this change?**
+
+- Core package (`@opensaas/stack-core`) now handles auth-agnostic MCP runtime
+- Auth package (`@opensaas/stack-auth`) provides Better Auth specific adapter
+- Reduces dependencies and package count in the monorepo
+- Enables custom auth providers beyond Better Auth
 
 ## License
 

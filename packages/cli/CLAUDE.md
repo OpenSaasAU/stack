@@ -146,9 +146,10 @@ export function getContext(session?: any) {
 
 - Context factory supports custom `prismaClientConstructor` for Better-auth session provider
 
-### With @opensaas/stack-mcp
+### With MCP (Model Context Protocol)
 
 - Generates MCP tools metadata when MCP enabled in config
+- MCP functionality is now in `@opensaas/stack-core/mcp` (runtime) and `@opensaas/stack-auth/mcp` (adapter)
 
 ### With Prisma
 

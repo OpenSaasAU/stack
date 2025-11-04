@@ -149,11 +149,13 @@ const context = createContext<typeof prisma>(config, prisma, session)
 - Session flows through context to access control
 - Generator creates auth tables in Prisma schema
 
-### With @opensaas/stack-mcp
+### With MCP (Model Context Protocol)
 
-- MCP reads config to generate tools
+- Core provides auth-agnostic MCP runtime via `@opensaas/stack-core/mcp`
+- MCP handler reads config to generate tools
 - Uses context for all operations (access control enforced)
 - Zod schemas from fields validate tool inputs
+- Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration
 
 ### With Third-Party Field Packages
 
