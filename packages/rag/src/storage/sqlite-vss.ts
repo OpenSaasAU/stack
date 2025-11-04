@@ -42,7 +42,7 @@ export class SqliteVssStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as any)[dbKey]
+    const model = (context.db as Record<string, unknown>)[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)
@@ -50,7 +50,9 @@ export class SqliteVssStorage implements VectorStorage {
 
     try {
       // Get the underlying Prisma client
-      const prisma = (context as any)._prisma || (context.db as any)._prisma
+      const prisma =
+        (context as Record<string, unknown>)._prisma ||
+        (context.db as Record<string, unknown>)._prisma
 
       if (!prisma) {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
@@ -63,10 +65,13 @@ export class SqliteVssStorage implements VectorStorage {
       }
 
       // Build JSON array string for the vector
-      const vectorString = JSON.stringify(queryVector)
+      // Note: vectorString would be used for native sqlite-vss queries
+      // Currently using fallback JS-based search
+      // const vectorString = JSON.stringify(queryVector)
 
       // Table name (Prisma uses PascalCase in schema but lowercases in DB)
-      const tableName = listKey
+      // Note: tableName would be used for native sqlite-vss queries
+      // const tableName = listKey
 
       // SQLite VSS query
       // We need to create a virtual table for VSS search

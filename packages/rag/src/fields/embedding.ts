@@ -101,7 +101,7 @@ export function embedding(options?: Omit<EmbeddingField, 'type'>): EmbeddingFiel
     dimensions,
     autoGenerate,
 
-    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+    getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {
       // Embedding schema validation
       const embeddingSchema = z.object({
         vector: z.array(z.number()).length(dimensions, {
@@ -118,10 +118,10 @@ export function embedding(options?: Omit<EmbeddingField, 'type'>): EmbeddingFiel
 
       // Embeddings are always optional in input
       // They are generated automatically via hooks if sourceField is set
-      return embeddingSchema.nullable().optional() as any
+      return embeddingSchema.nullable().optional() as unknown as z.ZodTypeAny
     },
 
-    getPrismaType: (fieldName: string) => {
+    getPrismaType: (_fieldName: string) => {
       // Store as JSON in database
       // For pgvector, we could use vector() type, but JSON is more portable
       return {

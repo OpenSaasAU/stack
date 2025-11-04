@@ -12,11 +12,6 @@ type OllamaEmbeddingResponse = {
   prompt_eval_count?: number
 }
 
-type OllamaBatchEmbeddingResponse = {
-  embeddings: number[][]
-  model: string
-}
-
 /**
  * Ollama embedding provider
  * Uses local Ollama instance for embedding generation

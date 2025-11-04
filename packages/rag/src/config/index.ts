@@ -1,7 +1,6 @@
 import type {
   RAGConfig,
   NormalizedRAGConfig,
-  EmbeddingProviderConfig,
   VectorStorageConfig,
   OpenAIEmbeddingConfig,
   OllamaEmbeddingConfig,

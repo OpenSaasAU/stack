@@ -12,8 +12,18 @@ const providerFactories = new Map<string, (config: EmbeddingProviderConfig) => E
 /**
  * Register the built-in providers
  */
-providerFactories.set('openai', (config) => createOpenAIProvider(config as any))
-providerFactories.set('ollama', (config) => createOllamaProvider(config as any))
+providerFactories.set('openai', (config) => {
+  if (config.type !== 'openai') {
+    throw new Error('Invalid config type for OpenAI provider')
+  }
+  return createOpenAIProvider(config)
+})
+providerFactories.set('ollama', (config) => {
+  if (config.type !== 'ollama') {
+    throw new Error('Invalid config type for Ollama provider')
+  }
+  return createOllamaProvider(config)
+})
 
 /**
  * Register a custom embedding provider factory

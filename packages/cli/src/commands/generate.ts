@@ -10,7 +10,6 @@ import {
   writeContext,
   patchPrismaTypes,
 } from '../generator/index.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
 
 export async function generateCommand() {
   console.log(chalk.bold('\n🚀 OpenSaas Generator\n'))
@@ -36,8 +35,8 @@ export async function generateCommand() {
     // Config may be async (if plugins are present)
     // jiti.import() returns a module object with 'default' export
     // We need to manually extract the default export since interopDefault doesn't work with async exports
-    let module = (await jiti.import(configPath)) as any
-    let configOrPromise = module.default || module
+    const module = (await jiti.import(configPath)) as { default?: unknown }
+    const configOrPromise = module.default || module
 
     // Resolve the config if it's a Promise (from plugin execution)
     let config = await Promise.resolve(configOrPromise)

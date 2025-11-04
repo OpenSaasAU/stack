@@ -19,7 +19,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly model: string
   readonly dimensions: number
 
-  private client: any // OpenAI client instance
+  private client: unknown // OpenAI client instance
   private config: OpenAIEmbeddingConfig
 
   constructor(config: OpenAIEmbeddingConfig) {
@@ -33,7 +33,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   private initializeClient() {
     try {
-       
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { OpenAI } = require('openai')
 
       this.client = new OpenAI({
@@ -106,7 +106,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       const results: number[][] = new Array(texts.length)
 
       // Fill in embeddings for valid texts
-      response.data.forEach((item: any, i: number) => {
+      response.data.forEach((item: { embedding: number[] }, i: number) => {
         const originalIndex = validIndices[i]
         results[originalIndex] = item.embedding
       })

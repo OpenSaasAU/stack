@@ -65,7 +65,7 @@ export class PgVectorStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as any)[dbKey]
+    const model = (context.db as Record<string, unknown>)[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)
@@ -87,7 +87,9 @@ export class PgVectorStorage implements VectorStorage {
       // Get the underlying Prisma client
       // Note: This bypasses access control for the similarity search,
       // but we enforce it in the second query
-      const prisma = (context as any)._prisma || (context.db as any)._prisma
+      const prisma =
+        (context as Record<string, unknown>)._prisma ||
+        (context.db as Record<string, unknown>)._prisma
 
       if (!prisma) {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
@@ -140,7 +142,7 @@ export class PgVectorStorage implements VectorStorage {
       // Match items with their scores and sort by score
       const searchResults: SearchResult<T>[] = []
       for (const idInfo of itemIds) {
-        const item = items.find((i: any) => i.id === idInfo.id)
+        const item = items.find((i: { id: string }) => i.id === idInfo.id)
         if (item) {
           searchResults.push({
             item: item as T,

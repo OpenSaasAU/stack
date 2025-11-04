@@ -3,10 +3,8 @@ import type {
   Plugin,
   PluginContext,
   ListConfig,
-  FieldConfig,
   Hooks,
   OperationAccess,
-  ListMcpConfig,
   McpCustomTool,
   BaseFieldConfig,
 } from './types.js'
@@ -69,7 +67,7 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
  * Deep merge two objects
  * Used for merging list configurations
  */
-function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
+function _deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
   const result = { ...target }
 
   for (const key in source) {
@@ -85,7 +83,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
       !Array.isArray(targetValue)
     ) {
       // Recursively merge objects
-      result[key] = deepMerge(
+      result[key] = _deepMerge(
         targetValue as Record<string, unknown>,
         sourceValue as Record<string, unknown>,
       ) as T[Extract<keyof T, string>]

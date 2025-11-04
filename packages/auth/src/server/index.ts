@@ -113,12 +113,12 @@ export function createAuth(
   // Return a proxy that lazily initializes the auth instance
   return new Proxy({} as ReturnType<typeof betterAuth>, {
     get(_, prop) {
-      return (...args: any[]) => {
+      return (...args: unknown[]) => {
         return (async () => {
           const instance = await getAuthInstance()
           const value = instance[prop as keyof typeof instance]
           if (typeof value === 'function') {
-            return (value as any).apply(instance, args)
+            return (value as (...args: unknown[]) => unknown).apply(instance, args)
           }
           return value
         })()

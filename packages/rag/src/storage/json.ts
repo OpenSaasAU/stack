@@ -23,7 +23,7 @@ export class JsonVectorStorage implements VectorStorage {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
     const dbKey = getDbKey(listKey)
-    const model = (context.db as any)[dbKey]
+    const model = (context.db as Record<string, unknown>)[dbKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)

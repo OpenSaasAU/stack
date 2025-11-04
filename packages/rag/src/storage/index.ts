@@ -14,8 +14,18 @@ const storageFactories = new Map<string, (config: VectorStorageConfig) => Vector
  * Register the built-in storage backends
  */
 storageFactories.set('json', () => createJsonStorage())
-storageFactories.set('pgvector', (config) => createPgVectorStorage(config as any))
-storageFactories.set('sqlite-vss', (config) => createSqliteVssStorage(config as any))
+storageFactories.set('pgvector', (config) => {
+  if (config.type !== 'pgvector') {
+    throw new Error('Invalid config type for pgvector storage')
+  }
+  return createPgVectorStorage(config)
+})
+storageFactories.set('sqlite-vss', (config) => {
+  if (config.type !== 'sqlite-vss') {
+    throw new Error('Invalid config type for sqlite-vss storage')
+  }
+  return createSqliteVssStorage(config)
+})
 
 /**
  * Register a custom vector storage backend
