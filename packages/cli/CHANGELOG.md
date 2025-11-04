@@ -1,5 +1,12 @@
 # @opensaas/stack-cli
 
+## 0.1.4
+
+### Patch Changes
+
+- d2d1720: clean up dependency
+  - @opensaas/stack-core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes

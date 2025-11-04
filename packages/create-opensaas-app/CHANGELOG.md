@@ -1,5 +1,11 @@
 # create-opensaas-app
 
+## 0.1.4
+
+### Patch Changes
+
+- d2d1720: fix package templates
+
 ## 0.1.3
 
 ### Patch Changes

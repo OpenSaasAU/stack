@@ -1,5 +1,11 @@
 # @opensaas/stack-ui
 
+## 0.1.4
+
+### Patch Changes
+
+- @opensaas/stack-core@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
