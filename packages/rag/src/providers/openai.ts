@@ -33,7 +33,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   private initializeClient() {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       const { OpenAI } = require('openai')
 
       this.client = new OpenAI({
@@ -44,7 +44,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     } catch (error) {
       throw new Error(
         'OpenAI package not found. Install it with: npm install openai\n' +
-        'Error: ' + (error as Error).message
+          'Error: ' +
+          (error as Error).message,
       )
     }
   }
@@ -66,9 +67,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
       return response.data[0].embedding
     } catch (error) {
-      throw new Error(
-        `OpenAI embedding generation failed: ${(error as Error).message}`
-      )
+      throw new Error(`OpenAI embedding generation failed: ${(error as Error).message}`)
     }
   }
 
@@ -121,9 +120,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
       return results
     } catch (error) {
-      throw new Error(
-        `OpenAI batch embedding generation failed: ${(error as Error).message}`
-      )
+      throw new Error(`OpenAI batch embedding generation failed: ${(error as Error).message}`)
     }
   }
 }

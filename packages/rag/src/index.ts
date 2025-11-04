@@ -5,16 +5,15 @@
 
 // Config exports
 export {
-  withRAG,
-  ragConfig,
   openaiEmbeddings,
   ollamaEmbeddings,
   pgvectorStorage,
   sqliteVssStorage,
   jsonStorage,
-  getRAGConfig,
-  getEmbeddingProvider,
 } from './config/index.js'
+
+// Plugin export
+export { ragPlugin } from './config/plugin.js'
 
 export type {
   RAGConfig,

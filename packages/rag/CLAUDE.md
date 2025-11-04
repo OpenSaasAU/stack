@@ -108,7 +108,7 @@ export default withRAG(
       model: 'text-embedding-3-small',
     }),
     storage: pgvectorStorage({ distanceFunction: 'cosine' }),
-  })
+  }),
 )
 ```
 
@@ -140,7 +140,7 @@ export default withRAG(
       model: 'nomic-embed-text',
     }),
     storage: jsonStorage(), // Good for development, no DB extensions needed
-  })
+  }),
 )
 ```
 
@@ -265,12 +265,12 @@ export default withRAG(
         }),
       },
     }),
-    authConfig({ emailAndPassword: { enabled: true } })
+    authConfig({ emailAndPassword: { enabled: true } }),
   ),
   ragConfig({
     provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
     enableMcpTools: true, // Auto-generates semantic_search_article tool
-  })
+  }),
 )
 ```
 
@@ -378,11 +378,17 @@ registerEmbeddingProvider('custom', (config) => {
     dimensions: config.dimensions,
     async embed(text) {
       // Your implementation
-      return [/* vector */]
+      return [
+        /* vector */
+      ]
     },
     async embedBatch(texts) {
       // Batch implementation
-      return [[/* vectors */]]
+      return [
+        [
+          /* vectors */
+        ],
+      ]
     },
   }
 })
@@ -534,6 +540,7 @@ storage: pgvectorStorage() // instead of jsonStorage()
 ```
 
 Then:
+
 ```bash
 pnpm generate
 pnpm db:push

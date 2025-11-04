@@ -48,7 +48,7 @@ export default withRAG(
           content: text({ validation: { isRequired: true } }),
           // Embedding field with automatic generation
           contentEmbedding: embedding({
-            sourceField: 'content',  // Auto-embed when content changes
+            sourceField: 'content', // Auto-embed when content changes
             provider: 'openai',
             dimensions: 1536,
           }),
@@ -61,7 +61,7 @@ export default withRAG(
       apiKey: process.env.OPENAI_API_KEY!,
       model: 'text-embedding-3-small',
     }),
-  })
+  }),
 )
 ```
 
@@ -109,7 +109,7 @@ export async function searchArticles(query: string) {
   const results = await storage.search('Article', 'contentEmbedding', queryVector, {
     limit: 10,
     minScore: 0.7,
-    context,  // Access control enforced
+    context, // Access control enforced
   })
 
   return results
@@ -124,14 +124,16 @@ For local development without API costs:
 import { ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
 
 export default withRAG(
-  config({ /* ... */ }),
+  config({
+    /* ... */
+  }),
   ragConfig({
     provider: ollamaEmbeddings({
       baseURL: 'http://localhost:11434',
       model: 'nomic-embed-text',
     }),
     storage: jsonStorage(), // No database extensions needed
-  })
+  }),
 )
 ```
 
@@ -162,6 +164,7 @@ storage: pgvectorStorage({ distanceFunction: 'cosine' })
 ```
 
 Setup:
+
 ```sql
 CREATE EXTENSION vector;
 ```
@@ -197,7 +200,7 @@ export default withRAG(
   ragConfig({
     provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
     enableMcpTools: true, // Enables semantic_search_article tool
-  })
+  }),
 )
 ```
 

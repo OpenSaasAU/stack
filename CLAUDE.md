@@ -179,11 +179,16 @@ The hooks system provides data transformation and side effects during database o
 
 - `packages/core/src/config/types.ts` - Type definitions
 - `packages/core/src/config/index.ts` - Config builder functions
+- `packages/core/src/config/plugin-engine.ts` - Plugin execution engine
 
 Users define their schema in `opensaas.config.ts`:
 
 ```typescript
 export default config({
+  plugins: [
+    authPlugin({ emailAndPassword: { enabled: true } }),
+    ragPlugin({ provider: openaiEmbeddings({ apiKey: '...' }) }),
+  ],
   db: { provider: 'sqlite', url: 'file:./dev.db' },
   lists: {
     Post: list({
@@ -193,6 +198,67 @@ export default config({
     }),
   },
 })
+```
+
+### Plugin System
+
+**Overview:** The stack uses a plugin system for extending functionality. Plugins can inject lists, add hooks, register MCP tools, and participate in code generation.
+
+**Key files:**
+
+- `packages/core/src/config/plugin-engine.ts` - Dependency resolution and execution
+- `packages/auth/src/config/plugin.ts` - Auth plugin implementation
+- `packages/rag/src/config/plugin.ts` - RAG plugin implementation
+
+**Plugin Capabilities:**
+
+- **Inject Lists**: Add auto-generated lists (e.g., User, Session from authPlugin)
+- **Extend Lists**: Add fields or hooks to existing lists
+- **Hook Chaining**: Multiple plugins can add hooks that execute in sequence
+- **Deep Merging**: Plugins safely merge fields, hooks, and access control
+- **Lifecycle Hooks**: `beforeGenerate`, `afterGenerate` for code generation control
+- **Dependency Resolution**: Automatic execution ordering via topological sort
+
+**Plugin Pattern:**
+
+```typescript
+export function myPlugin(config: MyConfig): Plugin {
+  return {
+    name: 'my-plugin',
+    version: '0.1.0',
+    dependencies: ['auth'], // Optional: depends on auth plugin
+
+    init: async (context) => {
+      // Add lists
+      context.addList('MyList', list({ fields: {...} }))
+
+      // Extend existing lists
+      context.extendList('User', { fields: { myField: text() } })
+
+      // Store plugin data for runtime
+      context.setPluginData('my-plugin', config)
+    },
+
+    beforeGenerate: async (config) => {
+      // Modify config before schema generation
+      return config
+    },
+
+    afterGenerate: async (files) => {
+      // Post-process generated files
+      return files
+    },
+  }
+}
+```
+
+**Runtime Access:**
+
+Plugin data is stored in `config._pluginData[pluginName]`:
+
+```typescript
+const authConfig = config._pluginData.auth // NormalizedAuthConfig
+const ragConfig = config._pluginData.rag // NormalizedRAGConfig
 ```
 
 ### Generators

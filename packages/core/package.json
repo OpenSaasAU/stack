@@ -17,6 +17,10 @@
     "./mcp": {
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
+    },
+    "./config/plugin-engine": {
+      "types": "./dist/config/plugin-engine.d.ts",
+      "default": "./dist/config/plugin-engine.js"
     }
   },
   "scripts": {

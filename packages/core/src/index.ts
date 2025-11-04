@@ -24,6 +24,10 @@ export type {
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,
+  // Plugin system types
+  Plugin,
+  PluginContext,
+  GeneratedFiles,
 } from './config/index.js'
 
 // Access control

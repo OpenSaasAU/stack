@@ -93,8 +93,8 @@ export class PgVectorStorage implements VectorStorage {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
-          'Falling back to JSON-based search. ' +
-          'For full pgvector support, ensure the context exposes _prisma.'
+            'Falling back to JSON-based search. ' +
+            'For full pgvector support, ensure the context exposes _prisma.',
         )
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }
@@ -114,14 +114,14 @@ export class PgVectorStorage implements VectorStorage {
 
       // Get IDs of items within score threshold
       const itemIds = results
-        .map(r => ({
+        .map((r) => ({
           id: r.id,
           distance: Number(r.distance),
           score: this.distanceToScore(Number(r.distance)),
         }))
-        .filter(r => r.score >= minScore)
+        .filter((r) => r.score >= minScore)
         .slice(0, limit)
-        .map(r => ({ id: r.id, distance: r.distance, score: r.score }))
+        .map((r) => ({ id: r.id, distance: r.distance, score: r.score }))
 
       if (itemIds.length === 0) {
         return []
@@ -132,7 +132,7 @@ export class PgVectorStorage implements VectorStorage {
         where: {
           ...where,
           id: {
-            in: itemIds.map(r => r.id),
+            in: itemIds.map((r) => r.id),
           },
         },
       })
@@ -154,7 +154,7 @@ export class PgVectorStorage implements VectorStorage {
     } catch (error) {
       throw new Error(
         `pgvector search failed: ${(error as Error).message}\n` +
-        'Ensure pgvector extension is installed: CREATE EXTENSION vector;'
+          'Ensure pgvector extension is installed: CREATE EXTENSION vector;',
       )
     }
   }

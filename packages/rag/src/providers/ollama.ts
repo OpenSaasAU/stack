@@ -53,7 +53,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       this.dimensionsInitialized = true
     } catch (error) {
       throw new Error(
-        `Failed to initialize Ollama provider (ensure Ollama is running and model '${this.model}' is available): ${(error as Error).message}`
+        `Failed to initialize Ollama provider (ensure Ollama is running and model '${this.model}' is available): ${(error as Error).message}`,
       )
     }
   }
@@ -78,12 +78,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
-      return await response.json() as T
+      return (await response.json()) as T
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        throw new Error(
-          `Failed to connect to Ollama at ${this.baseURL}. Ensure Ollama is running.`
-        )
+        throw new Error(`Failed to connect to Ollama at ${this.baseURL}. Ensure Ollama is running.`)
       }
       throw error
     }
@@ -111,9 +109,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
       return response.embedding
     } catch (error) {
-      throw new Error(
-        `Ollama embedding generation failed: ${(error as Error).message}`
-      )
+      throw new Error(`Ollama embedding generation failed: ${(error as Error).message}`)
     }
   }
 
@@ -148,7 +144,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
     try {
       // Make parallel requests (Ollama doesn't have batch API)
-      const embeddingPromises = validTexts.map(text => this.embed(text))
+      const embeddingPromises = validTexts.map((text) => this.embed(text))
       const embeddings = await Promise.all(embeddingPromises)
 
       // Create result array with correct size
@@ -169,9 +165,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
       return results
     } catch (error) {
-      throw new Error(
-        `Ollama batch embedding generation failed: ${(error as Error).message}`
-      )
+      throw new Error(`Ollama batch embedding generation failed: ${(error as Error).message}`)
     }
   }
 }

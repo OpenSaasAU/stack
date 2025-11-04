@@ -1,21 +1,17 @@
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
-import config from '../../../opensaas.config'
-import { getContext } from '@/.opensaas/context'
+import { getContext, config } from "@/.opensaas/context"
 import { FieldRegistration } from './FieldRegistration'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = getContext()
+  const context = await getContext()
   return await context.serverAction(props)
 }
-
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
-}
-
 /**
  * Main admin interface using catch-all route
  * Handles all admin routes: /admin, /admin/Post, /admin/Post/create, /admin/Post/[id]
@@ -24,13 +20,12 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
   const adminContext = getContext()
-
   return (
     <>
       <FieldRegistration />
       <AdminUI
         context={adminContext}
-        config={config}
+        config={await config}
         params={resolvedParams.admin}
         searchParams={resolvedSearchParams}
         basePath="/admin"
@@ -38,4 +33,3 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       />
     </>
   )
-}

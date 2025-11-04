@@ -62,7 +62,7 @@ export function createVectorStorage(config: VectorStorageConfig): VectorStorage 
   if (!factory) {
     throw new Error(
       `Unknown vector storage type: ${config.type}. ` +
-      `Available backends: ${Array.from(storageFactories.keys()).join(', ')}`
+        `Available backends: ${Array.from(storageFactories.keys()).join(', ')}`,
     )
   }
 

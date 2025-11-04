@@ -58,7 +58,7 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
   if (!factory) {
     throw new Error(
       `Unknown embedding provider type: ${config.type}. ` +
-      `Available providers: ${Array.from(providerFactories.keys()).join(', ')}`
+        `Available providers: ${Array.from(providerFactories.keys()).join(', ')}`,
     )
   }
 

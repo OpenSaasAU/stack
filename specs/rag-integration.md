@@ -1,12 +1,14 @@
 # RAG Integration Specification
 
-**Status**: Implemented (Core foundation complete)
+**Status**: Plugin System Implemented
 **Package**: `@opensaas/stack-rag`
-**Version**: 0.1.0
+**Version**: 0.2.0
 
 ## Overview
 
 This document specifies the RAG (Retrieval-Augmented Generation) integration for OpenSaas Stack, enabling developers to easily add vector embeddings and semantic search to their applications.
+
+**Breaking Change (v0.2.0)**: Migrated from `withRAG()` wrapper to `ragPlugin()` for better scalability and composition.
 
 ## Goals
 
@@ -21,11 +23,11 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
 
 ### ✅ Completed
 
-1. **Core Configuration System** (`packages/rag/src/config/`)
-   - `withRAG()` config wrapper following auth pattern
-   - `ragConfig()` builder with provider and storage configuration
+1. **Plugin System** (`packages/rag/src/config/`)
+   - `ragPlugin()` - Plugin-based configuration (**NEW in v0.2.0**)
    - Helper functions: `openaiEmbeddings()`, `ollamaEmbeddings()`, `pgvectorStorage()`, etc.
    - Type-safe configuration with normalization
+   - **REMOVED**: `withRAG()` wrapper (breaking change)
 
 2. **Embedding Providers** (`packages/rag/src/providers/`)
    - `EmbeddingProvider` interface
@@ -65,7 +67,13 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
 
 ### 🚧 Remaining Work
 
-1. **Runtime Utilities** (`packages/rag/src/runtime/`)
+1. **Automatic Hooks** - ✅ **IMPLEMENTED in ragPlugin** (v0.2.0)
+   - ✅ Inject `afterOperation` hooks into embedding fields with `sourceField`
+   - ✅ Detect source field changes (hash comparison)
+   - ✅ Automatic embedding regeneration
+   - ⏳ Batch embedding generation for multiple items (future)
+
+2. **Runtime Utilities** (`packages/rag/src/runtime/`)
    - `generateEmbeddings()` - High-level embedding generation
    - `semanticSearch()` - Simplified search API
    - `findSimilar()` - Find similar items by ID
@@ -73,17 +81,11 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
    - Batch processing utilities
    - Rate limiting utilities
 
-2. **Automatic Hooks**
-   - Inject `afterOperation` hooks into embedding fields with `sourceField`
-   - Detect source field changes (hash comparison)
-   - Automatic embedding regeneration
-   - Batch embedding generation for multiple items
-
-3. **MCP Integration** (`packages/rag/src/mcp/`)
-   - `createRagMcpTools()` - Generate semantic search tools
-   - Per-list tool generation (e.g., `semantic_search_article`)
-   - Integration with core MCP runtime
-   - Access control in MCP tools
+3. **MCP Integration** - ✅ **IMPLEMENTED in ragPlugin** (v0.2.0)
+   - ✅ Automatic semantic search tools via `ragPlugin`
+   - ✅ Per-list tool generation (e.g., `semantic_search_article`)
+   - ✅ Integration with core MCP runtime
+   - ✅ Access control in MCP tools
 
 4. **High-Level Field Wrapper**
    - `searchable(field, options)` wrapper for automatic RAG
@@ -110,23 +112,23 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
 
 ## Architecture
 
-### Config Wrapper Pattern
+### Plugin Pattern (v0.2.0)
 
-Following the `withAuth()` pattern:
+Uses the new plugin system for better composition:
 
 ```typescript
-export function withRAG(opensaasConfig: OpenSaasConfig, ragConfig: RAGConfig): OpenSaasConfig {
-  const normalized = normalizeRAGConfig(ragConfig)
+export function ragPlugin(config: RAGConfig): Plugin {
+  return {
+    name: 'rag',
+    version: '0.1.0',
 
-  // Attach RAG config for runtime use
-  const result: OpenSaasConfig & { __ragConfig?: NormalizedRAGConfig } = {
-    ...opensaasConfig,
+    init: async (context) => {
+      // Find embedding fields with autoGenerate
+      // Inject afterOperation hooks for automatic embedding generation
+      // Register MCP tools for semantic search
+      // Store config in context._pluginData.rag
+    },
   }
-  result.__ragConfig = normalized
-
-  // TODO: Inject hooks into fields with autoGenerate: true
-
-  return result
 }
 ```
 
@@ -209,11 +211,11 @@ async search(listKey, fieldName, queryVector, options) {
 type StoredEmbedding = {
   vector: number[]
   metadata: {
-    model: string        // e.g., 'text-embedding-3-small'
-    provider: string     // e.g., 'openai'
-    dimensions: number   // e.g., 1536
-    generatedAt: string  // ISO timestamp
-    sourceHash?: string  // SHA-256 of source text (for change detection)
+    model: string // e.g., 'text-embedding-3-small'
+    provider: string // e.g., 'openai'
+    dimensions: number // e.g., 1536
+    generatedAt: string // ISO timestamp
+    sourceHash?: string // SHA-256 of source text (for change detection)
   }
 }
 ```
@@ -232,41 +234,44 @@ model Article {
 
 ```typescript
 type SearchResult<T> = {
-  item: T           // The matching record
-  score: number     // Similarity score (0-1, higher is more similar)
-  distance: number  // Distance metric (depends on backend)
+  item: T // The matching record
+  score: number // Similarity score (0-1, higher is more similar)
+  distance: number // Distance metric (depends on backend)
 }
 ```
 
 ## Usage Examples
 
-### Basic Setup
+### Basic Setup (v0.2.0)
 
 ```typescript
-import { withRAG, ragConfig, openaiEmbeddings } from '@opensaas/stack-rag'
+import { config } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
-export default withRAG(
-  config({
-    lists: {
-      Article: list({
-        fields: {
-          content: text(),
-          contentEmbedding: embedding({
-            sourceField: 'content',
-            provider: 'openai',
-            dimensions: 1536,
-            autoGenerate: true,
-          }),
-        },
-      }),
-    },
-  }),
-  ragConfig({
-    provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
-    storage: pgvectorStorage(),
-  })
-)
+export default config({
+  plugins: [
+    ragPlugin({
+      provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
+      storage: pgvectorStorage(),
+    }),
+  ],
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
+  lists: {
+    Article: list({
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          provider: 'openai',
+          dimensions: 1536,
+          autoGenerate: true, // Plugin will inject hooks automatically
+        }),
+      },
+    }),
+  },
+})
 ```
 
 ### Semantic Search
@@ -328,6 +333,7 @@ Good for SQLite-based apps:
 ### JSON Storage
 
 No setup needed. Embeddings stored as JSON, similarity computed in JavaScript. Good for:
+
 - Development
 - Small datasets (<10k documents)
 - Any database (no extensions required)
@@ -445,13 +451,16 @@ pnpm db:push
 ## Dependencies
 
 ### Required
+
 - `@opensaas/stack-core` (workspace)
 - `zod` (validation)
 
 ### Optional Peer Dependencies
+
 - `openai` (for OpenAI provider)
 
 ### Dev Dependencies
+
 - `typescript`
 - `vitest`
 - `@vitest/ui`
@@ -460,6 +469,7 @@ pnpm db:push
 ## Conclusion
 
 The core RAG integration is now complete with:
+
 - ✅ Config system
 - ✅ Embedding providers (OpenAI, Ollama)
 - ✅ Vector storage (pgvector, sqlite-vss, JSON)
@@ -467,6 +477,7 @@ The core RAG integration is now complete with:
 - ✅ Documentation
 
 Remaining work focuses on:
+
 - Runtime utilities for easier usage
 - Automatic hooks for embedding generation
 - MCP integration

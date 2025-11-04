@@ -56,8 +56,8 @@ export class SqliteVssStorage implements VectorStorage {
         // Fallback: if we can't access Prisma directly, use JSON storage approach
         console.warn(
           'sqlite-vss: Could not access Prisma client directly. ' +
-          'Falling back to JSON-based search. ' +
-          'For full sqlite-vss support, ensure the context exposes _prisma.'
+            'Falling back to JSON-based search. ' +
+            'For full sqlite-vss support, ensure the context exposes _prisma.',
         )
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }
@@ -99,7 +99,7 @@ export class SqliteVssStorage implements VectorStorage {
         if (storedVector.length !== queryVector.length) {
           console.warn(
             `Vector dimension mismatch for ${listKey}.${item.id}.${fieldName}: ` +
-            `expected ${queryVector.length}, got ${storedVector.length}. Skipping.`
+              `expected ${queryVector.length}, got ${storedVector.length}. Skipping.`,
           )
           continue
         }
@@ -115,7 +115,7 @@ export class SqliteVssStorage implements VectorStorage {
             storedVector.reduce((sum: number, val: number, i: number) => {
               const diff = val - queryVector[i]
               return sum + diff * diff
-            }, 0)
+            }, 0),
           )
         }
 
@@ -137,7 +137,7 @@ export class SqliteVssStorage implements VectorStorage {
     } catch (error) {
       throw new Error(
         `sqlite-vss search failed: ${(error as Error).message}\n` +
-        'Ensure sqlite-vss extension is loaded in your SQLite connection.'
+          'Ensure sqlite-vss extension is loaded in your SQLite connection.',
       )
     }
   }

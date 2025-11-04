@@ -56,7 +56,7 @@ export class JsonVectorStorage implements VectorStorage {
       if (storedVector.length !== queryVector.length) {
         console.warn(
           `Vector dimension mismatch for ${listKey}.${item.id}.${fieldName}: ` +
-          `expected ${queryVector.length}, got ${storedVector.length}. Skipping.`
+            `expected ${queryVector.length}, got ${storedVector.length}. Skipping.`,
         )
         continue
       }

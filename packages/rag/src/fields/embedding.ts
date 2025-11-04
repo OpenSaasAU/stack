@@ -93,7 +93,7 @@ export type EmbeddingField = BaseFieldConfig<StoredEmbedding | null, StoredEmbed
  */
 export function embedding(options?: Omit<EmbeddingField, 'type'>): EmbeddingField {
   const dimensions = options?.dimensions || 1536
-  const autoGenerate = options?.autoGenerate ?? (options?.sourceField != null)
+  const autoGenerate = options?.autoGenerate ?? options?.sourceField != null
 
   return {
     type: 'embedding',
