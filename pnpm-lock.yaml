@@ -387,9 +387,6 @@ importers:
       '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@opensaas/stack-mcp':
-        specifier: workspace:*
-        version: link:../../packages/mcp
       '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../../packages/ui
