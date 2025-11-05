@@ -10,7 +10,7 @@
     "generate": "opensaas generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "test": "tsx test.ts"
+    "test:rag": "tsx test.ts"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
