@@ -131,14 +131,14 @@ Create a server action in `app/actions.ts`:
 import { getContext } from '@/.opensaas/context'
 
 export async function getPosts() {
-  const context = getContext()
+  const context = await getContext()
   return context.db.post.findMany({
     include: { author: true },
   })
 }
 
 export async function createPost(data: { title: string; content: string }) {
-  const context = getContext({ userId: 'user-1' }) // In real app, get from session
+  const context = await getContext({ userId: 'user-1' }) // In real app, get from session
   return context.db.post.create({ data })
 }
 ```

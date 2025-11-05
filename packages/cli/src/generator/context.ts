@@ -17,7 +17,7 @@ export function generateContext(config: OpenSaasConfig): string {
 
   // Generate the Prisma client instantiation code
   const prismaInstantiation = hasCustomConstructor
-    ? `config.db.prismaClientConstructor!(PrismaClient)`
+    ? `resolvedConfig.db.prismaClientConstructor!(PrismaClient)`
     : `new PrismaClient()`
 
   // Generate storage utilities if storage is configured
@@ -47,21 +47,25 @@ async function getStorageRuntime() {
  */
 const storage = {
   uploadFile: async (providerName: string, file: File, buffer: Buffer, options?: unknown) => {
+    const config = await getConfig()
     const runtime = await getStorageRuntime()
     return runtime.uploadFile(config, providerName, { file, buffer }, options as any)
   },
 
   uploadImage: async (providerName: string, file: File, buffer: Buffer, options?: unknown) => {
+    const config = await getConfig()
     const runtime = await getStorageRuntime()
     return runtime.uploadImage(config, providerName, { file, buffer }, options as any)
   },
 
   deleteFile: async (providerName: string, filename: string) => {
+    const config = await getConfig()
     const runtime = await getStorageRuntime()
     return runtime.deleteFile(config, providerName, filename)
   },
 
   deleteImage: async (metadata: unknown) => {
+    const config = await getConfig()
     const runtime = await getStorageRuntime()
     return runtime.deleteImage(config, metadata as any)
   },
@@ -87,6 +91,7 @@ const storage = {
 }
 `
 
+  // Always use async version for consistency
   return `/**
  * Auto-generated context factory
  *
@@ -97,15 +102,36 @@ const storage = {
  */
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
-import type { Session as OpensaasSession } from '@opensaas/stack-core'
+import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client'
 import type { Context } from './types'
-import config from '../opensaas.config'
+import configOrPromise from '../opensaas.config'
+
+// Resolve config if it's a Promise (when plugins are present)
+const configPromise = Promise.resolve(configOrPromise)
+let resolvedConfig: OpenSaasConfig | null = null
 
 // Internal Prisma singleton - managed automatically
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
-const prisma = globalForPrisma.prisma ?? ${prismaInstantiation}
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+let prisma: PrismaClient | null = null
+
+async function getPrisma() {
+  if (!prisma) {
+    if (!resolvedConfig) {
+      resolvedConfig = await configPromise
+    }
+    prisma = globalForPrisma.prisma ?? ${prismaInstantiation}
+    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+  }
+  return prisma
+}
+
+async function getConfig() {
+  if (!resolvedConfig) {
+    resolvedConfig = await configPromise
+  }
+  return resolvedConfig
+}
 ${storageUtilities}
 /**
  * Get OpenSaas context with optional session
@@ -115,24 +141,40 @@ ${storageUtilities}
  * @example
  * \`\`\`typescript
  * // Anonymous access
- * const context = getContext()
+ * const context = await getContext()
  * const posts = await context.db.post.findMany()
  *
  * // Authenticated access
- * const context = getContext({ userId: 'user-123' })
+ * const context = await getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
  *
  * // With custom session type
  * type CustomSession = { userId: string; email: string; role: string } | null
- * const context = getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
+ * const context = await getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
  * // context.session is now typed as CustomSession
  * \`\`\`
  */
-export function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Context<TSession> {
-  return getOpensaasContext(config, prisma, session ?? null, storage) as Context<TSession>
+export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
+  const config = await getConfig()
+  const prismaClient = await getPrisma()
+  return getOpensaasContext(config, prismaClient, session ?? null, storage) as Context<TSession>
 }
 
-export const rawOpensaasContext = getContext()
+/**
+ * Raw context for synchronous initialization (e.g., Better-auth setup)
+ * This is only available after config is resolved, use with caution
+ */
+export const rawOpensaasContext = (async () => {
+  const config = await getConfig()
+  const prismaClient = await getPrisma()
+  return getOpensaasContext(config, prismaClient, null, storage)
+})()
+
+/**
+ * Re-export resolved config for use in admin pages and server actions
+ * This is a promise that resolves to the config
+ */
+export const config = getConfig()
 `
 }
 

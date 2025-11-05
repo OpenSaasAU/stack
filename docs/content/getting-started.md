@@ -138,7 +138,7 @@ Your application code uses the context to interact with the database:
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
-const context = getContext()
+const context = await getContext()
 const posts = await context.db.post.findMany()
 ```
 

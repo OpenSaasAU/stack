@@ -48,6 +48,7 @@ jobs:
           - { name: 'cli', dir: './packages/cli', label: 'CLI Package Coverage' }
           - { name: 'auth', dir: './packages/auth', label: 'Auth Package Coverage' }
           - { name: 'storage', dir: './packages/storage', label: 'Storage Package Coverage' }
+          - { name: 'rag', dir: './packages/rag', label: 'RAG Package Coverage' }
           - {
               name: 'storage-s3',
               dir: './packages/storage-s3',

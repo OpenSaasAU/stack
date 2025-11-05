@@ -359,7 +359,7 @@ Create a test script to verify JSON field behavior:
 import { getContext } from './.opensaas/context.js'
 
 async function test() {
-  const context = getContext()
+  const context = await getContext()
 
   // Create product with JSON data
   const product = await context.db.product.create({

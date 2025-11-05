@@ -6,10 +6,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@opensaas/stac
 import { Button } from '@opensaas/stack-ui/primitives'
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { createPost } from '../lib/actions'
-import config from '../opensaas.config'
 import type { PostCreateInput } from '../.opensaas/types'
+import { FieldConfig } from '@opensaas/stack-core'
 
-export function CreatePostDialog() {
+export function CreatePostDialog({ fields }: { fields: Record<string, FieldConfig> }) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
 
@@ -26,7 +26,7 @@ export function CreatePostDialog() {
           </DialogHeader>
 
           <ItemCreateForm<PostCreateInput>
-            fields={config.lists.Post.fields}
+            fields={fields}
             onSubmit={async (data) => {
               const result = await createPost(data)
 

@@ -25,65 +25,106 @@ function getDatabaseConfig(
  * // lib/auth.ts
  * import { createAuth } from '@opensaas/stack-auth/server'
  * import config from '../opensaas.config'
+ * import { rawOpensaasContext } from '@/.opensaas/context'
  *
- * export const auth = createAuth(config)
+ * export const auth = createAuth(config, rawOpensaasContext)
  * ```
  */
 export function createAuth(
-  opensaasConfig: OpenSaasConfig & { __authConfig?: NormalizedAuthConfig },
-  context: AccessContext,
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
 ) {
-  // Extract auth config (added by withAuth)
-  const authConfig = opensaasConfig.__authConfig
+  // Resolve config and context asynchronously
+  const configPromise = Promise.resolve(opensaasConfig)
+  const contextPromise = Promise.resolve(context)
 
-  if (!authConfig) {
-    throw new Error(
-      'Auth config not found. Make sure to wrap your config with withAuth() in opensaas.config.ts',
-    )
-  }
+  // Create auth instance lazily when needed
+  let authInstance: ReturnType<typeof betterAuth> | null = null
+  let authPromise: Promise<ReturnType<typeof betterAuth>> | null = null
 
-  // Build better-auth configuration
-  const betterAuthConfig: BetterAuthOptions = {
-    database: getDatabaseConfig(opensaasConfig.db, context),
+  async function getAuthInstance() {
+    if (authInstance) return authInstance
 
-    // Enable email and password if configured
-    emailAndPassword: authConfig.emailAndPassword.enabled
-      ? {
-          enabled: true,
-          requireEmailVerification: authConfig.emailVerification.enabled,
+    if (!authPromise) {
+      authPromise = (async () => {
+        const resolvedConfig = await configPromise
+        const resolvedContext = await contextPromise
+
+        // Extract auth config from plugin data
+        const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+
+        if (!authConfig) {
+          throw new Error(
+            'Auth config not found. Make sure to use authPlugin() in your opensaas.config.ts',
+          )
         }
-      : undefined,
 
-    // Configure session
-    session: {
-      expiresIn: authConfig.session.expiresIn || 604800,
-      updateAge: authConfig.session.updateAge ? (authConfig.session.expiresIn || 604800) / 10 : 0,
-    },
+        // Build better-auth configuration
+        const betterAuthConfig: BetterAuthOptions = {
+          database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
 
-    // Trust host (required for production)
-    trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],
+          // Enable email and password if configured
+          emailAndPassword: authConfig.emailAndPassword.enabled
+            ? {
+                enabled: true,
+                requireEmailVerification: authConfig.emailVerification.enabled,
+              }
+            : undefined,
 
-    // Social providers
-    socialProviders: Object.entries(authConfig.socialProviders)
-      .filter(([_, config]) => config?.enabled !== false)
-      .reduce(
-        (acc, [provider, config]) => {
-          if (config) {
-            acc[provider] = {
-              clientId: config.clientId,
-              clientSecret: config.clientSecret,
-            }
-          }
-          return acc
-        },
-        {} as Record<string, { clientId: string; clientSecret: string }>,
-      ),
+          // Configure session
+          session: {
+            expiresIn: authConfig.session.expiresIn || 604800,
+            updateAge: authConfig.session.updateAge
+              ? (authConfig.session.expiresIn || 604800) / 10
+              : 0,
+          },
 
-    // Pass through any additional Better Auth plugins
-    plugins: authConfig.betterAuthPlugins || [],
+          // Trust host (required for production)
+          trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],
+
+          // Social providers
+          socialProviders: Object.entries(authConfig.socialProviders)
+            .filter(([_, config]) => config?.enabled !== false)
+            .reduce(
+              (acc, [provider, config]) => {
+                if (config) {
+                  acc[provider] = {
+                    clientId: config.clientId,
+                    clientSecret: config.clientSecret,
+                  }
+                }
+                return acc
+              },
+              {} as Record<string, { clientId: string; clientSecret: string }>,
+            ),
+
+          // Pass through any additional Better Auth plugins
+          plugins: authConfig.betterAuthPlugins || [],
+        }
+
+        authInstance = betterAuth(betterAuthConfig)
+        return authInstance
+      })()
+    }
+
+    return authPromise
   }
 
-  return betterAuth(betterAuthConfig)
+  // Return a proxy that lazily initializes the auth instance
+  return new Proxy({} as ReturnType<typeof betterAuth>, {
+    get(_, prop) {
+      return (...args: unknown[]) => {
+        return (async () => {
+          const instance = await getAuthInstance()
+          const value = instance[prop as keyof typeof instance]
+          if (typeof value === 'function') {
+            return (value as (...args: unknown[]) => unknown).apply(instance, args)
+          }
+          return value
+        })()
+      }
+    },
+  })
 }
 
 /**

@@ -121,7 +121,7 @@ export async function getContext() {
 import { getContextWithUser } from './lib/context'
 
 export async function createPost(userId: string, data: any) {
-  const context = getContextWithUser(userId)
+  const context = await getContextWithUser(userId)
 
   // Access control automatically enforced
   const post = await context.db.post.create({ data })
@@ -320,10 +320,10 @@ hooks: {
 import { getContext } from '@opensaas/stack-core'
 
 // With session
-const context = getContext(config, prisma, { userId: '123' })
+const context = await getContext(config, prisma, { userId: '123' })
 
 // Anonymous
-const context = getContext(config, prisma, null)
+const context = await getContext(config, prisma, null)
 ```
 
 ### Using Context
@@ -411,7 +411,7 @@ import config from './opensaas.config'
 
 describe('Post access control', () => {
   it('allows author to update their post', async () => {
-    const context = getContext(config, prisma, { userId: authorId })
+    const context = await getContext(config, prisma, { userId: authorId })
     const updated = await context.db.post.update({
       where: { id: postId },
       data: { title: 'New Title' },
@@ -421,7 +421,7 @@ describe('Post access control', () => {
   })
 
   it('denies non-author from updating post', async () => {
-    const context = getContext(config, prisma, { userId: otherUserId })
+    const context = await getContext(config, prisma, { userId: otherUserId })
     const updated = await context.db.post.update({
       where: { id: postId },
       data: { title: 'Hacked!' },

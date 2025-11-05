@@ -112,7 +112,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         authorId: '2',
       })
 
-      const context = getContext(testConfig, mockPrisma, { userId: '1' })
+      const context = await getContext(testConfig, mockPrisma, { userId: '1' })
 
       await context.db.post.update({
         where: { id: '1' },
@@ -191,7 +191,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         title: 'Original Title',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
         context.db.post.update({
@@ -259,7 +259,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         authorId: '2',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await context.db.post.update({
         where: { id: '1' },
@@ -327,7 +327,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         title: 'Original Title',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
         context.db.post.update({
@@ -392,7 +392,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         ],
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await context.db.user.findUnique({
         where: { id: '1' },
@@ -464,7 +464,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       const result = await context.db.post.findUnique({
         where: { id: '1' },
@@ -517,7 +517,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         // Author should not be included due to access control
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await context.db.post.findUnique({
         where: { id: '1' },
@@ -576,7 +576,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         internalNotes: 'New secret notes',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       const result = await context.db.post.update({
         where: { id: '1' },
@@ -630,7 +630,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         title: 'updated title',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       const result = await context.db.post.update({
         where: { id: '1' },
@@ -693,7 +693,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         authorId: '2',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       const result = await context.db.post.update({
         where: { id: '1' },
@@ -762,7 +762,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         name: 'Other User',
       })
 
-      const context = getContext(testConfig, mockPrisma, { userId: '1' })
+      const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
       await expect(
         context.db.post.update({
@@ -825,7 +825,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         authorId: '2',
       })
 
-      const context = getContext(testConfig, mockPrisma, { userId: '1' })
+      const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
       const result = await context.db.post.update({
         where: { id: '1' },
@@ -883,7 +883,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         name: 'John Doe',
       })
 
-      const context = getContext(testConfig, mockPrisma, null)
+      const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
         context.db.post.update({

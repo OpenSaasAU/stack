@@ -1,16 +1,14 @@
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
-import config from '../../../opensaas.config'
-import { getContext } from '@/.opensaas/context'
+import { getContext, config } from '@/.opensaas/context'
 import { getAuth } from '@/lib/auth'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = getContext()
+  const context = await getContext()
   return await context.serverAction(props)
 }
-
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -24,7 +22,6 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
   const session = await getAuth()
-
   if (!session) {
     return (
       <div className="p-8">
@@ -37,8 +34,8 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   }
   return (
     <AdminUI
-      context={getContext(session.user)}
-      config={config}
+      context={await getContext(session.user)}
+      config={await config}
       params={resolvedParams.admin}
       searchParams={resolvedSearchParams}
       basePath="/admin"

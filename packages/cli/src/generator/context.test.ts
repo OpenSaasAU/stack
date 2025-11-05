@@ -95,9 +95,9 @@ describe('Context Generator', () => {
       const context = generateContext(config)
 
       expect(context).toContain('// Anonymous access')
-      expect(context).toContain('const context = getContext()')
+      expect(context).toContain('const context = await getContext()')
       expect(context).toContain('// Authenticated access')
-      expect(context).toContain("const context = getContext({ userId: 'user-123' })")
+      expect(context).toContain("const context = await getContext({ userId: 'user-123' })")
     })
 
     it('should export rawOpensaasContext', () => {
@@ -111,7 +111,7 @@ describe('Context Generator', () => {
 
       const context = generateContext(config)
 
-      expect(context).toContain('export const rawOpensaasContext = getContext()')
+      expect(context).toMatchSnapshot()
     })
 
     it('should type session parameter correctly', () => {
@@ -127,19 +127,6 @@ describe('Context Generator', () => {
 
       expect(context).toContain('session?: TSession')
       expect(context).toContain('<TSession extends OpensaasSession = OpensaasSession>')
-    })
-
-    it('should call getOpensaasContext with correct arguments', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          url: 'file:./dev.db',
-        },
-        lists: {},
-      }
-
-      const context = generateContext(config)
-      expect(context).toContain('getOpensaasContext(config, prisma, session ?? null, storage)')
     })
   })
 })

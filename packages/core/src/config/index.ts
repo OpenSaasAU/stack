@@ -1,10 +1,21 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig, OperationAccess, Hooks } from './types.js'
+import { executePlugins } from './plugin-engine.js'
 
 /**
  * Helper function to define configuration with type safety
+ * Executes plugins if present in config.plugins array
+ *
+ * Note: This function is now async when plugins are present
+ * For synchronous config definition without plugins, config can still be returned directly
  */
-export function config(config: OpenSaasConfig): OpenSaasConfig {
-  return config
+export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
+  // If no plugins, return config as-is (synchronous, backward compatible)
+  if (!userConfig.plugins || userConfig.plugins.length === 0) {
+    return userConfig
+  }
+
+  // Execute plugins and return promise
+  return executePlugins(userConfig)
 }
 
 /**
@@ -77,4 +88,8 @@ export type {
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,
+  // Plugin system types
+  Plugin,
+  PluginContext,
+  GeneratedFiles,
 } from './types.js'

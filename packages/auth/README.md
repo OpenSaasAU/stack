@@ -396,7 +396,7 @@ Access the session in server components or actions:
 import { getContext } from '@/.opensaas/context'
 
 async function myServerAction() {
-  const context = getContext()
+  const context = await getContext()
 
   if (!context.session) {
     throw new Error('Not authenticated')

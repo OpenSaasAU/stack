@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/pri
 import { Button } from '@opensaas/stack-ui/primitives'
 import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
-import config from '../../../opensaas.config'
-import type { Post, PostUpdateInput } from '../../../.opensaas/types'
+import type { Post, PostUpdateInput } from '@/.opensaas/types'
+import { FieldConfig } from '@opensaas/stack-core'
 
-export function PostEditor({ post }: { post: Post }) {
+export function PostEditor({ post, fields }: { post: Post; fields: Record<string, FieldConfig> }) {
   const [editing, setEditing] = useState(false)
   const router = useRouter()
 
@@ -21,7 +21,7 @@ export function PostEditor({ post }: { post: Post }) {
         </CardHeader>
         <CardContent>
           <ItemEditForm<PostUpdateInput>
-            fields={config.lists.Post.fields}
+            fields={fields}
             initialData={post as unknown as PostUpdateInput}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data)

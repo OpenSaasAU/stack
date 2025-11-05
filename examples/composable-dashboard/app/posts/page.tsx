@@ -1,13 +1,13 @@
 import Link from 'next/link'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
-import { getContext } from '@/.opensaas/context'
+import { config, getContext } from '@/.opensaas/context'
 import { CreatePostDialog } from '../../components/CreatePostDialog'
 
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
   const searchParams = await props.searchParams
   const search = searchParams.search || ''
-  const context = getContext()
+  const context = await getContext()
 
   // Fetch posts with search using context (access control applied)
   const posts = await context.db.post.findMany({
@@ -52,7 +52,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
       <main className="container mx-auto px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold">Posts</h2>
-          <CreatePostDialog />
+          <CreatePostDialog fields={(await config).lists.Post.fields} />
         </div>
 
         {/* Search Bar */}

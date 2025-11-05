@@ -7,29 +7,30 @@
  * - Auto-generated User, Session, Account, Verification lists
  * - Session integration with OpenSaas access control
  * - Pre-built auth UI components (SignIn, SignUp, ForgotPassword)
- * - Easy configuration with withAuth() wrapper
+ * - Easy configuration with authPlugin()
  *
  * @example
  * ```typescript
  * // opensaas.config.ts
  * import { config } from '@opensaas/stack-core'
- * import { withAuth, authConfig } from '@opensaas/stack-auth'
+ * import { authPlugin } from '@opensaas/stack-auth'
  *
- * export default withAuth(
- *   config({
- *     db: { provider: 'sqlite', url: 'file:./dev.db' },
- *     lists: { ... }
- *   }),
- *   authConfig({
- *     emailAndPassword: { enabled: true },
- *     emailVerification: { enabled: true },
- *   })
- * )
+ * export default config({
+ *   plugins: [
+ *     authPlugin({
+ *       emailAndPassword: { enabled: true },
+ *       emailVerification: { enabled: true },
+ *     })
+ *   ],
+ *   db: { provider: 'sqlite', url: 'file:./dev.db' },
+ *   lists: { ... }
+ * })
  * ```
  */
 
 // Config exports
-export { withAuth, authConfig, normalizeAuthConfig } from './config/index.js'
+export { normalizeAuthConfig } from './config/index.js'
+export { authPlugin } from './config/plugin.js'
 export type { AuthConfig, NormalizedAuthConfig } from './config/index.js'
 export type * from './config/types.js'
 

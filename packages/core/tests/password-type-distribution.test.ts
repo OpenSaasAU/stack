@@ -62,7 +62,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   })
 
   it('should NOT make all fields a union of string | HashedPassword', async () => {
-    const context = getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(await testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.findUnique({ where: { id: '1' } })
 
@@ -94,7 +94,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   })
 
   it('should preserve types with included relationships', async () => {
-    const context = getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(await testConfig, mockPrismaClient, null)
 
     const users = await context.db.user.findMany({
       include: {
@@ -128,7 +128,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   })
 
   it('should verify TypeScript narrowing works correctly', async () => {
-    const context = getContext(testConfig, mockPrismaClient, null)
+    const context = getContext(await testConfig, mockPrismaClient, null)
 
     const user = await context.db.user.findUnique({ where: { id: '1' } })
 
