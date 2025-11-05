@@ -5,20 +5,6 @@ import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
 /**
- * Type for Prisma model with findMany method
- */
-type PrismaModel = {
-  findMany: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
-}
-
-/**
- * Type for raw Prisma client
- */
-type PrismaClient = {
-  $queryRawUnsafe: <T = unknown>(query: string) => Promise<T>
-}
-
-/**
  * pgvector storage backend
  * Uses PostgreSQL with pgvector extension for efficient vector similarity search
  * Requires: CREATE EXTENSION vector;

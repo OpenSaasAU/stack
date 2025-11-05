@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import type { Plugin } from '@opensaas/stack-core'
+import type { Plugin, PluginContext } from '@opensaas/stack-core'
 
 describe('RAG Plugin', () => {
   describe('plugin creation', () => {
@@ -96,7 +96,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -134,7 +134,7 @@ describe('RAG Plugin', () => {
         },
         extendList: vi.fn(),
         setPluginData: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await expect(plugin.init!(mockContext)).rejects.toThrow(
         /has autoGenerate enabled but no sourceField specified/,
@@ -167,7 +167,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -194,7 +194,7 @@ describe('RAG Plugin', () => {
         },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -237,7 +237,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -287,7 +287,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -323,7 +323,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -363,7 +363,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -395,7 +395,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -431,7 +431,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -473,7 +473,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -525,7 +525,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -560,7 +560,7 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 
@@ -583,7 +583,7 @@ describe('RAG Plugin', () => {
         config: { lists: {} },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as any
+      } as Partial<PluginContext>
 
       await plugin.init!(mockContext)
 

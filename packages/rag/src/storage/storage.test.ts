@@ -3,6 +3,7 @@ import { JsonVectorStorage } from './json.js'
 import { createVectorStorage } from './index.js'
 import { cosineSimilarity, dotProduct, l2Distance } from './types.js'
 import type { StoredEmbedding } from '../config/types.js'
+import type { AccessContext } from '@opensaas/stack-core'
 
 describe('Vector Storage', () => {
   describe('JsonVectorStorage', () => {
@@ -22,7 +23,7 @@ describe('Vector Storage', () => {
       it('should throw error for non-existent list', async () => {
         const mockContext = {
           db: {},
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -40,7 +41,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue([]),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -79,7 +80,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -134,7 +135,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [1.0, 0.0, 0.0] // Same as embedding1 and embedding3
 
@@ -171,7 +172,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.5, 0.5, 0.5]
 
@@ -217,7 +218,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [1.0, 0.0, 0.0]
 
@@ -279,7 +280,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [1.0, 1.0, 1.0]
 
@@ -326,7 +327,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.1, 0.2, 0.3] // 3 dimensions
 
@@ -352,7 +353,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue([]),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [0.1, 0.2, 0.3]
         const whereClause = { published: true }
@@ -392,7 +393,7 @@ describe('Vector Storage', () => {
               findMany: vi.fn().mockResolvedValue(mockItems),
             },
           },
-        } as any
+        } as Partial<AccessContext>
 
         const queryVector = [1.0, 0.0, 0.0]
 

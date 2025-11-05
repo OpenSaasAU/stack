@@ -5,13 +5,6 @@ import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
 /**
- * Type for Prisma model with findMany method
- */
-type PrismaModel = {
-  findMany: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
-}
-
-/**
  * SQLite VSS storage backend
  * Uses sqlite-vss extension for vector similarity search
  * Requires: sqlite-vss extension to be loaded
