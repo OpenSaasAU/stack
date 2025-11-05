@@ -64,39 +64,6 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
 }
 
 /**
- * Deep merge two objects
- * Used for merging list configurations
- */
-function _deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
-  const result = { ...target }
-
-  for (const key in source) {
-    const sourceValue = source[key]
-    const targetValue = result[key]
-
-    if (
-      sourceValue &&
-      typeof sourceValue === 'object' &&
-      !Array.isArray(sourceValue) &&
-      targetValue &&
-      typeof targetValue === 'object' &&
-      !Array.isArray(targetValue)
-    ) {
-      // Recursively merge objects
-      result[key] = _deepMerge(
-        targetValue as Record<string, unknown>,
-        sourceValue as Record<string, unknown>,
-      ) as T[Extract<keyof T, string>]
-    } else if (sourceValue !== undefined) {
-      // Otherwise, overwrite with source value
-      result[key] = sourceValue as T[Extract<keyof T, string>]
-    }
-  }
-
-  return result
-}
-
-/**
  * Merge hooks from extension into existing hooks
  * Combines hook arrays so multiple plugins can add hooks
  */
