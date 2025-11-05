@@ -187,6 +187,51 @@ function generateContextType(): string {
 }
 
 /**
+ * Collect TypeScript imports from field configurations
+ */
+function collectFieldImports(config: OpenSaasConfig): Array<{
+  names: string[]
+  from: string
+  typeOnly: boolean
+}> {
+  const importsMap = new Map<string, { names: Set<string>; typeOnly: boolean }>()
+
+  // Iterate through all lists and fields
+  for (const listConfig of Object.values(config.lists)) {
+    for (const fieldConfig of Object.values(listConfig.fields)) {
+      // Check if field provides imports
+      if (fieldConfig.getTypeScriptImports) {
+        const imports = fieldConfig.getTypeScriptImports()
+        for (const imp of imports) {
+          const existing = importsMap.get(imp.from)
+          if (existing) {
+            // Merge names into existing import
+            imp.names.forEach((name) => existing.names.add(name))
+            // If either import is not type-only, make the merged import not type-only
+            if (imp.typeOnly === false) {
+              existing.typeOnly = false
+            }
+          } else {
+            // Add new import
+            importsMap.set(imp.from, {
+              names: new Set(imp.names),
+              typeOnly: imp.typeOnly ?? true,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  // Convert map to array
+  return Array.from(importsMap.entries()).map(([from, { names, typeOnly }]) => ({
+    names: Array.from(names).sort(),
+    from,
+    typeOnly,
+  }))
+}
+
+/**
  * Generate all TypeScript types from config
  */
 export function generateTypes(config: OpenSaasConfig): string {
@@ -205,6 +250,15 @@ export function generateTypes(config: OpenSaasConfig): string {
     "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'",
   )
   lines.push("import type { PrismaClient } from './prisma-client'")
+
+  // Add field-specific imports
+  const fieldImports = collectFieldImports(config)
+  for (const imp of fieldImports) {
+    const typePrefix = imp.typeOnly ? 'type ' : ''
+    const names = imp.names.join(', ')
+    lines.push(`import ${typePrefix}{ ${names} } from '${imp.from}'`)
+  }
+
   lines.push('')
 
   // Generate types for each list

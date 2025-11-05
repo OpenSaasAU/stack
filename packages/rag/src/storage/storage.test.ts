@@ -5,6 +5,17 @@ import { cosineSimilarity, dotProduct, l2Distance } from './types.js'
 import type { StoredEmbedding } from '../config/types.js'
 import type { AccessContext } from '@opensaas/stack-core'
 
+// Helper to create mock context
+function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessContext<unknown> {
+  return {
+    db: dbOverrides,
+    session: null,
+    sudo: vi.fn(),
+    prisma: {} as unknown,
+    storage: {} as unknown,
+  } as AccessContext<unknown>
+}
+
 describe('Vector Storage', () => {
   describe('JsonVectorStorage', () => {
     let storage: JsonVectorStorage
@@ -21,9 +32,7 @@ describe('Vector Storage', () => {
 
     describe('search', () => {
       it('should throw error for non-existent list', async () => {
-        const mockContext = {
-          db: {},
-        } as Partial<AccessContext>
+        const mockContext = createMockContext({})
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -35,13 +44,11 @@ describe('Vector Storage', () => {
       })
 
       it('should return empty results when no items match', async () => {
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue([]),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue([]),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -74,13 +81,11 @@ describe('Vector Storage', () => {
           },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [0.1, 0.2, 0.3]
 
@@ -89,7 +94,7 @@ describe('Vector Storage', () => {
         })
 
         expect(results).toHaveLength(1)
-        expect(results[0].item.id).toBe('2')
+        expect((results[0].item as { id: string }).id).toBe('2')
       })
 
       it('should calculate cosine similarity correctly', async () => {
@@ -129,13 +134,11 @@ describe('Vector Storage', () => {
           { id: '3', embedding: embedding3 },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [1.0, 0.0, 0.0] // Same as embedding1 and embedding3
 
@@ -166,13 +169,11 @@ describe('Vector Storage', () => {
           },
         }))
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [0.5, 0.5, 0.5]
 
@@ -212,13 +213,11 @@ describe('Vector Storage', () => {
           },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [1.0, 0.0, 0.0]
 
@@ -228,7 +227,7 @@ describe('Vector Storage', () => {
         })
 
         expect(results).toHaveLength(1)
-        expect(results[0].item.id).toBe('1')
+        expect((results[0].item as { id: string }).id).toBe('1')
       })
 
       it('should sort results by score descending', async () => {
@@ -274,13 +273,11 @@ describe('Vector Storage', () => {
           },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [1.0, 1.0, 1.0]
 
@@ -321,13 +318,11 @@ describe('Vector Storage', () => {
           },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [0.1, 0.2, 0.3] // 3 dimensions
 
@@ -338,7 +333,7 @@ describe('Vector Storage', () => {
         })
 
         expect(results).toHaveLength(1)
-        expect(results[0].item.id).toBe('2')
+        expect((results[0].item as { id: string }).id).toBe('2')
         expect(consoleWarnSpy).toHaveBeenCalledWith(
           expect.stringContaining('Vector dimension mismatch'),
         )
@@ -347,13 +342,11 @@ describe('Vector Storage', () => {
       })
 
       it('should pass through where clause to Prisma', async () => {
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue([]),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue([]),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [0.1, 0.2, 0.3]
         const whereClause = { published: true }
@@ -363,7 +356,10 @@ describe('Vector Storage', () => {
           where: whereClause,
         })
 
-        expect(mockContext.db.article.findMany).toHaveBeenCalledWith({
+        expect(
+          (mockContext.db as Record<string, { findMany: (args: unknown) => void }>).article
+            .findMany,
+        ).toHaveBeenCalledWith({
           where: {
             published: true,
             embedding: { not: null },
@@ -387,13 +383,11 @@ describe('Vector Storage', () => {
           },
         ]
 
-        const mockContext = {
-          db: {
-            article: {
-              findMany: vi.fn().mockResolvedValue(mockItems),
-            },
+        const mockContext = createMockContext({
+          article: {
+            findMany: vi.fn().mockResolvedValue(mockItems),
           },
-        } as Partial<AccessContext>
+        })
 
         const queryVector = [1.0, 0.0, 0.0]
 

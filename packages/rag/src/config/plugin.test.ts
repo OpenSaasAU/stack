@@ -78,6 +78,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -96,9 +97,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.extendList).toHaveBeenCalledWith(
         'Article',
@@ -120,6 +122,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -134,9 +137,11 @@ describe('RAG Plugin', () => {
         },
         extendList: vi.fn(),
         setPluginData: vi.fn(),
-      } as Partial<PluginContext>
+        registerMcpTool: vi.fn(),
+        addList: vi.fn(),
+      } as PluginContext
 
-      await expect(plugin.init!(mockContext)).rejects.toThrow(
+      await expect(plugin.init!(mockContext as PluginContext)).rejects.toThrow(
         /has autoGenerate enabled but no sourceField specified/,
       )
     })
@@ -153,6 +158,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -167,9 +173,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       // Should not extend list for fields without autoGenerate
       expect(mockContext.extendList).not.toHaveBeenCalled()
@@ -190,13 +197,16 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {},
         },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        extendList: vi.fn(),
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.setPluginData).toHaveBeenCalledWith(
         'rag',
@@ -221,6 +231,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -237,9 +248,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.extendList).toHaveBeenCalledWith(
         'Article',
@@ -263,6 +275,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -287,9 +300,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       // Should be called once per list (hooks are merged)
       expect(mockContext.extendList).toHaveBeenCalledTimes(2)
@@ -310,6 +324,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -323,9 +338,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.registerMcpTool).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -350,6 +366,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -363,9 +380,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.registerMcpTool).not.toHaveBeenCalled()
     })
@@ -383,6 +401,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             User: {
               fields: {
@@ -395,9 +414,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.registerMcpTool).not.toHaveBeenCalled()
     })
@@ -415,6 +435,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             BlogPost: {
               fields: {
@@ -431,9 +452,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.registerMcpTool).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -461,6 +483,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -473,11 +496,16 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
-      const toolCall = mockContext.registerMcpTool.mock.calls[0][0]
+      const toolCall = (
+        mockContext.registerMcpTool as unknown as {
+          mock: { calls: [[{ inputSchema: unknown }]] }
+        }
+      ).mock.calls[0][0]
 
       expect(toolCall.inputSchema).toEqual(
         expect.objectContaining({
@@ -509,6 +537,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -525,9 +554,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.extendList).toHaveBeenCalled()
     })
@@ -544,6 +574,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
           lists: {
             Article: {
               fields: {
@@ -560,9 +591,10 @@ describe('RAG Plugin', () => {
         extendList: vi.fn(),
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
       expect(mockContext.extendList).toHaveBeenCalled()
     })
@@ -580,14 +612,21 @@ describe('RAG Plugin', () => {
       const plugin = ragPlugin(config)
 
       const mockContext = {
-        config: { lists: {} },
+        config: {
+          db: { provider: 'sqlite', url: 'file:./test.db' },
+          lists: {},
+        },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
-      } as Partial<PluginContext>
+        extendList: vi.fn(),
+        addList: vi.fn(),
+      } as PluginContext
 
-      await plugin.init!(mockContext)
+      await plugin.init!(mockContext as PluginContext)
 
-      const normalizedConfig = mockContext.setPluginData.mock.calls[0][1]
+      const normalizedConfig = (
+        mockContext.setPluginData as unknown as { mock: { calls: [[string, unknown]] } }
+      ).mock.calls[0][1]
 
       expect(normalizedConfig).toMatchObject({
         enableMcpTools: expect.any(Boolean),

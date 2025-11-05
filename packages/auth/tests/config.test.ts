@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeAuthConfig, authConfig, withAuth } from '../src/config/index.js'
+import { normalizeAuthConfig } from '../src/config/index.js'
+import { authPlugin } from '../src/config/plugin.js'
 import { config, list } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
-import type { AuthConfig } from '../src/config/types.js'
+import { text, select } from '@opensaas/stack-core/fields'
+import type { NormalizedAuthConfig } from '../src/config/types.js'
 
 describe('normalizeAuthConfig', () => {
   it('should apply default values for disabled features', () => {
@@ -148,32 +149,14 @@ describe('normalizeAuthConfig', () => {
   })
 })
 
-describe('authConfig', () => {
-  it('should return the input config unchanged', () => {
-    const input: AuthConfig = {
-      emailAndPassword: { enabled: true },
-      sessionFields: ['userId', 'email'],
-    }
-
-    const result = authConfig(input)
-
-    expect(result).toEqual(input)
-  })
-
-  it('should work with empty config', () => {
-    const result = authConfig({})
-
-    expect(result).toEqual({})
-  })
-})
-
-describe('withAuth', () => {
-  it('should merge auth lists into opensaas config', () => {
-    const baseConfig = config({
+describe('authPlugin', () => {
+  it('should inject all auth lists into config', async () => {
+    const result = await config({
       db: {
         provider: 'sqlite',
         url: 'file:./test.db',
       },
+      plugins: [authPlugin({})],
       lists: {
         Post: list({
           fields: {
@@ -183,8 +166,6 @@ describe('withAuth', () => {
       },
     })
 
-    const result = withAuth(baseConfig, authConfig({}))
-
     // Should have both user lists and auth lists
     expect(result.lists).toHaveProperty('Post')
     expect(result.lists).toHaveProperty('User')
@@ -193,71 +174,59 @@ describe('withAuth', () => {
     expect(result.lists).toHaveProperty('Verification')
   })
 
-  it('should preserve database config', () => {
-    const baseConfig = config({
+  it('should preserve database config', async () => {
+    const result = await config({
       db: {
         provider: 'postgresql',
         url: 'postgresql://test',
       },
+      plugins: [authPlugin({})],
       lists: {},
     })
-
-    const result = withAuth(baseConfig, authConfig({}))
 
     expect(result.db.provider).toBe('postgresql')
     expect(result.db.url).toBe('postgresql://test')
   })
 
-  it('should attach normalized auth config internally', () => {
-    const baseConfig = config({
+  it('should store normalized auth config in _pluginData', async () => {
+    const result = await config({
       db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true, minPasswordLength: 12 },
+          sessionFields: ['userId', 'email', 'name', 'role'],
+        }),
+      ],
       lists: {},
     })
 
-    const result = withAuth(
-      baseConfig,
-      authConfig({
-        emailAndPassword: { enabled: true },
-      }),
-    ) as typeof baseConfig & { __authConfig?: unknown }
-
-    expect(result.__authConfig).toBeDefined()
-    expect(
-      (result.__authConfig as { emailAndPassword: { enabled: boolean } }).emailAndPassword.enabled,
-    ).toBe(true)
+    expect(result._pluginData).toHaveProperty('auth')
+    const authConfig = result._pluginData.auth as NormalizedAuthConfig
+    expect(authConfig.emailAndPassword.enabled).toBe(true)
+    expect(authConfig.emailAndPassword.minPasswordLength).toBe(12)
+    expect(authConfig.sessionFields).toEqual(['userId', 'email', 'name', 'role'])
   })
 
-  it('should handle empty lists in base config', () => {
-    const baseConfig = config({
+  it('should extend User list with custom fields', async () => {
+    const result = await config({
       db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {},
-    })
-
-    const result = withAuth(baseConfig, authConfig({}))
-
-    expect(result.lists).toHaveProperty('User')
-    expect(result.lists).toHaveProperty('Session')
-    expect(result.lists).toHaveProperty('Account')
-    expect(result.lists).toHaveProperty('Verification')
-  })
-
-  it('should extend User list with custom fields', () => {
-    const baseConfig = config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {},
-    })
-
-    const result = withAuth(
-      baseConfig,
-      authConfig({
-        extendUserList: {
-          fields: {
-            role: text(),
-            company: text(),
+      plugins: [
+        authPlugin({
+          extendUserList: {
+            fields: {
+              role: select({
+                options: [
+                  { label: 'Admin', value: 'admin' },
+                  { label: 'User', value: 'user' },
+                ],
+              }),
+              company: text(),
+            },
           },
-        },
-      }),
-    )
+        }),
+      ],
+      lists: {},
+    })
 
     const userList = result.lists.User
     expect(userList).toBeDefined()
@@ -266,5 +235,195 @@ describe('withAuth', () => {
     // Should also have base auth fields
     expect(userList.fields).toHaveProperty('email')
     expect(userList.fields).toHaveProperty('name')
+  })
+
+  it('should generate User list with correct fields', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    const userList = result.lists.User
+    expect(userList).toBeDefined()
+    expect(userList.fields).toHaveProperty('name')
+    expect(userList.fields).toHaveProperty('email')
+    expect(userList.fields).toHaveProperty('emailVerified')
+    expect(userList.fields).toHaveProperty('image')
+    expect(userList.fields).toHaveProperty('sessions')
+    expect(userList.fields).toHaveProperty('accounts')
+  })
+
+  it('should generate Session list with correct fields', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    const sessionList = result.lists.Session
+    expect(sessionList).toBeDefined()
+    expect(sessionList.fields).toHaveProperty('token')
+    expect(sessionList.fields).toHaveProperty('expiresAt')
+    expect(sessionList.fields).toHaveProperty('ipAddress')
+    expect(sessionList.fields).toHaveProperty('userAgent')
+    expect(sessionList.fields).toHaveProperty('user')
+  })
+
+  it('should generate Account list with correct fields', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    const accountList = result.lists.Account
+    expect(accountList).toBeDefined()
+    expect(accountList.fields).toHaveProperty('accountId')
+    expect(accountList.fields).toHaveProperty('providerId')
+    expect(accountList.fields).toHaveProperty('accessToken')
+    expect(accountList.fields).toHaveProperty('refreshToken')
+    expect(accountList.fields).toHaveProperty('password')
+    expect(accountList.fields).toHaveProperty('user')
+  })
+
+  it('should generate Verification list with correct fields', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    const verificationList = result.lists.Verification
+    expect(verificationList).toBeDefined()
+    expect(verificationList.fields).toHaveProperty('identifier')
+    expect(verificationList.fields).toHaveProperty('value')
+    expect(verificationList.fields).toHaveProperty('expiresAt')
+  })
+
+  it('should work with empty auth config', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    expect(result.lists).toHaveProperty('User')
+    expect(result.lists).toHaveProperty('Session')
+    expect(result.lists).toHaveProperty('Account')
+    expect(result.lists).toHaveProperty('Verification')
+  })
+
+  it('should merge with other user-defined lists', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [authPlugin({})],
+      lists: {
+        Post: list({
+          fields: {
+            title: text(),
+            content: text(),
+          },
+        }),
+        Comment: list({
+          fields: {
+            text: text(),
+          },
+        }),
+      },
+    })
+
+    // Should have both auth lists and user lists
+    expect(result.lists).toHaveProperty('User')
+    expect(result.lists).toHaveProperty('Session')
+    expect(result.lists).toHaveProperty('Account')
+    expect(result.lists).toHaveProperty('Verification')
+    expect(result.lists).toHaveProperty('Post')
+    expect(result.lists).toHaveProperty('Comment')
+  })
+
+  it('should pass through config options to normalized config', async () => {
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: {
+            enabled: true,
+            minPasswordLength: 10,
+            requireConfirmation: false,
+          },
+          emailVerification: {
+            enabled: true,
+            sendOnSignUp: false,
+            tokenExpiration: 3600,
+          },
+          passwordReset: {
+            enabled: true,
+            tokenExpiration: 7200,
+          },
+          session: {
+            expiresIn: 86400,
+            updateAge: false,
+          },
+          sessionFields: ['userId', 'email', 'role'],
+          socialProviders: {
+            github: {
+              clientId: 'test-id',
+              clientSecret: 'test-secret',
+            },
+          },
+        }),
+      ],
+      lists: {},
+    })
+
+    const authConfig = result._pluginData.auth as NormalizedAuthConfig
+    expect(authConfig.emailAndPassword.enabled).toBe(true)
+    expect(authConfig.emailAndPassword.minPasswordLength).toBe(10)
+    expect(authConfig.emailAndPassword.requireConfirmation).toBe(false)
+    expect(authConfig.emailVerification.enabled).toBe(true)
+    expect(authConfig.emailVerification.sendOnSignUp).toBe(false)
+    expect(authConfig.passwordReset.enabled).toBe(true)
+    expect(authConfig.session.expiresIn).toBe(86400)
+    expect(authConfig.sessionFields).toEqual(['userId', 'email', 'role'])
+    expect(authConfig.socialProviders).toHaveProperty('github')
+  })
+
+  it('should process Better Auth plugins with schemas', async () => {
+    // Mock Better Auth plugin with schema (using snake_case like Better Auth does)
+    const mockPlugin = {
+      id: 'test-plugin',
+      schema: {
+        test_table: {
+          fields: {
+            id: { type: 'string', required: true },
+            name: { type: 'string' },
+            isActive: { type: 'boolean' },
+            count: { type: 'number' },
+            createdAt: { type: 'date' },
+          },
+        },
+      },
+    }
+
+    const result = await config({
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      plugins: [
+        authPlugin({
+          betterAuthPlugins: [mockPlugin],
+        }),
+      ],
+      lists: {},
+    })
+
+    // Should have auth lists plus the plugin's list (converted to PascalCase)
+    expect(result.lists).toHaveProperty('User')
+    expect(result.lists).toHaveProperty('TestTable')
+
+    // Verify the converted list has correct fields
+    const testTableList = result.lists.TestTable
+    expect(testTableList.fields).toHaveProperty('name')
+    expect(testTableList.fields).toHaveProperty('isActive')
+    expect(testTableList.fields).toHaveProperty('count')
   })
 })

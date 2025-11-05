@@ -212,6 +212,27 @@ export type BaseFieldConfig<TInput = any, TOutput = TInput> = {
     type: string
     optional: boolean
   }
+  /**
+   * Get TypeScript imports needed for this field's type
+   * @returns Array of import statements needed for the generated types file
+   */
+  getTypeScriptImports?: () => Array<{
+    /**
+     * The type/value names to import
+     * e.g., ['StoredEmbedding', 'EmbeddingMetadata']
+     */
+    names: string[]
+    /**
+     * The module to import from
+     * e.g., '@opensaas/stack-rag'
+     */
+    from: string
+    /**
+     * Whether this is a type-only import
+     * @default true
+     */
+    typeOnly?: boolean
+  }>
 }
 
 export type TextField = BaseFieldConfig<string, string> & {

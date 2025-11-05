@@ -136,5 +136,15 @@ export function embedding(options?: Omit<EmbeddingField, 'type'>): EmbeddingFiel
         optional: true,
       }
     },
+
+    getTypeScriptImports: () => {
+      return [
+        {
+          names: ['StoredEmbedding'],
+          from: '@opensaas/stack-rag',
+          typeOnly: true,
+        },
+      ]
+    },
   }
 }
