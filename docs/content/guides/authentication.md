@@ -33,7 +33,9 @@ export default config({
     }),
   ],
   db: { provider: 'sqlite', url: 'file:./dev.db' },
-  lists: { /* your lists */ },
+  lists: {
+    /* your lists */
+  },
 })
 ```
 
@@ -193,12 +195,7 @@ export const authClient = createClient({
 })
 
 // Optional: Export individual methods for convenience
-export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-} = authClient
+export const { signIn, signUp, signOut, useSession } = authClient
 ```
 
 ### API Routes
@@ -211,6 +208,7 @@ export { GET, POST } from '@/lib/auth'
 ```
 
 This handles all auth endpoints:
+
 - `/api/auth/sign-in`
 - `/api/auth/sign-up`
 - `/api/auth/sign-out`
@@ -479,6 +477,7 @@ authPlugin({
 ```
 
 These fields will be:
+
 1. Available in the session object
 2. Automatically typed in TypeScript
 3. Passed to all access control functions
@@ -548,10 +547,7 @@ Post: list({
 
         // Authenticated users: published posts + their own drafts
         return {
-          OR: [
-            { status: { equals: 'published' } },
-            { authorId: { equals: session.userId } },
-          ],
+          OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
         }
       },
     },
@@ -678,7 +674,9 @@ authPlugin({
 
   extendUserList: {
     fields: {
-      role: select({ /* ... */ }),
+      role: select({
+        /* ... */
+      }),
       company: text(),
     },
   },
@@ -817,7 +815,7 @@ You can customize the OAuth buttons using CSS:
   /* Your custom styles */
 }
 
-.auth-provider-button[data-provider="github"] {
+.auth-provider-button[data-provider='github'] {
   /* GitHub-specific styles */
 }
 ```
@@ -945,6 +943,7 @@ The auth plugin automatically creates these lists in your database:
 ```
 
 **Access Control:**
+
 - Query: Anyone
 - Create: Anyone (sign-up)
 - Update: Own user only
@@ -954,17 +953,17 @@ The auth plugin automatically creates these lists in your database:
 
 ```typescript
 {
-  id: string                   // Auto-generated UUID
-  userId: string               // Foreign key to User
-  token: string                // Session token (unique)
-  expiresAt: DateTime          // Session expiration
-  ipAddress: string | null     // Client IP
-  userAgent: string | null     // Client user agent
-  createdAt: DateTime          // Auto-generated
-  updatedAt: DateTime          // Auto-updated
+  id: string // Auto-generated UUID
+  userId: string // Foreign key to User
+  token: string // Session token (unique)
+  expiresAt: DateTime // Session expiration
+  ipAddress: string | null // Client IP
+  userAgent: string | null // Client user agent
+  createdAt: DateTime // Auto-generated
+  updatedAt: DateTime // Auto-updated
 
   // Relationships
-  user: User                   // Session owner
+  user: User // Session owner
 }
 ```
 
@@ -974,19 +973,19 @@ Stores OAuth provider information and password hashes:
 
 ```typescript
 {
-  id: string                     // Auto-generated UUID
-  userId: string                 // Foreign key to User
-  accountId: string              // Provider-specific user ID
-  providerId: string             // 'github', 'google', 'email-password'
-  accessToken: string | null     // OAuth access token
-  refreshToken: string | null    // OAuth refresh token
-  expiresAt: DateTime | null     // Token expiration
-  password: string | null        // Hashed password (for email/password)
-  createdAt: DateTime            // Auto-generated
-  updatedAt: DateTime            // Auto-updated
+  id: string // Auto-generated UUID
+  userId: string // Foreign key to User
+  accountId: string // Provider-specific user ID
+  providerId: string // 'github', 'google', 'email-password'
+  accessToken: string | null // OAuth access token
+  refreshToken: string | null // OAuth refresh token
+  expiresAt: DateTime | null // Token expiration
+  password: string | null // Hashed password (for email/password)
+  createdAt: DateTime // Auto-generated
+  updatedAt: DateTime // Auto-updated
 
   // Relationships
-  user: User                     // Account owner
+  user: User // Account owner
 }
 ```
 
@@ -996,12 +995,12 @@ Stores email verification and password reset tokens:
 
 ```typescript
 {
-  id: string           // Auto-generated UUID
-  identifier: string   // Email address
-  value: string        // Token value
-  expiresAt: DateTime  // Token expiration
-  createdAt: DateTime  // Auto-generated
-  updatedAt: DateTime  // Auto-updated
+  id: string // Auto-generated UUID
+  identifier: string // Email address
+  value: string // Token value
+  expiresAt: DateTime // Token expiration
+  createdAt: DateTime // Auto-generated
+  updatedAt: DateTime // Auto-updated
 }
 ```
 
@@ -1010,6 +1009,7 @@ Stores email verification and password reset tokens:
 ### Security
 
 1. **Use Strong Secrets**
+
    ```bash
    # Generate with:
    openssl rand -base64 32
@@ -1017,6 +1017,7 @@ Stores email verification and password reset tokens:
 
 2. **Silent Failures**
    Access-denied operations return `null` or `[]` instead of throwing errors. This prevents information leakage about whether records exist:
+
    ```typescript
    const post = await context.db.post.update({ where: { id }, data })
    if (!post) {
@@ -1026,6 +1027,7 @@ Stores email verification and password reset tokens:
    ```
 
 3. **Never Expose Sensitive Fields**
+
    ```typescript
    fields: {
      password: password(), // Automatically excluded from reads
@@ -1051,6 +1053,7 @@ Stores email verification and password reset tokens:
 ### Session Management
 
 1. **Configure Session Expiration**
+
    ```typescript
    authPlugin({
      session: {
@@ -1232,10 +1235,7 @@ export default config({
               return { status: { equals: 'published' } }
             }
             return {
-              OR: [
-                { status: { equals: 'published' } },
-                { authorId: { equals: session.userId } },
-              ],
+              OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
             }
           },
         },
@@ -1337,6 +1337,7 @@ const context = await getContext(session?.user)
 ### OAuth Redirect Not Working
 
 Check your OAuth app configuration:
+
 1. Callback URL must match exactly: `http://localhost:3000/api/auth/callback/{provider}`
 2. Environment variables are set correctly
 3. App is approved/published (for Google)
@@ -1350,6 +1351,7 @@ Check your OAuth app configuration:
 ### "Access Denied" on All Operations
 
 Check your access control configuration:
+
 - Does the operation return `true` or a filter?
 - Is the session being passed correctly?
 - Are you checking the right session fields?
@@ -1363,7 +1365,9 @@ authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'], // Include 'role'
   extendUserList: {
     fields: {
-      role: select({ /* ... */ }),
+      role: select({
+        /* ... */
+      }),
     },
   },
 })
