@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-storage",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "File and image upload field types with pluggable storage providers for OpenSaas Stack",
   "type": "module",
   "exports": {

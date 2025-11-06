@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-vercel
 
+## 0.1.6
+
+### Patch Changes
+
+- @opensaas/stack-storage@0.1.6
+
 ## 0.1.5
 
 ### Patch Changes
