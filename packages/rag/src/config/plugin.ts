@@ -68,62 +68,57 @@ export function ragPlugin(config: RAGConfig): Plugin {
             // Inject afterOperation hook to auto-generate embeddings
             context.extendList(listName, {
               hooks: {
-                afterOperation: async (args) => {
-                  if (args.operation === 'create' || args.operation === 'update') {
-                    // Skip if item is missing
-                    if (!args.item) return
+                resolveInput: async (args) => {
+                  // Skip if item is missing
+                  if (!args.resolvedData)
+                    throw new Error('RAG plugin: Missing resolvedData in resolveInput hook')
 
-                    const sourceText = args.item[sourceField] as string | undefined
-                    const currentEmbedding = args.item[fieldName] as {
-                      vector: number[]
-                      metadata: { sourceHash?: string }
-                    } | null
+                  const sourceText = args.resolvedData[sourceField] as string | undefined
+                  const currentEmbedding = args.resolvedData[fieldName] as {
+                    vector: number[]
+                    metadata: { sourceHash?: string }
+                  } | null
 
-                    // Skip if source text is empty
-                    if (!sourceText) return
+                  // Skip if source text is empty
+                  if (!sourceText) return args.resolvedData
 
-                    // Check if we need to regenerate (source text changed)
-                    const sourceHash = await hashText(sourceText)
-                    if (currentEmbedding && currentEmbedding.metadata.sourceHash === sourceHash) {
-                      // Source text hasn't changed, skip regeneration
-                      return
-                    }
+                  // Check if we need to regenerate (source text changed)
+                  const sourceHash = await hashText(sourceText)
+                  if (currentEmbedding && currentEmbedding.metadata.sourceHash === sourceHash) {
+                    // Source text hasn't changed, skip regeneration
+                    return args.resolvedData
+                  }
 
-                    // Get provider for this field
-                    const providerName = embeddingConfig.provider || 'default'
-                    const providerConfig =
-                      providerName === 'default'
-                        ? normalized.provider
-                        : normalized.providers[providerName] || normalized.provider
+                  // Get provider for this field
+                  const providerName = embeddingConfig.provider || 'default'
+                  const providerConfig =
+                    providerName === 'default'
+                      ? normalized.provider
+                      : normalized.providers[providerName] || normalized.provider
 
-                    if (!providerConfig) {
-                      console.warn(
-                        `RAG plugin: No provider configured for field "${listName}.${fieldName}"`,
-                      )
-                      return
-                    }
+                  if (!providerConfig) {
+                    console.warn(
+                      `RAG plugin: No provider configured for field "${listName}.${fieldName}"`,
+                    )
+                    return args.resolvedData
+                  }
 
-                    // Generate embedding
-                    const provider = createEmbeddingProvider(providerConfig)
-                    const vector = await provider.embed(sourceText)
+                  // Generate embedding
+                  const provider = createEmbeddingProvider(providerConfig)
+                  const vector = await provider.embed(sourceText)
 
-                    // Update record with new embedding
-                    const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
-                    await args.context.db[dbKey].update({
-                      where: { id: args.item.id },
-                      data: {
-                        [fieldName]: {
-                          vector,
-                          metadata: {
-                            model: provider.model,
-                            provider: provider.type,
-                            dimensions: provider.dimensions,
-                            generatedAt: new Date().toISOString(),
-                            sourceHash,
-                          },
-                        },
+                  return {
+                    ...args.resolvedData,
+                    [fieldName]: {
+                      vector,
+                      metadata: {
+                        model: provider.model,
+                        provider: provider.type,
+                        dimensions: provider.dimensions,
+                        generatedAt: new Date().toISOString(),
+                        sourceHash,
                       },
-                    })
+                    },
                   }
                 },
               },
