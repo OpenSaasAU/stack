@@ -68,18 +68,21 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
 ### 🚧 Remaining Work
 
 1. **Automatic Hooks** - ✅ **IMPLEMENTED in ragPlugin** (v0.2.0)
-   - ✅ Inject `afterOperation` hooks into embedding fields with `sourceField`
+   - ✅ Inject `resolveInput` hooks into embedding fields with `sourceField`
    - ✅ Detect source field changes (hash comparison)
    - ✅ Automatic embedding regeneration
    - ⏳ Batch embedding generation for multiple items (future)
 
-2. **Runtime Utilities** (`packages/rag/src/runtime/`)
-   - `generateEmbeddings()` - High-level embedding generation
-   - `semanticSearch()` - Simplified search API
-   - `findSimilar()` - Find similar items by ID
-   - `chunkText()` - Text chunking strategies (recursive, sentence, sliding-window)
-   - Batch processing utilities
-   - Rate limiting utilities
+2. **Runtime Utilities** - ✅ **IMPLEMENTED** (v0.2.0) (`packages/rag/src/runtime/`)
+   - ✅ `generateEmbedding()` - High-level embedding generation with chunking support
+   - ✅ `generateEmbeddings()` - Batch embedding generation
+   - ✅ `semanticSearch()` - Simplified search API
+   - ✅ `findSimilar()` - Find similar items by ID
+   - ✅ `chunkText()` - Text chunking strategies (recursive, sentence, sliding-window, token-aware)
+   - ✅ `batchProcess()` - Batch processing with progress tracking
+   - ✅ `RateLimiter` - Rate limiting utilities
+   - ✅ `ProcessingQueue` - Concurrent processing queue
+   - ✅ Helper functions: `hashText()`, `validateEmbeddingDimensions()`, `mergeEmbeddings()`
 
 3. **MCP Integration** - ✅ **IMPLEMENTED in ragPlugin** (v0.2.0)
    - ✅ Automatic semantic search tools via `ragPlugin`
@@ -468,19 +471,23 @@ pnpm db:push
 
 ## Conclusion
 
-The core RAG integration is now complete with:
+The RAG integration is now feature-complete for v0.2.0 with:
 
-- ✅ Config system
+- ✅ Plugin system (v0.2.0)
+- ✅ Automatic hooks for embedding generation
 - ✅ Embedding providers (OpenAI, Ollama)
 - ✅ Vector storage (pgvector, sqlite-vss, JSON)
 - ✅ Field types
-- ✅ Documentation
+- ✅ Runtime utilities (chunking, search, batch processing)
+- ✅ MCP integration
+- ✅ Comprehensive documentation
+- ✅ Test coverage (338 tests)
 
 Remaining work focuses on:
 
-- Runtime utilities for easier usage
-- Automatic hooks for embedding generation
-- MCP integration
-- Examples and testing
+- Additional examples and demos
+- CLI integration
+- Performance optimizations
+- Additional providers and storage backends
 
 The architecture follows OpenSaas Stack patterns and is fully extensible for custom providers and storage backends.

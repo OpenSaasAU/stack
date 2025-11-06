@@ -1,7 +1,7 @@
 ---
-'@opensaas/stack-auth': minor
-'@opensaas/stack-core': minor
-'@opensaas/stack-cli': minor
+'@opensaas/stack-auth': patch
+'@opensaas/stack-core': patch
+'@opensaas/stack-cli': patch
 ---
 
 Add plugin mechanism

@@ -257,7 +257,7 @@ describe('RAG Plugin', () => {
         'Article',
         expect.objectContaining({
           hooks: expect.objectContaining({
-            afterOperation: expect.any(Function),
+            resolveInput: expect.any(Function),
           }),
         }),
       )
