@@ -20,6 +20,7 @@ A modern stack for building admin-heavy applications with Next.js App Router, de
 - 🤖 **AI Assistant Integration**: MCP server for seamless AI assistant access
 - 📁 **File Storage**: Abstract storage interface with S3 and Vercel Blob adapters
 - 📝 **Rich Text Editing**: Tiptap integration for advanced content editing
+- 🔍 **Semantic Search**: RAG integration with vector embeddings for AI-powered search
 
 ## Project Structure
 
@@ -36,6 +37,7 @@ This is a monorepo containing:
 - **`packages/storage`**: Abstract storage interface for file uploads
 - **`packages/storage-s3`**: S3-compatible storage adapter (AWS S3, R2, MinIO, etc.)
 - **`packages/storage-vercel`**: Vercel Blob storage adapter
+- **`packages/rag`**: RAG (Retrieval-Augmented Generation) integration with vector embeddings and semantic search
 
 ### Examples
 
@@ -47,6 +49,7 @@ This is a monorepo containing:
 - **`examples/tiptap-demo`**: Tiptap rich text editor integration
 - **`examples/json-demo`**: JSON field type demonstration
 - **`examples/file-upload-demo`**: File upload and image handling with storage adapters
+- **`examples/rag-demo`**: RAG integration with semantic search and embeddings
 
 ## Quick Start
 
@@ -149,6 +152,22 @@ pnpm dev
 cd examples/file-upload-demo
 
 # Copy environment file and configure storage
+cp .env.example .env
+
+# Generate and setup database
+pnpm generate
+pnpm db:push
+
+# Start development server
+pnpm dev
+```
+
+#### RAG Demo (with semantic search)
+
+```bash
+cd examples/rag-demo
+
+# Copy environment file and add OpenAI API key
 cp .env.example .env
 
 # Generate and setup database
@@ -459,6 +478,7 @@ OpenSaas is designed to be fully extensible without modifying core code. Field t
 **Third-party field packages:**
 
 - `richText()` from `@opensaas/stack-tiptap` - Rich text editor with Tiptap
+- `embedding()` from `@opensaas/stack-rag` - Vector embeddings for semantic search
 
 **Create your own:**
 
@@ -558,6 +578,92 @@ export default config({
 
 See `examples/file-upload-demo` for complete working example.
 
+## Semantic Search & RAG
+
+OpenSaas provides RAG (Retrieval-Augmented Generation) capabilities through the `@opensaas/stack-rag` package, enabling semantic search with vector embeddings.
+
+### Features
+
+- **Multiple Embedding Providers**: OpenAI, Ollama, and custom providers
+- **Flexible Storage**: pgvector, SQLite VSS, and JSON storage
+- **Automatic Embeddings**: Auto-generate embeddings on create/update via plugin hooks
+- **Text Chunking**: Built-in chunking strategies for long documents
+- **MCP Integration**: Automatic semantic search tools for AI assistants
+- **Access Control**: All searches respect existing access control rules
+
+### Quick Start
+
+```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { embedding } from '@opensaas/stack-rag/fields'
+
+export default config({
+  plugins: [
+    ragPlugin({
+      provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
+      storage: pgvectorStorage(),
+    }),
+  ],
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
+  lists: {
+    Article: list({
+      fields: {
+        title: text(),
+        content: text(),
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          provider: 'openai',
+          dimensions: 1536,
+          autoGenerate: true, // Auto-generate on create/update
+        }),
+      },
+    }),
+  },
+})
+```
+
+### Semantic Search
+
+```typescript
+import { semanticSearch } from '@opensaas/stack-rag/runtime'
+
+// Search for similar articles
+const results = await semanticSearch({
+  listKey: 'Article',
+  fieldName: 'contentEmbedding',
+  query: 'articles about artificial intelligence',
+  context,
+  limit: 10,
+  minScore: 0.7,
+})
+```
+
+### Local Development
+
+Use Ollama for local development without API costs:
+
+```typescript
+import { ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
+
+ragPlugin({
+  provider: ollamaEmbeddings({
+    baseURL: 'http://localhost:11434',
+    model: 'nomic-embed-text',
+  }),
+  storage: jsonStorage(), // No DB extensions needed
+})
+```
+
+### Supported Storage Backends
+
+- **pgvector**: Production-ready PostgreSQL extension (recommended)
+- **SQLite VSS**: For SQLite-based applications
+- **JSON**: JavaScript-based search (development/small datasets)
+
+See `examples/rag-demo` for complete working example and `specs/rag-integration.md` for detailed documentation.
+
 ## Roadmap
 
 - [x] **Phase 1**: Core foundation (config, fields, generators)
@@ -569,9 +675,10 @@ See `examples/file-upload-demo` for complete working example.
 - [x] **Phase 7**: MCP server for AI assistant integration
 - [x] **Phase 8**: File storage abstraction and adapters
 - [x] **Phase 9**: Third-party field packages (Tiptap, JSON)
-- [ ] **Phase 10**: Documentation and guides
-- [ ] **Phase 11**: Testing utilities and helpers
-- [ ] **Phase 12**: Beta release and stability improvements
+- [x] **Phase 10**: RAG integration with semantic search and embeddings
+- [ ] **Phase 11**: Documentation and guides
+- [ ] **Phase 12**: Testing utilities and helpers
+- [ ] **Phase 13**: Beta release and stability improvements
 
 ## Philosophy
 
