@@ -1,5 +1,12 @@
 # @opensaas/stack-core
 
+## 0.1.6
+
+### Patch Changes
+
+- 39996ca: Fix missing StoredEmbedding type import in generated types. Fields can now declare TypeScript imports needed for their types via the new `getTypeScriptImports()` method. This resolves the type error where `StoredEmbedding` was referenced but not imported in the generated `.opensaas/types.ts` file.
+- 39996ca: Add plugin mechanism
+
 ## 0.1.5
 
 ### Patch Changes
