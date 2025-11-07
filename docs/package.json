@@ -16,7 +16,7 @@
     "@markdoc/next.js": "^0.5.0",
     "@vercel/analytics": "^1.5.0",
     "clipboard-copy": "^4.0.1",
-    "lucide-react": "^0.552.0",
+    "lucide-react": "^0.553.0",
     "next": "^16.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
