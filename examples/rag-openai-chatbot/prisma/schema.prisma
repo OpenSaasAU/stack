@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model KnowledgeBase {
+  id        String   @id @default(cuid())
+  title        String
+  content      String
+  category     String?
+  published    Boolean @default(true)
+  contentEmbedding Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
