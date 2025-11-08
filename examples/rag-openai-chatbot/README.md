@@ -34,6 +34,7 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 ### 1. Install PostgreSQL and pgvector
 
 **macOS (using Homebrew):**
+
 ```bash
 brew install postgresql@15
 brew services start postgresql@15
@@ -43,12 +44,14 @@ brew install pgvector
 ```
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt-get install postgresql-15 postgresql-15-pgvector
 sudo systemctl start postgresql
 ```
 
 **Docker:**
+
 ```bash
 docker run -d \
   --name postgres-pgvector \
@@ -122,6 +125,7 @@ pnpm dev
 ```
 
 Visit:
+
 - **Homepage:** [http://localhost:3000](http://localhost:3000)
 - **Chatbot:** [http://localhost:3000/chat](http://localhost:3000/chat)
 - **Search:** [http://localhost:3000/search](http://localhost:3000/search)
@@ -132,12 +136,14 @@ Visit:
 ### Chatbot (`/chat`)
 
 Ask questions about OpenSaas Stack:
+
 - "What is OpenSaas Stack?"
 - "How does the access control system work?"
 - "What are hooks in OpenSaas Stack?"
 - "How do I create custom field types?"
 
 The chatbot will:
+
 1. Convert your question to a vector embedding
 2. Search for the 3 most relevant articles
 3. Use them as context for GPT-4 to generate an informed response
@@ -146,6 +152,7 @@ The chatbot will:
 ### Semantic Search (`/search`)
 
 Search the knowledge base using natural language:
+
 - "access control" - finds articles about the access control system
 - "plugin system" - finds articles about plugins and extensions
 - "embedding generation" - finds articles about RAG integration
@@ -155,6 +162,7 @@ Results are ranked by semantic similarity (cosine distance).
 ### Admin Panel (`/admin`)
 
 Full CRUD interface for managing the knowledge base:
+
 - Create new articles
 - Edit existing articles
 - Delete articles
@@ -204,6 +212,7 @@ content: searchable(text(), {
 ```
 
 The `searchable()` wrapper:
+
 - Automatically creates a `contentEmbedding` field
 - Adds a `resolveInput` hook that generates embeddings on create/update
 - Uses OpenAI's `text-embedding-3-small` model (1536 dimensions)
@@ -258,8 +267,8 @@ const result = streamText({
 
 return result.toUIMessageStreamResponse({
   data: {
-    sources: searchResults.map(r => ({ id: r.id, title: r.title, score: r.score }))
-  }
+    sources: searchResults.map((r) => ({ id: r.id, title: r.title, score: r.score })),
+  },
 })
 ```
 
@@ -370,6 +379,7 @@ OpenAI has rate limits. For batch operations, use the `batchProcess()` utility f
 ### Use Different OpenAI Models
 
 Edit `.env`:
+
 ```env
 OPENAI_CHAT_MODEL="gpt-4o"  # Use GPT-4 instead of GPT-4o-mini
 ```
@@ -419,6 +429,7 @@ Error: Rate limit exceeded
 ### Embeddings Not Generating
 
 **Check:**
+
 1. `OPENAI_API_KEY` is set correctly
 2. Articles have content (required for embedding generation)
 3. Check server console for error messages
@@ -426,6 +437,7 @@ Error: Rate limit exceeded
 ### Database Connection Errors
 
 **Check:**
+
 1. PostgreSQL is running
 2. `DATABASE_URL` is correct
 3. Database exists: `psql -l | grep rag_chatbot`

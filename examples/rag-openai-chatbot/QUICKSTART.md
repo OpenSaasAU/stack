@@ -50,6 +50,7 @@ docker run -d \
 ```
 
 Then use this in `.env`:
+
 ```
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/rag_chatbot?schema=public"
 ```
@@ -70,20 +71,24 @@ psql rag_chatbot -c "CREATE EXTENSION vector;"
 ## Troubleshooting
 
 **Can't connect to database?**
+
 - Make sure PostgreSQL is running: `pg_isready`
 - Check your DATABASE_URL in `.env`
 
 **OpenAI errors?**
+
 - Verify your OPENAI_API_KEY is correct
 - Check you have credits: https://platform.openai.com/usage
 
 **Embeddings not generating?**
+
 - Check the server console for errors
 - Ensure articles have content (required field)
 
 ## Next Steps
 
 Read the full [README.md](./README.md) for:
+
 - Detailed architecture explanation
 - How RAG works in this demo
 - Performance optimization tips

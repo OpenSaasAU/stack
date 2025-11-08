@@ -13,18 +13,14 @@ const MODEL_DIMENSIONS: Record<OpenAIEmbeddingModel, number> = {
 /**
  * Lazily load OpenAI to avoid requiring it at import time
  */
-let OpenAIConstructor: any = null
 async function getOpenAI() {
-  if (OpenAIConstructor) return OpenAIConstructor
-
   try {
     const module = await import('openai')
-    OpenAIConstructor = module.default
-    return OpenAIConstructor
+    return module.default
   } catch (error) {
     throw new Error(
       'OpenAI package not found. Install it with: npm install openai\n' +
-        'Make sure to run: pnpm install openai'
+        'Make sure to run: pnpm install openai',
     )
   }
 }

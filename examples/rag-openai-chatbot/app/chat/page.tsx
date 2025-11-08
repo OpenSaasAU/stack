@@ -13,12 +13,10 @@ export default function ChatPage() {
           >
             ← Back to Home
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            AI Chatbot with RAG
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Chatbot with RAG</h1>
           <p className="text-gray-600">
-            Ask questions about OpenSaas Stack. The AI assistant will search the
-            knowledge base and provide informed responses with source citations.
+            Ask questions about OpenSaas Stack. The AI assistant will search the knowledge
+            base and provide informed responses with source citations.
           </p>
         </div>
 
@@ -31,16 +29,12 @@ export default function ChatPage() {
           <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
             <li>Your question is converted into a vector embedding using OpenAI</li>
             <li>
-              The top 3 most relevant articles are found using cosine similarity
-              search
+              The top 3 most relevant articles are found using cosine similarity search
             </li>
             <li>
-              The articles are provided as context to GPT-4 for generating the
-              response
+              The articles are provided as context to GPT-4 for generating the response
             </li>
-            <li>
-              The response includes citations to the knowledge base articles used
-            </li>
+            <li>The response includes citations to the knowledge base articles used</li>
           </ol>
         </div>
       </div>

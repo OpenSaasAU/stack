@@ -21,12 +21,7 @@ const categoryLabels: Record<string, string> = {
   devops: 'DevOps',
 }
 
-export function KnowledgeCard({
-  title,
-  content,
-  category,
-  score,
-}: KnowledgeCardProps) {
+export function KnowledgeCard({ title, content, category, score }: KnowledgeCardProps) {
   return (
     <div className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-3">
@@ -48,9 +43,7 @@ export function KnowledgeCard({
         </span>
       </div>
 
-      <p className="text-gray-700 text-sm leading-relaxed line-clamp-3">
-        {content}
-      </p>
+      <p className="text-gray-700 text-sm leading-relaxed line-clamp-3">{content}</p>
     </div>
   )
 }

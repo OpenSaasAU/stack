@@ -6,12 +6,10 @@ export default function HomePage() {
       <div className="max-w-5xl mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
-            OpenSaas RAG Chatbot
-          </h1>
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">OpenSaas RAG Chatbot</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            An intelligent chatbot powered by OpenAI, vector embeddings, and
-            pgvector for semantic search
+            An intelligent chatbot powered by OpenAI, vector embeddings, and pgvector for
+            semantic search
           </p>
         </div>
 
@@ -19,34 +17,28 @@ export default function HomePage() {
         <div className="grid md:grid-cols-3 gap-8 mb-16">
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-100">
             <div className="text-3xl mb-4">🤖</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              AI-Powered Chat
-            </h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">AI-Powered Chat</h3>
             <p className="text-gray-600 text-sm">
-              Chat with an AI assistant that has access to a comprehensive
-              knowledge base about OpenSaas Stack
+              Chat with an AI assistant that has access to a comprehensive knowledge base
+              about OpenSaas Stack
             </p>
           </div>
 
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-100">
             <div className="text-3xl mb-4">🔍</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Semantic Search
-            </h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Semantic Search</h3>
             <p className="text-gray-600 text-sm">
-              Search the knowledge base using natural language with vector
-              embeddings and similarity scoring
+              Search the knowledge base using natural language with vector embeddings and
+              similarity scoring
             </p>
           </div>
 
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-100">
             <div className="text-3xl mb-4">📚</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Knowledge Base
-            </h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Knowledge Base</h3>
             <p className="text-gray-600 text-sm">
-              Manage articles with automatic embedding generation using OpenAI
-              and pgvector storage
+              Manage articles with automatic embedding generation using OpenAI and
+              pgvector storage
             </p>
           </div>
         </div>
@@ -125,9 +117,7 @@ export default function HomePage() {
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 mr-3">✓</span>
-                <span className="text-gray-700">
-                  Full CRUD admin interface
-                </span>
+                <span className="text-gray-700">Full CRUD admin interface</span>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 mr-3">✓</span>

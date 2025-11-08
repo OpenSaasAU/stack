@@ -29,8 +29,10 @@ export function ChatInterface() {
   const isLoading = status === 'submitted' || status === 'streaming'
 
   // Extract sources from the last assistant message metadata
-  const lastAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant')
-  const metadata = lastAssistantMessage?.metadata as { sources?: Array<{ id: string; title: string; score: number }> } | undefined
+  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant')
+  const metadata = lastAssistantMessage?.metadata as
+    | { sources?: Array<{ id: string; title: string; score: number }> }
+    | undefined
   const sources = metadata?.sources || []
 
   return (
