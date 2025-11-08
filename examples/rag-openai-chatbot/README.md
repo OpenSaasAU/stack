@@ -16,9 +16,10 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 ## Tech Stack
 
 - **OpenSaas Stack** - Config-first Next.js framework with built-in access control
+- **Vercel AI SDK** - Streaming AI responses with `ai`, `@ai-sdk/react`, and `@ai-sdk/openai`
 - **OpenAI** - `text-embedding-3-small` for embeddings, `gpt-4o-mini` for chat completions
 - **pgvector** - PostgreSQL extension for efficient vector similarity search
-- **Next.js 16** - App Router with Server Actions
+- **Next.js 16** - App Router with streaming responses
 - **TypeScript** - End-to-end type safety
 - **Tailwind CSS** - Utility-first styling
 
@@ -167,8 +168,10 @@ Embeddings are automatically generated/updated when articles are created or modi
 examples/rag-openai-chatbot/
 ├── app/
 │   ├── actions/
-│   │   ├── chat.ts          # Server action for RAG-enhanced chat
 │   │   └── search.ts        # Server action for semantic search
+│   ├── api/
+│   │   └── chat/
+│   │       └── route.ts     # Streaming API route with RAG (Vercel AI SDK)
 │   ├── admin/               # Admin UI (auto-generated CRUD)
 │   ├── chat/                # Chatbot page
 │   ├── search/              # Search page
@@ -176,7 +179,7 @@ examples/rag-openai-chatbot/
 │   ├── layout.tsx           # Root layout
 │   └── page.tsx             # Homepage
 ├── components/
-│   ├── ChatInterface.tsx    # Chat UI component
+│   ├── ChatInterface.tsx    # Chat UI component (uses useChat hook)
 │   ├── SearchInterface.tsx  # Search UI component
 │   └── KnowledgeCard.tsx    # Article display card
 ├── scripts/
@@ -224,28 +227,39 @@ const score = cosineSimilarity(queryVector, article.contentEmbedding.vector)
 
 ### 3. RAG Chat Flow
 
-When chatting (in `app/actions/chat.ts`):
+When chatting (in `app/api/chat/route.ts`):
 
-1. **Retrieve:** Search for top 3 relevant articles
-2. **Augment:** Build context from retrieved articles
-3. **Generate:** Send context + question to GPT-4
+1. **Retrieve:** Search for top 3 relevant articles using semantic search
+2. **Augment:** Build system message with context from retrieved articles
+3. **Generate:** Stream response from GPT-4 using Vercel AI SDK
 
 ```typescript
-const searchResults = await searchKnowledge(userMessage, {
+// Perform semantic search
+const searchResults = await searchKnowledge(userQuery, {
   limit: 3,
   minScore: 0.6,
 })
 
-const context = searchResults
-  .map((result, i) => `[${i + 1}] ${result.title}\n${result.content}`)
-  .join('\n\n')
+// Build system message with RAG context
+let systemMessage = 'You are a helpful AI assistant...'
+if (searchResults.length > 0) {
+  systemMessage += '\n\nRelevant information from knowledge base:\n\n'
+  searchResults.forEach((result, i) => {
+    systemMessage += `[${i + 1}] ${result.title}\n${result.content}\n\n`
+  })
+}
 
-const completion = await openai.chat.completions.create({
-  model: 'gpt-4o-mini',
-  messages: [
-    { role: 'system', content: 'Use the context to answer questions...' },
-    { role: 'user', content: `${context}\n\nQuestion: ${userMessage}` },
-  ],
+// Stream response with Vercel AI SDK
+const result = streamText({
+  model: openai('gpt-4o-mini'),
+  system: systemMessage,
+  messages: convertToModelMessages(messages),
+})
+
+return result.toUIMessageStreamResponse({
+  data: {
+    sources: searchResults.map(r => ({ id: r.id, title: r.title, score: r.score }))
+  }
 })
 ```
 

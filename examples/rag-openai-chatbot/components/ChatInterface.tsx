@@ -1,15 +1,11 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
-import { chatWithKnowledge, type ChatMessage } from '@/app/actions/chat'
+import React, { useRef, useEffect } from 'react'
+import { useChat } from '@ai-sdk/react'
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [sources, setSources] = useState<
-    Array<{ id: string; title: string; score: number }>
-  >([])
+  const { messages, sendMessage, status } = useChat()
+  const [input, setInput] = React.useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -20,44 +16,22 @@ export function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-
+    const isLoading = status === 'submitted' || status === 'streaming'
     if (!input.trim() || isLoading) return
 
-    const userMessage = input.trim()
+    sendMessage({ text: input })
     setInput('')
-    setIsLoading(true)
-
-    // Add user message to chat
-    const newMessages: ChatMessage[] = [
-      ...messages,
-      { role: 'user', content: userMessage },
-    ]
-    setMessages(newMessages)
-
-    try {
-      // Get AI response
-      const response = await chatWithKnowledge(messages, userMessage)
-
-      // Add assistant message
-      setMessages([...newMessages, { role: 'assistant', content: response.message }])
-
-      // Update sources
-      setSources(response.sources)
-    } catch (error) {
-      console.error('Chat error:', error)
-      setMessages([
-        ...newMessages,
-        {
-          role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
-        },
-      ])
-    } finally {
-      setIsLoading(false)
-    }
   }
+
+  // Check if currently loading
+  const isLoading = status === 'submitted' || status === 'streaming'
+
+  // Extract sources from the last assistant message metadata
+  const lastAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant')
+  const metadata = lastAssistantMessage?.metadata as { sources?: Array<{ id: string; title: string; score: number }> } | undefined
+  const sources = metadata?.sources || []
 
   return (
     <div className="flex flex-col h-[600px] max-w-4xl mx-auto border border-gray-200 rounded-lg overflow-hidden">
@@ -83,9 +57,9 @@ export function ChatInterface() {
           </div>
         )}
 
-        {messages.map((message, index) => (
+        {messages.map((message) => (
           <div
-            key={index}
+            key={message.id}
             className={`flex ${
               message.role === 'user' ? 'justify-end' : 'justify-start'
             }`}
@@ -97,7 +71,16 @@ export function ChatInterface() {
                   : 'bg-white text-gray-900 shadow-sm'
               }`}
             >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              {message.parts.map((part, partIndex) => {
+                if (part.type === 'text') {
+                  return (
+                    <p key={partIndex} className="text-sm whitespace-pre-wrap">
+                      {part.text}
+                    </p>
+                  )
+                }
+                return null
+              })}
             </div>
           </div>
         ))}
