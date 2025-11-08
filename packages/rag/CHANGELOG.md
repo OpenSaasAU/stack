@@ -1,5 +1,14 @@
 # @opensaas/stack-rag
 
+## 0.1.7
+
+### Patch Changes
+
+- 372d467: Add `searchable` helper functions to embeddings
+- 372d467: Add sudo to context to bypass access control
+- Updated dependencies [372d467]
+  - @opensaas/stack-core@0.1.7
+
 ## 0.1.6
 
 ### Patch Changes
