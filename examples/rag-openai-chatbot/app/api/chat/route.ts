@@ -45,10 +45,9 @@ export async function POST(req: Request) {
 
   // Stream the response using Vercel AI SDK
   const result = streamText({
-    model: openai(process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'),
+    model: openai(process.env.OPENAI_CHAT_MODEL || 'gpt-5-nano'),
     system: systemMessage,
     messages: convertToModelMessages(messages),
-    temperature: 0.7,
   })
 
   // Return streaming response with sources as metadata

@@ -510,7 +510,7 @@ importers:
         specifier: ^16.0.1
         version: 16.0.1(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       openai:
-        specifier: ^4.75.0
+        specifier: ^4.104.0
         version: 4.104.0(zod@3.25.76)
       pg:
         specifier: ^8.13.1
