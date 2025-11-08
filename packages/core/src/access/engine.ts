@@ -116,9 +116,14 @@ export async function checkFieldAccess(
   args: {
     session: Session
     item?: Record<string, unknown>
-    context: AccessContext
+    context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<boolean> {
+  // Skip access check in sudo mode
+  if (args.context._isSudo) {
+    return true
+  }
+
   if (!fieldAccess) {
     return true // No field access means allow
   }
@@ -257,7 +262,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   fieldConfigs: Record<string, FieldConfig>,
   args: {
     session: Session
-    context: AccessContext
+    context: AccessContext & { _isSudo?: boolean }
   },
   config?: OpenSaasConfig,
   depth: number = 0,
@@ -275,7 +280,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Check field access
+    // Check field access (checkFieldAccess already handles sudo mode)
     const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
       ...args,
       item,
@@ -365,7 +370,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   args: {
     session: Session
     item?: Record<string, unknown>
-    context: AccessContext
+    context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
@@ -378,7 +383,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Check field access
+    // Check field access (checkFieldAccess already handles sudo mode)
     const canWrite = await checkFieldAccess(fieldConfig?.access, operation, {
       ...args,
     })

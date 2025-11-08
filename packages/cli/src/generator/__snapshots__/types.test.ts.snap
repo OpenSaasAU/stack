@@ -38,6 +38,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -83,6 +85,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -128,6 +132,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -169,6 +175,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -214,6 +222,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -301,6 +311,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -369,6 +381,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -437,6 +451,8 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;
 
@@ -508,5 +524,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   prisma: PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+  _isSudo: boolean
 }"
 `;

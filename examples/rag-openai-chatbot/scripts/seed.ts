@@ -114,7 +114,9 @@ const sampleArticles = [
 async function seed() {
   console.log('🌱 Starting database seed...\n')
 
-  const context = await getContext()
+  // Use sudo() to bypass access control while still executing all hooks
+  // This ensures embeddings are generated even if access control denies creation
+  const context = (await getContext()).sudo()
 
   try {
     // Check if articles already exist

@@ -13,6 +13,7 @@ function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessCon
     sudo: vi.fn(),
     prisma: {} as unknown,
     storage: {} as unknown,
+    _isSudo: false,
   } as AccessContext<unknown>
 }
 

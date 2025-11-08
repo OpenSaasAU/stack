@@ -181,6 +181,8 @@ function generateContextType(): string {
   lines.push('  prisma: PrismaClient')
   lines.push('  storage: StorageUtils')
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
+  lines.push('  sudo: () => Context<TSession>')
+  lines.push('  _isSudo: boolean')
   lines.push('}')
 
   return lines.join('\n')

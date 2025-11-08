@@ -54,7 +54,9 @@ export default config({
       access: {
         operation: {
           query: () => true,
-          create: () => true,
+          // Set to false to demonstrate sudo() bypassing access control
+          // The seed script uses sudo() to create articles despite this restriction
+          create: () => false,
           update: () => true,
           delete: () => true,
         },

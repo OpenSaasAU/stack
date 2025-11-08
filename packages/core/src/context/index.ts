@@ -146,12 +146,23 @@ export function getContext<
   prisma: TPrisma,
   session: Session,
   storage?: StorageUtils,
+  _isSudo: boolean = false,
 ): {
   db: AccessControlledDB<TPrisma>
   session: Session
   prisma: TPrisma
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
+  _isSudo: boolean
+  sudo: () => {
+    db: AccessControlledDB<TPrisma>
+    session: Session
+    prisma: TPrisma
+    storage: StorageUtils
+    serverAction: (props: ServerActionProps) => Promise<unknown>
+    sudo: () => unknown
+    _isSudo: boolean
+  }
 } {
   // Initialize db object - will be populated with access-controlled operations
   // Type is intentionally broad to allow dynamic model access
@@ -185,6 +196,7 @@ export function getContext<
         )
       },
     },
+    _isSudo,
   }
 
   // Create access-controlled operations for each list
@@ -226,12 +238,20 @@ export function getContext<
     return null
   }
 
+  // Sudo function - creates a new context that bypasses access control
+  // but still executes all hooks and validation
+  function sudo() {
+    return getContext(config, prisma, session, context.storage, true)
+  }
+
   return {
     db: db as AccessControlledDB<TPrisma>,
     session,
     prisma,
     storage: context.storage,
     serverAction,
+    sudo,
+    _isSudo,
   }
 }
 
@@ -242,25 +262,29 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
   return async (args: { where: { id: string }; include?: Record<string, unknown> }) => {
-    // Check query access
-    const queryAccess = listConfig.access?.operation?.query
-    const accessResult = await checkAccess(queryAccess, {
-      session: context.session,
-      context,
-    })
+    // Check query access (skip if sudo mode)
+    let where: Record<string, unknown> = args.where
+    if (!context._isSudo) {
+      const queryAccess = listConfig.access?.operation?.query
+      const accessResult = await checkAccess(queryAccess, {
+        session: context.session,
+        context,
+      })
 
-    if (accessResult === false) {
-      return null
-    }
+      if (accessResult === false) {
+        return null
+      }
 
-    // Merge access filter with where clause
-    const where = mergeFilters(args.where, accessResult)
-    if (where === null) {
-      return null
+      // Merge access filter with where clause
+      const mergedWhere = mergeFilters(args.where, accessResult)
+      if (mergedWhere === null) {
+        return null
+      }
+      where = mergedWhere
     }
 
     // Build include with access control filters
@@ -290,12 +314,13 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     }
 
     // Filter readable fields and apply resolveOutput hooks (including nested relationships)
+    // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       item,
       listConfig.fields,
       {
         session: context.session,
-        context,
+        context: { ...context, _isSudo: context._isSudo },
       },
       config,
       0,
@@ -323,7 +348,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
   return async (args?: {
@@ -332,21 +357,25 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     skip?: number
     include?: Record<string, unknown>
   }) => {
-    // Check query access
-    const queryAccess = listConfig.access?.operation?.query
-    const accessResult = await checkAccess(queryAccess, {
-      session: context.session,
-      context,
-    })
+    // Check query access (skip if sudo mode)
+    let where: Record<string, unknown> | undefined = args?.where
+    if (!context._isSudo) {
+      const queryAccess = listConfig.access?.operation?.query
+      const accessResult = await checkAccess(queryAccess, {
+        session: context.session,
+        context,
+      })
 
-    if (accessResult === false) {
-      return []
-    }
+      if (accessResult === false) {
+        return []
+      }
 
-    // Merge access filter with where clause
-    const where = mergeFilters(args?.where, accessResult)
-    if (where === null) {
-      return []
+      // Merge access filter with where clause
+      const mergedWhere = mergeFilters(args?.where, accessResult)
+      if (mergedWhere === null) {
+        return []
+      }
+      where = mergedWhere
     }
 
     // Build include with access control filters
@@ -374,6 +403,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     })
 
     // Filter readable fields for each item and apply resolveOutput hooks (including nested relationships)
+    // Pass sudo flag through context to skip field-level access checks
     const filtered = await Promise.all(
       items.map((item: Record<string, unknown>) =>
         filterReadableFields(
@@ -381,7 +411,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           listConfig.fields,
           {
             session: context.session,
-            context,
+            context: { ...context, _isSudo: context._isSudo },
           },
           config,
           0,
@@ -415,19 +445,21 @@ function createCreate<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
   return async (args: { data: Record<string, unknown> }) => {
-    // 1. Check create access
-    const createAccess = listConfig.access?.operation?.create
-    const accessResult = await checkAccess(createAccess, {
-      session: context.session,
-      context,
-    })
+    // 1. Check create access (skip if sudo mode)
+    if (!context._isSudo) {
+      const createAccess = listConfig.access?.operation?.create
+      const accessResult = await checkAccess(createAccess, {
+        session: context.session,
+        context,
+      })
 
-    if (accessResult === false) {
-      return null
+      if (accessResult === false) {
+        return null
+      }
     }
 
     // 2. Execute list-level resolveInput hook
@@ -459,10 +491,10 @@ function createCreate<TPrisma extends PrismaClientLike>(
       throw new ValidationError(validation.errors, validation.fieldErrors)
     }
 
-    // 5. Filter writable fields (field-level access control)
+    // 5. Filter writable fields (field-level access control, skip if sudo mode)
     const filteredData = await filterWritableFields(resolvedData, listConfig.fields, 'create', {
       session: context.session,
-      context,
+      context: { ...context, _isSudo: context._isSudo },
     })
 
     // 5.5. Process nested relationship operations
@@ -509,12 +541,13 @@ function createCreate<TPrisma extends PrismaClientLike>(
     )
 
     // 11. Filter readable fields and apply resolveOutput hooks (including nested relationships)
+    // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       item,
       listConfig.fields,
       {
         session: context.session,
-        context,
+        context: { ...context, _isSudo: context._isSudo },
       },
       config,
       0,
@@ -532,7 +565,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
   return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -548,26 +581,28 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       return null
     }
 
-    // 2. Check update access
-    const updateAccess = listConfig.access?.operation?.update
-    const accessResult = await checkAccess(updateAccess, {
-      session: context.session,
-      item,
-      context,
-    })
-
-    if (accessResult === false) {
-      return null
-    }
-
-    // If access returns a filter, check if item matches
-    if (typeof accessResult === 'object') {
-      const matchesFilter = await model.findFirst({
-        where: mergeFilters(args.where, accessResult),
+    // 2. Check update access (skip if sudo mode)
+    if (!context._isSudo) {
+      const updateAccess = listConfig.access?.operation?.update
+      const accessResult = await checkAccess(updateAccess, {
+        session: context.session,
+        item,
+        context,
       })
 
-      if (!matchesFilter) {
+      if (accessResult === false) {
         return null
+      }
+
+      // If access returns a filter, check if item matches
+      if (typeof accessResult === 'object') {
+        const matchesFilter = await model.findFirst({
+          where: mergeFilters(args.where, accessResult),
+        })
+
+        if (!matchesFilter) {
+          return null
+        }
       }
     }
 
@@ -603,11 +638,11 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       throw new ValidationError(validation.errors, validation.fieldErrors)
     }
 
-    // 6. Filter writable fields (field-level access control)
+    // 6. Filter writable fields (field-level access control, skip if sudo mode)
     const filteredData = await filterWritableFields(resolvedData, listConfig.fields, 'update', {
       session: context.session,
       item,
-      context,
+      context: { ...context, _isSudo: context._isSudo },
     })
 
     // 6.5. Process nested relationship operations
@@ -660,12 +695,13 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     )
 
     // 12. Filter readable fields and apply resolveOutput hooks (including nested relationships)
+    // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       updated,
       listConfig.fields,
       {
         session: context.session,
-        context,
+        context: { ...context, _isSudo: context._isSudo },
       },
       config,
       0,
@@ -683,7 +719,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
 ) {
   return async (args: { where: { id: string } }) => {
     // 1. Fetch the item to pass to access control and hooks
@@ -698,26 +734,28 @@ function createDelete<TPrisma extends PrismaClientLike>(
       return null
     }
 
-    // 2. Check delete access
-    const deleteAccess = listConfig.access?.operation?.delete
-    const accessResult = await checkAccess(deleteAccess, {
-      session: context.session,
-      item,
-      context,
-    })
-
-    if (accessResult === false) {
-      return null
-    }
-
-    // If access returns a filter, check if item matches
-    if (typeof accessResult === 'object') {
-      const matchesFilter = await model.findFirst({
-        where: mergeFilters(args.where, accessResult),
+    // 2. Check delete access (skip if sudo mode)
+    if (!context._isSudo) {
+      const deleteAccess = listConfig.access?.operation?.delete
+      const accessResult = await checkAccess(deleteAccess, {
+        session: context.session,
+        item,
+        context,
       })
 
-      if (!matchesFilter) {
+      if (accessResult === false) {
         return null
+      }
+
+      // If access returns a filter, check if item matches
+      if (typeof accessResult === 'object') {
+        const matchesFilter = await model.findFirst({
+          where: mergeFilters(args.where, accessResult),
+        })
+
+        if (!matchesFilter) {
+          return null
+        }
       }
     }
 
@@ -764,24 +802,28 @@ function createCount<TPrisma extends PrismaClientLike>(
   listName: string,
   listConfig: ListConfig,
   prisma: TPrisma,
-  context: AccessContext,
+  context: AccessContext<TPrisma>,
 ) {
   return async (args?: { where?: Record<string, unknown> }) => {
-    // Check query access
-    const queryAccess = listConfig.access?.operation?.query
-    const accessResult = await checkAccess(queryAccess, {
-      session: context.session,
-      context,
-    })
+    // Check query access (skip if sudo mode)
+    let where: Record<string, unknown> | undefined = args?.where
+    if (!context._isSudo) {
+      const queryAccess = listConfig.access?.operation?.query
+      const accessResult = await checkAccess(queryAccess, {
+        session: context.session,
+        context,
+      })
 
-    if (accessResult === false) {
-      return 0
-    }
+      if (accessResult === false) {
+        return 0
+      }
 
-    // Merge access filter with where clause
-    const where = mergeFilters(args?.where, accessResult)
-    if (where === null) {
-      return 0
+      // Merge access filter with where clause
+      const mergedWhere = mergeFilters(args?.where, accessResult)
+      if (mergedWhere === null) {
+        return 0
+      }
+      where = mergedWhere
     }
 
     // Execute count
