@@ -90,10 +90,13 @@ This document specifies the RAG (Retrieval-Augmented Generation) integration for
    - ✅ Integration with core MCP runtime
    - ✅ Access control in MCP tools
 
-4. **High-Level Field Wrapper**
-   - `searchable(field, options)` wrapper for automatic RAG
-   - Example: `searchable(text(), { provider: 'openai' })`
-   - Automatically adds embedding field + hooks
+4. **High-Level Field Wrapper** - ✅ **IMPLEMENTED** (v0.2.0)
+   - ✅ `searchable(field, options)` wrapper for automatic RAG
+   - ✅ Example: `searchable(text(), { provider: 'openai' })`
+   - ✅ Automatically adds embedding field + hooks
+   - ✅ Supports custom embedding field names
+   - ✅ Simplified options (provider, dimensions, chunking)
+   - ✅ Backward compatible with manual `embedding()` pattern
 
 5. **Example Application** (`examples/rag-demo/`)
    - Document search interface
@@ -245,13 +248,13 @@ type SearchResult<T> = {
 
 ## Usage Examples
 
-### Basic Setup (v0.2.0)
+### Basic Setup with searchable() Wrapper (v0.2.0)
 
 ```typescript
 import { config } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
-import { embedding } from '@opensaas/stack-rag/fields'
+import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
   plugins: [
@@ -264,17 +267,33 @@ export default config({
   lists: {
     Article: list({
       fields: {
-        content: text(),
-        contentEmbedding: embedding({
-          sourceField: 'content',
+        // Using searchable() wrapper - automatically creates contentEmbedding field
+        content: searchable(text(), {
           provider: 'openai',
           dimensions: 1536,
-          autoGenerate: true, // Plugin will inject hooks automatically
         }),
       },
     }),
   },
 })
+```
+
+**Alternative: Manual Pattern**
+
+The manual pattern is still supported for advanced use cases:
+
+```typescript
+import { embedding } from '@opensaas/stack-rag/fields'
+
+fields: {
+  content: text(),
+  contentEmbedding: embedding({
+    sourceField: 'content',
+    provider: 'openai',
+    dimensions: 1536,
+    autoGenerate: true,
+  }),
+}
 ```
 
 ### Semantic Search
