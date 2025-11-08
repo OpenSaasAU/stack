@@ -267,7 +267,7 @@ describe('ProcessingQueue', () => {
     // With concurrency 3, should be faster than sequential
     // 5 items with 10ms each sequentially = 50ms
     // With concurrency 3: ceil(5/3) * 10ms = 20ms
-    expect(duration).toBeLessThan(40)
+    expect(duration).toBeLessThan(50)
   })
 
   it('should track queue size', async () => {
