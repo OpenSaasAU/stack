@@ -281,3 +281,62 @@ export type SearchResult<T = unknown> = {
    */
   distance: number
 }
+
+/**
+ * Options for searchable() field wrapper
+ * Simplified options for common use cases
+ */
+export type SearchableOptions = {
+  /**
+   * Embedding provider to use
+   * References a provider name from RAG config
+   * Falls back to default provider if not specified
+   */
+  provider?: EmbeddingProviderName
+
+  /**
+   * Vector dimensions
+   * Must match the provider's output dimensions
+   * @default 1536 (OpenAI text-embedding-3-small)
+   */
+  dimensions?: number
+
+  /**
+   * Chunking configuration for long texts
+   */
+  chunking?: ChunkingConfig
+
+  /**
+   * Custom name for the generated embedding field
+   * If not provided, defaults to `${fieldName}Embedding`
+   * @example 'contentVector' instead of 'contentEmbedding'
+   */
+  embeddingFieldName?: string
+}
+
+/**
+ * Internal metadata attached to searchable fields
+ * Used by ragPlugin to identify and inject embedding fields
+ * @internal
+ */
+export type SearchableMetadata = {
+  /**
+   * Name for the generated embedding field
+   */
+  embeddingFieldName: string
+
+  /**
+   * Embedding provider to use
+   */
+  provider?: EmbeddingProviderName
+
+  /**
+   * Vector dimensions
+   */
+  dimensions?: number
+
+  /**
+   * Chunking configuration
+   */
+  chunking?: ChunkingConfig
+}

@@ -11,6 +11,21 @@ const MODEL_DIMENSIONS: Record<OpenAIEmbeddingModel, number> = {
 }
 
 /**
+ * Lazily load OpenAI to avoid requiring it at import time
+ */
+async function getOpenAI() {
+  try {
+    const module = await import('openai')
+    return module.default
+  } catch (error) {
+    throw new Error(
+      'OpenAI package not found. Install it with: npm install openai\n' +
+        'Make sure to run: pnpm install openai',
+    )
+  }
+}
+
+/**
  * Type for OpenAI client (avoids direct dependency)
  */
 type OpenAIClient = {
@@ -34,35 +49,33 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly model: string
   readonly dimensions: number
 
-  private client: OpenAIClient
+  private client: OpenAIClient | null = null
   private config: OpenAIEmbeddingConfig
+  private clientPromise: Promise<OpenAIClient> | null = null
 
   constructor(config: OpenAIEmbeddingConfig) {
     this.config = config
     this.model = config.model || 'text-embedding-3-small'
     this.dimensions = MODEL_DIMENSIONS[this.model as OpenAIEmbeddingModel] || 1536
-
-    // Initialize OpenAI client
-    this.client = this.initializeClient()
   }
 
-  private initializeClient(): OpenAIClient {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { OpenAI } = require('openai')
+  private async ensureClient(): Promise<OpenAIClient> {
+    if (this.client) return this.client
+    if (this.clientPromise) return this.clientPromise
 
-      return new OpenAI({
-        apiKey: this.config.apiKey,
-        organization: this.config.organization,
-        baseURL: this.config.baseURL,
-      }) as OpenAIClient
-    } catch (error) {
-      throw new Error(
-        'OpenAI package not found. Install it with: npm install openai\n' +
-          'Error: ' +
-          (error as Error).message,
-      )
-    }
+    this.clientPromise = this.initializeClient()
+    this.client = await this.clientPromise
+    return this.client
+  }
+
+  private async initializeClient(): Promise<OpenAIClient> {
+    const OpenAI = await getOpenAI()
+
+    return new OpenAI({
+      apiKey: this.config.apiKey,
+      organization: this.config.organization,
+      baseURL: this.config.baseURL,
+    }) as OpenAIClient
   }
 
   /**
@@ -74,7 +87,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     }
 
     try {
-      const response = await this.client.embeddings.create({
+      const client = await this.ensureClient()
+      const response = await client.embeddings.create({
         model: this.model,
         input: text,
         encoding_format: 'float',
@@ -111,7 +125,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
     try {
       // OpenAI supports batch embedding
-      const response = await this.client.embeddings.create({
+      const client = await this.ensureClient()
+      const response = await client.embeddings.create({
         model: this.model,
         input: validTexts,
         encoding_format: 'float',

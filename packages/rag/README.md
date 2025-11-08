@@ -35,7 +35,7 @@ pnpm add openai  # For OpenAI embeddings
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
-import { embedding } from '@opensaas/stack-rag/fields'
+import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
   plugins: [
@@ -55,19 +55,22 @@ export default config({
     Article: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        content: text({ validation: { isRequired: true } }),
-        // Embedding field with automatic generation
-        contentEmbedding: embedding({
-          sourceField: 'content', // Auto-embed when content changes
+        // Use searchable() wrapper for automatic embedding generation
+        content: searchable(text({ validation: { isRequired: true } }), {
           provider: 'openai',
           dimensions: 1536,
-          autoGenerate: true,
         }),
       },
     }),
   },
 })
 ```
+
+**What's happening:**
+
+- The `searchable()` wrapper automatically creates a `contentEmbedding` field
+- Embeddings are auto-generated whenever `content` changes
+- The embedding field respects all your existing access control rules
 
 ### 2. Generate schema and push to database
 
@@ -181,6 +184,79 @@ Good for SQLite-based apps. Requires sqlite-vss extension.
 ```typescript
 storage: sqliteVssStorage({ distanceFunction: 'cosine' })
 ```
+
+## Field Configuration Patterns
+
+### High-Level: `searchable()` Wrapper (Recommended)
+
+The easiest way to add semantic search to any field:
+
+```typescript
+import { searchable } from '@opensaas/stack-rag/fields'
+
+fields: {
+  content: searchable(text({ validation: { isRequired: true } }), {
+    provider: 'openai',
+    dimensions: 1536,
+  })
+}
+```
+
+**What it does:**
+
+- Automatically creates a companion `contentEmbedding` field
+- Links it to the source field (`content`)
+- Auto-generates embeddings when content changes
+- Clean, concise syntax
+
+**Options:**
+
+```typescript
+type SearchableOptions = {
+  provider?: string // Embedding provider (e.g., 'openai', 'ollama')
+  dimensions?: number // Vector dimensions (default: 1536)
+  chunking?: ChunkingConfig // Text chunking configuration
+  embeddingFieldName?: string // Custom embedding field name (default: `${fieldName}Embedding`)
+}
+```
+
+**Custom embedding field name:**
+
+```typescript
+fields: {
+  body: searchable(text(), {
+    provider: 'openai',
+    embeddingFieldName: 'bodyVector', // Instead of 'bodyEmbedding'
+  })
+}
+```
+
+### Low-Level: Manual `embedding()` Field
+
+For advanced use cases where you need more control:
+
+```typescript
+import { embedding } from '@opensaas/stack-rag/fields'
+
+fields: {
+  content: text({ validation: { isRequired: true } }),
+  contentEmbedding: embedding({
+    sourceField: 'content',
+    provider: 'openai',
+    dimensions: 1536,
+    autoGenerate: true,
+  })
+}
+```
+
+**When to use manual pattern:**
+
+- Need access to the embedding field in your schema
+- Want to store embeddings without a source field
+- Building custom embedding pipelines
+- Need field-level hooks on the embedding field
+
+Both patterns are fully supported and can be used interchangeably.
 
 ## MCP Integration
 

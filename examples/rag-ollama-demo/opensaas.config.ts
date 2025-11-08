@@ -1,7 +1,7 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
 import { ragPlugin, ollamaEmbeddings, sqliteVssStorage } from '@opensaas/stack-rag'
-import { embedding } from '@opensaas/stack-rag/fields'
+import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
   plugins: [
@@ -25,16 +25,18 @@ export default config({
         title: text({
           validation: { isRequired: true },
         }),
-        content: text({
-          validation: { isRequired: true },
-        }),
+        // Using searchable() wrapper for automatic embedding generation
+        // This automatically creates a 'contentEmbedding' field linked to 'content'
+        content: searchable(
+          text({
+            validation: { isRequired: true },
+          }),
+          {
+            provider: 'ollama',
+            dimensions: 768,
+          },
+        ),
         summary: text(),
-        contentEmbedding: embedding({
-          sourceField: 'content',
-          provider: 'ollama',
-          dimensions: 768,
-          autoGenerate: true,
-        }),
         published: checkbox({
           defaultValue: false,
         }),
@@ -53,16 +55,18 @@ export default config({
         title: text({
           validation: { isRequired: true },
         }),
-        body: text({
-          validation: { isRequired: true },
-        }),
+        // Using searchable() wrapper with custom embedding field name
+        body: searchable(
+          text({
+            validation: { isRequired: true },
+          }),
+          {
+            provider: 'ollama',
+            dimensions: 768,
+            embeddingFieldName: 'bodyEmbedding', // Optional: customize the embedding field name
+          },
+        ),
         category: text(),
-        bodyEmbedding: embedding({
-          sourceField: 'body',
-          provider: 'ollama',
-          dimensions: 768,
-          autoGenerate: true,
-        }),
         published: checkbox({
           defaultValue: false,
         }),

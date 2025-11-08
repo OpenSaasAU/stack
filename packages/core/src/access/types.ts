@@ -119,6 +119,7 @@ export type AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> =
   prisma: TPrisma
   db: AccessControlledDB<TPrisma>
   storage: StorageUtils
+  _isSudo: boolean
   [key: string]: unknown
 }
 

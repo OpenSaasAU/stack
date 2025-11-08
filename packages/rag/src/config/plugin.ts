@@ -1,7 +1,8 @@
 import type { Plugin } from '@opensaas/stack-core'
-import type { RAGConfig, NormalizedRAGConfig } from './types.js'
+import type { RAGConfig, NormalizedRAGConfig, SearchableMetadata } from './types.js'
 import { normalizeRAGConfig } from './index.js'
 import { createEmbeddingProvider } from '../providers/index.js'
+import { embedding } from '../fields/embedding.js'
 
 /**
  * RAG plugin for OpenSaas Stack
@@ -45,7 +46,39 @@ export function ragPlugin(config: RAGConfig): Plugin {
     version: '0.1.0',
 
     init: async (context) => {
-      // Find all embedding fields with autoGenerate enabled
+      // First pass: Scan for searchable() wrapped fields and inject embedding fields
+      for (const [listName, listConfig] of Object.entries(context.config.lists)) {
+        const embeddingFieldsToInject: Record<string, ReturnType<typeof embedding>> = {}
+
+        for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+          // Check if field has _searchable metadata
+          if ('_searchable' in fieldConfig) {
+            const meta = fieldConfig._searchable as SearchableMetadata
+
+            // Determine embedding field name
+            const embeddingName = meta.embeddingFieldName || `${fieldName}Embedding`
+
+            // Create embedding field
+            embeddingFieldsToInject[embeddingName] = embedding({
+              sourceField: fieldName,
+              provider: meta.provider,
+              dimensions: meta.dimensions,
+              chunking: meta.chunking,
+              autoGenerate: true,
+            })
+          }
+        }
+
+        // Inject all embedding fields at once
+        if (Object.keys(embeddingFieldsToInject).length > 0) {
+          context.extendList(listName, {
+            fields: embeddingFieldsToInject,
+          })
+        }
+      }
+
+      // Second pass: Find all embedding fields with autoGenerate enabled
+      // This includes both manually defined embedding fields AND injected ones from searchable()
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
           if (

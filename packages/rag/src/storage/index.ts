@@ -84,3 +84,6 @@ export * from './types.js'
 export { JsonVectorStorage, createJsonStorage } from './json.js'
 export { PgVectorStorage, createPgVectorStorage } from './pgvector.js'
 export { SqliteVssStorage, createSqliteVssStorage } from './sqlite-vss.js'
+
+// Export access control utilities
+export { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'
