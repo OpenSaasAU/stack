@@ -162,18 +162,47 @@ export default config({
 
 ### 2. Embedding Fields
 
-Fields with `autoGenerate: true` automatically create embeddings:
+Use the `searchable()` wrapper to automatically add embeddings to any field:
 
 ```typescript
+import { searchable } from '@opensaas/stack-rag/fields'
+
+fields: {
+  // Using searchable() wrapper (recommended)
+  content: searchable(
+    text({ validation: { isRequired: true } }),
+    {
+      provider: 'ollama',    // Use Ollama provider
+      dimensions: 768,       // nomic-embed-text dimensions
+    }
+  ),
+}
+```
+
+**What it does:**
+
+- Automatically creates a `contentEmbedding` field
+- Links it to the `content` field
+- Auto-generates embeddings on create/update
+- Cleaner, more concise syntax
+
+**Alternative (manual pattern):**
+
+```typescript
+import { embedding } from '@opensaas/stack-rag/fields'
+
 fields: {
   content: text({ validation: { isRequired: true } }),
   contentEmbedding: embedding({
     sourceField: 'content',      // Generate from this field
     provider: 'ollama',           // Use Ollama provider
+    dimensions: 768,
     autoGenerate: true,           // Auto-generate on create/update
   }),
 }
 ```
+
+Both patterns are fully supported and produce the same results.
 
 ### 3. Automatic Generation
 
