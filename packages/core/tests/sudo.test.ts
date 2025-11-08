@@ -163,7 +163,7 @@ describe('Sudo Context', () => {
       mockPrisma.post.create.mockResolvedValue(mockPost)
 
       // Sudo context should allow writing to secretField
-      const sudoResult = await sudoContext.db.post.create({
+      await sudoContext.db.post.create({
         data: { title: 'New Post', secretField: 'secret' },
       })
 
