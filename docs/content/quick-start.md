@@ -194,6 +194,8 @@ Now that you have a basic setup, explore these topics:
 - **[Field Types](/docs/core-concepts/field-types)** - Explore all available field types
 - **[Hooks](/docs/core-concepts/hooks)** - Add data transformation and side effects
 - **[Admin UI](/docs/packages/ui)** - Add a complete admin interface
+- **[Authentication](/docs/guides/authentication)** - Add user authentication with Better-auth
+- **[RAG Integration](/docs/packages/rag)** - Add semantic search and AI embeddings to your app
 
 {% callout type="info" %}
 **Tip**: The access control engine automatically secures all database operations. No record is returned without passing access checks.
