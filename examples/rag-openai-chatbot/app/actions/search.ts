@@ -2,7 +2,8 @@
 
 import { getContext } from '@/.opensaas/context'
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
-import { cosineSimilarity } from '@opensaas/stack-rag/storage'
+import { createVectorStorage } from '@opensaas/stack-rag/storage'
+import config from '@/opensaas.config'
 
 export interface SearchResult {
   id: string
@@ -35,47 +36,35 @@ export async function searchKnowledge(
     // Generate embedding for the query
     const queryVector = await provider.embed(query)
 
-    // Fetch all published knowledge base articles with their embeddings
-    const articles = await context.db.knowledgeBase.findMany({
-      where: { published: true },
-      select: {
-        id: true,
-        title: true,
-        content: true,
-        category: true,
-        contentEmbedding: true,
-      },
+    // Use pgvector storage for scalable semantic search with access control
+    const storage = createVectorStorage({
+      type: 'pgvector',
+      distanceFunction: 'cosine',
     })
 
-    // Calculate similarity scores and filter
-    const results = articles
-      .map((article) => {
-        const embedding = article.contentEmbedding as {
-          vector: number[]
-          metadata: Record<string, unknown>
-        } | null
+    // Search using database-level vector similarity
+    // This is much more scalable than fetching all items and calculating in JS
+    const results = await storage.search<{
+      id: string
+      title: string
+      content: string
+      category: string
+    }>('KnowledgeBase', 'contentEmbedding', queryVector, {
+      limit,
+      minScore,
+      context,
+      where: { published: true },
+      config: await config, // Pass config for access control enforcement
+    })
 
-        if (!embedding?.vector) {
-          return null
-        }
-
-        const score = cosineSimilarity(queryVector, embedding.vector)
-
-        return {
-          id: article.id,
-          title: article.title,
-          content: article.content,
-          category: article.category,
-          score,
-        }
-      })
-      .filter((result): result is SearchResult => {
-        return result !== null && result.score >= minScore
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-
-    return results
+    // Map to simplified result format
+    return results.map((r) => ({
+      id: r.item.id,
+      title: r.item.title,
+      content: r.item.content,
+      category: r.item.category,
+      score: r.score,
+    }))
   } catch (error) {
     console.error('Search error:', error)
     throw new Error('Failed to perform semantic search')

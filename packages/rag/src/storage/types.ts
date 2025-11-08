@@ -65,6 +65,12 @@ export type SearchOptions = {
    * This is merged with access control filters
    */
   where?: Record<string, unknown>
+
+  /**
+   * OpenSaaS config for access control integration
+   * Required to properly enforce access control in raw SQL queries
+   */
+  config?: import('@opensaas/stack-core').OpenSaasConfig
 }
 
 /**

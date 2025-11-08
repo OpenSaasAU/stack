@@ -3,6 +3,7 @@ import type { SearchResult } from '../config/types.js'
 import type { PgVectorStorageConfig } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
+import { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'
 
 /**
  * pgvector storage backend
@@ -62,7 +63,7 @@ export class PgVectorStorage implements VectorStorage {
     queryVector: number[],
     options: SearchOptions,
   ): Promise<SearchResult<T>[]> {
-    const { limit = 10, minScore = 0.0, context, where = {} } = options
+    const { limit = 10, minScore = 0.0, context, where = {}, config } = options
 
     const dbKey = getDbKey(listKey)
     const model = context.db[dbKey]
@@ -78,15 +79,11 @@ export class PgVectorStorage implements VectorStorage {
     const vectorString = `[${queryVector.join(',')}]`
 
     // We need to use Prisma.$queryRaw to access pgvector operators
-    // The access-controlled context.db doesn't expose $queryRaw directly,
-    // so we need to use a two-step approach:
-    // 1. Get all matching IDs using raw query
-    // 2. Fetch full items via access-controlled context
+    // However, we must enforce access control in the raw query itself
+    // to ensure users only see items they have access to
 
     try {
       // Get the underlying Prisma client
-      // Note: This bypasses access control for the similarity search,
-      // but we enforce it in the second query
       const prisma = context.prisma
 
       if (!prisma) {
@@ -94,20 +91,43 @@ export class PgVectorStorage implements VectorStorage {
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +
-            'For full pgvector support, ensure the context exposes _prisma.',
+            'For full pgvector support, ensure the context exposes prisma.',
         )
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }
 
-      // Raw query to get IDs and distances
+      // Build access control filter
+      let accessFilter = null
+      if (config) {
+        accessFilter = await buildAccessControlFilter(listKey, context, config)
+
+        // If access is denied, return empty results
+        if (accessFilter === null) {
+          return []
+        }
+      }
+
+      // Merge access filter with user where clause
+      const combinedFilter = accessFilter ? mergeAccessFilter(accessFilter, where) : where
+
+      // If merged filter is null (access denied), return empty results
+      if (combinedFilter === null) {
+        return []
+      }
+
+      // Convert Prisma filter to SQL WHERE clause
+      const tableName = listKey // Prisma table names match the model name (PascalCase by default)
+      const sqlWhereClause = prismaFilterToSQL(combinedFilter, tableName)
+
+      // Raw query to get IDs and distances with access control
       // We extract the vector from the JSON field and cast it to vector type
-      const tableName = listKey.toLowerCase() // Prisma table names are lowercase
       const results = (await prisma.$queryRawUnsafe(`
         SELECT id,
                (("${fieldName}"->>'vector')::vector ${distanceOp} '${vectorString}'::vector) as distance
         FROM "${tableName}"
         WHERE "${fieldName}" IS NOT NULL
           AND "${fieldName}"->>'vector' IS NOT NULL
+          AND (${sqlWhereClause})
         ORDER BY distance
         LIMIT ${limit * 2}
       `)) as Array<{ id: string; distance: string }>
@@ -128,9 +148,9 @@ export class PgVectorStorage implements VectorStorage {
       }
 
       // Fetch full items via access-controlled context
+      // This applies field-level access control and resolveOutput hooks
       const items = await model.findMany({
         where: {
-          ...where,
           id: {
             in: itemIds.map((r) => r.id),
           },
