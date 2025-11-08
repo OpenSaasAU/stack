@@ -35,6 +35,3 @@ next-env.d.ts
 
 # opensaas generated files
 /.opensaas
-
-# prisma
-/prisma/migrations
