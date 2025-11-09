@@ -55,6 +55,10 @@ export const navigation: NavItem[] = [
         href: '/docs/packages/auth',
       },
       {
+        title: 'RAG',
+        href: '/docs/packages/rag',
+      },
+      {
         title: 'Storage',
         href: '/docs/packages/storage',
       },
@@ -86,6 +90,14 @@ export const navigation: NavItem[] = [
       {
         title: 'Authentication',
         href: '/docs/guides/authentication',
+      },
+      {
+        title: 'RAG Setup',
+        href: '/docs/guides/rag-setup',
+      },
+      {
+        title: 'RAG Advanced',
+        href: '/docs/guides/rag-advanced',
       },
       {
         title: 'Deployment',
