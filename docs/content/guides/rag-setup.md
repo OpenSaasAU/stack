@@ -235,10 +235,10 @@ ragPlugin({
 
 #### OpenAI Models
 
-| Model | Dimensions | Use Case | Cost (per 1M tokens) |
-|-------|-----------|----------|---------------------|
-| `text-embedding-3-small` | 1536 | General purpose, cost-effective | $0.02 |
-| `text-embedding-3-large` | 3072 | Higher quality, more expensive | $0.13 |
+| Model                    | Dimensions | Use Case                        | Cost (per 1M tokens) |
+| ------------------------ | ---------- | ------------------------------- | -------------------- |
+| `text-embedding-3-small` | 1536       | General purpose, cost-effective | $0.02                |
+| `text-embedding-3-large` | 3072       | Higher quality, more expensive  | $0.13                |
 
 **Recommendations:**
 
@@ -279,11 +279,11 @@ ragPlugin({
 
 #### Ollama Models
 
-| Model | Dimensions | Use Case |
-|-------|-----------|----------|
-| `nomic-embed-text` | 768 | General purpose, fast |
-| `mxbai-embed-large` | 1024 | Higher quality |
-| `all-minilm` | 384 | Very fast, smaller |
+| Model               | Dimensions | Use Case              |
+| ------------------- | ---------- | --------------------- |
+| `nomic-embed-text`  | 768        | General purpose, fast |
+| `mxbai-embed-large` | 1024       | Higher quality        |
+| `all-minilm`        | 384        | Very fast, smaller    |
 
 **Recommendations:**
 
@@ -381,7 +381,7 @@ export default config({
           {
             provider: 'openai',
             dimensions: 1536,
-          }
+          },
         ),
         category: select({
           options: [
@@ -737,9 +737,11 @@ async function seed() {
 
   for (const article of articles) {
     // Use sudo() to bypass access control during seeding
-    const created = await sudo(context.db.knowledgeBase.create({
-      data: article,
-    }))
+    const created = await sudo(
+      context.db.knowledgeBase.create({
+        data: article,
+      }),
+    )
     console.log(`Created: ${created.title}`)
   }
 }
@@ -872,6 +874,7 @@ Error: Rate limit exceeded
 **Solutions:**
 
 1. **Create indexes** (for pgvector):
+
    ```sql
    CREATE INDEX article_embedding_idx
    ON "Article" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
@@ -879,11 +882,13 @@ Error: Rate limit exceeded
    ```
 
 2. **Reduce result limit**:
+
    ```typescript
    storage.search(..., { limit: 5 }) // Instead of 100
    ```
 
 3. **Use minScore filter**:
+
    ```typescript
    storage.search(..., { minScore: 0.7 }) // Only high-quality matches
    ```

@@ -390,8 +390,12 @@ ragPlugin({
 
   // OR multiple providers
   providers: {
-    openai: openaiEmbeddings({ /* ... */ }),
-    ollama: ollamaEmbeddings({ /* ... */ }),
+    openai: openaiEmbeddings({
+      /* ... */
+    }),
+    ollama: ollamaEmbeddings({
+      /* ... */
+    }),
   },
 
   // Storage backend
@@ -416,7 +420,8 @@ content: searchable(text(), {
   provider: 'openai', // Provider to use
   dimensions: 1536, // Vector dimensions
   embeddingFieldName: 'customEmbedding', // Custom field name
-  chunking: { // Text chunking for long content
+  chunking: {
+    // Text chunking for long content
     strategy: 'recursive',
     chunkSize: 1000,
     chunkOverlap: 200,
@@ -432,7 +437,8 @@ contentEmbedding: embedding({
   provider: 'openai', // Provider to use
   dimensions: 1536, // Vector dimensions
   autoGenerate: true, // Auto-generate on changes
-  chunking: { // Text chunking configuration
+  chunking: {
+    // Text chunking configuration
     strategy: 'sentence',
     chunkSize: 500,
   },

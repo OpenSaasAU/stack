@@ -36,8 +36,8 @@ contentEmbedding: embedding({
   hooks: {
     resolveInput: async ({ resolvedData, operation, context }) => {
       // Generate embedding if content changed
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -325,9 +325,7 @@ class HuggingFaceEmbeddingProvider {
 
 registerEmbeddingProvider('huggingface', (config) => new HuggingFaceEmbeddingProvider(config))
 
-export function huggingfaceEmbeddings(
-  config: Omit<HuggingFaceConfig, 'type'>
-): HuggingFaceConfig {
+export function huggingfaceEmbeddings(config: Omit<HuggingFaceConfig, 'type'>): HuggingFaceConfig {
   return { type: 'huggingface', ...config }
 }
 ```
@@ -347,7 +345,7 @@ interface VectorStorage {
     listKey: string,
     fieldName: string,
     queryVector: number[],
-    options: SearchOptions
+    options: SearchOptions,
   ): Promise<SearchResult<T>[]>
 }
 
@@ -620,7 +618,7 @@ const chunkEmbeddings = await Promise.all(
       startOffset: chunk.start,
       endOffset: chunk.end,
     }
-  })
+  }),
 )
 
 // Store chunks in database
@@ -693,9 +691,7 @@ const result = await batchProcess({
   batchSize: 20, // Process 20 at a time
   rateLimit: 60, // 60 requests per minute
   onProgress: (progress) => {
-    console.log(
-      `Progress: ${progress.percentage}% (${progress.processed}/${progress.total})`
-    )
+    console.log(`Progress: ${progress.percentage}% (${progress.processed}/${progress.total})`)
   },
 })
 
@@ -781,7 +777,7 @@ async function precomputeQueryEmbeddings() {
     commonQueries.map(async (query) => ({
       query,
       embedding: await provider.embed(query),
-    }))
+    })),
   )
 
   // Store in database or cache
@@ -895,7 +891,7 @@ export async function rerankResults(query: string, results: SearchResult[], topK
         id: pair.id,
         score: response[0].score,
       }
-    })
+    }),
   )
 
   // Re-rank by cross-encoder scores
@@ -1172,10 +1168,7 @@ export async function backupEmbeddings() {
     })),
   }
 
-  await writeFile(
-    `backups/embeddings-${Date.now()}.json`,
-    JSON.stringify(backup, null, 2)
-  )
+  await writeFile(`backups/embeddings-${Date.now()}.json`, JSON.stringify(backup, null, 2))
 
   console.log(`Backed up ${articles.length} embeddings`)
 }
@@ -1239,7 +1232,7 @@ describe('Semantic Search', () => {
           title: 'Machine Learning Basics',
           content: 'Machine learning is a subset of artificial intelligence...',
         },
-      })
+      }),
     )
   })
 
