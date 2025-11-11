@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Code2, Github, Menu } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { CopyMarkdownButton } from './CopyMarkdownButton'
+import { SearchModal } from './SearchModal'
 
 interface DocLayoutProps {
   children: React.ReactNode
@@ -40,6 +41,7 @@ export function DocLayout({ children, slug, title }: DocLayoutProps) {
             </nav>
           </div>
           <div className="flex items-center gap-4">
+            <SearchModal />
             <CopyMarkdownButton slug={slug} />
             <button className="md:hidden p-2">
               <Menu className="h-5 w-5" />

@@ -30,4 +30,7 @@ export type {
   EmbeddingMetadata,
   StoredEmbedding,
   SearchResult,
+  EmbeddingsIndex,
+  EmbeddedDocument,
+  EmbeddingChunk,
 } from './config/types.js'
