@@ -61,8 +61,9 @@ function generatePluginServicesInterface(config: OpenSaasConfig): string {
   lines.push('/**')
   lines.push(' * Plugin runtime services')
   lines.push(' * Provides type-safe access to context.plugins')
+  lines.push(' * Extends Record to allow compatibility with base AccessContext type')
   lines.push(' */')
-  lines.push('export interface PluginServices {')
+  lines.push('export interface PluginServices extends Record<string, Record<string, any> | undefined> {')
 
   if (pluginsWithRuntime.length > 0) {
     for (const plugin of pluginsWithRuntime) {
@@ -70,8 +71,8 @@ function generatePluginServicesInterface(config: OpenSaasConfig): string {
         // Use typed runtime service from plugin
         lines.push(`  ${plugin.name}?: ${plugin.runtimeServiceTypes.typeName}`)
       } else {
-        // Fallback to Record<string, unknown> for plugins without type metadata
-        lines.push(`  ${plugin.name}?: Record<string, unknown>`)
+        // Fallback to Record<string, any> for plugins without type metadata
+        lines.push(`  ${plugin.name}?: Record<string, any>`)
       }
     }
   }
@@ -82,29 +83,20 @@ function generatePluginServicesInterface(config: OpenSaasConfig): string {
 }
 
 /**
- * Generate module augmentations to extend OpenSaaS core types
+ * Generate module augmentation for OpenSaaS core types
+ * Note: We cannot augment _pluginData or plugins properties directly due to type constraints
+ * Instead, users should cast to PluginServices when accessing context.plugins
  */
-function generateModuleAugmentations(): string {
+function generateModuleAugmentation(): string {
   const lines: string[] = []
 
   lines.push('')
   lines.push('/**')
-  lines.push(' * Module augmentation to extend OpenSaasConfig with typed plugin data')
+  lines.push(' * Declare this module to make interfaces available globally')
+  lines.push(' * Import this file to get typed plugin access')
   lines.push(' */')
-  lines.push("declare module '@opensaas/stack-core' {")
-  lines.push('  export interface OpenSaasConfig {')
-  lines.push('    _pluginData?: PluginData')
-  lines.push('  }')
-  lines.push('}')
-
-  lines.push('')
-  lines.push('/**')
-  lines.push(' * Module augmentation to extend AccessContext with typed plugin services')
-  lines.push(' */')
-  lines.push("declare module '@opensaas/stack-core/access' {")
-  lines.push('  export interface AccessContext {')
-  lines.push('    plugins: PluginServices')
-  lines.push('  }')
+  lines.push('declare global {')
+  lines.push('  // Plugin types are available as PluginServices interface')
   lines.push('}')
 
   return lines.join('\n')
@@ -131,8 +123,8 @@ export function generatePluginTypes(config: OpenSaasConfig): string {
   lines.push(generatePluginDataInterface(config))
   lines.push(generatePluginServicesInterface(config))
 
-  // Generate module augmentations
-  lines.push(generateModuleAugmentations())
+  // Generate module augmentation
+  lines.push(generateModuleAugmentation())
 
   return lines.join('\n')
 }

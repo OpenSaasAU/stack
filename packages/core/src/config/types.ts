@@ -875,8 +875,9 @@ export type Plugin = {
 
 /**
  * Main configuration type
+ * Using interface instead of type to allow module augmentation
  */
-export type OpenSaasConfig = {
+export interface OpenSaasConfig {
   db: DatabaseConfig
   lists: Record<string, ListConfig>
   session?: SessionConfig
