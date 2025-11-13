@@ -171,21 +171,26 @@ Article: list({
 The Tiptap editor includes a formatting toolbar with:
 
 ### Text Formatting
+
 - **Bold** text
 - _Italic_ text
 - ~~Strike-through~~ text
 
 ### Headings
+
 - H1, H2, H3 heading levels
 
 ### Lists
+
 - Bullet lists
 - Ordered (numbered) lists
 
 ### Blockquotes
+
 - Quote blocks for callouts
 
 ### Modes
+
 - **Edit mode**: Full toolbar with all formatting options
 - **Read mode**: Render-only view without toolbar
 
@@ -429,6 +434,7 @@ Visit http://localhost:3002/admin
 Creates a rich text field configuration.
 
 **Parameters:**
+
 - `options` (optional):
   - `validation.isRequired` - Make field required (default: `false`)
   - `ui.placeholder` - Placeholder text (default: `"Start writing..."`)
@@ -442,6 +448,7 @@ Creates a rich text field configuration.
 **Returns:** `RichTextField`
 
 **Example:**
+
 ```typescript
 const field = richText({
   validation: { isRequired: true },
@@ -463,19 +470,21 @@ const field = richText({
 React component for rendering the Tiptap editor.
 
 **Props:**
+
 - `name: string` - Field name (for form handling)
 - `value: any` - JSON content value from Tiptap
 - `onChange: (props: { editor: Editor }) => void` - Change handler
 - `label: string` - Field label text
 - `error?: string` - Validation error message
 - `disabled?: boolean` - Disable editing
-- `required?: boolean` - Show required indicator (*)
+- `required?: boolean` - Show required indicator (\*)
 - `mode?: "read" | "edit"` - Display mode (default: `"edit"`)
 - `placeholder?: string` - Placeholder text (default: `"Start writing..."`)
 - `minHeight?: number` - Minimum height in pixels (default: `200`)
 - `maxHeight?: number` - Maximum height in pixels (scrollable if exceeded)
 
 **Example:**
+
 ```typescript
 import { TiptapField } from '@opensaas/stack-tiptap'
 
@@ -495,10 +504,12 @@ import { TiptapField } from '@opensaas/stack-tiptap'
 Registers a custom component for the `richText` field type.
 
 **Parameters:**
+
 - `fieldType: string` - Field type name (e.g., `"richText"`, `"richTextExtended"`)
 - `Component: React.ComponentType` - React component to register
 
 **Example:**
+
 ```typescript
 'use client'
 

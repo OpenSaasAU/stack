@@ -309,7 +309,7 @@ The generator creates CRUD tools for each list:
 
 ```typescript
 {
-  data: Record<string, any>  // Fields to set
+  data: Record<string, any> // Fields to set
 }
 ```
 
@@ -360,7 +360,9 @@ The generator creates CRUD tools for each list:
 
 ```typescript
 {
-  where: { id: string }
+  where: {
+    id: string
+  }
 }
 ```
 

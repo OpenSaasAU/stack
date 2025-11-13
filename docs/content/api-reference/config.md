@@ -12,16 +12,22 @@ Creates and validates an OpenSaaS Stack configuration. Executes plugins if provi
 import { config } from '@opensaas/stack-core'
 
 export default config({
-  db: { /* ... */ },
-  lists: { /* ... */ },
+  db: {
+    /* ... */
+  },
+  lists: {
+    /* ... */
+  },
   // ... other options
 })
 ```
 
 **Parameters:**
+
 - `userConfig: OpenSaasConfig` - The configuration object
 
 **Returns:**
+
 - `OpenSaasConfig | Promise<OpenSaasConfig>` - Synchronous if no plugins, async if plugins are present
 
 ### `list()`
@@ -32,19 +38,28 @@ Defines a list (data model) with type-safe field definitions, access control, an
 import { list } from '@opensaas/stack-core'
 
 User: list({
-  fields: { /* ... */ },
-  access: { /* ... */ },
-  hooks: { /* ... */ },
+  fields: {
+    /* ... */
+  },
+  access: {
+    /* ... */
+  },
+  hooks: {
+    /* ... */
+  },
 })
 ```
 
 **Type Parameter:**
+
 - `T` - The TypeScript type of items in this list (optional, auto-inferred from generated types)
 
 **Parameters:**
+
 - `config: object` - List configuration object
 
 **Returns:**
+
 - `ListConfig<T>` - Typed list configuration
 
 ---
@@ -83,6 +98,7 @@ Dictionary of list definitions. Keys must be in PascalCase (e.g., `Post`, `BlogP
 **Type:** `Record<string, ListConfig>`
 
 **Example:**
+
 ```typescript
 lists: {
   Post: list({ /* ... */ }),
@@ -157,6 +173,7 @@ Database connection string.
 **Type:** `string`
 
 **Examples:**
+
 - SQLite: `'file:./dev.db'`
 - PostgreSQL: `'postgresql://user:pass@localhost:5432/db'`
 - MySQL: `'mysql://user:pass@localhost:3306/db'`
@@ -168,6 +185,7 @@ Custom Prisma client factory for database adapters (Neon, Turso, PlanetScale, et
 **Type:** `(PrismaClientClass: any) => any`
 
 **Example:**
+
 ```typescript
 import { PrismaNeon } from '@prisma/adapter-neon'
 import { neonConfig } from '@neondatabase/serverless'
@@ -255,6 +273,7 @@ access: {
 #### Properties
 
 Each operation accepts an `AccessControl` function that returns:
+
 - `true` - Allow access
 - `false` - Deny access
 - `PrismaFilter` - Prisma where clause to filter accessible records
@@ -262,10 +281,11 @@ Each operation accepts an `AccessControl` function that returns:
 **Type:** `AccessControl<T>`
 
 **Function signature:**
+
 ```typescript
-(args: {
-  session: Session,
-  item?: T,        // Present for update/delete
+;(args: {
+  session: Session
+  item?: T // Present for update/delete
   context: AccessContext
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
 ```
@@ -277,12 +297,11 @@ Each operation accepts an `AccessControl` function that returns:
 query: ({ session }) => !!session
 
 // Filter: Users can only update their own posts
-update: ({ session, item }) =>
-  session?.userId === item.authorId
+update: ({ session, item }) => session?.userId === item.authorId
 
 // Filter object: Scope access to specific records
 query: ({ session }) => ({
-  authorId: { equals: session?.userId }
+  authorId: { equals: session?.userId },
 })
 ```
 
@@ -312,6 +331,7 @@ Transform input data before validation and database write.
 **Use cases:** Auto-populate fields, set defaults, normalize data
 
 **Example:**
+
 ```typescript
 resolveInput: async ({ resolvedData, operation }) => {
   // Auto-set publishedAt when status changes to published
@@ -331,6 +351,7 @@ Custom validation logic beyond field-level validation rules.
 **Use cases:** Cross-field validation, business logic validation
 
 **Example:**
+
 ```typescript
 validateInput: async ({ resolvedData, addValidationError }) => {
   if (resolvedData.endDate < resolvedData.startDate) {
@@ -348,6 +369,7 @@ Side effects before database operation. Does NOT modify data.
 **Use cases:** Logging, notifications, pre-operation checks
 
 **Example:**
+
 ```typescript
 beforeOperation: async ({ operation, item, context }) => {
   await auditLog.record({
@@ -367,6 +389,7 @@ Side effects after database operation. Does NOT modify data.
 **Use cases:** Cache invalidation, webhooks, post-operation cleanup
 
 **Example:**
+
 ```typescript
 afterOperation: async ({ operation, item, context }) => {
   await invalidateCache(`post:${item.id}`)
@@ -380,10 +403,10 @@ Arguments passed to hook functions.
 
 ```typescript
 type HookArgs<T> = {
-  operation: 'create' | 'update' | 'delete',
-  resolvedData?: Partial<T>,  // Input data (not present for delete)
-  item?: T,                    // Existing item (for update/delete)
-  context: AccessContext,
+  operation: 'create' | 'update' | 'delete'
+  resolvedData?: Partial<T> // Input data (not present for delete)
+  item?: T // Existing item (for update/delete)
+  context: AccessContext
 }
 ```
 
@@ -395,12 +418,12 @@ Base configuration for all field types. Each field type extends this with type-s
 
 ```typescript
 type BaseFieldConfig = {
-  type: string,
-  access?: FieldAccess,
-  defaultValue?: unknown,
-  hooks?: FieldHooks,
-  typePatch?: TypePatchConfig,
-  ui?: object,
+  type: string
+  access?: FieldAccess
+  defaultValue?: unknown
+  hooks?: FieldHooks
+  typePatch?: TypePatchConfig
+  ui?: object
 }
 ```
 
@@ -419,13 +442,14 @@ Field-level access control.
 **Type:** [`FieldAccess`](#fieldaccess)
 
 **Example:**
+
 ```typescript
 internalNotes: text({
   access: {
     read: ({ session }) => session?.role === 'admin',
     create: ({ session }) => session?.role === 'admin',
     update: ({ session }) => session?.role === 'admin',
-  }
+  },
 })
 ```
 
@@ -454,6 +478,7 @@ UI-specific configuration passed to field components.
 **Type:** `object`
 
 **Common UI options:**
+
 - `component?: React.Component` - Custom field component
 - `fieldType?: string` - Reference to globally registered field type
 - `valueForClientSerialization?: (args) => unknown` - Transform value before sending to browser
@@ -477,6 +502,7 @@ access: {
 Each property accepts an `AccessControl` function that returns `true` (allow) or `false` (deny).
 
 **Example:**
+
 ```typescript
 password: password({
   access: {
@@ -485,7 +511,7 @@ password: password({
     // Only admins can set passwords
     create: ({ session }) => session?.role === 'admin',
     update: ({ session }) => session?.role === 'admin',
-  }
+  },
 })
 ```
 
@@ -515,6 +541,7 @@ Transform field value before database write.
 **Use cases:** Hash passwords, normalize data, transform input format
 
 **Example:**
+
 ```typescript
 password: password({
   hooks: {
@@ -523,8 +550,8 @@ password: password({
         return await bcrypt.hash(inputValue, 10)
       }
       return inputValue
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -537,13 +564,14 @@ Transform field value after database read.
 **Use cases:** Wrap sensitive data, format values, compute derived values
 
 **Example:**
+
 ```typescript
 password: password({
   hooks: {
     resolveOutput: ({ value }) => {
       return new HashedPassword(value) // Wrap to prevent accidental exposure
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -554,13 +582,14 @@ Side effects before database operation. Does NOT modify data.
 **When called:** Before `create`, `update`, or `delete` operations
 
 **Example:**
+
 ```typescript
 profileImage: text({
   hooks: {
     beforeOperation: async ({ operation, resolvedValue }) => {
       console.log(`About to ${operation} profile image:`, resolvedValue)
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -571,6 +600,7 @@ Side effects after database operation. Does NOT modify data.
 **When called:** After `create`, `update`, `delete`, or `query` operations
 
 **Example:**
+
 ```typescript
 thumbnail: text({
   hooks: {
@@ -578,8 +608,8 @@ thumbnail: text({
       if (operation === 'delete') {
         await deleteFromCDN(value) // Cleanup on delete
       }
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -604,6 +634,7 @@ Function that retrieves the current session.
 **Type:** `() => Promise<Session>`
 
 **Example:**
+
 ```typescript
 import { auth } from '@/lib/auth'
 
@@ -706,6 +737,7 @@ colors: {
 **Format:** HSL values as string: `"hue saturation% lightness%"`
 
 **Example:**
+
 ```typescript
 theme: {
   colors: {
@@ -817,6 +849,7 @@ mcp: {
 ```
 
 **Example:**
+
 ```typescript
 mcp: {
   enabled: true,
@@ -890,6 +923,7 @@ tools: {
 ```
 
 **Example:**
+
 ```typescript
 Post: list({
   mcp: {
@@ -897,9 +931,9 @@ Post: list({
       read: true,
       create: true,
       update: true,
-      delete: false,  // Disable delete tool for safety
-    }
-  }
+      delete: false, // Disable delete tool for safety
+    },
+  },
 })
 ```
 
@@ -911,37 +945,40 @@ Custom MCP tool definition for specialized operations.
 
 ```typescript
 type McpCustomTool = {
-  name: string,
-  description: string,
-  inputSchema: ZodSchema,
-  handler: (args) => Promise<unknown>,
+  name: string
+  description: string
+  inputSchema: ZodSchema
+  handler: (args) => Promise<unknown>
 }
 ```
 
 **Example:**
+
 ```typescript
 import { z } from 'zod'
 
-customTools: [{
-  name: 'publish-post',
-  description: 'Publish a draft post and notify subscribers',
-  inputSchema: z.object({
-    postId: z.string(),
-    notifySubscribers: z.boolean().optional(),
-  }),
-  handler: async ({ input, context }) => {
-    const post = await context.db.post.update({
-      where: { id: input.postId },
-      data: { status: 'published', publishedAt: new Date() },
-    })
+customTools: [
+  {
+    name: 'publish-post',
+    description: 'Publish a draft post and notify subscribers',
+    inputSchema: z.object({
+      postId: z.string(),
+      notifySubscribers: z.boolean().optional(),
+    }),
+    handler: async ({ input, context }) => {
+      const post = await context.db.post.update({
+        where: { id: input.postId },
+        data: { status: 'published', publishedAt: new Date() },
+      })
 
-    if (input.notifySubscribers) {
-      await notifySubscribers(post)
-    }
+      if (input.notifySubscribers) {
+        await notifySubscribers(post)
+      }
 
-    return post
-  }
-}]
+      return post
+    },
+  },
+]
 ```
 
 ---
@@ -957,6 +994,7 @@ storage: Record<string, StorageProviderConfig>
 Maps provider names to their configurations.
 
 **Example:**
+
 ```typescript
 import { s3Storage, localStorage } from '@opensaas/stack-storage'
 
@@ -1003,12 +1041,13 @@ Where to apply the type patch.
 **Default:** `'scalars-only'`
 
 **Example:**
+
 ```typescript
 password: password({
   typePatch: {
     resultType: "import('@opensaas/stack-core').HashedPassword",
     patchScope: 'scalars-only',
-  }
+  },
 })
 ```
 
@@ -1022,13 +1061,13 @@ Plugin definition for extending stack functionality.
 
 ```typescript
 type Plugin = {
-  name: string,
-  version?: string,
-  dependencies?: string[],
-  init: (context: PluginContext) => void | Promise<void>,
-  beforeGenerate?: (config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>,
-  afterGenerate?: (files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>,
-  runtime?: (context: AccessContext) => unknown,
+  name: string
+  version?: string
+  dependencies?: string[]
+  init: (context: PluginContext) => void | Promise<void>
+  beforeGenerate?: (config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>
+  afterGenerate?: (files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>
+  runtime?: (context: AccessContext) => unknown
 }
 ```
 
@@ -1053,8 +1092,9 @@ Array of plugin names this plugin depends on.
 **Type:** `string[]`
 
 **Example:**
+
 ```typescript
-dependencies: ['auth']  // This plugin requires auth plugin to run first
+dependencies: ['auth'] // This plugin requires auth plugin to run first
 ```
 
 ##### `init` (required)
@@ -1064,16 +1104,20 @@ Main initialization hook. Called during config processing.
 **Type:** `(context: PluginContext) => void | Promise<void>`
 
 **Example:**
+
 ```typescript
 init: async (context) => {
   // Add new list
-  context.addList('MyList', list({
-    fields: { name: text() }
-  }))
+  context.addList(
+    'MyList',
+    list({
+      fields: { name: text() },
+    }),
+  )
 
   // Extend existing list
   context.extendList('User', {
-    fields: { myField: text() }
+    fields: { myField: text() },
   })
 
   // Store plugin data
@@ -1100,11 +1144,12 @@ Provides runtime services attached to context.
 **Type:** `(context: AccessContext) => unknown`
 
 **Example:**
+
 ```typescript
 runtime: (context) => ({
   sendEmail: async (to, subject, body) => {
     // Email service implementation
-  }
+  },
 })
 
 // Access in your app:
@@ -1119,12 +1164,12 @@ Context provided to plugins during initialization.
 
 ```typescript
 type PluginContext = {
-  readonly config: OpenSaasConfig,
-  addList: (name: string, listConfig: ListConfig) => void,
-  extendList: (name: string, extension: object) => void,
-  registerFieldType?: (type: string, builder: Function) => void,
-  registerMcpTool?: (tool: McpCustomTool) => void,
-  setPluginData: <T>(pluginName: string, data: T) => void,
+  readonly config: OpenSaasConfig
+  addList: (name: string, listConfig: ListConfig) => void
+  extendList: (name: string, extension: object) => void
+  registerFieldType?: (type: string, builder: Function) => void
+  registerMcpTool?: (tool: McpCustomTool) => void
+  setPluginData: <T>(pluginName: string, data: T) => void
 }
 ```
 
@@ -1135,6 +1180,7 @@ type PluginContext = {
 Add a new list to the config. Throws if list already exists.
 
 **Signature:**
+
 ```typescript
 addList(name: string, listConfig: ListConfig): void
 ```
@@ -1144,6 +1190,7 @@ addList(name: string, listConfig: ListConfig): void
 Extend an existing list with additional fields, hooks, or access control. Deep merges configuration.
 
 **Signature:**
+
 ```typescript
 extendList(name: string, extension: {
   fields?: Record<string, FieldConfig>,
@@ -1158,6 +1205,7 @@ extendList(name: string, extension: {
 Register a custom field type globally.
 
 **Signature:**
+
 ```typescript
 registerFieldType(type: string, builder: (options?: unknown) => BaseFieldConfig): void
 ```
@@ -1167,6 +1215,7 @@ registerFieldType(type: string, builder: (options?: unknown) => BaseFieldConfig)
 Register a custom MCP tool globally.
 
 **Signature:**
+
 ```typescript
 registerMcpTool(tool: McpCustomTool): void
 ```
@@ -1176,11 +1225,13 @@ registerMcpTool(tool: McpCustomTool): void
 Store plugin-specific data for runtime access.
 
 **Signature:**
+
 ```typescript
 setPluginData<T>(pluginName: string, data: T): void
 ```
 
 **Access at runtime:**
+
 ```typescript
 const pluginData = config._pluginData[pluginName]
 ```
@@ -1195,12 +1246,12 @@ Context object passed to access control functions, hooks, and custom tools.
 
 ```typescript
 type AccessContext = {
-  session: Session,
-  prisma: PrismaClient,
-  db: AccessControlledDB,
-  storage: StorageUtils,
-  plugins: Record<string, unknown>,
-  _isSudo: boolean,
+  session: Session
+  prisma: PrismaClient
+  db: AccessControlledDB
+  storage: StorageUtils
+  plugins: Record<string, unknown>
+  _isSudo: boolean
 }
 ```
 
@@ -1250,10 +1301,10 @@ Storage utilities for file/image uploads.
 
 ```typescript
 type StorageUtils = {
-  uploadFile: (providerName, file, buffer, options?) => Promise<FileMetadata>,
-  uploadImage: (providerName, file, buffer, options?) => Promise<ImageMetadata>,
-  deleteFile: (providerName, filename) => Promise<void>,
-  deleteImage: (metadata) => Promise<void>,
+  uploadFile: (providerName, file, buffer, options?) => Promise<FileMetadata>
+  uploadImage: (providerName, file, buffer, options?) => Promise<ImageMetadata>
+  deleteFile: (providerName, filename) => Promise<void>
+  deleteImage: (metadata) => Promise<void>
 }
 ```
 

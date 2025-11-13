@@ -25,16 +25,14 @@ const context = await getContext(config, prisma, session, storage)
 ```
 
 **Type Signature:**
+
 ```typescript
-function getContext<
-  TConfig extends OpenSaasConfig,
-  TPrisma extends PrismaClientLike
->(
+function getContext<TConfig extends OpenSaasConfig, TPrisma extends PrismaClientLike>(
   config: TConfig,
   prisma: TPrisma,
   session: Session,
   storage?: StorageUtils,
-  _isSudo?: boolean
+  _isSudo?: boolean,
 ): {
   db: AccessControlledDB<TPrisma>
   session: Session
@@ -55,6 +53,7 @@ Your OpenSaaS configuration object.
 **Type:** `OpenSaasConfig`
 
 **Example:**
+
 ```typescript
 import config from './opensaas.config'
 
@@ -68,6 +67,7 @@ Your Prisma client instance. Pass as generic for type safety.
 **Type:** `TPrisma extends PrismaClientLike`
 
 **Example:**
+
 ```typescript
 import { PrismaClient } from '@prisma/client'
 
@@ -82,6 +82,7 @@ Current user session or `null` for anonymous access.
 **Type:** `Session | null`
 
 **Session Type:**
+
 ```typescript
 type Session = {
   userId?: string
@@ -90,6 +91,7 @@ type Session = {
 ```
 
 **Example:**
+
 ```typescript
 // With authentication
 const session = { userId: 'user-123', role: 'admin' }
@@ -108,6 +110,7 @@ Storage utilities for file/image uploads.
 **Default:** Throws error when storage operations are attempted
 
 **Example:**
+
 ```typescript
 import { createStorageUtils } from '@opensaas/stack-storage'
 
@@ -133,6 +136,7 @@ Access-controlled database interface with full Prisma type inference.
 **Type:** `AccessControlledDB<TPrisma>`
 
 **Available Operations:**
+
 - `findUnique(args)` - Find single record by unique field
 - `findMany(args)` - Find multiple records with filtering
 - `create(args)` - Create new record
@@ -141,18 +145,19 @@ Access-controlled database interface with full Prisma type inference.
 - `count(args)` - Count records
 
 **Example:**
+
 ```typescript
 // Query posts (access control enforced)
 const posts = await context.db.post.findMany({
-  where: { status: 'published' }
+  where: { status: 'published' },
 })
 
 // Create post (access control + hooks)
 const post = await context.db.post.create({
   data: {
     title: 'My Post',
-    content: 'Post content...'
-  }
+    content: 'Post content...',
+  },
 })
 ```
 
@@ -163,6 +168,7 @@ Current user session (same as input parameter).
 **Type:** `Session | null`
 
 **Example:**
+
 ```typescript
 if (context.session?.userId) {
   console.log('User is authenticated:', context.session.userId)
@@ -178,6 +184,7 @@ Raw Prisma client (bypasses access control - use with caution).
 **Warning:** Using `context.prisma` directly bypasses all access control. Only use when necessary and ensure proper authorization.
 
 **Example:**
+
 ```typescript
 // Direct Prisma access (bypasses access control)
 const count = await context.prisma.post.count()
@@ -190,19 +197,18 @@ Storage utilities for file/image operations.
 **Type:** `StorageUtils`
 
 **Methods:**
+
 - `uploadFile(provider, file, buffer, options)` - Upload file
 - `uploadImage(provider, file, buffer, options)` - Upload image with transformations
 - `deleteFile(provider, filename)` - Delete file
 - `deleteImage(metadata)` - Delete image and transformations
 
 **Example:**
+
 ```typescript
-const metadata = await context.storage.uploadImage(
-  'avatars',
-  file,
-  buffer,
-  { transformations: { thumbnail: { width: 150, height: 150 } } }
-)
+const metadata = await context.storage.uploadImage('avatars', file, buffer, {
+  transformations: { thumbnail: { width: 150, height: 150 } },
+})
 ```
 
 ##### `serverAction()`
@@ -212,6 +218,7 @@ Generic server action handler for Next.js Server Actions.
 **Type:** `(props: ServerActionProps) => Promise<unknown>`
 
 **Props:**
+
 ```typescript
 type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
@@ -220,6 +227,7 @@ type ServerActionProps =
 ```
 
 **Example:**
+
 ```typescript
 'use server'
 
@@ -231,8 +239,8 @@ async function handleAction(formData: FormData) {
     action: 'create',
     data: {
       title: formData.get('title'),
-      content: formData.get('content')
-    }
+      content: formData.get('content'),
+    },
   })
 }
 ```
@@ -246,6 +254,7 @@ Creates a new context with access control bypassed.
 **Important:** Sudo mode bypasses access control but still executes hooks and validation.
 
 **Example:**
+
 ```typescript
 const adminContext = context.sudo()
 
@@ -260,6 +269,7 @@ Flag indicating if context is in sudo mode.
 **Type:** `boolean`
 
 **Example:**
+
 ```typescript
 if (context._isSudo) {
   console.log('Running in sudo mode - access control bypassed')
@@ -285,6 +295,7 @@ const context = await getContext({ userId: 'user-123' })
 ```
 
 **Generated Implementation:**
+
 ```typescript
 import { getContext as coreGetContext } from '@opensaas/stack-core/context'
 import { PrismaClient } from '@prisma/client'
@@ -310,6 +321,7 @@ All database operations are access-controlled and execute hooks in the correct o
 Find a single record by unique field (typically ID).
 
 **Signature:**
+
 ```typescript
 db[listKey].findUnique(args: {
   where: { id: string }
@@ -318,24 +330,28 @@ db[listKey].findUnique(args: {
 ```
 
 **Parameters:**
+
 - `where` - Unique field filter (e.g., `{ id: '...' }`)
 - `include` - Optional relationships to include
 
 **Returns:** Record or `null` if not found or access denied
 
 **Access Control:**
+
 - Checks `operation.query` access
 - Applies field-level read access
 - Returns `null` on access denial (silent failure)
 
 **Hooks Executed:**
+
 1. Field-level `resolveOutput` (transforms output values)
 2. Field-level `afterOperation` (side effects)
 
 **Example:**
+
 ```typescript
 const post = await context.db.post.findUnique({
-  where: { id: 'post-123' }
+  where: { id: 'post-123' },
 })
 
 if (!post) {
@@ -345,10 +361,11 @@ if (!post) {
 ```
 
 **With Relationships:**
+
 ```typescript
 const post = await context.db.post.findUnique({
   where: { id: 'post-123' },
-  include: { author: true }
+  include: { author: true },
 })
 ```
 
@@ -359,6 +376,7 @@ const post = await context.db.post.findUnique({
 Find multiple records with optional filtering, pagination, and relationships.
 
 **Signature:**
+
 ```typescript
 db[listKey].findMany(args?: {
   where?: Record<string, unknown>
@@ -369,6 +387,7 @@ db[listKey].findMany(args?: {
 ```
 
 **Parameters:**
+
 - `where` - Filter conditions (merged with access filters)
 - `take` - Maximum number of records to return
 - `skip` - Number of records to skip (for pagination)
@@ -377,33 +396,36 @@ db[listKey].findMany(args?: {
 **Returns:** Array of records (empty array `[]` if none found or access denied)
 
 **Access Control:**
+
 - Checks `operation.query` access
 - Merges access filters with user's `where` clause
 - Applies field-level read access
 - Returns `[]` on access denial (silent failure)
 
 **Hooks Executed:**
+
 1. Field-level `resolveOutput` for each record
 2. Field-level `afterOperation` for each record
 
 **Example:**
+
 ```typescript
 // All published posts
 const posts = await context.db.post.findMany({
-  where: { status: 'published' }
+  where: { status: 'published' },
 })
 
 // With pagination
 const posts = await context.db.post.findMany({
   where: { status: 'published' },
   take: 10,
-  skip: 20
+  skip: 20,
 })
 
 // With relationships
 const posts = await context.db.post.findMany({
   where: { status: 'published' },
-  include: { author: true, comments: true }
+  include: { author: true, comments: true },
 })
 ```
 
@@ -414,6 +436,7 @@ const posts = await context.db.post.findMany({
 Create a new record with full validation, access control, and hooks.
 
 **Signature:**
+
 ```typescript
 db[listKey].create(args: {
   data: Record<string, unknown>
@@ -421,16 +444,19 @@ db[listKey].create(args: {
 ```
 
 **Parameters:**
+
 - `data` - Field values for the new record
 
 **Returns:** Created record or `null` if access denied
 
 **Access Control:**
+
 - Checks `operation.create` access
 - Applies field-level create access
 - Returns `null` on access denial (silent failure)
 
 **Hooks Executed (in order):**
+
 1. List-level `resolveInput` - Transform input data
 2. Field-level `resolveInput` - Transform field values (e.g., hash passwords)
 3. List-level `validateInput` - Custom validation
@@ -445,13 +471,14 @@ db[listKey].create(args: {
 12. Field-level `resolveOutput` - Transform output values
 
 **Example:**
+
 ```typescript
 const post = await context.db.post.create({
   data: {
     title: 'My First Post',
     content: 'This is the content...',
-    status: 'draft'
-  }
+    status: 'draft',
+  },
 })
 
 if (!post) {
@@ -460,10 +487,11 @@ if (!post) {
 ```
 
 **With Validation Errors:**
+
 ```typescript
 try {
   const post = await context.db.post.create({
-    data: { title: '' } // Empty title (required field)
+    data: { title: '' }, // Empty title (required field)
   })
 } catch (error) {
   if (error instanceof ValidationError) {
@@ -479,6 +507,7 @@ try {
 Update an existing record with full validation, access control, and hooks.
 
 **Signature:**
+
 ```typescript
 db[listKey].update(args: {
   where: { id: string }
@@ -487,18 +516,21 @@ db[listKey].update(args: {
 ```
 
 **Parameters:**
+
 - `where` - Unique field to identify record
 - `data` - Fields to update (partial update)
 
 **Returns:** Updated record or `null` if not found or access denied
 
 **Access Control:**
+
 - Fetches existing record first
 - Checks `operation.update` access (with access to existing item)
 - Applies field-level update access
 - Returns `null` on access denial (silent failure)
 
 **Hooks Executed (in order):**
+
 1. List-level `resolveInput` - Transform input data
 2. Field-level `resolveInput` - Transform field values
 3. List-level `validateInput` - Custom validation
@@ -513,13 +545,14 @@ db[listKey].update(args: {
 12. Field-level `resolveOutput` - Transform output values
 
 **Example:**
+
 ```typescript
 const post = await context.db.post.update({
   where: { id: 'post-123' },
   data: {
     status: 'published',
-    publishedAt: new Date()
-  }
+    publishedAt: new Date(),
+  },
 })
 
 if (!post) {
@@ -529,11 +562,12 @@ if (!post) {
 ```
 
 **Partial Updates:**
+
 ```typescript
 // Only update title (other fields unchanged)
 const post = await context.db.post.update({
   where: { id: 'post-123' },
-  data: { title: 'Updated Title' }
+  data: { title: 'Updated Title' },
 })
 ```
 
@@ -544,6 +578,7 @@ const post = await context.db.post.update({
 Delete an existing record with access control and hooks.
 
 **Signature:**
+
 ```typescript
 db[listKey].delete(args: {
   where: { id: string }
@@ -551,16 +586,19 @@ db[listKey].delete(args: {
 ```
 
 **Parameters:**
+
 - `where` - Unique field to identify record
 
 **Returns:** Deleted record or `null` if not found or access denied
 
 **Access Control:**
+
 - Fetches existing record first
 - Checks `operation.delete` access (with access to existing item)
 - Returns `null` on access denial (silent failure)
 
 **Hooks Executed (in order):**
+
 1. Field-level `beforeOperation` - Side effects before delete
 2. List-level `beforeOperation` - Side effects before delete
 3. **Database delete operation**
@@ -568,9 +606,10 @@ db[listKey].delete(args: {
 5. Field-level `afterOperation` - Side effects after delete (e.g., cleanup files)
 
 **Example:**
+
 ```typescript
 const post = await context.db.post.delete({
-  where: { id: 'post-123' }
+  where: { id: 'post-123' },
 })
 
 if (!post) {
@@ -579,6 +618,7 @@ if (!post) {
 ```
 
 **Use Case - Cleanup:**
+
 ```typescript
 // Field hook automatically cleans up files
 thumbnail: text({
@@ -587,8 +627,8 @@ thumbnail: text({
       if (operation === 'delete' && value) {
         await deleteFromStorage(value)
       }
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -599,6 +639,7 @@ thumbnail: text({
 Count records with optional filtering and access control.
 
 **Signature:**
+
 ```typescript
 db[listKey].count(args?: {
   where?: Record<string, unknown>
@@ -606,20 +647,23 @@ db[listKey].count(args?: {
 ```
 
 **Parameters:**
+
 - `where` - Optional filter conditions (merged with access filters)
 
 **Returns:** Number of matching records (returns `0` if access denied)
 
 **Access Control:**
+
 - Checks `operation.query` access
 - Merges access filters with user's `where` clause
 - Returns `0` on access denial (silent failure)
 
 **Example:**
+
 ```typescript
 // Count all published posts
 const count = await context.db.post.count({
-  where: { status: 'published' }
+  where: { status: 'published' },
 })
 
 // Count all posts (respects access control)
@@ -648,10 +692,12 @@ const adminContext = context.sudo()
 ### What Sudo Mode Does
 
 **Bypasses:**
+
 - Operation-level access control (query, create, update, delete)
 - Field-level access control (read, create, update)
 
 **Still Executes:**
+
 - All hooks (resolveInput, validateInput, beforeOperation, afterOperation)
 - Field validation (isRequired, length, min, max)
 - Field transformations (password hashing, etc.)
@@ -672,8 +718,8 @@ const allPosts = await sudoContext.db.post.findMany()
 const post = await sudoContext.db.post.create({
   data: {
     title: '', // ValidationError - still validates
-    password: 'plain' // Still hashes password
-  }
+    password: 'plain', // Still hashes password
+  },
 })
 ```
 
@@ -710,25 +756,27 @@ OpenSaaS Stack uses silent failures to prevent information leakage about the exi
 ### Why Silent Failures?
 
 When access is denied, returning explicit errors can reveal:
+
 - Whether a record exists
 - What fields it has
 - Information about the data structure
 
 Silent failures prevent this by returning the same result whether:
+
 1. Record doesn't exist
 2. User doesn't have access
 3. Access rule filtered out the record
 
 ### Behavior by Operation
 
-| Operation | Access Denied Returns |
-|-----------|----------------------|
-| `findUnique()` | `null` |
-| `findMany()` | `[]` (empty array) |
-| `create()` | `null` |
-| `update()` | `null` |
-| `delete()` | `null` |
-| `count()` | `0` |
+| Operation      | Access Denied Returns |
+| -------------- | --------------------- |
+| `findUnique()` | `null`                |
+| `findMany()`   | `[]` (empty array)    |
+| `create()`     | `null`                |
+| `update()`     | `null`                |
+| `delete()`     | `null`                |
+| `count()`      | `0`                   |
 
 ### Handling Silent Failures
 
@@ -737,7 +785,7 @@ Always check for `null` or empty results:
 ```typescript
 const post = await context.db.post.update({
   where: { id },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 if (!post) {
@@ -776,7 +824,7 @@ The context provides full TypeScript type inference from your Prisma schema.
 ```typescript
 // Type: Post | null
 const post = await context.db.post.findUnique({
-  where: { id: 'post-123' }
+  where: { id: 'post-123' },
 })
 
 // Type: Post[]
@@ -800,11 +848,7 @@ import { getContext } from '@opensaas/stack-core/context'
 const prisma = new PrismaClient()
 
 // Full type inference for all operations
-const context = getContext<typeof config, typeof prisma>(
-  config,
-  prisma,
-  session
-)
+const context = getContext<typeof config, typeof prisma>(config, prisma, session)
 ```
 
 ---
@@ -895,7 +939,7 @@ import { ValidationError } from '@opensaas/stack-core'
 
 try {
   const post = await context.db.post.create({
-    data: { title: '' }
+    data: { title: '' },
   })
 } catch (error) {
   if (error instanceof ValidationError) {
@@ -913,7 +957,7 @@ try {
 ```typescript
 const post = await context.db.post.update({
   where: { id },
-  data: { title: 'New Title' }
+  data: { title: 'New Title' },
 })
 
 if (!post) {
@@ -927,7 +971,9 @@ if (!post) {
 ```typescript
 try {
   const post = await context.db.post.create({
-    data: { /* ... */ }
+    data: {
+      /* ... */
+    },
   })
 } catch (error) {
   // Prisma errors (unique constraint, foreign key, etc.)

@@ -53,9 +53,11 @@ export function myPlugin(options: MyPluginOptions): Plugin {
     runtime: (context) => {
       // Provide runtime services (optional)
       return {
-        myUtility: async () => { /* ... */ }
+        myUtility: async () => {
+          /* ... */
+        },
       }
-    }
+    },
   }
 }
 ```
@@ -66,12 +68,12 @@ The `context` object passed to `init()` provides these methods:
 
 ```typescript
 type PluginContext = {
-  readonly config: OpenSaasConfig,
-  addList: (name: string, listConfig: ListConfig) => void,
-  extendList: (name: string, extension: object) => void,
-  registerFieldType?: (type: string, builder: Function) => void,
-  registerMcpTool?: (tool: McpCustomTool) => void,
-  setPluginData: <T>(pluginName: string, data: T) => void,
+  readonly config: OpenSaasConfig
+  addList: (name: string, listConfig: ListConfig) => void
+  extendList: (name: string, extension: object) => void
+  registerFieldType?: (type: string, builder: Function) => void
+  registerMcpTool?: (tool: McpCustomTool) => void
+  setPluginData: <T>(pluginName: string, data: T) => void
 }
 ```
 
@@ -84,20 +86,23 @@ Called during config processing. Use this to add or extend lists.
 ```typescript
 init: async (context) => {
   // Add a new list
-  context.addList('AuditLog', list({
-    fields: {
-      action: text({ validation: { isRequired: true } }),
-      userId: text(),
-      timestamp: timestamp({ defaultValue: { kind: 'now' } }),
-    }
-  }))
+  context.addList(
+    'AuditLog',
+    list({
+      fields: {
+        action: text({ validation: { isRequired: true } }),
+        userId: text(),
+        timestamp: timestamp({ defaultValue: { kind: 'now' } }),
+      },
+    }),
+  )
 
   // Extend existing User list (if it exists)
   if (context.config.lists.User) {
     context.extendList('User', {
       fields: {
         lastLoginAt: timestamp(),
-      }
+      },
     })
   }
 
@@ -145,7 +150,7 @@ runtime: (context) => ({
   },
   logEvent: async (event: string, data: unknown) => {
     // Analytics implementation
-  }
+  },
 })
 
 // Access in your app:
@@ -175,24 +180,27 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
 
     init: async (context) => {
       // Add AuditLog list
-      context.addList('AuditLog', list({
-        fields: {
-          listName: text({ validation: { isRequired: true } }),
-          itemId: text(),
-          operation: text({ validation: { isRequired: true } }),
-          userId: text(),
-          changes: text(), // JSON string of changes
-          timestamp: timestamp({ defaultValue: { kind: 'now' } }),
-        },
-        access: {
-          operation: {
-            query: ({ session }) => session?.role === 'admin',
-            create: () => true, // Hooks can always create
-            update: () => false,
-            delete: () => false,
-          }
-        }
-      }))
+      context.addList(
+        'AuditLog',
+        list({
+          fields: {
+            listName: text({ validation: { isRequired: true } }),
+            itemId: text(),
+            operation: text({ validation: { isRequired: true } }),
+            userId: text(),
+            changes: text(), // JSON string of changes
+            timestamp: timestamp({ defaultValue: { kind: 'now' } }),
+          },
+          access: {
+            operation: {
+              query: ({ session }) => session?.role === 'admin',
+              create: () => true, // Hooks can always create
+              update: () => false,
+              delete: () => false,
+            },
+          },
+        }),
+      )
 
       // Add audit hooks to all lists
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
@@ -213,10 +221,10 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
                   userId: ctx.session?.userId || 'anonymous',
                   changes: JSON.stringify(item),
                   timestamp: new Date(),
-                }
+                },
               })
-            }
-          }
+            },
+          },
         })
       }
 
@@ -229,10 +237,10 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
       getAuditTrail: async (listName: string, itemId: string) => {
         return context.prisma.auditLog.findMany({
           where: { listName, itemId },
-          orderBy: { timestamp: 'desc' }
+          orderBy: { timestamp: 'desc' },
         })
-      }
-    })
+      },
+    }),
   }
 }
 ```
@@ -248,8 +256,8 @@ export default config({
   plugins: [
     auditPlugin({
       excludeLists: ['AuditLog', 'Session'],
-      logReads: false
-    })
+      logReads: false,
+    }),
   ],
   db: { provider: 'sqlite', url: 'file:./dev.db' },
   lists: {
@@ -257,9 +265,9 @@ export default config({
       fields: {
         title: text(),
         content: text(),
-      }
-    })
-  }
+      },
+    }),
+  },
 })
 ```
 
@@ -293,9 +301,9 @@ export function myPlugin(): Plugin {
       context.extendList('User', {
         fields: {
           apiKey: text(), // Add to existing User from auth
-        }
+        },
       })
-    }
+    },
   }
 }
 ```
@@ -325,11 +333,11 @@ export function timestampPlugin(): Plugin {
             resolveInput: async ({ resolvedData }) => {
               resolvedData.updatedAt = new Date()
               return resolvedData
-            }
-          }
+            },
+          },
         })
       }
-    }
+    },
   }
 }
 
@@ -345,11 +353,11 @@ export function validationPlugin(): Plugin {
               if (resolvedData.spam) {
                 addValidationError('Spam detected')
               }
-            }
-          }
+            },
+          },
         })
       }
-    }
+    },
   }
 }
 
@@ -365,7 +373,7 @@ init: async (context) => {
   // Only extend User if it exists
   if (context.config.lists.User) {
     context.extendList('User', {
-      fields: { apiKey: text() }
+      fields: { apiKey: text() },
     })
   }
 
@@ -374,8 +382,8 @@ init: async (context) => {
     if (listConfig.fields.authorId) {
       context.extendList(listName, {
         fields: {
-          publishedAt: timestamp()
-        }
+          publishedAt: timestamp(),
+        },
       })
     }
   }
@@ -395,7 +403,7 @@ init: async (context) => {
     getZodSchema: (fieldName, operation) => {
       return z.object({
         lat: z.number(),
-        lng: z.number()
+        lng: z.number(),
       })
     },
     getPrismaType: (fieldName) => {
@@ -403,7 +411,7 @@ init: async (context) => {
     },
     getTypeScriptType: () => {
       return { type: '{ lat: number, lng: number }', optional: false }
-    }
+    },
   }))
 }
 ```
@@ -425,7 +433,7 @@ init: async (context) => {
     handler: async ({ input, context }) => {
       // Send email implementation
       return { success: true }
-    }
+    },
   })
 }
 ```
@@ -444,11 +452,7 @@ export interface MyPluginOptions {
 }
 
 export function myPlugin(options: MyPluginOptions): Plugin {
-  const {
-    apiKey,
-    endpoint = 'https://api.example.com',
-    retries = 3
-  } = options
+  const { apiKey, endpoint = 'https://api.example.com', retries = 3 } = options
 
   return {
     name: 'my-plugin',
@@ -471,7 +475,9 @@ export function myPlugin(options: MyPluginOptions): Plugin {
     throw new Error('myPlugin: retries must be positive')
   }
 
-  return { /* ... */ }
+  return {
+    /* ... */
+  }
 }
 ```
 
@@ -487,7 +493,9 @@ export function myPlugin(options?: { apiKey?: string }): Plugin {
     throw new Error('myPlugin: API key not found')
   }
 
-  return { /* ... */ }
+  return {
+    /* ... */
+  }
 }
 ```
 
@@ -507,7 +515,7 @@ describe('myPlugin', () => {
     const cfg = config({
       plugins: [myPlugin()],
       db: { provider: 'sqlite', url: 'file::memory:' },
-      lists: {}
+      lists: {},
     })
 
     expect(cfg.lists.AuditLog).toBeDefined()
@@ -519,8 +527,8 @@ describe('myPlugin', () => {
       plugins: [myPlugin()],
       db: { provider: 'sqlite', url: 'file::memory:' },
       lists: {
-        User: list({ fields: { name: text() } })
-      }
+        User: list({ fields: { name: text() } }),
+      },
     })
 
     expect(cfg.lists.User.fields.apiKey).toBeDefined()
@@ -569,7 +577,7 @@ test('audit plugin logs operations', async () => {
 
 Document your plugin thoroughly:
 
-```typescript
+````typescript
 /**
  * Audit Plugin for OpenSaaS Stack
  *
@@ -590,7 +598,7 @@ Document your plugin thoroughly:
  * @param options.logReads - Whether to log read operations
  */
 export function auditPlugin(options: AuditPluginConfig): Plugin
-```
+````
 
 ### 3. Error Handling
 
@@ -599,9 +607,7 @@ Provide clear error messages:
 ```typescript
 init: async (context) => {
   if (!context.config.lists.User) {
-    throw new Error(
-      'myPlugin requires a User list. Please define one or use the auth plugin.'
-    )
+    throw new Error('myPlugin requires a User list. Please define one or use the auth plugin.')
   }
 }
 ```
@@ -709,6 +715,7 @@ my-plugin/
 **Problem**: Plugin init() not being called
 
 **Solutions**:
+
 1. Check plugin is in `plugins` array
 2. Verify plugin function is being called: `plugins: [myPlugin()]`
 3. Check for dependency resolution errors
@@ -718,6 +725,7 @@ my-plugin/
 **Problem**: Extended fields not appearing
 
 **Solutions**:
+
 1. Use `extendList()` not `addList()` for existing lists
 2. Check list name matches exactly (PascalCase)
 3. Verify plugin runs before generator
@@ -727,6 +735,7 @@ my-plugin/
 **Problem**: `context.plugins.myPlugin` is undefined
 
 **Solutions**:
+
 1. Ensure `runtime()` is defined in plugin
 2. Check plugin data stored with `setPluginData()`
 3. Verify context is using correct config
@@ -736,6 +745,7 @@ my-plugin/
 **Problem**: TypeScript errors in plugin code
 
 **Solutions**:
+
 1. Import types from `@opensaas/stack-core`
 2. Use `Plugin` type for return value
 3. Check `ListConfig` and `FieldConfig` types

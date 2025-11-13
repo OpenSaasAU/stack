@@ -82,7 +82,7 @@ export function loadExistingIndex(filePath: string): EmbeddingsIndex | null {
   try {
     const content = readFileSync(filePath, 'utf-8')
     return JSON.parse(content) as EmbeddingsIndex
-  } catch (error) {
+  } catch {
     console.warn(`Warning: Could not load existing embeddings from ${filePath}`)
     return null
   }

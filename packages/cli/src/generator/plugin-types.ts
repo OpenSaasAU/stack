@@ -63,7 +63,9 @@ function generatePluginServicesInterface(config: OpenSaasConfig): string {
   lines.push(' * Provides type-safe access to context.plugins')
   lines.push(' * Extends Record to allow compatibility with base AccessContext type')
   lines.push(' */')
-  lines.push('export interface PluginServices extends Record<string, Record<string, any> | undefined> {')
+  lines.push(
+    'export interface PluginServices extends Record<string, Record<string, any> | undefined> {',
+  )
 
   if (pluginsWithRuntime.length > 0) {
     for (const plugin of pluginsWithRuntime) {

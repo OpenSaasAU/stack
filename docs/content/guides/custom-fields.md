@@ -66,9 +66,7 @@ export function ColorPickerField({
             className="w-8 h-8 rounded border border-border"
             style={{ backgroundColor: value || '#000000' }}
           />
-          <span className="text-sm text-muted-foreground">
-            {value || 'No color selected'}
-          </span>
+          <span className="text-sm text-muted-foreground">{value || 'No color selected'}</span>
         </div>
       </div>
     )
@@ -252,9 +250,7 @@ export function SlugField({
     return (
       <div className="space-y-1">
         <label className="text-sm font-medium">{label}</label>
-        <code className="text-sm bg-muted px-2 py-1 rounded">
-          /{value || 'no-slug'}
-        </code>
+        <code className="text-sm bg-muted px-2 py-1 rounded">/{value || 'no-slug'}</code>
       </div>
     )
   }
@@ -285,9 +281,7 @@ export function SlugField({
             isAutoMode && 'bg-muted text-muted-foreground italic',
           )}
         />
-        {isAutoMode && (
-          <span className="text-xs text-muted-foreground">Auto</span>
-        )}
+        {isAutoMode && <span className="text-xs text-muted-foreground">Auto</span>}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <p className="text-xs text-muted-foreground">
@@ -405,21 +399,22 @@ export default config({
 ```
 
 This combines:
+
 - Custom UI component for better UX
 - Server-side hook for automatic generation
 - Validation to ensure uniqueness
 
 ## Comparison: When to Use Which Approach
 
-| Scenario                           | Recommended Approach      | Why                                   |
-| ---------------------------------- | ------------------------- | ------------------------------------- |
-| Color picker for multiple fields   | Global Registration       | Reusable across User, Post, etc.      |
-| Slug field (one per content type)  | Per-Field Override        | Specific to Post.slug                 |
-| Rich text editor                   | Global Registration       | Common pattern, multiple use cases    |
-| Custom computed field display      | Per-Field Override        | Unique calculation logic              |
-| Phone number formatter             | Global Registration       | Standard format, many fields          |
-| Special admin-only control         | Per-Field Override        | Single use case                       |
-| Date range picker                  | Global Registration       | Library component, multiple fields    |
+| Scenario                           | Recommended Approach       | Why                                   |
+| ---------------------------------- | -------------------------- | ------------------------------------- |
+| Color picker for multiple fields   | Global Registration        | Reusable across User, Post, etc.      |
+| Slug field (one per content type)  | Per-Field Override         | Specific to Post.slug                 |
+| Rich text editor                   | Global Registration        | Common pattern, multiple use cases    |
+| Custom computed field display      | Per-Field Override         | Unique calculation logic              |
+| Phone number formatter             | Global Registration        | Standard format, many fields          |
+| Special admin-only control         | Per-Field Override         | Single use case                       |
+| Date range picker                  | Global Registration        | Library component, multiple fields    |
 | Field with unique validation logic | Per-Field Override or Hook | Depends on whether UI or data focused |
 
 ## Working with Third-Party Field Packages
@@ -461,6 +456,7 @@ export default config({
 See the [packages/tiptap](https://github.com/OpenSaasAU/stack/tree/main/packages/tiptap) source code for a complete reference implementation.
 
 Key requirements:
+
 1. Implement `BaseFieldConfig` interface
 2. Provide `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()` methods
 3. Export field builder function and React component
@@ -487,7 +483,7 @@ Use the stack's utility classes and CSS variables:
 ```tsx
 import { cn } from '@opensaas/stack-ui/lib/utils'
 
-<input
+;<input
   className={cn(
     'px-3 py-2 rounded-md border border-input',
     'bg-background text-foreground',
@@ -568,6 +564,7 @@ function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps })
 **Problem**: Custom field not appearing in admin UI
 
 **Solutions**:
+
 1. Ensure registration file is imported in admin page
 2. Check that component is marked with `'use client'`
 3. Verify field type name matches registration
@@ -578,6 +575,7 @@ function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps })
 **Problem**: Type errors when using custom component
 
 **Solutions**:
+
 1. Ensure component implements `FieldComponentProps`
 2. Check that props interface is exported
 3. Verify field config UI options match component props
@@ -587,6 +585,7 @@ function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps })
 **Problem**: Component doesn't match admin UI theme
 
 **Solutions**:
+
 1. Use CSS variables from the theme system
 2. Import and use `cn()` utility for conditional classes
 3. Check that Tailwind classes are being processed

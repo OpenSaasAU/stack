@@ -36,18 +36,20 @@ Validation rules for the text field.
 **Type:** `object`
 
 **Properties:**
+
 - `isRequired?: boolean` - Field is required on create
 - `length?: object` - Length constraints
   - `min?: number` - Minimum character length (default: 1 when required)
   - `max?: number` - Maximum character length
 
 **Example:**
+
 ```typescript
 title: text({
   validation: {
     isRequired: true,
-    length: { min: 3, max: 100 }
-  }
+    length: { min: 3, max: 100 },
+  },
 })
 ```
 
@@ -58,15 +60,17 @@ Database index configuration.
 **Type:** `boolean | 'unique'`
 
 **Values:**
+
 - `true` - Create non-unique index for faster queries
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
 **Example:**
+
 ```typescript
 email: text({
   isIndexed: 'unique',
-  validation: { isRequired: true }
+  validation: { isRequired: true },
 })
 ```
 
@@ -78,9 +82,10 @@ UI display mode for the field.
 **Default:** `'input'`
 
 **Example:**
+
 ```typescript
 description: text({
-  ui: { displayMode: 'textarea' }
+  ui: { displayMode: 'textarea' },
 })
 ```
 
@@ -125,18 +130,20 @@ Validation rules for the integer field.
 **Type:** `object`
 
 **Properties:**
+
 - `isRequired?: boolean` - Field is required on create
 - `min?: number` - Minimum value (inclusive)
 - `max?: number` - Maximum value (inclusive)
 
 **Example:**
+
 ```typescript
 age: integer({
   validation: {
     isRequired: true,
     min: 0,
-    max: 150
-  }
+    max: 150,
+  },
 })
 ```
 
@@ -147,6 +154,7 @@ Default value when creating new items.
 **Type:** `number`
 
 **Example:**
+
 ```typescript
 score: integer({ defaultValue: 0 })
 ```
@@ -187,6 +195,7 @@ Default boolean value.
 **Type:** `boolean`
 
 **Example:**
+
 ```typescript
 isPublished: checkbox({ defaultValue: false })
 emailVerified: checkbox({ defaultValue: true })
@@ -228,13 +237,15 @@ Default timestamp value.
 **Type:** `{ kind: 'now' } | Date`
 
 **Values:**
+
 - `{ kind: 'now' }` - Automatically set to current time on create
 - `Date` - Specific date/time value
 
 **Example:**
+
 ```typescript
 createdAt: timestamp({
-  defaultValue: { kind: 'now' }
+  defaultValue: { kind: 'now' },
 })
 
 publishedAt: timestamp()
@@ -251,6 +262,7 @@ Prisma: `DateTime`
 #### Validation
 
 Accepts:
+
 - `Date` objects
 - ISO 8601 datetime strings
 
@@ -291,12 +303,14 @@ Validation rules for the password field.
 **Type:** `object`
 
 **Properties:**
+
 - `isRequired?: boolean` - Field is required on create
 
 **Example:**
+
 ```typescript
 password: password({
-  validation: { isRequired: true }
+  validation: { isRequired: true },
 })
 ```
 
@@ -315,16 +329,16 @@ Prisma: `String`
 const user = await context.db.user.create({
   data: {
     email: 'user@example.com',
-    password: 'plaintextPassword' // Hashed before storage
-  }
+    password: 'plaintextPassword', // Hashed before storage
+  },
 })
 
 // Authenticating - use the compare() method
 const user = await context.db.user.findUnique({
-  where: { email: 'user@example.com' }
+  where: { email: 'user@example.com' },
 })
 
-if (user && await user.password.compare('plaintextPassword')) {
+if (user && (await user.password.compare('plaintextPassword'))) {
   // Password is correct
 }
 ```
@@ -343,6 +357,7 @@ class HashedPassword extends String {
 ```
 
 **Important:**
+
 - Never compare password strings directly
 - Always use `await password.compare(input)` for verification
 - Empty strings and undefined values skip hashing (allows partial updates)
@@ -380,17 +395,19 @@ Array of available options.
 **Type:** `Array<{ label: string; value: string }>`
 
 **Properties:**
+
 - `label` - Display text shown to users
 - `value` - Actual value stored in database
 
 **Example:**
+
 ```typescript
 status: select({
   options: [
     { label: 'Draft', value: 'draft' },
     { label: 'Published', value: 'published' },
-    { label: 'Archived', value: 'archived' }
-  ]
+    { label: 'Archived', value: 'archived' },
+  ],
 })
 ```
 
@@ -401,10 +418,13 @@ Default selected value (must match one of the option values).
 **Type:** `string`
 
 **Example:**
+
 ```typescript
 status: select({
-  options: [/* ... */],
-  defaultValue: 'draft'
+  options: [
+    /* ... */
+  ],
+  defaultValue: 'draft',
 })
 ```
 
@@ -422,6 +442,7 @@ UI component to use for selection.
 **Default:** `'select'`
 
 **Values:**
+
 - `'select'` - Dropdown select menu
 - `'segmented-control'` - Button group (good for 2-4 options)
 - `'radio'` - Radio button group
@@ -463,27 +484,29 @@ Reference to related list in format `'ListName.fieldName'`.
 **Type:** `string`
 
 **Format:** `'ListName.fieldName'` where:
+
 - `ListName` - The target list (PascalCase)
 - `fieldName` - The field on the target list that references back
 
 **Example:**
+
 ```typescript
 // User.posts -> Post.author relationship
 User: list({
   fields: {
     posts: relationship({
       ref: 'Post.author',
-      many: true
-    })
-  }
+      many: true,
+    }),
+  },
 })
 
 Post: list({
   fields: {
     author: relationship({
-      ref: 'User.posts'
-    })
-  }
+      ref: 'User.posts',
+    }),
+  },
 })
 ```
 
@@ -495,6 +518,7 @@ Whether this is a one-to-many relationship.
 **Default:** `false`
 
 **Values:**
+
 - `true` - One-to-many (e.g., User has many Posts)
 - `false` - Many-to-one or one-to-one (e.g., Post has one Author)
 
@@ -506,6 +530,7 @@ UI component for selecting related items.
 **Default:** `'select'`
 
 **Values:**
+
 - `'select'` - Dropdown select for choosing related items
 - `'cards'` - Card-based UI for managing relationships
 
@@ -516,14 +541,14 @@ UI component for selecting related items.
 ```typescript
 User: list({
   fields: {
-    posts: relationship({ ref: 'Post.author', many: true })
-  }
+    posts: relationship({ ref: 'Post.author', many: true }),
+  },
 })
 
 Post: list({
   fields: {
-    author: relationship({ ref: 'User.posts' })
-  }
+    author: relationship({ ref: 'User.posts' }),
+  },
 })
 ```
 
@@ -532,14 +557,14 @@ Post: list({
 ```typescript
 Post: list({
   fields: {
-    author: relationship({ ref: 'User.posts' })
-  }
+    author: relationship({ ref: 'User.posts' }),
+  },
 })
 
 User: list({
   fields: {
-    posts: relationship({ ref: 'Post.author', many: true })
-  }
+    posts: relationship({ ref: 'Post.author', many: true }),
+  },
 })
 ```
 
@@ -548,14 +573,14 @@ User: list({
 ```typescript
 User: list({
   fields: {
-    profile: relationship({ ref: 'Profile.user' })
-  }
+    profile: relationship({ ref: 'Profile.user' }),
+  },
 })
 
 Profile: list({
   fields: {
-    user: relationship({ ref: 'User.profile' })
-  }
+    user: relationship({ ref: 'User.profile' }),
+  },
 })
 ```
 
@@ -602,6 +627,7 @@ Validation rules for the JSON field.
 **Type:** `object`
 
 **Properties:**
+
 - `isRequired?: boolean` - Field is required on create
 
 ##### `ui.placeholder`
@@ -631,8 +657,8 @@ metadata: json({
   ui: {
     placeholder: 'Enter JSON data...',
     rows: 10,
-    formatted: true
-  }
+    formatted: true,
+  },
 })
 
 // Creating with JSON data
@@ -640,14 +666,14 @@ const item = await context.db.item.create({
   data: {
     metadata: {
       tags: ['tag1', 'tag2'],
-      settings: { theme: 'dark', notifications: true }
-    }
-  }
+      settings: { theme: 'dark', notifications: true },
+    },
+  },
 })
 
 // Querying returns parsed JSON
 const item = await context.db.item.findUnique({
-  where: { id: '...' }
+  where: { id: '...' },
 })
 console.log(item.metadata.tags) // ['tag1', 'tag2']
 ```
@@ -687,13 +713,14 @@ type AccessControl = (args: {
 ```
 
 **Example:**
+
 ```typescript
 internalNotes: text({
   access: {
     read: ({ session }) => session?.role === 'admin',
     create: ({ session }) => session?.role === 'admin',
-    update: ({ session }) => session?.role === 'admin'
-  }
+    update: ({ session }) => session?.role === 'admin',
+  },
 })
 ```
 
@@ -758,6 +785,7 @@ Transform field value before database write.
 **Use cases:** Hash passwords, normalize data, compute derived values
 
 **Example:**
+
 ```typescript
 slug: text({
   hooks: {
@@ -767,8 +795,8 @@ slug: text({
         return item.title.toLowerCase().replace(/\s+/g, '-')
       }
       return inputValue
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -781,14 +809,15 @@ Transform field value after database read.
 **Use cases:** Wrap sensitive data, format values, compute client-safe representations
 
 **Example:**
+
 ```typescript
 profileImage: text({
   hooks: {
     resolveOutput: ({ value }) => {
       // Add CDN prefix to image URLs
       return value ? `https://cdn.example.com/${value}` : null
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -801,9 +830,12 @@ Side effects before database operation. Does NOT modify data.
 **Use cases:** Logging, validation, pre-operation checks
 
 **Example:**
+
 ```typescript
 status: select({
-  options: [/* ... */],
+  options: [
+    /* ... */
+  ],
   hooks: {
     beforeOperation: async ({ operation, resolvedValue, item }) => {
       // Log status changes
@@ -811,11 +843,11 @@ status: select({
         await auditLog.record({
           event: 'status_change',
           from: item.status,
-          to: resolvedValue
+          to: resolvedValue,
         })
       }
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -828,6 +860,7 @@ Side effects after database operation. Does NOT modify data.
 **Use cases:** Cache invalidation, webhooks, cleanup
 
 **Example:**
+
 ```typescript
 thumbnail: text({
   hooks: {
@@ -839,8 +872,8 @@ thumbnail: text({
         // Invalidate CDN cache
         await invalidateCDNCache(value)
       }
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -855,12 +888,14 @@ UI-specific configuration passed to field components.
 **Type:** `object`
 
 **Common properties:**
+
 - `component?: React.Component` - Custom field component (per-field override)
 - `fieldType?: string` - Reference to globally registered field type
 - `valueForClientSerialization?: (args) => unknown` - Transform value before sending to browser
 - Additional field-type-specific options
 
 **Example:**
+
 ```typescript
 content: text({
   ui: {
@@ -869,19 +904,20 @@ content: text({
     rows: 10,
     // Custom UI options
     spellcheck: true,
-    autocomplete: 'off'
-  }
+    autocomplete: 'off',
+  },
 })
 ```
 
 **Custom Component Example:**
+
 ```typescript
 import { SlugField } from './components/SlugField'
 
 slug: text({
   ui: {
-    component: SlugField // Use custom component for this field only
-  }
+    component: SlugField, // Use custom component for this field only
+  },
 })
 ```
 
@@ -896,10 +932,13 @@ Default value when creating new items.
 **Type:** Varies by field type
 
 **Example:**
+
 ```typescript
 status: select({
-  options: [/* ... */],
-  defaultValue: 'draft'
+  options: [
+    /* ... */
+  ],
+  defaultValue: 'draft',
 })
 
 score: integer({ defaultValue: 0 })
@@ -920,6 +959,7 @@ Every field configuration object implements these methods used by generators and
 Returns Zod schema for input validation.
 
 **Signature:**
+
 ```typescript
 getZodSchema(
   fieldName: string,
@@ -928,16 +968,18 @@ getZodSchema(
 ```
 
 **Parameters:**
+
 - `fieldName` - Field name (used in error messages)
 - `operation` - Whether this is a create or update operation
 
 **Returns:** Zod schema for validating input
 
 **Example implementation:**
+
 ```typescript
 getZodSchema: (fieldName, operation) => {
   const baseSchema = z.string({
-    message: `${fieldName} must be text`
+    message: `${fieldName} must be text`,
   })
 
   const withValidation = options?.validation?.isRequired
@@ -955,6 +997,7 @@ getZodSchema: (fieldName, operation) => {
 Returns Prisma type and modifiers for schema generation.
 
 **Signature:**
+
 ```typescript
 getPrismaType(fieldName: string): {
   type: string
@@ -963,18 +1006,21 @@ getPrismaType(fieldName: string): {
 ```
 
 **Parameters:**
+
 - `fieldName` - Field name (used for generating field-specific modifiers)
 
 **Returns:** Object with:
+
 - `type` - Prisma scalar type (`String`, `Int`, `Boolean`, `DateTime`, `Json`)
 - `modifiers` - Optional Prisma modifiers (`?`, `@default(...)`, `@unique`, `@index`)
 
 **Example implementation:**
+
 ```typescript
 getPrismaType: (fieldName) => {
   return {
     type: 'String',
-    modifiers: options?.validation?.isRequired ? undefined : '?'
+    modifiers: options?.validation?.isRequired ? undefined : '?',
   }
 }
 ```
@@ -986,6 +1032,7 @@ getPrismaType: (fieldName) => {
 Returns TypeScript type information for type generation.
 
 **Signature:**
+
 ```typescript
 getTypeScriptType(): {
   type: string
@@ -994,15 +1041,17 @@ getTypeScriptType(): {
 ```
 
 **Returns:** Object with:
+
 - `type` - TypeScript type string (e.g., `'string'`, `'number'`, `'boolean'`, `'Date'`)
 - `optional` - Whether the field is optional in TypeScript
 
 **Example implementation:**
+
 ```typescript
 getTypeScriptType: () => {
   return {
     type: 'string',
-    optional: !options?.validation?.isRequired
+    optional: !options?.validation?.isRequired,
   }
 }
 ```
@@ -1014,6 +1063,7 @@ getTypeScriptType: () => {
 Returns TypeScript imports needed for this field's type (optional).
 
 **Signature:**
+
 ```typescript
 getTypeScriptImports(): Array<{
   names: string[]
@@ -1025,13 +1075,16 @@ getTypeScriptImports(): Array<{
 **Returns:** Array of import specifications
 
 **Example implementation:**
+
 ```typescript
 getTypeScriptImports: () => {
-  return [{
-    names: ['HashedPassword'],
-    from: '@opensaas/stack-core',
-    typeOnly: false
-  }]
+  return [
+    {
+      names: ['HashedPassword'],
+      from: '@opensaas/stack-core',
+      typeOnly: false,
+    },
+  ]
 }
 ```
 
@@ -1057,31 +1110,30 @@ export function email(options?: Omit<EmailField, 'type'>): EmailField {
 
     getZodSchema: (fieldName, operation) => {
       const schema = z.string().email({
-        message: `${fieldName} must be a valid email`
+        message: `${fieldName} must be a valid email`,
       })
-      return options?.validation?.isRequired
-        ? schema
-        : schema.optional()
+      return options?.validation?.isRequired ? schema : schema.optional()
     },
 
     getPrismaType: (fieldName) => {
       return {
         type: 'String',
-        modifiers: options?.validation?.isRequired ? undefined : '?'
+        modifiers: options?.validation?.isRequired ? undefined : '?',
       }
     },
 
     getTypeScriptType: () => {
       return {
         type: 'string',
-        optional: !options?.validation?.isRequired
+        optional: !options?.validation?.isRequired,
       }
-    }
+    },
   }
 }
 ```
 
 **Key principles:**
+
 1. Extend `BaseFieldConfig` with your field's options
 2. Implement all three generator methods
 3. Use field-level hooks for data transformation
@@ -1102,8 +1154,8 @@ content: richText({
   ui: {
     minHeight: 300,
     maxHeight: 800,
-    placeholder: 'Write your content...'
-  }
+    placeholder: 'Write your content...',
+  },
 })
 ```
 
@@ -1121,16 +1173,16 @@ avatar: image({
   validation: { isRequired: true },
   transformations: {
     thumbnail: { width: 150, height: 150 },
-    large: { width: 1200, height: 1200 }
-  }
+    large: { width: 1200, height: 1200 },
+  },
 })
 
 document: file({
   storage: 'local',
   validation: {
     maxSize: 10 * 1024 * 1024, // 10MB
-    allowedTypes: ['application/pdf', 'text/plain']
-  }
+    allowedTypes: ['application/pdf', 'text/plain'],
+  },
 })
 ```
 
@@ -1148,27 +1200,29 @@ Field validation is defined in the `validation` object:
 text({
   validation: {
     isRequired: true,
-    length: { min: 3, max: 100 }
-  }
+    length: { min: 3, max: 100 },
+  },
 })
 
 integer({
   validation: {
     isRequired: true,
     min: 0,
-    max: 100
-  }
+    max: 100,
+  },
 })
 ```
 
 ### Validation Errors
 
 Validation errors include:
+
 - Field name (formatted for display)
 - Error message
 - Validation rule that failed
 
 **Example error:**
+
 ```
 {
   "field": "title",
@@ -1204,8 +1258,8 @@ email: text({
   isIndexed: 'unique',
   validation: {
     isRequired: true,
-    length: { max: 255 }
-  }
+    length: { max: 255 },
+  },
 })
 
 // ❌ Bad: No validation
@@ -1228,11 +1282,11 @@ authorId: text()
 // ✅ Good: Index fields used in queries
 email: text({
   isIndexed: 'unique',
-  validation: { isRequired: true }
+  validation: { isRequired: true },
 })
 
 slug: text({
-  isIndexed: true
+  isIndexed: true,
 })
 ```
 
@@ -1244,8 +1298,8 @@ email: text({
   hooks: {
     resolveInput: async ({ inputValue }) => {
       return inputValue?.toLowerCase().trim()
-    }
-  }
+    },
+  },
 })
 
 // ❌ Bad: Don't transform in application code

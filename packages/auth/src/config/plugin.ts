@@ -45,8 +45,7 @@ export function authPlugin(config: AuthConfig): Plugin {
       for (const plugin of normalized.betterAuthPlugins) {
         if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
           // Plugin has schema property - convert to OpenSaaS lists
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin schema types are dynamic
-          const pluginSchema = plugin.schema as any
+          const pluginSchema = plugin.schema
           const pluginLists = convertBetterAuthSchema(pluginSchema)
 
           // Add or extend lists from plugin
@@ -98,7 +97,7 @@ export function authPlugin(config: AuthConfig): Plugin {
         getUser: async (userId: string) => {
           // Use 'authUser' if custom User list name was provided, otherwise 'user'
           const userListKey = 'user' // TODO: Make this configurable based on list name
-          return await (context.db as any)[userListKey].findUnique({
+          return await context.db[userListKey].findUnique({
             where: { id: userId },
           })
         },
@@ -112,7 +111,7 @@ export function authPlugin(config: AuthConfig): Plugin {
             return null
           }
           const userListKey = 'user'
-          return await (context.db as any)[userListKey].findUnique({
+          return await context.db[userListKey].findUnique({
             where: { id: context.session.userId },
           })
         },

@@ -17,7 +17,7 @@ async function getOpenAI() {
   try {
     const module = await import('openai')
     return module.default
-  } catch (error) {
+  } catch {
     throw new Error(
       'OpenAI package not found. Install it with: npm install openai\n' +
         'Make sure to run: pnpm install openai',

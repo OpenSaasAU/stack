@@ -31,7 +31,9 @@ async function main() {
   // Create embedding provider from environment variables
   // Reads EMBEDDING_PROVIDER and OPENAI_API_KEY/OLLAMA_BASE_URL
   const provider = createProviderFromEnv()
-  console.log(`Using ${provider.type} provider (model: ${provider.model}, dimensions: ${provider.dimensions})\n`)
+  console.log(
+    `Using ${provider.type} provider (model: ${provider.model}, dimensions: ${provider.dimensions})\n`,
+  )
 
   // Get all documentation slugs
   const allSlugs = getAllDocSlugs()
@@ -54,20 +56,15 @@ async function main() {
       // Strip markdown and generate embeddings using stack utilities
       const cleanText = stripMarkdown(doc.content)
 
-      const embeddedDoc = await generateDocumentEmbeddings(
-        documentId,
-        cleanText,
-        provider,
-        {
-          title: doc.title,
-          chunkSize: CHUNK_SIZE,
-          chunkOverlap: CHUNK_OVERLAP,
-          metadata: {
-            slug: documentId,
-            section: doc.title,
-          },
+      const embeddedDoc = await generateDocumentEmbeddings(documentId, cleanText, provider, {
+        title: doc.title,
+        chunkSize: CHUNK_SIZE,
+        chunkOverlap: CHUNK_OVERLAP,
+        metadata: {
+          slug: documentId,
+          section: doc.title,
         },
-      )
+      })
 
       documents[embeddedDoc.id] = embeddedDoc
       console.log(`  ✓ Generated ${embeddedDoc.chunks.length} chunks`)
