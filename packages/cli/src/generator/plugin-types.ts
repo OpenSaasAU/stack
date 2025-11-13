@@ -38,22 +38,41 @@ function generatePluginDataInterface(config: OpenSaasConfig): string {
  */
 function generatePluginServicesInterface(config: OpenSaasConfig): string {
   const lines: string[] = []
+  const imports: string[] = []
 
-  lines.push('')
+  // Check if we have plugins with runtime functions
+  const pluginsWithRuntime = (config._plugins || config.plugins || []).filter((p) => p.runtime)
+
+  // Collect imports from plugins that provide runtime service types
+  if (pluginsWithRuntime.length > 0) {
+    for (const plugin of pluginsWithRuntime) {
+      if (plugin.runtimeServiceTypes) {
+        imports.push(plugin.runtimeServiceTypes.import)
+      }
+    }
+  }
+
+  // Add imports at the top if any exist
+  if (imports.length > 0) {
+    lines.push(...imports)
+    lines.push('')
+  }
+
   lines.push('/**')
   lines.push(' * Plugin runtime services')
   lines.push(' * Provides type-safe access to context.plugins')
   lines.push(' */')
   lines.push('export interface PluginServices {')
 
-  // Check if we have plugins with runtime functions
-  const pluginsWithRuntime = (config._plugins || config.plugins || []).filter((p) => p.runtime)
-
   if (pluginsWithRuntime.length > 0) {
     for (const plugin of pluginsWithRuntime) {
-      // For each plugin with runtime, add a Record<string, unknown> entry
-      // TODO: In the future, plugins could export their runtime service types
-      lines.push(`  ${plugin.name}?: Record<string, unknown>`)
+      if (plugin.runtimeServiceTypes) {
+        // Use typed runtime service from plugin
+        lines.push(`  ${plugin.name}?: ${plugin.runtimeServiceTypes.typeName}`)
+      } else {
+        // Fallback to Record<string, unknown> for plugins without type metadata
+        lines.push(`  ${plugin.name}?: Record<string, unknown>`)
+      }
     }
   }
 

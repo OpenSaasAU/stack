@@ -45,6 +45,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
     name: 'rag',
     version: '0.1.0',
 
+    runtimeServiceTypes: {
+      import: "import type { RAGRuntimeServices } from '@opensaas/stack-rag'",
+      typeName: 'RAGRuntimeServices',
+    },
+
     init: async (context) => {
       // First pass: Scan for searchable() wrapped fields and inject embedding fields
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {

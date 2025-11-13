@@ -846,6 +846,31 @@ export type Plugin = {
    * Return value is stored in context.plugins[pluginName]
    */
   runtime?: (context: import('../access/types.js').AccessContext) => unknown
+
+  /**
+   * Optional: Type metadata for runtime services
+   * Enables type-safe code generation for context.plugins
+   *
+   * @example
+   * ```typescript
+   * {
+   *   import: "import type { AuthRuntimeServices } from '@opensaas/stack-auth/runtime'",
+   *   typeName: "AuthRuntimeServices"
+   * }
+   * ```
+   */
+  runtimeServiceTypes?: {
+    /**
+     * Import statement to include in generated types file
+     * Must be a complete import statement with 'import type' and quotes
+     */
+    import: string
+    /**
+     * TypeScript type name to use in PluginServices interface
+     * Should match the exported type from the import
+     */
+    typeName: string
+  }
 }
 
 /**

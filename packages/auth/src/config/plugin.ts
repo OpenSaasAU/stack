@@ -32,6 +32,11 @@ export function authPlugin(config: AuthConfig): Plugin {
     name: 'auth',
     version: '0.1.0',
 
+    runtimeServiceTypes: {
+      import: "import type { AuthRuntimeServices } from '@opensaas/stack-auth'",
+      typeName: 'AuthRuntimeServices',
+    },
+
     init: async (context) => {
       // Get auth lists from base Better Auth schema
       const authLists = getAuthLists(normalized.extendUserList)
