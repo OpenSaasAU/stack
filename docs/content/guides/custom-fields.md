@@ -482,7 +482,6 @@ Use the stack's utility classes and CSS variables:
 
 ```tsx
 import { cn } from '@opensaas/stack-ui/lib/utils'
-
 ;<input
   className={cn(
     'px-3 py-2 rounded-md border border-input',
