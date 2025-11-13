@@ -8,6 +8,7 @@ import {
   writePrismaSchema,
   writeTypes,
   writeContext,
+  writePluginTypes,
   patchPrismaTypes,
 } from '../generator/index.js'
 import { OpenSaasConfig } from '@opensaas/stack-core'
@@ -72,15 +73,18 @@ export async function generateCommand() {
       const prismaSchemaPath = path.join(cwd, 'prisma', 'schema.prisma')
       const typesPath = path.join(cwd, '.opensaas', 'types.ts')
       const contextPath = path.join(cwd, '.opensaas', 'context.ts')
+      const pluginTypesPath = path.join(cwd, '.opensaas', 'plugin-types.ts')
 
       writePrismaSchema(config, prismaSchemaPath)
       writeTypes(config, typesPath)
       writeContext(config, contextPath)
+      writePluginTypes(config, pluginTypesPath)
 
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
       console.log(chalk.green('✅ TypeScript types generated'))
       console.log(chalk.green('✅ Context factory generated'))
+      console.log(chalk.green('✅ Plugin types generated'))
 
       // Execute afterGenerate hooks if plugins are present
       if (config.plugins && config.plugins.length > 0) {

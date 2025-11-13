@@ -180,6 +180,7 @@ function generateContextType(): string {
   lines.push('  session: TSession')
   lines.push('  prisma: PrismaClient')
   lines.push('  storage: StorageUtils')
+  lines.push('  plugins: PluginServices')
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
   lines.push('  sudo: () => Context<TSession>')
   lines.push('  _isSudo: boolean')
@@ -252,6 +253,7 @@ export function generateTypes(config: OpenSaasConfig): string {
     "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'",
   )
   lines.push("import type { PrismaClient } from './prisma-client'")
+  lines.push("import type { PluginServices } from './plugin-types'")
 
   // Add field-specific imports
   const fieldImports = collectFieldImports(config)

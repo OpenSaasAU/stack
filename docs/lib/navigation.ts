@@ -88,6 +88,10 @@ export const navigation: NavItem[] = [
         href: '/docs/guides/authentication',
       },
       {
+        title: 'Writing Plugins',
+        href: '/docs/guides/plugins',
+      },
+      {
         title: 'MCP Setup',
         href: '/docs/guides/mcp-setup',
       },

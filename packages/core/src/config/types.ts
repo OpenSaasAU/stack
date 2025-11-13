@@ -881,4 +881,10 @@ export type OpenSaasConfig = {
    * @internal
    */
   _pluginData?: Record<string, unknown>
+  /**
+   * Sorted plugin instances (stored after plugin execution)
+   * Used at runtime to call plugin.runtime() functions
+   * @internal
+   */
+  _plugins?: Plugin[]
 }

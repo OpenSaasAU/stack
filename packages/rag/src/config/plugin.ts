@@ -247,6 +247,38 @@ export function ragPlugin(config: RAGConfig): Plugin {
       // Access at runtime via: config._pluginData.rag
       context.setPluginData<NormalizedRAGConfig>('rag', normalized)
     },
+
+    runtime: (context) => {
+      // Provide RAG-related utilities at runtime
+      return {
+        /**
+         * Generate embedding for a given text
+         * Uses the configured embedding provider
+         */
+        generateEmbedding: async (text: string, providerName?: string) => {
+          const ragConfig = (context as any).config?._pluginData?.rag as NormalizedRAGConfig
+          if (!ragConfig || !ragConfig.provider) {
+            throw new Error('RAG plugin not configured')
+          }
+
+          const provider = createEmbeddingProvider(ragConfig.provider)
+          return await provider.embed(text)
+        },
+
+        /**
+         * Generate embeddings for multiple texts (batch)
+         */
+        generateEmbeddings: async (texts: string[], providerName?: string) => {
+          const ragConfig = (context as any).config?._pluginData?.rag as NormalizedRAGConfig
+          if (!ragConfig || !ragConfig.provider) {
+            throw new Error('RAG plugin not configured')
+          }
+
+          const provider = createEmbeddingProvider(ragConfig.provider)
+          return await provider.embedBatch(texts)
+        },
+      }
+    },
   }
 }
 

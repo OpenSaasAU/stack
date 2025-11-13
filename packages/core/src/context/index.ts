@@ -152,6 +152,7 @@ export function getContext<
   session: Session
   prisma: TPrisma
   storage: StorageUtils
+  plugins: Record<string, unknown>
   serverAction: (props: ServerActionProps) => Promise<unknown>
   _isSudo: boolean
   sudo: () => {
@@ -159,6 +160,7 @@ export function getContext<
     session: Session
     prisma: TPrisma
     storage: StorageUtils
+    plugins: Record<string, unknown>
     serverAction: (props: ServerActionProps) => Promise<unknown>
     sudo: () => unknown
     _isSudo: boolean
@@ -196,6 +198,7 @@ export function getContext<
         )
       },
     },
+    plugins: {}, // Will be populated with plugin runtime services
     _isSudo,
   }
 
@@ -210,6 +213,20 @@ export function getContext<
       update: createUpdate(listName, listConfig, prisma, context, config),
       delete: createDelete(listName, listConfig, prisma, context),
       count: createCount(listName, listConfig, prisma, context),
+    }
+  }
+
+  // Execute plugin runtime functions and populate context.plugins
+  // Use _plugins (sorted by dependencies) if available, otherwise fall back to plugins array
+  const pluginsToExecute = config._plugins || config.plugins || []
+  for (const plugin of pluginsToExecute) {
+    if (plugin.runtime) {
+      try {
+        context.plugins[plugin.name] = plugin.runtime(context)
+      } catch (error) {
+        console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
+        // Continue with other plugins even if one fails
+      }
     }
   }
 
@@ -249,6 +266,7 @@ export function getContext<
     session,
     prisma,
     storage: context.storage,
+    plugins: context.plugins,
     serverAction,
     sudo,
     _isSudo,

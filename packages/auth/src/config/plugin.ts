@@ -82,5 +82,36 @@ export function authPlugin(config: AuthConfig): Plugin {
       // Access at runtime via: config._pluginData.auth
       context.setPluginData<NormalizedAuthConfig>('auth', normalized)
     },
+
+    runtime: (context) => {
+      // Provide auth-related utilities at runtime
+      return {
+        /**
+         * Get user by ID
+         * Uses the access-controlled context to fetch user data
+         */
+        getUser: async (userId: string) => {
+          // Use 'authUser' if custom User list name was provided, otherwise 'user'
+          const userListKey = 'user' // TODO: Make this configurable based on list name
+          return await (context.db as any)[userListKey].findUnique({
+            where: { id: userId },
+          })
+        },
+
+        /**
+         * Get current user from session
+         * Extracts userId from session and fetches user data
+         */
+        getCurrentUser: async () => {
+          if (!context.session?.userId) {
+            return null
+          }
+          const userListKey = 'user'
+          return await (context.db as any)[userListKey].findUnique({
+            where: { id: context.session.userId },
+          })
+        },
+      }
+    },
   }
 }
