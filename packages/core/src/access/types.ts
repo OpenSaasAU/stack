@@ -122,7 +122,6 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean
-  [key: string]: unknown
 }
 
 /**
