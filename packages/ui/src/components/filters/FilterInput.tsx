@@ -6,7 +6,13 @@
 
 import * as React from 'react'
 import { Input } from '../../primitives/input.js'
-import { Select } from '../../primitives/select.js'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../primitives/select.js'
 import { Checkbox } from '../../primitives/checkbox.js'
 import { DateTimePicker } from '../../primitives/datetime-picker.js'
 import { Button } from '../../primitives/button.js'
@@ -242,12 +248,16 @@ export function SelectFilterInput({
         ) : (
           <div className="flex-1">
             <Select value={String(value)} onValueChange={(val) => onChange(val)}>
-              <option value="">Select...</option>
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <SelectTrigger>
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
         )}
@@ -315,12 +325,16 @@ export function RelationshipFilterInput({
         ) : (
           <div className="flex-1">
             <Select value={String(value)} onValueChange={(val) => onChange(val)}>
-              <option value="">Select...</option>
-              {relatedItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.displayValue}
-                </option>
-              ))}
+              <SelectTrigger>
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                {relatedItems.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.displayValue}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
         )}

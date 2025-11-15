@@ -9,7 +9,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation.js'
 import { Button } from '../../primitives/button.js'
 import { Card } from '../../primitives/card.js'
-import { Select } from '../../primitives/select.js'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../primitives/select.js'
 import { Popover } from '../../primitives/popover.js'
 import {
   TextFilterInput,
@@ -278,12 +284,16 @@ export function FilterBar({
                     setSelectedOperator('')
                   }}
                 >
-                  <option value="">Select field...</option>
-                  {fields.map((field) => (
-                    <option key={field.name} value={field.name}>
-                      {formatFieldName(field.name)}
-                    </option>
-                  ))}
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select field..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fields.map((field) => (
+                      <SelectItem key={field.name} value={field.name}>
+                        {formatFieldName(field.name)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
 
@@ -294,17 +304,21 @@ export function FilterBar({
                     value={selectedOperator}
                     onValueChange={(value) => setSelectedOperator(value as FilterOperator)}
                   >
-                    <option value="">Select operator...</option>
-                    {(() => {
-                      const field = fieldMap.get(selectedField)
-                      if (!field) return null
-                      const operators = FIELD_TYPE_OPERATORS[field.type] || []
-                      return operators.map((op) => (
-                        <option key={op} value={op}>
-                          {OPERATOR_LABELS[op]}
-                        </option>
-                      ))
-                    })()}
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select operator..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        const field = fieldMap.get(selectedField)
+                        if (!field) return null
+                        const operators = FIELD_TYPE_OPERATORS[field.type] || []
+                        return operators.map((op) => (
+                          <SelectItem key={op} value={op}>
+                            {OPERATOR_LABELS[op]}
+                          </SelectItem>
+                        ))
+                      })()}
+                    </SelectContent>
                   </Select>
                 </div>
               )}
