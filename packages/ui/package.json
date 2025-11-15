@@ -41,6 +41,7 @@
     "test:coverage": "vitest --coverage",
     "test:browser": "BROWSER_TEST=true vitest --run",
     "test:browser:ui": "BROWSER_TEST=true vitest --ui",
+    "test:browser:coverage": "BROWSER_TEST=true vitest --coverage --run",
     "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo"
   },
   "keywords": [

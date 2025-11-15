@@ -31,6 +31,12 @@ jobs:
         env:
           OPENAI_API_KEY: 'sk-testing-key'
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests with coverage
+        run: cd packages/ui && pnpm test:browser:coverage
+
       - name: Upload coverage artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v5
@@ -39,6 +45,14 @@ jobs:
           path: |
             packages/*/coverage/
           retention-days: 1
+
+      - name: Upload browser test screenshots
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: browser-test-screenshots
+          path: packages/ui/tests/browser/**/__screenshots__/
+          retention-days: 7
 
   coverage:
     runs-on: ubuntu-latest
