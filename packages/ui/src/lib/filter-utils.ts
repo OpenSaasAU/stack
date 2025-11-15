@@ -2,7 +2,7 @@
  * Utilities for managing filter state in URLs and converting to Prisma filters
  */
 
-import type { FilterCondition, FilterOperator, ListFilters } from './filter-types.js'
+import type { FilterOperator, ListFilters } from './filter-types.js'
 
 /**
  * Parse filters from URL search params

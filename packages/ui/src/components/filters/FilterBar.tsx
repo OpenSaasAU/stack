@@ -16,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../primitives/select.js'
-import { Popover } from '../../primitives/popover.js'
 import {
   TextFilterInput,
   NumberFilterInput,
@@ -26,7 +25,6 @@ import {
   RelationshipFilterInput,
 } from './FilterInput.js'
 import {
-  parseFiltersFromURL,
   serializeFiltersToURL,
   addFilter,
   removeFilter,
@@ -79,7 +77,6 @@ export interface FilterBarProps {
  * ```
  */
 export function FilterBar({
-  listKey,
   fields,
   basePath,
   urlKey,
