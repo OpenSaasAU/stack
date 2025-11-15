@@ -8,6 +8,8 @@ import {
   OpenSaasConfig,
   type PrismaClientLike,
 } from '@opensaas/stack-core'
+import { parseFiltersFromURL, filtersToPrismaWhere } from '../lib/filter-utils.js'
+import type { ListFilters } from '../lib/filter-types.js'
 
 export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
   context: AccessContext<TPrisma>
@@ -18,6 +20,8 @@ export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLi
   page?: number
   pageSize?: number
   search?: string
+  filters?: ListFilters
+  searchParams?: Record<string, string | string[] | undefined>
 }
 
 /**
@@ -33,10 +37,15 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
   page = 1,
   pageSize = 50,
   search,
+  filters,
+  searchParams = {},
 }: ListViewProps<TPrisma>) {
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]
+
+  // Parse filters from searchParams if not provided directly
+  const parsedFilters = filters || parseFiltersFromURL(searchParams)
 
   if (!listConfig) {
     return (
@@ -60,8 +69,11 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
       throw new Error(`Context for ${listKey} not found`)
     }
 
+    // Build filter where clause from URL filters
+    const filterWhere = filtersToPrismaWhere(parsedFilters)
+
     // Build search filter if search term provided
-    let where: Record<string, unknown> | undefined = undefined
+    let searchWhere: Record<string, unknown> | undefined = undefined
     if (search && search.trim()) {
       // Find all text fields to search across
       const searchableFields = Object.entries(listConfig.fields)
@@ -69,7 +81,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         .map(([fieldName]) => fieldName)
 
       if (searchableFields.length > 0) {
-        where = {
+        searchWhere = {
           OR: searchableFields.map((fieldName) => ({
             [fieldName]: {
               contains: search.trim(),
@@ -77,6 +89,18 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
           })),
         }
       }
+    }
+
+    // Combine filter and search where clauses
+    let where: Record<string, unknown> | undefined = undefined
+    if (filterWhere && searchWhere) {
+      where = {
+        AND: [filterWhere, searchWhere],
+      }
+    } else if (filterWhere) {
+      where = filterWhere
+    } else if (searchWhere) {
+      where = searchWhere
     }
 
     // Build include object for relationship fields
@@ -147,6 +171,9 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         pageSize={pageSize}
         total={total || 0}
         search={search}
+        filters={parsedFilters}
+        searchParams={searchParams}
+        config={config}
       />
     </div>
   )

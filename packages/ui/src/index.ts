@@ -72,3 +72,47 @@ export { cn, formatListName, formatFieldName, getFieldDisplayValue } from './lib
 
 // Theme utilities
 export { generateThemeCSS, getThemeStyleTag, presetThemes } from './lib/theme.js'
+
+// Filter components and utilities
+export { FilterBar } from './components/filters/index.js'
+export type { FilterBarProps } from './components/filters/index.js'
+
+export {
+  TextFilterInput,
+  NumberFilterInput,
+  BooleanFilterInput,
+  DateFilterInput,
+  SelectFilterInput,
+  RelationshipFilterInput,
+} from './components/filters/index.js'
+
+export type {
+  FilterInputBaseProps,
+  TextFilterInputProps,
+  NumberFilterInputProps,
+  BooleanFilterInputProps,
+  DateFilterInputProps,
+  SelectFilterInputProps,
+  RelationshipFilterInputProps,
+} from './components/filters/index.js'
+
+// Filter types and utilities
+export type {
+  FilterOperator,
+  FilterCondition,
+  ListFilters,
+  FilterURLState,
+} from './lib/filter-types.js'
+
+export { FIELD_TYPE_OPERATORS, OPERATOR_LABELS } from './lib/filter-types.js'
+
+export {
+  parseFiltersFromURL,
+  serializeFiltersToURL,
+  filtersToPrismaWhere,
+  addFilter,
+  removeFilter,
+  removeFieldFilters,
+  getFieldFilters,
+  clearFilters,
+} from './lib/filter-utils.js'
