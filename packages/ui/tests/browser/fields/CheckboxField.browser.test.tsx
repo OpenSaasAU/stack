@@ -117,7 +117,13 @@ describe('CheckboxField (Browser)', () => {
 
     it('should be disabled when disabled prop is true', async () => {
       render(
-        <CheckboxField name="active" value={false} onChange={() => {}} label="Is Active" disabled />,
+        <CheckboxField
+          name="active"
+          value={false}
+          onChange={() => {}}
+          label="Is Active"
+          disabled
+        />,
       )
 
       const checkbox = screen.getByRole('checkbox')

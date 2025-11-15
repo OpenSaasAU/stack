@@ -16,6 +16,7 @@ Browser tests provide more realistic testing by running tests in actual browser 
 ### Prerequisites
 
 1. Install Playwright browsers:
+
    ```bash
    npx playwright install chromium
    ```
@@ -66,27 +67,30 @@ describe('MyComponent (Browser)', () => {
 ## Test Categories
 
 ### Primitives
+
 - **Button.browser.test.tsx**: Tests button variants, keyboard navigation, focus states
 - **Dialog.browser.test.tsx**: Tests modal dialogs, focus trapping, keyboard shortcuts (Escape)
 
 ### Fields
+
 - **TextField.browser.test.tsx**: Tests text input, paste, special characters, focus/blur
 - **CheckboxField.browser.test.tsx**: Tests checkbox toggling, keyboard (Space), label clicks
 - **SelectField.browser.test.tsx**: Tests dropdown behavior, keyboard navigation (arrows)
 
 ## Browser vs Regular Tests
 
-| Aspect | Regular Tests (Happy DOM) | Browser Tests |
-|--------|--------------------------|---------------|
-| **Speed** | Fast (~500ms) | Slower (~5s) |
-| **Environment** | Simulated DOM | Real browser |
-| **User Interactions** | Simulated | Real events |
-| **Visual Testing** | No | Yes |
-| **CI/CD** | Easy | Requires setup |
+| Aspect                | Regular Tests (Happy DOM) | Browser Tests  |
+| --------------------- | ------------------------- | -------------- |
+| **Speed**             | Fast (~500ms)             | Slower (~5s)   |
+| **Environment**       | Simulated DOM             | Real browser   |
+| **User Interactions** | Simulated                 | Real events    |
+| **Visual Testing**    | No                        | Yes            |
+| **CI/CD**             | Easy                      | Requires setup |
 
 ## When to Use Browser Tests
 
 Use browser tests for:
+
 - Complex user interactions (drag-drop, keyboard navigation)
 - Focus management and accessibility
 - Browser-specific features
@@ -94,6 +98,7 @@ Use browser tests for:
 - Issues that only reproduce in real browsers
 
 Use regular tests (Happy DOM) for:
+
 - Unit testing components
 - Testing props and state
 - Fast feedback during development
@@ -108,6 +113,7 @@ For CI/CD environments, ensure:
 3. **Browser Binaries**: Ensure chromium/firefox/webkit are available
 
 Example GitHub Actions:
+
 ```yaml
 - name: Install Playwright
   run: npx playwright install --with-deps chromium
@@ -119,14 +125,17 @@ Example GitHub Actions:
 ## Troubleshooting
 
 ### "Browser connection was closed"
+
 - **Cause**: No display server available
 - **Solution**: Run in headless mode or use xvfb
 
 ### "vitest/browser can be imported only inside Browser Mode"
+
 - **Cause**: Browser tests running in regular test mode
 - **Solution**: Ensure tests are in `tests/browser/` directory and use `pnpm test:browser`
 
 ### Playwright installation errors
+
 - **Cause**: Missing system dependencies
 - **Solution**: Run `npx playwright install --with-deps chromium`
 
