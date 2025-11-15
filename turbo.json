@@ -3,7 +3,8 @@
   "tasks": {
     "opensaas-stack-docs#build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**"]
+      "outputs": [".next/**"],
+      "env": ["OPENAI_API_KEY"]
     },
     "build": {
       "dependsOn": ["^build"],
