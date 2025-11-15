@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { generateCommand } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
 import { devCommand } from './commands/dev.js'
+import { createMCPCommand } from './commands/mcp.js'
 
 const program = new Command()
 
@@ -34,5 +35,8 @@ program
   .action(async () => {
     await devCommand()
   })
+
+// Add MCP command group
+program.addCommand(createMCPCommand())
 
 program.parse()

@@ -1,0 +1,19 @@
+{
+  "name": "opensaas-stack",
+  "version": "0.1.0",
+  "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
+  "author": {
+    "name": "OpenSaaS",
+    "url": "https://opensaas.au"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack"
+  },
+  "homepage": "https://stack.opensaas.au/",
+  "keywords": ["opensaas", "nextjs", "prisma", "feature-driven", "code-generation"],
+  "mcp": {
+    "server": "@opensaas/stack-cli",
+    "install": "npx @opensaas/stack-cli mcp install"
+  }
+}
