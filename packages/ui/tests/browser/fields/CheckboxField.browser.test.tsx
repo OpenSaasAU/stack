@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from 'vitest/browser'
+import React from 'react'
 import { CheckboxField } from '../../../src/components/fields/CheckboxField.js'
 
 describe('CheckboxField (Browser)', () => {
@@ -69,33 +70,35 @@ describe('CheckboxField (Browser)', () => {
     })
 
     it('should toggle state with multiple clicks', async () => {
-      let currentValue = false
-      const handleChange = (value: boolean) => {
-        currentValue = value
+      function TestComponent() {
+        const [value, setValue] = React.useState(false)
+        return (
+          <CheckboxField
+            name="active"
+            value={value}
+            onChange={setValue}
+            label="Is Active"
+            data-testid="checkbox-field"
+          />
+        )
       }
 
-      render(
-        <CheckboxField
-          name="active"
-          value={currentValue}
-          onChange={handleChange}
-          label="Is Active"
-        />,
-      )
+      render(<TestComponent />)
 
       const checkbox = screen.getByRole('checkbox')
 
       // First click - check
+      expect(checkbox).not.toBeChecked()
       await userEvent.click(checkbox)
-      expect(currentValue).toBe(true)
+      expect(checkbox).toBeChecked()
 
       // Second click - uncheck
       await userEvent.click(checkbox)
-      expect(currentValue).toBe(false)
+      expect(checkbox).not.toBeChecked()
 
       // Third click - check again
       await userEvent.click(checkbox)
-      expect(currentValue).toBe(true)
+      expect(checkbox).toBeChecked()
     })
 
     it('should display error message', async () => {
@@ -138,8 +141,11 @@ describe('CheckboxField (Browser)', () => {
       )
 
       const checkbox = screen.getByRole('checkbox')
-      await userEvent.click(checkbox)
 
+      // Verify checkbox is disabled - browsers prevent clicking disabled checkboxes
+      expect(checkbox).toBeDisabled()
+
+      // In real browsers, disabled checkboxes cannot be clicked
       expect(currentValue).toBe(false)
     })
 

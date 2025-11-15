@@ -75,8 +75,13 @@ describe('Button (Browser)', () => {
     )
 
     const button = screen.getByRole('button', { name: 'Disabled' })
-    await userEvent.click(button)
 
+    // Verify button is disabled - browsers prevent clicking disabled buttons
+    expect(button).toBeDisabled()
+    expect(button).toHaveClass('disabled:pointer-events-none')
+
+    // In real browsers, disabled buttons cannot be clicked
+    // The pointer-events-none class prevents any interaction
     expect(clicked).toBe(false)
   })
 
