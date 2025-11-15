@@ -32,7 +32,7 @@ jobs:
           OPENAI_API_KEY: 'sk-testing-key'
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run browser tests with coverage
         run: cd packages/ui && pnpm test:browser:coverage
