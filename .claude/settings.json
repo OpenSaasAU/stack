@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "opensaas-stack": {
+      "command": "opensaas",
+      "args": ["mcp", "start"],
+      "disabled": false
+    }
+  }
+}

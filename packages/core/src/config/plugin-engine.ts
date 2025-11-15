@@ -257,6 +257,13 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
     currentConfig._pluginData.__mcpTools = mcpToolsRegistry
   }
 
+  // Store plugin instances in config for runtime access
+  // This allows context creation to call plugin.runtime() functions
+  if (!currentConfig._plugins) {
+    currentConfig._plugins = []
+  }
+  currentConfig._plugins = sortedPlugins
+
   return currentConfig
 }
 

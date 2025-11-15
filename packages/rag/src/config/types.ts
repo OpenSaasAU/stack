@@ -156,6 +156,42 @@ export type VectorStorageConfig =
   | CustomStorageConfig
 
 /**
+ * Build-time embedding generation configuration
+ */
+export type BuildTimeConfig = {
+  /**
+   * Enable build-time embedding generation
+   */
+  enabled: boolean
+
+  /**
+   * Output path for embeddings JSON file
+   * Relative to project root
+   * @default '.embeddings/embeddings.json'
+   */
+  outputPath?: string
+
+  /**
+   * Chunk size for text splitting (in characters)
+   * @default 500
+   */
+  chunkSize?: number
+
+  /**
+   * Overlap between chunks (in characters)
+   * @default 50
+   */
+  chunkOverlap?: number
+
+  /**
+   * Whether to enable differential updates
+   * Only regenerate embeddings for changed content
+   * @default true
+   */
+  differential?: boolean
+}
+
+/**
  * Main RAG configuration
  */
 export type RAGConfig = {
@@ -192,6 +228,13 @@ export type RAGConfig = {
   chunking?: ChunkingConfig
 
   /**
+   * Build-time embedding generation configuration
+   * When enabled, embeddings are generated at build time and stored in a JSON file
+   * instead of being generated at runtime via hooks
+   */
+  buildTime?: BuildTimeConfig
+
+  /**
    * Whether to enable MCP tools for semantic search
    * Requires MCP to be enabled in main config
    * @default true
@@ -219,6 +262,7 @@ export type NormalizedRAGConfig = {
   providers: Record<string, EmbeddingProviderConfig>
   storage: VectorStorageConfig
   chunking: Required<ChunkingConfig>
+  buildTime: Required<BuildTimeConfig> | null
   enableMcpTools: boolean
   batchSize: number
   rateLimit: number
@@ -339,4 +383,118 @@ export type SearchableMetadata = {
    * Chunking configuration
    */
   chunking?: ChunkingConfig
+}
+
+/**
+ * A chunk of text with its embedding
+ * Used in build-time generation output
+ */
+export type EmbeddingChunk = {
+  /**
+   * The text content of this chunk
+   */
+  text: string
+
+  /**
+   * The embedding vector for this chunk
+   */
+  embedding: number[]
+
+  /**
+   * Metadata about the chunk
+   */
+  metadata: {
+    /**
+     * Index of this chunk within the document
+     */
+    chunkIndex: number
+
+    /**
+     * Start character position in original text
+     */
+    startOffset: number
+
+    /**
+     * End character position in original text
+     */
+    endOffset: number
+
+    /**
+     * Whether this chunk represents a document title
+     * Title chunks receive boosted scoring during search
+     */
+    isTitle?: boolean
+
+    /**
+     * Additional custom metadata
+     */
+    [key: string]: unknown
+  }
+}
+
+/**
+ * Document with embeddings
+ * Used in build-time generation output
+ */
+export type EmbeddedDocument = {
+  /**
+   * Document ID or slug
+   */
+  id: string
+
+  /**
+   * Document title
+   */
+  title?: string
+
+  /**
+   * The chunks of this document with embeddings
+   */
+  chunks: EmbeddingChunk[]
+
+  /**
+   * Embedding metadata
+   */
+  embeddingMetadata: EmbeddingMetadata
+
+  /**
+   * When the embeddings were generated
+   */
+  generatedAt: string
+
+  /**
+   * Hash of the source content (for differential updates)
+   */
+  contentHash: string
+}
+
+/**
+ * Build-time embeddings index file format
+ */
+export type EmbeddingsIndex = {
+  /**
+   * Version of the embeddings format
+   */
+  version: string
+
+  /**
+   * Embedding configuration used to generate these embeddings
+   */
+  config: {
+    provider: string
+    model: string
+    dimensions: number
+    chunkSize: number
+    chunkOverlap: number
+  }
+
+  /**
+   * Documents with embeddings
+   */
+  documents: Record<string, EmbeddedDocument>
+
+  /**
+   * When the index was generated
+   */
+  generatedAt: string
 }

@@ -34,6 +34,9 @@ export { authPlugin } from './config/plugin.js'
 export type { AuthConfig, NormalizedAuthConfig } from './config/index.js'
 export type * from './config/types.js'
 
+// Runtime type exports
+export type { AuthRuntimeServices } from './runtime/types.js'
+
 // List generators (for advanced use cases)
 export {
   getAuthLists,

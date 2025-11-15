@@ -67,10 +67,6 @@ export const navigation: NavItem[] = [
         href: '/docs/packages/ui',
       },
       {
-        title: 'MCP',
-        href: '/docs/packages/mcp',
-      },
-      {
         title: 'Tiptap',
         href: '/docs/packages/tiptap',
       },
@@ -90,6 +86,14 @@ export const navigation: NavItem[] = [
       {
         title: 'Authentication',
         href: '/docs/guides/authentication',
+      },
+      {
+        title: 'Writing Plugins',
+        href: '/docs/guides/plugins',
+      },
+      {
+        title: 'MCP Setup',
+        href: '/docs/guides/mcp-setup',
       },
       {
         title: 'RAG Setup',

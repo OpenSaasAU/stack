@@ -846,12 +846,38 @@ export type Plugin = {
    * Return value is stored in context.plugins[pluginName]
    */
   runtime?: (context: import('../access/types.js').AccessContext) => unknown
+
+  /**
+   * Optional: Type metadata for runtime services
+   * Enables type-safe code generation for context.plugins
+   *
+   * @example
+   * ```typescript
+   * {
+   *   import: "import type { AuthRuntimeServices } from '@opensaas/stack-auth/runtime'",
+   *   typeName: "AuthRuntimeServices"
+   * }
+   * ```
+   */
+  runtimeServiceTypes?: {
+    /**
+     * Import statement to include in generated types file
+     * Must be a complete import statement with 'import type' and quotes
+     */
+    import: string
+    /**
+     * TypeScript type name to use in PluginServices interface
+     * Should match the exported type from the import
+     */
+    typeName: string
+  }
 }
 
 /**
  * Main configuration type
+ * Using interface instead of type to allow module augmentation
  */
-export type OpenSaasConfig = {
+export interface OpenSaasConfig {
   db: DatabaseConfig
   lists: Record<string, ListConfig>
   session?: SessionConfig
@@ -881,4 +907,10 @@ export type OpenSaasConfig = {
    * @internal
    */
   _pluginData?: Record<string, unknown>
+  /**
+   * Sorted plugin instances (stored after plugin execution)
+   * Used at runtime to call plugin.runtime() functions
+   * @internal
+   */
+  _plugins?: Plugin[]
 }

@@ -113,14 +113,15 @@ export type StorageUtils = {
 
 /**
  * Context type (simplified for access control)
+ * Using interface instead of type to allow module augmentation
  */
-export type AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> = {
+export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
   session: Session
   prisma: TPrisma
   db: AccessControlledDB<TPrisma>
   storage: StorageUtils
+  plugins: Record<string, unknown>
   _isSudo: boolean
-  [key: string]: unknown
 }
 
 /**

@@ -134,6 +134,7 @@ exports[`Generate Command Integration > Generator Integration > should generate 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -167,6 +168,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -253,12 +255,14 @@ exports[`Generate Command Integration > Generator Integration > should handle em
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean

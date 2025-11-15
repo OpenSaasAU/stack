@@ -49,3 +49,21 @@ export {
   type BatchError,
   type BatchProcessResult,
 } from './batch.js'
+
+// Build-time utilities
+export {
+  simpleChunkText,
+  hashContent,
+  loadExistingIndex,
+  generateDocumentEmbeddings,
+} from './build-time.js'
+
+// Markdown processing
+export { stripMarkdown, extractMarkdownText } from './markdown.js'
+
+// Provider helpers
+export {
+  createProviderFromEnv,
+  getProviderConfigFromEnv,
+  type ProviderType,
+} from './provider-helpers.js'

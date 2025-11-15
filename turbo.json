@@ -2,7 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "opensaas-stack-docs#build": {
-      "outputs": [".next/**"]
+      "dependsOn": ["^build"],
+      "outputs": [".next/**"],
+      "env": ["OPENAI_API_KEY"]
     },
     "build": {
       "dependsOn": ["^build"],

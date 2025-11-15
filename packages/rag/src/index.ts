@@ -15,6 +15,9 @@ export {
 // Plugin export
 export { ragPlugin } from './config/plugin.js'
 
+// Runtime type exports
+export type { RAGRuntimeServices } from './runtime/types.js'
+
 export type {
   RAGConfig,
   NormalizedRAGConfig,
@@ -30,4 +33,7 @@ export type {
   EmbeddingMetadata,
   StoredEmbedding,
   SearchResult,
+  EmbeddingsIndex,
+  EmbeddedDocument,
+  EmbeddingChunk,
 } from './config/types.js'

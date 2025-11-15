@@ -45,6 +45,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
     name: 'rag',
     version: '0.1.0',
 
+    runtimeServiceTypes: {
+      import: "import type { RAGRuntimeServices } from '@opensaas/stack-rag'",
+      typeName: 'RAGRuntimeServices',
+    },
+
     init: async (context) => {
       // First pass: Scan for searchable() wrapped fields and inject embedding fields
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
@@ -246,6 +251,38 @@ export function ragPlugin(config: RAGConfig): Plugin {
       // Store RAG config for runtime access
       // Access at runtime via: config._pluginData.rag
       context.setPluginData<NormalizedRAGConfig>('rag', normalized)
+    },
+
+    runtime: () => {
+      // Provide RAG-related utilities at runtime
+      return {
+        /**
+         * Generate embedding for a given text
+         * Uses the configured embedding provider
+         */
+        generateEmbedding: async (text: string) => {
+          const ragConfig = normalized
+          if (!ragConfig || !ragConfig.provider) {
+            throw new Error('RAG plugin not configured')
+          }
+
+          const provider = createEmbeddingProvider(ragConfig.provider)
+          return await provider.embed(text)
+        },
+
+        /**
+         * Generate embeddings for multiple texts (batch)
+         */
+        generateEmbeddings: async (texts: string[]) => {
+          const ragConfig = normalized
+          if (!ragConfig || !ragConfig.provider) {
+            throw new Error('RAG plugin not configured')
+          }
+
+          const provider = createEmbeddingProvider(ragConfig.provider)
+          return await provider.embedBatch(texts)
+        },
+      }
     },
   }
 }

@@ -32,6 +32,11 @@ export function authPlugin(config: AuthConfig): Plugin {
     name: 'auth',
     version: '0.1.0',
 
+    runtimeServiceTypes: {
+      import: "import type { AuthRuntimeServices } from '@opensaas/stack-auth'",
+      typeName: 'AuthRuntimeServices',
+    },
+
     init: async (context) => {
       // Get auth lists from base Better Auth schema
       const authLists = getAuthLists(normalized.extendUserList)
@@ -40,8 +45,7 @@ export function authPlugin(config: AuthConfig): Plugin {
       for (const plugin of normalized.betterAuthPlugins) {
         if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
           // Plugin has schema property - convert to OpenSaaS lists
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin schema types are dynamic
-          const pluginSchema = plugin.schema as any
+          const pluginSchema = plugin.schema
           const pluginLists = convertBetterAuthSchema(pluginSchema)
 
           // Add or extend lists from plugin
@@ -81,6 +85,37 @@ export function authPlugin(config: AuthConfig): Plugin {
       // Store auth config for runtime access
       // Access at runtime via: config._pluginData.auth
       context.setPluginData<NormalizedAuthConfig>('auth', normalized)
+    },
+
+    runtime: (context) => {
+      // Provide auth-related utilities at runtime
+      return {
+        /**
+         * Get user by ID
+         * Uses the access-controlled context to fetch user data
+         */
+        getUser: async (userId: string) => {
+          // Use 'authUser' if custom User list name was provided, otherwise 'user'
+          const userListKey = 'user' // TODO: Make this configurable based on list name
+          return await context.db[userListKey].findUnique({
+            where: { id: userId },
+          })
+        },
+
+        /**
+         * Get current user from session
+         * Extracts userId from session and fetches user data
+         */
+        getCurrentUser: async () => {
+          if (!context.session?.userId) {
+            return null
+          }
+          const userListKey = 'user'
+          return await context.db[userListKey].findUnique({
+            where: { id: context.session.userId },
+          })
+        },
+      }
     },
   }
 }

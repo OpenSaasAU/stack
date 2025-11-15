@@ -8,6 +8,7 @@ exports[`Types Generator > generateTypes > should generate Context type with all
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -37,6 +38,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -51,6 +53,7 @@ exports[`Types Generator > generateTypes > should generate CreateInput type 1`] 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type Post = {
   id: string
@@ -84,6 +87,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -98,6 +102,7 @@ exports[`Types Generator > generateTypes > should generate UpdateInput type 1`] 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type Post = {
   id: string
@@ -131,6 +136,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -145,6 +151,7 @@ exports[`Types Generator > generateTypes > should generate WhereInput type 1`] =
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -174,6 +181,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -188,6 +196,7 @@ exports[`Types Generator > generateTypes > should generate type definitions for 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -221,6 +230,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -235,6 +245,7 @@ exports[`Types Generator > generateTypes > should generate types for multiple li
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -310,6 +321,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -324,6 +336,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type Post = {
   id: string
@@ -380,6 +393,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -394,6 +408,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type Post = {
   id: string
@@ -450,6 +465,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean
@@ -464,6 +480,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
 import type { PrismaClient } from './prisma-client'
+import type { PluginServices } from './plugin-types'
 
 export type User = {
   id: string
@@ -523,6 +540,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
+  plugins: PluginServices
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
   _isSudo: boolean

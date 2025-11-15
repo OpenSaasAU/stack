@@ -82,6 +82,7 @@ export function createVectorStorage(config: VectorStorageConfig): VectorStorage 
 // Export types and individual storage backends
 export * from './types.js'
 export { JsonVectorStorage, createJsonStorage } from './json.js'
+export { JsonFileStorage, createJsonFileStorage } from './json-file.js'
 export { PgVectorStorage, createPgVectorStorage } from './pgvector.js'
 export { SqliteVssStorage, createSqliteVssStorage } from './sqlite-vss.js'
 
