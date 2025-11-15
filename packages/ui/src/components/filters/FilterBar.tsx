@@ -28,12 +28,20 @@ import {
 } from '../../lib/filter-utils.js'
 import { FIELD_TYPE_OPERATORS, OPERATOR_LABELS } from '../../lib/filter-types.js'
 import type { ListFilters, FilterOperator } from '../../lib/filter-types.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { formatFieldName } from '../../lib/utils.js'
+
+/**
+ * Serializable field metadata for filtering
+ */
+export interface FilterableField {
+  name: string
+  type: string
+  options?: Array<{ label: string; value: string }> // For select fields
+}
 
 export interface FilterBarProps {
   listKey: string
-  config: OpenSaasConfig
+  fields: FilterableField[]
   basePath: string
   urlKey: string
   currentFilters: ListFilters
@@ -49,7 +57,14 @@ export interface FilterBarProps {
  * ```tsx
  * <FilterBar
  *   listKey="Post"
- *   config={config}
+ *   fields={[
+ *     { name: 'title', type: 'text' },
+ *     { name: 'status', type: 'select', options: [
+ *       { value: 'draft', label: 'Draft' },
+ *       { value: 'published', label: 'Published' }
+ *     ]},
+ *     { name: 'views', type: 'integer' }
+ *   ]}
  *   basePath="/admin"
  *   urlKey="post"
  *   currentFilters={filters}
@@ -59,7 +74,7 @@ export interface FilterBarProps {
  */
 export function FilterBar({
   listKey,
-  config,
+  fields,
   basePath,
   urlKey,
   currentFilters,
@@ -67,19 +82,12 @@ export function FilterBar({
   className,
 }: FilterBarProps) {
   const router = useRouter()
-  const listConfig = config.lists[listKey]
   const [isAddingFilter, setIsAddingFilter] = useState(false)
   const [selectedField, setSelectedField] = useState<string>('')
   const [selectedOperator, setSelectedOperator] = useState<FilterOperator | ''>('')
 
-  if (!listConfig) {
-    return null
-  }
-
-  // Get filterable fields (exclude password, system fields)
-  const filterableFields = Object.entries(listConfig.fields).filter(
-    ([fieldName, _]) => !['id', 'createdAt', 'updatedAt', 'password'].includes(fieldName),
-  )
+  // Create a lookup map for field metadata
+  const fieldMap = new Map(fields.map((f) => [f.name, f]))
 
   const handleUpdateFilters = (newFilters: ListFilters) => {
     const params = new URLSearchParams()
@@ -139,10 +147,10 @@ export function FilterBar({
   }
 
   const renderFilterInput = (filter: (typeof currentFilters)[0]) => {
-    const fieldConfig = listConfig.fields[filter.field]
-    if (!fieldConfig || !('type' in fieldConfig)) return null
+    const field = fieldMap.get(filter.field)
+    if (!field) return null
 
-    const fieldType = fieldConfig.type
+    const fieldType = field.type
     const label = formatFieldName(filter.field)
 
     const baseProps = {
@@ -199,17 +207,13 @@ export function FilterBar({
         )
 
       case 'select':
-        if ('options' in fieldConfig && fieldConfig.options) {
-          const options = Object.entries(fieldConfig.options).map(([value, label]) => ({
-            value,
-            label: String(label),
-          }))
+        if (field.options) {
           return (
             <SelectFilterInput
               key={`${filter.field}-${filter.operator}`}
               {...baseProps}
               operator={filter.operator as 'equals' | 'in' | 'not' | 'notIn'}
-              options={options}
+              options={field.options}
               multiple={filter.operator === 'in' || filter.operator === 'notIn'}
             />
           )
@@ -275,9 +279,9 @@ export function FilterBar({
                   }}
                 >
                   <option value="">Select field...</option>
-                  {filterableFields.map(([fieldName, fieldConfig]) => (
-                    <option key={fieldName} value={fieldName}>
-                      {formatFieldName(fieldName)}
+                  {fields.map((field) => (
+                    <option key={field.name} value={field.name}>
+                      {formatFieldName(field.name)}
                     </option>
                   ))}
                 </Select>
@@ -292,9 +296,9 @@ export function FilterBar({
                   >
                     <option value="">Select operator...</option>
                     {(() => {
-                      const fieldConfig = listConfig.fields[selectedField]
-                      if (!fieldConfig || !('type' in fieldConfig)) return null
-                      const operators = FIELD_TYPE_OPERATORS[fieldConfig.type] || []
+                      const field = fieldMap.get(selectedField)
+                      if (!field) return null
+                      const operators = FIELD_TYPE_OPERATORS[field.type] || []
                       return operators.map((op) => (
                         <option key={op} value={op}>
                           {OPERATOR_LABELS[op]}
@@ -310,9 +314,9 @@ export function FilterBar({
                 <Button
                   size="sm"
                   onClick={() => {
-                    const fieldConfig = listConfig.fields[selectedField]
-                    if (fieldConfig && 'type' in fieldConfig) {
-                      const defaultValue = getDefaultValue(fieldConfig.type, selectedOperator)
+                    const field = fieldMap.get(selectedField)
+                    if (field) {
+                      const defaultValue = getDefaultValue(field.type, selectedOperator)
                       handleAddFilter(selectedField, selectedOperator, defaultValue)
                     }
                   }}

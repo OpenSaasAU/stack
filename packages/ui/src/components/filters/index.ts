@@ -4,7 +4,7 @@
  */
 
 export { FilterBar } from './FilterBar.js'
-export type { FilterBarProps } from './FilterBar.js'
+export type { FilterBarProps, FilterableField } from './FilterBar.js'
 
 export {
   TextFilterInput,

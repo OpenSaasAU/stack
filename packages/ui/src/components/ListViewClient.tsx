@@ -16,8 +16,8 @@ import {
 import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
-import { getUrlKey, type OpenSaasConfig } from '@opensaas/stack-core'
-import { FilterBar } from './filters/FilterBar.js'
+import { getUrlKey } from '@opensaas/stack-core'
+import { FilterBar, type FilterableField } from './filters/FilterBar.js'
 import type { ListFilters } from '../lib/filter-types.js'
 
 export interface ListViewClientProps {
@@ -34,7 +34,7 @@ export interface ListViewClientProps {
   search?: string
   filters?: ListFilters
   searchParams?: Record<string, string | string[] | undefined>
-  config: OpenSaasConfig
+  filterableFields: FilterableField[]
 }
 
 /**
@@ -55,7 +55,7 @@ export function ListViewClient({
   search: initialSearch,
   filters = [],
   searchParams = {},
-  config,
+  filterableFields,
 }: ListViewClientProps) {
   const router = useRouter()
   const [sortBy, setSortBy] = useState<string | null>(null)
@@ -182,7 +182,7 @@ export function ListViewClient({
       {/* Filter Bar */}
       <FilterBar
         listKey={listKey}
-        config={config}
+        fields={filterableFields}
         basePath={basePath}
         urlKey={urlKey}
         currentFilters={filters}

@@ -75,7 +75,7 @@ export { generateThemeCSS, getThemeStyleTag, presetThemes } from './lib/theme.js
 
 // Filter components and utilities
 export { FilterBar } from './components/filters/index.js'
-export type { FilterBarProps } from './components/filters/index.js'
+export type { FilterBarProps, FilterableField } from './components/filters/index.js'
 
 export {
   TextFilterInput,

@@ -134,6 +134,26 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
     }
   })
 
+  // Extract serializable field metadata for FilterBar
+  const filterableFields = Object.entries(listConfig.fields)
+    .filter(([fieldName]) => !['id', 'createdAt', 'updatedAt', 'password'].includes(fieldName))
+    .map(([fieldName, field]) => {
+      const baseField = {
+        name: fieldName,
+        type: (field as { type: string }).type,
+      }
+
+      // Add options for select fields
+      if ('type' in field && field.type === 'select' && 'options' in field && field.options) {
+        return {
+          ...baseField,
+          options: field.options as Array<{ label: string; value: string }>,
+        }
+      }
+
+      return baseField
+    })
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -173,7 +193,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         search={search}
         filters={parsedFilters}
         searchParams={searchParams}
-        config={config}
+        filterableFields={filterableFields}
       />
     </div>
   )
