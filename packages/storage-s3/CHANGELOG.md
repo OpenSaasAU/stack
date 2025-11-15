@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-s3
 
+## 1.0.0
+
+### Patch Changes
+
+- @opensaas/stack-storage@1.0.0
+
 ## 0.1.7
 
 ### Patch Changes
