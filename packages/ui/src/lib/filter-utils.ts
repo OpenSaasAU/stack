@@ -37,7 +37,12 @@ export function parseFiltersFromURL(
       } else if (operator === 'is') {
         // Parse boolean for checkbox fields
         parsedValue = value === 'true'
-      } else if (operator === 'gt' || operator === 'gte' || operator === 'lt' || operator === 'lte') {
+      } else if (
+        operator === 'gt' ||
+        operator === 'gte' ||
+        operator === 'lt' ||
+        operator === 'lte'
+      ) {
         // Try to parse as number for numeric operators
         const num = Number(value)
         parsedValue = isNaN(num) ? value : num
