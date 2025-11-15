@@ -1,5 +1,13 @@
 # @opensaas/stack-tiptap
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [f4f3966]
+  - @opensaas/stack-core@1.0.0
+  - @opensaas/stack-ui@1.0.0
+
 ## 0.1.7
 
 ### Patch Changes
