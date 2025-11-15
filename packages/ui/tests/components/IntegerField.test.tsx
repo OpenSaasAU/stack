@@ -111,7 +111,9 @@ describe('IntegerField', () => {
       const onChange = vi.fn()
       const user = userEvent.setup()
 
-      render(<IntegerField name="temperature" value={null} onChange={onChange} label="Temperature" />)
+      render(
+        <IntegerField name="temperature" value={null} onChange={onChange} label="Temperature" />,
+      )
 
       const input = screen.getByRole('spinbutton')
       await user.type(input, '-5')

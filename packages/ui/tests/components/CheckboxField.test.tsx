@@ -65,7 +65,9 @@ describe('CheckboxField', () => {
     })
 
     it('should be disabled when disabled prop is true', () => {
-      render(<CheckboxField name="active" value={false} onChange={vi.fn()} label="Is Active" disabled />)
+      render(
+        <CheckboxField name="active" value={false} onChange={vi.fn()} label="Is Active" disabled />,
+      )
 
       const checkbox = screen.getByRole('checkbox')
       expect(checkbox).toBeDisabled()
@@ -75,7 +77,15 @@ describe('CheckboxField', () => {
       const onChange = vi.fn()
       const user = userEvent.setup()
 
-      render(<CheckboxField name="active" value={false} onChange={onChange} label="Is Active" disabled />)
+      render(
+        <CheckboxField
+          name="active"
+          value={false}
+          onChange={onChange}
+          label="Is Active"
+          disabled
+        />,
+      )
 
       const checkbox = screen.getByRole('checkbox')
       await user.click(checkbox)
@@ -86,7 +96,15 @@ describe('CheckboxField', () => {
 
   describe('read mode', () => {
     it('should render "Yes" when value is true', () => {
-      render(<CheckboxField name="active" value={true} onChange={vi.fn()} label="Is Active" mode="read" />)
+      render(
+        <CheckboxField
+          name="active"
+          value={true}
+          onChange={vi.fn()}
+          label="Is Active"
+          mode="read"
+        />,
+      )
 
       expect(screen.getByText('Is Active')).toBeInTheDocument()
       expect(screen.getByText('Yes')).toBeInTheDocument()
@@ -94,7 +112,15 @@ describe('CheckboxField', () => {
     })
 
     it('should render "No" when value is false', () => {
-      render(<CheckboxField name="active" value={false} onChange={vi.fn()} label="Is Active" mode="read" />)
+      render(
+        <CheckboxField
+          name="active"
+          value={false}
+          onChange={vi.fn()}
+          label="Is Active"
+          mode="read"
+        />,
+      )
 
       expect(screen.getByText('Is Active')).toBeInTheDocument()
       expect(screen.getByText('No')).toBeInTheDocument()

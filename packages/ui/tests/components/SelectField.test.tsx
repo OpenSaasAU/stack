@@ -171,15 +171,7 @@ describe('SelectField', () => {
 
   describe('edge cases', () => {
     it('should handle empty options array', () => {
-      render(
-        <SelectField
-          name="status"
-          value=""
-          onChange={vi.fn()}
-          label="Status"
-          options={[]}
-        />,
-      )
+      render(<SelectField name="status" value="" onChange={vi.fn()} label="Status" options={[]} />)
 
       expect(screen.getByRole('combobox')).toBeInTheDocument()
     })

@@ -1,5 +1,14 @@
 import { describe, test, expect } from 'vitest'
-import { text, integer, checkbox, timestamp, password, select, relationship, json } from '../src/fields/index.js'
+import {
+  text,
+  integer,
+  checkbox,
+  timestamp,
+  password,
+  select,
+  relationship,
+  json,
+} from '../src/fields/index.js'
 import { z } from 'zod'
 
 describe('Field Types', () => {
@@ -469,9 +478,7 @@ describe('Field Types', () => {
 
       test('allows undefined in update mode even when required', () => {
         const field = select({
-          options: [
-            { label: 'Draft', value: 'draft' },
-          ],
+          options: [{ label: 'Draft', value: 'draft' }],
           validation: { isRequired: true },
         })
         const schema = field.getZodSchema('status', 'update')
@@ -523,9 +530,7 @@ describe('Field Types', () => {
 
       test('returns required type when isRequired', () => {
         const field = select({
-          options: [
-            { label: 'Draft', value: 'draft' },
-          ],
+          options: [{ label: 'Draft', value: 'draft' }],
           validation: { isRequired: true },
         })
         const tsType = field.getTypeScriptType()
@@ -535,9 +540,7 @@ describe('Field Types', () => {
 
       test('returns optional type when has defaultValue', () => {
         const field = select({
-          options: [
-            { label: 'Draft', value: 'draft' },
-          ],
+          options: [{ label: 'Draft', value: 'draft' }],
           defaultValue: 'draft',
         })
         const tsType = field.getTypeScriptType()
