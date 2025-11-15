@@ -28,6 +28,8 @@ jobs:
 
       - name: Run tests with coverage
         run: turbo run test:coverage
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
 
       - name: Upload coverage artifacts
         if: github.event_name == 'pull_request'
