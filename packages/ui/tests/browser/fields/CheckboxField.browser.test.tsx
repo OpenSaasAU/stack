@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { userEvent } from 'vitest/browser'
 import React from 'react'
 import { CheckboxField } from '../../../src/components/fields/CheckboxField.js'
@@ -83,21 +83,29 @@ describe('CheckboxField (Browser)', () => {
         )
       }
 
-      render(<TestComponent />)
+      await act(async () => {
+        render(<TestComponent />)
+      })
 
       const checkbox = screen.getByRole('checkbox')
 
       // First click - check
       expect(checkbox).not.toBeChecked()
-      await userEvent.click(checkbox)
+      await act(async () => {
+        await userEvent.click(checkbox)
+      })
       expect(checkbox).toBeChecked()
 
       // Second click - uncheck
-      await userEvent.click(checkbox)
+      await act(async () => {
+        await userEvent.click(checkbox)
+      })
       expect(checkbox).not.toBeChecked()
 
       // Third click - check again
-      await userEvent.click(checkbox)
+      await act(async () => {
+        await userEvent.click(checkbox)
+      })
       expect(checkbox).toBeChecked()
     })
 

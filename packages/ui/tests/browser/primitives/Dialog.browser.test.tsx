@@ -16,13 +16,15 @@ import { Button } from '../../../src/primitives/button.js'
 
 describe('Dialog (Browser)', () => {
   it('should render dialog trigger', async () => {
-    render(
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button>Open Dialog</Button>
-        </DialogTrigger>
-      </Dialog>,
-    )
+    await act(async () => {
+      render(
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button>Open Dialog</Button>
+          </DialogTrigger>
+        </Dialog>,
+      )
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
     expect(trigger).toBeInTheDocument()
@@ -46,7 +48,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 
@@ -81,7 +85,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 
@@ -127,7 +133,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 
@@ -167,7 +175,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 
@@ -205,7 +215,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 
@@ -240,7 +252,9 @@ describe('Dialog (Browser)', () => {
       )
     }
 
-    render(<TestDialog />)
+    await act(async () => {
+      render(<TestDialog />)
+    })
 
     const trigger = screen.getByRole('button', { name: 'Open Dialog' })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { userEvent } from 'vitest/browser'
 import React from 'react'
 import { TextField } from '../../../src/components/fields/TextField.js'
@@ -125,13 +125,17 @@ describe('TextField (Browser)', () => {
         )
       }
 
-      render(<TestComponent />)
+      await act(async () => {
+        render(<TestComponent />)
+      })
 
       const input = screen.getByRole('textbox')
       const button = screen.getByRole('button')
 
       // Click button to set value programmatically
-      await userEvent.click(button)
+      await act(async () => {
+        await userEvent.click(button)
+      })
 
       await waitFor(() => {
         expect(input).toHaveValue('programmatic value')
@@ -158,11 +162,19 @@ describe('TextField (Browser)', () => {
         return <TextField name="username" value={value} onChange={setValue} label="Username" />
       }
 
-      render(<TestComponent />)
+      await act(async () => {
+        render(<TestComponent />)
+      })
 
       const input = screen.getByRole('textbox')
-      await userEvent.click(input)
-      await userEvent.keyboard('test123')
+
+      await act(async () => {
+        await userEvent.click(input)
+      })
+
+      await act(async () => {
+        await userEvent.keyboard('test123')
+      })
 
       await waitFor(() => {
         expect(input).toHaveValue('test123')
