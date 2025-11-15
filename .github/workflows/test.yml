@@ -23,6 +23,8 @@ jobs:
 
       - name: Run tests
         run: turbo run test
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
 
       - name: Run tests with coverage
         run: turbo run test:coverage
