@@ -245,7 +245,7 @@ ${s.feature.includes.map((inc) => `- ${inc}`).join('\n')}
   /**
    * Validate a feature implementation
    */
-  async validateFeature({ feature, configPath }: { feature: string; configPath?: string }) {
+  async validateFeature({ feature }: { feature: string; configPath?: string }) {
     const featureDefinition = getFeature(feature)
 
     if (!featureDefinition) {

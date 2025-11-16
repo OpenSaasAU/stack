@@ -88,6 +88,7 @@ export function AdminUI<TPrisma>({
         basePath={basePath}
         search={search}
         page={page}
+        searchParams={searchParams}
       />
     )
   }
