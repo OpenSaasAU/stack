@@ -14,9 +14,7 @@ test.describe('Admin UI', () => {
       await expect(page).toHaveURL(/\/admin/)
 
       // Should show navigation or list of models
-      await expect(
-        page.locator('text=/post|user/i').first()
-      ).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=/post|user/i').first()).toBeVisible({ timeout: 5000 })
     })
 
     test('should show navigation to different lists', async ({ page }) => {
@@ -184,23 +182,13 @@ test.describe('Admin UI', () => {
       await page.waitForLoadState('networkidle')
 
       // Fields should be populated
-      await expect(page.locator('input[name="title"]')).toHaveValue(
-        'Edit Test Post'
-      )
-      await expect(page.locator('input[name="slug"]')).toHaveValue(
-        'edit-test-post'
-      )
-      await expect(page.locator('textarea[name="content"]')).toHaveValue(
-        'Original content'
-      )
-      await expect(page.locator('textarea[name="internalNotes"]')).toHaveValue(
-        'Original notes'
-      )
+      await expect(page.locator('input[name="title"]')).toHaveValue('Edit Test Post')
+      await expect(page.locator('input[name="slug"]')).toHaveValue('edit-test-post')
+      await expect(page.locator('textarea[name="content"]')).toHaveValue('Original content')
+      await expect(page.locator('textarea[name="internalNotes"]')).toHaveValue('Original notes')
     })
 
-    test('should save changes when edit form is submitted', async ({
-      page,
-    }) => {
+    test('should save changes when edit form is submitted', async ({ page }) => {
       // Create a post
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
@@ -244,9 +232,7 @@ test.describe('Admin UI', () => {
       })
     })
 
-    test('should clear validation errors when field is corrected', async ({
-      page,
-    }) => {
+    test('should clear validation errors when field is corrected', async ({ page }) => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
@@ -311,9 +297,7 @@ test.describe('Admin UI', () => {
   })
 
   test.describe('Segmented Control UI', () => {
-    test('should display status field as segmented control', async ({
-      page,
-    }) => {
+    test('should display status field as segmented control', async ({ page }) => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
@@ -322,9 +306,7 @@ test.describe('Admin UI', () => {
 
       // Status field should be rendered as segmented control (or select)
       // This depends on your UI implementation
-      const statusField = page.locator(
-        'select[name="status"], [role="radiogroup"]'
-      )
+      const statusField = page.locator('select[name="status"], [role="radiogroup"]')
       await expect(statusField).toBeVisible()
     })
   })
@@ -333,18 +315,11 @@ test.describe('Admin UI', () => {
     test('should show loading state during navigation', async ({ page }) => {
       await page.goto('/admin/post')
 
-      // Check for loading indicator during page load
-      const loadingIndicator = page.locator(
-        'text=/loading/i, [role="progressbar"], .spinner'
-      )
-
       // Loading might be too fast to catch, so we just verify page loads
       await page.waitForLoadState('networkidle')
 
       // Page should eventually load
-      await expect(
-        page.locator('text=/post|create|new/i').first()
-      ).toBeVisible({ timeout: 10000 })
+      await expect(page.locator('text=/post|create|new/i').first()).toBeVisible({ timeout: 10000 })
     })
   })
 })

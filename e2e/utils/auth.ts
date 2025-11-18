@@ -20,7 +20,7 @@ export const secondUser = {
  */
 export async function signUp(
   page: Page,
-  { email, password, name }: { email: string; password: string; name: string }
+  { email, password, name }: { email: string; password: string; name: string },
 ) {
   await page.goto('/sign-up')
   await page.fill('input[name="name"]', name)
@@ -35,10 +35,7 @@ export async function signUp(
 /**
  * Sign in an existing user
  */
-export async function signIn(
-  page: Page,
-  { email, password }: { email: string; password: string }
-) {
+export async function signIn(page: Page, { email, password }: { email: string; password: string }) {
   await page.goto('/sign-in')
   await page.fill('input[name="email"]', email)
   await page.fill('input[name="password"]', password)

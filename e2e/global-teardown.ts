@@ -2,7 +2,7 @@ import { FullConfig } from '@playwright/test'
 import { cleanupDatabase } from './utils/db.js'
 import * as path from 'path'
 
-async function globalTeardown(config: FullConfig) {
+async function globalTeardown(_config: FullConfig) {
   console.log('\n=== Global Teardown for E2E Tests ===')
 
   const exampleDir = path.join(process.cwd(), 'examples/starter-auth')

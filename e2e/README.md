@@ -36,6 +36,7 @@ e2e/
 ### Prerequisites
 
 1. Install dependencies:
+
    ```bash
    pnpm install
    ```
@@ -111,31 +112,37 @@ pnpm test:e2e:codegen
 #### Authentication (`01-auth.spec.ts`)
 
 **Sign Up:**
+
 - ✅ Successful user registration
 - ✅ Email validation (invalid email format)
 - ✅ Password validation (minimum length)
 - ✅ Duplicate email prevention
 
 **Sign In:**
+
 - ✅ Successful login with correct credentials
 - ✅ Error handling for incorrect password
 - ✅ Error handling for non-existent user
 
 **Password Reset:**
+
 - ✅ Password reset page displays correctly
 - ✅ Email submission for reset link
 
 **Session Management:**
+
 - ✅ Session persists across page reloads
 - ✅ Session persists across navigation
 
 #### CRUD and Access Control (`02-posts-access-control.spec.ts`)
 
 **Unauthenticated Access:**
+
 - ✅ Prevents post creation without authentication
 - ✅ Shows only published posts to public users
 
 **Post Creation:**
+
 - ✅ Authenticated users can create posts
 - ✅ Required field validation
 - ✅ Custom validation (title cannot contain "spam")
@@ -143,43 +150,53 @@ pnpm test:e2e:codegen
 - ✅ Auto-set publishedAt on status change
 
 **Update Access Control:**
+
 - ✅ Authors can update their own posts
 - ✅ Non-authors cannot update others' posts
 
 **Delete Access Control:**
+
 - ✅ Authors can delete their own posts
 
 **Field-level Access Control:**
+
 - ✅ Only authors can read internalNotes field
 
 #### Admin UI (`03-admin-ui.spec.ts`)
 
 **Navigation and Layout:**
+
 - ✅ Admin UI accessible at /admin
 - ✅ Navigation between different lists (Post, User)
 
 **List Table View:**
+
 - ✅ Empty state display
 - ✅ Posts appear in table after creation
 - ✅ Multiple columns displayed correctly
 
 **Create Form:**
+
 - ✅ All fields render correctly
 - ✅ Field labels are visible
 - ✅ Proper field types (text, textarea, select)
 
 **Edit Form:**
+
 - ✅ Form populates with existing data
 - ✅ Changes save successfully
 
 **Form Validation UI:**
+
 - ✅ Inline validation errors display
 - ✅ Errors clear when corrected
 
 **Relationships:**
+
 - ✅ Author relationship field displays
 
 **Auto-generated Lists:**
+
 - ✅ User list displays (from authPlugin)
 - ✅ User fields render in table
 
@@ -188,6 +205,7 @@ pnpm test:e2e:codegen
 ### Global Setup
 
 Before tests run, `global-setup.ts`:
+
 1. Creates `.env` file if it doesn't exist
 2. Sets up test database
 3. Generates Prisma schema and types
@@ -195,6 +213,7 @@ Before tests run, `global-setup.ts`:
 ### Global Teardown
 
 After tests complete, `global-teardown.ts`:
+
 1. Cleans up test database
 
 ### Web Server
@@ -204,6 +223,7 @@ Playwright automatically starts the Next.js dev server before running tests and 
 ### Test Isolation
 
 Each test file uses:
+
 - Fresh browser context (isolated cookies/storage)
 - Database state from global setup
 - Independent authentication (signs up new users as needed)
@@ -245,6 +265,7 @@ test.afterAll(() => {
 ### Best Practices
 
 1. **Use Descriptive Test Names**: Make it clear what's being tested
+
    ```typescript
    test('should show validation error for invalid email', async ({ page }) => {
      // ...
@@ -252,18 +273,21 @@ test.afterAll(() => {
    ```
 
 2. **Wait for Navigation**: Use `waitForURL()` after actions that trigger navigation
+
    ```typescript
    await page.click('button[type="submit"]')
    await page.waitForURL('/', { timeout: 10000 })
    ```
 
 3. **Wait for Network Idle**: Use `waitForLoadState('networkidle')` when data is loading
+
    ```typescript
    await page.goto('/admin/post')
    await page.waitForLoadState('networkidle')
    ```
 
 4. **Use Expect Assertions**: Always verify expected outcomes
+
    ```typescript
    await expect(page.locator('text=My Post')).toBeVisible()
    ```
@@ -306,23 +330,21 @@ pnpm exec playwright test --debug -g "test name"
 
 ## CI/CD Integration
 
-E2E tests run automatically in GitHub Actions:
+E2E tests run automatically in GitHub Actions as part of the main test workflow.
 
-### Workflows
+### Test Workflow
 
 **Main Test Workflow** (`.github/workflows/test.yml`):
+
 - Runs on all pull requests to `main`
 - Executes E2E tests alongside unit tests
-
-**Dedicated E2E Workflow** (`.github/workflows/e2e.yml`):
-- Triggers on E2E-related file changes
-- Can be manually triggered
-- Runs nightly at 2 AM UTC
-- Provides detailed test reports and artifacts
+- 30-minute timeout for long-running tests
+- Uploads test reports and artifacts
 
 ### CI Configuration
 
 When `CI=true` is set, Playwright automatically:
+
 - Uses GitHub Actions reporter
 - Retries failed tests twice
 - Runs with a single worker (no parallelization)
@@ -331,6 +353,7 @@ When `CI=true` is set, Playwright automatically:
 ### Viewing Results
 
 Test results are available in the GitHub Actions UI:
+
 1. Navigate to the Actions tab
 2. Select the workflow run
 3. View test results and download artifacts (reports, screenshots, traces)
@@ -342,11 +365,13 @@ Traces can be viewed at [trace.playwright.dev](https://trace.playwright.dev)
 To add E2E tests for a new example:
 
 1. Create a new directory under `e2e/`:
+
    ```bash
    mkdir e2e/my-example
    ```
 
 2. Create test files:
+
    ```bash
    touch e2e/my-example/01-feature.spec.ts
    ```

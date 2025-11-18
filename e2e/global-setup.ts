@@ -1,9 +1,9 @@
-import { chromium, FullConfig } from '@playwright/test'
+import { FullConfig } from '@playwright/test'
 import { setupDatabase } from './utils/db.js'
 import * as path from 'path'
 import * as fs from 'fs'
 
-async function globalSetup(config: FullConfig) {
+async function globalSetup(_config: FullConfig) {
   console.log('=== Global Setup for E2E Tests ===')
 
   const exampleDir = path.join(process.cwd(), 'examples/starter-auth')
@@ -20,16 +20,13 @@ async function globalSetup(config: FullConfig) {
       // Set default values for testing
       envContent = envContent.replace(
         /BETTER_AUTH_SECRET=.*/,
-        'BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"'
+        'BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"',
       )
       envContent = envContent.replace(
         /BETTER_AUTH_URL=.*/,
-        'BETTER_AUTH_URL="http://localhost:3000"'
+        'BETTER_AUTH_URL="http://localhost:3000"',
       )
-      envContent = envContent.replace(
-        /DATABASE_URL=.*/,
-        'DATABASE_URL="file:./dev.db"'
-      )
+      envContent = envContent.replace(/DATABASE_URL=.*/, 'DATABASE_URL="file:./dev.db"')
 
       fs.writeFileSync(envPath, envContent)
       console.log('.env file created successfully')

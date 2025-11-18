@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, signIn, testUser, secondUser } from '../utils/auth.js'
+import { signUp, testUser } from '../utils/auth.js'
 
 test.describe('Authentication', () => {
   test.describe('Sign Up', () => {
@@ -80,9 +80,7 @@ test.describe('Authentication', () => {
       await page.goto('/sign-in')
     })
 
-    test('should successfully sign in with correct credentials', async ({
-      page,
-    }) => {
+    test('should successfully sign in with correct credentials', async ({ page }) => {
       await page.goto('/sign-in')
 
       await page.fill('input[name="email"]', testUser.email)
@@ -106,9 +104,7 @@ test.describe('Authentication', () => {
       await page.click('button[type="submit"]')
 
       // Should show error message
-      await expect(page.locator('text=/invalid|incorrect|error/i')).toBeVisible(
-        { timeout: 5000 }
-      )
+      await expect(page.locator('text=/invalid|incorrect|error/i')).toBeVisible({ timeout: 5000 })
     })
 
     test('should show error for non-existent user', async ({ page }) => {
@@ -120,9 +116,7 @@ test.describe('Authentication', () => {
       await page.click('button[type="submit"]')
 
       // Should show error message
-      await expect(page.locator('text=/invalid|not found|error/i')).toBeVisible(
-        { timeout: 5000 }
-      )
+      await expect(page.locator('text=/invalid|not found|error/i')).toBeVisible({ timeout: 5000 })
     })
   })
 
@@ -137,9 +131,7 @@ test.describe('Authentication', () => {
       await expect(page.locator('button[type="submit"]')).toBeVisible()
     })
 
-    test('should accept email submission for password reset', async ({
-      page,
-    }) => {
+    test('should accept email submission for password reset', async ({ page }) => {
       await page.goto('/forgot-password')
 
       await page.fill('input[name="email"]', testUser.email)
@@ -147,9 +139,7 @@ test.describe('Authentication', () => {
 
       // Should show success message or confirmation
       // Note: Actual email won't be sent in test environment
-      await expect(
-        page.locator('text=/email|sent|check|link/i')
-      ).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=/email|sent|check|link/i')).toBeVisible({ timeout: 5000 })
     })
   })
 

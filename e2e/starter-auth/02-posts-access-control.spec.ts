@@ -3,9 +3,7 @@ import { signUp, signIn, testUser, secondUser } from '../utils/auth.js'
 
 test.describe('Posts CRUD and Access Control', () => {
   test.describe('Unauthenticated Access', () => {
-    test('should not allow post creation without authentication', async ({
-      page,
-    }) => {
+    test('should not allow post creation without authentication', async ({ page }) => {
       // Try to access admin directly without signing in
       await page.goto('/admin')
 
@@ -14,7 +12,7 @@ test.describe('Posts CRUD and Access Control', () => {
     })
 
     test('should only show published posts to unauthenticated users', async ({
-      page,
+      page: _page,
       context,
     }) => {
       // Create a user and add posts in a separate context
@@ -56,9 +54,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await signUp(page, testUser)
     })
 
-    test('should allow authenticated user to create a post', async ({
-      page,
-    }) => {
+    test('should allow authenticated user to create a post', async ({ page }) => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
@@ -70,10 +66,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'My First Post')
       await page.fill('input[name="slug"]', 'my-first-post')
       await page.fill('textarea[name="content"]', 'This is the content')
-      await page.fill(
-        'textarea[name="internalNotes"]',
-        'These are internal notes'
-      )
+      await page.fill('textarea[name="internalNotes"]', 'These are internal notes')
 
       // Submit the form
       await page.click('button[type="submit"]')
@@ -148,9 +141,7 @@ test.describe('Posts CRUD and Access Control', () => {
       })
     })
 
-    test('should auto-set publishedAt when status changes to published', async ({
-      page,
-    }) => {
+    test('should auto-set publishedAt when status changes to published', async ({ page }) => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
@@ -180,10 +171,7 @@ test.describe('Posts CRUD and Access Control', () => {
   })
 
   test.describe('Post Update - Author Access Control', () => {
-    test('should allow author to update their own post', async ({
-      page,
-      context,
-    }) => {
+    test('should allow author to update their own post', async ({ page, context: _context }) => {
       // Create user and post
       await signUp(page, testUser)
       await page.goto('/admin/post')
@@ -210,10 +198,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await expect(page.locator('text=Updated Title')).toBeVisible()
     })
 
-    test('should not allow non-author to update post', async ({
-      page,
-      context,
-    }) => {
+    test('should not allow non-author to update post', async ({ page, context }) => {
       // User 1 creates a post
       await signUp(page, testUser)
       await page.goto('/admin/post')
@@ -286,13 +271,15 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Find and click delete button (adjust selector based on your UI)
-      const deleteButton = page.locator('button:has-text("Delete"), button:has-text("delete")').first()
+      const deleteButton = page
+        .locator('button:has-text("Delete"), button:has-text("delete")')
+        .first()
       if (await deleteButton.isVisible()) {
         await deleteButton.click()
 
         // Confirm deletion if there's a confirmation dialog
         const confirmButton = page.locator(
-          'button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Delete")'
+          'button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Delete")',
         )
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click()
@@ -307,10 +294,7 @@ test.describe('Posts CRUD and Access Control', () => {
   })
 
   test.describe('Field-level Access Control', () => {
-    test('should only allow author to read internalNotes', async ({
-      page,
-      context,
-    }) => {
+    test('should only allow author to read internalNotes', async ({ page, context }) => {
       // User 1 creates a post with internal notes
       await signUp(page, testUser)
       await page.goto('/admin/post')

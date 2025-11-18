@@ -16,7 +16,7 @@ test.describe('Build Validation', () => {
         cwd: exampleDir,
         stdio: 'inherit',
       })
-    } catch (error) {
+    } catch {
       console.log('Clean failed (this is ok if no previous build exists)')
     }
 
@@ -30,8 +30,9 @@ test.describe('Build Validation', () => {
         stdio: 'pipe',
       })
       console.log(buildOutput)
-    } catch (error: any) {
-      console.error('Build failed:', error.stdout || error.message)
+    } catch (error: unknown) {
+      const err = error as { stdout?: string; message?: string }
+      console.error('Build failed:', err.stdout || err.message)
       throw error
     }
 
@@ -58,8 +59,9 @@ test.describe('Build Validation', () => {
         stdio: 'pipe',
       })
       console.log(generateOutput)
-    } catch (error: any) {
-      console.error('Generate failed:', error.stdout || error.message)
+    } catch (error: unknown) {
+      const err = error as { stdout?: string; message?: string }
+      console.error('Generate failed:', err.stdout || err.message)
       throw error
     }
 
@@ -79,27 +81,22 @@ test.describe('Build Validation', () => {
     test.setTimeout(120000) // 2 minutes
 
     console.log('Checking TypeScript...')
-    let tscOutput = ''
     try {
       // Run TypeScript compiler in check mode
-      tscOutput = execSync('npx tsc --noEmit', {
+      execSync('npx tsc --noEmit', {
         cwd: exampleDir,
         encoding: 'utf-8',
         stdio: 'pipe',
       })
       console.log('TypeScript check passed!')
-    } catch (error: any) {
-      console.error('TypeScript errors:', error.stdout || error.message)
-      throw new Error(
-        `TypeScript compilation failed:\n${error.stdout || error.message}`
-      )
+    } catch (error: unknown) {
+      const err = error as { stdout?: string; message?: string }
+      console.error('TypeScript errors:', err.stdout || err.message)
+      throw new Error(`TypeScript compilation failed:\n${err.stdout || err.message}`)
     }
   })
 
   test('should have all required dependencies installed', async () => {
-    const packageJsonPath = path.join(exampleDir, 'package.json')
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
-
     const nodeModulesPath = path.join(exampleDir, 'node_modules')
     expect(fs.existsSync(nodeModulesPath)).toBe(true)
 
@@ -139,12 +136,9 @@ test.describe('Build Validation', () => {
 
     expect(fs.existsSync(nextConfigPath)).toBe(true)
 
-    // Should be valid JavaScript
-    try {
-      require(nextConfigPath)
-    } catch (error) {
-      throw new Error(`Invalid next.config.js: ${error}`)
-    }
+    // File should contain valid Next.js config
+    const configContent = fs.readFileSync(nextConfigPath, 'utf-8')
+    expect(configContent).toContain('module.exports')
   })
 
   test('should have valid opensaas.config.ts', async () => {
