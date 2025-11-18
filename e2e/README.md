@@ -306,13 +306,36 @@ pnpm exec playwright test --debug -g "test name"
 
 ## CI/CD Integration
 
-For CI environments, tests are configured to:
-- Use GitHub Actions reporter
-- Retry failed tests twice
-- Run with a single worker (no parallelization)
-- Not reuse existing dev servers
+E2E tests run automatically in GitHub Actions:
 
-Set `CI=true` environment variable to enable CI mode.
+### Workflows
+
+**Main Test Workflow** (`.github/workflows/test.yml`):
+- Runs on all pull requests to `main`
+- Executes E2E tests alongside unit tests
+
+**Dedicated E2E Workflow** (`.github/workflows/e2e.yml`):
+- Triggers on E2E-related file changes
+- Can be manually triggered
+- Runs nightly at 2 AM UTC
+- Provides detailed test reports and artifacts
+
+### CI Configuration
+
+When `CI=true` is set, Playwright automatically:
+- Uses GitHub Actions reporter
+- Retries failed tests twice
+- Runs with a single worker (no parallelization)
+- Does not reuse existing dev servers
+
+### Viewing Results
+
+Test results are available in the GitHub Actions UI:
+1. Navigate to the Actions tab
+2. Select the workflow run
+3. View test results and download artifacts (reports, screenshots, traces)
+
+Traces can be viewed at [trace.playwright.dev](https://trace.playwright.dev)
 
 ## Adding Tests for New Examples
 

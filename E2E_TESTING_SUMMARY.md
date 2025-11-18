@@ -244,36 +244,57 @@ cleanupDatabase('examples/starter-auth')
 
 ## CI/CD Integration
 
-The test suite is CI-ready. For GitHub Actions or other CI systems:
+E2E tests are fully integrated into GitHub Actions with two workflows:
 
-```yaml
-- name: Install dependencies
-  run: pnpm install
+### 1. Main Test Workflow (`.github/workflows/test.yml`)
 
-- name: Install Playwright browsers
-  run: pnpm exec playwright install --with-deps
+Runs on all pull requests to `main`:
+- Executes E2E tests as part of the main test suite
+- Runs alongside unit tests, linting, and formatting checks
+- Uploads test reports and artifacts on failure
 
-- name: Build packages
-  run: pnpm build
+### 2. Dedicated E2E Workflow (`.github/workflows/e2e.yml`)
 
-- name: Run E2E tests
-  run: pnpm test:e2e
-  env:
-    CI: true
+Provides more control over E2E test execution:
 
-- name: Upload test results
-  if: always()
-  uses: actions/upload-artifact@v3
-  with:
-    name: playwright-report
-    path: playwright-report/
-```
+**Triggers:**
+- Pull requests that modify E2E-related files
+- Manual trigger via GitHub Actions UI
+- Nightly schedule (2 AM UTC daily)
+
+**Features:**
+- 30-minute timeout for long-running tests
+- Comprehensive artifact uploads (reports, screenshots, traces)
+- Automatic PR comments with test results
+- Extended artifact retention (30 days)
+
+**Manual Trigger:**
+Go to Actions → E2E Tests → Run workflow
+
+### GitHub Actions Configuration
 
 When `CI=true` is set, Playwright will:
-- Use GitHub Actions reporter
-- Retry failed tests twice
-- Run with single worker (no parallelization)
-- Not reuse existing dev servers
+- ✅ Use GitHub Actions reporter for better CI output
+- ✅ Retry failed tests twice automatically
+- ✅ Run with single worker (no parallelization)
+- ✅ Not reuse existing dev servers
+- ✅ Upload screenshots and traces on failure
+
+### Artifacts Uploaded
+
+On test completion:
+- **playwright-report/** - HTML test report
+- **test-results/** - Raw test results
+
+On test failure:
+- **playwright-screenshots/** - Screenshots of failures
+- **playwright-traces/** - Execution traces for debugging
+
+### Viewing Test Results
+
+1. **In GitHub Actions**: Navigate to the Actions tab, select the workflow run
+2. **Download artifacts**: Click on uploaded artifacts to download
+3. **View traces**: Download trace files and view at [trace.playwright.dev](https://trace.playwright.dev)
 
 ## Next Steps
 
