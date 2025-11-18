@@ -402,12 +402,7 @@ describe('ListTable', () => {
     it('should exclude password fields by default', () => {
       const items = [{ id: '1', username: 'john', password: 'secret123' }]
 
-      render(
-        <ListTable
-          items={items}
-          fieldTypes={{ username: 'text', password: 'password' }}
-        />,
-      )
+      render(<ListTable items={items} fieldTypes={{ username: 'text', password: 'password' }} />)
 
       expect(screen.getByText('Username')).toBeInTheDocument()
       expect(screen.queryByText('Password')).not.toBeInTheDocument()

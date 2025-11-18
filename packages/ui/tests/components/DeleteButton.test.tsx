@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DeleteButton } from '../../src/components/standalone/DeleteButton.js'
@@ -62,9 +62,7 @@ describe('DeleteButton', () => {
       const deleteButton = screen.getByRole('button', { name: /delete/i })
       await user.click(deleteButton)
 
-      expect(
-        screen.getByText(/are you sure you want to delete this post/i),
-      ).toBeInTheDocument()
+      expect(screen.getByText(/are you sure you want to delete this post/i)).toBeInTheDocument()
     })
 
     it('should show custom confirmation title', async () => {

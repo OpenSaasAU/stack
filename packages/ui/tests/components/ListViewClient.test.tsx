@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
 
@@ -257,9 +257,7 @@ describe('ListViewClient', () => {
 
     it('should preserve search in pagination URLs', async () => {
       const user = userEvent.setup()
-      render(
-        <ListViewClient {...defaultProps} total={100} pageSize={10} page={1} search="test" />,
-      )
+      render(<ListViewClient {...defaultProps} total={100} pageSize={10} page={1} search="test" />)
 
       const nextButton = screen.getByRole('button', { name: /next/i })
       await user.click(nextButton)
