@@ -47,10 +47,20 @@ BETTER_AUTH_URL="http://localhost:3000"
     console.log('Database setup complete')
   } catch (error) {
     console.error('Database setup failed:', error)
+    if (error instanceof Error) {
+      console.error('Error details:', error.message)
+      console.error('Stack trace:', error.stack)
+    }
     throw error
   }
 
   console.log('=== Global Setup Complete ===\n')
+  console.log('Next.js dev server will start shortly...')
+  console.log('If server startup fails, check that:')
+  console.log('  1. All packages are built (pnpm build)')
+  console.log('  2. Dependencies are installed (pnpm install)')
+  console.log('  3. Database is set up (pnpm generate && pnpm db:push)')
+  console.log('')
 }
 
 export default globalSetup

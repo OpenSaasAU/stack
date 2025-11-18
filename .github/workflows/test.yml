@@ -74,6 +74,22 @@ jobs:
           pnpm --filter @opensaas/stack-ui build
           pnpm --filter @opensaas/stack-cli build
 
+      - name: Setup starter-auth example
+        working-directory: ./examples/starter-auth
+        run: |
+          # Create .env file if it doesn't exist
+          if [ ! -f .env ]; then
+            cp .env.example .env
+            # Set test environment variables
+            sed -i 's/BETTER_AUTH_SECRET=.*/BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"/' .env
+            sed -i 's|BETTER_AUTH_URL=.*|BETTER_AUTH_URL="http://localhost:3000"|' .env
+            sed -i 's|DATABASE_URL=.*|DATABASE_URL="file:./dev.db"|' .env
+          fi
+          # Generate Prisma schema and types
+          pnpm generate
+          # Push schema to database
+          pnpm db:push --skip-generate
+
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 

@@ -47,6 +47,8 @@ export default defineConfig({
     command: 'cd examples/starter-auth && pnpm dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    timeout: 180000, // 3 minutes - Next.js can take time to build and start
+    stdout: 'pipe', // Capture server output for debugging
+    stderr: 'pipe',
   },
 })

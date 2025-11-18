@@ -10,30 +10,46 @@ export function setupDatabase(exampleDir: string) {
   const dbPath = path.join(exampleDir, 'dev.db')
   const prismaDir = path.join(exampleDir, 'prisma')
 
+  console.log(`Setting up database in: ${exampleDir}`)
+
   // Remove existing database
   if (fs.existsSync(dbPath)) {
+    console.log('Removing existing database...')
     fs.unlinkSync(dbPath)
   }
 
   // Remove existing migrations
   const migrationsDir = path.join(prismaDir, 'migrations')
   if (fs.existsSync(migrationsDir)) {
+    console.log('Removing existing migrations...')
     fs.rmSync(migrationsDir, { recursive: true, force: true })
   }
 
   // Generate schema
-  console.log('Generating schema...')
-  execSync('pnpm generate', {
-    cwd: exampleDir,
-    stdio: 'inherit',
-  })
+  console.log('Generating Prisma schema and types...')
+  try {
+    execSync('pnpm generate', {
+      cwd: exampleDir,
+      stdio: 'inherit',
+    })
+  } catch (error) {
+    console.error('Failed to generate schema')
+    throw error
+  }
 
   // Push schema to database
   console.log('Pushing schema to database...')
-  execSync('pnpm db:push', {
-    cwd: exampleDir,
-    stdio: 'inherit',
-  })
+  try {
+    execSync('pnpm db:push --skip-generate --accept-data-loss', {
+      cwd: exampleDir,
+      stdio: 'inherit',
+    })
+  } catch (error) {
+    console.error('Failed to push schema to database')
+    throw error
+  }
+
+  console.log('Database setup completed successfully')
 }
 
 /**
