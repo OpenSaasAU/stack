@@ -17,6 +17,8 @@ import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
 import { getUrlKey } from '@opensaas/stack-core'
+import { FilterBar, type FilterableField } from './filters/FilterBar.js'
+import type { ListFilters } from '../lib/filter-types.js'
 
 export interface ListViewClientProps {
   items: Array<Record<string, unknown>>
@@ -30,6 +32,9 @@ export interface ListViewClientProps {
   pageSize: number
   total: number
   search?: string
+  filters?: ListFilters
+  searchParams?: Record<string, string | string[] | undefined>
+  filterableFields: FilterableField[]
 }
 
 /**
@@ -41,12 +46,16 @@ export function ListViewClient({
   fieldTypes,
   relationshipRefs,
   columns,
+  listKey,
   urlKey,
   basePath,
   page,
   pageSize,
   total,
   search: initialSearch,
+  filters = [],
+  searchParams = {},
+  filterableFields,
 }: ListViewClientProps) {
   const router = useRouter()
   const [sortBy, setSortBy] = useState<string | null>(null)
@@ -170,6 +179,16 @@ export function ListViewClient({
 
   return (
     <div className="space-y-4">
+      {/* Filter Bar */}
+      <FilterBar
+        listKey={listKey}
+        fields={filterableFields}
+        basePath={basePath}
+        urlKey={urlKey}
+        currentFilters={filters}
+        searchParams={searchParams}
+      />
+
       {/* Search Bar */}
       <Card className="p-4">
         <form onSubmit={handleSearch} className="flex gap-2">

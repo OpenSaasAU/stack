@@ -318,7 +318,6 @@ const currentUser = await context.db.user.findUnique({
     const hasStatus = this.answers['post-status'] as boolean
     const taxonomy = (this.answers['taxonomy'] as string[]) || []
     const postFields = (this.answers['post-fields'] as string[]) || []
-    const commentsEnabled = this.answers['comments-enabled'] as boolean
 
     const useTiptap = contentEditor === 'Rich text editor (Tiptap)'
     const useMarkdown = contentEditor === 'Markdown'
