@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { useRouter } from 'next/navigation.js'
 import type { createAuthClient } from 'better-auth/react'
 
 export type SignUpFormProps = {
@@ -67,6 +68,7 @@ export function SignUpForm({
   onSuccess,
   onError,
 }: SignUpFormProps) {
+  const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -98,7 +100,12 @@ export function SignUpForm({
         throw new Error(result.error.message)
       }
 
-      onSuccess?.()
+      // If onSuccess is provided, call it. Otherwise, automatically redirect
+      if (onSuccess) {
+        onSuccess()
+      } else {
+        router.push(redirectTo)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sign up failed'
       setError(message)
@@ -117,6 +124,8 @@ export function SignUpForm({
         provider,
         callbackURL: redirectTo,
       })
+      // Social sign-in handles its own redirect via OAuth flow
+      // Only call onSuccess if provided
       onSuccess?.()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sign up failed'

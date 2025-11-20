@@ -118,38 +118,38 @@ export function createAuth(
         return undefined
       }
 
-      // Return a proxy or function that handles lazy initialization
-      return new Proxy(
-        {},
-        {
-          get(__, subProp) {
-            // Handle nested property access (e.g., auth.api.getSession)
-            return async (...args: unknown[]) => {
-              const instance = await getAuthInstance()
-              const parentValue = instance[prop as keyof typeof instance]
-              if (parentValue && typeof parentValue === 'object') {
-                const childValue = (parentValue as Record<string, unknown>)[subProp as string]
-                if (typeof childValue === 'function') {
-                  return (childValue as (...args: unknown[]) => unknown).apply(parentValue, args)
-                }
-                return childValue
+      // Create a lazy wrapper function
+      const lazyWrapper = async (...args: unknown[]) => {
+        const instance = await getAuthInstance()
+        const value = instance[prop as keyof typeof instance]
+        if (typeof value === 'function') {
+          return (value as (...args: unknown[]) => unknown).apply(instance, args)
+        }
+        return value
+      }
+
+      // Return a proxy that supports both direct calls and nested property access
+      return new Proxy(lazyWrapper, {
+        get(target, subProp) {
+          if (subProp === 'then') {
+            // Support await on nested properties
+            return undefined
+          }
+          // Handle nested property access (e.g., auth.api.getSession)
+          return async (...args: unknown[]) => {
+            const instance = await getAuthInstance()
+            const parentValue = instance[prop as keyof typeof instance]
+            if (parentValue && typeof parentValue === 'object') {
+              const childValue = (parentValue as Record<string, unknown>)[subProp as string]
+              if (typeof childValue === 'function') {
+                return (childValue as (...args: unknown[]) => unknown).apply(parentValue, args)
               }
-              throw new Error(`Property ${String(prop)}.${String(subProp)} not found on auth instance`)
+              return childValue
             }
-          },
-          apply(__, ___, args: unknown[]) {
-            // Handle direct calls (e.g., auth.handler())
-            return (async () => {
-              const instance = await getAuthInstance()
-              const value = instance[prop as keyof typeof instance]
-              if (typeof value === 'function') {
-                return (value as (...args: unknown[]) => unknown).apply(instance, args)
-              }
-              return value
-            })()
-          },
+            throw new Error(`Property ${String(prop)}.${String(subProp)} not found on auth instance`)
+          }
         },
-      )
+      })
     },
   })
 }
