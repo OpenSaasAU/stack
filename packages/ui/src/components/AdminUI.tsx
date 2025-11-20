@@ -15,6 +15,7 @@ export interface AdminUIProps<TPrisma> {
   basePath?: string
   // Server action can return any shape depending on the list item type
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  onSignOut?: () => Promise<void>
 }
 
 /**
@@ -34,6 +35,7 @@ export function AdminUI<TPrisma>({
   searchParams = {},
   basePath = '/admin',
   serverAction,
+  onSignOut,
 }: AdminUIProps<TPrisma>) {
   // Parse route from params
   const [urlSegment, action] = params
@@ -104,6 +106,7 @@ export function AdminUI<TPrisma>({
           config={config}
           basePath={basePath}
           currentPath={currentPath}
+          onSignOut={onSignOut}
         />
         <main className="flex-1 overflow-y-auto">{content}</main>
       </div>
