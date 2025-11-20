@@ -113,16 +113,43 @@ export function createAuth(
   // Return a proxy that lazily initializes the auth instance
   return new Proxy({} as ReturnType<typeof betterAuth>, {
     get(_, prop) {
-      return (...args: unknown[]) => {
-        return (async () => {
-          const instance = await getAuthInstance()
-          const value = instance[prop as keyof typeof instance]
-          if (typeof value === 'function') {
-            return (value as (...args: unknown[]) => unknown).apply(instance, args)
-          }
-          return value
-        })()
+      if (prop === 'then') {
+        // Support await on the proxy itself
+        return undefined
       }
+
+      // Return a proxy or function that handles lazy initialization
+      return new Proxy(
+        {},
+        {
+          get(__, subProp) {
+            // Handle nested property access (e.g., auth.api.getSession)
+            return async (...args: unknown[]) => {
+              const instance = await getAuthInstance()
+              const parentValue = instance[prop as keyof typeof instance]
+              if (parentValue && typeof parentValue === 'object') {
+                const childValue = (parentValue as Record<string, unknown>)[subProp as string]
+                if (typeof childValue === 'function') {
+                  return (childValue as (...args: unknown[]) => unknown).apply(parentValue, args)
+                }
+                return childValue
+              }
+              throw new Error(`Property ${String(prop)}.${String(subProp)} not found on auth instance`)
+            }
+          },
+          apply(__, ___, args: unknown[]) {
+            // Handle direct calls (e.g., auth.handler())
+            return (async () => {
+              const instance = await getAuthInstance()
+              const value = instance[prop as keyof typeof instance]
+              if (typeof value === 'function') {
+                return (value as (...args: unknown[]) => unknown).apply(instance, args)
+              }
+              return value
+            })()
+          },
+        },
+      )
     },
   })
 }
