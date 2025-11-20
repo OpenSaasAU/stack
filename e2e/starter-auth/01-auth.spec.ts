@@ -190,6 +190,7 @@ test.describe('Authentication', () => {
       await expect(page.locator('text=/sign out/i')).toBeVisible()
 
       await page.goto('/')
+      await page.goto('/admin')
       await expect(page.locator('text=/sign out/i')).toBeVisible()
     })
   })
