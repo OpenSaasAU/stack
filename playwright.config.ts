@@ -44,7 +44,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cd examples/starter-auth && pnpm dev',
+    command: 'cd examples/starter-auth && pnpm build && pnpm start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 180000, // 3 minutes - Next.js can take time to build and start

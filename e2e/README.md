@@ -31,6 +31,38 @@ e2e/
 └── README.md              # This file
 ```
 
+## How Tests Work
+
+### Unified Build Approach
+
+The E2E tests use a **production build** approach for realistic testing:
+
+1. **Global Setup** (`global-setup.ts`):
+   - Creates `.env` file with test credentials
+   - Generates Prisma schema and types (`pnpm generate`)
+   - Pushes schema to database (`pnpm db:push`)
+
+2. **Playwright Web Server** (`playwright.config.ts`):
+   - Runs `pnpm build && pnpm start` to create production build
+   - Waits for server to be ready at `http://localhost:3000`
+   - Tests run against the **production server**, not dev mode
+
+3. **Tests Execute**:
+   - Validate build artifacts exist (not rebuild)
+   - Test authentication, CRUD, access control, and UI
+   - All tests run against the same production build
+
+4. **Global Teardown** (`global-teardown.ts`):
+   - Cleans up test database
+   - Playwright stops the server automatically
+
+This approach ensures:
+
+- ✅ Tests validate production builds (what users will run)
+- ✅ No conflicts between build processes and running server
+- ✅ Faster test execution (single build, not multiple)
+- ✅ Realistic testing environment
+
 ## Running Tests
 
 ### Prerequisites
@@ -41,7 +73,16 @@ e2e/
    pnpm install
    ```
 
-2. Install Playwright browsers (first time only):
+2. Build packages (required for example build):
+
+   ```bash
+   pnpm --filter @opensaas/stack-core build
+   pnpm --filter @opensaas/stack-auth build
+   pnpm --filter @opensaas/stack-ui build
+   pnpm --filter @opensaas/stack-cli build
+   ```
+
+3. Install Playwright browsers (first time only):
    ```bash
    pnpm exec playwright install
    ```
