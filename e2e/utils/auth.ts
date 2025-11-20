@@ -23,9 +23,10 @@ export async function signUp(
   { email, password, name }: { email: string; password: string; name: string },
 ) {
   await page.goto('/sign-up')
-  await page.fill('input[name="name"]', name)
-  await page.fill('input[name="email"]', email)
-  await page.fill('input[name="password"]', password)
+  await page.fill('input#name', name)
+  await page.fill('input#email', email)
+  await page.fill('input#password', password)
+  await page.fill('input#confirmPassword', password) // Fill confirm password field
   await page.click('button[type="submit"]')
 
   // Wait for redirect after successful signup
@@ -37,8 +38,8 @@ export async function signUp(
  */
 export async function signIn(page: Page, { email, password }: { email: string; password: string }) {
   await page.goto('/sign-in')
-  await page.fill('input[name="email"]', email)
-  await page.fill('input[name="password"]', password)
+  await page.fill('input#email', email)
+  await page.fill('input#password', password)
   await page.click('button[type="submit"]')
 
   // Wait for redirect after successful signin
