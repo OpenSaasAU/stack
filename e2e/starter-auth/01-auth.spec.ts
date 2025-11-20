@@ -39,7 +39,7 @@ test.describe('Authentication', () => {
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
       // Should show error message (adjust selector based on your error UI)
-      await expect(page.locator('text=/invalid|error/i')).toBeVisible({
+      await expect(page.locator("text=/'invalid-email' is missing/i")).toBeVisible({
         timeout: 5000,
       })
     })
@@ -56,7 +56,7 @@ test.describe('Authentication', () => {
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
       // Should show error message about password length
-      await expect(page.locator('text=/password|8|characters/i')).toBeVisible({
+      await expect(page.locator('text=/Password too short/i')).toBeVisible({
         timeout: 5000,
       })
     })
@@ -107,7 +107,7 @@ test.describe('Authentication', () => {
       await page.getByRole('button', { name: 'Sign In' }).click()
 
       // Should redirect to home page
-      await page.waitForURL('/', { timeout: 10000 })
+      await page.waitForURL('/admin', { timeout: 10000 })
 
       // Verify we're logged in
       await expect(page.locator('text=/sign out/i')).toBeVisible()
