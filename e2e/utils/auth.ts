@@ -22,7 +22,11 @@ export async function signUp(
   page: Page,
   { email, password, name }: { email: string; password: string; name: string },
 ) {
-  await page.goto('/sign-up')
+  await page.goto('/sign-up', { waitUntil: 'networkidle' })
+
+  // Wait for the form to be ready (React hydration)
+  await page.waitForSelector('input#name:not([disabled])', { state: 'visible' })
+
   await page.fill('input#name', name)
   await page.fill('input#email', email)
   await page.fill('input#password', password)
@@ -37,7 +41,11 @@ export async function signUp(
  * Sign in an existing user
  */
 export async function signIn(page: Page, { email, password }: { email: string; password: string }) {
-  await page.goto('/sign-in')
+  await page.goto('/sign-in', { waitUntil: 'networkidle' })
+
+  // Wait for the form to be ready (React hydration)
+  await page.waitForSelector('input#email:not([disabled])', { state: 'visible' })
+
   await page.fill('input#email', email)
   await page.fill('input#password', password)
   await page.click('button[type="submit"]')
