@@ -1,25 +1,27 @@
 import { test, expect } from '@playwright/test'
-import { signUp, testUser } from '../utils/auth.js'
+import { signUp, generateTestUser } from '../utils/auth.js'
 
 test.describe('Authentication', () => {
   test.describe('Sign Up', () => {
     test('should successfully sign up a new user', async ({ page }) => {
+      const user = generateTestUser()
+
       await page.goto('/sign-up', { waitUntil: 'networkidle' })
 
       // Wait for form to be ready
       await page.waitForSelector('input#name:not([disabled])', { state: 'visible' })
 
       // Fill in the form using role-based selectors
-      await page.getByRole('textbox', { name: 'Name' }).fill(testUser.name)
-      await page.getByRole('textbox', { name: 'Email' }).fill(testUser.email)
-      await page.getByRole('textbox', { name: 'Password', exact: true }).fill(testUser.password)
-      await page.getByRole('textbox', { name: 'Confirm Password' }).fill(testUser.password)
+      await page.getByRole('textbox', { name: 'Name' }).fill(user.name)
+      await page.getByRole('textbox', { name: 'Email' }).fill(user.email)
+      await page.getByRole('textbox', { name: 'Password', exact: true }).fill(user.password)
+      await page.getByRole('textbox', { name: 'Confirm Password' }).fill(user.password)
 
       // Submit the form
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
-      // Should redirect to home page after successful signup
-      await page.waitForURL('/', { timeout: 10000 })
+      // Should redirect to admin page after successful signup
+      await page.waitForURL('/admin', { timeout: 10000 })
 
       // Verify we're logged in (look for sign out button/link)
       await expect(page.locator('text=/sign out/i')).toBeVisible()
@@ -60,8 +62,10 @@ test.describe('Authentication', () => {
     })
 
     test('should prevent duplicate email registration', async ({ page }) => {
+      const user = generateTestUser()
+
       // First sign up
-      await signUp(page, testUser)
+      await signUp(page, user)
 
       // Navigate back to sign up
       await page.goto('/sign-up', { waitUntil: 'networkidle' })
@@ -69,7 +73,7 @@ test.describe('Authentication', () => {
 
       // Try to sign up with same email
       await page.getByRole('textbox', { name: 'Name' }).fill('Another User')
-      await page.getByRole('textbox', { name: 'Email' }).fill(testUser.email)
+      await page.getByRole('textbox', { name: 'Email' }).fill(user.email)
       await page.getByRole('textbox', { name: 'Password', exact: true }).fill('anotherpassword123')
       await page.getByRole('textbox', { name: 'Confirm Password' }).fill('anotherpassword123')
 
@@ -83,10 +87,13 @@ test.describe('Authentication', () => {
   })
 
   test.describe('Sign In', () => {
+    let testUser: ReturnType<typeof generateTestUser>
+
     test.beforeEach(async ({ page }) => {
-      // Create a user before each sign-in test
+      // Create a unique user for each test
+      testUser = generateTestUser()
       await signUp(page, testUser)
-      // Sign out to test sign in
+      // Navigate to sign-in page
       await page.goto('/sign-in')
     })
 
@@ -145,10 +152,12 @@ test.describe('Authentication', () => {
     })
 
     test('should accept email submission for password reset', async ({ page }) => {
+      const user = generateTestUser()
+
       await page.goto('/forgot-password', { waitUntil: 'networkidle' })
       await page.waitForSelector('input#email:not([disabled])', { state: 'visible' })
 
-      await page.getByRole('textbox', { name: 'Email' }).fill(testUser.email)
+      await page.getByRole('textbox', { name: 'Email' }).fill(user.email)
       await page.getByRole('button', { name: /reset|submit/i }).click()
 
       // Should show success message or confirmation
@@ -159,8 +168,10 @@ test.describe('Authentication', () => {
 
   test.describe('Session Persistence', () => {
     test('should maintain session across page reloads', async ({ page }) => {
+      const user = generateTestUser()
+
       // Sign up and verify logged in
-      await signUp(page, testUser)
+      await signUp(page, user)
       await expect(page.locator('text=/sign out/i')).toBeVisible()
 
       // Reload the page
@@ -171,7 +182,8 @@ test.describe('Authentication', () => {
     })
 
     test('should maintain session across navigation', async ({ page }) => {
-      await signUp(page, testUser)
+      const user = generateTestUser()
+      await signUp(page, user)
 
       // Navigate to different pages
       await page.goto('/admin')

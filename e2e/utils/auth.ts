@@ -16,6 +16,20 @@ export const secondUser = {
 }
 
 /**
+ * Generate a unique test user to avoid email conflicts between tests
+ * Uses timestamp + random string to ensure uniqueness
+ */
+export function generateTestUser(name = 'Test User') {
+  const timestamp = Date.now()
+  const random = Math.random().toString(36).substring(7)
+  return {
+    email: `test-${timestamp}-${random}@example.com`,
+    password: 'testpassword123',
+    name,
+  }
+}
+
+/**
  * Sign up a new user
  */
 export async function signUp(
