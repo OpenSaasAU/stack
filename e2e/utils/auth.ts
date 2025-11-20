@@ -27,11 +27,12 @@ export async function signUp(
   // Wait for the form to be ready (React hydration)
   await page.waitForSelector('input#name:not([disabled])', { state: 'visible' })
 
-  await page.fill('input#name', name)
-  await page.fill('input#email', email)
-  await page.fill('input#password', password)
-  await page.fill('input#confirmPassword', password) // Fill confirm password field
-  await page.click('button[type="submit"]')
+  // Use role-based selectors for better reliability
+  await page.getByRole('textbox', { name: 'Name' }).fill(name)
+  await page.getByRole('textbox', { name: 'Email' }).fill(email)
+  await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password)
+  await page.getByRole('textbox', { name: 'Confirm Password' }).fill(password)
+  await page.getByRole('button', { name: 'Sign Up' }).click()
 
   // Wait for redirect after successful signup
   await page.waitForURL('/', { timeout: 10000 })
@@ -46,9 +47,10 @@ export async function signIn(page: Page, { email, password }: { email: string; p
   // Wait for the form to be ready (React hydration)
   await page.waitForSelector('input#email:not([disabled])', { state: 'visible' })
 
-  await page.fill('input#email', email)
-  await page.fill('input#password', password)
-  await page.click('button[type="submit"]')
+  // Use role-based selectors for better reliability
+  await page.getByRole('textbox', { name: 'Email' }).fill(email)
+  await page.getByRole('textbox', { name: 'Password' }).fill(password)
+  await page.getByRole('button', { name: 'Sign In' }).click()
 
   // Wait for redirect after successful signin
   await page.waitForURL('/', { timeout: 10000 })
