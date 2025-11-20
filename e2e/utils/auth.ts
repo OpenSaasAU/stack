@@ -20,7 +20,12 @@ export const secondUser = {
  */
 export async function signUp(
   page: Page,
-  { email, password, name }: { email: string; password: string; name: string },
+  {
+    email,
+    password,
+    name,
+    redirectTo = '/admin',
+  }: { email: string; password: string; name: string; redirectTo?: string },
 ) {
   await page.goto('/sign-up', { waitUntil: 'networkidle' })
 
@@ -35,13 +40,16 @@ export async function signUp(
   await page.getByRole('button', { name: 'Sign Up' }).click()
 
   // Wait for redirect after successful signup
-  await page.waitForURL('/', { timeout: 10000 })
+  await page.waitForURL(redirectTo, { timeout: 10000 })
 }
 
 /**
  * Sign in an existing user
  */
-export async function signIn(page: Page, { email, password }: { email: string; password: string }) {
+export async function signIn(
+  page: Page,
+  { email, password, redirectTo = '/admin' }: { email: string; password: string; redirectTo?: string },
+) {
   await page.goto('/sign-in', { waitUntil: 'networkidle' })
 
   // Wait for the form to be ready (React hydration)
@@ -53,7 +61,7 @@ export async function signIn(page: Page, { email, password }: { email: string; p
   await page.getByRole('button', { name: 'Sign In' }).click()
 
   // Wait for redirect after successful signin
-  await page.waitForURL('/', { timeout: 10000 })
+  await page.waitForURL(redirectTo, { timeout: 10000 })
 }
 
 /**
