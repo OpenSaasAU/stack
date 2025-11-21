@@ -3,12 +3,23 @@ import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { auth } from '@/lib/auth'
 import { getAuth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { getUrlKey } from '@opensaas/stack-core'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getContext()
-  return await context.serverAction(props)
+  const session = await getAuth()
+  const context = await getContext(session)
+  const result = await context.serverAction(props)
+
+  // Redirect after successful operations
+  if (result) {
+    const listUrl = `/admin/${getUrlKey(props.listKey)}`
+    redirect(listUrl)
+  }
+
+  return result
 }
 
 // Sign out server action

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, signIn, generateTestUser } from '../utils/auth.js'
+import { signUp, signIn, generateTestUser, selectAuthor } from '../utils/auth.js'
 
 test.describe('Posts CRUD and Access Control', () => {
   test.describe('Unauthenticated Access', () => {
@@ -30,6 +30,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.fill('textarea[name="content"]', 'This is published')
       await setupPage.getByLabel('Status').click()
       await setupPage.getByRole('option', { name: 'published' }).click()
+      await selectAuthor(setupPage)
       await setupPage.click('button[type="submit"]')
       await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -40,6 +41,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.fill('input[name="slug"]', 'draft-post')
       await setupPage.fill('textarea[name="content"]', 'This is a draft')
       // Default status is draft, no need to change
+      await selectAuthor(setupPage)
       await setupPage.click('button[type="submit"]')
       await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -72,6 +74,9 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', 'my-first-post')
       await page.fill('textarea[name="content"]', 'This is the content')
       await page.fill('textarea[name="internalNotes"]', 'These are internal notes')
+
+      // Select author (required for access control)
+      await selectAuthor(page)
 
       // Submit the form
       await page.click('button[type="submit"]')
@@ -129,6 +134,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'First Post')
       await page.fill('input[name="slug"]', 'unique-slug')
       await page.fill('textarea[name="content"]', 'Content')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -138,6 +144,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'Second Post')
       await page.fill('input[name="slug"]', 'unique-slug')
       await page.fill('textarea[name="content"]', 'Content')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
 
       // Should show error about duplicate slug
@@ -158,6 +165,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('textarea[name="content"]', 'Content')
       await page.getByLabel('Status').click()
       await page.getByRole('option', { name: 'published' }).click()
+      await selectAuthor(page)
 
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
@@ -189,6 +197,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'Original Title')
       await page.fill('input[name="slug"]', 'original-title')
       await page.fill('textarea[name="content"]', 'Original content')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -218,6 +227,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'User 1 Post')
       await page.fill('input[name="slug"]', 'user-1-post')
       await page.fill('textarea[name="content"]', 'Content by user 1')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -277,6 +287,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'Post to Delete')
       await page.fill('input[name="slug"]', 'post-to-delete')
       await page.fill('textarea[name="content"]', 'This will be deleted')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -318,6 +329,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', 'post-with-notes')
       await page.fill('textarea[name="content"]', 'Public content')
       await page.fill('textarea[name="internalNotes"]', 'Secret notes')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 

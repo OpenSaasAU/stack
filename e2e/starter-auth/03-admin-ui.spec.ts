@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { signUp, testUser } from '../utils/auth.js'
+import { signUp, generateTestUser, selectAuthor } from '../utils/auth.js'
 
 test.describe('Admin UI', () => {
+  let testUser: ReturnType<typeof generateTestUser>
+
   test.beforeEach(async ({ page }) => {
+    testUser = generateTestUser()
     await signUp(page, testUser)
   })
 
@@ -72,6 +75,7 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="title"]', 'Test Post')
       await page.fill('input[name="slug"]', 'test-post')
       await page.fill('textarea[name="content"]', 'Test content')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -89,7 +93,10 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="title"]', 'Full Post')
       await page.fill('input[name="slug"]', 'full-post')
       await page.fill('textarea[name="content"]', 'Content here')
-      await page.selectOption('select[name="status"]', 'published')
+      // Status field is a segmented control, not a select dropdown
+      await page.getByLabel('Status').click()
+      await page.getByRole('option', { name: 'published' }).click()
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -151,14 +158,15 @@ test.describe('Admin UI', () => {
       const contentInput = page.locator('textarea[name="content"]')
       await expect(contentInput).toBeVisible()
 
-      // Select dropdown
-      const statusSelect = page.locator('select[name="status"]')
-      await expect(statusSelect).toBeVisible()
+      // Status field is rendered as a segmented control (radio group), not a select
+      const statusField = page.getByLabel('Status')
+      await expect(statusField).toBeVisible()
 
-      // Check select options
-      const options = await statusSelect.locator('option').allTextContents()
-      expect(options).toContain('Draft')
-      expect(options).toContain('Published')
+      // Check that status options are available
+      // Note: Segmented controls don't have <option> elements like <select> does
+      // Instead they use buttons or radio buttons
+      await expect(page.locator('text=/Draft/i')).toBeVisible()
+      await expect(page.locator('text=/Published/i')).toBeVisible()
     })
   })
 
@@ -174,6 +182,7 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="slug"]', 'edit-test-post')
       await page.fill('textarea[name="content"]', 'Original content')
       await page.fill('textarea[name="internalNotes"]', 'Original notes')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -198,6 +207,7 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="title"]', 'Original')
       await page.fill('input[name="slug"]', 'original')
       await page.fill('textarea[name="content"]', 'Content')
+      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
