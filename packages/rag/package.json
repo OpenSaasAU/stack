@@ -59,7 +59,7 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-core": "^0.1.0",
     "openai": "^6.8.0"
   },
   "peerDependenciesMeta": {

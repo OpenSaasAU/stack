@@ -30,7 +30,7 @@
     "vitest": "^4.0.5"
   },
   "peerDependencies": {
-    "@opensaas/stack-storage": "workspace:*"
+    "@opensaas/stack-storage": "^0.1.0"
   },
   "repository": {
     "type": "git",

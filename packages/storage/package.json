@@ -45,7 +45,7 @@
     "vitest": "^4.0.5"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "workspace:*"
+    "@opensaas/stack-core": "^0.1.0"
   },
   "repository": {
     "type": "git",
