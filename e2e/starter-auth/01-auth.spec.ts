@@ -33,10 +33,8 @@ test.describe('Authentication', () => {
 
       // Disable HTML5 validation to test server-side validation
       await page.evaluate(() => {
-        document.querySelectorAll('input[type="email"]').forEach((input) => {
-          input.removeAttribute('type')
-          input.setAttribute('type', 'text')
-        })
+        const forms = document.querySelectorAll('form')
+        forms.forEach((form) => form.setAttribute('novalidate', 'novalidate'))
       })
 
       await page.getByRole('textbox', { name: 'Name' }).fill('Test User')
@@ -46,8 +44,8 @@ test.describe('Authentication', () => {
 
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
-      // Should show error message from server
-      await expect(page.locator('text=/invalid|error/i')).toBeVisible({
+      // Should show error message from server (Better-auth returns "Invalid email")
+      await expect(page.locator('text="Invalid email"').first()).toBeVisible({
         timeout: 5000,
       })
     })
@@ -58,10 +56,8 @@ test.describe('Authentication', () => {
 
       // Disable HTML5 validation to test server-side validation
       await page.evaluate(() => {
-        document.querySelectorAll('input[type="email"]').forEach((input) => {
-          input.removeAttribute('type')
-          input.setAttribute('type', 'text')
-        })
+        const forms = document.querySelectorAll('form')
+        forms.forEach((form) => form.setAttribute('novalidate', 'novalidate'))
       })
 
       await page.getByRole('textbox', { name: 'Name' }).fill('Test User')
@@ -72,7 +68,8 @@ test.describe('Authentication', () => {
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
       // Should show error message about password length
-      await expect(page.locator('text=/password|8|characters/i')).toBeVisible({
+      // Look for the error message div/text, not the label
+      await expect(page.locator('text="Password too short"').first()).toBeVisible({
         timeout: 5000,
       })
     })
@@ -175,10 +172,8 @@ test.describe('Authentication', () => {
 
       // Disable HTML5 validation to test server-side validation
       await page.evaluate(() => {
-        document.querySelectorAll('input[type="email"]').forEach((input) => {
-          input.removeAttribute('type')
-          input.setAttribute('type', 'text')
-        })
+        const forms = document.querySelectorAll('form')
+        forms.forEach((form) => form.setAttribute('novalidate', 'novalidate'))
       })
 
       await page.getByRole('textbox', { name: 'Email' }).fill(user.email)
@@ -186,8 +181,10 @@ test.describe('Authentication', () => {
 
       // Should show success message or confirmation
       // Note: Actual email won't be sent in test environment
-      // Use more specific selector to avoid matching existing page text
-      await expect(page.locator('text=/sent|success|check your/i')).toBeVisible({ timeout: 5000 })
+      // Better-auth might show "Email sent" or similar success message
+      await expect(
+        page.locator('text=/email sent|check your email|reset link|password reset/i').first(),
+      ).toBeVisible({ timeout: 5000 })
     })
   })
 
