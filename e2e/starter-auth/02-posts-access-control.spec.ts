@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, signIn, testUser, secondUser } from '../utils/auth.js'
+import { signUp, signIn, generateTestUser } from '../utils/auth.js'
 
 test.describe('Posts CRUD and Access Control', () => {
   test.describe('Unauthenticated Access', () => {
@@ -16,6 +16,7 @@ test.describe('Posts CRUD and Access Control', () => {
       context,
     }) => {
       // Create a user and add posts in a separate context
+      const testUser = generateTestUser()
       const setupPage = await context.newPage()
       await signUp(setupPage, testUser)
       await setupPage.goto('/admin/post')
@@ -50,7 +51,10 @@ test.describe('Posts CRUD and Access Control', () => {
   })
 
   test.describe('Post Creation', () => {
+    let testUser: ReturnType<typeof generateTestUser>
+
     test.beforeEach(async ({ page }) => {
+      testUser = generateTestUser()
       await signUp(page, testUser)
     })
 
@@ -173,6 +177,7 @@ test.describe('Posts CRUD and Access Control', () => {
   test.describe('Post Update - Author Access Control', () => {
     test('should allow author to update their own post', async ({ page, context: _context }) => {
       // Create user and post
+      const testUser = generateTestUser()
       await signUp(page, testUser)
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
@@ -200,6 +205,8 @@ test.describe('Posts CRUD and Access Control', () => {
 
     test('should not allow non-author to update post', async ({ page, context }) => {
       // User 1 creates a post
+      const testUser = generateTestUser()
+      const secondUser = generateTestUser()
       await signUp(page, testUser)
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
@@ -257,6 +264,7 @@ test.describe('Posts CRUD and Access Control', () => {
 
   test.describe('Post Deletion - Author Access Control', () => {
     test('should allow author to delete their own post', async ({ page }) => {
+      const testUser = generateTestUser()
       await signUp(page, testUser)
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
@@ -296,6 +304,8 @@ test.describe('Posts CRUD and Access Control', () => {
   test.describe('Field-level Access Control', () => {
     test('should only allow author to read internalNotes', async ({ page, context }) => {
       // User 1 creates a post with internal notes
+      const testUser = generateTestUser()
+      const secondUser = generateTestUser()
       await signUp(page, testUser)
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
