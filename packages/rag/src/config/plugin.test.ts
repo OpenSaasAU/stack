@@ -78,7 +78,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -122,7 +122,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -158,7 +158,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -197,7 +197,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {},
         },
         setPluginData: vi.fn(),
@@ -231,7 +231,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -275,7 +275,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -324,7 +324,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -366,7 +366,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -401,7 +401,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             User: {
               fields: {
@@ -435,7 +435,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             BlogPost: {
               fields: {
@@ -483,7 +483,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -537,7 +537,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -574,7 +574,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {
             Article: {
               fields: {
@@ -613,7 +613,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: { provider: 'sqlite', url: 'file:./test.db' },
+          db: { provider: 'sqlite', url: 'file:./test.db', prismaClientConstructor: (() => null) as any },
           lists: {},
         },
         setPluginData: vi.fn(),

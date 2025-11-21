@@ -2,26 +2,24 @@
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate basic schema with datasource and generator 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 "
 `;
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate many-to-one relationship 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -44,13 +42,12 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with basic fields 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -66,13 +63,12 @@ model User {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with checkbox field 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Post {
@@ -87,13 +83,12 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with timestamp field 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Post {
@@ -108,13 +103,12 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate multiple models 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -142,13 +136,12 @@ model Comment {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate one-to-many relationship 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -170,13 +163,12 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should use custom opensaasPath for generator output 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.custom-path/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 "
 `;

@@ -16,8 +16,8 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/client": "^6.17.1",
-    "better-sqlite3": "^11.7.0",
+    "@prisma/adapter-better-sqlite3": "^7.0.0",
+    "@prisma/client": "^7.0.0",
     "next": "^16.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
@@ -28,7 +28,7 @@
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "prisma": "^6.17.1",
+    "prisma": "^7.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

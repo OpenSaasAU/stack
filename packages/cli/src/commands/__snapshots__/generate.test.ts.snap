@@ -12,7 +12,7 @@ exports[`Generate Command Integration > Generator Integration > should generate 
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client'
+import { PrismaClient } from './prisma-client/client'
 import type { Context } from './types'
 import configOrPromise from '../opensaas.config'
 
@@ -21,7 +21,7 @@ const configPromise = Promise.resolve(configOrPromise)
 let resolvedConfig: OpenSaasConfig | null = null
 
 // Internal Prisma singleton - managed automatically
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | null }
 let prisma: PrismaClient | null = null
 
 async function getPrisma() {
@@ -29,7 +29,7 @@ async function getPrisma() {
     if (!resolvedConfig) {
       resolvedConfig = await configPromise
     }
-    prisma = globalForPrisma.prisma ?? new PrismaClient()
+    prisma = globalForPrisma.prisma ?? resolvedConfig.db.prismaClientConstructor!(PrismaClient)
     if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
   }
   return prisma
@@ -107,13 +107,12 @@ export const config = getConfig()
 
 exports[`Generate Command Integration > Generator Integration > should generate all files for a basic config > prisma-schema 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -133,7 +132,7 @@ exports[`Generate Command Integration > Generator Integration > should generate 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client'
+import type { PrismaClient } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -177,13 +176,12 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
 
 exports[`Generate Command Integration > Generator Integration > should generate consistent output across multiple runs > consistent-output 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -197,52 +195,48 @@ model User {
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > mysql-provider 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 "
 `;
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > postgresql-provider 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 "
 `;
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > sqlite-provider 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 "
 `;
 
 exports[`Generate Command Integration > Generator Integration > should handle empty lists config > empty-lists-schema 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 "
 `;
@@ -254,7 +248,7 @@ exports[`Generate Command Integration > Generator Integration > should handle em
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client'
+import type { PrismaClient } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
@@ -271,13 +265,12 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = {
 
 exports[`Generate Command Integration > Generator Integration > should overwrite existing files > overwrite-after 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Post {
@@ -291,13 +284,12 @@ model Post {
 
 exports[`Generate Command Integration > Generator Integration > should overwrite existing files > overwrite-before 1`] = `
 "generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {

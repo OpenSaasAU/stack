@@ -1,6 +1,7 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 import type { Post, User } from './.opensaas/types'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * OpenSaas Configuration
@@ -9,6 +10,10 @@ export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+      return new PrismaClient({ adapter })
+    },
   },
 
   lists: {

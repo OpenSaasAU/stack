@@ -252,7 +252,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push(
     "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'",
   )
-  lines.push("import type { PrismaClient } from './prisma-client'")
+  lines.push("import type { PrismaClient } from './prisma-client/client'")
   lines.push("import type { PluginServices } from './plugin-types'")
 
   // Add field-specific imports

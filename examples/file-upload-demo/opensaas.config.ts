@@ -2,11 +2,16 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
 import { localStorage } from '@opensaas/stack-storage'
 import { file, image } from '@opensaas/stack-storage/fields'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+      return new PrismaClient({ adapter })
+    },
   },
 
   storage: {

@@ -66,13 +66,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
   // Generator and datasource
   lines.push('generator client {')
-  lines.push('  provider = "prisma-client-js"')
+  lines.push('  provider = "prisma-client"')
   lines.push(`  output   = "../${opensaasPath}/prisma-client"`)
   lines.push('}')
   lines.push('')
   lines.push('datasource db {')
   lines.push(`  provider = "${config.db.provider}"`)
-  lines.push('  url      = env("DATABASE_URL")')
   lines.push('}')
   lines.push('')
 

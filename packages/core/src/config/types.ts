@@ -398,10 +398,34 @@ export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
   url: string
   /**
-   * Optional factory function to create a custom Prisma client instance
-   * Receives the PrismaClient class and returns a configured instance
+   * Factory function to create a Prisma client instance with a database adapter
+   * Required in Prisma 7+ - receives the PrismaClient class and returns a configured instance
    *
-   * @example
+   * @example SQLite with better-sqlite3
+   * ```typescript
+   * import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
+   * import Database from 'better-sqlite3'
+   *
+   * prismaClientConstructor: (PrismaClient) => {
+   *   const db = new Database(process.env.DATABASE_URL || './dev.db')
+   *   const adapter = new PrismaBetterSQLite3(db)
+   *   return new PrismaClient({ adapter })
+   * }
+   * ```
+   *
+   * @example PostgreSQL with pg
+   * ```typescript
+   * import { PrismaPg } from '@prisma/adapter-pg'
+   * import pg from 'pg'
+   *
+   * prismaClientConstructor: (PrismaClient) => {
+   *   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+   *   const adapter = new PrismaPg(pool)
+   *   return new PrismaClient({ adapter })
+   * }
+   * ```
+   *
+   * @example Neon serverless (PostgreSQL)
    * ```typescript
    * import { PrismaNeon } from '@prisma/adapter-neon'
    * import { neonConfig } from '@neondatabase/serverless'
@@ -419,7 +443,7 @@ export type DatabaseConfig = {
   // Uses `any` for maximum flexibility with Prisma client constructors and adapters
   // Different database adapters have varying type signatures that are hard to unify
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prismaClientConstructor?: (PrismaClientClass: any) => any
+  prismaClientConstructor: (PrismaClientClass: any) => any
 }
 
 /**
