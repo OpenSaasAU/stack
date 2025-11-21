@@ -28,7 +28,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.fill('input[name="title"]', 'Published Post')
       await setupPage.fill('input[name="slug"]', 'published-post')
       await setupPage.fill('textarea[name="content"]', 'This is published')
-      await setupPage.selectOption('select[name="status"]', 'published')
+      await setupPage.getByLabel('Status').click()
+      await setupPage.getByRole('option', { name: 'published' }).click()
       await setupPage.click('button[type="submit"]')
       await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -155,7 +156,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'Published Post')
       await page.fill('input[name="slug"]', 'published-post')
       await page.fill('textarea[name="content"]', 'Content')
-      await page.selectOption('select[name="status"]', 'published')
+      await page.getByLabel('Status').click()
+      await page.getByRole('option', { name: 'published' }).click()
 
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
