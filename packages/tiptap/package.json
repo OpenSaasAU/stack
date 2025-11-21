@@ -54,7 +54,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@opensaas/stack-core": "",
+    "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
