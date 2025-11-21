@@ -976,6 +976,9 @@ importers:
 
   packages/tiptap:
     dependencies:
+      '@opensaas/stack-core':
+        specifier: ^0.1.0
+        version: 0.1.7(@prisma/client@6.19.0(prisma@6.17.1(magicast@0.3.5)(typescript@5.9.3))(typescript@5.9.3))
       '@tiptap/extension-placeholder':
         specifier: ^3.7.2
         version: 3.10.7(@tiptap/extensions@3.10.7(@tiptap/core@3.10.7(@tiptap/pm@3.10.7))(@tiptap/pm@3.10.7))
@@ -1001,9 +1004,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
-      '@opensaas/stack-core':
-        specifier: workspace:*
-        version: link:../core
       '@opensaas/stack-ui':
         specifier: workspace:*
         version: link:../ui
@@ -2356,6 +2356,11 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
+
+  '@opensaas/stack-core@0.1.7':
+    resolution: {integrity: sha512-enHx7PfAPpjS/gfiYYNi1hZ1APw+ySL/QdPxbV8BdNiLT6wGENhJzw1XLej5tJfpSfNOLQo2UYkbIbn0W/3t6Q==}
+    peerDependencies:
+      '@prisma/client': ^6.17.0
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -8240,6 +8245,12 @@ snapshots:
       fastq: 1.19.1
 
   '@nolyfill/is-core-module@1.0.39': {}
+
+  '@opensaas/stack-core@0.1.7(@prisma/client@6.19.0(prisma@6.17.1(magicast@0.3.5)(typescript@5.9.3))(typescript@5.9.3))':
+    dependencies:
+      '@prisma/client': 6.19.0(prisma@6.17.1(magicast@0.3.5)(typescript@5.9.3))(typescript@5.9.3)
+      bcryptjs: 3.0.3
+      zod: 4.1.12
 
   '@opentelemetry/api@1.9.0': {}
 
