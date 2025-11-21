@@ -36,12 +36,7 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
           <p className="text-xs text-muted-foreground truncate">{userEmail || ''}</p>
         </div>
       </div>
-      <Button
-        onClick={handleSignOut}
-        variant="outline"
-        size="sm"
-        className="w-full text-sm"
-      >
+      <Button onClick={handleSignOut} variant="outline" size="sm" className="w-full text-sm">
         Sign Out
       </Button>
     </div>

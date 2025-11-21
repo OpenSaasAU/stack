@@ -146,7 +146,9 @@ export function createAuth(
               }
               return childValue
             }
-            throw new Error(`Property ${String(prop)}.${String(subProp)} not found on auth instance`)
+            throw new Error(
+              `Property ${String(prop)}.${String(subProp)} not found on auth instance`,
+            )
           }
         },
       })
