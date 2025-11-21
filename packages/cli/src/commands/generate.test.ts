@@ -235,7 +235,7 @@ describe('Generate Command Integration', () => {
             provider,
             url: provider === 'sqlite' ? 'file:./dev.db' : 'postgresql://localhost:5432/db',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
+            prismaClientConstructor: (() => null) as any,
           },
           lists: {},
         }
