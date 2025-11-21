@@ -31,12 +31,12 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@opensaas/stack-core": "workspace:*",
     "mime-types": "^3.0.1",
     "sharp": "^0.34.4",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@opensaas/stack-core": "workspace:*",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.2",
@@ -45,7 +45,7 @@
     "vitest": "^4.0.5"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "workspace:*"
+    "@opensaas/stack-core": "^0.1.0"
   },
   "repository": {
     "type": "git",

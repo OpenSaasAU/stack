@@ -40,8 +40,8 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "workspace:*",
-    "@opensaas/stack-ui": "workspace:*",
+    "@opensaas/stack-core": "^0.1.0",
+    "@opensaas/stack-ui": "^0.1.0",
     "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
