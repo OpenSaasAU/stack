@@ -895,9 +895,6 @@ importers:
 
   packages/storage:
     dependencies:
-      '@opensaas/stack-core':
-        specifier: workspace:*
-        version: link:../core
       mime-types:
         specifier: ^3.0.1
         version: 3.0.2
@@ -908,6 +905,9 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
+      '@opensaas/stack-core':
+        specifier: workspace:*
+        version: link:../core
       '@types/mime-types':
         specifier: ^3.0.1
         version: 3.0.1
