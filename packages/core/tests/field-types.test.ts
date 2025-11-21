@@ -9,7 +9,6 @@ import {
   relationship,
   json,
 } from '../src/fields/index.js'
-import { z } from 'zod'
 
 describe('Field Types', () => {
   describe('text field', () => {

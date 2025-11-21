@@ -174,6 +174,7 @@ describe('authPlugin', () => {
   })
 
   it('should preserve database config', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mockConstructor = (() => null) as any
     const result = await config({
       db: {

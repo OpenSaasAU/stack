@@ -48,6 +48,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -89,6 +90,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {},
@@ -106,6 +108,7 @@ describe('Generate Command Integration', () => {
       const config1: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -120,6 +123,7 @@ describe('Generate Command Integration', () => {
       const config2: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -148,6 +152,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         opensaasPath: '.custom',
@@ -169,6 +174,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -198,6 +204,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {},
@@ -227,6 +234,7 @@ describe('Generate Command Integration', () => {
           db: {
             provider,
             url: provider === 'sqlite' ? 'file:./dev.db' : 'postgresql://localhost:5432/db',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
           },
           lists: {},
@@ -244,6 +252,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
         lists: {

@@ -1,7 +1,7 @@
 ---
-"@opensaas/stack-core": minor
-"@opensaas/stack-cli": minor
-"@opensaas/stack-rag": patch
+'@opensaas/stack-core': minor
+'@opensaas/stack-cli': minor
+'@opensaas/stack-rag': patch
 ---
 
 Upgrade to Prisma 7 with database adapter support
@@ -66,6 +66,7 @@ Install the appropriate adapter for your database:
 ## Migration Steps
 
 1. Install Prisma 7 and adapter:
+
    ```bash
    pnpm add @prisma/client@7 @prisma/adapter-better-sqlite3 better-sqlite3
    pnpm add -D prisma@7
@@ -74,6 +75,7 @@ Install the appropriate adapter for your database:
 2. Update your `opensaas.config.ts` to include `prismaClientConstructor` (see example above)
 
 3. Regenerate schema and client:
+
    ```bash
    pnpm generate
    npx prisma generate
