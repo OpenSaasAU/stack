@@ -2,13 +2,10 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@opensaas/stack-*", "create-opensaas-app"]],
+  "fixed": [],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
-  "updateInternalDependencies": "patch",
-  "ignore": ["opensaas-*-example", "opensaas-stack-docs"],
-  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
-    "onlyUpdatePeerDependentsWhenOutOfRange": true
-  }
+  "updateInternalDependencies": "minor",
+  "ignore": ["opensaas-*-example", "opensaas-stack-docs"]
 }
