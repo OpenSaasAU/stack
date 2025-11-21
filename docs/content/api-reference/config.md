@@ -154,7 +154,7 @@ Database connection and adapter configuration.
 db: {
   provider: 'postgresql' | 'mysql' | 'sqlite',
   url: string,
-  prismaClientConstructor?: (PrismaClientClass: any) => any,
+  prismaClientConstructor: (PrismaClientClass: any) => any,
 }
 ```
 
@@ -168,7 +168,7 @@ Database type.
 
 ##### `url` (required)
 
-Database connection string.
+Database connection string. In Prisma 7, this URL is passed to the database adapter via `prismaClientConstructor` rather than directly to Prisma's datasource block.
 
 **Type:** `string`
 
@@ -178,9 +178,9 @@ Database connection string.
 - PostgreSQL: `'postgresql://user:pass@localhost:5432/db'`
 - MySQL: `'mysql://user:pass@localhost:3306/db'`
 
-##### `prismaClientConstructor`
+##### `prismaClientConstructor` (required)
 
-Custom Prisma client factory for database adapters (Neon, Turso, PlanetScale, etc.).
+Factory function that creates a Prisma client instance with a database adapter. **Required in Prisma 7** - all database connections must use adapters.
 
 **Type:** `(PrismaClientClass: any) => any`
 
