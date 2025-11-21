@@ -9,7 +9,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -30,7 +29,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -51,7 +49,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -72,7 +69,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -92,7 +88,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -112,7 +107,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -139,7 +133,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -165,7 +158,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -191,7 +183,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -221,7 +212,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Product: {
@@ -243,7 +233,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -265,7 +254,6 @@ describe('Types Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {},
       }

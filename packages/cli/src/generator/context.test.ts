@@ -9,7 +9,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
@@ -31,7 +30,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'postgresql',
-          url: process.env.DATABASE_URL || 'postgresql://localhost:5432/db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: ((PrismaClient: any) => new PrismaClient()) as any,
         },
@@ -53,7 +51,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
@@ -72,7 +69,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
@@ -93,7 +89,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
@@ -112,7 +107,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },
@@ -128,7 +122,6 @@ describe('Context Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           prismaClientConstructor: (() => null) as any,
         },

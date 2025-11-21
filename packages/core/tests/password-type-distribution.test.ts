@@ -41,7 +41,6 @@ describe('Password Field Type Distribution Bug Fix', () => {
   const testConfig = config({
     db: {
       provider: 'sqlite',
-      url: 'file:./test.db',
     },
     lists: {
       User: list({

@@ -396,10 +396,11 @@ export type ListConfig<T = any> = {
  */
 export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
-  url: string
   /**
    * Factory function to create a Prisma client instance with a database adapter
    * Required in Prisma 7+ - receives the PrismaClient class and returns a configured instance
+   *
+   * The connection URL is passed directly to the adapter, not to the config.
    *
    * @example SQLite with better-sqlite3
    * ```typescript

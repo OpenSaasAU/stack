@@ -31,7 +31,6 @@ const isOwner: AccessControl = ({ session, item }) => {
 export default config({
   db: {
     provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
       const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
       return new PrismaClient({ adapter })

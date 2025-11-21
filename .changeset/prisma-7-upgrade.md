@@ -19,7 +19,6 @@ import Database from 'better-sqlite3'
 export default config({
   db: {
     provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
       const db = new Database(process.env.DATABASE_URL || './dev.db')
       const adapter = new PrismaBetterSQLite3(db)
@@ -27,6 +26,27 @@ export default config({
     },
   },
 })
+```
+
+### Removed `url` from `DatabaseConfig`
+
+The `url` field has been removed from the `DatabaseConfig` type. Database connection URLs are now passed directly to adapters in `prismaClientConstructor`:
+
+```typescript
+// ❌ Before (Prisma 6)
+db: {
+  provider: 'sqlite',
+  url: 'file:./dev.db',  // url in config
+}
+
+// ✅ After (Prisma 7)
+db: {
+  provider: 'sqlite',
+  prismaClientConstructor: (PrismaClient) => {
+    const adapter = new PrismaBetterSQLite3({ url: './dev.db' })  // url in adapter
+    return new PrismaClient({ adapter })
+  },
+}
 ```
 
 ### Generated Schema Changes

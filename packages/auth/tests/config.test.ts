@@ -154,7 +154,6 @@ describe('authPlugin', () => {
     const result = await config({
       db: {
         provider: 'sqlite',
-        url: 'file:./test.db',
       },
       plugins: [authPlugin({})],
       lists: {
@@ -175,22 +174,22 @@ describe('authPlugin', () => {
   })
 
   it('should preserve database config', async () => {
+    const mockConstructor = (() => null) as any
     const result = await config({
       db: {
         provider: 'postgresql',
-        url: 'postgresql://test',
+        prismaClientConstructor: mockConstructor,
       },
       plugins: [authPlugin({})],
       lists: {},
     })
 
     expect(result.db.provider).toBe('postgresql')
-    expect(result.db.url).toBe('postgresql://test')
+    expect(result.db.prismaClientConstructor).toBe(mockConstructor)
   })
 
   it('should store normalized auth config in _pluginData', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true, minPasswordLength: 12 },
@@ -209,7 +208,6 @@ describe('authPlugin', () => {
 
   it('should extend User list with custom fields', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [
         authPlugin({
           extendUserList: {
@@ -239,7 +237,6 @@ describe('authPlugin', () => {
 
   it('should generate User list with correct fields', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -256,7 +253,6 @@ describe('authPlugin', () => {
 
   it('should generate Session list with correct fields', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -272,7 +268,6 @@ describe('authPlugin', () => {
 
   it('should generate Account list with correct fields', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -289,7 +284,6 @@ describe('authPlugin', () => {
 
   it('should generate Verification list with correct fields', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -303,7 +297,6 @@ describe('authPlugin', () => {
 
   it('should work with empty auth config', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -316,7 +309,6 @@ describe('authPlugin', () => {
 
   it('should merge with other user-defined lists', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [authPlugin({})],
       lists: {
         Post: list({
@@ -344,7 +336,6 @@ describe('authPlugin', () => {
 
   it('should pass through config options to normalized config', async () => {
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [
         authPlugin({
           emailAndPassword: {
@@ -407,7 +398,6 @@ describe('authPlugin', () => {
     }
 
     const result = await config({
-      db: { provider: 'sqlite', url: 'file:./test.db' },
       plugins: [
         authPlugin({
           betterAuthPlugins: [mockPlugin],

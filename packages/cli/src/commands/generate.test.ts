@@ -48,7 +48,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -90,7 +89,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {},
@@ -108,7 +106,6 @@ describe('Generate Command Integration', () => {
       const config1: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -123,7 +120,6 @@ describe('Generate Command Integration', () => {
       const config2: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -152,7 +148,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         opensaasPath: '.custom',
@@ -174,7 +169,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
@@ -204,7 +198,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {},
@@ -251,7 +244,6 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
