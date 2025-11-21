@@ -7,8 +7,8 @@ test.describe('Posts CRUD and Access Control', () => {
       // Try to access admin directly without signing in
       await page.goto('/admin')
 
-      // Should be redirected to sign-in page or show access denied
-      await page.waitForURL(/sign-in/, { timeout: 5000 })
+      // Should show access denied message
+      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
     })
 
     test('should only show published posts to unauthenticated users', async ({
