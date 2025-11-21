@@ -4,6 +4,7 @@ import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import type { AccessControl } from '@opensaas/stack-core'
 import { z } from 'zod'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
@@ -43,7 +44,10 @@ export default config({
 
   db: {
     provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+      return new PrismaClient({ adapter })
+    },
   },
 
   // Enable MCP server with Better Auth OAuth

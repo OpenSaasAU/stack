@@ -73,7 +73,6 @@ describe('Dev Command', () => {
       `
       import { config } from '@opensaas/stack-core'
       export default config({
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {}
       })
     `,

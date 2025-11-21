@@ -2,6 +2,8 @@ import { config, list } from '@opensaas/stack-core'
 import { text, select, checkbox } from '@opensaas/stack-core/fields'
 import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
 
 export default config({
   plugins: [
@@ -17,7 +19,11 @@ export default config({
   ],
   db: {
     provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
+    prismaClientConstructor: (PrismaClient) => {
+      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+      const adapter = new PrismaPg(pool)
+      return new PrismaClient({ adapter })
+    },
   },
   lists: {
     KnowledgeBase: list({

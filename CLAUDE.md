@@ -399,12 +399,49 @@ const context = await getContext({ userId: 'user-123' })
 const myPosts = await context.db.post.findMany()
 ```
 
-**Custom Prisma Client Constructors:**
+**Prisma Client Constructor (Required for Prisma 7):**
 
-To use custom database drivers (e.g., Neon, Turso, PlanetScale), you can provide a `prismaClientConstructor` function in your config:
+Prisma 7 requires database adapters. You must provide a `prismaClientConstructor` function in your config:
 
 ```typescript
-// opensaas.config.ts
+// opensaas.config.ts - SQLite example
+import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
+import Database from 'better-sqlite3'
+
+export default config({
+  db: {
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const db = new Database(process.env.DATABASE_URL || './dev.db')
+      const adapter = new PrismaBetterSQLite3(db)
+      return new PrismaClient({ adapter })
+    },
+  },
+  // ... rest of config
+})
+```
+
+```typescript
+// PostgreSQL example
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
+
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+    prismaClientConstructor: (PrismaClient) => {
+      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+      const adapter = new PrismaPg(pool)
+      return new PrismaClient({ adapter })
+    },
+  },
+})
+```
+
+```typescript
+// Neon serverless PostgreSQL example
 import { PrismaNeon } from '@prisma/adapter-neon'
 import { neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
@@ -421,11 +458,10 @@ export default config({
       return new PrismaClient({ adapter })
     },
   },
-  // ... rest of config
 })
 ```
 
-The generated context will use your custom constructor instead of the default `new PrismaClient()`.
+The generated context will use your custom constructor to instantiate PrismaClient with the appropriate adapter.
 
 ### 3. Silent Failures
 

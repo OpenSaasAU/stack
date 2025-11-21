@@ -16,9 +16,27 @@ export function generateContext(config: OpenSaasConfig): string {
   const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
 
   // Generate the Prisma client instantiation code
+  // Prisma 7 requires adapters, so prismaClientConstructor must be provided
   const prismaInstantiation = hasCustomConstructor
     ? `resolvedConfig.db.prismaClientConstructor!(PrismaClient)`
-    : `new PrismaClient()`
+    : `(() => {
+      throw new Error(
+        'Prisma 7 requires a database adapter. Please add prismaClientConstructor to your opensaas.config.ts db configuration.\\n\\n' +
+        'Example for SQLite:\\n' +
+        'import { PrismaBetterSQLite3 } from \\'@prisma/adapter-better-sqlite3\\'\\n' +
+        'import Database from \\'better-sqlite3\\'\\n\\n' +
+        'db: {\\n' +
+        '  provider: \\'sqlite\\',\\n' +
+        '  url: process.env.DATABASE_URL || \\'file:./dev.db\\',\\n' +
+        '  prismaClientConstructor: (PrismaClient) => {\\n' +
+        '    const db = new Database(process.env.DATABASE_URL || \\'./dev.db\\')\\n' +
+        '    const adapter = new PrismaBetterSQLite3(db)\\n' +
+        '    return new PrismaClient({ adapter })\\n' +
+        '  }\\n' +
+        '}\\n\\n' +
+        'See https://www.prisma.io/docs/orm/overview/databases/database-drivers for more information.'
+      )
+    })()`
 
   // Generate storage utilities if storage is configured
   const storageUtilities = hasStorage
@@ -103,7 +121,7 @@ const storage = {
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client'
+import { PrismaClient } from './prisma-client/client'
 import type { Context } from './types'
 import configOrPromise from '../opensaas.config'
 
@@ -112,7 +130,7 @@ const configPromise = Promise.resolve(configOrPromise)
 let resolvedConfig: OpenSaasConfig | null = null
 
 // Internal Prisma singleton - managed automatically
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | null }
 let prisma: PrismaClient | null = null
 
 async function getPrisma() {

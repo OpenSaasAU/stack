@@ -17,7 +17,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -53,7 +52,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [pluginC, pluginB, pluginA], // Reverse order
       }
@@ -76,7 +74,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [pluginA, pluginB],
       }
@@ -92,7 +89,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -114,7 +110,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin1, plugin2],
       }
@@ -153,7 +148,6 @@ describe('Plugin Engine', () => {
       ]
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: plugins.reverse(), // Reversed to test sorting
       }
@@ -181,7 +175,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: {
@@ -215,7 +208,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -242,7 +234,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin1, plugin2],
       }
@@ -255,7 +246,6 @@ describe('Plugin Engine', () => {
 
     test('handles empty plugin list', async () => {
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [],
       }
@@ -266,7 +256,6 @@ describe('Plugin Engine', () => {
 
     test('handles no plugins property', async () => {
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
       }
 
@@ -290,7 +279,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -315,7 +303,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: {
@@ -347,7 +334,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin1, plugin2],
       }
@@ -373,7 +359,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: {
@@ -403,7 +388,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -433,7 +417,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: {
@@ -485,7 +468,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -541,7 +523,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -592,7 +573,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -643,7 +623,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -679,7 +658,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -720,7 +698,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -760,7 +737,6 @@ describe('Plugin Engine', () => {
       const originalQuery = vi.fn(() => true)
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -802,7 +778,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -836,7 +811,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },
@@ -876,7 +850,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -905,7 +878,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -939,7 +911,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -976,7 +947,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin1, plugin2],
       }
@@ -1002,7 +972,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin],
       }
@@ -1039,7 +1008,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [plugin1, plugin2],
       }
@@ -1057,7 +1025,6 @@ describe('Plugin Engine', () => {
 
     test('handles no lifecycle hooks', async () => {
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {},
         plugins: [],
       }
@@ -1115,7 +1082,6 @@ describe('Plugin Engine', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite', url: 'file:./dev.db' },
         lists: {
           Post: {
             fields: { title: text() },

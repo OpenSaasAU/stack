@@ -153,8 +153,7 @@ Database connection and adapter configuration.
 ```typescript
 db: {
   provider: 'postgresql' | 'mysql' | 'sqlite',
-  url: string,
-  prismaClientConstructor?: (PrismaClientClass: any) => any,
+  prismaClientConstructor: (PrismaClientClass: any) => any,
 }
 ```
 
@@ -166,25 +165,31 @@ Database type.
 
 **Type:** `'postgresql' | 'mysql' | 'sqlite'`
 
-##### `url` (required)
+##### `prismaClientConstructor` (required)
 
-Database connection string.
+Factory function that creates a Prisma client instance with a database adapter. **Required in Prisma 7** - all database connections must use adapters.
 
-**Type:** `string`
-
-**Examples:**
-
-- SQLite: `'file:./dev.db'`
-- PostgreSQL: `'postgresql://user:pass@localhost:5432/db'`
-- MySQL: `'mysql://user:pass@localhost:3306/db'`
-
-##### `prismaClientConstructor`
-
-Custom Prisma client factory for database adapters (Neon, Turso, PlanetScale, etc.).
+The database connection URL is passed directly to the adapter, not to the OpenSaas config.
 
 **Type:** `(PrismaClientClass: any) => any`
 
-**Example:**
+**Example - SQLite:**
+
+```typescript
+import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
+import Database from 'better-sqlite3'
+
+db: {
+  provider: 'sqlite',
+  prismaClientConstructor: (PrismaClient) => {
+    const db = new Database(process.env.DATABASE_URL || './dev.db')
+    const adapter = new PrismaBetterSQLite3(db)
+    return new PrismaClient({ adapter })
+  }
+}
+```
+
+**Example - PostgreSQL (Neon):**
 
 ```typescript
 import { PrismaNeon } from '@prisma/adapter-neon'
@@ -193,7 +198,6 @@ import ws from 'ws'
 
 db: {
   provider: 'postgresql',
-  url: process.env.DATABASE_URL,
   prismaClientConstructor: (PrismaClient) => {
     neonConfig.webSocketConstructor = ws
     const adapter = new PrismaNeon({

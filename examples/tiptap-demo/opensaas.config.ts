@@ -3,6 +3,7 @@ import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
 import { richText } from '@opensaas/stack-tiptap/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { User, Article } from '@/.opensaas/types'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
@@ -27,7 +28,10 @@ const isAuthor: AccessControl = ({ session }) => {
 export default config({
   db: {
     provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+      return new PrismaClient({ adapter })
+    },
   },
 
   lists: {

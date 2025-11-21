@@ -107,7 +107,7 @@ export function createMCPCommand(): Command {
       try {
         await installMCPServer()
         process.exit(0)
-      } catch (error) {
+      } catch {
         process.exit(1)
       }
     })
@@ -119,7 +119,7 @@ export function createMCPCommand(): Command {
       try {
         await uninstallMCPServer()
         process.exit(0)
-      } catch (error) {
+      } catch {
         process.exit(1)
       }
     })

@@ -87,11 +87,10 @@ Outputs:
 ```prisma
 datasource db {
   provider = "sqlite"
-  url = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
 }
 
 model Post {
@@ -101,6 +100,8 @@ model Post {
   updatedAt DateTime @updatedAt
 }
 ```
+
+**Note:** Prisma 7 no longer includes `url` in the schema. The database URL is passed to PrismaClient via adapters in the `prismaClientConstructor` function.
 
 ### Types (`.opensaas/types.ts`)
 
@@ -128,12 +129,15 @@ import { createContext } from '@opensaas/stack-core'
 import { PrismaClient } from '@prisma/client'
 import config from '../opensaas.config'
 
-const prisma = new PrismaClient()
+// Prisma 7 requires adapters - PrismaClient created via prismaClientConstructor
+const prisma = config.db.prismaClientConstructor(PrismaClient)
 
 export function getContext(session?: any) {
   return createContext(config, prisma, session)
 }
 ```
+
+**Note:** The actual generated context is more sophisticated with async config resolution and singleton management, but this shows the core pattern.
 
 ## Integration Points
 
@@ -195,30 +199,51 @@ pnpm next dev
 - run: pnpm test
 ```
 
-### Custom Prisma Client
+### Custom Prisma Client (Required in Prisma 7)
 
-Config with custom constructor:
+**All configs must provide `prismaClientConstructor`** with a database adapter:
 
 ```typescript
+// SQLite example
+import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
+import Database from 'better-sqlite3'
+
 config({
   db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
-      // Custom adapter setup
+      const db = new Database(process.env.DATABASE_URL || './dev.db')
+      const adapter = new PrismaBetterSQLite3(db)
       return new PrismaClient({ adapter })
     },
   },
 })
 ```
 
-Generated context uses custom constructor:
+```typescript
+// PostgreSQL example
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
+
+config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+    prismaClientConstructor: (PrismaClient) => {
+      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+      const adapter = new PrismaPg(pool)
+      return new PrismaClient({ adapter })
+    },
+  },
+})
+```
+
+Generated context always uses the constructor:
 
 ```typescript
 // .opensaas/context.ts
-const prisma = config.db.prismaClientConstructor
-  ? config.db.prismaClientConstructor(PrismaClient)
-  : new PrismaClient()
+const prisma = config.db.prismaClientConstructor(PrismaClient)
 ```
 
 ## Type Patching

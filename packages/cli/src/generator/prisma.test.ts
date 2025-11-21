@@ -9,7 +9,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {},
       }
@@ -23,7 +22,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         opensaasPath: '.custom-path',
         lists: {},
@@ -38,7 +36,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -60,7 +57,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -81,7 +77,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           Post: {
@@ -102,7 +97,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -128,7 +122,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -154,7 +147,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'postgresql',
-          url: process.env.DATABASE_URL || 'postgresql://localhost:5432/db',
         },
         lists: {
           User: {
@@ -184,7 +176,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {
           User: {
@@ -206,7 +197,6 @@ describe('Prisma Schema Generator', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          url: 'file:./dev.db',
         },
         lists: {},
       }

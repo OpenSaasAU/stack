@@ -5,10 +5,11 @@
  * Run with: npx tsx scripts/install-pgvector.ts
  */
 
-import { PrismaClient } from '@/.opensaas/prisma-client/client'
+import { rawOpensaasContext } from '@/.opensaas/context'
 
 async function main() {
-  const prisma = new PrismaClient()
+  const prisma = (await rawOpensaasContext).prisma
+  if (!prisma) throw new Error('Prisma client not found in context')
 
   try {
     console.log('Installing pgvector extension...')
