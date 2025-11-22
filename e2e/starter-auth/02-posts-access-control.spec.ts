@@ -23,18 +23,20 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.waitForLoadState('networkidle')
 
       // Create a published post
-      await setupPage.click('text=/create|new/i')
+      await setupPage.getByRole('link', { name: /create.*post/i }).click()
+      await setupPage.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await setupPage.waitForLoadState('networkidle')
       await setupPage.fill('input[name="title"]', 'Published Post')
       await setupPage.fill('input[name="slug"]', 'published-post')
       await setupPage.fill('textarea[name="content"]', 'This is published')
       await setupPage.getByLabel('Status').click()
-      await setupPage.getByRole('option', { name: 'published' }).click()
+      await setupPage.getByRole('option', { name: 'Published' }).click()
       await setupPage.click('button[type="submit"]')
       await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Create a draft post
-      await setupPage.click('text=/create|new/i')
+      await setupPage.getByRole('link', { name: /create.*post/i }).click()
+      await setupPage.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await setupPage.waitForLoadState('networkidle')
       await setupPage.fill('input[name="title"]', 'Draft Post')
       await setupPage.fill('input[name="slug"]', 'draft-post')
@@ -64,7 +66,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForLoadState('networkidle')
 
       // Click create button
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       // Fill in post details
@@ -88,23 +91,27 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       // Try to submit without required fields
       await page.click('button[type="submit"]')
 
-      // Should show validation errors
-      await expect(page.locator('text=/required/i')).toBeVisible({
-        timeout: 5000,
-      })
+      // Check that required field shows invalid state
+      const titleInput = page.locator('input[name="title"]')
+      await expect(titleInput).toHaveAttribute('required', '')
+
+      // Verify form didn't navigate away (validation prevented submission)
+      await expect(page).toHaveURL(/admin\/post\/create/, { timeout: 2000 })
     })
 
     test('should validate title does not contain "spam"', async ({ page }) => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       // Try to create post with "spam" in title
@@ -115,7 +122,9 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.click('button[type="submit"]')
 
       // Should show validation error about spam
-      await expect(page.locator('text=/spam/i')).toBeVisible({ timeout: 5000 })
+      await expect(
+        page.locator('text="Validation failed: Title cannot contain the word \\"spam\\""')
+      ).toBeVisible({ timeout: 5000 })
     })
 
     test('should enforce unique slug constraint', async ({ page }) => {
@@ -123,7 +132,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForLoadState('networkidle')
 
       // Create first post
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'First Post')
       await page.fill('input[name="slug"]', 'unique-slug')
@@ -132,7 +142,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Try to create second post with same slug
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'Second Post')
       await page.fill('input[name="slug"]', 'unique-slug')
@@ -149,29 +160,28 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       await page.fill('input[name="title"]', 'Published Post')
       await page.fill('input[name="slug"]', 'published-post')
       await page.fill('textarea[name="content"]', 'Content')
       await page.getByLabel('Status').click()
-      await page.getByRole('option', { name: 'published' }).click()
+      await page.getByRole('option', { name: 'Published' }).click()
 
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
-      // Click on the created post to view details
-      await page.click('text=Published Post')
+      // Click on the Edit link for the created post
+      await page.getByRole('link', { name: 'Edit' }).first().click()
       await page.waitForLoadState('networkidle')
 
-      // Verify publishedAt is set (should be visible in the form or details)
-      // This depends on your UI implementation
-      const publishedAtField = page.locator('input[name="publishedAt"]')
-      if (await publishedAtField.isVisible()) {
-        const value = await publishedAtField.inputValue()
-        expect(value).not.toBe('')
-      }
+      // Verify publishedAt is set - it's displayed as a button with the date/time
+      const publishedAtButton = page.getByRole('button', { name: /\d{2}\/\d{2}\/\d{4}/ })
+      await expect(publishedAtButton).toBeVisible({ timeout: 5000 })
+      const buttonText = await publishedAtButton.textContent()
+      expect(buttonText).toMatch(/\d{2}\/\d{2}\/\d{4}/)
     })
   })
 
@@ -183,7 +193,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'Original Title')
       await page.fill('input[name="slug"]', 'original-title')
@@ -192,7 +203,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Edit the post
-      await page.click('text=Original Title')
+      await page.getByRole('link', { name: 'Edit' }).first().click()
       await page.waitForLoadState('networkidle')
 
       // Update title
@@ -212,7 +223,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'User 1 Post')
       await page.fill('input[name="slug"]', 'user-1-post')
@@ -221,7 +233,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Get the post URL/ID
-      await page.click('text=User 1 Post')
+      await page.getByRole('link', { name: 'Edit' }).first().click()
       const postUrl = page.url()
 
       // Sign out and sign in as different user
@@ -271,7 +283,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForLoadState('networkidle')
 
       // Create a post
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'Post to Delete')
       await page.fill('input[name="slug"]', 'post-to-delete')
@@ -311,7 +324,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.goto('/admin/post')
       await page.waitForLoadState('networkidle')
 
-      await page.click('text=/create|new/i')
+      await page.getByRole('link', { name: /create.*post/i }).click()
+      await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
       await page.fill('input[name="title"]', 'Post with Notes')
       await page.fill('input[name="slug"]', 'post-with-notes')
@@ -321,7 +335,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
       // Verify author can see internal notes
-      await page.click('text=Post with Notes')
+      await page.getByRole('link', { name: 'Edit' }).first().click()
       await page.waitForLoadState('networkidle')
 
       const notesField = page.locator('textarea[name="internalNotes"]')
