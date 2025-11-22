@@ -1,7 +1,6 @@
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
-import { auth } from '@/lib/auth'
 import { getAuth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
@@ -20,14 +19,6 @@ async function serverAction(props: ServerActionInput) {
   }
 
   return result
-}
-
-// Sign out server action
-async function handleSignOut() {
-  'use server'
-  await auth.api.signOut({
-    headers: new Headers(),
-  })
 }
 
 interface AdminPageProps {
@@ -61,7 +52,6 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={resolvedSearchParams}
       basePath="/admin"
       serverAction={serverAction}
-      onSignOut={handleSignOut}
     />
   )
 }

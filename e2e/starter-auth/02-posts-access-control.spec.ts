@@ -73,7 +73,6 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'My First Post')
       await page.fill('input[name="slug"]', 'my-first-post')
       await page.fill('textarea[name="content"]', 'This is the content')
-      await page.fill('textarea[name="internalNotes"]', 'These are internal notes')
 
       // Select author (required for access control)
       await selectAuthor(page)

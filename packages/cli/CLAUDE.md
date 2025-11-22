@@ -103,6 +103,29 @@ model Post {
 
 **Note:** Prisma 7 no longer includes `url` in the schema. The database URL is passed to PrismaClient via adapters in the `prismaClientConstructor` function.
 
+### Prisma CLI Config (`prisma.config.ts`)
+
+```typescript
+import 'dotenv/config'
+import { defineConfig, env } from 'prisma/config'
+
+export default defineConfig({
+  schema: 'prisma/schema.prisma',
+  datasource: {
+    url: env('DATABASE_URL'),
+  },
+})
+```
+
+**Purpose:** Prisma 7 requires this file at the project root for CLI commands like `prisma db push` and `prisma migrate dev` to work. This is separate from the runtime configuration.
+
+**Key points:**
+
+- Generated automatically by `opensaas generate`
+- Requires `dotenv` package to load `.env` files
+- Reads `DATABASE_URL` from environment variables
+- Only used by Prisma CLI commands, not by application runtime
+
 ### Types (`.opensaas/types.ts`)
 
 ```typescript
@@ -159,9 +182,9 @@ export function getContext(session?: any) {
 
 Workflow:
 
-1. `opensaas generate` → creates `prisma/schema.prisma`
+1. `opensaas generate` → creates `prisma/schema.prisma` and `prisma.config.ts`
 2. `npx prisma generate` → creates Prisma Client
-3. `npx prisma db push` → pushes schema to database
+3. `npx prisma db push` → pushes schema to database (uses `prisma.config.ts` for datasource URL)
 
 ## Common Patterns
 

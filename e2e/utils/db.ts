@@ -40,7 +40,7 @@ export function setupDatabase(exampleDir: string) {
   // Push schema to database
   console.log('Pushing schema to database...')
   try {
-    execSync('pnpm db:push --skip-generate --accept-data-loss', {
+    execSync('pnpm db:push --accept-data-loss', {
       cwd: exampleDir,
       stdio: 'inherit',
     })

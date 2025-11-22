@@ -265,13 +265,30 @@ const ragConfig = config._pluginData.rag // NormalizedRAGConfig
 
 **Key files:**
 
-- `packages/core/src/generator/prisma.ts` - Generates `prisma/schema.prisma`
-- `packages/core/src/generator/types.ts` - Generates `.opensaas/types.ts`
-- `packages/core/bin/generate.cjs` - CLI entry point
+- `packages/cli/src/generator/prisma.ts` - Generates `prisma/schema.prisma`
+- `packages/cli/src/generator/prisma-config.ts` - Generates `prisma.config.ts`
+- `packages/cli/src/generator/types.ts` - Generates `.opensaas/types.ts`
+- `packages/cli/src/generator/context.ts` - Generates `.opensaas/context.ts`
 
 Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and TypeScript types.
 
+**Generated files:**
+
+1. **`prisma/schema.prisma`** - Prisma schema with models (no datasource URL)
+2. **`prisma.config.ts`** - Prisma 7 CLI configuration with datasource URL for `db:push` and migrations
+3. **`.opensaas/types.ts`** - TypeScript type definitions
+4. **`.opensaas/context.ts`** - Context factory with Prisma Client
+
 **Architecture:** Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic through `getPrismaType()` and `getTypeScriptType()` methods.
+
+**Prisma 7 Configuration:**
+
+Prisma 7 requires two separate configurations:
+
+- **CLI configuration** (`prisma.config.ts` at project root): Used by `prisma db push`, `prisma migrate dev`, etc. Contains datasource URL from environment variables.
+- **Runtime configuration** (in `opensaas.config.ts`): Used by application code. Provides database adapters via `prismaClientConstructor`.
+
+This separation allows CLI commands to work while keeping the runtime flexible with custom adapters.
 
 ### Field Types
 

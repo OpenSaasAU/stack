@@ -3,10 +3,12 @@ packages:
   - examples/*
   - docs
 
+onlyBuiltDependencies:
+  - better-sqlite3
+
 ignoredBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
-  - better-sqlite3
   - esbuild
   - prisma
   - sharp

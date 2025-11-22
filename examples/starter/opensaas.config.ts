@@ -3,7 +3,6 @@ import { text, relationship, select, timestamp, password } from '@opensaas/stack
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Post, User } from '@/.opensaas/types'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 /**
  * Access control helpers
  */
