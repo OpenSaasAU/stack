@@ -62,7 +62,11 @@ export async function signUp(
  */
 export async function signIn(
   page: Page,
-  { email, password, redirectTo = '/' }: { email: string; password: string; redirectTo?: string },
+  {
+    email,
+    password,
+    redirectTo = '/admin',
+  }: { email: string; password: string; redirectTo?: string },
 ) {
   await page.goto('/sign-in', { waitUntil: 'networkidle' })
 

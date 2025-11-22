@@ -98,6 +98,15 @@ export function createAuth(
               {} as Record<string, { clientId: string; clientSecret: string }>,
             ),
 
+          // Rate limiting configuration
+          rateLimit: authConfig.rateLimit
+            ? {
+                enabled: authConfig.rateLimit.enabled,
+                window: authConfig.rateLimit.window,
+                max: authConfig.rateLimit.max,
+              }
+            : undefined,
+
           // Pass through any additional Better Auth plugins
           plugins: authConfig.betterAuthPlugins || [],
         }

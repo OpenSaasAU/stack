@@ -43,6 +43,12 @@ export default config({
       // Configure session fields
       sessionFields: ['userId', 'email', 'name'],
 
+      // Disable rate limiting for E2E tests
+      // Set DISABLE_RATE_LIMITING=true in your environment to disable
+      rateLimit: {
+        enabled: process.env.DISABLE_RATE_LIMITING !== 'true',
+      },
+
       // Extend User list with custom fields
       extendUserList: {
         fields: {
@@ -138,7 +144,6 @@ export default config({
         // Auto-set author on create if not provided
         resolveInput: async ({ operation, resolvedData, item, context }) => {
           let data = { ...resolvedData }
-          console.log(context.session)
 
           // Auto-set author on create if not provided
           if (operation === 'create' && !data.authorId && context.session?.userId) {

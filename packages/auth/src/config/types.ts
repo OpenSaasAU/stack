@@ -167,6 +167,39 @@ export type AuthConfig = {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
   betterAuthPlugins?: any[]
+
+  /**
+   * Rate limiting configuration
+   * Controls rate limiting for authentication endpoints
+   *
+   * @example
+   * ```typescript
+   * // Disable rate limiting for testing
+   * rateLimit: {
+   *   enabled: process.env.DISABLE_RATE_LIMITING !== 'true',
+   * }
+   *
+   * // Custom rate limits
+   * rateLimit: {
+   *   enabled: true,
+   *   window: 60,  // 60 seconds
+   *   max: 100,    // 100 requests per window
+   * }
+   * ```
+   */
+  rateLimit?: {
+    enabled: boolean
+    /**
+     * Time window in seconds
+     * @default 60
+     */
+    window?: number
+    /**
+     * Maximum requests per window
+     * @default 100
+     */
+    max?: number
+  }
 }
 
 /**
@@ -174,11 +207,19 @@ export type AuthConfig = {
  * Used after parsing user config
  */
 export type NormalizedAuthConfig = Required<
-  Omit<AuthConfig, 'emailAndPassword' | 'emailVerification' | 'passwordReset' | 'betterAuthPlugins'>
+  Omit<
+    AuthConfig,
+    'emailAndPassword' | 'emailVerification' | 'passwordReset' | 'betterAuthPlugins' | 'rateLimit'
+  >
 > & {
   emailAndPassword: Required<EmailPasswordConfig>
   emailVerification: Required<EmailVerificationConfig>
   passwordReset: Required<PasswordResetConfig>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
   betterAuthPlugins: any[]
+  rateLimit?: {
+    enabled: boolean
+    window?: number
+    max?: number
+  }
 }
