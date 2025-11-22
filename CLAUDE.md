@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Specifications and design docs:** All specs, design documents, and technical documentation should be saved to and read from the `specs/` directory
 - **CLAUDE.md:** This file contains general guidance and architectural patterns
 - **README files:** Each package and example has its own README for specific usage instructions
+- **Claude Agents:** Specialized agents for common tasks are in `.claude/agents/` (see below)
 
 ## Project Overview
 
@@ -882,3 +883,52 @@ Then follow the prompts to select packages and version bumps.
 - Always run `pnpm lint` and `pnpm format` to ensure code quality and consistency before committing any changes
 
 - The repo URL is `https://github.com/OpenSaasAU/stack` and the docs site is `https://stack.opensaas.au/`
+
+## Claude Agents
+
+Specialized agents are available in `.claude/agents/` for common development tasks. These agents allow the main agent to stay focused on the primary task while delegating specific responsibilities.
+
+### Available Agents
+
+#### GitHub Issue Creator (`.claude/agents/github-issue-creator.md`)
+
+**Purpose:** Creates comprehensive GitHub issues when bugs, improvements, or technical debt are discovered during development.
+
+**When to use:**
+
+- A bug is found while working on another task
+- Technical debt is identified that should be tracked
+- Performance issues or edge cases are noticed
+- Feature improvements are discovered but out of scope
+
+**How to delegate:**
+
+```
+I discovered [issue] while working on [main task].
+Please delegate creating a GitHub issue to the github-issue-creator agent.
+
+Context:
+- Problem: [description]
+- Affected files: [paths and line numbers]
+- Root cause: [explanation]
+- Proposed solution: [if known]
+```
+
+**What the agent does:**
+
+1. Researches the issue by reading relevant code
+2. Creates a comprehensive, well-structured issue
+3. Uses `gh issue create` to post it
+4. Returns the issue URL
+5. Cleans up temporary files
+
+**Benefits:**
+
+- Main agent stays focused on primary task
+- Issues documented immediately while context is fresh
+- Consistent, high-quality issue format
+- Automatic resource cleanup
+
+### Creating New Agents
+
+See `.claude/agents/README.md` for guidelines on creating new specialized agents.

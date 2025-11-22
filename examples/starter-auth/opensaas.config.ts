@@ -147,7 +147,7 @@ export default config({
 
           // Auto-set author on create if not provided
           if (operation === 'create' && !data.authorId && context.session?.userId) {
-            data.authorId = context.session.userId
+            data.author = { connect: { id: context.session.userId } }
           }
 
           // If changing status to published and publishedAt isn't set yet

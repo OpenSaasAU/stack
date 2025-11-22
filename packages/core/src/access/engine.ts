@@ -365,7 +365,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
  */
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
-  fieldConfigs: Record<string, { access?: FieldAccess }>,
+  fieldConfigs: Record<string, { access?: FieldAccess; type?: string }>,
   operation: 'create' | 'update',
   args: {
     session: Session | null
@@ -375,11 +375,30 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
+  // Build a set of foreign key field names to exclude
+  // Foreign keys should not be in the data when using Prisma's relation syntax
+  const foreignKeyFields = new Set<string>()
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (fieldConfig.type === 'relationship') {
+      // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
+      const relConfig = fieldConfig as { many?: boolean }
+      if (!relConfig.many) {
+        foreignKeyFields.add(`${fieldName}Id`)
+      }
+    }
+  }
+
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
 
     // Skip system fields
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+      continue
+    }
+
+    // Skip foreign key fields (e.g., authorId) when their corresponding relationship field exists
+    // This prevents conflicts when using Prisma's relation syntax (e.g., author: { connect: { id } })
+    if (foreignKeyFields.has(fieldName)) {
       continue
     }
 
