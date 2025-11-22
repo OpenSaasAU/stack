@@ -164,8 +164,10 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
-      await page.fill('input[name="title"]', 'Published Post')
-      await page.fill('input[name="slug"]', 'published-post')
+      // Use unique title to avoid conflicts
+      const uniqueTitle = `Published Post ${Date.now()}`
+      await page.fill('input[name="title"]', uniqueTitle)
+      await page.fill('input[name="slug"]', `published-post-${Date.now()}`)
       await page.fill('textarea[name="content"]', 'Content')
       await page.getByLabel('Status').click()
       await page.getByRole('option', { name: 'Published' }).click()
@@ -175,10 +177,11 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForLoadState('networkidle')
 
       // Wait for the post to appear in the table before clicking Edit
-      await expect(page.locator('text=Published Post')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible({ timeout: 5000 })
 
-      // Click on the Edit link for the created post
-      await page.getByRole('link', { name: 'Edit' }).first().click()
+      // Click on the Edit link for the created post - use the row containing our unique title
+      const postRow = page.locator('tr', { has: page.locator(`text=${uniqueTitle}`) })
+      await postRow.getByRole('link', { name: 'Edit' }).click()
       await page.waitForLoadState('networkidle')
 
       // Verify publishedAt is set - it's displayed as a button with the date/time
@@ -200,24 +203,38 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.getByRole('link', { name: /create.*post/i }).click()
       await page.waitForURL(/admin\/post\/create/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
-      await page.fill('input[name="title"]', 'Original Title')
-      await page.fill('input[name="slug"]', 'original-title')
+
+      // Use a unique title for this test
+      const uniqueTitle = `Post ${Date.now()}`
+      await page.fill('input[name="title"]', uniqueTitle)
+      await page.fill('input[name="slug"]', `post-${Date.now()}`)
       await page.fill('textarea[name="content"]', 'Original content')
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForLoadState('networkidle')
 
-      // Edit the post
-      await page.getByRole('link', { name: 'Edit' }).first().click()
+      // Wait for the specific post to appear
+      await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible({ timeout: 5000 })
+
+      // Find the row containing our post and click its Edit link
+      const postRow = page.locator('tr', { has: page.locator(`text=${uniqueTitle}`) })
+      await postRow.getByRole('link', { name: 'Edit' }).click()
       await page.waitForLoadState('networkidle')
 
       // Update title
-      await page.fill('input[name="title"]', 'Updated Title')
+      const updatedTitle = `Updated ${Date.now()}`
+      await page.fill('input[name="title"]', updatedTitle)
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+
+      // Wait for navigation back to list page
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
-      // Verify update
-      await expect(page.locator('text=Updated Title')).toBeVisible()
+      // Verify no error message
+      await expect(page.locator('text=/access denied|operation failed/i')).not.toBeVisible()
+
+      // Verify the updated title appears in the table
+      await expect(page.locator(`text=${updatedTitle}`)).toBeVisible({ timeout: 5000 })
     })
 
     test('should not allow non-author to update post', async ({ page, context }) => {
