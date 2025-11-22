@@ -172,6 +172,10 @@ test.describe('Posts CRUD and Access Control', () => {
 
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForLoadState('networkidle')
+
+      // Wait for the post to appear in the table before clicking Edit
+      await expect(page.locator('text=Published Post')).toBeVisible({ timeout: 5000 })
 
       // Click on the Edit link for the created post
       await page.getByRole('link', { name: 'Edit' }).first().click()
@@ -210,6 +214,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="title"]', 'Updated Title')
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForLoadState('networkidle')
 
       // Verify update
       await expect(page.locator('text=Updated Title')).toBeVisible()
