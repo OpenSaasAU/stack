@@ -10,9 +10,7 @@ async function serverAction(props: ServerActionInput) {
   'use server'
   const session = await getSession()
   const context = await getContext(session ?? undefined)
-  console.log('Server action props:', props)
   const result = await context.serverAction(props)
-  console.log('Server action result:', result)
 
   // Redirect after successful operations
   if (result) {
@@ -36,7 +34,6 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
   const session = await getSession()
-  console.log(session)
   if (!session) {
     return (
       <div className="p-8">
@@ -49,7 +46,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   }
   return (
     <AdminUI
-      context={await getContext(session ?? undefined)}
+      context={await getContext(session)}
       config={await config}
       params={resolvedParams.admin}
       searchParams={resolvedSearchParams}

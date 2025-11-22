@@ -17,10 +17,11 @@ export async function getSession() {
   const session = await auth.api.getSession({
     headers: await headers(),
   })
+  if (!session || !session.user) return null
   return {
-    userId: session?.user?.id,
-    email: session?.user?.email,
-    name: session?.user?.name,
+    userId: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
   }
 }
 
