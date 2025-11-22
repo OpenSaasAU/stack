@@ -123,7 +123,7 @@ test.describe('Posts CRUD and Access Control', () => {
 
       // Should show validation error about spam
       await expect(
-        page.locator('text="Validation failed: Title cannot contain the word \\"spam\\""')
+        page.locator('text="Validation failed: Title cannot contain the word \\"spam\\""'),
       ).toBeVisible({ timeout: 5000 })
     })
 
