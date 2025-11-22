@@ -1,4 +1,4 @@
-import { Page, expect } from '@playwright/test'
+import { Page } from '@playwright/test'
 
 /**
  * Test user credentials for E2E tests
@@ -98,43 +98,4 @@ export async function isSignedIn(page: Page): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-/**
- * Select author field in post creation/edit form
- * This is required for posts due to access control rules
- */
-export async function selectAuthor(page: Page) {
-  // Wait for network to settle after any previous interactions
-  await page.waitForLoadState('networkidle')
-
-  // The Author field button doesn't have an aria-label, so we need to find it by its text
-  // Look for a button with "Select..." text (empty state)
-  const authorButton = page.getByRole('button', { name: 'Select...' })
-
-  await authorButton.waitFor({ state: 'visible', timeout: 10000 })
-
-  // Additional wait for React hydration and any pending state updates
-  await page.waitForTimeout(500)
-
-  // Ensure the field is not disabled before clicking
-  await expect(authorButton).toBeEnabled()
-
-  // Click the Author select button to open dropdown dialog
-  await authorButton.click()
-
-  // Wait for the dialog to open and populate with users
-  await page.waitForTimeout(500)
-
-  // Click on any user name in the list (current user should be near the top)
-  // The dialog closes automatically after clicking a user
-  const userNameInList = page.getByText(/Test User|testing/i).first()
-  await userNameInList.waitFor({ state: 'visible', timeout: 5000 })
-  await userNameInList.click()
-
-  // Wait for the dialog to close and selection to be applied
-  await page.waitForTimeout(500)
-
-  // Verify the selection worked by checking the button text changed
-  await expect(page.getByRole('button', { name: /Test User|testing/i })).toBeVisible()
 }

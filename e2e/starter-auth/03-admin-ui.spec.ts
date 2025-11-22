@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, generateTestUser, selectAuthor } from '../utils/auth.js'
+import { signUp, generateTestUser } from '../utils/auth.js'
 
 test.describe('Admin UI', () => {
   let testUser: ReturnType<typeof generateTestUser>
@@ -75,7 +75,6 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="title"]', 'Test Post')
       await page.fill('input[name="slug"]', 'test-post')
       await page.fill('textarea[name="content"]', 'Test content')
-      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -96,7 +95,6 @@ test.describe('Admin UI', () => {
       // Status field is a segmented control, not a select dropdown
       await page.getByLabel('Status').click()
       await page.getByRole('option', { name: 'published' }).click()
-      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -182,7 +180,6 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="slug"]', 'edit-test-post')
       await page.fill('textarea[name="content"]', 'Original content')
       await page.fill('textarea[name="internalNotes"]', 'Original notes')
-      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 
@@ -207,7 +204,6 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="title"]', 'Original')
       await page.fill('input[name="slug"]', 'original')
       await page.fill('textarea[name="content"]', 'Content')
-      await selectAuthor(page)
       await page.click('button[type="submit"]')
       await page.waitForURL(/admin\/post/, { timeout: 10000 })
 

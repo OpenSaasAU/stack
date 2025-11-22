@@ -108,6 +108,11 @@ export default config({
         publishedAt: timestamp(),
         author: relationship({
           ref: 'User.posts',
+          access: {
+            read: () => true,
+            create: isSignedIn,
+            update: isSignedIn,
+          },
         }),
       },
       access: {
@@ -130,18 +135,22 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ operation, resolvedData, item }) => {
-          // If changing status to published and publishedAt isn't set yet
-          if (
-            resolvedData?.status === 'published' &&
-            (!item?.publishedAt || operation === 'create')
-          ) {
-            return {
-              ...resolvedData,
-              publishedAt: new Date(),
-            }
+        // Auto-set author on create if not provided
+        resolveInput: async ({ operation, resolvedData, item, context }) => {
+          let data = { ...resolvedData }
+          console.log(context.session)
+
+          // Auto-set author on create if not provided
+          if (operation === 'create' && !data.authorId && context.session?.userId) {
+            data.authorId = context.session.userId
           }
-          return { ...resolvedData }
+
+          // If changing status to published and publishedAt isn't set yet
+          if (data?.status === 'published' && (!item?.publishedAt || operation === 'create')) {
+            data.publishedAt = new Date()
+          }
+
+          return data
         },
         // Example validation: title must not contain "spam"
         validateInput: async ({ resolvedData, addValidationError }) => {

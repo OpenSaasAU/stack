@@ -63,7 +63,7 @@ export function getRelatedListConfig(
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
-    session: Session
+    session: Session | null
     item?: T
     context: AccessContext
   },
@@ -114,7 +114,7 @@ export async function checkFieldAccess(
   fieldAccess: FieldAccess | undefined,
   operation: 'read' | 'create' | 'update',
   args: {
-    session: Session
+    session: Session | null
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
   },
@@ -190,7 +190,7 @@ function matchesFilter(item: Record<string, unknown>, filter: Record<string, unk
 export async function buildIncludeWithAccessControl(
   fieldConfigs: Record<string, FieldConfig>,
   args: {
-    session: Session
+    session: Session | null
     context: AccessContext
   },
   config: OpenSaasConfig,
@@ -261,7 +261,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   item: T,
   fieldConfigs: Record<string, FieldConfig>,
   args: {
-    session: Session
+    session: Session | null
     context: AccessContext & { _isSudo?: boolean }
   },
   config?: OpenSaasConfig,
@@ -368,7 +368,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   fieldConfigs: Record<string, { access?: FieldAccess }>,
   operation: 'create' | 'update',
   args: {
-    session: Session
+    session: Session | null
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
   },

@@ -63,6 +63,61 @@ Visit:
 - **Sign Up**: [http://localhost:3000/sign-up](http://localhost:3000/sign-up)
 - **Admin UI**: [http://localhost:3000/admin](http://localhost:3000/admin)
 
+## Session Type Safety
+
+This starter includes typed session support for autocomplete and type checking. The session type is defined in `types/session.d.ts`:
+
+```typescript
+declare module '@opensaas/stack-core' {
+  interface Session {
+    userId: string
+    email: string
+    name: string
+  }
+}
+```
+
+This provides autocomplete everywhere sessions are used:
+
+```typescript
+// Access control - fully typed
+const isSignedIn: AccessControl = ({ session }) => {
+  return !!session?.userId // ✅ Autocomplete for userId, email, name
+}
+
+// Server actions
+const context = await getContext(session)
+const userEmail = context.session?.email // ✅ Type: string
+```
+
+**To add more session fields:**
+
+1. Add the field to User in `opensaas.config.ts`:
+
+   ```typescript
+   extendUserList: {
+     fields: {
+       role: select({ options: [...] })
+     }
+   }
+   ```
+
+2. Include it in `sessionFields`:
+
+   ```typescript
+   sessionFields: ['userId', 'email', 'name', 'role']
+   ```
+
+3. Update `types/session.d.ts`:
+   ```typescript
+   interface Session {
+     userId: string
+     email: string
+     name: string
+     role: 'admin' | 'user' // Add this
+   }
+   ```
+
 ## Learn More
 
 - [Documentation](https://stack.opensaas.au/docs)

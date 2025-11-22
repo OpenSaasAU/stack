@@ -144,12 +144,12 @@ export function getContext<
 >(
   config: TConfig,
   prisma: TPrisma,
-  session: Session,
+  session: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
 ): {
   db: AccessControlledDB<TPrisma>
-  session: Session
+  session: Session | null
   prisma: TPrisma
   storage: StorageUtils
   plugins: Record<string, unknown>
@@ -157,7 +157,7 @@ export function getContext<
   _isSudo: boolean
   sudo: () => {
     db: AccessControlledDB<TPrisma>
-    session: Session
+    session: Session | null
     prisma: TPrisma
     storage: StorageUtils
     plugins: Record<string, unknown>
