@@ -18,9 +18,9 @@ export async function getSession() {
     headers: await headers(),
   })
   return {
-    userId: session?.user?.id || null,
-    email: session?.user?.email || null,
-    name: session?.user?.name || null,
+    userId: session?.user?.id,
+    email: session?.user?.email,
+    name: session?.user?.name,
   }
 }
 
