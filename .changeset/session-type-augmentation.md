@@ -40,6 +40,7 @@ declare module '@opensaas/stack-core' {
 ```
 
 This provides autocomplete in:
+
 - Access control functions
 - Hooks (resolveInput, validateInput, etc.)
 - Context object
@@ -60,12 +61,12 @@ This provides autocomplete in:
 ```typescript
 // Before: No autocomplete
 const isAdmin: AccessControl = ({ session }) => {
-  return session?.role === 'admin'  // ❌ 'role' is 'unknown'
+  return session?.role === 'admin' // ❌ 'role' is 'unknown'
 }
 
 // After: Full autocomplete and type checking
 const isAdmin: AccessControl = ({ session }) => {
-  return session?.role === 'admin'  // ✅ Autocomplete + type checking
+  return session?.role === 'admin' // ✅ Autocomplete + type checking
   //             ↑ Shows: userId, email, role
 }
 ```
