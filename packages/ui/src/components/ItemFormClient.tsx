@@ -122,6 +122,18 @@ export function ItemFormClient({
           setGeneralError('Access denied or operation failed')
         }
       } catch (error) {
+        // Extract field-specific errors if available
+        if (
+          error &&
+          typeof error === 'object' &&
+          'fieldErrors' in error &&
+          typeof error.fieldErrors === 'object' &&
+          error.fieldErrors !== null
+        ) {
+          setErrors(error.fieldErrors as Record<string, string>)
+        }
+
+        // Always show the general error message
         const errorMessage = error instanceof Error ? error.message : 'Failed to save item'
         setGeneralError(errorMessage)
       }
