@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-storage-vercel",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "description": "Vercel Blob storage provider for OpenSaas Stack file uploads",
   "type": "module",
   "exports": {
@@ -29,7 +29,7 @@
     "vitest": "^4.0.5"
   },
   "peerDependencies": {
-    "@opensaas/stack-storage": "^0.1.0"
+    "@opensaas/stack-storage": "^1.0.0"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,14 @@
 # @opensaas/stack-ui
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [fcf5cb8]
+- Updated dependencies [3851a3c]
+- Updated dependencies [f4f3966]
+  - @opensaas/stack-core@0.2.0
+
 ## 0.1.7
 
 ### Patch Changes
