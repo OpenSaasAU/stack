@@ -84,6 +84,7 @@ jobs:
         env:
           CI: true
           DATABASE_URL: 'file:./dev.db'
+          BETTER_AUTH_URL: http://localhost:3000
 
       - name: Upload Playwright report
         if: always()
