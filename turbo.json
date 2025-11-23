@@ -18,7 +18,8 @@
     "test:coverage": {
       "dependsOn": ["build"],
       "cache": false,
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": ["DATABASE_URL"]
     },
     "dev": {
       "cache": false,
