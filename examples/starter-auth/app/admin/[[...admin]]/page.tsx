@@ -10,15 +10,33 @@ async function serverAction(props: ServerActionInput) {
   'use server'
   const session = await getSession()
   const context = await getContext(session ?? undefined)
-  const result = await context.serverAction(props)
 
-  // Redirect after successful operations
-  if (result) {
-    const listUrl = `/admin/${getUrlKey(props.listKey)}`
-    redirect(listUrl)
+  try {
+    const result = await context.serverAction(props)
+    return result
+  } catch (error) {
+    // Handle validation errors from hooks
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ValidationError') {
+      const validationError = error as { message: string }
+      throw new Error(validationError.message)
+    }
+
+    // Handle Prisma unique constraint violations (P2002)
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'P2002' &&
+      'meta' in error
+    ) {
+      const meta = error.meta as { target?: string[] }
+      const field = meta.target?.[0] || 'field'
+      throw new Error(`A record with this ${field} already exists. Please use a unique value.`)
+    }
+
+    // Re-throw other errors
+    throw error
   }
-
-  return result
 }
 
 interface AdminPageProps {
