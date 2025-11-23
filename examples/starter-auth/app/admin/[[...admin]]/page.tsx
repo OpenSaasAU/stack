@@ -13,7 +13,7 @@ async function serverAction(props: ServerActionInput) {
   const result = await context.serverAction(props)
 
   // Redirect after successful operations
-  if (result) {
+  if (result && typeof result === 'object' && 'success' in result && result.success) {
     const listUrl = `/admin/${getUrlKey(props.listKey)}`
     redirect(listUrl)
   }
