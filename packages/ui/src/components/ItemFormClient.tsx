@@ -62,80 +62,81 @@ export function ItemFormClient({
     setGeneralError(null)
 
     startTransition(async () => {
-      try {
-        // Transform relationship fields to Prisma format
-        // Filter out password fields with isSet objects (unchanged passwords)
-        // File/Image fields: pass File objects through (Next.js will serialize them)
-        const transformedData: Record<string, unknown> = {}
-        for (const [fieldName, value] of Object.entries(formData)) {
-          const fieldConfig = fields[fieldName]
+      // Transform relationship fields to Prisma format
+      // Filter out password fields with isSet objects (unchanged passwords)
+      // File/Image fields: pass File objects through (Next.js will serialize them)
+      const transformedData: Record<string, unknown> = {}
+      for (const [fieldName, value] of Object.entries(formData)) {
+        const fieldConfig = fields[fieldName]
 
-          // Skip password fields that have { isSet: boolean } value (not being changed)
-          if (typeof value === 'object' && value !== null && 'isSet' in value) {
-            continue
-          }
+        // Skip password fields that have { isSet: boolean } value (not being changed)
+        if (typeof value === 'object' && value !== null && 'isSet' in value) {
+          continue
+        }
 
-          // Transform relationship fields - check discriminated union type
-          const fieldAny = fieldConfig as { type: string; many?: boolean }
-          if (fieldAny?.type === 'relationship') {
-            if (fieldAny.many) {
-              // Many relationship: use connect format
-              if (Array.isArray(value) && value.length > 0) {
-                transformedData[fieldName] = {
-                  connect: value.map((id: string) => ({ id })),
-                }
-              }
-            } else {
-              // Single relationship: use connect format
-              if (value) {
-                transformedData[fieldName] = {
-                  connect: { id: value },
-                }
+        // Transform relationship fields - check discriminated union type
+        const fieldAny = fieldConfig as { type: string; many?: boolean }
+        if (fieldAny?.type === 'relationship') {
+          if (fieldAny.many) {
+            // Many relationship: use connect format
+            if (Array.isArray(value) && value.length > 0) {
+              transformedData[fieldName] = {
+                connect: value.map((id: string) => ({ id })),
               }
             }
           } else {
-            // Non-relationship field: pass through (including File objects for file/image fields)
-            // File objects will be serialized by Next.js server action
-            transformedData[fieldName] = value
+            // Single relationship: use connect format
+            if (value) {
+              transformedData[fieldName] = {
+                connect: { id: value },
+              }
+            }
           }
+        } else {
+          // Non-relationship field: pass through (including File objects for file/image fields)
+          // File objects will be serialized by Next.js server action
+          transformedData[fieldName] = value
         }
+      }
 
-        const result =
-          mode === 'create'
-            ? await serverAction({
-                listKey,
-                action: 'create',
-                data: transformedData,
-              })
-            : await serverAction({
-                listKey,
-                action: 'update',
-                id: itemId!,
-                data: transformedData,
-              })
+      const result =
+        mode === 'create'
+          ? await serverAction({
+              listKey,
+              action: 'create',
+              data: transformedData,
+            })
+          : await serverAction({
+              listKey,
+              action: 'update',
+              id: itemId!,
+              data: transformedData,
+            })
 
-        if (result) {
+      // Check if result has the new format with success/error fields
+      if (result && typeof result === 'object' && 'success' in result) {
+        const actionResult = result as
+          | { success: true; data: unknown }
+          | { success: false; error: string; fieldErrors?: Record<string, string> }
+
+        if (actionResult.success) {
           // Navigate back to list view
           router.push(`${basePath}/${urlKey}`)
           router.refresh()
         } else {
-          setGeneralError('Access denied or operation failed')
+          // Handle error response
+          if (actionResult.fieldErrors) {
+            setErrors(actionResult.fieldErrors)
+          }
+          setGeneralError(actionResult.error)
         }
-      } catch (error) {
-        // Extract field-specific errors if available
-        if (
-          error &&
-          typeof error === 'object' &&
-          'fieldErrors' in error &&
-          typeof error.fieldErrors === 'object' &&
-          error.fieldErrors !== null
-        ) {
-          setErrors(error.fieldErrors as Record<string, string>)
-        }
-
-        // Always show the general error message
-        const errorMessage = error instanceof Error ? error.message : 'Failed to save item'
-        setGeneralError(errorMessage)
+      } else if (result) {
+        // Legacy format: result is the data itself
+        router.push(`${basePath}/${urlKey}`)
+        router.refresh()
+      } else {
+        // null result means access denied
+        setGeneralError('Access denied or operation failed')
       }
     })
   }
@@ -147,22 +148,31 @@ export function ItemFormClient({
     setShowDeleteConfirm(false)
 
     startTransition(async () => {
-      try {
-        const result = await serverAction({
-          listKey,
-          action: 'delete',
-          id: itemId,
-        })
+      const result = await serverAction({
+        listKey,
+        action: 'delete',
+        id: itemId,
+      })
 
-        if (result) {
+      // Check if result has the new format with success/error fields
+      if (result && typeof result === 'object' && 'success' in result) {
+        const actionResult = result as
+          | { success: true; data: unknown }
+          | { success: false; error: string; fieldErrors?: Record<string, string> }
+
+        if (actionResult.success) {
           router.push(`${basePath}/${urlKey}`)
           router.refresh()
         } else {
-          setGeneralError('Access denied or failed to delete item')
+          setGeneralError(actionResult.error)
         }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to delete item'
-        setGeneralError(errorMessage)
+      } else if (result) {
+        // Legacy format: result is the data itself
+        router.push(`${basePath}/${urlKey}`)
+        router.refresh()
+      } else {
+        // null result means access denied
+        setGeneralError('Access denied or failed to delete item')
       }
     })
   }

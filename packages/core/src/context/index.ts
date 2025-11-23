@@ -295,12 +295,21 @@ export function getContext<
   }
 
   // Generic server action handler with discriminated union for type safety
-  async function serverAction(props: ServerActionProps): Promise<unknown> {
+  // Returns a result object instead of throwing to work properly in Next.js production
+  async function serverAction(
+    props: ServerActionProps,
+  ): Promise<
+    | { success: true; data: unknown }
+    | { success: false; error: string; fieldErrors?: Record<string, string> }
+  > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
 
     if (!listConfig) {
-      throw new Error(`List "${props.listKey}" not found in configuration`)
+      return {
+        success: false,
+        error: `List "${props.listKey}" not found in configuration`,
+      }
     }
 
     const model = db[dbKey] as {
@@ -310,28 +319,67 @@ export function getContext<
     }
 
     try {
+      let result: unknown = null
+
       if (props.action === 'create') {
-        return await model.create({ data: props.data })
+        result = await model.create({ data: props.data })
       } else if (props.action === 'update') {
-        return await model.update({
+        result = await model.update({
           where: { id: props.id },
           data: props.data,
         })
       } else if (props.action === 'delete') {
-        return await model.delete({
+        result = await model.delete({
           where: { id: props.id },
         })
       }
 
-      return null
+      // Check for access denial (null return from access-controlled operations)
+      if (result === null) {
+        return {
+          success: false,
+          error: 'Access denied or operation failed',
+        }
+      }
+
+      return {
+        success: true,
+        data: result,
+      }
     } catch (error) {
-      // Re-throw ValidationError as-is (it already has fieldErrors)
+      // Handle ValidationError (has fieldErrors)
       if (error instanceof ValidationError) {
-        throw error
+        return {
+          success: false,
+          error: error.message,
+          fieldErrors: error.fieldErrors,
+        }
+      }
+
+      // Handle DatabaseError (has fieldErrors)
+      if (error instanceof DatabaseError) {
+        return {
+          success: false,
+          error: error.message,
+          fieldErrors: error.fieldErrors,
+        }
       }
 
       // Parse and convert Prisma errors to user-friendly DatabaseError
-      throw parsePrismaError(error, listConfig)
+      const dbError = parsePrismaError(error, listConfig)
+      if (dbError instanceof DatabaseError) {
+        return {
+          success: false,
+          error: dbError.message,
+          fieldErrors: dbError.fieldErrors,
+        }
+      }
+
+      // Generic error fallback
+      return {
+        success: false,
+        error: dbError.message,
+      }
     }
   }
 
