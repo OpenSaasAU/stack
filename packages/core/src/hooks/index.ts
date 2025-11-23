@@ -22,20 +22,33 @@ export class ValidationError extends Error {
  * Execute resolveInput hook
  * Allows modification of input data before validation
  */
-export async function executeResolveInput<T = Record<string, unknown>>(
-  hooks: Hooks<T> | undefined,
-  args: {
-    operation: 'create' | 'update'
-    resolvedData: Partial<T>
-    item?: T
-    context: AccessContext
-  },
-): Promise<Partial<T>> {
+export async function executeResolveInput<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
+  args:
+    | {
+        operation: 'create'
+        resolvedData: TCreateInput
+        item?: undefined
+        context: AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: TUpdateInput
+        item?: TOutput
+        context: AccessContext
+      },
+): Promise<TCreateInput | TUpdateInput> {
   if (!hooks?.resolveInput) {
     return args.resolvedData
   }
 
-  const result = await hooks.resolveInput(args)
+  // Type assertion is safe because we've constrained the args type
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await hooks.resolveInput(args as any)
   return result
 }
 
@@ -43,12 +56,16 @@ export async function executeResolveInput<T = Record<string, unknown>>(
  * Execute validateInput hook
  * Allows custom validation logic
  */
-export async function executeValidateInput<T = Record<string, unknown>>(
-  hooks: Hooks<T> | undefined,
+export async function executeValidateInput<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args: {
     operation: 'create' | 'update'
-    resolvedData: Partial<T>
-    item?: T
+    resolvedData: TCreateInput | TUpdateInput
+    item?: TOutput
     context: AccessContext
   },
 ): Promise<void> {
@@ -76,11 +93,16 @@ export async function executeValidateInput<T = Record<string, unknown>>(
  * Execute beforeOperation hook
  * Runs before database operation (cannot modify data)
  */
-export async function executeBeforeOperation<T = Record<string, unknown>>(
-  hooks: Hooks<T> | undefined,
+export async function executeBeforeOperation<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args: {
     operation: 'create' | 'update' | 'delete'
-    item?: T
+    resolvedData?: TCreateInput | TUpdateInput
+    item?: TOutput
     context: AccessContext
   },
 ): Promise<void> {
@@ -95,11 +117,16 @@ export async function executeBeforeOperation<T = Record<string, unknown>>(
  * Execute afterOperation hook
  * Runs after database operation
  */
-export async function executeAfterOperation<T = Record<string, unknown>>(
-  hooks: Hooks<T> | undefined,
+export async function executeAfterOperation<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args: {
     operation: 'create' | 'update' | 'delete'
-    item: T
+    resolvedData?: TCreateInput | TUpdateInput
+    item: TOutput
     context: AccessContext
   },
 ): Promise<void> {

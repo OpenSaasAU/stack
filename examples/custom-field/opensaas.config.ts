@@ -108,12 +108,17 @@ export default config({
           const result = { ...resolvedData }
 
           // Auto-set publishedAt when status changes to published
-          if (result.status === 'published' && (!item?.publishedAt || operation === 'create')) {
+          if (result.status === 'published' && !item?.publishedAt) {
             result.publishedAt = new Date()
           }
 
           // Auto-generate slug from title if not provided
-          if (operation === 'create' && !result.slug && result.title) {
+          if (
+            operation === 'create' &&
+            !result.slug &&
+            result.title &&
+            typeof result.title === 'string'
+          ) {
             const slug = result.title
               .toLowerCase()
               .replace(/[^\w\s-]/g, '')

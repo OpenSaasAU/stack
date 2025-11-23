@@ -7,7 +7,7 @@ exports[`Types Generator > generateTypes > should generate Context type with all
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -31,6 +31,46 @@ export type UserWhereInput = {
   OR?: Array<UserWhereInput>
   NOT?: UserWhereInput
   name?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
@@ -52,7 +92,7 @@ exports[`Types Generator > generateTypes > should generate CreateInput type 1`] 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Post = {
@@ -80,6 +120,46 @@ export type PostWhereInput = {
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
   content?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
@@ -101,7 +181,7 @@ exports[`Types Generator > generateTypes > should generate UpdateInput type 1`] 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Post = {
@@ -131,6 +211,46 @@ export type PostWhereInput = {
   content?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
@@ -150,7 +270,7 @@ exports[`Types Generator > generateTypes > should generate WhereInput type 1`] =
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -176,6 +296,46 @@ export type UserWhereInput = {
   name?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
@@ -195,7 +355,7 @@ exports[`Types Generator > generateTypes > should generate type definitions for 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -225,6 +385,46 @@ export type UserWhereInput = {
   email?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
@@ -244,7 +444,7 @@ exports[`Types Generator > generateTypes > should generate types for multiple li
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -270,6 +470,46 @@ export type UserWhereInput = {
   name?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Post = {
   id: string
   title: string | null
@@ -291,6 +531,46 @@ export type PostWhereInput = {
   OR?: Array<PostWhereInput>
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Comment = {
@@ -316,6 +596,46 @@ export type CommentWhereInput = {
   content?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for Comment list
+ * Properly typed to use Prisma's generated input types
+ */
+export type CommentHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.CommentCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.CommentUpdateInput
+        item: Comment
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.CommentCreateInput | Prisma.CommentUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    item?: Comment
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    item?: Comment
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    item?: Comment
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
@@ -335,7 +655,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Post = {
@@ -365,6 +685,46 @@ export type PostWhereInput = {
   title?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type User = {
   id: string
   name: string | null
@@ -386,6 +746,46 @@ export type UserWhereInput = {
   OR?: Array<UserWhereInput>
   NOT?: UserWhereInput
   name?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
@@ -407,7 +807,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Post = {
@@ -437,6 +837,46 @@ export type PostWhereInput = {
   title?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type User = {
   id: string
   name: string | null
@@ -460,6 +900,46 @@ export type UserWhereInput = {
   name?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
   db: AccessControlledDB<PrismaClient>
   session: TSession
@@ -479,7 +959,7 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -508,6 +988,46 @@ export type UserWhereInput = {
   name?: { equals?: string, not?: string }
 }
 
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+}
+
 export type Post = {
   id: string
   title: string | null
@@ -533,6 +1053,46 @@ export type PostWhereInput = {
   OR?: Array<PostWhereInput>
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for Post list
+ * Properly typed to use Prisma's generated input types
+ */
+export type PostHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.PostCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.PostUpdateInput
+        item: Post
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    item?: Post
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {

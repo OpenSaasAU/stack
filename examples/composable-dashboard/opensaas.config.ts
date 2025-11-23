@@ -133,12 +133,9 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ operation, resolvedData, item }) => {
+        resolveInput: async ({ resolvedData, item }) => {
           // If changing status to published and publishedAt isn't set yet
-          if (
-            resolvedData?.status === 'published' &&
-            (!item?.publishedAt || operation === 'create')
-          ) {
+          if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
               publishedAt: new Date(),

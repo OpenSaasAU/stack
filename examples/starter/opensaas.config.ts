@@ -127,12 +127,9 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ operation, resolvedData, item }) => {
+        resolveInput: async ({ resolvedData, item }) => {
           // If changing status to published and publishedAt isn't set yet
-          if (
-            resolvedData?.status === 'published' &&
-            (!item?.publishedAt || operation === 'create')
-          ) {
+          if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
               publishedAt: new Date(),
@@ -142,7 +139,11 @@ export default config({
         },
         // Example validation: title must not contain "spam"
         validateInput: async ({ resolvedData, addValidationError }) => {
-          if (resolvedData?.title && resolvedData.title.toLowerCase().includes('spam')) {
+          if (
+            resolvedData?.title &&
+            typeof resolvedData.title === 'string' &&
+            resolvedData.title.toLowerCase().includes('spam')
+          ) {
             addValidationError('Title cannot contain the word "spam"')
           }
         },

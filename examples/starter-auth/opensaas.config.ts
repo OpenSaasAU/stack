@@ -151,7 +151,9 @@ export default config({
           }
 
           // If changing status to published and publishedAt isn't set yet
-          if (data?.status === 'published' && (!item?.publishedAt || operation === 'create')) {
+          if (operation === 'create' && data?.status === 'published') {
+            data.publishedAt = new Date()
+          } else if (operation === 'update' && data?.status === 'published' && !item?.publishedAt) {
             data.publishedAt = new Date()
           }
 
@@ -159,7 +161,13 @@ export default config({
         },
         // Example validation: title must not contain "spam"
         validateInput: async ({ resolvedData, addValidationError }) => {
-          if (resolvedData?.title && resolvedData.title.toLowerCase().includes('spam')) {
+          if (
+            resolvedData &&
+            'title' in resolvedData &&
+            resolvedData.title &&
+            typeof resolvedData.title === 'string' &&
+            resolvedData.title.toLowerCase().includes('spam')
+          ) {
             addValidationError('Title cannot contain the word "spam"')
           }
         },
