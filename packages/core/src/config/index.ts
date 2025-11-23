@@ -64,16 +64,16 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function list<TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo>(
-  config: {
-    fields: Record<string, FieldConfig>
-    access?: {
-      operation?: OperationAccess<TTypeInfo['item']>
-    }
-    hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
-    mcp?: import('./types.js').ListMcpConfig
-  },
-): ListConfig<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']> {
+export function list<
+  TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo,
+>(config: {
+  fields: Record<string, FieldConfig>
+  access?: {
+    operation?: OperationAccess<TTypeInfo['item']>
+  }
+  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
+  mcp?: import('./types.js').ListMcpConfig
+}): ListConfig<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']> {
   // At runtime, field configs are unchanged
   // At type level, they're transformed to inject TypeInfo types
   return config as ListConfig<

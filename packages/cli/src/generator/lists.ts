@@ -39,7 +39,7 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
   lines.push(' *')
   lines.push(' * @example')
   lines.push(' * ```typescript')
-  lines.push(' * import type { Lists } from \'./.opensaas/lists\'')
+  lines.push(" * import type { Lists } from './.opensaas/lists'")
   lines.push(' *')
   lines.push(' * // Use TypeInfo as generic parameter')
   lines.push(' * Post: list<Lists.Post.TypeInfo>({')
@@ -72,12 +72,8 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push(`      key: '${listName}'`)
     lines.push(`      item: Item`)
     lines.push(`      inputs: {`)
-    lines.push(
-      `        create: import('./prisma-client/client').Prisma.${listName}CreateInput`,
-    )
-    lines.push(
-      `        update: import('./prisma-client/client').Prisma.${listName}UpdateInput`,
-    )
+    lines.push(`        create: import('./prisma-client/client').Prisma.${listName}CreateInput`)
+    lines.push(`        update: import('./prisma-client/client').Prisma.${listName}UpdateInput`)
     lines.push(`      }`)
     lines.push(`    }`)
     lines.push(`  }`)
