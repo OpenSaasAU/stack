@@ -174,11 +174,7 @@ function parsePrismaError(error: unknown, listConfig: ListConfig): Error {
         )
       }
 
-      return new DatabaseError(
-        'A record with this value already exists',
-        {},
-        prismaError.code,
-      )
+      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
     }
 
     // Handle other Prisma errors - return generic message
