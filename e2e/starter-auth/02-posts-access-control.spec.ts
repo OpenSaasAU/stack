@@ -151,7 +151,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.click('button[type="submit"]')
 
       // Should show error about duplicate slug
-      await expect(page.locator('text=/unique|duplicate/i')).toBeVisible({
+      await expect(page.locator('text="A record with this value already exists"')).toBeVisible({
         timeout: 5000,
       })
     })

@@ -14,6 +14,7 @@ import {
   executeAfterOperation,
   validateFieldRules,
   ValidationError,
+  DatabaseError,
 } from '../hooks/index.js'
 import { processNestedOperations } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -130,6 +131,69 @@ export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
+
+/**
+ * Parse Prisma error and convert to user-friendly DatabaseError
+ */
+function parsePrismaError(error: unknown, listConfig: ListConfig): Error {
+  // Check if it's a Prisma error
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    'meta' in error &&
+    typeof error.code === 'string'
+  ) {
+    const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
+
+    // Handle unique constraint violation
+    if (prismaError.code === 'P2002') {
+      const target = prismaError.meta?.target
+      const fieldErrors: Record<string, string> = {}
+
+      if (target && Array.isArray(target)) {
+        // Get field names from the constraint target
+        for (const fieldName of target) {
+          // Get the field config to get a better label
+          const fieldConfig = listConfig.fields[fieldName]
+          const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+
+          if (fieldConfig) {
+            fieldErrors[fieldName] = `This ${label.toLowerCase()} is already in use`
+          } else {
+            fieldErrors[fieldName] = `This value is already in use`
+          }
+        }
+
+        // Create a user-friendly general message
+        const fieldLabels = target.map((f) => f.charAt(0).toUpperCase() + f.slice(1)).join(', ')
+        return new DatabaseError(
+          `${fieldLabels} must be unique. The value you entered is already in use.`,
+          fieldErrors,
+          prismaError.code,
+        )
+      }
+
+      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
+    }
+
+    // Handle other Prisma errors - return generic message
+    return new DatabaseError(
+      prismaError.message || 'A database error occurred',
+      {},
+      prismaError.code,
+    )
+  }
+
+  // Not a Prisma error, return as-is if it's already an Error
+  if (error instanceof Error) {
+    return error
+  }
+
+  // Unknown error type
+  return new Error('An unknown error occurred')
+}
+
 /**
  * Create an access-controlled context
  *
@@ -231,28 +295,92 @@ export function getContext<
   }
 
   // Generic server action handler with discriminated union for type safety
-  async function serverAction(props: ServerActionProps): Promise<unknown> {
+  // Returns a result object instead of throwing to work properly in Next.js production
+  async function serverAction(
+    props: ServerActionProps,
+  ): Promise<
+    | { success: true; data: unknown }
+    | { success: false; error: string; fieldErrors?: Record<string, string> }
+  > {
     const dbKey = getDbKey(props.listKey)
+    const listConfig = config.lists[props.listKey]
+
+    if (!listConfig) {
+      return {
+        success: false,
+        error: `List "${props.listKey}" not found in configuration`,
+      }
+    }
+
     const model = db[dbKey] as {
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
       update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
       delete: (args: { where: { id: string } }) => Promise<unknown>
     }
 
-    if (props.action === 'create') {
-      return await model.create({ data: props.data })
-    } else if (props.action === 'update') {
-      return await model.update({
-        where: { id: props.id },
-        data: props.data,
-      })
-    } else if (props.action === 'delete') {
-      return await model.delete({
-        where: { id: props.id },
-      })
-    }
+    try {
+      let result: unknown = null
 
-    return null
+      if (props.action === 'create') {
+        result = await model.create({ data: props.data })
+      } else if (props.action === 'update') {
+        result = await model.update({
+          where: { id: props.id },
+          data: props.data,
+        })
+      } else if (props.action === 'delete') {
+        result = await model.delete({
+          where: { id: props.id },
+        })
+      }
+
+      // Check for access denial (null return from access-controlled operations)
+      if (result === null) {
+        return {
+          success: false,
+          error: 'Access denied or operation failed',
+        }
+      }
+
+      return {
+        success: true,
+        data: result,
+      }
+    } catch (error) {
+      // Handle ValidationError (has fieldErrors)
+      if (error instanceof ValidationError) {
+        return {
+          success: false,
+          error: error.message,
+          fieldErrors: error.fieldErrors,
+        }
+      }
+
+      // Handle DatabaseError (has fieldErrors)
+      if (error instanceof DatabaseError) {
+        return {
+          success: false,
+          error: error.message,
+          fieldErrors: error.fieldErrors,
+        }
+      }
+
+      // Parse and convert Prisma errors to user-friendly DatabaseError
+      const dbError = parsePrismaError(error, listConfig)
+      if (dbError instanceof DatabaseError) {
+        return {
+          success: false,
+          error: dbError.message,
+          fieldErrors: dbError.fieldErrors,
+        }
+      }
+
+      // Generic error fallback
+      return {
+        success: false,
+        error: dbError.message,
+      }
+    }
   }
 
   // Sudo function - creates a new context that bypasses access control
