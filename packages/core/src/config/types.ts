@@ -345,6 +345,42 @@ export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TIte
   [K in keyof TFields]: WithItemType<TFields[K], TItem>
 }
 
+/**
+ * TypeInfo interface for list type information
+ * Provides a structured way to pass all type information for a list
+ * Inspired by Keystone's TypeInfo pattern
+ *
+ * @template TKey - The list key/name (e.g., 'Post', 'User')
+ * @template TItem - The output type (Prisma model type)
+ * @template TCreateInput - The Prisma create input type
+ * @template TUpdateInput - The Prisma update input type
+ *
+ * @example
+ * ```typescript
+ * type PostTypeInfo = {
+ *   key: 'Post'
+ *   item: Post
+ *   inputs: {
+ *     create: Prisma.PostCreateInput
+ *     update: Prisma.PostUpdateInput
+ *   }
+ * }
+ * ```
+ */
+export interface TypeInfo<
+  TKey extends string = string,
+  TItem = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  TCreateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  TUpdateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+> {
+  key: TKey
+  item: TItem
+  inputs: {
+    create: TCreateInput
+    update: TUpdateInput
+  }
+}
+
 // Generic `any` default allows OperationAccess to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -355,36 +391,74 @@ export type OperationAccess<T = any> = {
   delete?: AccessControl<T>
 }
 
-export type HookArgs<T = Record<string, unknown>> = {
+/**
+ * Hook arguments for resolveInput hook
+ * Uses discriminated union to provide proper types based on operation
+ * - create: resolvedData is CreateInput, item is undefined
+ * - update: resolvedData is UpdateInput, item is the existing record
+ */
+export type ResolveInputHookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
+  | {
+      operation: 'create'
+      resolvedData: TCreateInput
+      item: undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      operation: 'update'
+      resolvedData: TUpdateInput
+      item: TOutput
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Hook arguments for other hooks (validateInput, beforeOperation, afterOperation)
+ * These hooks receive the same structure regardless of operation
+ */
+export type HookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> = {
   operation: 'create' | 'update' | 'delete'
-  resolvedData?: Partial<T>
-  item?: T
+  resolvedData?: TCreateInput | TUpdateInput
+  item?: TOutput
   context: import('../access/types.js').AccessContext
 }
 
-export type Hooks<T = Record<string, unknown>> = {
-  resolveInput?: (args: HookArgs<T> & { operation: 'create' | 'update' }) => Promise<Partial<T>>
+export type Hooks<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> = {
+  resolveInput?: (
+    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
+  ) => Promise<TCreateInput | TUpdateInput>
   validateInput?: (
-    args: HookArgs<T> & {
+    args: HookArgs<TOutput, TCreateInput, TUpdateInput> & {
       operation: 'create' | 'update'
       addValidationError: (msg: string) => void
     },
   ) => Promise<void>
-  beforeOperation?: (args: HookArgs<T>) => Promise<void>
-  afterOperation?: (args: HookArgs<T>) => Promise<void>
+  beforeOperation?: (args: HookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  afterOperation?: (args: HookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
 }
 
 // Generic `any` default allows ListConfig to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ListConfig<T = any> = {
+export type ListConfig<TOutput = any, TCreateInput = any, TUpdateInput = any> = {
   // Field configs are automatically transformed to inject the item type T
   // This enables proper typing in field hooks where item: TItem
-  fields: FieldsWithItemType<Record<string, FieldConfig>, T>
+  fields: FieldsWithItemType<Record<string, FieldConfig>, TOutput>
   access?: {
-    operation?: OperationAccess<T>
+    operation?: OperationAccess<TOutput>
   }
-  hooks?: Hooks<T>
+  hooks?: Hooks<TOutput, TCreateInput, TUpdateInput>
   /**
    * MCP server configuration for this list
    */

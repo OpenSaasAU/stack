@@ -59,7 +59,7 @@ export function text(options?: Omit<TextField, 'type'>): TextField {
         return z.union([withMax, z.undefined()])
       }
 
-      return !isRequired ? withMax.optional() : withMax
+      return !isRequired ? withMax.optional().nullable() : withMax
     },
     getPrismaType: () => {
       const validation = options?.validation
@@ -122,7 +122,7 @@ export function integer(options?: Omit<IntegerField, 'type'>): IntegerField {
           : withMin
 
       return !options?.validation?.isRequired || operation === 'update'
-        ? withMax.optional()
+        ? withMax.optional().nullable()
         : withMax
     },
     getPrismaType: () => {
@@ -152,7 +152,7 @@ export function checkbox(options?: Omit<CheckboxField, 'type'>): CheckboxField {
     type: 'checkbox',
     ...options,
     getZodSchema: () => {
-      return z.boolean().optional()
+      return z.boolean().optional().nullable()
     },
     getPrismaType: () => {
       const hasDefault = options?.defaultValue !== undefined
@@ -184,7 +184,7 @@ export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampFiel
     type: 'timestamp',
     ...options,
     getZodSchema: () => {
-      return z.union([z.date(), z.iso.datetime()]).optional()
+      return z.union([z.date(), z.iso.datetime()]).optional().nullable()
     },
     getPrismaType: () => {
       let modifiers = '?'
@@ -347,6 +347,7 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
             message: `${formatFieldName(fieldName)} must be text`,
           })
           .optional()
+          .nullable()
       }
     },
     getPrismaType: () => {
@@ -386,7 +387,7 @@ export function select(options: Omit<SelectField, 'type'>): SelectField {
       })
 
       if (!options.validation?.isRequired || operation === 'update') {
-        schema = schema.optional()
+        schema = schema.optional().nullable()
       }
 
       return schema
@@ -499,8 +500,8 @@ export function json(options?: Omit<JsonField, 'type'>): JsonField {
         // Required in update mode: can be undefined for partial updates
         return z.union([baseSchema, z.undefined()])
       } else {
-        // Not required: can be undefined
-        return baseSchema.optional()
+        // Not required: can be undefined or null
+        return baseSchema.optional().nullable()
       }
     },
     getPrismaType: () => {

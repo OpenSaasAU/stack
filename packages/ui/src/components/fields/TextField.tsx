@@ -1,6 +1,7 @@
 'use client'
 
 import { Input } from '../../primitives/input.js'
+import { Textarea } from '../../primitives/textarea.js'
 import { Label } from '../../primitives/label.js'
 import { cn } from '../../lib/utils.js'
 
@@ -14,6 +15,7 @@ export interface TextFieldProps {
   disabled?: boolean
   required?: boolean
   mode?: 'read' | 'edit'
+  displayMode?: 'input' | 'textarea'
 }
 
 export function TextField({
@@ -26,6 +28,7 @@ export function TextField({
   disabled,
   required,
   mode = 'edit',
+  displayMode = 'input',
 }: TextFieldProps) {
   if (mode === 'read') {
     return (
@@ -36,16 +39,18 @@ export function TextField({
     )
   }
 
+  const InputComponent = displayMode === 'textarea' ? Textarea : Input
+
   return (
     <div className="space-y-2">
       <Label htmlFor={name}>
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
       </Label>
-      <Input
+      <InputComponent
         id={name}
         name={name}
-        type="text"
+        type={displayMode === 'input' ? 'text' : undefined}
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

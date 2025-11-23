@@ -170,6 +170,55 @@ function generateWhereInputType(listName: string, fields: Record<string, FieldCo
 }
 
 /**
+ * Generate hook types that reference Prisma input types
+ */
+function generateHookTypes(listName: string): string {
+  const lines: string[] = []
+
+  lines.push(`/**`)
+  lines.push(` * Hook types for ${listName} list`)
+  lines.push(` * Properly typed to use Prisma's generated input types`)
+  lines.push(` */`)
+  lines.push(`export type ${listName}Hooks = {`)
+  lines.push(`  resolveInput?: (args:`)
+  lines.push(`    | {`)
+  lines.push(`        operation: 'create'`)
+  lines.push(`        resolvedData: Prisma.${listName}CreateInput`)
+  lines.push(`        item: undefined`)
+  lines.push(`        context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`      }`)
+  lines.push(`    | {`)
+  lines.push(`        operation: 'update'`)
+  lines.push(`        resolvedData: Prisma.${listName}UpdateInput`)
+  lines.push(`        item: ${listName}`)
+  lines.push(`        context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`      }`)
+  lines.push(`  ) => Promise<Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput>`)
+  lines.push(`  validateInput?: (args: {`)
+  lines.push(`    operation: 'create' | 'update'`)
+  lines.push(`    resolvedData: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    item?: ${listName}`)
+  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`    addValidationError: (msg: string) => void`)
+  lines.push(`  }) => Promise<void>`)
+  lines.push(`  beforeOperation?: (args: {`)
+  lines.push(`    operation: 'create' | 'update' | 'delete'`)
+  lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    item?: ${listName}`)
+  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`  }) => Promise<void>`)
+  lines.push(`  afterOperation?: (args: {`)
+  lines.push(`    operation: 'create' | 'update' | 'delete'`)
+  lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    item?: ${listName}`)
+  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`  }) => Promise<void>`)
+  lines.push(`}`)
+
+  return lines.join('\n')
+}
+
+/**
  * Generate Context type with all operations
  */
 function generateContextType(): string {
@@ -252,7 +301,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push(
     "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'",
   )
-  lines.push("import type { PrismaClient } from './prisma-client/client'")
+  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client'")
   lines.push("import type { PluginServices } from './plugin-types'")
 
   // Add field-specific imports
@@ -274,6 +323,8 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(generateUpdateInputType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateWhereInputType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateHookTypes(listName))
     lines.push('')
   }
 

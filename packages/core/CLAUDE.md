@@ -35,12 +35,57 @@ Built-in fields:
 ### Access Control (`src/access/`)
 
 - `engine.ts` - Core execution logic (`applyAccessControl()`)
-- `types.ts` - Type definitions (`AccessControl`, `OperationAccessControl`, etc.)
+- `types.ts` - Type definitions (`AccessControl`, `OperationAccessControl`, `Session`, etc.)
 
 Access control functions receive `{ session, context, item, operation }` and return:
 
 - `boolean` - Allow/deny
 - `Prisma filter object` - Scope access to matching records
+
+### Session Typing (`src/access/types.ts`)
+
+The `Session` interface can be augmented to provide type safety and autocomplete for session fields.
+
+**Default:** Session is a permissive object: `interface Session { [key: string]: unknown }`
+
+**Module Augmentation Pattern:**
+
+```typescript
+// types/session.d.ts (create this file in your project)
+import '@opensaas/stack-core'
+
+declare module '@opensaas/stack-core' {
+  interface Session {
+    userId: string
+    email: string
+    role: 'admin' | 'user'
+    organizationId?: string
+  }
+}
+```
+
+**Benefits:**
+
+- Autocomplete in access control functions
+- Type safety when accessing session properties
+- Single source of truth for session shape
+- Works with any auth provider (Better Auth, custom, etc.)
+
+**Usage after augmentation:**
+
+```typescript
+// Access control - fully typed
+const isAdmin: AccessControl = ({ session }) => {
+  return session?.role === 'admin' // ✅ 'role' is typed as 'admin' | 'user'
+  //             ↑ Autocomplete shows: userId, email, role, organizationId
+}
+
+// In server actions
+const context = await getContext(session)
+context.session?.email // ✅ Typed as string
+```
+
+**For Better Auth users:** See `@opensaas/stack-auth` documentation for examples of extracting Better Auth session types.
 
 ### Hooks (`src/hooks/`)
 

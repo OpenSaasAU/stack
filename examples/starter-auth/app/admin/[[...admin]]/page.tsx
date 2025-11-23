@@ -1,14 +1,26 @@
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
-import { getAuth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { getUrlKey } from '@opensaas/stack-core'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getContext()
-  return await context.serverAction(props)
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  const result = await context.serverAction(props)
+
+  // Redirect after successful operations
+  if (result) {
+    const listUrl = `/admin/${getUrlKey(props.listKey)}`
+    redirect(listUrl)
+  }
+
+  return result
 }
+
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -21,7 +33,7 @@ interface AdminPageProps {
 export default async function AdminPage({ params, searchParams }: AdminPageProps) {
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
-  const session = await getAuth()
+  const session = await getSession()
   if (!session) {
     return (
       <div className="p-8">
@@ -34,7 +46,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   }
   return (
     <AdminUI
-      context={await getContext(session.user)}
+      context={await getContext(session)}
       config={await config}
       params={resolvedParams.admin}
       searchParams={resolvedSearchParams}

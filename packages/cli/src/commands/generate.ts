@@ -6,7 +6,9 @@ import ora from 'ora'
 import { createJiti } from 'jiti'
 import {
   writePrismaSchema,
+  writePrismaConfig,
   writeTypes,
+  writeLists,
   writeContext,
   writePluginTypes,
   patchPrismaTypes,
@@ -71,18 +73,24 @@ export async function generateCommand() {
     const generatorSpinner = ora('Generating schema and types...').start()
     try {
       const prismaSchemaPath = path.join(cwd, 'prisma', 'schema.prisma')
+      const prismaConfigPath = path.join(cwd, 'prisma.config.ts')
       const typesPath = path.join(cwd, '.opensaas', 'types.ts')
+      const listsPath = path.join(cwd, '.opensaas', 'lists.ts')
       const contextPath = path.join(cwd, '.opensaas', 'context.ts')
       const pluginTypesPath = path.join(cwd, '.opensaas', 'plugin-types.ts')
 
       writePrismaSchema(config, prismaSchemaPath)
+      writePrismaConfig(config, prismaConfigPath)
       writeTypes(config, typesPath)
+      writeLists(config, listsPath)
       writeContext(config, contextPath)
       writePluginTypes(config, pluginTypesPath)
 
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
+      console.log(chalk.green('✅ Prisma config generated'))
       console.log(chalk.green('✅ TypeScript types generated'))
+      console.log(chalk.green('✅ Lists namespace generated'))
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
 

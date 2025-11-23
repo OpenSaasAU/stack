@@ -132,7 +132,7 @@ exports[`Generate Command Integration > Generator Integration > should generate 
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type User = {
@@ -160,6 +160,46 @@ export type UserWhereInput = {
   NOT?: UserWhereInput
   name?: { equals?: string, not?: string }
   email?: { equals?: string, not?: string }
+}
+
+/**
+ * Hook types for User list
+ * Properly typed to use Prisma's generated input types
+ */
+export type UserHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.UserCreateInput
+        item: undefined
+        context: import('@opensaas/stack-core').AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.UserUpdateInput
+        item: User
+        context: import('@opensaas/stack-core').AccessContext
+      }
+  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    item?: User
+    context: import('@opensaas/stack-core').AccessContext
+  }) => Promise<void>
 }
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
@@ -248,7 +288,7 @@ exports[`Generate Command Integration > Generator Integration > should handle em
  */
 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'
-import type { PrismaClient } from './prisma-client/client'
+import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {

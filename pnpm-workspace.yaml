@@ -1,4 +1,15 @@
 packages:
-  - 'packages/*'
-  - 'examples/*'
-  - 'docs'
+  - packages/*
+  - examples/*
+  - docs
+
+onlyBuiltDependencies:
+  - better-sqlite3
+
+ignoredBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - esbuild
+  - prisma
+  - sharp
+  - unrs-resolver

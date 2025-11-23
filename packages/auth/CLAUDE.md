@@ -87,6 +87,67 @@ access: {
 }
 ```
 
+### Session Type Safety
+
+To get autocomplete and type safety for session fields, use module augmentation:
+
+**Step 1: Create session type declaration file**
+
+```typescript
+// types/session.d.ts
+import '@opensaas/stack-core'
+
+declare module '@opensaas/stack-core' {
+  interface Session {
+    userId: string
+    email: string
+    name: string
+    role: 'admin' | 'user'
+  }
+}
+```
+
+**Step 2: Ensure fields match your sessionFields configuration**
+
+```typescript
+authConfig({
+  sessionFields: ['userId', 'email', 'name', 'role'],
+  extendUserList: {
+    fields: {
+      role: select({
+        options: [
+          { label: 'Admin', value: 'admin' },
+          { label: 'User', value: 'user' },
+        ],
+        defaultValue: 'user',
+      }),
+    },
+  },
+})
+```
+
+**Result: Fully typed session everywhere**
+
+```typescript
+const isAdmin: AccessControl = ({ session }) => {
+  return session?.role === 'admin' // ✅ Autocomplete and type checking
+  //             ↑ Shows: userId, email, name, role
+}
+
+const context = await getContext(session)
+if (context.session?.email) {
+  // ✅ Type: string
+  // Send email...
+}
+```
+
+**Important Notes:**
+
+- Session type declaration must match your `sessionFields` configuration
+- `userId` always maps to User's `id` field
+- Add fields to `extendUserList` before including them in session
+- The session type is independent of Better Auth's internal types
+
 ### Extending User List
 
 Add custom fields to User:

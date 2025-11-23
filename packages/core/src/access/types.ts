@@ -1,10 +1,39 @@
 /**
- * Session type - can be extended by users
+ * Session interface - can be augmented by developers to add custom fields
+ *
+ * By default, Session is a permissive object that can contain any properties.
+ * To get type safety and autocomplete, use module augmentation:
+ *
+ * @example
+ * ```typescript
+ * // types/session.d.ts
+ * import '@opensaas/stack-core'
+ *
+ * declare module '@opensaas/stack-core' {
+ *   interface Session {
+ *     userId: string
+ *     email: string
+ *     role: 'admin' | 'user'
+ *   }
+ * }
+ * ```
+ *
+ * After augmentation, session will be fully typed everywhere:
+ * - Access control functions
+ * - Hooks (resolveInput, validateInput, etc.)
+ * - Context object
+ *
+ * @example
+ * ```typescript
+ * // With augmentation, this is fully typed:
+ * const isAdmin: AccessControl = ({ session }) => {
+ *   return session?.role === 'admin'  // ✅ Autocomplete works
+ * }
+ * ```
  */
-export type Session = {
-  userId?: string
+export interface Session {
   [key: string]: unknown
-} | null
+}
 
 /**
  * Generic Prisma model delegate type
@@ -116,7 +145,7 @@ export type StorageUtils = {
  * Using interface instead of type to allow module augmentation
  */
 export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  session: Session
+  session: Session | null
   prisma: TPrisma
   db: AccessControlledDB<TPrisma>
   storage: StorageUtils
@@ -137,7 +166,7 @@ export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, 
  * - PrismaFilter: Prisma where clause to filter results
  */
 export type AccessControl<T = Record<string, unknown>> = (args: {
-  session: Session
+  session: Session | null
   item?: T // Present for update/delete operations
   context: AccessContext
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>

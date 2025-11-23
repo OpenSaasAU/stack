@@ -1,5 +1,7 @@
 export { generatePrismaSchema, writePrismaSchema } from './prisma.js'
+export { generatePrismaConfig, writePrismaConfig } from './prisma-config.js'
 export { generateTypes, writeTypes } from './types.js'
+export { generateListsNamespace, writeLists } from './lists.js'
 export { patchPrismaTypes } from './type-patcher.js'
 export { generateContext, writeContext } from './context.js'
 export { generatePluginTypes, writePluginTypes } from './plugin-types.js'

@@ -8,7 +8,8 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "tsconfig.tsbuildinfo"]
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "env": ["DATABASE_URL"]
     },
     "test": {
       "dependsOn": ["build"],
@@ -17,7 +18,8 @@
     "test:coverage": {
       "dependsOn": ["build"],
       "cache": false,
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": ["DATABASE_URL"]
     },
     "dev": {
       "cache": false,

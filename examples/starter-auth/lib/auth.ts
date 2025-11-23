@@ -10,10 +10,26 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 
 /**
- * Get the current session (similar to NextAuth's auth() function)
- * Returns Better Auth session with custom fields
+ * Get the current session in OpenSaas format
+ * Extracts configured sessionFields from Better Auth session
  */
-export async function getAuth() {
+export async function getSession() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  })
+  if (!session || !session.user) return null
+  return {
+    userId: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+  }
+}
+
+/**
+ * Get the raw Better Auth session (full object with session and user)
+ * Use this when you need access to Better Auth-specific properties
+ */
+export async function getBetterAuthSession() {
   const session = await auth.api.getSession({
     headers: await headers(),
   })

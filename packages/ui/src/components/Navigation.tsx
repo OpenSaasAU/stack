@@ -1,12 +1,14 @@
 import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
 import { AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { UserMenu } from './UserMenu.js'
 
 export interface NavigationProps<TPrisma> {
   context: AccessContext<TPrisma>
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string
+  onSignOut?: () => Promise<void>
 }
 
 /**
@@ -18,6 +20,7 @@ export function Navigation<TPrisma>({
   config,
   basePath = '/admin',
   currentPath = '',
+  onSignOut,
 }: NavigationProps<TPrisma>) {
   const lists = Object.keys(config.lists || {})
 
@@ -90,27 +93,13 @@ export function Navigation<TPrisma>({
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Footer - User Menu */}
       {context.session && (
-        <div className="p-4 border-t border-border bg-gradient-to-br from-primary/5 to-accent/5">
-          <div className="flex items-center space-x-3">
-            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-sm font-bold text-primary-foreground">
-                {String(
-                  (context.session.data as Record<string, unknown>)?.name,
-                )?.[0]?.toUpperCase() || '?'}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">
-                {String((context.session.data as Record<string, unknown>)?.name) || 'User'}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                {String((context.session.data as Record<string, unknown>)?.email) || ''}
-              </p>
-            </div>
-          </div>
-        </div>
+        <UserMenu
+          userName={String((context.session.data as Record<string, unknown>)?.name) || 'User'}
+          userEmail={String((context.session.data as Record<string, unknown>)?.email) || ''}
+          onSignOut={onSignOut}
+        />
       )}
     </nav>
   )

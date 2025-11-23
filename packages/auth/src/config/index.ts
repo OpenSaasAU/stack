@@ -64,6 +64,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         console.log(`Body: ${html}`)
       }),
     betterAuthPlugins: config.betterAuthPlugins || [],
+    rateLimit: config.rateLimit,
   }
 }
 
