@@ -33,6 +33,7 @@ describe('filterWritableFields', () => {
       context: {
         session: null,
         _isSudo: true, // Use sudo to bypass access control checks
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     })
 
@@ -67,6 +68,7 @@ describe('filterWritableFields', () => {
       context: {
         session: null,
         _isSudo: true,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     })
 
@@ -102,6 +104,7 @@ describe('filterWritableFields', () => {
       context: {
         session: null,
         _isSudo: true,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     })
 
@@ -129,6 +132,7 @@ describe('filterWritableFields', () => {
       context: {
         session: null,
         _isSudo: true,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     })
 
