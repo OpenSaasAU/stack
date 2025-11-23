@@ -1,6 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
-import type { Post, User } from './.opensaas/types'
+import type { Lists } from './.opensaas/lists'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
@@ -16,7 +16,7 @@ export default config({
   },
 
   lists: {
-    User: list<User>({
+    User: list<Lists.User.TypeInfo>({
       fields: {
         name: text({
           validation: { isRequired: true },
@@ -53,7 +53,7 @@ export default config({
       },
     }),
 
-    Post: list<Post>({
+    Post: list<Lists.Post.TypeInfo>({
       fields: {
         title: text({
           validation: { isRequired: true },
