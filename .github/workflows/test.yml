@@ -25,6 +25,7 @@ jobs:
         run: turbo run test
         env:
           OPENAI_API_KEY: 'sk-testing-key'
+          DATABASE_URL: 'file:./dev.db'
 
       - name: Run tests with coverage
         run: turbo run test:coverage
