@@ -19,6 +19,22 @@ export class ValidationError extends Error {
 }
 
 /**
+ * Database error with field-specific error information
+ * Used for Prisma errors like unique constraint violations
+ */
+export class DatabaseError extends Error {
+  public fieldErrors: Record<string, string>
+  public code?: string
+
+  constructor(message: string, fieldErrors: Record<string, string> = {}, code?: string) {
+    super(message)
+    this.name = 'DatabaseError'
+    this.fieldErrors = fieldErrors
+    this.code = code
+  }
+}
+
+/**
  * Execute resolveInput hook
  * Allows modification of input data before validation
  */
