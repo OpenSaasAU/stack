@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-storage-vercel",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Vercel Blob storage provider for OpenSaas Stack file uploads",
   "type": "module",
   "exports": {

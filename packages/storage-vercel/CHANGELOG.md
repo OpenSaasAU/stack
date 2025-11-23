@@ -1,5 +1,12 @@
 # @opensaas/stack-storage-vercel
 
+## 0.2.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @opensaas/stack-storage@0.2.0
+
 ## 0.1.7
 
 ### Patch Changes

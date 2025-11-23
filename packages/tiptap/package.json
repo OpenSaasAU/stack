@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-tiptap",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Tiptap rich text editor integration for OpenSaas Stack",
   "type": "module",
   "main": "./dist/index.js",
