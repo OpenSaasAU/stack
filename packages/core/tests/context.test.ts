@@ -101,7 +101,7 @@ describe('getContext', () => {
       expect(mockPrisma.user.create).toHaveBeenCalledWith({
         data: { name: 'John', email: 'john@example.com' },
       })
-      expect(result).toEqual(mockCreatedUser)
+      expect(result).toEqual({ success: true, data: mockCreatedUser })
     })
 
     it('should update an item', async () => {
@@ -121,7 +121,7 @@ describe('getContext', () => {
 
       expect(mockPrisma.user.findUnique).toHaveBeenCalled()
       expect(mockPrisma.user.update).toHaveBeenCalled()
-      expect(result).toEqual(mockUpdatedUser)
+      expect(result).toEqual({ success: true, data: mockUpdatedUser })
     })
 
     it('should delete an item', async () => {
@@ -139,7 +139,7 @@ describe('getContext', () => {
 
       expect(mockPrisma.user.findUnique).toHaveBeenCalled()
       expect(mockPrisma.user.delete).toHaveBeenCalled()
-      expect(result).toEqual(mockDeletedUser)
+      expect(result).toEqual({ success: true, data: mockDeletedUser })
     })
 
     it('should convert listKey to lowercase for db operations', async () => {
@@ -147,16 +147,17 @@ describe('getContext', () => {
       mockPrisma.post.create.mockResolvedValue(mockCreatedPost)
 
       const context = await getContext(config, mockPrisma, null)
-      await context.serverAction({
+      const result = await context.serverAction({
         listKey: 'Post',
         action: 'create',
         data: { title: 'Test Post' },
       })
 
       expect(mockPrisma.post.create).toHaveBeenCalled()
+      expect(result).toEqual({ success: true, data: mockCreatedPost })
     })
 
-    it('should return null for unknown action', async () => {
+    it('should return error for unknown action', async () => {
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
         listKey: 'User',
@@ -164,7 +165,38 @@ describe('getContext', () => {
         data: {},
       })
 
-      expect(result).toBeNull()
+      expect(result).toEqual({ success: false, error: 'Access denied or operation failed' })
+    })
+
+    it('should return error for unknown list', async () => {
+      const context = await getContext(config, mockPrisma, null)
+      const result = await context.serverAction({
+        listKey: 'UnknownList',
+        action: 'create',
+        data: {},
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: 'List "UnknownList" not found in configuration',
+      })
+    })
+
+    it('should handle database errors', async () => {
+      const dbError = new Error('Database connection failed')
+      mockPrisma.user.create.mockRejectedValue(dbError)
+
+      const context = await getContext(config, mockPrisma, null)
+      const result = await context.serverAction({
+        listKey: 'User',
+        action: 'create',
+        data: { name: 'John', email: 'john@example.com' },
+      })
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'Database connection failed',
+      })
     })
   })
 
