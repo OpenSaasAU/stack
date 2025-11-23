@@ -2,7 +2,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
 import { richText } from '@opensaas/stack-tiptap/fields'
 import type { AccessControl } from '@opensaas/stack-core'
-import type { User, Article } from '@/.opensaas/types'
+import type { Lists } from '@/.opensaas/lists'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
@@ -35,7 +35,7 @@ export default config({
   },
 
   lists: {
-    User: list<User>({
+    User: list<Lists.User.TypeInfo>({
       fields: {
         name: text({
           validation: { isRequired: true },
@@ -59,7 +59,7 @@ export default config({
       },
     }),
 
-    Article: list<Article>({
+    Article: list<Lists.Article.TypeInfo>({
       fields: {
         title: text({
           validation: { isRequired: true },

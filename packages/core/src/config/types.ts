@@ -345,6 +345,42 @@ export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TIte
   [K in keyof TFields]: WithItemType<TFields[K], TItem>
 }
 
+/**
+ * TypeInfo interface for list type information
+ * Provides a structured way to pass all type information for a list
+ * Inspired by Keystone's TypeInfo pattern
+ *
+ * @template TKey - The list key/name (e.g., 'Post', 'User')
+ * @template TItem - The output type (Prisma model type)
+ * @template TCreateInput - The Prisma create input type
+ * @template TUpdateInput - The Prisma update input type
+ *
+ * @example
+ * ```typescript
+ * type PostTypeInfo = {
+ *   key: 'Post'
+ *   item: Post
+ *   inputs: {
+ *     create: Prisma.PostCreateInput
+ *     update: Prisma.PostUpdateInput
+ *   }
+ * }
+ * ```
+ */
+export interface TypeInfo<
+  TKey extends string = string,
+  TItem = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  TCreateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  TUpdateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+> {
+  key: TKey
+  item: TItem
+  inputs: {
+    create: TCreateInput
+    update: TUpdateInput
+  }
+}
+
 // Generic `any` default allows OperationAccess to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
