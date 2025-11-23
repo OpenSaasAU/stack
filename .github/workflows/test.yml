@@ -85,6 +85,7 @@ jobs:
           CI: true
           DATABASE_URL: 'file:./dev.db'
           BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers123'
 
       - name: Upload Playwright report
         if: always()
