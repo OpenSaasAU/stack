@@ -1,11 +1,16 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": ["@changesets/changelog-github", { "repo": "OpenSaasAU/stack" }],
   "commit": false,
-  "fixed": [],
+  "fixed": [["@opensaas/stack-*"]],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
-  "updateInternalDependencies": "minor",
-  "ignore": ["opensaas-*-example", "opensaas-stack-docs"]
+  "privatePackages": {
+    "version": false
+  },
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true,
+    "updateInternalDependencies": "patch"
+  }
 }
