@@ -1022,10 +1022,10 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.709.0
         version: 3.937.0
+    devDependencies:
       '@opensaas/stack-storage':
         specifier: workspace:*
         version: link:../storage
-    devDependencies:
       '@types/node':
         specifier: ^24.7.2
         version: 24.10.0
@@ -1041,13 +1041,13 @@ importers:
 
   packages/storage-vercel:
     dependencies:
-      '@opensaas/stack-storage':
-        specifier: workspace:*
-        version: link:../storage
       '@vercel/blob':
         specifier: ^2.0.0
         version: 2.0.0
     devDependencies:
+      '@opensaas/stack-storage':
+        specifier: workspace:*
+        version: link:../storage
       '@types/node':
         specifier: ^24.7.2
         version: 24.10.0

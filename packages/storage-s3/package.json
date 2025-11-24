@@ -20,10 +20,10 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.709.0",
-    "@aws-sdk/s3-request-presigner": "^3.709.0",
-    "@opensaas/stack-storage": "workspace:*"
+    "@aws-sdk/s3-request-presigner": "^3.709.0"
   },
   "devDependencies": {
+    "@opensaas/stack-storage": "workspace:*",
     "@types/node": "^24.7.2",
     "@vitest/coverage-v8": "^4.0.4",
     "typescript": "^5.9.3",
