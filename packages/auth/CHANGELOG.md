@@ -1,5 +1,11 @@
 # @opensaas/stack-auth
 
+## 0.3.0
+
+### Minor Changes
+
+- [#133](https://github.com/OpenSaasAU/stack/pull/133) [`4ed7ba4`](https://github.com/OpenSaasAU/stack/commit/4ed7ba4ee4a08bacc76a40fc9f38a11fe0f00683) Thanks [@renovate](https://github.com/apps/renovate)! - Update to latest better-auth
+
 ## 0.2.0
 
 ### Minor Changes
