@@ -15,6 +15,9 @@ jobs:
       - name: Setup project
         uses: ./.github/actions/setup
 
+      - name: Ensure package version consistency
+        run: pnpm manypkg check
+
       - name: Lint codebase
         run: pnpm lint
 

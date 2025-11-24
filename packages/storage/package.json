@@ -38,11 +38,11 @@
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
-    "@vitest/coverage-v8": "^4.0.5",
+    "@vitest/coverage-v8": "^4.0.4",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.5"
+    "vitest": "^4.0.0"
   },
   "peerDependencies": {
     "@opensaas/stack-core": "^0"
