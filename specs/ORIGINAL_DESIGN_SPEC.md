@@ -312,9 +312,7 @@ export type PostCreateInput = {
 
 export type PostUpdateInput = Partial<Omit<Post, 'id' | 'createdAt' | 'updatedAt'>>
 
-export type PostWhereInput = {
-  // Prisma where input types
-}
+export type PostWhereInput = { // Prisma where input types }
 
 // Full Context type with all lists
 export type Context = {
@@ -327,9 +325,7 @@ export type Context = {
       delete: (args: { where: { id: string } }) => Promise<Post | null>
       count: (args: { where?: PostWhereInput }) => Promise<number>
     }
-    user: {
-      // ... similar for User
-    }
+    user: { // ... similar for User }
   }
   session: Session | null
   prisma: PrismaClient

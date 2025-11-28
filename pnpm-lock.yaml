@@ -52,7 +52,7 @@ importers:
         version: 1.57.0
       prettier:
         specifier: ^3.4.2
-        version: 3.6.2
+        version: 3.7.1
       turbo:
         specifier: ^2.5.8
         version: 2.6.1
@@ -116,7 +116,7 @@ importers:
         version: 16.0.5(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
       prettier:
         specifier: ^3.4.2
-        version: 3.6.2
+        version: 3.7.1
       tailwindcss:
         specifier: ^4.0.0
         version: 4.1.17
@@ -620,7 +620,7 @@ importers:
         version: 8.5.6
       prettier:
         specifier: ^3.4.2
-        version: 3.6.2
+        version: 3.7.1
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -5808,8 +5808,8 @@ packages:
     engines: {node: '>=10.13.0'}
     hasBin: true
 
-  prettier@3.6.2:
-    resolution: {integrity: sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ==}
+  prettier@3.7.1:
+    resolution: {integrity: sha512-RWKXE4qB3u5Z6yz7omJkjWwmTfLdcbv44jUVHC5NpfXwFGzvpQM798FGv/6WNK879tc+Cn0AAyherCl1KjbyZQ==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -12027,7 +12027,7 @@ snapshots:
 
   prettier@2.8.8: {}
 
-  prettier@3.6.2: {}
+  prettier@3.7.1: {}
 
   pretty-format@27.5.1:
     dependencies:

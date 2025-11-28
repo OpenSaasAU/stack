@@ -58,9 +58,8 @@ export async function generateCommand() {
 
       try {
         // Import plugin engine (avoid circular dependency)
-        const { executeBeforeGenerateHooks } = await import(
-          '@opensaas/stack-core/config/plugin-engine'
-        )
+        const { executeBeforeGenerateHooks } =
+          await import('@opensaas/stack-core/config/plugin-engine')
         config = await executeBeforeGenerateHooks(config)
         pluginSpinner.succeed(chalk.green('Plugin beforeGenerate hooks complete'))
       } catch (err) {
@@ -107,9 +106,8 @@ export async function generateCommand() {
           }
 
           // Execute afterGenerate hooks
-          const { executeAfterGenerateHooks } = await import(
-            '@opensaas/stack-core/config/plugin-engine'
-          )
+          const { executeAfterGenerateHooks } =
+            await import('@opensaas/stack-core/config/plugin-engine')
           const modifiedFiles = await executeAfterGenerateHooks(config, generatedFiles)
 
           // Write back modified files
