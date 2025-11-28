@@ -170,8 +170,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -219,8 +219,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -268,8 +268,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -317,8 +317,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -375,8 +375,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -424,8 +424,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -479,8 +479,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -534,8 +534,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -613,8 +613,8 @@ importers:
         specifier: ^10.4.20
         version: 10.4.21(postcss@8.5.6)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       postcss:
         specifier: ^8.4.49
         version: 8.5.6
@@ -683,8 +683,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@11.10.0)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -750,8 +750,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@11.10.0)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -805,8 +805,8 @@ importers:
         specifier: ^19.2.2
         version: 19.2.3(@types/react@19.2.7)
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       prisma:
         specifier: ^7.0.0
         version: 7.0.0(@types/react@19.2.7)(better-sqlite3@12.4.5)(magicast@0.3.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -952,8 +952,8 @@ importers:
   packages/rag:
     dependencies:
       dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
+        specifier: ^17.0.0
+        version: 17.2.3
       zod:
         specifier: ^4.1.12
         version: 4.1.13
@@ -4317,6 +4317,10 @@ packages:
 
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+    engines: {node: '>=12'}
+
+  dotenv@17.2.3:
+    resolution: {integrity: sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==}
     engines: {node: '>=12'}
 
   dotenv@8.6.0:
@@ -10394,6 +10398,8 @@ snapshots:
 
   dotenv@16.6.1: {}
 
+  dotenv@17.2.3: {}
+
   dotenv@8.6.0: {}
 
   dunder-proto@1.0.1:
@@ -10608,7 +10614,7 @@ snapshots:
       eslint: 9.39.1(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.1(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.1(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.1(jiti@2.6.1))
       eslint-plugin-react-hooks: 7.0.1(eslint@9.39.1(jiti@2.6.1))
@@ -10645,7 +10651,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.1(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -10660,7 +10666,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.1(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.48.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1)))(eslint@9.39.1(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
