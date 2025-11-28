@@ -37,8 +37,10 @@ export interface FileFieldConfig extends BaseFieldConfig<FileMetadata | null, Fi
 /**
  * Image field configuration
  */
-export interface ImageFieldConfig
-  extends BaseFieldConfig<ImageMetadata | null, ImageMetadata | null> {
+export interface ImageFieldConfig extends BaseFieldConfig<
+  ImageMetadata | null,
+  ImageMetadata | null
+> {
   type: 'image'
   /** Name of the storage provider from config.storage */
   storage: string
