@@ -2,7 +2,7 @@
  * Schema generator - converts OpenSaas config to table definitions
  */
 import type { OpenSaasConfig, FieldConfig, RelationshipField } from '@opensaas/stack-core'
-import type { TableDefinition, ColumnDefinition } from '../types/index.js'
+import type { TableDefinition, ColumnDefinition, RelationshipMap } from '../types/index.js'
 
 /**
  * Map OpenSaas field types to database column types
@@ -166,4 +166,48 @@ export function generateCreateTableSQL(
 
     return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(table.name)} (\n${allDefs.join(',\n')}\n);`
   })
+}
+
+/**
+ * Generate relationship maps for all tables
+ */
+export function generateRelationshipMaps(
+  config: OpenSaasConfig,
+): Record<string, RelationshipMap> {
+  const relationshipMaps: Record<string, RelationshipMap> = {}
+
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
+    const relationships: RelationshipMap = {}
+
+    for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      if (fieldConfig.type === 'relationship') {
+        const relField = fieldConfig as RelationshipField
+        const { list: targetList, field: targetField } = parseRelationshipRef(relField.ref)
+
+        if (relField.many) {
+          // One-to-many: foreign key is on the target table
+          relationships[fieldName] = {
+            name: fieldName,
+            type: 'one-to-many',
+            targetTable: targetList,
+            foreignKey: `${fieldName}Id`, // The FK on the target table
+            targetField: targetField,
+          }
+        } else {
+          // Many-to-one: foreign key is on this table
+          relationships[fieldName] = {
+            name: fieldName,
+            type: 'many-to-one',
+            targetTable: targetList,
+            foreignKey: `${fieldName}Id`, // The FK on this table
+            targetField: targetField,
+          }
+        }
+      }
+    }
+
+    relationshipMaps[listName] = relationships
+  }
+
+  return relationshipMaps
 }

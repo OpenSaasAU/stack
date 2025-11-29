@@ -62,9 +62,24 @@ async function main() {
   await adapter.createTable(postTable)
   console.log('✅ Created tables: User, Post\n')
 
-  // Create query builders
-  const users = new QueryBuilder(adapter, 'User', userTable)
-  const posts = new QueryBuilder(adapter, 'Post', postTable)
+  // Create query builders with relationship metadata
+  const users = new QueryBuilder(adapter, 'User', userTable, {
+    posts: {
+      name: 'posts',
+      type: 'one-to-many',
+      targetTable: 'Post',
+      foreignKey: 'authorId',
+    },
+  })
+
+  const posts = new QueryBuilder(adapter, 'Post', postTable, {
+    author: {
+      name: 'author',
+      type: 'many-to-one',
+      targetTable: 'User',
+      foreignKey: 'authorId',
+    },
+  })
 
   // Create users
   console.log('3. Creating users...')
@@ -182,6 +197,55 @@ async function main() {
   const remainingPosts = await posts.count()
   console.log(`✅ Remaining posts: ${remainingPosts}`)
 
+  // Relationship loading with include
+  console.log('\n9. Testing relationship loading (include)...\n')
+
+  console.log('   a) Load post with author (many-to-one):')
+  const postWithAuthor = await posts.findUnique({
+    where: { id: post1.id as string },
+    include: { author: true },
+  })
+  console.log(`   ✅ Post: "${postWithAuthor!.title}"`)
+  console.log(
+    `      Author: ${(postWithAuthor!.author as any).name} (${(postWithAuthor!.author as any).email})`,
+  )
+
+  console.log('\n   b) Load user with all posts (one-to-many):')
+  const userWithPosts = await users.findUnique({
+    where: { id: john.id as string },
+    include: { posts: true },
+  })
+  console.log(`   ✅ User: ${userWithPosts!.name}`)
+  console.log(`      Posts: ${(userWithPosts!.posts as any[]).length} total`)
+  ;(userWithPosts!.posts as any[]).forEach((p: any) => {
+    console.log(`      - ${p.title} (${p.status})`)
+  })
+
+  console.log('\n   c) Load user with filtered posts (published only):')
+  const userWithPublishedPosts = await users.findUnique({
+    where: { id: john.id as string },
+    include: {
+      posts: {
+        where: { status: { equals: 'published' } },
+      },
+    },
+  })
+  console.log(`   ✅ User: ${userWithPublishedPosts!.name}`)
+  console.log(`      Published posts: ${(userWithPublishedPosts!.posts as any[]).length}`)
+  ;(userWithPublishedPosts!.posts as any[]).forEach((p: any) => {
+    console.log(`      - ${p.title}`)
+  })
+
+  console.log('\n   d) Load all posts with authors:')
+  const postsWithAuthors = await posts.findMany({
+    where: { status: { equals: 'published' } },
+    include: { author: true },
+  })
+  console.log(`   ✅ Found ${postsWithAuthors.length} published posts with authors`)
+  postsWithAuthors.forEach((p: any) => {
+    console.log(`      - "${p.title}" by ${p.author.name}`)
+  })
+
   // Cleanup
   await adapter.disconnect()
   fs.unlinkSync(DB_PATH)
@@ -193,6 +257,8 @@ async function main() {
   console.log('  • No impedance mismatch - direct config to DB')
   console.log('  • Type-safe and predictable')
   console.log('  • No generated code needed')
+  console.log('  • Relationship loading works seamlessly with include')
+  console.log('  • Nested where filters in includes for fine-grained control')
 }
 
 main().catch(console.error)

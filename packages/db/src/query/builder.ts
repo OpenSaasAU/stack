@@ -7,24 +7,189 @@ import type {
   WhereFilter,
   DatabaseRow,
   TableDefinition,
+  RelationshipMap,
+  IncludeArgs,
 } from '../types/index.js'
 import { filterToSQL, mergeFilters } from '../utils/filter.js'
 
 export class QueryBuilder {
+  private relationships: RelationshipMap = {}
+  private static queryBuilders: Map<string, QueryBuilder> = new Map()
+
   constructor(
     private adapter: DatabaseAdapter,
     private tableName: string,
     private schema: TableDefinition,
-  ) {}
+    relationships?: RelationshipMap,
+  ) {
+    if (relationships) {
+      this.relationships = relationships
+    }
+    // Register this query builder for relationship lookups
+    QueryBuilder.queryBuilders.set(tableName, this)
+  }
+
+  /**
+   * Get a registered query builder by table name
+   */
+  private getQueryBuilder(tableName: string): QueryBuilder | undefined {
+    return QueryBuilder.queryBuilders.get(tableName)
+  }
+
+  /**
+   * Load relationships for a single record
+   */
+  private async loadRelationshipsForRecord(
+    record: DatabaseRow,
+    include?: Record<string, IncludeArgs>,
+  ): Promise<DatabaseRow> {
+    if (!include) return record
+
+    const result = { ...record }
+
+    for (const [fieldName, includeArg] of Object.entries(include)) {
+      const relationship = this.relationships[fieldName]
+      if (!relationship) {
+        console.warn(`Relationship "${fieldName}" not found on ${this.tableName}`)
+        continue
+      }
+
+      const targetBuilder = this.getQueryBuilder(relationship.targetTable)
+      if (!targetBuilder) {
+        console.warn(`Query builder for "${relationship.targetTable}" not found`)
+        continue
+      }
+
+      const whereFilter = typeof includeArg === 'object' ? includeArg.where : undefined
+
+      if (relationship.type === 'many-to-one') {
+        // e.g., Post.author - foreign key is on current table
+        const foreignKeyValue = record[relationship.foreignKey]
+        if (foreignKeyValue) {
+          const relatedRecord = await targetBuilder.findUnique({
+            where: { id: foreignKeyValue as string },
+          })
+          // Apply where filter if provided
+          if (relatedRecord && whereFilter) {
+            const filterResult = this.matchesFilter(relatedRecord, whereFilter)
+            result[fieldName] = filterResult ? relatedRecord : null
+          } else {
+            result[fieldName] = relatedRecord
+          }
+        } else {
+          result[fieldName] = null
+        }
+      } else {
+        // e.g., User.posts - foreign key is on target table
+        const filter: WhereFilter = {
+          [relationship.foreignKey]: { equals: record.id },
+        }
+        // Merge with user-provided where filter
+        const finalFilter = whereFilter ? { AND: [filter, whereFilter] } : filter
+
+        const relatedRecords = await targetBuilder.findMany({
+          where: finalFilter,
+        })
+        result[fieldName] = relatedRecords
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Load relationships for multiple records
+   */
+  private async loadRelationshipsForRecords(
+    records: DatabaseRow[],
+    include?: Record<string, IncludeArgs>,
+  ): Promise<DatabaseRow[]> {
+    if (!include || records.length === 0) return records
+
+    // For efficiency, we could batch load relationships
+    // For now, keep it simple and load per record
+    return Promise.all(records.map((record) => this.loadRelationshipsForRecord(record, include)))
+  }
+
+  /**
+   * Check if a record matches a filter (for in-memory filtering)
+   */
+  private matchesFilter(record: DatabaseRow, filter: WhereFilter): boolean {
+    // Simple implementation - checks direct equality and basic operators
+    for (const [key, value] of Object.entries(filter)) {
+      if (key === 'AND') {
+        const conditions = value as WhereFilter[]
+        if (!conditions.every((f) => this.matchesFilter(record, f))) {
+          return false
+        }
+      } else if (key === 'OR') {
+        const conditions = value as WhereFilter[]
+        if (!conditions.some((f) => this.matchesFilter(record, f))) {
+          return false
+        }
+      } else if (key === 'NOT') {
+        if (this.matchesFilter(record, value as WhereFilter)) {
+          return false
+        }
+      } else {
+        // Field filter
+        const fieldValue = record[key]
+        if (typeof value === 'object' && value !== null) {
+          const operator = value as Record<string, unknown>
+          if ('equals' in operator && fieldValue !== operator.equals) return false
+          if ('not' in operator && fieldValue === operator.not) return false
+          if ('in' in operator && !(operator.in as unknown[]).includes(fieldValue)) return false
+          if ('notIn' in operator && (operator.notIn as unknown[]).includes(fieldValue))
+            return false
+          if ('gt' in operator && !(fieldValue > operator.gt)) return false
+          if ('gte' in operator && !(fieldValue >= operator.gte)) return false
+          if ('lt' in operator && !(fieldValue < operator.lt)) return false
+          if ('lte' in operator && !(fieldValue <= operator.lte)) return false
+          if (
+            'contains' in operator &&
+            !(typeof fieldValue === 'string' && fieldValue.includes(operator.contains as string))
+          )
+            return false
+          if (
+            'startsWith' in operator &&
+            !(
+              typeof fieldValue === 'string' && fieldValue.startsWith(operator.startsWith as string)
+            )
+          )
+            return false
+          if (
+            'endsWith' in operator &&
+            !(typeof fieldValue === 'string' && fieldValue.endsWith(operator.endsWith as string))
+          )
+            return false
+        } else {
+          // Direct equality
+          if (fieldValue !== value) return false
+        }
+      }
+    }
+    return true
+  }
 
   /**
    * Find a single record by ID
    */
-  async findUnique(args: { where: { id: string } }): Promise<DatabaseRow | null> {
+  async findUnique(args: {
+    where: { id: string }
+    include?: Record<string, IncludeArgs>
+  }): Promise<DatabaseRow | null> {
     const dialect = this.adapter.getDialect()
     const sql = `SELECT * FROM ${dialect.quoteIdentifier(this.tableName)} WHERE ${dialect.quoteIdentifier('id')} = ${dialect.getPlaceholder(0)} LIMIT 1`
 
-    return this.adapter.queryOne(sql, [args.where.id])
+    const record = await this.adapter.queryOne(sql, [args.where.id])
+    if (!record) return null
+
+    // Load relationships if requested
+    if (args.include) {
+      return this.loadRelationshipsForRecord(record, args.include)
+    }
+
+    return record
   }
 
   /**
@@ -64,7 +229,14 @@ export class QueryBuilder {
     }
 
     const sql = parts.join(' ')
-    return this.adapter.query(sql, params)
+    const records = await this.adapter.query(sql, params)
+
+    // Load relationships if requested
+    if (args?.include) {
+      return this.loadRelationshipsForRecords(records, args.include)
+    }
+
+    return records
   }
 
   /**

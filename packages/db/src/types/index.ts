@@ -67,14 +67,37 @@ export type WhereFilter = {
 }
 
 /**
+ * Include arguments for relationships
+ */
+export type IncludeArgs = boolean | { where?: WhereFilter }
+
+/**
  * Query arguments
  */
 export interface QueryArgs {
   where?: WhereFilter
   take?: number
   skip?: number
-  include?: Record<string, boolean | { where?: WhereFilter }>
+  include?: Record<string, IncludeArgs>
   orderBy?: Record<string, 'asc' | 'desc'>
+}
+
+/**
+ * Relationship definition
+ */
+export interface RelationshipDefinition {
+  name: string
+  type: 'one-to-many' | 'many-to-one'
+  targetTable: string
+  foreignKey: string // Column name on the table that holds the FK
+  targetField?: string // Field name in the target table (for reverse lookup)
+}
+
+/**
+ * Relationship map for a table
+ */
+export interface RelationshipMap {
+  [fieldName: string]: RelationshipDefinition
 }
 
 /**

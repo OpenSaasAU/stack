@@ -1,5 +1,9 @@
 /**
  * Schema generation
  */
-export { generateTableDefinitions, generateCreateTableSQL } from './generator.js'
-export type { TableDefinition, ColumnDefinition } from '../types/index.js'
+export {
+  generateTableDefinitions,
+  generateCreateTableSQL,
+  generateRelationshipMaps,
+} from './generator.js'
+export type { TableDefinition, ColumnDefinition, RelationshipMap } from '../types/index.js'
