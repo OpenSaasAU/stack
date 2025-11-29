@@ -1,6 +1,6 @@
 /**
  * PostgreSQL database adapter
- * Supports both native pg and Neon serverless
+ * Accepts a driver instance (pg Pool or Neon Pool) for maximum flexibility
  */
 import type {
   DatabaseAdapter,
@@ -13,8 +13,9 @@ import type {
 
 /**
  * Generic connection interface for pg and Neon
+ * Both pg.Pool and Neon Pool implement this interface
  */
-export interface PostgresConnection {
+export interface PostgresDriver {
   query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>
   end?(): Promise<void>
 }
@@ -57,97 +58,51 @@ export class PostgreSQLDialect implements DatabaseDialect {
 /**
  * PostgreSQL adapter configuration
  */
-export interface PostgreSQLConfig extends DatabaseConfig {
+export interface PostgreSQLConfig extends Omit<DatabaseConfig, 'url'> {
   provider: 'postgresql'
   /**
-   * Connection type
-   * - 'pg': Native PostgreSQL driver (pg.Pool)
-   * - 'neon': Neon serverless driver
+   * PostgreSQL driver instance (pg.Pool or Neon Pool)
+   * This gives you full control over driver configuration
    */
-  connectionType?: 'pg' | 'neon'
-  /**
-   * Connection string (for both pg and Neon)
-   */
-  url: string
-  /**
-   * Optional pg Pool configuration
-   */
-  poolConfig?: {
-    max?: number
-    idleTimeoutMillis?: number
-    connectionTimeoutMillis?: number
-  }
+  driver: PostgresDriver
 }
 
 export class PostgreSQLAdapter implements DatabaseAdapter {
-  private connection: PostgresConnection | null = null
+  private driver: PostgresDriver
   private dialect = new PostgreSQLDialect()
-  private config: PostgreSQLConfig
 
   constructor(config: PostgreSQLConfig) {
-    this.config = config
+    this.driver = config.driver
   }
 
   async connect(): Promise<void> {
-    const connectionType = this.config.connectionType || 'pg'
-
-    if (connectionType === 'pg') {
-      // Dynamic import for pg
-      const { default: pg } = await import('pg')
-      const { Pool } = pg
-
-      const pool = new Pool({
-        connectionString: this.config.url,
-        ...this.config.poolConfig,
-      })
-
-      this.connection = pool
-    } else if (connectionType === 'neon') {
-      // Dynamic import for Neon
-      const { neonConfig, Pool } = await import('@neondatabase/serverless')
-
-      // Configure for Node.js environment (WebSocket)
-      if (typeof WebSocket === 'undefined') {
-        const { default: ws } = await import('ws')
-        neonConfig.webSocketConstructor = ws
-      }
-
-      const pool = new Pool({ connectionString: this.config.url })
-      this.connection = pool
-    } else {
-      throw new Error(`Unknown connection type: ${connectionType}`)
+    // Connection is already established via the driver
+    // Just verify it works with a simple query
+    try {
+      await this.driver.query('SELECT 1')
+    } catch (error) {
+      throw new Error(`Failed to connect to PostgreSQL: ${error}`)
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.connection && 'end' in this.connection && this.connection.end) {
-      await this.connection.end()
-      this.connection = null
+    if (this.driver.end) {
+      await this.driver.end()
     }
-  }
-
-  private getConnection(): PostgresConnection {
-    if (!this.connection) {
-      throw new Error('Database not connected. Call connect() first.')
-    }
-    return this.connection
   }
 
   async query<T = DatabaseRow>(sql: string, params: unknown[] = []): Promise<T[]> {
-    const conn = this.getConnection()
-    const result = await conn.query(sql, params)
+    const result = await this.driver.query(sql, params)
     return result.rows as T[]
   }
 
   async queryOne<T = DatabaseRow>(sql: string, params: unknown[] = []): Promise<T | null> {
-    const conn = this.getConnection()
-    const result = await conn.query(sql, params)
+    const result = await this.driver.query(sql, params)
     return (result.rows[0] as T) || null
   }
 
   async execute(sql: string, params: unknown[] = []): Promise<void> {
-    const conn = this.getConnection()
-    await conn.query(sql, params)
+    await this.driver.query(sql, params)
   }
 
   async createTable(table: TableDefinition): Promise<void> {

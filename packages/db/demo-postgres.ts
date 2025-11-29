@@ -1,14 +1,11 @@
 /**
- * PostgreSQL Demo - Works with both pg and Neon
+ * PostgreSQL Demo - Dependency injection pattern
  *
  * Usage:
  *   # With native pg
  *   DATABASE_URL=postgresql://localhost:5432/test npx tsx demo-postgres.ts
  *
  *   # With Neon serverless
- *   DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/dbname?sslmode=require npx tsx demo-postgres.ts pg
- *
- *   # Explicitly use Neon adapter
  *   DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/dbname?sslmode=require npx tsx demo-postgres.ts neon
  */
 
@@ -17,7 +14,7 @@ import { QueryBuilder } from './src/query/builder.js'
 import type { TableDefinition } from './src/types/index.js'
 
 const DATABASE_URL = process.env.DATABASE_URL
-const CONNECTION_TYPE = (process.argv[2] as 'pg' | 'neon') || 'pg'
+const DRIVER_TYPE = (process.argv[2] as 'pg' | 'neon') || 'pg'
 
 async function main() {
   if (!DATABASE_URL) {
@@ -29,15 +26,40 @@ async function main() {
   }
 
   console.log('🚀 PostgreSQL Custom ORM Demo\n')
-  console.log(`📡 Connection type: ${CONNECTION_TYPE}`)
+  console.log(`📡 Driver type: ${DRIVER_TYPE}`)
   console.log(`🔗 Database URL: ${DATABASE_URL.replace(/\/\/.*@/, '//***:***@')}\n`)
 
-  // Create adapter
+  // Create driver instance (you have full control here!)
+  let driver
+
+  if (DRIVER_TYPE === 'pg') {
+    console.log('Creating native pg Pool...')
+    const pg = await import('pg')
+    const { Pool } = pg.default
+
+    driver = new Pool({
+      connectionString: DATABASE_URL,
+      max: 20, // You control pool size
+      idleTimeoutMillis: 30000,
+    })
+  } else {
+    console.log('Creating Neon serverless Pool...')
+    const { Pool, neonConfig } = await import('@neondatabase/serverless')
+
+    // Configure WebSocket for Node.js
+    if (typeof WebSocket === 'undefined') {
+      const { default: ws } = await import('ws')
+      neonConfig.webSocketConstructor = ws
+    }
+
+    driver = new Pool({ connectionString: DATABASE_URL })
+  }
+
+  // Create adapter with your driver
   console.log('1. Creating PostgreSQL adapter...')
   const adapter = new PostgreSQLAdapter({
     provider: 'postgresql',
-    url: DATABASE_URL,
-    connectionType: CONNECTION_TYPE,
+    driver, // Pass in your configured driver
   })
 
   try {
@@ -153,14 +175,7 @@ async function main() {
     console.log(`   ✅ Found ${highViews.length} posts with >50 views`)
     highViews.forEach((p) => console.log(`      - ${p.title} (${p.views} views)`))
 
-    console.log('\n   c) Find posts by specific author:')
-    const johnsPosts = await posts.findMany({
-      where: { authorId: { equals: john.id } },
-    })
-    console.log(`   ✅ Found ${johnsPosts.length} posts by John`)
-    johnsPosts.forEach((p) => console.log(`      - ${p.title}`))
-
-    console.log('\n   d) Complex filter (published AND high views):')
+    console.log('\n   c) Complex filter (published AND high views):')
     const featuredPosts = await posts.findMany({
       where: {
         AND: [{ status: { equals: 'published' } }, { views: { gt: 50 } }],
@@ -169,45 +184,30 @@ async function main() {
     console.log(`   ✅ Found ${featuredPosts.length} featured posts`)
     featuredPosts.forEach((p) => console.log(`      - ${p.title} (${p.views} views)`))
 
-    console.log('\n   e) Boolean filter (published = true):')
-    const publishedBoolean = await posts.findMany({
-      where: { published: { equals: true } },
-    })
-    console.log(`   ✅ Found ${publishedBoolean.length} published posts (boolean)`)
-    publishedBoolean.forEach((p) => console.log(`      - ${p.title}`))
-
     // Update
     console.log('\n6. Testing update...')
     const updated = await posts.update({
       where: { id: post2.id as string },
-      data: { status: 'published', published: true, views: 10 },
+      data: { status: 'published', published: true },
     })
     console.log(`✅ Updated "${updated!.title}" status to ${updated!.status}`)
 
     // Count
     console.log('\n7. Testing count...')
     const totalPosts = await posts.count()
-    const publishedCount = await posts.count({
-      where: { status: { equals: 'published' } },
-    })
     console.log(`✅ Total posts: ${totalPosts}`)
-    console.log(`✅ Published posts: ${publishedCount}`)
 
     // Delete
     console.log('\n8. Testing delete...')
     const deleted = await posts.delete({ where: { id: post3.id as string } })
     console.log(`✅ Deleted post: "${deleted!.title}"`)
 
-    const remainingPosts = await posts.count()
-    console.log(`✅ Remaining posts: ${remainingPosts}`)
-
     console.log('\n✨ Demo complete!\n')
     console.log('Key observations:')
-    console.log('  • PostgreSQL native types work great (BOOLEAN, TIMESTAMP)')
-    console.log('  • $1, $2 placeholders work correctly')
-    console.log('  • Foreign keys enforced properly')
-    console.log('  • RETURNING clause for efficient creates/updates')
-    console.log(`  • ${CONNECTION_TYPE} driver working perfectly`)
+    console.log('  • Dependency injection pattern - you control the driver')
+    console.log('  • No dynamic imports in adapter - better tree-shaking')
+    console.log('  • Full control over connection pooling')
+    console.log(`  • ${DRIVER_TYPE} driver working perfectly`)
   } catch (error) {
     console.error('\n❌ Error:', error)
     throw error

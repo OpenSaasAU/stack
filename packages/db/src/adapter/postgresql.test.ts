@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest'
 import { PostgreSQLAdapter } from './postgresql.js'
 import { QueryBuilder } from '../query/builder.js'
 import type { TableDefinition } from '../types/index.js'
+import type { PostgresDriver } from './postgresql.js'
 
 // Skip tests if DATABASE_URL is not set
 const DATABASE_URL = process.env.DATABASE_URL
@@ -20,6 +21,7 @@ const shouldRun = DATABASE_URL && DATABASE_URL.includes('postgres')
 
 describe.skipIf(!shouldRun)('PostgreSQLAdapter', () => {
   let adapter: PostgreSQLAdapter
+  let driver: PostgresDriver
 
   beforeAll(async () => {
     if (!shouldRun) {
@@ -30,10 +32,18 @@ describe.skipIf(!shouldRun)('PostgreSQLAdapter', () => {
   beforeEach(async () => {
     if (!DATABASE_URL) return
 
+    // Create driver instance (dependency injection pattern)
+    const pg = await import('pg')
+    const { Pool } = pg.default
+
+    driver = new Pool({
+      connectionString: DATABASE_URL,
+    })
+
+    // Create adapter with driver
     adapter = new PostgreSQLAdapter({
       provider: 'postgresql',
-      url: DATABASE_URL,
-      connectionType: 'pg',
+      driver,
     })
 
     await adapter.connect()

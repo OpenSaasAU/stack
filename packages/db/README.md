@@ -68,15 +68,23 @@ const post = await posts.create({
 })
 ```
 
-### PostgreSQL (Native)
+### PostgreSQL (Native pg)
 
 ```typescript
 import { PostgreSQLAdapter } from '@opensaas/stack-db/adapter'
-// Create PostgreSQL adapter (native pg)
+import { Pool } from 'pg'
+
+// Create your own pg Pool (full control over configuration)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Configure pool size
+  idleTimeoutMillis: 30000,
+})
+
+// Pass driver to adapter (dependency injection)
 const adapter = new PostgreSQLAdapter({
   provider: 'postgresql',
-  url: process.env.DATABASE_URL,
-  connectionType: 'pg', // Use native pg driver
+  driver: pool,
 })
 
 await adapter.connect()
@@ -94,12 +102,21 @@ const post = await posts.create({
 
 ```typescript
 import { PostgreSQLAdapter } from '@opensaas/stack-db/adapter'
+import { Pool, neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
 
-// Create Neon serverless adapter
+// Configure Neon for Node.js (WebSocket)
+neonConfig.webSocketConstructor = ws
+
+// Create Neon Pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+})
+
+// Pass driver to adapter (dependency injection)
 const adapter = new PostgreSQLAdapter({
   provider: 'postgresql',
-  url: process.env.DATABASE_URL, // Neon connection string
-  connectionType: 'neon', // Use Neon serverless driver
+  driver: pool, // Works with any driver that implements PostgresDriver interface
 })
 
 await adapter.connect()

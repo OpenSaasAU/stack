@@ -6,6 +6,6 @@ export {
   PostgreSQLAdapter,
   PostgreSQLDialect,
   type PostgreSQLConfig,
-  type PostgresConnection,
+  type PostgresDriver,
 } from './postgresql.js'
 export type { DatabaseAdapter, DatabaseConfig, DatabaseDialect } from '../types/index.js'
