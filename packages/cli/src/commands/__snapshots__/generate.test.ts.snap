@@ -84,7 +84,7 @@ const storage = {
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as Context<TSession>
+  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
@@ -94,7 +94,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage)
+  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
 })()
 
 /**
@@ -135,13 +135,15 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
-export type User = {
+export type UserOutput = {
   id: string
   name: string
   email: string
   createdAt: Date
   updatedAt: Date
 }
+
+export type User = UserOutput
 
 export type UserCreateInput = {
   name: string
@@ -202,8 +204,26 @@ export type UserHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Custom DB type that overrides AccessControlledDB return types to include virtual fields
+ * Uses Output types which include computed virtual fields
+ */
+export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+  'user'
+> & {
+  user: {
+    // Only the 6 methods implemented by AccessControlledDB
+    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
+    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
+    create: (args: { data: any }) => Promise<UserOutput>
+    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
+    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
+    count: (args?: { where?: any }) => Promise<number>
+  }
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
-  db: AccessControlledDB<PrismaClient>
+  db: CustomDB
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils
@@ -291,8 +311,17 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Custom DB type that overrides AccessControlledDB return types to include virtual fields
+ * Uses Output types which include computed virtual fields
+ */
+export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+  
+> & {
+}
+
 export type Context<TSession extends OpensaasSession = OpensaasSession> = {
-  db: AccessControlledDB<PrismaClient>
+  db: CustomDB
   session: TSession
   prisma: PrismaClient
   storage: StorageUtils

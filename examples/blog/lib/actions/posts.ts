@@ -36,9 +36,6 @@ export async function updatePost(userId: string, postId: string, data: PostUpdat
   const post = await context.db.post.update({
     where: { id: postId },
     data,
-    select: {
-      title: true,
-    },
   })
 
   if (!post) {

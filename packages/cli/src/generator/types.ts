@@ -41,12 +41,12 @@ function isFieldOptional(field: FieldConfig): boolean {
 }
 
 /**
- * Generate TypeScript interface for a model
+ * Generate TypeScript Output type for a model (includes virtual fields)
  */
-function generateModelType(listName: string, fields: Record<string, FieldConfig>): string {
+function generateModelOutputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
 
-  lines.push(`export type ${listName} = {`)
+  lines.push(`export type ${listName}Output = {`)
   lines.push('  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
@@ -55,10 +55,10 @@ function generateModelType(listName: string, fields: Record<string, FieldConfig>
       const [targetList] = relField.ref.split('.')
 
       if (relField.many) {
-        lines.push(`  ${fieldName}: ${targetList}[]`)
+        lines.push(`  ${fieldName}: ${targetList}Output[]`)
       } else {
         lines.push(`  ${fieldName}Id: string | null`)
-        lines.push(`  ${fieldName}: ${targetList} | null`)
+        lines.push(`  ${fieldName}: ${targetList}Output | null`)
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig)
@@ -78,6 +78,13 @@ function generateModelType(listName: string, fields: Record<string, FieldConfig>
 }
 
 /**
+ * Generate convenience type alias (List = ListOutput)
+ */
+function generateModelTypeAlias(listName: string): string {
+  return `export type ${listName} = ${listName}Output`
+}
+
+/**
  * Generate CreateInput type
  */
 function generateCreateInputType(listName: string, fields: Record<string, FieldConfig>): string {
@@ -86,6 +93,12 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
   lines.push(`export type ${listName}CreateInput = {`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip virtual fields - they don't accept input in create operations
+    // Virtual fields with resolveInput hooks handle side effects but don't store data
+    if (fieldConfig.virtual) {
+      continue
+    }
+
     if (fieldConfig.type === 'relationship') {
       const relField = fieldConfig as RelationshipField
 
@@ -118,6 +131,12 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
   lines.push(`export type ${listName}UpdateInput = {`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Virtual fields with resolveInput hooks can accept input for side effects
+    // but we still skip them in the input type since they don't store data
+    if (fieldConfig.virtual) {
+      continue
+    }
+
     if (fieldConfig.type === 'relationship') {
       const relField = fieldConfig as RelationshipField
 
@@ -219,20 +238,61 @@ function generateHookTypes(listName: string): string {
 }
 
 /**
- * Generate Context type with all operations
+ * Generate custom DB interface that overrides AccessControlledDB return types
+ * Uses Omit to properly override model delegates with Output types
  */
-function generateContextType(): string {
+function generateCustomDBType(config: OpenSaasConfig): string {
   const lines: string[] = []
 
-  lines.push('export type Context<TSession extends OpensaasSession = OpensaasSession> = {')
-  lines.push('  db: AccessControlledDB<PrismaClient>')
+  // Generate list of db keys to omit from AccessControlledDB
+  const dbKeys = Object.keys(config.lists).map((listName) => {
+    const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
+    return `'${dbKey}'`
+  })
+
+  lines.push('/**')
+  lines.push(' * Custom DB type that overrides AccessControlledDB return types to include virtual fields')
+  lines.push(' * Uses Output types which include computed virtual fields')
+  lines.push(' */')
+  lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
+  lines.push(`  ${dbKeys.join(' | ')}`)
+  lines.push('> & {')
+
+  // For each list, create a type that matches AccessControlledDB but uses Output types
+  for (const listName of Object.keys(config.lists)) {
+    const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
+
+    lines.push(`  ${dbKey}: {`)
+    lines.push(`    // Only the 6 methods implemented by AccessControlledDB`)
+    lines.push(`    findUnique: (args: { where: { id: string }, include?: any }) => Promise<${listName}Output | null>`)
+    lines.push(`    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<${listName}Output[]>`)
+    lines.push(`    create: (args: { data: any }) => Promise<${listName}Output>`)
+    lines.push(`    update: (args: { where: { id: string }, data: any }) => Promise<${listName}Output | null>`)
+    lines.push(`    delete: (args: { where: { id: string } }) => Promise<${listName}Output | null>`)
+    lines.push(`    count: (args?: { where?: any }) => Promise<number>`)
+    lines.push(`  }`)
+  }
+
+  lines.push('}')
+
+  return lines.join('\n')
+}
+
+/**
+ * Generate Context type that is compatible with AccessContext
+ */
+function generateContextType(_config: OpenSaasConfig): string {
+  const lines: string[] = []
+
+  lines.push('/**')
+  lines.push(' * Context type compatible with AccessContext but with CustomDB for virtual field typing')
+  lines.push(' * Extends AccessContext and overrides db property to include virtual fields in output types')
+  lines.push(' */')
+  lines.push('export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, \'db\' | \'session\'> & {')
+  lines.push('  db: CustomDB')
   lines.push('  session: TSession')
-  lines.push('  prisma: PrismaClient')
-  lines.push('  storage: StorageUtils')
-  lines.push('  plugins: PluginServices')
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
   lines.push('  sudo: () => Context<TSession>')
-  lines.push('  _isSudo: boolean')
   lines.push('}')
 
   return lines.join('\n')
@@ -299,7 +359,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   // Add necessary imports
   // Use alias for Session to avoid conflicts if user has a list named "Session"
   lines.push(
-    "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB } from '@opensaas/stack-core'",
+    "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'",
   )
   lines.push("import type { PrismaClient, Prisma } from './prisma-client/client'")
   lines.push("import type { PluginServices } from './plugin-types'")
@@ -316,7 +376,9 @@ export function generateTypes(config: OpenSaasConfig): string {
 
   // Generate types for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    lines.push(generateModelType(listName, listConfig.fields))
+    lines.push(generateModelOutputType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateModelTypeAlias(listName))
     lines.push('')
     lines.push(generateCreateInputType(listName, listConfig.fields))
     lines.push('')
@@ -328,8 +390,12 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push('')
   }
 
+  // Generate CustomDB interface
+  lines.push(generateCustomDBType(config))
+  lines.push('')
+
   // Generate Context type
-  lines.push(generateContextType())
+  lines.push(generateContextType(config))
 
   return lines.join('\n')
 }

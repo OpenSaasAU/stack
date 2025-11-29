@@ -2,15 +2,15 @@ import Link from 'next/link.js'
 import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
 import {
-  AccessContext,
+  type AccessContext,
   getDbKey,
   getUrlKey,
   OpenSaasConfig,
   type PrismaClientLike,
 } from '@opensaas/stack-core'
 
-export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  context: AccessContext<TPrisma>
+export interface ListViewProps {
+  context: AccessContext<any>
   config: OpenSaasConfig
   listKey: string
   basePath?: string
@@ -24,7 +24,7 @@ export interface ListViewProps<TPrisma extends PrismaClientLike = PrismaClientLi
  * List view component - displays items in a table
  * Server Component that fetches data and renders client table
  */
-export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLike>({
+export async function ListView({
   context,
   config,
   listKey,
@@ -33,7 +33,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
   page = 1,
   pageSize = 50,
   search,
-}: ListViewProps<TPrisma>) {
+}: ListViewProps) {
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]
@@ -86,15 +86,18 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
         include[fieldName] = true
       }
     })
-    ;[items, total] = await Promise.all([
-      dbContext[key].findMany({
-        where,
-        skip,
-        take: pageSize,
-        ...(Object.keys(include).length > 0 ? { include } : {}),
-      }),
-      dbContext[key].count({ where }),
-    ])
+    const delegate = dbContext[key]
+    if (delegate?.findMany && delegate?.count) {
+      ;[items, total] = await Promise.all([
+        delegate.findMany({
+          where,
+          skip,
+          take: pageSize,
+          ...(Object.keys(include).length > 0 ? { include } : {}),
+        }),
+        delegate.count({ where }),
+      ])
+    }
   } catch (error) {
     console.error(`Failed to fetch ${listKey}:`, error)
   }
@@ -105,7 +108,7 @@ export async function ListView<TPrisma extends PrismaClientLike = PrismaClientLi
   // Extract only the relationship refs needed by client (don't send entire config)
   const relationshipRefs: Record<string, string> = {}
   Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
-    if ('type' in field && field.type === 'relationship' && 'ref' in field && field.ref) {
+    if ('type' in field && field.type === 'relationship' && 'ref' in field && typeof field.ref === 'string') {
       relationshipRefs[fieldName] = field.ref
     }
   })

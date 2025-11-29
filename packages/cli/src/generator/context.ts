@@ -175,7 +175,7 @@ ${storageUtilities}
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as Context<TSession>
+  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
@@ -185,7 +185,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage)
+  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
 })()
 
 /**

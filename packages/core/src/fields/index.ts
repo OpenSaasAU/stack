@@ -8,6 +8,7 @@ import type {
   SelectField,
   RelationshipField,
   JsonField,
+  VirtualField,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 
@@ -24,7 +25,9 @@ function formatFieldName(fieldName: string): string {
 /**
  * Text field
  */
-export function text(options?: Omit<TextField, 'type'>): TextField {
+export function text<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<TextField<TTypeInfo['item']>, 'type'>): TextField<TTypeInfo['item']> {
   return {
     type: 'text',
     ...options,
@@ -98,7 +101,9 @@ export function text(options?: Omit<TextField, 'type'>): TextField {
 /**
  * Integer field
  */
-export function integer(options?: Omit<IntegerField, 'type'>): IntegerField {
+export function integer<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<IntegerField<TTypeInfo['item']>, 'type'>): IntegerField<TTypeInfo['item']> {
   return {
     type: 'integer',
     ...options,
@@ -147,7 +152,9 @@ export function integer(options?: Omit<IntegerField, 'type'>): IntegerField {
 /**
  * Checkbox (boolean) field
  */
-export function checkbox(options?: Omit<CheckboxField, 'type'>): CheckboxField {
+export function checkbox<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<CheckboxField<TTypeInfo['item']>, 'type'>): CheckboxField<TTypeInfo['item']> {
   return {
     type: 'checkbox',
     ...options,
@@ -179,7 +186,9 @@ export function checkbox(options?: Omit<CheckboxField, 'type'>): CheckboxField {
 /**
  * Timestamp (DateTime) field
  */
-export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampField {
+export function timestamp<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<TimestampField<TTypeInfo['item']>, 'type'>): TimestampField<TTypeInfo['item']> {
   return {
     type: 'timestamp',
     ...options,
@@ -270,7 +279,9 @@ export function timestamp(options?: Omit<TimestampField, 'type'>): TimestampFiel
  * @param options - Field configuration options
  * @returns Password field configuration
  */
-export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
+export function password<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<PasswordField<TTypeInfo['item']>, 'type'>): PasswordField<TTypeInfo['item']> {
   return {
     type: 'password',
     ...options,
@@ -372,7 +383,9 @@ export function password(options?: Omit<PasswordField, 'type'>): PasswordField {
 /**
  * Select field (enum-like)
  */
-export function select(options: Omit<SelectField, 'type'>): SelectField {
+export function select<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options: Omit<SelectField<TTypeInfo['item']>, 'type'>): SelectField<TTypeInfo['item']> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
   }
@@ -420,7 +433,11 @@ export function select(options: Omit<SelectField, 'type'>): SelectField {
 /**
  * Relationship field
  */
-export function relationship(options: Omit<RelationshipField, 'type'>): RelationshipField {
+export function relationship<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(
+  options: Omit<RelationshipField<TTypeInfo['item']>, 'type'>,
+): RelationshipField<TTypeInfo['item']> {
   if (!options.ref) {
     throw new Error('Relationship field must have a ref')
   }
@@ -482,7 +499,9 @@ export function relationship(options: Omit<RelationshipField, 'type'>): Relation
  * @param options - Field configuration options
  * @returns JSON field configuration
  */
-export function json(options?: Omit<JsonField, 'type'>): JsonField {
+export function json<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<JsonField<TTypeInfo['item']>, 'type'>): JsonField<TTypeInfo['item']> {
   return {
     type: 'json',
     ...options,
@@ -519,6 +538,98 @@ export function json(options?: Omit<JsonField, 'type'>): JsonField {
         type: 'unknown',
         optional: !isRequired,
       }
+    },
+  }
+}
+
+/**
+ * Virtual field - not stored in database, computed via hooks
+ *
+ * **Features:**
+ * - Does not create a column in the database
+ * - Uses resolveOutput hook to compute value from other fields
+ * - Optionally uses resolveInput hook for write side effects (e.g., sync to external API)
+ * - Only computed when explicitly selected/included in queries
+ * - Supports both read and write operations via hooks
+ *
+ * **Usage Example:**
+ * ```typescript
+ * // Read-only computed field
+ * fields: {
+ *   firstName: text(),
+ *   lastName: text(),
+ *   fullName: virtual({
+ *     type: 'string',
+ *     hooks: {
+ *       resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`
+ *     }
+ *   })
+ * }
+ *
+ * // Write side effects (e.g., sync to external API)
+ * fields: {
+ *   externalSync: virtual({
+ *     type: 'boolean',
+ *     hooks: {
+ *       resolveInput: async ({ item }) => {
+ *         await syncToExternalAPI(item)
+ *         return undefined // Don't store anything
+ *       },
+ *       resolveOutput: () => true
+ *     }
+ *   })
+ * }
+ *
+ * // Query with select
+ * const user = await context.db.user.findUnique({
+ *   where: { id },
+ *   select: { firstName: true, lastName: true, fullName: true } // fullName computed
+ * })
+ * ```
+ *
+ * **Requirements:**
+ * - Must provide `type` (TypeScript type string)
+ * - Must provide `resolveOutput` hook (for reads)
+ * - Optional `resolveInput` hook (for write side effects)
+ *
+ * @param options - Virtual field configuration
+ * @returns Virtual field configuration
+ */
+export function virtual<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(
+  options: Omit<VirtualField<unknown, TTypeInfo['item']>, 'type' | 'virtual' | 'outputType'> & {
+    type: string
+  },
+): VirtualField<unknown, TTypeInfo['item']> {
+  // Validate that resolveOutput is provided
+  if (!options.hooks?.resolveOutput) {
+    throw new Error(
+      'Virtual fields must provide a resolveOutput hook to compute their value. ' +
+        'Example: hooks: { resolveOutput: ({ item }) => computeValue(item) }',
+    )
+  }
+
+  const { type: outputType, ...rest } = options
+
+  return {
+    type: 'virtual',
+    virtual: true,
+    outputType,
+    ...rest,
+    // Virtual fields don't create database columns
+    // Return undefined to signal generator to skip this field
+    getPrismaType: undefined,
+    // Virtual fields appear in output types with their specified type
+    getTypeScriptType: () => {
+      return {
+        type: options.type,
+        optional: false, // Virtual fields always compute a value
+      }
+    },
+    // Virtual fields never validate input (they don't accept database input)
+    getZodSchema: () => {
+      return z.never()
     },
   }
 }

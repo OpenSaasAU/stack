@@ -147,12 +147,18 @@ export type TypePatchConfig = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type BaseFieldConfig<TInput = any, TOutput = TInput> = {
+export type BaseFieldConfig<TInput = any, TOutput = TInput, TItem = any> = {
   type: string
   access?: FieldAccess
   defaultValue?: unknown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  hooks?: FieldHooks<TInput, TOutput, any>
+  hooks?: FieldHooks<TInput, TOutput, TItem>
+  /**
+   * Marks this field as virtual - not stored in database
+   * Virtual fields use resolveInput/resolveOutput hooks for computation
+   * They are excluded from Prisma schema and input types
+   * Only computed when explicitly selected/included in queries
+   */
+  virtual?: boolean
   /**
    * Type patching configuration for Prisma-generated types
    * When specified, the generator will patch Prisma's types to use
@@ -235,7 +241,7 @@ export type BaseFieldConfig<TInput = any, TOutput = TInput> = {
   }>
 }
 
-export type TextField = BaseFieldConfig<string, string> & {
+export type TextField<TItem = unknown> = BaseFieldConfig<string, string, TItem> & {
   type: 'text'
   validation?: {
     isRequired?: boolean
@@ -250,7 +256,7 @@ export type TextField = BaseFieldConfig<string, string> & {
   }
 }
 
-export type IntegerField = BaseFieldConfig<number, number> & {
+export type IntegerField<TItem = unknown> = BaseFieldConfig<number, number, TItem> & {
   type: 'integer'
   validation?: {
     isRequired?: boolean
@@ -259,18 +265,19 @@ export type IntegerField = BaseFieldConfig<number, number> & {
   }
 }
 
-export type CheckboxField = BaseFieldConfig<boolean, boolean> & {
+export type CheckboxField<TItem = unknown> = BaseFieldConfig<boolean, boolean, TItem> & {
   type: 'checkbox'
 }
 
-export type TimestampField = BaseFieldConfig<Date, Date> & {
+export type TimestampField<TItem = unknown> = BaseFieldConfig<Date, Date, TItem> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
 }
 
-export type PasswordField = BaseFieldConfig<
+export type PasswordField<TItem = unknown> = BaseFieldConfig<
   string,
-  import('../utils/password.js').HashedPassword
+  import('../utils/password.js').HashedPassword,
+  TItem
 > & {
   type: 'password'
   validation?: {
@@ -278,7 +285,7 @@ export type PasswordField = BaseFieldConfig<
   }
 }
 
-export type SelectField = BaseFieldConfig<string, string> & {
+export type SelectField<TItem = unknown> = BaseFieldConfig<string, string, TItem> & {
   type: 'select'
   options: Array<{ label: string; value: string }>
   validation?: {
@@ -289,7 +296,11 @@ export type SelectField = BaseFieldConfig<string, string> & {
   }
 }
 
-export type RelationshipField = BaseFieldConfig<string | string[], string | string[]> & {
+export type RelationshipField<TItem = unknown> = BaseFieldConfig<
+  string | string[],
+  string | string[],
+  TItem
+> & {
   type: 'relationship'
   ref: string // Format: 'ListName.fieldName'
   many?: boolean
@@ -298,7 +309,7 @@ export type RelationshipField = BaseFieldConfig<string | string[], string | stri
   }
 }
 
-export type JsonField = BaseFieldConfig<unknown, unknown> & {
+export type JsonField<TItem = unknown> = BaseFieldConfig<unknown, unknown, TItem> & {
   type: 'json'
   validation?: {
     isRequired?: boolean
@@ -310,6 +321,20 @@ export type JsonField = BaseFieldConfig<unknown, unknown> & {
   }
 }
 
+export type VirtualField<TOutput = unknown, TItem = unknown> = BaseFieldConfig<
+  never,
+  TOutput,
+  TItem
+> & {
+  type: 'virtual'
+  virtual: true
+  /**
+   * TypeScript type string for the virtual field output
+   * e.g., 'string', 'number', 'boolean', 'string[]', etc.
+   */
+  outputType: string
+}
+
 export type FieldConfig =
   | TextField
   | IntegerField
@@ -319,6 +344,7 @@ export type FieldConfig =
   | SelectField
   | RelationshipField
   | JsonField
+  | VirtualField<unknown>
   | BaseFieldConfig // Allow any field extending BaseFieldConfig (for third-party fields)
 
 /**
@@ -327,10 +353,10 @@ export type FieldConfig =
 
 /**
  * Utility type to inject item type into a single field config
- * Extracts TInput and TOutput from BaseFieldConfig<TInput, TOutput> and reconstructs with new hooks type
+ * Extracts TInput, TOutput, and TItem from BaseFieldConfig<TInput, TOutput, TItem> and reconstructs with new hooks type
  */
 type WithItemType<TField extends FieldConfig, TItem> =
-  TField extends BaseFieldConfig<infer TInput, infer TOutput>
+  TField extends BaseFieldConfig<infer TInput, infer TOutput, unknown>
     ? Omit<TField, 'hooks'> & {
         hooks?: FieldHooks<TInput, TOutput, TItem>
       }
@@ -340,8 +366,7 @@ type WithItemType<TField extends FieldConfig, TItem> =
  * Utility type to transform all fields in a record to inject item type
  * Maps over each field and applies WithItemType transformation
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TItem = any> = {
+export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TItem = unknown> = {
   [K in keyof TFields]: WithItemType<TFields[K], TItem>
 }
 

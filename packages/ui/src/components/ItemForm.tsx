@@ -3,11 +3,11 @@ import Link from 'next/link.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig, type PrismaClientLike } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 
-export interface ItemFormProps<TPrisma> {
-  context: AccessContext<TPrisma>
+export interface ItemFormProps {
+  context: AccessContext<any>
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
@@ -21,7 +21,7 @@ export interface ItemFormProps<TPrisma> {
  * Item form component - create or edit an item
  * Server Component that fetches data and sets up actions
  */
-export async function ItemForm<TPrisma>({
+export async function ItemForm({
   context,
   config,
   listKey,
@@ -29,7 +29,7 @@ export async function ItemForm<TPrisma>({
   itemId,
   basePath = '/admin',
   serverAction,
-}: ItemFormProps<TPrisma>) {
+}: ItemFormProps) {
   const listConfig = config.lists[listKey]
   const urlKey = getUrlKey(listKey)
 
@@ -58,10 +58,13 @@ export async function ItemForm<TPrisma>({
       }
 
       // Fetch item with relationships included
-      itemData = await context.db[getDbKey(listKey)].findUnique({
-        where: { id: itemId },
-        ...(Object.keys(includeRelationships).length > 0 && { include: includeRelationships }),
-      })
+      const delegate = context.db[getDbKey(listKey)]
+      if (delegate?.findUnique) {
+        itemData = await delegate.findUnique({
+          where: { id: itemId },
+          ...(Object.keys(includeRelationships).length > 0 && { include: includeRelationships }),
+        })
+      }
     } catch (error) {
       console.error(`Failed to fetch item ${itemId}:`, error)
     }
@@ -102,7 +105,8 @@ export async function ItemForm<TPrisma>({
         if (relatedListConfig) {
           try {
             const dbContext = context.db
-            const relatedItems = await dbContext[getDbKey(relatedListName)].findMany({})
+            const delegate = dbContext[getDbKey(relatedListName)]
+            const relatedItems = delegate?.findMany ? await delegate.findMany({}) : []
 
             // Use 'name' field as label if it exists, otherwise use 'id'
             relationshipData[fieldName] = relatedItems.map((item: Record<string, unknown>) => ({
