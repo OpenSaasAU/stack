@@ -171,9 +171,7 @@ export function generateCreateTableSQL(
 /**
  * Generate relationship maps for all tables
  */
-export function generateRelationshipMaps(
-  config: OpenSaasConfig,
-): Record<string, RelationshipMap> {
+export function generateRelationshipMaps(config: OpenSaasConfig): Record<string, RelationshipMap> {
   const relationshipMaps: Record<string, RelationshipMap> = {}
 
   for (const [listName, listConfig] of Object.entries(config.lists)) {

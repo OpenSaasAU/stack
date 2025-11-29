@@ -93,20 +93,28 @@ Filter tests:
 ### 1. Filter Syntax is Excellent ✅
 
 **Code:**
+
 ```typescript
 // Simple equality
-{ status: 'published' }
-{ status: { equals: 'published' } }
+{
+  status: 'published'
+}
+{
+  status: {
+    equals: 'published'
+  }
+}
 
 // Comparisons
-{ views: { gt: 100 } }
+{
+  views: {
+    gt: 100
+  }
+}
 
 // Complex logical
 {
-  AND: [
-    { status: { equals: 'published' } },
-    { views: { gt: 50 } }
-  ]
+  AND: [{ status: { equals: 'published' } }, { views: { gt: 50 } }]
 }
 
 // Access control merging (trivial!)
@@ -119,6 +127,7 @@ const merged = mergeFilters(userFilter, accessFilter)
 ### 2. Schema Generation is Straightforward ✅
 
 **Code:**
+
 ```typescript
 const tables = generateTableDefinitions(config)
 // Direct conversion from config to table definitions
@@ -130,15 +139,16 @@ const tables = generateTableDefinitions(config)
 ### 3. Query Builder is Clean ✅
 
 **Code:**
+
 ```typescript
 const posts = new QueryBuilder(adapter, 'Post', postTable)
 
 const published = await posts.findMany({
-  where: { status: { equals: 'published' } }
+  where: { status: { equals: 'published' } },
 })
 
 const post = await posts.create({
-  data: { title: 'Hello', content: 'World' }
+  data: { title: 'Hello', content: 'World' },
 })
 ```
 
@@ -147,6 +157,7 @@ const post = await posts.create({
 ### 4. Relationships Work ✅
 
 **Code:**
+
 ```typescript
 // Foreign key in schema
 {
@@ -166,6 +177,7 @@ await posts.findMany({
 ### 5. Access Control Integration is Perfect ✅
 
 **Code:**
+
 ```typescript
 // Simulated access control
 const userFilter = { authorId: session.userId }
@@ -203,30 +215,35 @@ Total Lines Written: ~1,200 LOC
 **Time to Build:** ~4 hours (including debugging, tests, demo)
 
 **Projected Full Implementation:**
+
 - Based on prototype velocity: 10-12 weeks is realistic
 - Includes: PostgreSQL adapter, migrations, optimization, integration, documentation
 
 ## What's Not Done (Future Work)
 
 ### Phase 1 Remaining (2-3 weeks)
+
 - PostgreSQL adapter
 - MySQL adapter (optional)
 - Advanced relationship loading (N+1 prevention)
 - Query optimization
 
 ### Phase 2 (2-3 weeks)
+
 - Migration file support (`db:migrate`)
 - Schema introspection improvements
 - Integration with existing context/access control
 - Update blog example to use custom ORM
 
 ### Phase 3 (2-3 weeks)
+
 - Performance optimization
 - Advanced features (aggregations, transactions)
 - Error handling improvements
 - Production hardening
 
 ### Phase 4 (2-3 weeks)
+
 - Documentation
 - Migration guide from Prisma
 - Performance benchmarks
@@ -272,19 +289,19 @@ Total Lines Written: ~1,200 LOC
 
 ## Comparison to Prisma
 
-| Aspect | Prisma | Custom ORM (Prototype) |
-|--------|--------|----------------------|
-| **Setup** | Generate schema → Generate types → Import | Direct config → Use |
-| **Filter syntax** | Excellent | Excellent (same/better) |
-| **CRUD operations** | Full featured | Basic (6 operations) ✅ |
-| **Relationships** | Advanced | Basic (foreign keys) ✅ |
-| **Migrations** | Excellent | Not yet (planned) |
-| **Type safety** | Excellent | Good ✅ |
-| **Bundle size** | ~3MB + engines | ~50KB + driver ✅ |
-| **Startup time** | Fast (cached) | Instant (no gen) ✅ |
-| **Access control fit** | Good | Perfect ✅ |
-| **Ecosystem** | Mature | None (yet) |
-| **Maintenance** | Third-party | In-house ✅ |
+| Aspect                 | Prisma                                    | Custom ORM (Prototype)  |
+| ---------------------- | ----------------------------------------- | ----------------------- |
+| **Setup**              | Generate schema → Generate types → Import | Direct config → Use     |
+| **Filter syntax**      | Excellent                                 | Excellent (same/better) |
+| **CRUD operations**    | Full featured                             | Basic (6 operations) ✅ |
+| **Relationships**      | Advanced                                  | Basic (foreign keys) ✅ |
+| **Migrations**         | Excellent                                 | Not yet (planned)       |
+| **Type safety**        | Excellent                                 | Good ✅                 |
+| **Bundle size**        | ~3MB + engines                            | ~50KB + driver ✅       |
+| **Startup time**       | Fast (cached)                             | Instant (no gen) ✅     |
+| **Access control fit** | Good                                      | Perfect ✅              |
+| **Ecosystem**          | Mature                                    | None (yet)              |
+| **Maintenance**        | Third-party                               | In-house ✅             |
 
 ## Decision Criteria Met
 
@@ -340,12 +357,14 @@ The prototype successfully validates the approach. Recommend:
 ### Success Metrics for Phase 2
 
 Must achieve:
+
 - ✅ PostgreSQL adapter working
 - ✅ Performance within 20% of Prisma
 - ✅ Blog example running smoothly
 - ✅ Zero test failures
 
 Should achieve:
+
 - Access control integration seamless
 - Developer experience positive
 - Community feedback encouraging
@@ -405,6 +424,7 @@ Should achieve:
 **The custom ORM prototype is a SUCCESS.**
 
 Key findings:
+
 - ✅ Approach is viable
 - ✅ Filter syntax is excellent
 - ✅ Architecture is clean

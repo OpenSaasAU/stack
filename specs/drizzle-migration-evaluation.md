@@ -17,44 +17,49 @@ Switching from Prisma to Drizzle would be a **HIGH COMPLEXITY** migration with *
 Prisma is deeply integrated across 4 key areas:
 
 #### **Schema Generation** (`packages/cli/src/generator/prisma.ts`)
+
 - Generates `schema.prisma` from OpenSaas config
 - Handles relationships automatically with `@relation` attributes
 - Provides migration tooling via `prisma db push`
 - 157 lines of generation logic
 
 #### **Type System** (`packages/core/src/access/types.ts`)
+
 - `PrismaClientLike` type for generic client
 - `AccessControlledDB<TPrisma>` preserves Prisma's generated types
 - Dynamic model access via `prisma[getDbKey(listName)]`
 
 #### **Access Control Engine** (`packages/core/src/context/index.ts`)
+
 - Intercepts all Prisma operations (986 lines)
 - Wraps `findUnique`, `findMany`, `create`, `update`, `delete`, `count`
 - Merges access filters with Prisma `where` clauses using Prisma filter syntax
 - Returns `null`/`[]` for denied access (silent failures)
 
 #### **Filter System** (`packages/core/src/access/engine.ts`)
+
 - Uses Prisma filter objects: `{ AND: [...], OR: [...], NOT: {...} }`
 - Relationship filtering via `include` with nested `where` clauses
 - Field-level access via `filterReadableFields`/`filterWritableFields`
 
 ### 2. Key Prisma Features Used
 
-| Feature | Usage | Critical? |
-|---------|-------|-----------|
-| Schema DSL | Generate schema from config | ✅ Yes |
-| Type generation | Preserve types in `AccessControlledDB<TPrisma>` | ✅ Yes |
-| Filter objects | Access control merge logic | ✅ Yes |
-| Dynamic model access | `prisma[modelName].findMany()` | ⚠️ Medium |
-| Relationships | Auto-generated foreign keys + `@relation` | ✅ Yes |
-| Adapters (v7) | SQLite/PostgreSQL/Neon support | ✅ Yes |
-| Migrations | `prisma db push` | ⚠️ Medium |
+| Feature              | Usage                                           | Critical? |
+| -------------------- | ----------------------------------------------- | --------- |
+| Schema DSL           | Generate schema from config                     | ✅ Yes    |
+| Type generation      | Preserve types in `AccessControlledDB<TPrisma>` | ✅ Yes    |
+| Filter objects       | Access control merge logic                      | ✅ Yes    |
+| Dynamic model access | `prisma[modelName].findMany()`                  | ⚠️ Medium |
+| Relationships        | Auto-generated foreign keys + `@relation`       | ✅ Yes    |
+| Adapters (v7)        | SQLite/PostgreSQL/Neon support                  | ✅ Yes    |
+| Migrations           | `prisma db push`                                | ⚠️ Medium |
 
 ## Drizzle ORM Overview
 
 ### What Drizzle Offers
 
 1. **Schema-first TypeScript DSL**
+
    ```typescript
    const users = pgTable('users', {
      id: text('id').primaryKey(),
@@ -64,6 +69,7 @@ Prisma is deeply integrated across 4 key areas:
    ```
 
 2. **Type-safe query builder**
+
    ```typescript
    const result = await db.select().from(users).where(eq(users.id, '123'))
    ```
@@ -100,6 +106,7 @@ Prisma is deeply integrated across 4 key areas:
 ### 🔴 HIGH COMPLEXITY: Schema Generation
 
 **Current (Prisma):**
+
 ```typescript
 // packages/cli/src/generator/prisma.ts
 function generatePrismaSchema(config: OpenSaasConfig): string {
@@ -112,6 +119,7 @@ function generatePrismaSchema(config: OpenSaasConfig): string {
 ```
 
 **With Drizzle:**
+
 ```typescript
 // Would need to generate TypeScript code instead
 function generateDrizzleSchema(config: OpenSaasConfig): string {
@@ -127,13 +135,16 @@ function generateDrizzleSchema(config: OpenSaasConfig): string {
   lines.push(`})`)
 
   // Relations require separate definition
-  lines.push(`export const ${camelCase(listName)}Relations = relations(${camelCase(listName)}, ({ one, many }) => ({`)
+  lines.push(
+    `export const ${camelCase(listName)}Relations = relations(${camelCase(listName)}, ({ one, many }) => ({`,
+  )
   lines.push(`  ${fieldName}: one(${targetTable}, { ... }),`)
   lines.push(`}))`)
 }
 ```
 
 **Challenges:**
+
 - Must generate valid TypeScript code (harder than generating DSL)
 - Need to track all tables for relationship references
 - Relations defined separately from schema
@@ -144,27 +155,31 @@ function generateDrizzleSchema(config: OpenSaasConfig): string {
 ### 🟡 MEDIUM COMPLEXITY: Type System
 
 **Current (Prisma):**
+
 ```typescript
 export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
   [K in keyof TPrisma]: TPrisma[K] extends {
     findUnique: any
     findMany: any
     // ...
-  } ? {
-    findUnique: TPrisma[K]['findUnique']
-    findMany: TPrisma[K]['findMany']
-    // ...
-  } : never
+  }
+    ? {
+        findUnique: TPrisma[K]['findUnique']
+        findMany: TPrisma[K]['findMany']
+        // ...
+      }
+    : never
 }
 ```
 
 **With Drizzle:**
+
 ```typescript
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type * as schema from './.opensaas/schema'
 
 export type AccessControlledDB = {
-  [K in keyof typeof schema]: typeof schema[K] extends Table
+  [K in keyof typeof schema]: (typeof schema)[K] extends Table
     ? {
         select: ReturnType<typeof db.select<schema[K]>>
         insert: ReturnType<typeof db.insert<schema[K]>>
@@ -176,6 +191,7 @@ export type AccessControlledDB = {
 ```
 
 **Challenges:**
+
 - Drizzle's type system is fundamentally different
 - Query builders return different types than Prisma promises
 - Would need to maintain type mappings manually
@@ -185,6 +201,7 @@ export type AccessControlledDB = {
 ### 🔴 HIGH COMPLEXITY: Access Control Engine
 
 **Current (Prisma):**
+
 ```typescript
 // Clean, simple filter merging
 const mergedWhere = mergeFilters(args.where, accessResult)
@@ -196,6 +213,7 @@ const items = await model.findMany({
 ```
 
 **With Drizzle:**
+
 ```typescript
 // Must build query conditionally
 import { and, or, eq } from 'drizzle-orm'
@@ -215,6 +233,7 @@ const items = await query
 ```
 
 **Challenges:**
+
 - Prisma filters are declarative objects
 - Drizzle uses functional query builder
 - Must convert OpenSaas filter syntax to Drizzle functions
@@ -230,7 +249,7 @@ return { AND: [accessFilter, userFilter] }
 // Drizzle (proposed) - complex and fragile
 return and(
   ...convertFilterToDrizzleConditions(accessFilter),
-  ...convertFilterToDrizzleConditions(userFilter)
+  ...convertFilterToDrizzleConditions(userFilter),
 )
 ```
 
@@ -241,6 +260,7 @@ return and(
 Hooks are ORM-agnostic - they operate on data before/after database operations.
 
 **No changes required** to:
+
 - `resolveInput` hooks
 - `validateInput` hooks
 - `beforeOperation` hooks
@@ -253,39 +273,45 @@ Hooks are ORM-agnostic - they operate on data before/after database operations.
 
 ### Potential Benefits of Drizzle
 
-| Benefit | Impact | Notes |
-|---------|--------|-------|
-| Better TypeScript integration | ⭐⭐⭐ Medium | No generation step, native TS |
-| Lighter bundle size | ⭐ Low | Client code doesn't bundle ORM |
-| More SQL control | ⭐⭐ Low-Medium | Advanced users could optimize queries |
-| Simpler runtime | ⭐⭐ Low-Medium | No Prisma engines, pure JS |
-| Type generation simplification | ⭐⭐⭐⭐ High | Could simplify TypeScript type generation |
+| Benefit                        | Impact          | Notes                                     |
+| ------------------------------ | --------------- | ----------------------------------------- |
+| Better TypeScript integration  | ⭐⭐⭐ Medium   | No generation step, native TS             |
+| Lighter bundle size            | ⭐ Low          | Client code doesn't bundle ORM            |
+| More SQL control               | ⭐⭐ Low-Medium | Advanced users could optimize queries     |
+| Simpler runtime                | ⭐⭐ Low-Medium | No Prisma engines, pure JS                |
+| Type generation simplification | ⭐⭐⭐⭐ High   | Could simplify TypeScript type generation |
 
 ### Benefits That DON'T Apply
 
 ❌ **"Simpler type generation"** - FALSE
+
 - Current: Generate simple Prisma schema DSL
 - With Drizzle: Generate complex TypeScript code
 
 ❌ **"Simpler hooks"** - FALSE (no change)
+
 - Hooks are already ORM-agnostic
 
 ❌ **"Simpler access control"** - FALSE
+
 - Access control would become MORE complex
 - Prisma's declarative filters are ideal for merging
 
 ### Real Benefits
 
 ✅ **Better TypeScript integration**
+
 - No generated types, all native TS
 - Better IntelliSense without generation step
 - Easier to debug
 
 ✅ **Lighter runtime**
+
 - No Prisma engines
 - Smaller deployment footprint
 
 ✅ **More control**
+
 - Direct SQL access when needed
 - Easier query optimization
 
@@ -315,16 +341,16 @@ Hooks are ORM-agnostic - they operate on data before/after database operations.
 
 ## Effort Estimation
 
-| Component | Current LOC | Estimated Effort | Risk |
-|-----------|-------------|------------------|------|
-| Schema generation | 157 | 2-3 weeks | 🔴 High |
-| Access control engine | 986 | 3-4 weeks | 🔴 High |
-| Type system | 182 | 1-2 weeks | 🟡 Medium |
-| Context factory | 213 | 1-2 weeks | 🟡 Medium |
-| Filter conversion | 417 | 2-3 weeks | 🔴 High |
-| Testing/debugging | - | 2-3 weeks | 🔴 High |
-| Documentation | - | 1 week | 🟢 Low |
-| Example migration | - | 1-2 weeks | 🟡 Medium |
+| Component             | Current LOC | Estimated Effort | Risk      |
+| --------------------- | ----------- | ---------------- | --------- |
+| Schema generation     | 157         | 2-3 weeks        | 🔴 High   |
+| Access control engine | 986         | 3-4 weeks        | 🔴 High   |
+| Type system           | 182         | 1-2 weeks        | 🟡 Medium |
+| Context factory       | 213         | 1-2 weeks        | 🟡 Medium |
+| Filter conversion     | 417         | 2-3 weeks        | 🔴 High   |
+| Testing/debugging     | -           | 2-3 weeks        | 🔴 High   |
+| Documentation         | -           | 1 week           | 🟢 Low    |
+| Example migration     | -           | 1-2 weeks        | 🟡 Medium |
 
 **Total Estimated Effort:** 13-22 weeks (3-5 months)
 
@@ -335,12 +361,14 @@ Hooks are ORM-agnostic - they operate on data before/after database operations.
 ### Option 1: Keep Prisma (Recommended)
 
 **Pros:**
+
 - Zero migration cost
 - Proven, stable
 - Great ecosystem
 - Perfect for declarative schema generation
 
 **Cons:**
+
 - Larger bundle size (but doesn't affect client code)
 - Generated code (but abstracted away)
 
@@ -360,10 +388,12 @@ class DrizzleAdapter implements DatabaseAdapter { ... }
 ```
 
 **Pros:**
+
 - Users can choose their ORM
 - Gradual migration path
 
 **Cons:**
+
 - Massive maintenance burden
 - Lowest common denominator
 - Complex abstraction layer
@@ -376,10 +406,12 @@ class DrizzleAdapter implements DatabaseAdapter { ... }
 - Add Drizzle for complex queries
 
 **Pros:**
+
 - Best of both worlds
 - Gradual adoption
 
 **Cons:**
+
 - Two ORMs to maintain
 - Confusion for developers
 - Bloated dependencies
@@ -424,12 +456,12 @@ Consider Drizzle if:
 2. **Type generation is a bottleneck**
    - Users complain about generation step
    - Generated types cause issues
-   - *Note: Current approach works well*
+   - _Note: Current approach works well_
 
 3. **Prisma limitations arise**
    - Can't express certain queries
    - Adapter issues with specific databases
-   - *Note: Haven't encountered this yet*
+   - _Note: Haven't encountered this yet_
 
 4. **Community strongly requests it**
    - Multiple users want Drizzle support
@@ -448,6 +480,7 @@ While Drizzle is an excellent ORM with some advantages over Prisma, **the migrat
 ### A1. Filter Merging
 
 **Prisma (Current):**
+
 ```typescript
 function mergeFilters(
   userFilter: PrismaFilter | undefined,
@@ -462,6 +495,7 @@ function mergeFilters(
 ```
 
 **Drizzle (Proposed):**
+
 ```typescript
 import { and, or, eq, not } from 'drizzle-orm'
 
@@ -505,6 +539,7 @@ function convertToDrizzleSQL(filter: Filter): SQL {
 ### A2. Query Execution
 
 **Prisma (Current):**
+
 ```typescript
 const items = await model.findMany({
   where: mergedWhere,
@@ -516,6 +551,7 @@ const items = await model.findMany({
 ```
 
 **Drizzle (Proposed):**
+
 ```typescript
 // Need separate queries or complex joins
 let query = db
@@ -527,10 +563,7 @@ let query = db
 if (includeAuthor) {
   query = query.leftJoin(
     authorTable,
-    and(
-      eq(table.authorId, authorTable.id),
-      ...authorAccessConditions
-    )
+    and(eq(table.authorId, authorTable.id), ...authorAccessConditions),
   )
 }
 

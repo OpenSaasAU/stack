@@ -10,7 +10,7 @@ import type {
   RelationshipMap,
   IncludeArgs,
 } from '../types/index.js'
-import { filterToSQL, mergeFilters } from '../utils/filter.js'
+import { filterToSQL } from '../utils/filter.js'
 
 export class QueryBuilder {
   private relationships: RelationshipMap = {}
@@ -212,8 +212,7 @@ export class QueryBuilder {
     // ORDER BY clause
     if (args?.orderBy) {
       const orderClauses = Object.entries(args.orderBy).map(
-        ([field, direction]) =>
-          `${dialect.quoteIdentifier(field)} ${direction.toUpperCase()}`,
+        ([field, direction]) => `${dialect.quoteIdentifier(field)} ${direction.toUpperCase()}`,
       )
       parts.push(`ORDER BY ${orderClauses.join(', ')}`)
     }
@@ -302,7 +301,9 @@ export class QueryBuilder {
     delete data.createdAt
 
     const columns = Object.keys(data)
-    const setClauses = columns.map((c, i) => `${dialect.quoteIdentifier(c)} = ${dialect.getPlaceholder(i)}`)
+    const setClauses = columns.map(
+      (c, i) => `${dialect.quoteIdentifier(c)} = ${dialect.getPlaceholder(i)}`,
+    )
     const values = columns.map((c) => this.normalizeValue(data[c]))
 
     const returningClause = dialect.getReturningClause()
@@ -343,7 +344,9 @@ export class QueryBuilder {
    */
   async count(args?: { where?: WhereFilter }): Promise<number> {
     const dialect = this.adapter.getDialect()
-    const parts: string[] = [`SELECT COUNT(*) as count FROM ${dialect.quoteIdentifier(this.tableName)}`]
+    const parts: string[] = [
+      `SELECT COUNT(*) as count FROM ${dialect.quoteIdentifier(this.tableName)}`,
+    ]
     const params: unknown[] = []
 
     // WHERE clause

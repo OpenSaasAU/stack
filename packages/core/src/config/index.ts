@@ -63,7 +63,6 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
  * })
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function list<
   TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo,
 >(config: {

@@ -59,12 +59,12 @@ for (const table of tables) {
 }
 
 // Use query builder
-const postTable = tables.find(t => t.name === 'Post')!
+const postTable = tables.find((t) => t.name === 'Post')!
 const posts = new QueryBuilder(adapter, 'Post', postTable)
 
 // CRUD operations
 const post = await posts.create({
-  data: { title: 'Hello', content: 'World' }
+  data: { title: 'Hello', content: 'World' },
 })
 ```
 
@@ -90,11 +90,11 @@ const adapter = new PostgreSQLAdapter({
 await adapter.connect()
 
 // Rest is the same as SQLite
-const postTable = tables.find(t => t.name === 'Post')!
+const postTable = tables.find((t) => t.name === 'Post')!
 const posts = new QueryBuilder(adapter, 'Post', postTable)
 
 const post = await posts.create({
-  data: { title: 'Hello PostgreSQL' }
+  data: { title: 'Hello PostgreSQL' },
 })
 ```
 
@@ -229,19 +229,9 @@ import { generateRelationshipMaps } from '@opensaas/stack-db/schema'
 
 const relationshipMaps = generateRelationshipMaps(config)
 
-const users = new QueryBuilder(
-  adapter,
-  'User',
-  userTable,
-  relationshipMaps['User'],
-)
+const users = new QueryBuilder(adapter, 'User', userTable, relationshipMaps['User'])
 
-const posts = new QueryBuilder(
-  adapter,
-  'Post',
-  postTable,
-  relationshipMaps['Post'],
-)
+const posts = new QueryBuilder(adapter, 'Post', postTable, relationshipMaps['Post'])
 ```
 
 ### Loading Relationships

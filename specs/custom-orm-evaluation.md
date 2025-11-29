@@ -61,6 +61,7 @@ Looking at the actual usage, Prisma provides:
 Based on code analysis, OpenSaas Stack needs:
 
 #### Core Operations (6 methods)
+
 ```typescript
 interface DatabaseModel {
   findUnique(where: { id: string }): Promise<Record<string, unknown> | null>
@@ -73,18 +74,21 @@ interface DatabaseModel {
 ```
 
 #### Filtering (subset of SQL)
+
 - `equals`, `not`, `in`, `notIn`
 - `gt`, `gte`, `lt`, `lte`
 - `contains`, `startsWith`, `endsWith`
 - `AND`, `OR`, `NOT`
 
 #### Relationships
+
 - One-to-one
 - One-to-many
 - Many-to-one
 - (Many-to-many could come later)
 
 #### Schema Management
+
 - Create tables
 - Add/remove columns
 - Create indexes
@@ -276,13 +280,16 @@ export function getContext<TSession>(
 ### Major Benefits
 
 #### 1. **Architectural Clarity** ⭐⭐⭐⭐⭐
+
 **Current (Prisma):**
+
 ```
 OpenSaas Config → Generate Prisma Schema → Prisma generates types →
 Wrap Prisma client → Prisma executes queries
 ```
 
 **Custom ORM:**
+
 ```
 OpenSaas Config → Generate DB schema → Direct query execution
 ```
@@ -298,12 +305,8 @@ Design filters exactly for your access control needs:
 ```typescript
 // Design filter syntax to match your use case perfectly
 type Filter = {
-  [field: string]:
-    | { equals: unknown }
-    | { in: unknown[] }
-    | { contains: string }
-    | { gt: number }
-    // etc.
+  [field: string]: { equals: unknown } | { in: unknown[] } | { contains: string } | { gt: number }
+  // etc.
   AND?: Filter[]
   OR?: Filter[]
   NOT?: Filter
@@ -330,21 +333,23 @@ No need to match Prisma's filter syntax - make it exactly what you need.
 #### 4. **Simpler Dependencies** ⭐⭐⭐⭐
 
 **Current dependencies:**
+
 ```json
 {
   "@prisma/client": "^7.0.0",
   "@prisma/adapter-better-sqlite3": "^7.0.0",
   "@prisma/adapter-pg": "^7.0.0",
-  "prisma": "^7.0.0"  // CLI
+  "prisma": "^7.0.0" // CLI
 }
 ```
 
 **Custom ORM:**
+
 ```json
 {
-  "better-sqlite3": "^9.0.0",  // Direct driver
-  "pg": "^8.11.0",             // Direct driver
-  "mysql2": "^3.6.0"           // Direct driver
+  "better-sqlite3": "^9.0.0", // Direct driver
+  "pg": "^8.11.0", // Direct driver
+  "mysql2": "^3.6.0" // Direct driver
 }
 ```
 
@@ -422,6 +427,7 @@ const context = getContext(config, session, adapter)
 **Problem:** Need to support SQLite, PostgreSQL, MySQL, etc.
 
 **Solution:** Use existing proven drivers
+
 ```typescript
 // SQLite
 import Database from 'better-sqlite3'
@@ -442,6 +448,7 @@ These are mature, well-tested libraries. You're just wrapping them.
 **Problem:** Need to generate correct SQL for different databases
 
 **Solution:** Abstract differences in adapter layer
+
 ```typescript
 class SQLiteAdapter {
   buildInsertQuery(data): string {
@@ -470,6 +477,7 @@ class MySQLAdapter {
 **Problem:** Efficient loading of relationships (N+1 queries)
 
 **Solution:** Implement basic eager loading
+
 ```typescript
 async findManyWithIncludes(args: QueryArgs): Promise<unknown[]> {
   // 1. Load main records
@@ -502,6 +510,7 @@ async findManyWithIncludes(args: QueryArgs): Promise<unknown[]> {
 **Problem:** Schema migrations are complex
 
 **Solution:** Start with simple `db:push` (like Prisma)
+
 ```typescript
 // Phase 1: Simple push (development)
 async function dbPush(config: OpenSaasConfig) {
@@ -528,6 +537,7 @@ async function migrateDev() {
 **Problem:** Need type-safe queries
 
 **Solution:** Generate types from config (already doing this!)
+
 ```typescript
 // Generated from config
 export interface Post {
@@ -545,7 +555,7 @@ export interface Context {
       findUnique(args: { where: { id: string } }): Promise<Post | null>
       findMany(args?: QueryArgs<Post>): Promise<Post[]>
       create(args: { data: CreatePost }): Promise<Post>
-      update(args: { where: { id: string }, data: UpdatePost }): Promise<Post>
+      update(args: { where: { id: string }; data: UpdatePost }): Promise<Post>
       delete(args: { where: { id: string } }): Promise<Post>
       count(args?: { where?: Partial<Post> }): Promise<number>
     }
@@ -560,6 +570,7 @@ export interface Context {
 **Problem:** Users might expect ORM features you haven't built
 
 **Solution:** Incremental feature addition
+
 - Start with core CRUD operations
 - Add features as needed (not speculatively)
 - Provide escape hatch for raw SQL
@@ -576,33 +587,33 @@ context.db._raw.query('SELECT ...')
 
 ### Phase 1: Core Implementation (6-8 weeks)
 
-| Component | Effort | Risk |
-|-----------|--------|------|
-| Database adapters (SQLite, PostgreSQL) | 1-2 weeks | 🟢 Low |
-| Query builder (CRUD operations) | 2-3 weeks | 🟡 Medium |
-| Filter system | 1 week | 🟢 Low |
-| Basic relationship loading | 1-2 weeks | 🟡 Medium |
-| Schema generation | 1 week | 🟢 Low |
-| Testing framework | 1 week | 🟢 Low |
+| Component                              | Effort    | Risk      |
+| -------------------------------------- | --------- | --------- |
+| Database adapters (SQLite, PostgreSQL) | 1-2 weeks | 🟢 Low    |
+| Query builder (CRUD operations)        | 2-3 weeks | 🟡 Medium |
+| Filter system                          | 1 week    | 🟢 Low    |
+| Basic relationship loading             | 1-2 weeks | 🟡 Medium |
+| Schema generation                      | 1 week    | 🟢 Low    |
+| Testing framework                      | 1 week    | 🟢 Low    |
 
 ### Phase 2: Migration & Polish (4-6 weeks)
 
-| Component | Effort | Risk |
-|-----------|--------|------|
+| Component             | Effort    | Risk      |
+| --------------------- | --------- | --------- |
 | Migration from Prisma | 2-3 weeks | 🟡 Medium |
-| Schema introspection | 1 week | 🟡 Medium |
-| db:push command | 1 week | 🟢 Low |
-| Documentation | 1-2 weeks | 🟢 Low |
-| Example updates | 1 week | 🟢 Low |
+| Schema introspection  | 1 week    | 🟡 Medium |
+| db:push command       | 1 week    | 🟢 Low    |
+| Documentation         | 1-2 weeks | 🟢 Low    |
+| Example updates       | 1 week    | 🟢 Low    |
 
 ### Phase 3: Advanced Features (Optional, 4-6 weeks)
 
-| Component | Effort | Risk |
-|-----------|--------|------|
-| Migration files (Prisma Migrate equivalent) | 2-3 weeks | 🟠 High |
-| Query optimization | 1-2 weeks | 🟡 Medium |
-| Connection pooling | 1 week | 🟢 Low |
-| Additional database support (MySQL) | 1 week | 🟢 Low |
+| Component                                   | Effort    | Risk      |
+| ------------------------------------------- | --------- | --------- |
+| Migration files (Prisma Migrate equivalent) | 2-3 weeks | 🟠 High   |
+| Query optimization                          | 1-2 weeks | 🟡 Medium |
+| Connection pooling                          | 1 week    | 🟢 Low    |
+| Additional database support (MySQL)         | 1 week    | 🟢 Low    |
 
 **Total for MVP (Phase 1 + 2):** 10-14 weeks (2.5-3.5 months)
 
@@ -613,51 +624,58 @@ context.db._raw.query('SELECT ...')
 ### Technical Risks
 
 🟡 **Medium Risk: SQL Generation**
+
 - Different databases have different SQL dialects
 - **Mitigation:** Use proven patterns, extensive testing, start with 2 databases
 
 🟡 **Medium Risk: Performance**
+
 - Custom ORM might not be as optimized as Prisma
 - **Mitigation:** Start simple, optimize based on real usage, provide raw SQL escape hatch
 
 🟢 **Low Risk: Missing Features**
+
 - Users might expect features you don't have
 - **Mitigation:** Clear documentation, incremental feature addition, Prisma interop period
 
 🟢 **Low Risk: Bugs**
+
 - New code will have bugs
 - **Mitigation:** Comprehensive test suite, gradual rollout, keep Prisma adapter as fallback
 
 ### Business Risks
 
 🟢 **Low Risk: Adoption**
+
 - This is internal to the framework
 - Users don't directly interact with the ORM layer
 - **Mitigation:** Transparent migration, compatibility layer
 
 🟡 **Medium Risk: Maintenance Burden**
+
 - Need to maintain ORM long-term
 - **Mitigation:** Limited scope, high test coverage, community contributions
 
 🟢 **Low Risk: Ecosystem**
+
 - Won't have tools like Prisma Studio
 - **Mitigation:** Build minimal admin UI (already have this!), add tools incrementally
 
 ## Comparison Matrix
 
-| Aspect | Prisma | Drizzle | Custom ORM |
-|--------|--------|---------|------------|
-| **Architectural fit** | 🟡 Medium | 🟡 Medium | ⭐ Excellent |
-| **Setup complexity** | 🟡 Medium | 🟢 Low | 🟢 Low |
-| **Filter syntax** | 🟡 Good | 🟠 Complex | ⭐ Perfect |
-| **Type generation** | 🟡 2-step | 🟢 1-step | ⭐ 1-step |
-| **Bundle size** | 🔴 Large | 🟢 Small | 🟢 Small |
-| **Feature completeness** | ⭐ Excellent | 🟢 Good | 🟡 Limited |
-| **Ecosystem tools** | ⭐ Excellent | 🟡 Good | 🟠 Minimal |
-| **Maintenance burden** | 🟢 Low | 🟢 Low | 🟡 Medium |
-| **Breaking changes** | 🔴 Yes | 🟡 Possible | ⭐ None |
-| **Development effort** | ⭐ 0 weeks | 🔴 13-22 weeks | 🟡 10-14 weeks |
-| **Long-term simplicity** | 🟡 Medium | 🟡 Medium | ⭐ High |
+| Aspect                   | Prisma       | Drizzle        | Custom ORM     |
+| ------------------------ | ------------ | -------------- | -------------- |
+| **Architectural fit**    | 🟡 Medium    | 🟡 Medium      | ⭐ Excellent   |
+| **Setup complexity**     | 🟡 Medium    | 🟢 Low         | 🟢 Low         |
+| **Filter syntax**        | 🟡 Good      | 🟠 Complex     | ⭐ Perfect     |
+| **Type generation**      | 🟡 2-step    | 🟢 1-step      | ⭐ 1-step      |
+| **Bundle size**          | 🔴 Large     | 🟢 Small       | 🟢 Small       |
+| **Feature completeness** | ⭐ Excellent | 🟢 Good        | 🟡 Limited     |
+| **Ecosystem tools**      | ⭐ Excellent | 🟡 Good        | 🟠 Minimal     |
+| **Maintenance burden**   | 🟢 Low       | 🟢 Low         | 🟡 Medium      |
+| **Breaking changes**     | 🔴 Yes       | 🟡 Possible    | ⭐ None        |
+| **Development effort**   | ⭐ 0 weeks   | 🔴 13-22 weeks | 🟡 10-14 weeks |
+| **Long-term simplicity** | 🟡 Medium    | 🟡 Medium      | ⭐ High        |
 
 ## Migration Strategy
 
@@ -666,10 +684,12 @@ context.db._raw.query('SELECT ...')
 Replace Prisma completely in one release.
 
 **Pros:**
+
 - Clean break
 - No dual maintenance
 
 **Cons:**
+
 - High risk
 - Long development time before shipping
 - All or nothing
@@ -701,6 +721,7 @@ export default config({
 ```
 
 **Timeline:**
+
 - **v2.0:** Ship custom ORM as experimental option
 - **v2.1:** Make custom ORM default, Prisma adapter available
 - **v2.2:** Deprecate Prisma adapter
@@ -720,16 +741,16 @@ export default config({
       const db = new Database('./dev.db')
       const adapter = new PrismaBetterSQLite3(db)
       return new PrismaClient({ adapter })
-    }
+    },
   },
   lists: {
     Post: list({
       fields: {
         title: text(),
         content: text(),
-      }
-    })
-  }
+      },
+    }),
+  },
 })
 
 // Generated: prisma/schema.prisma
@@ -756,9 +777,9 @@ export default config({
       fields: {
         title: text(),
         content: text(),
-      }
-    })
-  }
+      },
+    }),
+  },
 })
 
 // Generated: .opensaas/schema.ts (table definitions)
@@ -787,23 +808,27 @@ This is **not** a crazy idea. Given that:
 ### Phased Approach
 
 **Phase 1 (v2.0-beta):** Build custom ORM with SQLite + PostgreSQL support
+
 - Core CRUD operations
 - Basic relationships
 - Simple schema push
 - Keep Prisma adapter as fallback
 
 **Phase 2 (v2.0):** Refinement
+
 - Performance optimization
 - Additional features based on feedback
 - Custom ORM becomes default
 - Prisma adapter still available
 
 **Phase 3 (v2.1+):** Polish
+
 - Advanced features (migrations, additional databases)
 - Tooling improvements
 - Deprecate Prisma adapter
 
 **Phase 4 (v3.0):** Simplification
+
 - Remove Prisma dependency
 - Full custom ORM only
 
@@ -819,6 +844,7 @@ Before committing to custom ORM, validate:
 ### When NOT to Build Custom ORM
 
 Don't build if:
+
 - ❌ Need advanced ORM features soon (aggregations, transactions, etc.)
 - ❌ Team doesn't have database expertise
 - ❌ Can't dedicate 3 months to this

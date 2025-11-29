@@ -4,10 +4,31 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SQLiteAdapter } from '../adapter/sqlite.js'
 import { QueryBuilder } from './builder.js'
-import type { TableDefinition } from '../types/index.js'
+import type { TableDefinition, DatabaseRow } from '../types/index.js'
 import * as fs from 'fs'
 
 const TEST_DB_PATH = './test-relationships.sqlite'
+
+// Type definitions for test records
+interface User extends DatabaseRow {
+  name: string
+  email: string
+}
+
+interface Post extends DatabaseRow {
+  title: string
+  content: string
+  status: string
+  authorId: string | null
+}
+
+interface UserWithPosts extends User {
+  posts: Post[]
+}
+
+interface PostWithAuthor extends Post {
+  author: User | null
+}
 
 describe('Relationship Loading', () => {
   let adapter: SQLiteAdapter
@@ -16,8 +37,8 @@ describe('Relationship Loading', () => {
   let userId1: string
   let userId2: string
   let postId1: string
-  let postId2: string
-  let postId3: string
+  let _postId2: string
+  let _postId3: string
 
   beforeEach(async () => {
     // Clean up test database
@@ -113,7 +134,7 @@ describe('Relationship Loading', () => {
         authorId: userId1,
       },
     })
-    postId2 = post2.id as string
+    _postId2 = post2.id as string
 
     const post3 = await posts.create({
       data: {
@@ -123,7 +144,7 @@ describe('Relationship Loading', () => {
         authorId: userId2,
       },
     })
-    postId3 = post3.id as string
+    _postId3 = post3.id as string
   })
 
   afterEach(async () => {
@@ -144,8 +165,9 @@ describe('Relationship Loading', () => {
       expect(post).toBeDefined()
       expect(post!.title).toBe('First Post')
       expect(post!.author).toBeDefined()
-      expect((post!.author as any).name).toBe('John Doe')
-      expect((post!.author as any).email).toBe('john@example.com')
+      const author = (post as PostWithAuthor).author!
+      expect(author.name).toBe('John Doe')
+      expect(author.email).toBe('john@example.com')
     })
 
     it('should load author for multiple posts', async () => {
@@ -155,8 +177,9 @@ describe('Relationship Loading', () => {
 
       expect(allPosts).toHaveLength(3)
       allPosts.forEach((post) => {
-        expect(post.author).toBeDefined()
-        expect((post.author as any).name).toBeDefined()
+        const postWithAuthor = post as PostWithAuthor
+        expect(postWithAuthor.author).toBeDefined()
+        expect(postWithAuthor.author!.name).toBeDefined()
       })
     })
 
@@ -186,9 +209,10 @@ describe('Relationship Loading', () => {
       expect(user).toBeDefined()
       expect(user!.name).toBe('John Doe')
       expect(user!.posts).toBeDefined()
-      expect((user!.posts as any[]).length).toBe(2)
+      const userWithPosts = user as UserWithPosts
+      expect(userWithPosts.posts.length).toBe(2)
 
-      const titles = (user!.posts as any[]).map((p) => p.title)
+      const titles = userWithPosts.posts.map((p) => p.title)
       expect(titles).toContain('First Post')
       expect(titles).toContain('Second Post')
     })
@@ -205,7 +229,8 @@ describe('Relationship Loading', () => {
 
       expect(user).toBeDefined()
       expect(user!.posts).toBeDefined()
-      expect((user!.posts as any[]).length).toBe(0)
+      const userWithPosts = user as UserWithPosts
+      expect(userWithPosts.posts.length).toBe(0)
     })
 
     it('should load posts for multiple users', async () => {
@@ -215,13 +240,13 @@ describe('Relationship Loading', () => {
 
       expect(allUsers.length).toBeGreaterThanOrEqual(2)
 
-      const john = allUsers.find((u) => u.name === 'John Doe')
+      const john = allUsers.find((u) => u.name === 'John Doe') as UserWithPosts
       expect(john).toBeDefined()
-      expect((john!.posts as any[]).length).toBe(2)
+      expect(john.posts.length).toBe(2)
 
-      const jane = allUsers.find((u) => u.name === 'Jane Smith')
+      const jane = allUsers.find((u) => u.name === 'Jane Smith') as UserWithPosts
       expect(jane).toBeDefined()
-      expect((jane!.posts as any[]).length).toBe(1)
+      expect(jane.posts.length).toBe(1)
     })
   })
 
@@ -237,9 +262,10 @@ describe('Relationship Loading', () => {
       })
 
       expect(user).toBeDefined()
-      expect((user!.posts as any[]).length).toBe(1)
-      expect((user!.posts as any[])[0].title).toBe('First Post')
-      expect((user!.posts as any[])[0].status).toBe('published')
+      const userWithPosts = user as UserWithPosts
+      expect(userWithPosts.posts.length).toBe(1)
+      expect(userWithPosts.posts[0].title).toBe('First Post')
+      expect(userWithPosts.posts[0].status).toBe('published')
     })
 
     it('should filter related records in many-to-one', async () => {
@@ -270,7 +296,8 @@ describe('Relationship Loading', () => {
 
       expect(post).toBeDefined()
       expect(post!.author).toBeDefined()
-      expect((post!.author as any).name).toBe('John Doe')
+      const postWithAuthor = post as PostWithAuthor
+      expect(postWithAuthor.author!.name).toBe('John Doe')
     })
 
     it('should filter in findMany with complex where', async () => {

@@ -6,10 +6,31 @@
 
 import { SQLiteAdapter } from './src/adapter/sqlite.js'
 import { QueryBuilder } from './src/query/builder.js'
-import type { TableDefinition } from './src/types/index.js'
+import type { TableDefinition, DatabaseRow } from './src/types/index.js'
 import * as fs from 'fs'
 
 const DB_PATH = './demo.db'
+
+// Type definitions for demo records
+interface User extends DatabaseRow {
+  name: string
+  email: string
+}
+
+interface Post extends DatabaseRow {
+  title: string
+  content: string
+  status: string
+  authorId: string
+}
+
+interface UserWithPosts extends User {
+  posts: Post[]
+}
+
+interface PostWithAuthor extends Post {
+  author: User
+}
 
 async function main() {
   console.log('🚀 Custom ORM Demo\n')
@@ -206,9 +227,8 @@ async function main() {
     include: { author: true },
   })
   console.log(`   ✅ Post: "${postWithAuthor!.title}"`)
-  console.log(
-    `      Author: ${(postWithAuthor!.author as any).name} (${(postWithAuthor!.author as any).email})`,
-  )
+  const author = (postWithAuthor as PostWithAuthor).author
+  console.log(`      Author: ${author.name} (${author.email})`)
 
   console.log('\n   b) Load user with all posts (one-to-many):')
   const userWithPosts = await users.findUnique({
@@ -216,8 +236,9 @@ async function main() {
     include: { posts: true },
   })
   console.log(`   ✅ User: ${userWithPosts!.name}`)
-  console.log(`      Posts: ${(userWithPosts!.posts as any[]).length} total`)
-  ;(userWithPosts!.posts as any[]).forEach((p: any) => {
+  const allPosts = (userWithPosts as UserWithPosts).posts
+  console.log(`      Posts: ${allPosts.length} total`)
+  allPosts.forEach((p) => {
     console.log(`      - ${p.title} (${p.status})`)
   })
 
@@ -231,8 +252,9 @@ async function main() {
     },
   })
   console.log(`   ✅ User: ${userWithPublishedPosts!.name}`)
-  console.log(`      Published posts: ${(userWithPublishedPosts!.posts as any[]).length}`)
-  ;(userWithPublishedPosts!.posts as any[]).forEach((p: any) => {
+  const publishedPosts = (userWithPublishedPosts as UserWithPosts).posts
+  console.log(`      Published posts: ${publishedPosts.length}`)
+  publishedPosts.forEach((p) => {
     console.log(`      - ${p.title}`)
   })
 
@@ -242,8 +264,9 @@ async function main() {
     include: { author: true },
   })
   console.log(`   ✅ Found ${postsWithAuthors.length} published posts with authors`)
-  postsWithAuthors.forEach((p: any) => {
-    console.log(`      - "${p.title}" by ${p.author.name}`)
+  postsWithAuthors.forEach((p) => {
+    const postWithAuthor = p as PostWithAuthor
+    console.log(`      - "${postWithAuthor.title}" by ${postWithAuthor.author.name}`)
   })
 
   // Cleanup
