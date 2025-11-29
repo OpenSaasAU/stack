@@ -14,6 +14,7 @@ This is a proof-of-concept to validate the approach. **Not production-ready.**
 - ✅ **Minimal CRUD operations** - findUnique, findMany, create, update, delete, count
 - ✅ **Filter system** - Designed for access control merging
 - ✅ **SQLite support** - Production-quality SQLite adapter
+- ✅ **PostgreSQL support** - Native `pg` and Neon serverless adapters
 - ✅ **Relationship support** - Basic one-to-one, one-to-many, many-to-one
 - ✅ **Type-safe** - Full TypeScript support
 
@@ -24,7 +25,7 @@ OpenSaas Config
     ↓
 Schema Generator → Table Definitions
     ↓
-Database Adapter (SQLite)
+Database Adapter (SQLite / PostgreSQL)
     ↓
 Query Builder (CRUD operations)
     ↓
@@ -32,6 +33,8 @@ Access Control Wrapper (from @opensaas/stack-core)
 ```
 
 ## Usage
+
+### SQLite
 
 ```typescript
 import { SQLiteAdapter } from '@opensaas/stack-db/adapter'
@@ -42,7 +45,7 @@ import config from './opensaas.config'
 // Generate schema from config
 const tables = generateTableDefinitions(config)
 
-// Create adapter
+// Create SQLite adapter
 const adapter = new SQLiteAdapter({
   provider: 'sqlite',
   url: 'file:./dev.db',
@@ -63,15 +66,46 @@ const posts = new QueryBuilder(adapter, 'Post', postTable)
 const post = await posts.create({
   data: { title: 'Hello', content: 'World' }
 })
+```
 
-const allPosts = await posts.findMany({
-  where: { status: { equals: 'published' } }
+### PostgreSQL (Native)
+
+```typescript
+import { PostgreSQLAdapter } from '@opensaas/stack-db/adapter'
+// Create PostgreSQL adapter (native pg)
+const adapter = new PostgreSQLAdapter({
+  provider: 'postgresql',
+  url: process.env.DATABASE_URL,
+  connectionType: 'pg', // Use native pg driver
 })
 
-const updated = await posts.update({
-  where: { id: post.id },
-  data: { title: 'Updated' }
+await adapter.connect()
+
+// Rest is the same as SQLite
+const postTable = tables.find(t => t.name === 'Post')!
+const posts = new QueryBuilder(adapter, 'Post', postTable)
+
+const post = await posts.create({
+  data: { title: 'Hello PostgreSQL' }
 })
+```
+
+### PostgreSQL (Neon Serverless)
+
+```typescript
+import { PostgreSQLAdapter } from '@opensaas/stack-db/adapter'
+
+// Create Neon serverless adapter
+const adapter = new PostgreSQLAdapter({
+  provider: 'postgresql',
+  url: process.env.DATABASE_URL, // Neon connection string
+  connectionType: 'neon', // Use Neon serverless driver
+})
+
+await adapter.connect()
+
+// Works identically to native pg
+const posts = new QueryBuilder(adapter, 'Post', postTable)
 ```
 
 ## Filter Syntax
