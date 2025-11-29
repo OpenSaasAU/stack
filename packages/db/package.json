@@ -1,0 +1,31 @@
+{
+  "name": "@opensaas/stack-db",
+  "version": "0.1.0",
+  "description": "Custom database layer for OpenSaas Stack (prototype)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./adapter": "./src/adapter/index.ts",
+    "./query": "./src/query/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@opensaas/stack-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^20.10.6",
+    "better-sqlite3": "^9.2.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^9.0.0"
+  }
+}
