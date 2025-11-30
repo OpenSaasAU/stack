@@ -239,7 +239,7 @@ function generateHookTypes(listName: string): string {
 
 /**
  * Generate custom DB interface that overrides AccessControlledDB return types
- * Uses Omit to properly override model delegates with Output types
+ * Uses Prisma's generated arg types for type safety while overriding return types to include virtual fields
  */
 function generateCustomDBType(config: OpenSaasConfig): string {
   const lines: string[] = []
@@ -254,30 +254,32 @@ function generateCustomDBType(config: OpenSaasConfig): string {
   lines.push(
     ' * Custom DB type that overrides AccessControlledDB return types to include virtual fields',
   )
-  lines.push(' * Uses Output types which include computed virtual fields')
+  lines.push(' * Uses Prisma arg types for parameters and Output types for return values')
+  lines.push(' * Output types include computed virtual fields')
   lines.push(' */')
   lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
   lines.push(`  ${dbKeys.join(' | ')}`)
   lines.push('> & {')
 
-  // For each list, create a type that matches AccessControlledDB but uses Output types
+  // For each list, create a type that uses Prisma's arg types but overrides return types
   for (const listName of Object.keys(config.lists)) {
     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
 
     lines.push(`  ${dbKey}: {`)
-    lines.push(`    // Only the 6 methods implemented by AccessControlledDB`)
     lines.push(
-      `    findUnique: (args: { where: { id: string }, include?: any, select?: any }) => Promise<${listName}Output | null>`,
+      `    findUnique: (args: Prisma.${listName}FindUniqueArgs) => Promise<${listName}Output | null>`,
     )
     lines.push(
-      `    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any, select?: any, orderBy?: any, distinct?: any, cursor?: any }) => Promise<${listName}Output[]>`,
+      `    findMany: (args?: Prisma.${listName}FindManyArgs) => Promise<${listName}Output[]>`,
     )
-    lines.push(`    create: (args: { data: any, select?: any, include?: any }) => Promise<${listName}Output>`)
+    lines.push(`    create: (args: Prisma.${listName}CreateArgs) => Promise<${listName}Output>`)
     lines.push(
-      `    update: (args: { where: { id: string }, data: any, select?: any, include?: any }) => Promise<${listName}Output | null>`,
+      `    update: (args: Prisma.${listName}UpdateArgs) => Promise<${listName}Output | null>`,
     )
-    lines.push(`    delete: (args: { where: { id: string }, select?: any, include?: any }) => Promise<${listName}Output | null>`)
-    lines.push(`    count: (args?: { where?: any, select?: any }) => Promise<number>`)
+    lines.push(
+      `    delete: (args: Prisma.${listName}DeleteArgs) => Promise<${listName}Output | null>`,
+    )
+    lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
     lines.push(`  }`)
   }
 
