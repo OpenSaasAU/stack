@@ -1,0 +1,51 @@
+{
+  "name": "@opensaas/stack-db",
+  "version": "0.1.0",
+  "description": "Custom database layer for OpenSaas Stack (prototype)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./adapter": "./src/adapter/index.ts",
+    "./query": "./src/query/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@opensaas/stack-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@neondatabase/serverless": "^0.9.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^24.7.2",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.10",
+    "better-sqlite3": "^12.5.0",
+    "pg": "^8.13.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0",
+    "ws": "^8.16.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^12.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "@neondatabase/serverless": {
+      "optional": true
+    },
+    "ws": {
+      "optional": true
+    }
+  }
+}
