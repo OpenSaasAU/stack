@@ -41,7 +41,41 @@ function isFieldOptional(field: FieldConfig): boolean {
 }
 
 /**
+ * Generate virtual fields type - only contains virtual fields
+ * This is intersected with Prisma's GetPayload to add virtual fields to query results
+ */
+function generateVirtualFieldsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const lines: string[] = []
+  const virtualFields = Object.entries(fields).filter(([_, config]) => config.type === 'virtual')
+
+  lines.push(`/**`)
+  lines.push(` * Virtual fields for ${listName} - computed fields not in database`)
+  lines.push(` * These are added to query results via resolveOutput hooks`)
+  lines.push(` */`)
+  lines.push(`export type ${listName}VirtualFields = {`)
+
+  for (const [fieldName, fieldConfig] of virtualFields) {
+    const tsType = mapFieldTypeToTypeScript(fieldConfig)
+    if (!tsType) continue
+
+    const optional = isFieldOptional(fieldConfig)
+    const nullability = optional ? ' | null' : ''
+    lines.push(`  ${fieldName}: ${tsType}${nullability}`)
+  }
+
+  // If no virtual fields, make it an empty object
+  if (virtualFields.length === 0) {
+    lines.push('  // No virtual fields defined')
+  }
+
+  lines.push('}')
+
+  return lines.join('\n')
+}
+
+/**
  * Generate TypeScript Output type for a model (includes virtual fields)
+ * This is kept for backwards compatibility but CustomDB uses Prisma's GetPayload + VirtualFields
  */
 function generateModelOutputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
@@ -50,15 +84,18 @@ function generateModelOutputType(listName: string, fields: Record<string, FieldC
   lines.push('  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip virtual fields - they're in VirtualFields type
+    if (fieldConfig.type === 'virtual') continue
+
     if (fieldConfig.type === 'relationship') {
       const relField = fieldConfig as RelationshipField
       const [targetList] = relField.ref.split('.')
 
       if (relField.many) {
-        lines.push(`  ${fieldName}: ${targetList}Output[]`)
+        lines.push(`  ${fieldName}?: ${targetList}Output[]`) // Optional since only present with include
       } else {
         lines.push(`  ${fieldName}Id: string | null`)
-        lines.push(`  ${fieldName}: ${targetList}Output | null`)
+        lines.push(`  ${fieldName}?: ${targetList}Output | null`) // Optional since only present with include
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig)
@@ -72,7 +109,7 @@ function generateModelOutputType(listName: string, fields: Record<string, FieldC
 
   lines.push('  createdAt: Date')
   lines.push('  updatedAt: Date')
-  lines.push('}')
+  lines.push('} & ' + listName + 'VirtualFields') // Include virtual fields
 
   return lines.join('\n')
 }
@@ -238,8 +275,8 @@ function generateHookTypes(listName: string): string {
 }
 
 /**
- * Generate custom DB interface that overrides AccessControlledDB return types
- * Uses Prisma's generated arg types for type safety while overriding return types to include virtual fields
+ * Generate custom DB interface that uses Prisma's conditional types with virtual fields
+ * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
 function generateCustomDBType(config: OpenSaasConfig): string {
   const lines: string[] = []
@@ -252,34 +289,49 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
   lines.push('/**')
   lines.push(
-    ' * Custom DB type that overrides AccessControlledDB return types to include virtual fields',
+    ' * Custom DB type that uses Prisma\'s conditional types with virtual field support',
   )
-  lines.push(' * Uses Prisma arg types for parameters and Output types for return values')
-  lines.push(' * Output types include computed virtual fields')
+  lines.push(' * Types change based on select/include - relationships only present when explicitly included')
+  lines.push(' * Virtual fields are added to the base model type')
   lines.push(' */')
   lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
   lines.push(`  ${dbKeys.join(' | ')}`)
   lines.push('> & {')
 
-  // For each list, create a type that uses Prisma's arg types but overrides return types
+  // For each list, create strongly-typed methods using Prisma's conditional types
   for (const listName of Object.keys(config.lists)) {
     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
 
     lines.push(`  ${dbKey}: {`)
-    lines.push(
-      `    findUnique: (args: Prisma.${listName}FindUniqueArgs) => Promise<${listName}Output | null>`,
-    )
-    lines.push(
-      `    findMany: (args?: Prisma.${listName}FindManyArgs) => Promise<${listName}Output[]>`,
-    )
-    lines.push(`    create: (args: Prisma.${listName}CreateArgs) => Promise<${listName}Output>`)
-    lines.push(
-      `    update: (args: Prisma.${listName}UpdateArgs) => Promise<${listName}Output | null>`,
-    )
-    lines.push(
-      `    delete: (args: Prisma.${listName}DeleteArgs) => Promise<${listName}Output | null>`,
-    )
+
+    // findUnique - generic to preserve Prisma's conditional return type
+    lines.push(`    findUnique: <T extends Prisma.${listName}FindUniqueArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}FindUniqueArgs>`)
+    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+
+    // findMany - generic to preserve Prisma's conditional return type
+    lines.push(`    findMany: <T extends Prisma.${listName}FindManyArgs>(`)
+    lines.push(`      args?: Prisma.SelectSubset<T, Prisma.${listName}FindManyArgs>`)
+    lines.push(`    ) => Promise<Array<Prisma.${listName}GetPayload<T> & ${listName}VirtualFields>>`)
+
+    // create - generic to preserve Prisma's conditional return type
+    lines.push(`    create: <T extends Prisma.${listName}CreateArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}CreateArgs>`)
+    lines.push(`    ) => Promise<Prisma.${listName}GetPayload<T> & ${listName}VirtualFields>`)
+
+    // update - generic to preserve Prisma's conditional return type
+    lines.push(`    update: <T extends Prisma.${listName}UpdateArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}UpdateArgs>`)
+    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+
+    // delete - generic to preserve Prisma's conditional return type
+    lines.push(`    delete: <T extends Prisma.${listName}DeleteArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}DeleteArgs>`)
+    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+
+    // count - no changes to return type
     lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
+
     lines.push(`  }`)
   }
 
@@ -392,6 +444,9 @@ export function generateTypes(config: OpenSaasConfig): string {
 
   // Generate types for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
+    // Generate VirtualFields type first (needed by Output type)
+    lines.push(generateVirtualFieldsType(listName, listConfig.fields))
+    lines.push('')
     lines.push(generateModelOutputType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateModelTypeAlias(listName))
