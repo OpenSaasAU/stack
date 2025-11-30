@@ -90,6 +90,11 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
     // Add regular fields
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      // Skip virtual fields - they don't create database columns
+      if (fieldConfig.virtual) {
+        continue
+      }
+
       if (fieldConfig.type === 'relationship') {
         relationshipFields.push({
           name: fieldName,

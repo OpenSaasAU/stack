@@ -60,7 +60,9 @@ describe('Context Generator', () => {
       const context = generateContext(config)
 
       expect(context).toContain('const globalForPrisma')
-      expect(context).toContain('globalThis as unknown as { prisma: PrismaClient | null }')
+      expect(context).toContain(
+        'globalThis as unknown as { prisma: ReturnType<typeof createExtendedPrisma> | null }',
+      )
       expect(context).toContain('globalForPrisma.prisma')
       expect(context).toContain("if (process.env.NODE_ENV !== 'production')")
     })

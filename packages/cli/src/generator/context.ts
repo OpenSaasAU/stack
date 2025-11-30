@@ -123,6 +123,7 @@ import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client/client'
 import type { Context } from './types'
+import { prismaExtensions } from './prisma-extensions'
 import configOrPromise from '../opensaas.config'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -130,15 +131,29 @@ const configPromise = Promise.resolve(configOrPromise)
 let resolvedConfig: OpenSaasConfig | null = null
 
 // Internal Prisma singleton - managed automatically
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | null }
-let prisma: PrismaClient | null = null
+const globalForPrisma = globalThis as unknown as { prisma: ReturnType<typeof createExtendedPrisma> | null }
+let prisma: ReturnType<typeof createExtendedPrisma> | null = null
+
+/**
+ * Create Prisma client with result extensions
+ */
+function createExtendedPrisma(basePrisma: PrismaClient) {
+  // Check if there are any extensions to apply
+  if (Object.keys(prismaExtensions).length === 0) {
+    return basePrisma
+  }
+  // Apply result extensions
+  return basePrisma.$extends(prismaExtensions)
+}
 
 async function getPrisma() {
   if (!prisma) {
     if (!resolvedConfig) {
       resolvedConfig = await configPromise
     }
-    prisma = globalForPrisma.prisma ?? ${prismaInstantiation}
+    const basePrisma = ${prismaInstantiation}
+    const extendedPrisma = createExtendedPrisma(basePrisma)
+    prisma = globalForPrisma.prisma ?? extendedPrisma
     if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
   }
   return prisma
@@ -175,7 +190,7 @@ ${storageUtilities}
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as Context<TSession>
+  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
@@ -185,7 +200,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage)
+  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
 })()
 
 /**

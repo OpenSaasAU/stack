@@ -1,10 +1,10 @@
 import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
-import { AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 
-export interface DashboardProps<TPrisma> {
-  context: AccessContext<TPrisma>
+export interface DashboardProps {
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   basePath?: string
 }
@@ -13,19 +13,16 @@ export interface DashboardProps<TPrisma> {
  * Dashboard landing page showing all available lists
  * Server Component
  */
-export async function Dashboard<TPrisma>({
-  context,
-  config,
-  basePath = '/admin',
-}: DashboardProps<TPrisma>) {
+export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
   const lists = Object.keys(config.lists || {})
 
   // Get counts for each list
   const listCounts = await Promise.all(
     lists.map(async (listKey) => {
       try {
-        const count = await context.db[getDbKey(listKey)]?.count()
-        return { listKey, count: count || 0 }
+        const delegate = context.db[getDbKey(listKey)]
+        const count = delegate?.count ? await delegate.count() : 0
+        return { listKey, count }
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error)
         return { listKey, count: 0 }

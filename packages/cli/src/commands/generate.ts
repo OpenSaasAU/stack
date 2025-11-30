@@ -11,7 +11,7 @@ import {
   writeLists,
   writeContext,
   writePluginTypes,
-  patchPrismaTypes,
+  writePrismaExtensions,
 } from '../generator/index.js'
 import { OpenSaasConfig } from '@opensaas/stack-core'
 
@@ -77,6 +77,7 @@ export async function generateCommand() {
       const listsPath = path.join(cwd, '.opensaas', 'lists.ts')
       const contextPath = path.join(cwd, '.opensaas', 'context.ts')
       const pluginTypesPath = path.join(cwd, '.opensaas', 'plugin-types.ts')
+      const prismaExtensionsPath = path.join(cwd, '.opensaas', 'prisma-extensions.ts')
 
       writePrismaSchema(config, prismaSchemaPath)
       writePrismaConfig(config, prismaConfigPath)
@@ -84,6 +85,7 @@ export async function generateCommand() {
       writeLists(config, listsPath)
       writeContext(config, contextPath)
       writePluginTypes(config, pluginTypesPath)
+      writePrismaExtensions(config, prismaExtensionsPath)
 
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
@@ -92,6 +94,7 @@ export async function generateCommand() {
       console.log(chalk.green('✅ Lists namespace generated'))
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
+      console.log(chalk.green('✅ Prisma extensions generated'))
 
       // Execute afterGenerate hooks if plugins are present
       if (config.plugins && config.plugins.length > 0) {
@@ -158,18 +161,6 @@ export async function generateCommand() {
       console.log(chalk.green('✅ Prisma client generated'))
     } catch (err) {
       prismaSpinner.fail(chalk.red('Failed to generate Prisma client'))
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(chalk.red('\n❌ Error:'), message)
-      process.exit(1)
-    }
-
-    // Patch Prisma types with field transformations
-    const patchSpinner = ora('Patching Prisma types...').start()
-    try {
-      patchPrismaTypes(config, cwd)
-      patchSpinner.succeed(chalk.green('Type patching complete'))
-    } catch (err) {
-      patchSpinner.fail(chalk.red('Failed to patch types'))
       const message = err instanceof Error ? err.message : String(err)
       console.error(chalk.red('\n❌ Error:'), message)
       process.exit(1)

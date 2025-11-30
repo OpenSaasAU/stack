@@ -1,5 +1,12 @@
 import { config, list } from '@opensaas/stack-core'
-import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
+import {
+  text,
+  relationship,
+  select,
+  timestamp,
+  password,
+  virtual,
+} from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
@@ -51,6 +58,16 @@ export default config({
         posts: relationship({
           ref: 'Post.author',
           many: true,
+        }),
+        // Virtual field - computed from name and email, not stored in database
+        displayName: virtual<Lists.User.TypeInfo>({
+          type: 'string',
+          hooks: {
+            resolveOutput: ({ item }) => {
+              // item is now typed as User with name, email, etc.
+              return `${item.name || 'Unknown'} (${item.email || 'no-email'})`
+            },
+          },
         }),
       },
       access: {

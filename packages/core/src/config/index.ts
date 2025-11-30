@@ -63,11 +63,10 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
  * })
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function list<
   TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo,
 >(config: {
-  fields: Record<string, FieldConfig>
+  fields: import('./types.js').FieldsWithItemType<Record<string, FieldConfig>, TTypeInfo['item']>
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }

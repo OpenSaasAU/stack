@@ -1,10 +1,10 @@
 import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
-import { AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { UserMenu } from './UserMenu.js'
 
-export interface NavigationProps<TPrisma> {
-  context: AccessContext<TPrisma>
+export interface NavigationProps {
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string
@@ -15,13 +15,13 @@ export interface NavigationProps<TPrisma> {
  * Navigation sidebar showing all lists
  * Server Component
  */
-export function Navigation<TPrisma>({
+export function Navigation({
   context,
   config,
   basePath = '/admin',
   currentPath = '',
   onSignOut,
-}: NavigationProps<TPrisma>) {
+}: NavigationProps) {
   const lists = Object.keys(config.lists || {})
 
   return (

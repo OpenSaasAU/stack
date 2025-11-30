@@ -11,10 +11,12 @@ export function generateZodSchema(
   const shape: Record<string, z.ZodTypeAny> = {}
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    // Skip system fields and relationships
+    // Skip system fields, relationships, and virtual fields
+    // Virtual fields don't accept input - they only compute output
     if (
       ['id', 'createdAt', 'updatedAt'].includes(fieldName) ||
-      fieldConfig.type === 'relationship'
+      fieldConfig.type === 'relationship' ||
+      fieldConfig.virtual
     ) {
       continue
     }

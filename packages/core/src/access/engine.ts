@@ -271,6 +271,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   const filtered: Record<string, unknown> = {}
   const MAX_DEPTH = 5 // Prevent infinite recursion
 
+  // Process existing fields from the database result
   for (const [fieldName, value] of Object.entries(item)) {
     const fieldConfig = fieldConfigs[fieldName]
 
@@ -357,6 +358,43 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     }
   }
 
+  // Process virtual fields - compute values from other fields
+  // Virtual fields don't exist in the database result, so we need to compute them separately
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    // Skip if already processed (from database result)
+    if (fieldName in filtered) {
+      continue
+    }
+
+    // Only process virtual fields
+    if (!fieldConfig.virtual) {
+      continue
+    }
+
+    // Check field access
+    const canRead = await checkFieldAccess(fieldConfig.access, 'read', {
+      ...args,
+      item,
+    })
+
+    if (!canRead) {
+      continue
+    }
+
+    // Virtual fields must have resolveOutput hook to compute their value
+    if (fieldConfig.hooks?.resolveOutput && listKey) {
+      const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
+      filtered[fieldName] = hook({
+        value: undefined, // Virtual fields don't have a database value
+        operation: 'query',
+        fieldName,
+        listKey,
+        item: filtered, // Pass filtered item so virtual field can access other fields
+        context: args.context,
+      })
+    }
+  }
+
   return filtered as Partial<T>
 }
 
@@ -393,6 +431,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 
     // Skip system fields
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+      continue
+    }
+
+    // Skip virtual fields - they don't store in database
+    // Virtual fields with resolveInput hooks handle side effects separately
+    if (fieldConfig && 'virtual' in fieldConfig && fieldConfig.virtual) {
       continue
     }
 
