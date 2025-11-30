@@ -66,7 +66,7 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
 export function list<
   TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo,
 >(config: {
-  fields: import('./types.js').FieldsWithItemType<Record<string, FieldConfig>, TTypeInfo['item']>
+  fields: import('./types.js').FieldsWithTypeInfo<Record<string, FieldConfig>, TTypeInfo>
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
@@ -99,7 +99,7 @@ export type {
   OperationAccess,
   Hooks,
   FieldHooks,
-  FieldsWithItemType,
+  FieldsWithTypeInfo,
   DatabaseConfig,
   SessionConfig,
   UIConfig,
