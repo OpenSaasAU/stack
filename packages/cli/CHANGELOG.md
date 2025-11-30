@@ -1,5 +1,59 @@
 # @opensaas/stack-cli
 
+## 0.4.0
+
+### Minor Changes
+
+- [#170](https://github.com/OpenSaasAU/stack/pull/170) [`3c4db9d`](https://github.com/OpenSaasAU/stack/commit/3c4db9d8318fc73d291991d8bdfa4f607c3a50ea) Thanks [@list({](https://github.com/list({)! - Add support for virtual fields with proper TypeScript type generation
+
+  Virtual fields are computed fields that don't exist in the database but are added to query results at runtime. This feature enables derived or computed values to be included in your API responses with full type safety.
+
+  **New Features:**
+  - Added `virtual()` field type for defining computed fields in your schema
+  - Virtual fields are automatically excluded from database schema and input types
+  - Virtual fields appear in output types with full TypeScript autocomplete
+  - Virtual fields support `resolveOutput` hooks for custom computation logic
+
+  **Type System Improvements:**
+  - Generated Context type now properly extends AccessContext from core
+  - Separate Input and Output types (e.g., `UserOutput` includes virtual fields, `UserCreateInput` does not)
+  - UI components now accept `AccessContext<any>` for better compatibility with custom context types
+  - Type aliases provide convenience (e.g., `User = UserOutput`)
+
+  **Example Usage:**
+
+  ```typescript
+  import { list, text, virtual } from '@opensaas/stack-core'
+
+  export default config({
+    lists: {
+
+        fields: {
+          name: text(),
+          email: text(),
+          displayName: virtual({
+            type: 'string',
+            hooks: {
+              resolveOutput: async ({ item }) => {
+                return `${item.name} (${item.email})`
+              },
+            },
+          }),
+        },
+      }),
+    },
+  })
+  ```
+
+  The `displayName` field will automatically appear in query results with full TypeScript support, but won't be part of create/update operations or the database schema.
+
+### Patch Changes
+
+- [#154](https://github.com/OpenSaasAU/stack/pull/154) [`edf1e5f`](https://github.com/OpenSaasAU/stack/commit/edf1e5fa4cfefcb7bc09bf45d4702260e6d0d3aa) Thanks [@renovate](https://github.com/apps/renovate)! - Update dependency chokidar to v5
+
+- Updated dependencies [[`3c4db9d`](https://github.com/OpenSaasAU/stack/commit/3c4db9d8318fc73d291991d8bdfa4f607c3a50ea)]:
+  - @opensaas/stack-core@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
