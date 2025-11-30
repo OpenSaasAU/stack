@@ -407,13 +407,12 @@ describe('Field Types', () => {
       })
     })
 
-    describe('typePatch', () => {
-      test('has type patch configured', () => {
+    describe('resultExtension', () => {
+      test('has result extension configured', () => {
         const field = password()
 
-        expect(field.typePatch).toBeDefined()
-        expect(field.typePatch?.resultType).toBe("import('@opensaas/stack-core').HashedPassword")
-        expect(field.typePatch?.patchScope).toBe('scalars-only')
+        expect(field.resultExtension).toBeDefined()
+        expect(field.resultExtension?.outputType).toBe("import('@opensaas/stack-core').HashedPassword")
       })
     })
   })
