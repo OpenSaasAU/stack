@@ -129,21 +129,29 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
 }
 
 /**
- * Configuration for patching Prisma-generated types
- * Allows fields to transform their types in query results
+ * Configuration for Prisma result extensions
+ * Allows fields to transform their runtime values and types in query results
+ *
+ * Runtime transformation is delegated to the field's resolveOutput hook.
+ * This config only specifies the TypeScript output type for generated types.
  */
-export type TypePatchConfig = {
+export type ResultExtensionConfig = {
   /**
-   * The TypeScript type to use in Prisma result types (e.g., Payload scalars)
-   * This is an import statement like: "import('@opensaas/stack-core').HashedPassword"
+   * The TypeScript type to use in query result types
+   * This is a type expression like: "import('@opensaas/stack-core').HashedPassword"
+   *
+   * The actual runtime transformation is performed by the field's resolveOutput hook.
+   * The Prisma extension will automatically call the hook if it exists.
+   *
+   * @example "import('@opensaas/stack-core').HashedPassword"
+   * @example "import('./types').MyCustomType"
    */
-  resultType: string
+  outputType: string
   /**
-   * Optional: Where to apply the patch
-   * - 'scalars-only': Only patch in Payload scalars (default, safest)
-   * - 'all': Patch everywhere the field appears (including inputs)
+   * @deprecated No longer used. Runtime transformations are handled by resolveOutput hooks.
+   * This field is kept for backwards compatibility but should not be used in new code.
    */
-  patchScope?: 'scalars-only' | 'all'
+  compute?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,11 +168,10 @@ export type BaseFieldConfig<TInput = any, TOutput = TInput, TItem = any> = {
    */
   virtual?: boolean
   /**
-   * Type patching configuration for Prisma-generated types
-   * When specified, the generator will patch Prisma's types to use
-   * the specified type in query results instead of the original type
+   * Prisma result extension configuration
+   * Transforms field values and types in query results using Prisma's native extension system
    */
-  typePatch?: TypePatchConfig
+  resultExtension?: ResultExtensionConfig
   ui?: {
     /**
      * Custom React component to render this field

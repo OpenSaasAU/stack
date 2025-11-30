@@ -74,6 +74,41 @@ function generateVirtualFieldsType(listName: string, fields: Record<string, Fiel
 }
 
 /**
+ * Generate transformed fields type - fields with resultExtension transformations
+ * This replaces Prisma's base types with transformed types (e.g., string -> HashedPassword)
+ */
+function generateTransformedFieldsType(
+  listName: string,
+  fields: Record<string, FieldConfig>,
+): string {
+  const lines: string[] = []
+  const transformedFields = Object.entries(fields).filter(([_, config]) => config.resultExtension)
+
+  lines.push(`/**`)
+  lines.push(` * Transformed fields for ${listName} - fields with resultExtension transformations`)
+  lines.push(` * These override Prisma's base types with transformed types via result extensions`)
+  lines.push(` */`)
+  lines.push(`export type ${listName}TransformedFields = {`)
+
+  for (const [fieldName, fieldConfig] of transformedFields) {
+    if (fieldConfig.resultExtension) {
+      const optional = isFieldOptional(fieldConfig)
+      const nullability = optional ? ' | undefined' : ''
+      lines.push(`  ${fieldName}: ${fieldConfig.resultExtension.outputType}${nullability}`)
+    }
+  }
+
+  // If no transformed fields, make it an empty object
+  if (transformedFields.length === 0) {
+    lines.push('  // No transformed fields defined')
+  }
+
+  lines.push('}')
+
+  return lines.join('\n')
+}
+
+/**
  * Generate TypeScript Output type for a model (includes virtual fields)
  * This is kept for backwards compatibility but CustomDB uses Prisma's GetPayload + VirtualFields
  */
@@ -275,7 +310,7 @@ function generateHookTypes(listName: string): string {
 }
 
 /**
- * Generate custom DB interface that uses Prisma's conditional types with virtual fields
+ * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
  * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
 function generateCustomDBType(config: OpenSaasConfig): string {
@@ -289,10 +324,12 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
   lines.push('/**')
   lines.push(
-    ' * Custom DB type that uses Prisma\'s conditional types with virtual field support',
+    " * Custom DB type that uses Prisma's conditional types with virtual and transformed field support",
   )
-  lines.push(' * Types change based on select/include - relationships only present when explicitly included')
-  lines.push(' * Virtual fields are added to the base model type')
+  lines.push(
+    ' * Types change based on select/include - relationships only present when explicitly included',
+  )
+  lines.push(' * Virtual fields and transformed fields are added to the base model type')
   lines.push(' */')
   lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
   lines.push(`  ${dbKeys.join(' | ')}`)
@@ -307,27 +344,37 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     // findUnique - generic to preserve Prisma's conditional return type
     lines.push(`    findUnique: <T extends Prisma.${listName}FindUniqueArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}FindUniqueArgs>`)
-    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+    lines.push(
+      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
+    )
 
     // findMany - generic to preserve Prisma's conditional return type
     lines.push(`    findMany: <T extends Prisma.${listName}FindManyArgs>(`)
     lines.push(`      args?: Prisma.SelectSubset<T, Prisma.${listName}FindManyArgs>`)
-    lines.push(`    ) => Promise<Array<Prisma.${listName}GetPayload<T> & ${listName}VirtualFields>>`)
+    lines.push(
+      `    ) => Promise<Array<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>>`,
+    )
 
     // create - generic to preserve Prisma's conditional return type
     lines.push(`    create: <T extends Prisma.${listName}CreateArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}CreateArgs>`)
-    lines.push(`    ) => Promise<Prisma.${listName}GetPayload<T> & ${listName}VirtualFields>`)
+    lines.push(
+      `    ) => Promise<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>`,
+    )
 
     // update - generic to preserve Prisma's conditional return type
     lines.push(`    update: <T extends Prisma.${listName}UpdateArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}UpdateArgs>`)
-    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+    lines.push(
+      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
+    )
 
     // delete - generic to preserve Prisma's conditional return type
     lines.push(`    delete: <T extends Prisma.${listName}DeleteArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}DeleteArgs>`)
-    lines.push(`    ) => Promise<(Prisma.${listName}GetPayload<T> & ${listName}VirtualFields) | null>`)
+    lines.push(
+      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
+    )
 
     // count - no changes to return type
     lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
@@ -444,8 +491,11 @@ export function generateTypes(config: OpenSaasConfig): string {
 
   // Generate types for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    // Generate VirtualFields type first (needed by Output type)
+    // Generate VirtualFields type first (needed by Output type and CustomDB)
     lines.push(generateVirtualFieldsType(listName, listConfig.fields))
+    lines.push('')
+    // Generate TransformedFields type (needed by CustomDB)
+    lines.push(generateTransformedFieldsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateModelOutputType(listName, listConfig.fields))
     lines.push('')

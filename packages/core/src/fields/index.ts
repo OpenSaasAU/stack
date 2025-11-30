@@ -285,9 +285,9 @@ export function password<
   return {
     type: 'password',
     ...options,
-    typePatch: {
-      resultType: "import('@opensaas/stack-core').HashedPassword",
-      patchScope: 'scalars-only',
+    resultExtension: {
+      outputType: "import('@opensaas/stack-core').HashedPassword",
+      // No compute - delegates to resolveOutput hook
     },
     ui: {
       ...options?.ui,

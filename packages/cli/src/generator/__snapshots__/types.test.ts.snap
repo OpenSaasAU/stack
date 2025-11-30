@@ -10,12 +10,28 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -76,20 +92,30 @@ export type UserHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'user'
 > & {
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }
 
@@ -115,13 +141,29 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string
   content: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -185,20 +227,30 @@ export type PostHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'post'
 > & {
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
 }
 
@@ -224,13 +276,29 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string
   content: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -294,20 +362,30 @@ export type PostHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'post'
 > & {
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
 }
 
@@ -333,12 +411,28 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -399,20 +493,30 @@ export type UserHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'user'
 > & {
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }
 
@@ -438,13 +542,29 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string
   email: string
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -508,20 +628,30 @@ export type UserHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'user'
 > & {
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }
 
@@ -547,12 +677,28 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -612,12 +758,28 @@ export type UserHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -677,12 +839,28 @@ export type PostHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Virtual fields for Comment - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type CommentVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Comment - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type CommentTransformedFields = {
+  // No transformed fields defined
+}
+
 export type CommentOutput = {
   id: string
   content: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & CommentVirtualFields
 
 export type Comment = CommentOutput
 
@@ -743,38 +921,66 @@ export type CommentHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'user' | 'post' | 'comment'
 > & {
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   comment: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<CommentOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<CommentOutput[]>
-    create: (args: { data: any }) => Promise<CommentOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<CommentOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<CommentOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.CommentFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.CommentFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
+    findMany: <T extends Prisma.CommentFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.CommentFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields>>
+    create: <T extends Prisma.CommentCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.CommentCreateArgs>
+    ) => Promise<Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields>
+    update: <T extends Prisma.CommentUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.CommentUpdateArgs>
+    ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
+    delete: <T extends Prisma.CommentDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.CommentDeleteArgs>
+    ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
+    count: (args?: Prisma.CommentCountArgs) => Promise<number>
   }
 }
 
@@ -800,14 +1006,30 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string | null
   authorId: string | null
-  author: UserOutput | null
+  author?: UserOutput | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -869,12 +1091,28 @@ export type PostHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -935,29 +1173,48 @@ export type UserHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'post' | 'user'
 > & {
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }
 
@@ -983,14 +1240,30 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string | null
   authorId: string | null
-  author: UserOutput | null
+  author?: UserOutput | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -1052,12 +1325,28 @@ export type PostHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -1118,29 +1407,48 @@ export type UserHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'post' | 'user'
 > & {
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }
 
@@ -1166,13 +1474,29 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+/**
+ * Virtual fields for User - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type UserVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for User - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type UserTransformedFields = {
+  // No transformed fields defined
+}
+
 export type UserOutput = {
   id: string
   name: string | null
-  posts: PostOutput[]
+  posts?: PostOutput[]
   createdAt: Date
   updatedAt: Date
-}
+} & UserVirtualFields
 
 export type User = UserOutput
 
@@ -1234,14 +1558,30 @@ export type UserHooks = {
   }) => Promise<void>
 }
 
+/**
+ * Virtual fields for Post - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type PostVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Post - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type PostTransformedFields = {
+  // No transformed fields defined
+}
+
 export type PostOutput = {
   id: string
   title: string | null
   authorId: string | null
-  author: UserOutput | null
+  author?: UserOutput | null
   createdAt: Date
   updatedAt: Date
-}
+} & PostVirtualFields
 
 export type Post = PostOutput
 
@@ -1304,29 +1644,48 @@ export type PostHooks = {
 }
 
 /**
- * Custom DB type that overrides AccessControlledDB return types to include virtual fields
- * Uses Output types which include computed virtual fields
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
  */
 export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
   'user' | 'post'
 > & {
   user: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<UserOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<UserOutput[]>
-    create: (args: { data: any }) => Promise<UserOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<UserOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<UserOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    findMany: <T extends Prisma.UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    create: <T extends Prisma.UserCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    update: <T extends Prisma.UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    delete: <T extends Prisma.UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
   post: {
-    // Only the 6 methods implemented by AccessControlledDB
-    findUnique: (args: { where: { id: string }, include?: any }) => Promise<PostOutput | null>
-    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<PostOutput[]>
-    create: (args: { data: any }) => Promise<PostOutput>
-    update: (args: { where: { id: string }, data: any }) => Promise<PostOutput | null>
-    delete: (args: { where: { id: string } }) => Promise<PostOutput | null>
-    count: (args?: { where?: any }) => Promise<number>
+    findUnique: <T extends Prisma.PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    findMany: <T extends Prisma.PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
+    create: <T extends Prisma.PostCreateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
+    update: <T extends Prisma.PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    delete: <T extends Prisma.PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
+    count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
 }
 
