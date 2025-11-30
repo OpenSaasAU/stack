@@ -27,7 +27,7 @@ function formatFieldName(fieldName: string): string {
  */
 export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TextField<TTypeInfo['item']>, 'type'>): TextField<TTypeInfo['item']> {
+>(options?: Omit<TextField<TTypeInfo>, 'type'>): TextField<TTypeInfo> {
   return {
     type: 'text',
     ...options,
@@ -103,7 +103,7 @@ export function text<
  */
 export function integer<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<IntegerField<TTypeInfo['item']>, 'type'>): IntegerField<TTypeInfo['item']> {
+>(options?: Omit<IntegerField<TTypeInfo>, 'type'>): IntegerField<TTypeInfo> {
   return {
     type: 'integer',
     ...options,
@@ -154,7 +154,7 @@ export function integer<
  */
 export function checkbox<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<CheckboxField<TTypeInfo['item']>, 'type'>): CheckboxField<TTypeInfo['item']> {
+>(options?: Omit<CheckboxField<TTypeInfo>, 'type'>): CheckboxField<TTypeInfo> {
   return {
     type: 'checkbox',
     ...options,
@@ -188,7 +188,7 @@ export function checkbox<
  */
 export function timestamp<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TimestampField<TTypeInfo['item']>, 'type'>): TimestampField<TTypeInfo['item']> {
+>(options?: Omit<TimestampField<TTypeInfo>, 'type'>): TimestampField<TTypeInfo> {
   return {
     type: 'timestamp',
     ...options,
@@ -281,7 +281,7 @@ export function timestamp<
  */
 export function password<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<PasswordField<TTypeInfo['item']>, 'type'>): PasswordField<TTypeInfo['item']> {
+>(options?: Omit<PasswordField<TTypeInfo>, 'type'>): PasswordField<TTypeInfo> {
   return {
     type: 'password',
     ...options,
@@ -385,7 +385,7 @@ export function password<
  */
 export function select<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options: Omit<SelectField<TTypeInfo['item']>, 'type'>): SelectField<TTypeInfo['item']> {
+>(options: Omit<SelectField<TTypeInfo>, 'type'>): SelectField<TTypeInfo> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
   }
@@ -435,9 +435,7 @@ export function select<
  */
 export function relationship<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(
-  options: Omit<RelationshipField<TTypeInfo['item']>, 'type'>,
-): RelationshipField<TTypeInfo['item']> {
+>(options: Omit<RelationshipField<TTypeInfo>, 'type'>): RelationshipField<TTypeInfo> {
   if (!options.ref) {
     throw new Error('Relationship field must have a ref')
   }
@@ -501,7 +499,7 @@ export function relationship<
  */
 export function json<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<JsonField<TTypeInfo['item']>, 'type'>): JsonField<TTypeInfo['item']> {
+>(options?: Omit<JsonField<TTypeInfo>, 'type'>): JsonField<TTypeInfo> {
   return {
     type: 'json',
     ...options,
@@ -598,10 +596,10 @@ export function json<
 export function virtual<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
 >(
-  options: Omit<VirtualField<unknown, TTypeInfo['item']>, 'type' | 'virtual' | 'outputType'> & {
+  options: Omit<VirtualField<unknown, TTypeInfo>, 'type' | 'virtual' | 'outputType'> & {
     type: string
   },
-): VirtualField<unknown, TTypeInfo['item']> {
+): VirtualField<unknown, TTypeInfo> {
   // Validate that resolveOutput is provided
   if (!options.hooks?.resolveOutput) {
     throw new Error(

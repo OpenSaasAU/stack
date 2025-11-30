@@ -60,7 +60,7 @@ export default config({
           many: true,
         }),
         // Virtual field - computed from name and email, not stored in database
-        displayName: virtual<Lists.User.TypeInfo>({
+        displayName: virtual({
           type: 'string',
           hooks: {
             resolveOutput: ({ item }) => {

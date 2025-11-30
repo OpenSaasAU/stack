@@ -1,4 +1,4 @@
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
 import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
@@ -7,7 +7,11 @@ import type { FileValidationOptions } from '../utils/upload.js'
 /**
  * File field configuration
  */
-export interface FileFieldConfig extends BaseFieldConfig<FileMetadata | null, FileMetadata | null> {
+export interface FileFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends BaseFieldConfig<
+  FileMetadata | null,
+  FileMetadata | null,
+  TTypeInfo
+> {
   type: 'file'
   /** Name of the storage provider from config.storage */
   storage: string
@@ -37,9 +41,10 @@ export interface FileFieldConfig extends BaseFieldConfig<FileMetadata | null, Fi
 /**
  * Image field configuration
  */
-export interface ImageFieldConfig extends BaseFieldConfig<
+export interface ImageFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends BaseFieldConfig<
   ImageMetadata | null,
-  ImageMetadata | null
+  ImageMetadata | null,
+  TTypeInfo
 > {
   type: 'image'
   /** Name of the storage provider from config.storage */
@@ -91,8 +96,10 @@ export interface ImageFieldConfig extends BaseFieldConfig<
  * }
  * ```
  */
-export function file(options: Omit<FileFieldConfig, 'type'>): FileFieldConfig {
-  const fieldConfig: FileFieldConfig = {
+export function file<TTypeInfo extends TypeInfo = TypeInfo>(
+  options: Omit<FileFieldConfig<TTypeInfo>, 'type'>,
+): FileFieldConfig<TTypeInfo> {
+  const fieldConfig: FileFieldConfig<TTypeInfo> = {
     type: 'file',
     ...options,
 
@@ -218,8 +225,10 @@ export function file(options: Omit<FileFieldConfig, 'type'>): FileFieldConfig {
  * }
  * ```
  */
-export function image(options: Omit<ImageFieldConfig, 'type'>): ImageFieldConfig {
-  const fieldConfig: ImageFieldConfig = {
+export function image<TTypeInfo extends TypeInfo = TypeInfo>(
+  options: Omit<ImageFieldConfig<TTypeInfo>, 'type'>,
+): ImageFieldConfig<TTypeInfo> {
+  const fieldConfig: ImageFieldConfig<TTypeInfo> = {
     type: 'image',
     ...options,
 
