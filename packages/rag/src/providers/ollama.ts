@@ -117,11 +117,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       return []
     }
 
-    // Ensure dimensions are initialized
-    if (!this.dimensionsInitialized) {
-      await this.initializeDimensions()
-    }
-
     // Filter out empty texts and keep track of indices
     const validTexts: string[] = []
     const validIndices: number[] = []
@@ -135,6 +130,11 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
     if (validTexts.length === 0) {
       throw new Error('Cannot generate embeddings for all empty texts')
+    }
+
+    // Ensure dimensions are initialized (only after validating we have valid texts)
+    if (!this.dimensionsInitialized) {
+      await this.initializeDimensions()
     }
 
     try {
