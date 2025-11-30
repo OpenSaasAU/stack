@@ -251,7 +251,9 @@ function generateCustomDBType(config: OpenSaasConfig): string {
   })
 
   lines.push('/**')
-  lines.push(' * Custom DB type that overrides AccessControlledDB return types to include virtual fields')
+  lines.push(
+    ' * Custom DB type that overrides AccessControlledDB return types to include virtual fields',
+  )
   lines.push(' * Uses Output types which include computed virtual fields')
   lines.push(' */')
   lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
@@ -264,10 +266,16 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
     lines.push(`  ${dbKey}: {`)
     lines.push(`    // Only the 6 methods implemented by AccessControlledDB`)
-    lines.push(`    findUnique: (args: { where: { id: string }, include?: any }) => Promise<${listName}Output | null>`)
-    lines.push(`    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<${listName}Output[]>`)
+    lines.push(
+      `    findUnique: (args: { where: { id: string }, include?: any }) => Promise<${listName}Output | null>`,
+    )
+    lines.push(
+      `    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<${listName}Output[]>`,
+    )
     lines.push(`    create: (args: { data: any }) => Promise<${listName}Output>`)
-    lines.push(`    update: (args: { where: { id: string }, data: any }) => Promise<${listName}Output | null>`)
+    lines.push(
+      `    update: (args: { where: { id: string }, data: any }) => Promise<${listName}Output | null>`,
+    )
     lines.push(`    delete: (args: { where: { id: string } }) => Promise<${listName}Output | null>`)
     lines.push(`    count: (args?: { where?: any }) => Promise<number>`)
     lines.push(`  }`)
@@ -285,10 +293,16 @@ function generateContextType(_config: OpenSaasConfig): string {
   const lines: string[] = []
 
   lines.push('/**')
-  lines.push(' * Context type compatible with AccessContext but with CustomDB for virtual field typing')
-  lines.push(' * Extends AccessContext and overrides db property to include virtual fields in output types')
+  lines.push(
+    ' * Context type compatible with AccessContext but with CustomDB for virtual field typing',
+  )
+  lines.push(
+    ' * Extends AccessContext and overrides db property to include virtual fields in output types',
+  )
   lines.push(' */')
-  lines.push('export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, \'db\' | \'session\'> & {')
+  lines.push(
+    "export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {",
+  )
   lines.push('  db: CustomDB')
   lines.push('  session: TSession')
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')

@@ -1,10 +1,10 @@
 import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig, type PrismaClientLike } from '@opensaas/stack-core'
+import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 
 export interface DashboardProps {
-  context: AccessContext<any>
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   basePath?: string
 }
@@ -13,11 +13,7 @@ export interface DashboardProps {
  * Dashboard landing page showing all available lists
  * Server Component
  */
-export async function Dashboard({
-  context,
-  config,
-  basePath = '/admin',
-}: DashboardProps) {
+export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
   const lists = Object.keys(config.lists || {})
 
   // Get counts for each list

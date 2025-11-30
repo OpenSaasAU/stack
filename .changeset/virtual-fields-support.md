@@ -1,7 +1,7 @@
 ---
-"@opensaas/stack-core": minor
-"@opensaas/stack-cli": minor
-"@opensaas/stack-ui": minor
+'@opensaas/stack-core': minor
+'@opensaas/stack-cli': minor
+'@opensaas/stack-ui': minor
 ---
 
 Add support for virtual fields with proper TypeScript type generation
@@ -38,12 +38,12 @@ export default config({
           hooks: {
             resolveOutput: async ({ item }) => {
               return `${item.name} (${item.email})`
-            }
-          }
-        })
-      }
-    })
-  }
+            },
+          },
+        }),
+      },
+    }),
+  },
 })
 ```
 

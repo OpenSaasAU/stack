@@ -4,11 +4,11 @@ import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getListKeyFromUrl, OpenSaasConfig, type PrismaClientLike } from '@opensaas/stack-core'
+import { type AccessContext, getListKeyFromUrl, OpenSaasConfig } from '@opensaas/stack-core'
 import { generateThemeCSS } from '../lib/theme.js'
 
 export interface AdminUIProps {
-  context: AccessContext<any>
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   params?: string[]
   searchParams?: { [key: string]: string | string[] | undefined }

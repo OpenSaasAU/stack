@@ -1,16 +1,10 @@
 import Link from 'next/link.js'
 import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
-import {
-  type AccessContext,
-  getDbKey,
-  getUrlKey,
-  OpenSaasConfig,
-  type PrismaClientLike,
-} from '@opensaas/stack-core'
+import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 
 export interface ListViewProps {
-  context: AccessContext<any>
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   listKey: string
   basePath?: string
@@ -108,7 +102,12 @@ export async function ListView({
   // Extract only the relationship refs needed by client (don't send entire config)
   const relationshipRefs: Record<string, string> = {}
   Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
-    if ('type' in field && field.type === 'relationship' && 'ref' in field && typeof field.ref === 'string') {
+    if (
+      'type' in field &&
+      field.type === 'relationship' &&
+      'ref' in field &&
+      typeof field.ref === 'string'
+    ) {
       relationshipRefs[fieldName] = field.ref
     }
   })

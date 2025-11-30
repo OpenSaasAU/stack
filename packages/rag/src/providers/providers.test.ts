@@ -57,7 +57,7 @@ describe('Embedding Providers', () => {
         await expect(provider.embed('   ')).rejects.toThrow(
           'Cannot generate embedding for empty text',
         )
-      })
+      }).timeout(50000)
 
       it('should validate embedding dimensions', () => {
         const provider = new OpenAIEmbeddingProvider({

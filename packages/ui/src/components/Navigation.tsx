@@ -1,10 +1,10 @@
 import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getUrlKey, OpenSaasConfig, type PrismaClientLike } from '@opensaas/stack-core'
+import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { UserMenu } from './UserMenu.js'
 
 export interface NavigationProps {
-  context: AccessContext<any>
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string

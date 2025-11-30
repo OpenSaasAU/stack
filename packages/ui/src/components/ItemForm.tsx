@@ -3,11 +3,11 @@ import Link from 'next/link.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig, type PrismaClientLike } from '@opensaas/stack-core'
+import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 
 export interface ItemFormProps {
-  context: AccessContext<any>
+  context: AccessContext<unknown>
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
