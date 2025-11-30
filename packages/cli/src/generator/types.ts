@@ -267,17 +267,17 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     lines.push(`  ${dbKey}: {`)
     lines.push(`    // Only the 6 methods implemented by AccessControlledDB`)
     lines.push(
-      `    findUnique: (args: { where: { id: string }, include?: any }) => Promise<${listName}Output | null>`,
+      `    findUnique: (args: { where: { id: string }, include?: any, select?: any }) => Promise<${listName}Output | null>`,
     )
     lines.push(
-      `    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any }) => Promise<${listName}Output[]>`,
+      `    findMany: (args?: { where?: any, take?: number, skip?: number, include?: any, select?: any, orderBy?: any, distinct?: any, cursor?: any }) => Promise<${listName}Output[]>`,
     )
-    lines.push(`    create: (args: { data: any }) => Promise<${listName}Output>`)
+    lines.push(`    create: (args: { data: any, select?: any, include?: any }) => Promise<${listName}Output>`)
     lines.push(
-      `    update: (args: { where: { id: string }, data: any }) => Promise<${listName}Output | null>`,
+      `    update: (args: { where: { id: string }, data: any, select?: any, include?: any }) => Promise<${listName}Output | null>`,
     )
-    lines.push(`    delete: (args: { where: { id: string } }) => Promise<${listName}Output | null>`)
-    lines.push(`    count: (args?: { where?: any }) => Promise<number>`)
+    lines.push(`    delete: (args: { where: { id: string }, select?: any, include?: any }) => Promise<${listName}Output | null>`)
+    lines.push(`    count: (args?: { where?: any, select?: any }) => Promise<number>`)
     lines.push(`  }`)
   }
 
