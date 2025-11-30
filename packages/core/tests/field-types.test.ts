@@ -412,7 +412,9 @@ describe('Field Types', () => {
         const field = password()
 
         expect(field.resultExtension).toBeDefined()
-        expect(field.resultExtension?.outputType).toBe("import('@opensaas/stack-core').HashedPassword")
+        expect(field.resultExtension?.outputType).toBe(
+          "import('@opensaas/stack-core').HashedPassword",
+        )
       })
     })
   })
