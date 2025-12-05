@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
-import { text, integer } from '../src/fields/index.js'
+import { text, integer, relationship } from '../src/fields/index.js'
 import type { PrismaClient } from '@prisma/client'
 
 describe('Sudo Context', () => {
@@ -429,6 +429,7 @@ describe('Sudo Context', () => {
           fields: {
             email: text({ validation: { isRequired: true } }),
             name: text(),
+            posts: relationship({ ref: 'Post.author', many: true }),
           },
           access: {
             operation: {
@@ -441,6 +442,7 @@ describe('Sudo Context', () => {
           fields: {
             title: text({ validation: { isRequired: true } }),
             content: text(),
+            author: relationship({ ref: 'User.posts' }),
           },
           access: {
             operation: {
@@ -524,7 +526,15 @@ describe('Sudo Context', () => {
       const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
       const sudoContext = context.sudo()
 
-      // Mock existing user
+      // Mock existing post (needed for access control check in main operation)
+      mockPrismaWithRelations.post.findUnique.mockResolvedValue({
+        id: '1',
+        title: 'Original Post',
+        content: 'Original Content',
+        authorId: 'user-1',
+      })
+
+      // Mock existing user (for nested update)
       mockPrismaWithRelations.user.findUnique.mockResolvedValue({
         id: 'user-1',
         email: 'existing@example.com',
