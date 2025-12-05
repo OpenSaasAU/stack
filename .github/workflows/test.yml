@@ -111,25 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     needs: test
-    strategy:
-      matrix:
-        package:
-          - { name: 'core', dir: './packages/core', label: 'Core Package Coverage' }
-          - { name: 'ui', dir: './packages/ui', label: 'UI Package Coverage' }
-          - { name: 'cli', dir: './packages/cli', label: 'CLI Package Coverage' }
-          - { name: 'auth', dir: './packages/auth', label: 'Auth Package Coverage' }
-          - { name: 'storage', dir: './packages/storage', label: 'Storage Package Coverage' }
-          - { name: 'rag', dir: './packages/rag', label: 'RAG Package Coverage' }
-          - {
-              name: 'storage-s3',
-              dir: './packages/storage-s3',
-              label: 'Storage S3 Package Coverage',
-            }
-          - {
-              name: 'storage-vercel',
-              dir: './packages/storage-vercel',
-              label: 'Storage Vercel Package Coverage',
-            }
 
     steps:
       - name: Checkout code
@@ -141,8 +122,50 @@ jobs:
           name: coverage-reports
           path: packages/
 
-      - name: Report coverage for ${{ matrix.package.name }}
+      - name: Report coverage for Core Package
         uses: davelosert/vitest-coverage-report-action@v2
         with:
-          working-directory: ${{ matrix.package.dir }}
-          name: ${{ matrix.package.label }}
+          working-directory: ./packages/core
+          name: 'Core Package Coverage'
+
+      - name: Report coverage for UI Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/ui
+          name: 'UI Package Coverage'
+
+      - name: Report coverage for CLI Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/cli
+          name: 'CLI Package Coverage'
+
+      - name: Report coverage for Auth Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/auth
+          name: 'Auth Package Coverage'
+
+      - name: Report coverage for Storage Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/storage
+          name: 'Storage Package Coverage'
+
+      - name: Report coverage for RAG Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/rag
+          name: 'RAG Package Coverage'
+
+      - name: Report coverage for Storage S3 Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/storage-s3
+          name: 'Storage S3 Package Coverage'
+
+      - name: Report coverage for Storage Vercel Package
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: ./packages/storage-vercel
+          name: 'Storage Vercel Package Coverage'
