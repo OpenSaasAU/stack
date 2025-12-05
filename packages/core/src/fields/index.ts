@@ -279,9 +279,9 @@ export function timestamp<
  * @param options - Field configuration options
  * @returns Password field configuration
  */
-export function password<
-  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<PasswordField<TTypeInfo>, 'type'>): PasswordField<TTypeInfo> {
+export function password<TTypeInfo extends import('../config/types.js').TypeInfo>(
+  options?: Omit<PasswordField<TTypeInfo>, 'type'>,
+): PasswordField<TTypeInfo> {
   return {
     type: 'password',
     ...options,
@@ -293,21 +293,18 @@ export function password<
       ...options?.ui,
       valueForClientSerialization: ({ value }) => ({ isSet: !!value }),
     },
+    // Cast hooks to any since field builders are generic and can't know the specific TFieldKey
     hooks: {
       // Hash password before writing to database
-      resolveInput: async ({ inputValue }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveInput: async ({ inputValue }: { inputValue: any }) => {
         // Skip if undefined or null (allows partial updates)
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
 
         // Skip if not a string
-        if (typeof inputValue !== 'string') {
-          return inputValue
-        }
-
-        // Skip empty strings (let validation handle this)
-        if (inputValue.length === 0) {
+        if (typeof inputValue !== 'string' || inputValue.length === 0) {
           return inputValue
         }
 
@@ -320,7 +317,8 @@ export function password<
         return await hashPassword(inputValue)
       },
       // Wrap password with HashedPassword class after reading from database
-      resolveOutput: ({ value }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveOutput: ({ value }: { value: any }) => {
         // Only wrap string values (hashed passwords)
         if (typeof value === 'string' && value.length > 0) {
           return new HashedPassword(value)
@@ -329,7 +327,8 @@ export function password<
       },
       // Merge with user-provided hooks if any
       ...options?.hooks,
-    },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hook object needs type assertion for field builder
+    } as any,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
       const isRequired = validation?.isRequired
@@ -593,13 +592,9 @@ export function json<
  * @param options - Virtual field configuration
  * @returns Virtual field configuration
  */
-export function virtual<
-  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(
-  options: Omit<VirtualField<unknown, TTypeInfo>, 'type' | 'virtual' | 'outputType'> & {
-    type: string
-  },
-): VirtualField<unknown, TTypeInfo> {
+export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>(
+  options: Omit<VirtualField<TTypeInfo>, 'virtual' | 'outputType' | 'type'> & { type: string },
+): VirtualField<TTypeInfo> {
   // Validate that resolveOutput is provided
   if (!options.hooks?.resolveOutput) {
     throw new Error(

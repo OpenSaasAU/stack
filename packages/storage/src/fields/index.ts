@@ -7,11 +7,9 @@ import type { FileValidationOptions } from '../utils/upload.js'
 /**
  * File field configuration
  */
-export interface FileFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends BaseFieldConfig<
-  FileMetadata | null,
-  FileMetadata | null,
-  TTypeInfo
-> {
+export interface FileFieldConfig<
+  TTypeInfo extends TypeInfo = TypeInfo,
+> extends BaseFieldConfig<TTypeInfo> {
   type: 'file'
   /** Name of the storage provider from config.storage */
   storage: string
@@ -41,11 +39,9 @@ export interface FileFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends 
 /**
  * Image field configuration
  */
-export interface ImageFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends BaseFieldConfig<
-  ImageMetadata | null,
-  ImageMetadata | null,
-  TTypeInfo
-> {
+export interface ImageFieldConfig<
+  TTypeInfo extends TypeInfo = TypeInfo,
+> extends BaseFieldConfig<TTypeInfo> {
   type: 'image'
   /** Name of the storage provider from config.storage */
   storage: string
@@ -99,12 +95,15 @@ export interface ImageFieldConfig<TTypeInfo extends TypeInfo = TypeInfo> extends
 export function file<TTypeInfo extends TypeInfo = TypeInfo>(
   options: Omit<FileFieldConfig<TTypeInfo>, 'type'>,
 ): FileFieldConfig<TTypeInfo> {
+  const { hooks: userHooks, ...restOptions } = options
+
   const fieldConfig: FileFieldConfig<TTypeInfo> = {
     type: 'file',
-    ...options,
+    ...restOptions,
 
     hooks: {
-      resolveInput: async ({ inputValue, context, item, fieldName }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      resolveInput: async ({ inputValue, context, item, fieldName }: any) => {
         // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
@@ -152,7 +151,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
         return inputValue
       },
 
-      afterOperation: async ({ operation, item, fieldName, context }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      afterOperation: async ({ operation, item, fieldName, context }: any) => {
         // Only cleanup on delete if enabled
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const fileMetadata = item[fieldName] as FileMetadata | null
@@ -167,6 +167,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
           }
         }
       },
+      // Merge with user-provided hooks if any
+      ...userHooks,
     },
 
     getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {
@@ -228,12 +230,15 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
 export function image<TTypeInfo extends TypeInfo = TypeInfo>(
   options: Omit<ImageFieldConfig<TTypeInfo>, 'type'>,
 ): ImageFieldConfig<TTypeInfo> {
+  const { hooks: userHooks, ...restOptions } = options
+
   const fieldConfig: ImageFieldConfig<TTypeInfo> = {
     type: 'image',
-    ...options,
+    ...restOptions,
 
     hooks: {
-      resolveInput: async ({ inputValue, context, item, fieldName }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      resolveInput: async ({ inputValue, context, item, fieldName }: any) => {
         // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
@@ -293,7 +298,8 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
         return inputValue
       },
 
-      afterOperation: async ({ operation, item, fieldName, context }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      afterOperation: async ({ operation, item, fieldName, context }: any) => {
         // Only cleanup on delete if enabled
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const imageMetadata = item[fieldName] as ImageMetadata | null
@@ -308,6 +314,8 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           }
         }
       },
+      // Merge with user-provided hooks if any
+      ...userHooks,
     },
 
     getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {

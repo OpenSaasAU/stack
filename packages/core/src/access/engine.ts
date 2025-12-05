@@ -40,7 +40,7 @@ export function isPrismaFilter(value: unknown): value is PrismaFilter {
 export function getRelatedListConfig(
   relationshipRef: string,
   config: OpenSaasConfig,
-): { listName: string; listConfig: ListConfig } | null {
+): { listName: string; listConfig: ListConfig<any> } | null { // eslint-disable-line @typescript-eslint/no-explicit-any -- Return type must accept any list config from config.lists
   // Parse ref format: "ListName.fieldName"
   const parts = relationshipRef.split('.')
   if (parts.length !== 2) {
@@ -209,7 +209,7 @@ export async function buildIncludeWithAccessControl(
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && fieldConfig.ref) {
       hasRelationships = true
-      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
 
       if (relatedConfig) {
         // Check query access for the related list
@@ -303,7 +303,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       value !== undefined &&
       depth < MAX_DEPTH
     ) {
-      const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
 
       if (relatedConfig) {
         // For many relationships (arrays) - recursively filter fields in each item

@@ -61,7 +61,7 @@ export default config({
         }),
         // Virtual field - computed from name and email, not stored in database
         displayName: virtual({
-          type: 'string',
+          type: 'string', // TypeScript output type
           hooks: {
             resolveOutput: ({ item }) => {
               // item is now typed as User with name, email, etc.

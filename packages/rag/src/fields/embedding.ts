@@ -1,16 +1,12 @@
 import { z } from 'zod'
 import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core'
-import type { StoredEmbedding, EmbeddingProviderName, ChunkingConfig } from '../config/types.js'
+import type { EmbeddingProviderName, ChunkingConfig } from '../config/types.js'
 
 /**
  * Embedding field configuration
  * Stores vector embeddings as JSON with metadata
  */
-export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<
-  StoredEmbedding | null,
-  StoredEmbedding | null,
-  TTypeInfo
-> & {
+export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'embedding'
 
   /**

@@ -248,7 +248,8 @@ function generateFieldSchemas(
     if (
       operation === 'create' &&
       'validation' in fieldConfig &&
-      fieldConfig.validation?.isRequired
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
+      (fieldConfig.validation as any)?.isRequired
     ) {
       required.push(fieldName)
     }

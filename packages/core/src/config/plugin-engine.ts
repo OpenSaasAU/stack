@@ -168,7 +168,8 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
   }
 
   // Field type registry (for third-party fields)
-  const fieldTypeRegistry = new Map<string, (options?: unknown) => BaseFieldConfig>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Registry must accept any field config builder
+  const fieldTypeRegistry = new Map<string, (options?: unknown) => BaseFieldConfig<any>>()
 
   // MCP tools registry
   const mcpToolsRegistry: McpCustomTool[] = []
@@ -178,7 +179,8 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
     const context: PluginContext = {
       config: currentConfig,
 
-      addList: (name: string, listConfig: ListConfig) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin context must accept any list config
+      addList: (name: string, listConfig: ListConfig<any>) => {
         if (currentConfig.lists[name]) {
           throw new Error(
             `Plugin "${plugin.name}" tried to add list "${name}" but it already exists. Use extendList() to modify existing lists.`,
@@ -224,7 +226,8 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
         }
       },
 
-      registerFieldType: (type: string, builder: (options?: unknown) => BaseFieldConfig) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field type registry must accept any field config
+      registerFieldType: (type: string, builder: (options?: unknown) => BaseFieldConfig<any>) => {
         if (fieldTypeRegistry.has(type)) {
           throw new Error(
             `Plugin "${plugin.name}" tried to register field type "${type}" but it's already registered`,
