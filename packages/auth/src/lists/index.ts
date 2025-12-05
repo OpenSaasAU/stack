@@ -89,7 +89,8 @@ export function createUserList(
  * Create the Session list for better-auth
  * Stores active user sessions
  */
-export function createSessionList(): ListConfig<any> { // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createSessionList(): ListConfig<any> {
+  // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   return list({
     fields: {
       // Session token (stored in cookie, used as primary key)
@@ -142,7 +143,8 @@ export function createSessionList(): ListConfig<any> { // eslint-disable-line @t
  * Create the Account list for better-auth
  * Stores OAuth provider accounts and credentials
  */
-export function createAccountList(): ListConfig<any> { // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createAccountList(): ListConfig<any> {
+  // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   return list({
     fields: {
       // Account identifier from provider
@@ -206,7 +208,8 @@ export function createAccountList(): ListConfig<any> { // eslint-disable-line @t
  * Create the Verification list for better-auth
  * Stores email verification tokens, password reset tokens, etc.
  */
-export function createVerificationList(): ListConfig<any> { // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createVerificationList(): ListConfig<any> {
+  // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   return list({
     fields: {
       // Identifier (e.g., email address)

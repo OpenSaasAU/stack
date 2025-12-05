@@ -40,7 +40,8 @@ export function isPrismaFilter(value: unknown): value is PrismaFilter {
 export function getRelatedListConfig(
   relationshipRef: string,
   config: OpenSaasConfig,
-): { listName: string; listConfig: ListConfig<any> } | null { // eslint-disable-line @typescript-eslint/no-explicit-any -- Return type must accept any list config from config.lists
+): { listName: string; listConfig: ListConfig<any> } | null {
+  // eslint-disable-line @typescript-eslint/no-explicit-any -- Return type must accept any list config from config.lists
   // Parse ref format: "ListName.fieldName"
   const parts = relationshipRef.split('.')
   if (parts.length !== 2) {

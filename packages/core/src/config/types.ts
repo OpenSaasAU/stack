@@ -554,7 +554,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
-  hooks?: Hooks<TTypeInfo>
+  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
    * MCP server configuration for this list
    */
