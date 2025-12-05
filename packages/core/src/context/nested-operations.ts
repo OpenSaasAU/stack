@@ -61,7 +61,8 @@ function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
  */
 async function processNestedCreate(
   items: Record<string, unknown> | Array<Record<string, unknown>>,
-  relatedListConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
@@ -151,7 +152,8 @@ async function processNestedCreate(
 async function processNestedConnect(
   connections: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
-  relatedListConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
   context: AccessContext,
   prisma: unknown,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
@@ -209,7 +211,8 @@ async function processNestedConnect(
 async function processNestedUpdate(
   updates: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
-  relatedListConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
   prisma: unknown,
@@ -313,7 +316,8 @@ async function processNestedUpdate(
 async function processNestedConnectOrCreate(
   operations: Record<string, unknown> | Array<Record<string, unknown>>,
   relatedListName: string,
-  relatedListConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
   prisma: unknown,

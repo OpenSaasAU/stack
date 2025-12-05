@@ -18,12 +18,24 @@ export type FieldType =
  * Field-level hooks for data transformation and side effects
  * Allows field types to define custom behavior during operations
  *
- * @template TInput - Type of the input value (what goes into the database)
- * @template TOutput - Type of the output value (what comes out of the database)
- * @template TItem - Type of the parent item/record
+ * @template TTypeInfo - List type information including item and input types
+ * @template TFieldKey - The specific field name (defaults to any field in the list)
+ *
+ * @example
+ * ```typescript
+ * // For a 'title' field on Post list:
+ * FieldHooks<Lists.Post.TypeInfo, 'title'>
+ * // resolveOutput returns: string | undefined (field-specific)
+ *
+ * // Generic (for field builders):
+ * FieldHooks<TTypeInfo>
+ * // resolveOutput returns: union of all field types
+ * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
+export type FieldHooks<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = {
   /**
    * Transform field value before database write
    * Called during create/update operations after list-level resolveInput but before validation
@@ -41,12 +53,15 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
    */
   resolveInput?: (args: {
     operation: 'create' | 'update'
-    inputValue: TInput | undefined
-    item?: TItem
+    inputValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
+    item?: TTypeInfo['item']
     listKey: string
-    fieldName: string
+    fieldName: TFieldKey
     context: import('../access/types.js').AccessContext
-  }) => Promise<TInput | undefined> | TInput | undefined
+  }) =>
+    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
+    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | undefined
 
   /**
    * Perform side effects before database write
@@ -63,10 +78,10 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
    */
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedValue: TInput | undefined
-    item?: TItem
+    resolvedValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
+    item?: TTypeInfo['item']
     listKey: string
-    fieldName: string
+    fieldName: TFieldKey
     context: import('../access/types.js').AccessContext
   }) => Promise<void> | void
 
@@ -83,25 +98,14 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
    * }
    * ```
    */
-  afterOperation?: (
-    args:
-      | {
-          operation: 'create' | 'update' | 'delete'
-          value: TInput | undefined
-          item: TItem
-          listKey: string
-          fieldName: string
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          operation: 'query'
-          value: TOutput | undefined
-          item: TItem
-          listKey: string
-          fieldName: string
-          context: import('../access/types.js').AccessContext
-        },
-  ) => Promise<void> | void
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete' | 'query'
+    value: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
+    item: TTypeInfo['item']
+    listKey: string
+    fieldName: TFieldKey
+    context: import('../access/types.js').AccessContext
+  }) => Promise<void> | void
 
   /**
    * Transform field value after database read
@@ -120,12 +124,12 @@ export type FieldHooks<TInput = any, TOutput = TInput, TItem = any> = {
    */
   resolveOutput?: (args: {
     operation: 'query'
-    value: TInput | undefined
-    item: TItem
+    value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    item: TTypeInfo['item']
     listKey: string
-    fieldName: string
+    fieldName: TFieldKey
     context: import('../access/types.js').AccessContext
-  }) => TOutput | undefined
+  }) => GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
 }
 
 /**
@@ -154,12 +158,11 @@ export type ResultExtensionConfig = {
   compute?: string
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type BaseFieldConfig<TInput = any, TOutput = TInput, TItem = any> = {
+export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   type: string
   access?: FieldAccess
   defaultValue?: unknown
-  hooks?: FieldHooks<TInput, TOutput, TItem>
+  hooks?: FieldHooks<TTypeInfo>
   /**
    * Marks this field as virtual - not stored in database
    * Virtual fields use resolveInput/resolveOutput hooks for computation
@@ -248,7 +251,7 @@ export type BaseFieldConfig<TInput = any, TOutput = TInput, TItem = any> = {
   }>
 }
 
-export type TextField<TItem = unknown> = BaseFieldConfig<string, string, TItem> & {
+export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'text'
   validation?: {
     isRequired?: boolean
@@ -263,7 +266,7 @@ export type TextField<TItem = unknown> = BaseFieldConfig<string, string, TItem> 
   }
 }
 
-export type IntegerField<TItem = unknown> = BaseFieldConfig<number, number, TItem> & {
+export type IntegerField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'integer'
   validation?: {
     isRequired?: boolean
@@ -272,27 +275,23 @@ export type IntegerField<TItem = unknown> = BaseFieldConfig<number, number, TIte
   }
 }
 
-export type CheckboxField<TItem = unknown> = BaseFieldConfig<boolean, boolean, TItem> & {
+export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'checkbox'
 }
 
-export type TimestampField<TItem = unknown> = BaseFieldConfig<Date, Date, TItem> & {
+export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
 }
 
-export type PasswordField<TItem = unknown> = BaseFieldConfig<
-  string,
-  import('../utils/password.js').HashedPassword,
-  TItem
-> & {
+export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'password'
   validation?: {
     isRequired?: boolean
   }
 }
 
-export type SelectField<TItem = unknown> = BaseFieldConfig<string, string, TItem> & {
+export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'select'
   options: Array<{ label: string; value: string }>
   validation?: {
@@ -303,20 +302,17 @@ export type SelectField<TItem = unknown> = BaseFieldConfig<string, string, TItem
   }
 }
 
-export type RelationshipField<TItem = unknown> = BaseFieldConfig<
-  string | string[],
-  string | string[],
-  TItem
-> & {
-  type: 'relationship'
-  ref: string // Format: 'ListName.fieldName'
-  many?: boolean
-  ui?: {
-    displayMode?: 'select' | 'cards'
+export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
+  BaseFieldConfig<TTypeInfo> & {
+    type: 'relationship'
+    ref: string // Format: 'ListName.fieldName'
+    many?: boolean
+    ui?: {
+      displayMode?: 'select' | 'cards'
+    }
   }
-}
 
-export type JsonField<TItem = unknown> = BaseFieldConfig<unknown, unknown, TItem> & {
+export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'json'
   validation?: {
     isRequired?: boolean
@@ -328,11 +324,7 @@ export type JsonField<TItem = unknown> = BaseFieldConfig<unknown, unknown, TItem
   }
 }
 
-export type VirtualField<TOutput = unknown, TItem = unknown> = BaseFieldConfig<
-  never,
-  TOutput,
-  TItem
-> & {
+export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'virtual'
   virtual: true
   /**
@@ -342,40 +334,112 @@ export type VirtualField<TOutput = unknown, TItem = unknown> = BaseFieldConfig<
   outputType: string
 }
 
-export type FieldConfig =
-  | TextField
-  | IntegerField
-  | CheckboxField
-  | TimestampField
-  | PasswordField
-  | SelectField
-  | RelationshipField
-  | JsonField
-  | VirtualField<unknown>
-  | BaseFieldConfig // Allow any field extending BaseFieldConfig (for third-party fields)
+/**
+ * Generic field configuration type
+ * Simplified to just BaseFieldConfig to reduce type complexity
+ * Specific field types (TextField, IntegerField, etc.) are used by field builders
+ * but at the config level we treat all fields uniformly
+ */
+export type FieldConfig = BaseFieldConfig<TypeInfo>
 
 /**
  * List configuration types
  */
 
 /**
- * Utility type to inject item type into a single field config
- * Extracts TInput, TOutput, and TItem from BaseFieldConfig<TInput, TOutput, TItem> and reconstructs with new hooks type
+ * Utility type to inject TypeInfo into a single field config
+ * Extracts TInput and TOutput from BaseFieldConfig and reconstructs with new TypeInfo
  */
-type WithItemType<TField extends FieldConfig, TItem> =
-  TField extends BaseFieldConfig<infer TInput, infer TOutput, unknown>
-    ? Omit<TField, 'hooks'> & {
-        hooks?: FieldHooks<TInput, TOutput, TItem>
-      }
-    : TField
+type WithTypeInfo<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo>
 
 /**
- * Utility type to transform all fields in a record to inject item type
- * Maps over each field and applies WithItemType transformation
+ * Utility type to transform all fields in a record to inject TypeInfo
+ * Maps over each field and applies WithTypeInfo transformation
  */
-export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TItem = unknown> = {
-  [K in keyof TFields]: WithItemType<TFields[K], TItem>
+export type FieldsWithTypeInfo<TTypeInfo extends TypeInfo> = {
+  [key: string]: WithTypeInfo<TTypeInfo>
 }
+
+/**
+ * Parse TypeScript type string to actual type
+ * Handles: 'string', 'number', 'boolean', 'Date', unions, string literals, imports
+ *
+ * @example
+ * ParseTypeString<'string'> => string
+ * ParseTypeString<'number'> => number
+ * ParseTypeString<"'draft' | 'published'"> => 'draft' | 'published'
+ * ParseTypeString<"import('@opensaas/stack-core').HashedPassword"> => any (fallback for imports)
+ */
+type ParseTypeString<T extends string> = T extends 'string'
+  ? string
+  : T extends 'number'
+    ? number
+    : T extends 'boolean'
+      ? boolean
+      : T extends 'Date'
+        ? Date
+        : T extends 'unknown'
+          ? unknown
+          : T extends `'${infer U}'`
+            ? U // String literal
+            : T extends `${infer U} | ${infer V}`
+              ? ParseTypeString<U> | ParseTypeString<V> // Union
+              : T extends `import(${string}).${string}`
+                ? any // eslint-disable-line @typescript-eslint/no-explicit-any -- Import types can't be resolved at compile time
+                : unknown // Fallback
+
+/**
+ * Extract field value type from a field config
+ * Uses the field's getTypeScriptType() method result
+ * If resultExtension is present, uses its outputType instead
+ *
+ * @example
+ * ExtractFieldValueType<TextField> => string | null | undefined (if optional)
+ * ExtractFieldValueType<IntegerField> => number
+ * ExtractFieldValueType<PasswordField> => HashedPassword (from resultExtension)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any BaseFieldConfig
+type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends {
+  resultExtension: { outputType: infer O }
+}
+  ? ParseTypeString<O & string>
+  : TField extends { getTypeScriptType(): { type: infer T; optional: infer Opt } }
+    ? Opt extends true
+      ? ParseTypeString<T & string> | null | undefined
+      : ParseTypeString<T & string>
+    : unknown
+
+/**
+ * Extract field names as union of string literals
+ *
+ * @example
+ * FieldKeys<{ title: TextField, content: TextField }> => 'title' | 'content'
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
+export type FieldKeys<TFields extends Record<string, any>> = keyof TFields & string
+
+/**
+ * Get field config for a specific field name
+ * Preserves the specific field type (TextField, PasswordField, etc.)
+ *
+ * @example
+ * GetFieldConfig<{ title: TextField }, 'title'> => TextField
+ */
+export type GetFieldConfig<
+  TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
+  TFieldKey extends FieldKeys<TFields>,
+> = TFields[TFieldKey]
+
+/**
+ * Get value type for a specific field
+ *
+ * @example
+ * GetFieldValueType<{ title: TextField }, 'title'> => string
+ */
+export type GetFieldValueType<
+  TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
+  TFieldKey extends FieldKeys<TFields>,
+> = ExtractFieldValueType<GetFieldConfig<TFields, TFieldKey>>
 
 /**
  * TypeInfo interface for list type information
@@ -383,6 +447,7 @@ export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TIte
  * Inspired by Keystone's TypeInfo pattern
  *
  * @template TKey - The list key/name (e.g., 'Post', 'User')
+ * @template TFields - The fields configuration for the list
  * @template TItem - The output type (Prisma model type)
  * @template TCreateInput - The Prisma create input type
  * @template TUpdateInput - The Prisma update input type
@@ -391,6 +456,7 @@ export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TIte
  * ```typescript
  * type PostTypeInfo = {
  *   key: 'Post'
+ *   fields: { title: TextField<...>, content: TextField<...> }
  *   item: Post
  *   inputs: {
  *     create: Prisma.PostCreateInput
@@ -401,15 +467,14 @@ export type FieldsWithItemType<TFields extends Record<string, FieldConfig>, TIte
  */
 export interface TypeInfo<
   TKey extends string = string,
-  TItem = any, // eslint-disable-line @typescript-eslint/no-explicit-any
-  TCreateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
-  TUpdateInput = any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  TFields extends Record<string, any> = Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- TypeInfo must accept any field record
 > {
   key: TKey
-  item: TItem
+  fields: TFields
+  item: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Item type is provided by Prisma and varies per list
   inputs: {
-    create: TCreateInput
-    update: TUpdateInput
+    create: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
+    update: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
   }
 }
 
@@ -482,15 +547,14 @@ export type Hooks<
 
 // Generic `any` default allows ListConfig to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ListConfig<TOutput = any, TCreateInput = any, TUpdateInput = any> = {
-  // Field configs are automatically transformed to inject the item type T
-  // This enables proper typing in field hooks where item: TItem
-  fields: FieldsWithItemType<Record<string, FieldConfig>, TOutput>
+export type ListConfig<TTypeInfo extends TypeInfo> = {
+  // Field configs are automatically transformed to inject the full TypeInfo
+  // This enables proper typing in field hooks where item, create input, and update input are all typed
+  fields: FieldsWithTypeInfo<TTypeInfo>
   access?: {
-    operation?: OperationAccess<TOutput>
+    operation?: OperationAccess<TTypeInfo['item']>
   }
-  hooks?: Hooks<TOutput, TCreateInput, TUpdateInput>
+  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
    * MCP server configuration for this list
    */
@@ -894,7 +958,8 @@ export type PluginContext = {
    * Add a new list to the config
    * Throws error if list already exists (unless merge strategy used)
    */
-  addList: (name: string, listConfig: ListConfig) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin API must accept any list config
+  addList: (name: string, listConfig: ListConfig<any>) => void
 
   /**
    * Extend an existing list with additional fields, hooks, or access control
@@ -917,7 +982,8 @@ export type PluginContext = {
    * Register a field type globally
    * Useful for third-party field packages
    */
-  registerFieldType?: (type: string, builder: (options?: unknown) => BaseFieldConfig) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin API must accept any field config builder
+  registerFieldType?: (type: string, builder: (options?: unknown) => BaseFieldConfig<any>) => void
 
   /**
    * Register a custom MCP tool
@@ -1010,7 +1076,8 @@ export type Plugin = {
  */
 export interface OpenSaasConfig {
   db: DatabaseConfig
-  lists: Record<string, ListConfig>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
+  lists: Record<string, ListConfig<any>>
   session?: SessionConfig
   ui?: UIConfig
   /**

@@ -6,7 +6,7 @@ import type { Lists } from '@/.opensaas/lists'
 const testList = list<Lists.User.TypeInfo>({
   fields: {
     displayName: virtual({
-      type: 'string',
+      type: 'string', // TypeScript output type
       hooks: {
         resolveOutput: ({ item }) => {
           // This should show the item type as the User model, not 'any'

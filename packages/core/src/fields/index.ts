@@ -27,7 +27,7 @@ function formatFieldName(fieldName: string): string {
  */
 export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TextField<TTypeInfo['item']>, 'type'>): TextField<TTypeInfo['item']> {
+>(options?: Omit<TextField<TTypeInfo>, 'type'>): TextField<TTypeInfo> {
   return {
     type: 'text',
     ...options,
@@ -103,7 +103,7 @@ export function text<
  */
 export function integer<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<IntegerField<TTypeInfo['item']>, 'type'>): IntegerField<TTypeInfo['item']> {
+>(options?: Omit<IntegerField<TTypeInfo>, 'type'>): IntegerField<TTypeInfo> {
   return {
     type: 'integer',
     ...options,
@@ -154,7 +154,7 @@ export function integer<
  */
 export function checkbox<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<CheckboxField<TTypeInfo['item']>, 'type'>): CheckboxField<TTypeInfo['item']> {
+>(options?: Omit<CheckboxField<TTypeInfo>, 'type'>): CheckboxField<TTypeInfo> {
   return {
     type: 'checkbox',
     ...options,
@@ -188,7 +188,7 @@ export function checkbox<
  */
 export function timestamp<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TimestampField<TTypeInfo['item']>, 'type'>): TimestampField<TTypeInfo['item']> {
+>(options?: Omit<TimestampField<TTypeInfo>, 'type'>): TimestampField<TTypeInfo> {
   return {
     type: 'timestamp',
     ...options,
@@ -279,9 +279,9 @@ export function timestamp<
  * @param options - Field configuration options
  * @returns Password field configuration
  */
-export function password<
-  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<PasswordField<TTypeInfo['item']>, 'type'>): PasswordField<TTypeInfo['item']> {
+export function password<TTypeInfo extends import('../config/types.js').TypeInfo>(
+  options?: Omit<PasswordField<TTypeInfo>, 'type'>,
+): PasswordField<TTypeInfo> {
   return {
     type: 'password',
     ...options,
@@ -293,21 +293,18 @@ export function password<
       ...options?.ui,
       valueForClientSerialization: ({ value }) => ({ isSet: !!value }),
     },
+    // Cast hooks to any since field builders are generic and can't know the specific TFieldKey
     hooks: {
       // Hash password before writing to database
-      resolveInput: async ({ inputValue }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveInput: async ({ inputValue }: { inputValue: any }) => {
         // Skip if undefined or null (allows partial updates)
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
 
         // Skip if not a string
-        if (typeof inputValue !== 'string') {
-          return inputValue
-        }
-
-        // Skip empty strings (let validation handle this)
-        if (inputValue.length === 0) {
+        if (typeof inputValue !== 'string' || inputValue.length === 0) {
           return inputValue
         }
 
@@ -320,7 +317,8 @@ export function password<
         return await hashPassword(inputValue)
       },
       // Wrap password with HashedPassword class after reading from database
-      resolveOutput: ({ value }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveOutput: ({ value }: { value: any }) => {
         // Only wrap string values (hashed passwords)
         if (typeof value === 'string' && value.length > 0) {
           return new HashedPassword(value)
@@ -329,7 +327,8 @@ export function password<
       },
       // Merge with user-provided hooks if any
       ...options?.hooks,
-    },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hook object needs type assertion for field builder
+    } as any,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
       const isRequired = validation?.isRequired
@@ -385,7 +384,7 @@ export function password<
  */
 export function select<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options: Omit<SelectField<TTypeInfo['item']>, 'type'>): SelectField<TTypeInfo['item']> {
+>(options: Omit<SelectField<TTypeInfo>, 'type'>): SelectField<TTypeInfo> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
   }
@@ -435,9 +434,7 @@ export function select<
  */
 export function relationship<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(
-  options: Omit<RelationshipField<TTypeInfo['item']>, 'type'>,
-): RelationshipField<TTypeInfo['item']> {
+>(options: Omit<RelationshipField<TTypeInfo>, 'type'>): RelationshipField<TTypeInfo> {
   if (!options.ref) {
     throw new Error('Relationship field must have a ref')
   }
@@ -501,7 +498,7 @@ export function relationship<
  */
 export function json<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<JsonField<TTypeInfo['item']>, 'type'>): JsonField<TTypeInfo['item']> {
+>(options?: Omit<JsonField<TTypeInfo>, 'type'>): JsonField<TTypeInfo> {
   return {
     type: 'json',
     ...options,
@@ -595,13 +592,9 @@ export function json<
  * @param options - Virtual field configuration
  * @returns Virtual field configuration
  */
-export function virtual<
-  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(
-  options: Omit<VirtualField<unknown, TTypeInfo['item']>, 'type' | 'virtual' | 'outputType'> & {
-    type: string
-  },
-): VirtualField<unknown, TTypeInfo['item']> {
+export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>(
+  options: Omit<VirtualField<TTypeInfo>, 'virtual' | 'outputType' | 'type'> & { type: string },
+): VirtualField<TTypeInfo> {
   // Validate that resolveOutput is provided
   if (!options.hooks?.resolveOutput) {
     throw new Error(

@@ -4,7 +4,8 @@ import type { BaseFieldConfig } from '@opensaas/stack-core'
 import type { SearchableOptions } from '../config/types.js'
 
 // Mock text field for testing
-function mockTextField(): BaseFieldConfig {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mock function for testing
+function mockTextField(): BaseFieldConfig<any> {
   return {
     type: 'text',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

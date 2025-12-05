@@ -3,6 +3,25 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 /**
+ * Map field type string to TypeScript field type name
+ */
+function getFieldTypeName(fieldType: string): string {
+  const typeMap: Record<string, string> = {
+    text: 'TextField',
+    integer: 'IntegerField',
+    checkbox: 'CheckboxField',
+    timestamp: 'TimestampField',
+    password: 'PasswordField',
+    select: 'SelectField',
+    relationship: 'RelationshipField',
+    json: 'JsonField',
+    virtual: 'VirtualField',
+  }
+
+  return typeMap[fieldType] || 'BaseFieldConfig'
+}
+
+/**
  * Generate Lists namespace with TypeInfo for each list
  * This provides strongly-typed hooks with Prisma input types
  *
@@ -61,15 +80,34 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
   lines.push('export declare namespace Lists {')
 
   // Generate type for each list
-  for (const listName of Object.keys(config.lists)) {
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
     lines.push(
       `  export type ${listName} = import('@opensaas/stack-core').ListConfig<Lists.${listName}.TypeInfo>`,
     )
     lines.push('')
     lines.push(`  namespace ${listName} {`)
     lines.push(`    export type Item = import('./types').${listName}`)
+    lines.push('')
+
+    // Generate Fields type
+    lines.push(`    /**`)
+    lines.push(`     * Field configurations for ${listName}`)
+    lines.push(`     * Maps field names to their field config types`)
+    lines.push(`     */`)
+    lines.push(`    export type Fields = {`)
+    for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      const fieldTypeName = getFieldTypeName(fieldConfig.type)
+      lines.push(
+        `      ${fieldName}: import('@opensaas/stack-core').${fieldTypeName}<Lists.${listName}.TypeInfo>`,
+      )
+    }
+    lines.push(`    }`)
+    lines.push('')
+
+    // Generate TypeInfo with fields property
     lines.push(`    export type TypeInfo = {`)
     lines.push(`      key: '${listName}'`)
+    lines.push(`      fields: Fields`)
     lines.push(`      item: Item`)
     lines.push(`      inputs: {`)
     lines.push(`        create: import('./prisma-client/client').Prisma.${listName}CreateInput`)

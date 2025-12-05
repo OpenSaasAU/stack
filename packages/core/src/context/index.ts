@@ -135,7 +135,8 @@ export type ServerActionProps =
 /**
  * Parse Prisma error and convert to user-friendly DatabaseError
  */
-function parsePrismaError(error: unknown, listConfig: ListConfig): Error {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
   // Check if it's a Prisma error
   if (
     error &&
@@ -406,7 +407,8 @@ export function getContext<
  */
 function createFindUnique<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
@@ -492,7 +494,8 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
  */
 function createFindMany<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
@@ -589,7 +592,8 @@ function createFindMany<TPrisma extends PrismaClientLike>(
  */
 function createCreate<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
@@ -709,7 +713,8 @@ function createCreate<TPrisma extends PrismaClientLike>(
  */
 function createUpdate<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
@@ -863,7 +868,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
  */
 function createDelete<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
 ) {
@@ -946,7 +952,8 @@ function createDelete<TPrisma extends PrismaClientLike>(
  */
 function createCount<TPrisma extends PrismaClientLike>(
   listName: string,
-  listConfig: ListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
 ) {

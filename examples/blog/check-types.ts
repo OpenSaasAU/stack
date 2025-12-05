@@ -11,7 +11,7 @@ import type { Lists } from './.opensaas/lists'
 const testUser = list<Lists.User.TypeInfo>({
   fields: {
     displayName: virtual({
-      type: 'string',
+      type: 'string', // TypeScript output type
       hooks: {
         resolveOutput: ({ item }) => {
           // Hover over 'item' here - it should show type User (with name, email, etc.)

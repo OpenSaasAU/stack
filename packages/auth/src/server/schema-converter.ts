@@ -94,7 +94,8 @@ function convertField(
  * Get default access control for auth tables
  * Most auth tables should only be accessible to their owners
  */
-function getDefaultAccess(tableName: string): ListConfig['access'] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function getDefaultAccess(tableName: string): ListConfig<any>['access'] {
   const lowerTableName = tableName.toLowerCase()
 
   // User table - special access control
@@ -103,13 +104,15 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
       operation: {
         query: () => true, // Anyone can query users
         create: () => true, // Anyone can create (sign up)
-        update: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        update: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemId = (item as { id?: string })?.id
           return userId === itemId
         },
-        delete: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        delete: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemId = (item as { id?: string })?.id
@@ -123,7 +126,8 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
   if (lowerTableName === 'session') {
     return {
       operation: {
-        query: ({ session }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        query: ({ session }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           if (!userId) return false
@@ -133,7 +137,8 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
         },
         create: () => true, // Better-auth handles session creation
         update: () => false, // No manual updates
-        delete: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        delete: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemUserId = (item as { user?: { id?: string } })?.user?.id
@@ -147,7 +152,8 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
   if (lowerTableName === 'account') {
     return {
       operation: {
-        query: ({ session }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        query: ({ session }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           if (!userId) return false
@@ -156,13 +162,15 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
           } as Record<string, unknown>
         },
         create: () => true, // Better-auth handles account creation
-        update: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        update: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemUserId = (item as { user?: { id?: string } })?.user?.id
           return userId === itemUserId
         },
-        delete: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        delete: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemUserId = (item as { user?: { id?: string } })?.user?.id
@@ -192,7 +200,8 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
   ) {
     return {
       operation: {
-        query: ({ session }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        query: ({ session }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           if (!userId) return false
@@ -202,13 +211,15 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
           } as Record<string, unknown>
         },
         create: () => true, // Better-auth/plugins handle creation
-        update: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        update: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemUserId = (item as { userId?: string })?.userId
           return userId === itemUserId
         },
-        delete: ({ session, item }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
+        delete: ({ session, item }: any) => {
           if (!session) return false
           const userId = (session as { userId?: string }).userId
           const itemUserId = (item as { userId?: string })?.userId
@@ -235,7 +246,8 @@ function getDefaultAccess(tableName: string): ListConfig['access'] {
 export function convertTableToList(
   tableName: string,
   tableSchema: BetterAuthTableSchema,
-): ListConfig {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): ListConfig<any> {
   const fields: Record<string, FieldConfig> = {}
 
   // First pass: convert regular fields
@@ -275,8 +287,9 @@ export function convertTableToList(
  */
 export function convertBetterAuthSchema(
   tables: Record<string, BetterAuthTableSchema>,
-): Record<string, ListConfig> {
-  const lists: Record<string, ListConfig> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): Record<string, ListConfig<any>> {
+  const lists: Record<string, ListConfig<any>> = {} // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 
   for (const [tableName, tableSchema] of Object.entries(tables)) {
     // Convert table name to PascalCase for OpenSaaS list key

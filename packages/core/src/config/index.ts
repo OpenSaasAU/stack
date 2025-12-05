@@ -1,4 +1,4 @@
-import type { OpenSaasConfig, ListConfig, FieldConfig, OperationAccess, Hooks } from './types.js'
+import type { OpenSaasConfig, ListConfig, OperationAccess, Hooks } from './types.js'
 import { executePlugins } from './plugin-engine.js'
 
 /**
@@ -63,23 +63,17 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
  * })
  * ```
  */
-export function list<
-  TTypeInfo extends import('./types.js').TypeInfo = import('./types.js').TypeInfo,
->(config: {
-  fields: import('./types.js').FieldsWithItemType<Record<string, FieldConfig>, TTypeInfo['item']>
+export function list<TTypeInfo extends import('./types.js').TypeInfo>(config: {
+  fields: import('./types.js').FieldsWithTypeInfo<TTypeInfo>
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
   hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   mcp?: import('./types.js').ListMcpConfig
-}): ListConfig<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']> {
+}): ListConfig<TTypeInfo> {
   // At runtime, field configs are unchanged
   // At type level, they're transformed to inject TypeInfo types
-  return config as ListConfig<
-    TTypeInfo['item'],
-    TTypeInfo['inputs']['create'],
-    TTypeInfo['inputs']['update']
-  >
+  return config as ListConfig<TTypeInfo>
 }
 
 // Re-export all types
@@ -95,11 +89,13 @@ export type {
   PasswordField,
   SelectField,
   RelationshipField,
+  JsonField,
+  VirtualField,
   TypeInfo,
   OperationAccess,
   Hooks,
   FieldHooks,
-  FieldsWithItemType,
+  FieldsWithTypeInfo,
   DatabaseConfig,
   SessionConfig,
   UIConfig,

@@ -37,7 +37,8 @@ import type { SearchableOptions, SearchableMetadata } from '../config/types.js'
  * @param options - Embedding configuration options
  * @returns The same field with searchable metadata attached
  */
-export function searchable<T extends BaseFieldConfig>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Searchable must accept any field config
+export function searchable<T extends BaseFieldConfig<any>>(
   field: T,
   options: SearchableOptions = {},
 ): T & { _searchable: SearchableMetadata } {

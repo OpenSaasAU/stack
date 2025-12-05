@@ -15,18 +15,22 @@ export type ExtendUserListConfig = {
    * Access control for the User list
    * If not provided, defaults to basic access control (users can update their own records)
    */
-  access?: ListConfig['access']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  access?: ListConfig<any>['access']
   /**
    * Hooks for the User list
    */
-  hooks?: ListConfig['hooks']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  hooks?: ListConfig<any>['hooks']
 }
 
 /**
  * Create the base User list with better-auth required fields
  * This matches the better-auth user schema
  */
-export function createUserList(config?: ExtendUserListConfig): ListConfig {
+export function createUserList(
+  config?: ExtendUserListConfig, // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): ListConfig<any> {
   return list({
     fields: {
       // Better-auth required fields
@@ -85,7 +89,8 @@ export function createUserList(config?: ExtendUserListConfig): ListConfig {
  * Create the Session list for better-auth
  * Stores active user sessions
  */
-export function createSessionList(): ListConfig {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createSessionList(): ListConfig<any> {
   return list({
     fields: {
       // Session token (stored in cookie, used as primary key)
@@ -138,7 +143,8 @@ export function createSessionList(): ListConfig {
  * Create the Account list for better-auth
  * Stores OAuth provider accounts and credentials
  */
-export function createAccountList(): ListConfig {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createAccountList(): ListConfig<any> {
   return list({
     fields: {
       // Account identifier from provider
@@ -202,7 +208,8 @@ export function createAccountList(): ListConfig {
  * Create the Verification list for better-auth
  * Stores email verification tokens, password reset tokens, etc.
  */
-export function createVerificationList(): ListConfig {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function createVerificationList(): ListConfig<any> {
   return list({
     fields: {
       // Identifier (e.g., email address)
@@ -235,7 +242,8 @@ export function createVerificationList(): ListConfig {
  * Get all auth lists required by better-auth
  * This is the main export used by withAuth()
  */
-export function getAuthLists(userConfig?: ExtendUserListConfig): Record<string, ListConfig> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+export function getAuthLists(userConfig?: ExtendUserListConfig): Record<string, ListConfig<any>> {
   return {
     User: createUserList(userConfig),
     Session: createSessionList(),
