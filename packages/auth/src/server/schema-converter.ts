@@ -246,8 +246,8 @@ function getDefaultAccess(tableName: string): ListConfig<any>['access'] {
 export function convertTableToList(
   tableName: string,
   tableSchema: BetterAuthTableSchema,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
-  // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   const fields: Record<string, FieldConfig> = {}
 
   // First pass: convert regular fields
@@ -287,8 +287,8 @@ export function convertTableToList(
  */
 export function convertBetterAuthSchema(
   tables: Record<string, BetterAuthTableSchema>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
-  // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   const lists: Record<string, ListConfig<any>> = {} // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 
   for (const [tableName, tableSchema] of Object.entries(tables)) {
