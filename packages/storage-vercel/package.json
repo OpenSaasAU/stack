@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@opensaas/stack-storage": "workspace:*",
-    "@types/node": "^24.7.2",
-    "@vitest/coverage-v8": "^4.0.4",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.15",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.15"
   },
   "peerDependencies": {
     "@opensaas/stack-storage": "^0"
