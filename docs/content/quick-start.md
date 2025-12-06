@@ -53,7 +53,7 @@ cd my-app
 #### 2. Install OpenSaaS Stack
 
 ```bash
-pnpm add @opensaas/stack-core
+pnpm add @opensaas/stack-core @prisma/adapter-better-sqlite3
 pnpm add -D prisma
 ```
 
@@ -64,11 +64,15 @@ Create `opensaas.config.ts` in your project root:
 ```typescript
 import { config, list } from '@opensaas/stack-core/config'
 import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   db: {
     provider: 'sqlite',
-    url: 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+      return new PrismaClient({ adapter })
+    },
   },
   lists: {
     Post: list({
