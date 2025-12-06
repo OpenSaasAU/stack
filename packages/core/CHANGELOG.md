@@ -1,5 +1,155 @@
 # @opensaas/stack-core
 
+## 0.4.0
+
+### Minor Changes
+
+- [#190](https://github.com/OpenSaasAU/stack/pull/190) [`527b677`](https://github.com/OpenSaasAU/stack/commit/527b677ab598070185e23d163a9e99bc20f03c49) Thanks [@borisno2](https://github.com/borisno2)! - Fix nested operations to respect sudo mode, preventing access control checks when using context.sudo()
+
+  When using `context.sudo()`, nested relationship operations (create, connect, update, connectOrCreate) were still enforcing access control checks, causing "Access denied" errors even when sudo mode should bypass all access control.
+
+  This fix adds `context._isSudo` checks to all four nested operation functions in `packages/core/src/context/nested-operations.ts`:
+  - `processNestedCreate()` - Now skips create access control in sudo mode
+  - `processNestedConnect()` - Now skips update access control in sudo mode
+  - `processNestedUpdate()` - Now skips update access control in sudo mode
+  - `processNestedConnectOrCreate()` - Now skips update access control in sudo mode
+
+  The fix ensures that when `context.sudo()` is used, all nested operations bypass access control checks while still executing hooks and validation.
+
+  Comprehensive tests have been added to `packages/core/tests/sudo.test.ts` to verify nested operations work correctly in sudo mode.
+
+  Fixes #134
+
+- [#172](https://github.com/OpenSaasAU/stack/pull/172) [`929a2a9`](https://github.com/OpenSaasAU/stack/commit/929a2a9a2dfa80b1d973d259dd87828d644ea58d) Thanks [@list<Lists.User.TypeInfo>({](https://github.com/list<Lists.User.TypeInfo>({), [@list<Lists.User.TypeInfo>({](https://github.com/list<Lists.User.TypeInfo>({)! - Improve TypeScript type inference for field configs and list-level hooks by automatically passing TypeInfo from list level down
+
+  This change eliminates the need to manually specify type parameters on field builders when using features like virtual fields, and fixes a critical bug where list-level hooks weren't receiving properly typed parameters.
+
+  ## Field Type Inference Improvements
+
+  Previously, users had to write `virtual<Lists.User.TypeInfo>({...})` to get proper type inference. Now TypeScript automatically infers the correct types from the list-level type parameter.
+
+  **Example:**
+
+  ```typescript
+  // Before
+
+    fields: {
+      displayName: virtual<Lists.User.TypeInfo>({
+        type: 'string',
+        hooks: {
+          resolveOutput: ({ item }) => `${item.name} (${item.email})`,
+        },
+      }),
+    },
+  })
+
+  // After
+
+    fields: {
+      displayName: virtual({
+        type: 'string',
+        hooks: {
+          resolveOutput: ({ item }) => `${item.name} (${item.email})`,
+        },
+      }),
+    },
+  })
+  ```
+
+  ## List-Level Hooks Type Inference Fix
+
+  Fixed a critical type parameter mismatch where `Hooks<TTypeInfo>` was passing the entire TypeInfo object as the first parameter instead of properly destructuring it into three required parameters:
+  1. `TOutput` - The item type (what's stored in DB)
+  2. `TCreateInput` - Prisma create input type
+  3. `TUpdateInput` - Prisma update input type
+
+  **Impact:**
+  - `resolveInput` now receives proper Prisma input types (e.g., `PostCreateInput`, `PostUpdateInput`)
+  - `validateInput` has access to properly typed input data
+  - `beforeOperation` and `afterOperation` have correct item types
+  - All list-level hook callbacks now get full IntelliSense and type checking
+
+  **Example:**
+
+  ```typescript
+  Post: list<Lists.Post.TypeInfo>({
+    fields: { title: text(), content: text() },
+    hooks: {
+      resolveInput: async ({ operation, resolvedData }) => {
+        // ✅ resolvedData is now properly typed as PostCreateInput or PostUpdateInput
+        // ✅ Full autocomplete for title, content, etc.
+        if (operation === 'create') {
+          console.log(resolvedData.title) // TypeScript knows this is string | undefined
+        }
+        return resolvedData
+      },
+      beforeOperation: async ({ operation, item }) => {
+        // ✅ item is now properly typed as Post with all fields
+        if (operation === 'update' && item) {
+          console.log(item.title) // TypeScript knows this is string
+          console.log(item.createdAt) // TypeScript knows this is Date
+        }
+      },
+    },
+  })
+  ```
+
+  ## Breaking Changes
+  - Field types now accept full `TTypeInfo extends TypeInfo` instead of just `TItem`
+  - `FieldsWithItemType` utility replaced with `FieldsWithTypeInfo`
+  - All field builders updated to use new type signature
+  - List-level hooks now receive properly typed parameters (may reveal existing type errors)
+
+  ## Benefits
+  - ✨ Cleaner code without manual type parameter repetition
+  - 🎯 Better type inference in both field-level and list-level hooks
+  - 🔄 Consistent type flow from list configuration down to individual fields
+  - 🛡️ Maintained full type safety with improved DX
+  - 💡 Full IntelliSense support in all hook callbacks
+
+- [#170](https://github.com/OpenSaasAU/stack/pull/170) [`3c4db9d`](https://github.com/OpenSaasAU/stack/commit/3c4db9d8318fc73d291991d8bdfa4f607c3a50ea) Thanks [@list({](https://github.com/list({)! - Add support for virtual fields with proper TypeScript type generation
+
+  Virtual fields are computed fields that don't exist in the database but are added to query results at runtime. This feature enables derived or computed values to be included in your API responses with full type safety.
+
+  **New Features:**
+  - Added `virtual()` field type for defining computed fields in your schema
+  - Virtual fields are automatically excluded from database schema and input types
+  - Virtual fields appear in output types with full TypeScript autocomplete
+  - Virtual fields support `resolveOutput` hooks for custom computation logic
+
+  **Type System Improvements:**
+  - Generated Context type now properly extends AccessContext from core
+  - Separate Input and Output types (e.g., `UserOutput` includes virtual fields, `UserCreateInput` does not)
+  - UI components now accept `AccessContext<any>` for better compatibility with custom context types
+  - Type aliases provide convenience (e.g., `User = UserOutput`)
+
+  **Example Usage:**
+
+  ```typescript
+  import { list, text, virtual } from '@opensaas/stack-core'
+
+  export default config({
+    lists: {
+
+        fields: {
+          name: text(),
+          email: text(),
+          displayName: virtual({
+            type: 'string',
+            hooks: {
+              resolveOutput: async ({ item }) => {
+                return `${item.name} (${item.email})`
+              },
+            },
+          }),
+        },
+      }),
+    },
+  })
+  ```
+
+  The `displayName` field will automatically appear in query results with full TypeScript support, but won't be part of create/update operations or the database schema.
+
 ## 0.3.0
 
 ## 0.2.0
