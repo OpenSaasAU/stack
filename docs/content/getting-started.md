@@ -41,7 +41,7 @@ cd ../../examples/blog
 
 The `.env` file is already created with SQLite configuration.
 
-{% callout type="note" %}
+{% callout type="info" %}
 Prisma 7 requires database adapters. The examples are pre-configured with the `@prisma/adapter-better-sqlite3` adapter. See the [Config System](/docs/core-concepts/config) for adapter examples.
 {% /callout %}
 
