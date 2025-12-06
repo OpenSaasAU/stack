@@ -47,21 +47,21 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@tiptap/extension-placeholder": "^3.7.2",
-    "@tiptap/pm": "^3.7.2",
-    "@tiptap/react": "^3.7.2",
-    "@tiptap/starter-kit": "^3.7.2",
-    "zod": "^4.1.12"
+    "@tiptap/extension-placeholder": "^3.13.0",
+    "@tiptap/pm": "^3.13.0",
+    "@tiptap/react": "^3.13.0",
+    "@tiptap/starter-kit": "^3.13.0",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@types/node": "^24.7.2",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "next": "^16.0.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "next": "^16.0.7",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "typescript": "^5.9.3"
   }
 }

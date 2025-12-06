@@ -70,15 +70,17 @@ async function processNestedCreate(
 
   const processedItems = await Promise.all(
     itemsArray.map(async (item) => {
-      // 1. Check create access
-      const createAccess = relatedListConfig.access?.operation?.create
-      const accessResult = await checkAccess(createAccess, {
-        session: context.session,
-        context,
-      })
+      // 1. Check create access (skip if sudo mode)
+      if (!context._isSudo) {
+        const createAccess = relatedListConfig.access?.operation?.create
+        const accessResult = await checkAccess(createAccess, {
+          session: context.session,
+          context,
+        })
 
-      if (accessResult === false) {
-        throw new Error('Access denied: Cannot create related item')
+        if (accessResult === false) {
+          throw new Error('Access denied: Cannot create related item')
+        }
       }
 
       // 2. Execute list-level resolveInput hook
@@ -159,43 +161,45 @@ async function processNestedConnect(
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections]
 
-  // Check update access for each item being connected
-  for (const connection of connectionsArray) {
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(relatedListName)]
+  // Check update access for each item being connected (skip if sudo mode)
+  if (!context._isSudo) {
+    for (const connection of connectionsArray) {
+      // Access Prisma model dynamically - required because model names are generated at runtime
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (prisma as any)[getDbKey(relatedListName)]
 
-    // Fetch the item to check access
-    const item = await model.findUnique({
-      where: connection,
-    })
+      // Fetch the item to check access
+      const item = await model.findUnique({
+        where: connection,
+      })
 
-    if (!item) {
-      throw new Error(`Cannot connect: Item not found`)
-    }
+      if (!item) {
+        throw new Error(`Cannot connect: Item not found`)
+      }
 
-    // Check update access (connecting modifies the relationship)
-    const updateAccess = relatedListConfig.access?.operation?.update
-    const accessResult = await checkAccess(updateAccess, {
-      session: context.session,
-      item,
-      context,
-    })
+      // Check update access (connecting modifies the relationship)
+      const updateAccess = relatedListConfig.access?.operation?.update
+      const accessResult = await checkAccess(updateAccess, {
+        session: context.session,
+        item,
+        context,
+      })
 
-    if (accessResult === false) {
-      throw new Error('Access denied: Cannot connect to this item')
-    }
+      if (accessResult === false) {
+        throw new Error('Access denied: Cannot connect to this item')
+      }
 
-    // If access returns a filter, check if item matches
-    if (typeof accessResult === 'object') {
-      // Simple field matching
-      for (const [key, value] of Object.entries(accessResult)) {
-        if (typeof value === 'object' && value !== null && 'equals' in value) {
-          if (item[key] !== (value as Record<string, unknown>).equals) {
+      // If access returns a filter, check if item matches
+      if (typeof accessResult === 'object') {
+        // Simple field matching
+        for (const [key, value] of Object.entries(accessResult)) {
+          if (typeof value === 'object' && value !== null && 'equals' in value) {
+            if (item[key] !== (value as Record<string, unknown>).equals) {
+              throw new Error('Access denied: Cannot connect to this item')
+            }
+          } else if (item[key] !== value) {
             throw new Error('Access denied: Cannot connect to this item')
           }
-        } else if (item[key] !== value) {
-          throw new Error('Access denied: Cannot connect to this item')
         }
       }
     }
@@ -234,16 +238,18 @@ async function processNestedUpdate(
         throw new Error('Cannot update: Item not found')
       }
 
-      // Check update access
-      const updateAccess = relatedListConfig.access?.operation?.update
-      const accessResult = await checkAccess(updateAccess, {
-        session: context.session,
-        item,
-        context,
-      })
+      // Check update access (skip if sudo mode)
+      if (!context._isSudo) {
+        const updateAccess = relatedListConfig.access?.operation?.update
+        const accessResult = await checkAccess(updateAccess, {
+          session: context.session,
+          item,
+          context,
+        })
 
-      if (accessResult === false) {
-        throw new Error('Access denied: Cannot update related item')
+        if (accessResult === false) {
+          throw new Error('Access denied: Cannot update related item')
+        }
       }
 
       // Execute list-level resolveInput hook
@@ -335,30 +341,32 @@ async function processNestedConnectOrCreate(
         config,
       )
 
-      // Check access for the connect portion (try to find existing item)
-      try {
-        // Access Prisma model dynamically - required because model names are generated at runtime
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const model = (prisma as any)[getDbKey(relatedListName)]
-        const existingItem = await model.findUnique({
-          where: opRecord.where,
-        })
-
-        if (existingItem) {
-          // Check update access for connection
-          const updateAccess = relatedListConfig.access?.operation?.update
-          const accessResult = await checkAccess(updateAccess, {
-            session: context.session,
-            item: existingItem,
-            context,
+      // Check access for the connect portion (try to find existing item) (skip if sudo mode)
+      if (!context._isSudo) {
+        try {
+          // Access Prisma model dynamically - required because model names are generated at runtime
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const model = (prisma as any)[getDbKey(relatedListName)]
+          const existingItem = await model.findUnique({
+            where: opRecord.where,
           })
 
-          if (accessResult === false) {
-            throw new Error('Access denied: Cannot connect to existing item')
+          if (existingItem) {
+            // Check update access for connection
+            const updateAccess = relatedListConfig.access?.operation?.update
+            const accessResult = await checkAccess(updateAccess, {
+              session: context.session,
+              item: existingItem,
+              context,
+            })
+
+            if (accessResult === false) {
+              throw new Error('Access denied: Cannot connect to existing item')
+            }
           }
+        } catch {
+          // Item doesn't exist, will use create (already processed)
         }
-      } catch {
-        // Item doesn't exist, will use create (already processed)
       }
 
       return {
