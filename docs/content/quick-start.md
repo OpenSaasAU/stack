@@ -28,6 +28,12 @@ pnpm install
 npm create opensaas-app@latest my-app --with-auth
 ```
 
+**Optional:** Add `--with-ai` flag to enable AI development tools:
+
+```bash
+npm create opensaas-app@latest my-app --with-ai
+```
+
 This creates a complete Next.js project with:
 
 - OpenSaaS Stack pre-configured
@@ -204,6 +210,18 @@ Now that you have a basic setup, explore these topics:
 {% callout type="info" %}
 **Tip**: The access control engine automatically secures all database operations. No record is returned without passing access checks.
 {% /callout %}
+
+## AI-Assisted Development
+
+OpenSaaS Stack includes a Claude Code plugin for feature-driven development. Instead of manually configuring infrastructure, describe what you want to build and let Claude guide you through implementation.
+
+**Features:**
+
+- Interactive feature wizards that generate complete code
+- Documentation search via `/opensaas-docs`
+- Specialized agent that understands OpenSaaS patterns
+
+**[Claude Code Plugin Guide →](/docs/guides/claude-code)**
 
 ## Common Issues
 
