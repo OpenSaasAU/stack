@@ -76,6 +76,10 @@ export const navigation: NavItem[] = [
     title: 'Guides',
     items: [
       {
+        title: 'Claude Code Plugin',
+        href: '/docs/guides/claude-code',
+      },
+      {
         title: 'Custom Fields',
         href: '/docs/guides/custom-fields',
       },

@@ -22,6 +22,7 @@ async function main() {
   const args = process.argv.slice(2)
   let projectName = args.find((arg) => !arg.startsWith('--'))
   const hasAuthFlag = args.includes('--with-auth')
+  const hasAiFlag = args.includes('--with-ai')
   const hasTemplateFlag = args.some((arg) => arg.startsWith('--template'))
 
   // Prompt for project name if not provided
@@ -74,20 +75,23 @@ async function main() {
     withAuth = response.withAuth
   }
 
-  // Prompt for MCP/AI development tools
-  const mcpResponse = await prompts({
-    type: 'confirm',
-    name: 'enableMCP',
-    message: 'Enable AI development tools? (MCP server + Claude Code plugin)',
-    initial: true,
-  })
+  // Prompt for MCP/AI development tools if not specified via flag
+  let enableMCP = hasAiFlag
+  if (!hasAiFlag) {
+    const mcpResponse = await prompts({
+      type: 'confirm',
+      name: 'enableMCP',
+      message: 'Enable AI development tools? (MCP server + Claude Code plugin)',
+      initial: true,
+    })
 
-  if (mcpResponse.enableMCP === undefined) {
-    console.log(chalk.yellow('\n👋 Cancelled'))
-    process.exit(0)
+    if (mcpResponse.enableMCP === undefined) {
+      console.log(chalk.yellow('\n👋 Cancelled'))
+      process.exit(0)
+    }
+
+    enableMCP = mcpResponse.enableMCP
   }
-
-  const enableMCP = mcpResponse.enableMCP
 
   // Create project
   await createProject({ projectName, withAuth, enableMCP })
