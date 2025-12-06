@@ -76,9 +76,7 @@ import { config } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
-  plugins: [
-    authPlugin({ emailAndPassword: { enabled: true } }),
-  ],
+  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
   // ...
 })
 ```
