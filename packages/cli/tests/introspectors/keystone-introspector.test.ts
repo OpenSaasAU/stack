@@ -86,7 +86,11 @@ export default {
     expect(introspector.mapKeystoneTypeToOpenSaas('file')).toEqual({ type: 'file', import: 'file' })
   })
 
-  it('should generate warnings for unsupported features', async () => {
+  it('should handle virtual fields', () => {
+    expect(introspector.mapKeystoneTypeToOpenSaas('virtual')).toEqual({ type: 'virtual', import: 'virtual' })
+  })
+
+  it('should generate warnings for migration reminders', async () => {
     const config = `
 export default {
   db: {
@@ -117,8 +121,8 @@ export default {
     expect(warnings.length).toBeGreaterThan(0)
     // Should warn about storage configuration (helpful reminder)
     expect(warnings.some(w => w.includes('storage'))).toBe(true)
-    // Should warn about virtual fields (actually unsupported)
-    expect(warnings.some(w => w.includes('virtual'))).toBe(true)
+    // Should remind about manual migration for virtual field hooks
+    expect(warnings.some(w => w.includes('virtual') && w.includes('manually migrate'))).toBe(true)
   })
 
   it('should throw for missing config', async () => {

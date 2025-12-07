@@ -232,8 +232,9 @@ export class KeystoneIntrospector {
       // Storage field types (from @opensaas/stack-storage)
       'image': { type: 'image', import: 'image' },
       'file': { type: 'file', import: 'file' },
-      // Unsupported types
-      'virtual': { type: 'text', import: 'text' }, // Not supported - computed fields
+      // Virtual/computed fields
+      'virtual': { type: 'virtual', import: 'virtual' },
+      // Other field types
       'calendarDay': { type: 'timestamp', import: 'timestamp' },
     }
 
@@ -249,20 +250,18 @@ export class KeystoneIntrospector {
     const hasFileOrImageFields = schema.models.some(model =>
       model.fields.some(field => ['image', 'file'].includes(field.type.toLowerCase()))
     )
-
-    for (const model of schema.models) {
-      for (const field of model.fields) {
-        const lower = field.type.toLowerCase()
-
-        if (lower === 'virtual') {
-          warnings.push(`Field "${model.name}.${field.name}" uses "virtual" - computed fields are not supported and will be skipped`)
-        }
-      }
-    }
+    const hasVirtualFields = schema.models.some(model =>
+      model.fields.some(field => field.type.toLowerCase() === 'virtual')
+    )
 
     // Add storage configuration reminder if file/image fields are present
     if (hasFileOrImageFields) {
       warnings.push('Your schema uses file/image fields - you\'ll need to configure storage providers in your OpenSaaS config')
+    }
+
+    // Add virtual field migration reminder
+    if (hasVirtualFields) {
+      warnings.push('Your schema uses virtual fields - you\'ll need to manually migrate the resolveOutput hooks to compute field values')
     }
 
     return warnings
