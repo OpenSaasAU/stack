@@ -202,9 +202,7 @@ describe('MigrationGenerator', () => {
 
       const output = await generator.generate(session)
 
-      const secretStep = output.steps.find((step) =>
-        step.includes('BETTER_AUTH_SECRET'),
-      )
+      const secretStep = output.steps.find((step) => step.includes('BETTER_AUTH_SECRET'))
       expect(secretStep).toBeDefined()
       expect(secretStep).toContain('openssl rand -base64 32')
     })
@@ -563,7 +561,9 @@ describe('MigrationGenerator', () => {
 
       const output = await generator.generate(session)
 
-      expect(output.configContent).toContain("import type { AccessControl } from '@opensaas/stack-core'")
+      expect(output.configContent).toContain(
+        "import type { AccessControl } from '@opensaas/stack-core'",
+      )
     })
 
     it('should not include AccessControl type when auth disabled', async () => {

@@ -139,7 +139,14 @@ export class MigrationGenerator {
 
     // Generate each list
     const listDefinitions = modelsToGenerate.map((model) => {
-      return this.generateList(model, schema, ownerModels.has(model.name), answers, usedFieldTypes, warnings)
+      return this.generateList(
+        model,
+        schema,
+        ownerModels.has(model.name),
+        answers,
+        usedFieldTypes,
+        warnings,
+      )
     })
 
     return listDefinitions.join('\n')
@@ -382,10 +389,7 @@ const isOwner: AccessControl = ({ session, item }) => {
       case 'postgresql':
         return {
           provider: 'postgresql',
-          imports: [
-            "import { PrismaPg } from '@prisma/adapter-pg'",
-            "import pg from 'pg'",
-          ],
+          imports: ["import { PrismaPg } from '@prisma/adapter-pg'", "import pg from 'pg'"],
           configCode: `    db: {
       provider: 'postgresql',
       prismaClientConstructor: (PrismaClient) => {
@@ -399,9 +403,7 @@ const isOwner: AccessControl = ({ session, item }) => {
       case 'mysql':
         return {
           provider: 'mysql',
-          imports: [
-            "import { PrismaPlanetScale } from '@prisma/adapter-planetscale'",
-          ],
+          imports: ["import { PrismaPlanetScale } from '@prisma/adapter-planetscale'"],
           configCode: `    db: {
       provider: 'mysql',
       prismaClientConstructor: (PrismaClient) => {
@@ -417,9 +419,7 @@ const isOwner: AccessControl = ({ session, item }) => {
       default:
         return {
           provider: 'sqlite',
-          imports: [
-            "import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'",
-          ],
+          imports: ["import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'"],
           configCode: `    db: {
       provider: 'sqlite',
       prismaClientConstructor: (PrismaClient) => {
@@ -475,8 +475,7 @@ const isOwner: AccessControl = ({ session, item }) => {
     authMethods: string[]
     adminBasePath: string
   }): string {
-    const { imports, accessHelpers, dbConfig, lists, useAuth, authMethods, adminBasePath } =
-      options
+    const { imports, accessHelpers, dbConfig, lists, useAuth, authMethods, adminBasePath } = options
 
     // Generate auth plugin config
     let authPluginStr = ''
