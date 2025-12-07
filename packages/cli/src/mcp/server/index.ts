@@ -131,6 +131,105 @@ const TOOLS: Tool[] = [
       required: ['feature'],
     },
   },
+  {
+    name: 'opensaas_start_migration',
+    description:
+      'Start the migration wizard for an existing project. Returns the first question to begin the migration process.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectType: {
+          type: 'string',
+          description: 'Type of project being migrated',
+          enum: ['prisma', 'keystone', 'nextjs'],
+        },
+      },
+      required: ['projectType'],
+    },
+  },
+  {
+    name: 'opensaas_answer_migration',
+    description:
+      'Answer a question in the migration wizard. Use this after opensaas_start_migration to progress through the migration.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: {
+          type: 'string',
+          description: 'Migration session ID from the wizard',
+        },
+        answer: {
+          description: 'Answer to the current question',
+          oneOf: [
+            { type: 'string' },
+            { type: 'boolean' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+        },
+      },
+      required: ['sessionId', 'answer'],
+    },
+  },
+  {
+    name: 'opensaas_introspect_prisma',
+    description:
+      'Analyze a Prisma schema file and return detailed information about models, fields, and relationships. This helps you understand your existing schema before migration.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        schemaPath: {
+          type: 'string',
+          description: 'Path to schema.prisma (defaults to prisma/schema.prisma)',
+        },
+      },
+    },
+  },
+  {
+    name: 'opensaas_introspect_keystone',
+    description:
+      'Analyze a KeystoneJS config file and return information about lists and fields. This helps you understand your existing schema before migration.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        configPath: {
+          type: 'string',
+          description: 'Path to keystone.config.ts (defaults to keystone.config.ts)',
+        },
+      },
+    },
+  },
+  {
+    name: 'opensaas_search_migration_docs',
+    description:
+      'Search OpenSaaS Stack documentation for migration-related topics. Searches both local CLAUDE.md files and online documentation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Search query (e.g., "prisma to opensaas", "access control patterns", "field types")',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'opensaas_get_example',
+    description:
+      'Get example code for a specific feature or pattern. Returns code snippets from the examples directory.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        feature: {
+          type: 'string',
+          description:
+            'Feature to get example for (e.g., "blog-with-auth", "access-control", "relationships", "hooks", "custom-fields")',
+        },
+      },
+      required: ['feature'],
+    },
+  },
 ]
 
 /**
@@ -188,6 +287,28 @@ export async function startMCPServer() {
 
         case 'opensaas_validate_feature':
           return await stackServer.validateFeature(args as { feature: string; configPath?: string })
+
+        case 'opensaas_start_migration':
+          return await stackServer.startMigration(
+            args as { projectType: 'prisma' | 'keystone' | 'nextjs' },
+          )
+
+        case 'opensaas_answer_migration':
+          return await stackServer.answerMigration(
+            args as { sessionId: string; answer: string | boolean | string[] },
+          )
+
+        case 'opensaas_introspect_prisma':
+          return await stackServer.introspectPrisma(args as { schemaPath?: string })
+
+        case 'opensaas_introspect_keystone':
+          return await stackServer.introspectKeystone(args as { configPath?: string })
+
+        case 'opensaas_search_migration_docs':
+          return await stackServer.searchMigrationDocs(args as { query: string })
+
+        case 'opensaas_get_example':
+          return await stackServer.getExample(args as { feature: string })
 
         default:
           return {

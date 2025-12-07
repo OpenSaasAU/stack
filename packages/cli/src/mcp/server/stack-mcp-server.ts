@@ -3,16 +3,26 @@
  */
 
 import { WizardEngine } from '../lib/wizards/wizard-engine.js'
+import { MigrationWizard } from '../lib/wizards/migration-wizard.js'
 import { OpenSaasDocumentationProvider } from '../lib/documentation-provider.js'
 import { getAllFeatures, getFeature } from '../lib/features/catalog.js'
+import { PrismaIntrospector } from '../../migration/introspectors/prisma-introspector.js'
+import { KeystoneIntrospector } from '../../migration/introspectors/keystone-introspector.js'
+import type { ProjectType } from '../../migration/types.js'
 
 export class StackMCPServer {
   private wizardEngine: WizardEngine
+  private migrationWizard: MigrationWizard
   private docsProvider: OpenSaasDocumentationProvider
+  private prismaIntrospector: PrismaIntrospector
+  private keystoneIntrospector: KeystoneIntrospector
 
   constructor() {
     this.wizardEngine = new WizardEngine()
+    this.migrationWizard = new MigrationWizard()
     this.docsProvider = new OpenSaasDocumentationProvider()
+    this.prismaIntrospector = new PrismaIntrospector()
+    this.keystoneIntrospector = new KeystoneIntrospector()
   }
 
   /**
@@ -286,6 +296,239 @@ ${featureDefinition.dependsOn && featureDefinition.dependsOn.length > 0 ? `\n## 
 4. Run \`pnpm generate\` and \`pnpm db:push\` successfully
 
 **Note**: Full automatic validation coming soon! For now, use this checklist to verify your implementation.`,
+        },
+      ],
+    }
+  }
+
+  /**
+   * Start a migration wizard session
+   */
+  async startMigration({ projectType }: { projectType: ProjectType }) {
+    return this.migrationWizard.startMigration(projectType)
+  }
+
+  /**
+   * Answer a migration wizard question
+   */
+  async answerMigration({
+    sessionId,
+    answer,
+  }: {
+    sessionId: string
+    answer: string | boolean | string[]
+  }) {
+    return this.migrationWizard.answerQuestion(sessionId, answer)
+  }
+
+  /**
+   * Introspect a Prisma schema
+   */
+  async introspectPrisma({ schemaPath }: { schemaPath?: string }) {
+    const cwd = process.cwd()
+    const path = schemaPath || 'prisma/schema.prisma'
+
+    try {
+      const schema = await this.prismaIntrospector.introspect(cwd, path)
+
+      const modelList = schema.models
+        .map((m) => {
+          const fields = m.fields
+            .map((f) => {
+              let type = f.type
+              if (f.relation) type = `→ ${f.relation.model}`
+              if (f.isList) type = `${type}[]`
+              if (!f.isRequired) type = `${type}?`
+              return `    - ${f.name}: ${type}`
+            })
+            .join('\n')
+          return `### ${m.name}\n${fields}`
+        })
+        .join('\n\n')
+
+      const enumList =
+        schema.enums.length > 0
+          ? `\n## Enums\n\n${schema.enums.map((e) => `- **${e.name}**: ${e.values.join(', ')}`).join('\n')}`
+          : ''
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `# Prisma Schema Analysis
+
+**Provider:** ${schema.provider}
+**Models:** ${schema.models.length}
+**Enums:** ${schema.enums.length}
+
+## Models
+
+${modelList}
+${enumList}
+
+---
+
+**Ready to migrate?** Use \`opensaas_start_migration({ projectType: "prisma" })\` to begin the wizard.`,
+          },
+        ],
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `❌ Failed to introspect Prisma schema: ${message}\n\nMake sure the file exists at: ${path}`,
+          },
+        ],
+        isError: true,
+      }
+    }
+  }
+
+  /**
+   * Introspect a KeystoneJS config
+   */
+  async introspectKeystone({ configPath }: { configPath?: string }) {
+    const cwd = process.cwd()
+    const path = configPath || 'keystone.config.ts'
+
+    try {
+      const config = await this.keystoneIntrospector.introspect(cwd, path)
+
+      const listInfo = config.models
+        .map((m) => {
+          const fields = m.fields.map((f) => `    - ${f.name}: ${f.type}`).join('\n')
+          return `### ${m.name}\n${fields}`
+        })
+        .join('\n\n')
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `# KeystoneJS Config Analysis
+
+**Lists:** ${config.models.length}
+
+## Lists
+
+${listInfo}
+
+---
+
+**Note:** KeystoneJS → OpenSaaS migration is mostly 1:1. Field types and access control patterns map directly.
+
+**Ready to migrate?** Use \`opensaas_start_migration({ projectType: "keystone" })\` to begin.`,
+          },
+        ],
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `❌ Failed to introspect KeystoneJS config: ${message}\n\nMake sure the file exists at: ${path}`,
+          },
+        ],
+        isError: true,
+      }
+    }
+  }
+
+  /**
+   * Search migration documentation
+   */
+  async searchMigrationDocs({ query }: { query: string }) {
+    // First try local CLAUDE.md files
+    const localDocs = await this.docsProvider.searchLocalDocs(query)
+
+    // Then try hosted docs
+    const hostedDocs = await this.docsProvider.searchDocs(query)
+
+    const sections: string[] = []
+
+    if (localDocs.content) {
+      sections.push(`## Local Documentation\n\n${localDocs.content}`)
+    }
+
+    if (hostedDocs.content && hostedDocs.content !== 'No documentation found for this query.') {
+      sections.push(`## Online Documentation\n\n${hostedDocs.content}`)
+    }
+
+    if (sections.length === 0) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `No documentation found for "${query}".
+
+Try these searches:
+- "access control" - How to restrict access to data
+- "field types" - Available field types in OpenSaaS
+- "authentication" - Setting up auth with Better-auth
+- "hooks" - Data transformation and side effects
+
+Or visit: https://stack.opensaas.au/`,
+          },
+        ],
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `# Documentation: ${query}\n\n${sections.join('\n\n---\n\n')}`,
+        },
+      ],
+    }
+  }
+
+  /**
+   * Get example code for a feature
+   */
+  async getExample({ feature }: { feature: string }) {
+    const example = await this.docsProvider.getExampleConfig(feature)
+
+    if (!example) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `No example found for "${feature}".
+
+Available examples:
+- **blog-with-auth** - Blog with user authentication
+- **access-control** - Access control patterns
+- **relationships** - Model relationships
+- **hooks** - Data transformation hooks
+- **custom-fields** - Custom field types
+
+Use: \`opensaas_get_example({ feature: "example-name" })\``,
+          },
+        ],
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `# Example: ${feature}
+
+${example.description}
+
+\`\`\`typescript
+${example.code}
+\`\`\`
+
+${example.notes ? `\n## Notes\n\n${example.notes}` : ''}
+
+---
+
+📚 Full example at: ${example.sourcePath}`,
         },
       ],
     }
