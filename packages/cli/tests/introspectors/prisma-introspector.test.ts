@@ -46,11 +46,11 @@ model Post {
     expect(result.provider).toBe('sqlite')
     expect(result.models).toHaveLength(2)
 
-    const user = result.models.find(m => m.name === 'User')
+    const user = result.models.find((m) => m.name === 'User')
     expect(user).toBeDefined()
     expect(user!.fields).toHaveLength(4)
 
-    const post = result.models.find(m => m.name === 'Post')
+    const post = result.models.find((m) => m.name === 'Post')
     expect(post).toBeDefined()
     expect(post!.hasRelations).toBe(true)
   })
@@ -101,13 +101,13 @@ model User {
     const result = await introspector.introspect(tempDir)
     const user = result.models[0]
 
-    const nameField = user.fields.find(f => f.name === 'name')
+    const nameField = user.fields.find((f) => f.name === 'name')
     expect(nameField!.isRequired).toBe(false)
 
-    const emailsField = user.fields.find(f => f.name === 'emails')
+    const emailsField = user.fields.find((f) => f.name === 'emails')
     expect(emailsField!.isList).toBe(true)
 
-    const isActiveField = user.fields.find(f => f.name === 'isActive')
+    const isActiveField = user.fields.find((f) => f.name === 'isActive')
     expect(isActiveField!.defaultValue).toBe('true')
   })
 
@@ -130,11 +130,11 @@ model User {
     const result = await introspector.introspect(tempDir)
     const user = result.models[0]
 
-    const idField = user.fields.find(f => f.name === 'id')
+    const idField = user.fields.find((f) => f.name === 'id')
     expect(idField!.isId).toBe(true)
     expect(idField!.defaultValue).toBe('cuid()')
 
-    const emailField = user.fields.find(f => f.name === 'email')
+    const emailField = user.fields.find((f) => f.name === 'email')
     expect(emailField!.isUnique).toBe(true)
   })
 
@@ -159,9 +159,9 @@ model User {
     await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
 
     const result = await introspector.introspect(tempDir)
-    const post = result.models.find(m => m.name === 'Post')
+    const post = result.models.find((m) => m.name === 'Post')
 
-    const authorField = post!.fields.find(f => f.name === 'author')
+    const authorField = post!.fields.find((f) => f.name === 'author')
     expect(authorField!.relation).toBeDefined()
     expect(authorField!.relation!.model).toBe('User')
     expect(authorField!.relation!.fields).toEqual(['authorId'])
@@ -170,9 +170,18 @@ model User {
 
   it('should map Prisma types to OpenSaaS types', () => {
     expect(introspector.mapPrismaTypeToOpenSaas('String')).toEqual({ type: 'text', import: 'text' })
-    expect(introspector.mapPrismaTypeToOpenSaas('Int')).toEqual({ type: 'integer', import: 'integer' })
-    expect(introspector.mapPrismaTypeToOpenSaas('Boolean')).toEqual({ type: 'checkbox', import: 'checkbox' })
-    expect(introspector.mapPrismaTypeToOpenSaas('DateTime')).toEqual({ type: 'timestamp', import: 'timestamp' })
+    expect(introspector.mapPrismaTypeToOpenSaas('Int')).toEqual({
+      type: 'integer',
+      import: 'integer',
+    })
+    expect(introspector.mapPrismaTypeToOpenSaas('Boolean')).toEqual({
+      type: 'checkbox',
+      import: 'checkbox',
+    })
+    expect(introspector.mapPrismaTypeToOpenSaas('DateTime')).toEqual({
+      type: 'timestamp',
+      import: 'timestamp',
+    })
     expect(introspector.mapPrismaTypeToOpenSaas('Json')).toEqual({ type: 'json', import: 'json' })
   })
 
@@ -202,8 +211,9 @@ model Data {
   })
 
   it('should throw for missing schema', async () => {
-    await expect(introspector.introspect(tempDir, 'nonexistent.prisma'))
-      .rejects.toThrow('Schema file not found')
+    await expect(introspector.introspect(tempDir, 'nonexistent.prisma')).rejects.toThrow(
+      'Schema file not found',
+    )
   })
 
   it('should handle comments in schema', async () => {
@@ -226,8 +236,8 @@ model User {
     const user = result.models[0]
 
     expect(user.fields).toHaveLength(2)
-    expect(user.fields.find(f => f.name === 'id')).toBeDefined()
-    expect(user.fields.find(f => f.name === 'email')).toBeDefined()
+    expect(user.fields.find((f) => f.name === 'id')).toBeDefined()
+    expect(user.fields.find((f) => f.name === 'email')).toBeDefined()
   })
 
   it('should handle model-level attributes', async () => {
@@ -252,7 +262,7 @@ model User {
 
     // Should only include actual fields, not model-level attributes
     expect(user.fields).toHaveLength(2)
-    expect(user.fields.find(f => f.name === 'firstName')).toBeDefined()
-    expect(user.fields.find(f => f.name === 'lastName')).toBeDefined()
+    expect(user.fields.find((f) => f.name === 'firstName')).toBeDefined()
+    expect(user.fields.find((f) => f.name === 'lastName')).toBeDefined()
   })
 })

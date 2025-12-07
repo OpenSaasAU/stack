@@ -13,10 +13,13 @@ export class PrismaIntrospector {
   /**
    * Introspect a Prisma schema file
    */
-  async introspect(cwd: string, schemaPath: string = 'prisma/schema.prisma'): Promise<IntrospectedSchema> {
+  async introspect(
+    cwd: string,
+    schemaPath: string = 'prisma/schema.prisma',
+  ): Promise<IntrospectedSchema> {
     const fullPath = path.isAbsolute(schemaPath) ? schemaPath : path.join(cwd, schemaPath)
 
-    if (!await fs.pathExists(fullPath)) {
+    if (!(await fs.pathExists(fullPath))) {
       throw new Error(`Schema file not found: ${fullPath}`)
     }
 
@@ -52,12 +55,12 @@ export class PrismaIntrospector {
       const body = match[2]
 
       const fields = this.extractFields(body)
-      const primaryKey = fields.find(f => f.isId)?.name || 'id'
+      const primaryKey = fields.find((f) => f.isId)?.name || 'id'
 
       models.push({
         name,
         fields,
-        hasRelations: fields.some(f => f.relation !== undefined),
+        hasRelations: fields.some((f) => f.relation !== undefined),
         primaryKey,
       })
     }
@@ -111,7 +114,7 @@ export class PrismaIntrospector {
     const [, name, rawType, optional, isList, rest] = fieldMatch
 
     // Skip if this looks like an index or other non-field line
-    if (['@@', 'index', 'unique'].some(kw => name.startsWith(kw))) {
+    if (['@@', 'index', 'unique'].some((kw) => name.startsWith(kw))) {
       return null
     }
 
@@ -153,8 +156,8 @@ export class PrismaIntrospector {
       field.relation = {
         name: nameMatch ? nameMatch[1] : '',
         model: rawType,
-        fields: fieldsMatch ? fieldsMatch[1].split(',').map(f => f.trim()) : [],
-        references: referencesMatch ? referencesMatch[1].split(',').map(r => r.trim()) : [],
+        fields: fieldsMatch ? fieldsMatch[1].split(',').map((f) => f.trim()) : [],
+        references: referencesMatch ? referencesMatch[1].split(',').map((r) => r.trim()) : [],
       }
     }
 
@@ -177,8 +180,8 @@ export class PrismaIntrospector {
 
       const values = body
         .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('//'))
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('//'))
 
       enums.push({ name, values })
     }
@@ -191,15 +194,15 @@ export class PrismaIntrospector {
    */
   mapPrismaTypeToOpenSaas(prismaType: string): { type: string; import: string } {
     const mappings: Record<string, { type: string; import: string }> = {
-      'String': { type: 'text', import: 'text' },
-      'Int': { type: 'integer', import: 'integer' },
-      'Float': { type: 'float', import: 'float' },
-      'Boolean': { type: 'checkbox', import: 'checkbox' },
-      'DateTime': { type: 'timestamp', import: 'timestamp' },
-      'Json': { type: 'json', import: 'json' },
-      'BigInt': { type: 'text', import: 'text' }, // No native support
-      'Decimal': { type: 'text', import: 'text' }, // No native support
-      'Bytes': { type: 'text', import: 'text' }, // No native support
+      String: { type: 'text', import: 'text' },
+      Int: { type: 'integer', import: 'integer' },
+      Float: { type: 'float', import: 'float' },
+      Boolean: { type: 'checkbox', import: 'checkbox' },
+      DateTime: { type: 'timestamp', import: 'timestamp' },
+      Json: { type: 'json', import: 'json' },
+      BigInt: { type: 'text', import: 'text' }, // No native support
+      Decimal: { type: 'text', import: 'text' }, // No native support
+      Bytes: { type: 'text', import: 'text' }, // No native support
     }
 
     return mappings[prismaType] || { type: 'text', import: 'text' }
@@ -215,7 +218,9 @@ export class PrismaIntrospector {
     for (const model of schema.models) {
       for (const field of model.fields) {
         if (['BigInt', 'Decimal', 'Bytes'].includes(field.type)) {
-          warnings.push(`Field "${model.name}.${field.name}" uses unsupported type "${field.type}" - will be mapped to text()`)
+          warnings.push(
+            `Field "${model.name}.${field.name}" uses unsupported type "${field.type}" - will be mapped to text()`,
+          )
         }
       }
     }

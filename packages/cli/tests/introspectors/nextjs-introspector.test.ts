@@ -193,7 +193,7 @@ describe('NextjsIntrospector', () => {
     const result = await introspector.introspect(tempDir)
     const recommendations = introspector.getRecommendations(result)
 
-    expect(recommendations.some(r => r.includes('App Router'))).toBe(true)
+    expect(recommendations.some((r) => r.includes('App Router'))).toBe(true)
   })
 
   it('should recommend Better-auth for non-better-auth projects', async () => {
@@ -208,7 +208,7 @@ describe('NextjsIntrospector', () => {
     const result = await introspector.introspect(tempDir)
     const recommendations = introspector.getRecommendations(result)
 
-    expect(recommendations.some(r => r.includes('Better-auth'))).toBe(true)
+    expect(recommendations.some((r) => r.includes('Better-auth'))).toBe(true)
   })
 
   it('should recommend Prisma setup if missing', async () => {
@@ -222,7 +222,7 @@ describe('NextjsIntrospector', () => {
     const result = await introspector.introspect(tempDir)
     const recommendations = introspector.getRecommendations(result)
 
-    expect(recommendations.some(r => r.includes('Prisma'))).toBe(true)
+    expect(recommendations.some((r) => r.includes('Prisma'))).toBe(true)
   })
 
   it('should generate warnings for old Next.js versions', async () => {
@@ -236,7 +236,7 @@ describe('NextjsIntrospector', () => {
     const result = await introspector.introspect(tempDir)
     const warnings = introspector.getWarnings(result)
 
-    expect(warnings.some(w => w.includes('12.0.0'))).toBe(true)
+    expect(warnings.some((w) => w.includes('12.0.0'))).toBe(true)
   })
 
   it('should warn about MongoDB/Mongoose', async () => {
@@ -251,12 +251,11 @@ describe('NextjsIntrospector', () => {
     const result = await introspector.introspect(tempDir)
     const warnings = introspector.getWarnings(result)
 
-    expect(warnings.some(w => w.includes('MongoDB'))).toBe(true)
+    expect(warnings.some((w) => w.includes('MongoDB'))).toBe(true)
   })
 
   it('should throw for missing package.json', async () => {
-    await expect(introspector.introspect(tempDir))
-      .rejects.toThrow('package.json not found')
+    await expect(introspector.introspect(tempDir)).rejects.toThrow('package.json not found')
   })
 
   it('should detect router in src directory', async () => {

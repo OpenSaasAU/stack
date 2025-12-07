@@ -26,7 +26,7 @@ export class NextjsIntrospector {
   async introspect(cwd: string): Promise<NextjsAnalysis> {
     const packageJsonPath = path.join(cwd, 'package.json')
 
-    if (!await fs.pathExists(packageJsonPath)) {
+    if (!(await fs.pathExists(packageJsonPath))) {
       throw new Error('package.json not found')
     }
 
@@ -36,8 +36,12 @@ export class NextjsIntrospector {
       version: this.getNextVersion(pkg),
       routerType: await this.detectRouterType(cwd),
       typescript: await this.hasTypeScript(cwd),
-      hasPrisma: this.hasDependency(pkg, '@prisma/client') || await fs.pathExists(path.join(cwd, 'prisma')),
-      hasEnvFile: await fs.pathExists(path.join(cwd, '.env')) || await fs.pathExists(path.join(cwd, '.env.local')),
+      hasPrisma:
+        this.hasDependency(pkg, '@prisma/client') ||
+        (await fs.pathExists(path.join(cwd, 'prisma'))),
+      hasEnvFile:
+        (await fs.pathExists(path.join(cwd, '.env'))) ||
+        (await fs.pathExists(path.join(cwd, '.env.local'))),
       existingDependencies: this.getAllDependencies(pkg),
     }
 
@@ -65,10 +69,12 @@ export class NextjsIntrospector {
    * Detect if project uses app router, pages router, or both
    */
   private async detectRouterType(cwd: string): Promise<'app' | 'pages' | 'both' | 'unknown'> {
-    const hasApp = await fs.pathExists(path.join(cwd, 'app')) ||
-                   await fs.pathExists(path.join(cwd, 'src', 'app'))
-    const hasPages = await fs.pathExists(path.join(cwd, 'pages')) ||
-                     await fs.pathExists(path.join(cwd, 'src', 'pages'))
+    const hasApp =
+      (await fs.pathExists(path.join(cwd, 'app'))) ||
+      (await fs.pathExists(path.join(cwd, 'src', 'app')))
+    const hasPages =
+      (await fs.pathExists(path.join(cwd, 'pages'))) ||
+      (await fs.pathExists(path.join(cwd, 'src', 'pages')))
 
     if (hasApp && hasPages) return 'both'
     if (hasApp) return 'app'
@@ -98,10 +104,7 @@ export class NextjsIntrospector {
   private getAllDependencies(pkg: Record<string, unknown>): string[] {
     const deps = pkg.dependencies as Record<string, string> | undefined
     const devDeps = pkg.devDependencies as Record<string, string> | undefined
-    return [
-      ...Object.keys(deps || {}),
-      ...Object.keys(devDeps || {}),
-    ]
+    return [...Object.keys(deps || {}), ...Object.keys(devDeps || {})]
   }
 
   /**
@@ -161,7 +164,9 @@ export class NextjsIntrospector {
     }
 
     if (analysis.authLibrary && analysis.authLibrary !== 'better-auth') {
-      recommendations.push(`Consider migrating from ${analysis.authLibrary} to Better-auth (used by OpenSaaS Stack auth plugin)`)
+      recommendations.push(
+        `Consider migrating from ${analysis.authLibrary} to Better-auth (used by OpenSaaS Stack auth plugin)`,
+      )
     }
 
     if (!analysis.hasPrisma) {
@@ -169,7 +174,9 @@ export class NextjsIntrospector {
     }
 
     if (analysis.databaseLibrary && analysis.databaseLibrary !== 'prisma') {
-      recommendations.push(`You're using ${analysis.databaseLibrary} - you may need to migrate to Prisma or run both`)
+      recommendations.push(
+        `You're using ${analysis.databaseLibrary} - you may need to migrate to Prisma or run both`,
+      )
     }
 
     if (!analysis.hasEnvFile) {
@@ -186,11 +193,15 @@ export class NextjsIntrospector {
     const warnings: string[] = []
 
     if (analysis.version.startsWith('12') || analysis.version.startsWith('11')) {
-      warnings.push(`Next.js ${analysis.version} is quite old - consider upgrading to 14+ for best results`)
+      warnings.push(
+        `Next.js ${analysis.version} is quite old - consider upgrading to 14+ for best results`,
+      )
     }
 
     if (analysis.databaseLibrary === 'mongoose') {
-      warnings.push('MongoDB/Mongoose is not fully supported by Prisma - migration may require database change')
+      warnings.push(
+        'MongoDB/Mongoose is not fully supported by Prisma - migration may require database change',
+      )
     }
 
     return warnings

@@ -64,30 +64,48 @@ export default {
     expect(result.provider).toBe('sqlite')
     expect(result.models).toHaveLength(2)
 
-    const user = result.models.find(m => m.name === 'User')
+    const user = result.models.find((m) => m.name === 'User')
     expect(user).toBeDefined()
     expect(user!.fields).toHaveLength(3)
 
-    const post = result.models.find(m => m.name === 'Post')
+    const post = result.models.find((m) => m.name === 'Post')
     expect(post).toBeDefined()
     expect(post!.hasRelations).toBe(true)
   })
 
   it('should map KeystoneJS types to OpenSaaS types', () => {
     expect(introspector.mapKeystoneTypeToOpenSaas('text')).toEqual({ type: 'text', import: 'text' })
-    expect(introspector.mapKeystoneTypeToOpenSaas('integer')).toEqual({ type: 'integer', import: 'integer' })
-    expect(introspector.mapKeystoneTypeToOpenSaas('checkbox')).toEqual({ type: 'checkbox', import: 'checkbox' })
-    expect(introspector.mapKeystoneTypeToOpenSaas('timestamp')).toEqual({ type: 'timestamp', import: 'timestamp' })
-    expect(introspector.mapKeystoneTypeToOpenSaas('relationship')).toEqual({ type: 'relationship', import: 'relationship' })
+    expect(introspector.mapKeystoneTypeToOpenSaas('integer')).toEqual({
+      type: 'integer',
+      import: 'integer',
+    })
+    expect(introspector.mapKeystoneTypeToOpenSaas('checkbox')).toEqual({
+      type: 'checkbox',
+      import: 'checkbox',
+    })
+    expect(introspector.mapKeystoneTypeToOpenSaas('timestamp')).toEqual({
+      type: 'timestamp',
+      import: 'timestamp',
+    })
+    expect(introspector.mapKeystoneTypeToOpenSaas('relationship')).toEqual({
+      type: 'relationship',
+      import: 'relationship',
+    })
   })
 
   it('should handle file and image fields', () => {
-    expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({ type: 'image', import: 'image' })
+    expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({
+      type: 'image',
+      import: 'image',
+    })
     expect(introspector.mapKeystoneTypeToOpenSaas('file')).toEqual({ type: 'file', import: 'file' })
   })
 
   it('should handle virtual fields', () => {
-    expect(introspector.mapKeystoneTypeToOpenSaas('virtual')).toEqual({ type: 'virtual', import: 'virtual' })
+    expect(introspector.mapKeystoneTypeToOpenSaas('virtual')).toEqual({
+      type: 'virtual',
+      import: 'virtual',
+    })
   })
 
   it('should generate warnings for migration reminders', async () => {
@@ -120,14 +138,15 @@ export default {
 
     expect(warnings.length).toBeGreaterThan(0)
     // Should warn about storage configuration (helpful reminder)
-    expect(warnings.some(w => w.includes('storage'))).toBe(true)
+    expect(warnings.some((w) => w.includes('storage'))).toBe(true)
     // Should remind about manual migration for virtual field hooks
-    expect(warnings.some(w => w.includes('virtual') && w.includes('manually migrate'))).toBe(true)
+    expect(warnings.some((w) => w.includes('virtual') && w.includes('manually migrate'))).toBe(true)
   })
 
   it('should throw for missing config', async () => {
-    await expect(introspector.introspect(tempDir, 'nonexistent.ts'))
-      .rejects.toThrow('KeystoneJS config not found')
+    await expect(introspector.introspect(tempDir, 'nonexistent.ts')).rejects.toThrow(
+      'KeystoneJS config not found',
+    )
   })
 
   it('should try alternative config paths', async () => {
@@ -188,14 +207,14 @@ export default {
 
     const result = await introspector.introspect(tempDir, 'keystone.config.js')
 
-    const post = result.models.find(m => m.name === 'Post')
-    const authorField = post!.fields.find(f => f.name === 'author')
+    const post = result.models.find((m) => m.name === 'Post')
+    const authorField = post!.fields.find((f) => f.name === 'author')
     expect(authorField!.relation).toBeDefined()
     expect(authorField!.relation!.model).toBe('User')
     expect(authorField!.relation!.references).toEqual(['posts'])
 
-    const user = result.models.find(m => m.name === 'User')
-    const postsField = user!.fields.find(f => f.name === 'posts')
+    const user = result.models.find((m) => m.name === 'User')
+    const postsField = user!.fields.find((f) => f.name === 'posts')
     expect(postsField!.isList).toBe(true)
   })
 
@@ -227,10 +246,10 @@ export default {
     const result = await introspector.introspect(tempDir, 'keystone.config.js')
     const user = result.models[0]
 
-    const emailField = user.fields.find(f => f.name === 'email')
+    const emailField = user.fields.find((f) => f.name === 'email')
     expect(emailField!.isRequired).toBe(true)
 
-    const ageField = user.fields.find(f => f.name === 'age')
+    const ageField = user.fields.find((f) => f.name === 'age')
     expect(ageField!.defaultValue).toBe('0')
   })
 })

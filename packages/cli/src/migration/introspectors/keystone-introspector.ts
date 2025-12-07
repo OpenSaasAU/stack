@@ -35,15 +35,14 @@ export class KeystoneIntrospector {
   /**
    * Introspect a KeystoneJS config file
    */
-  async introspect(cwd: string, configPath: string = 'keystone.config.ts'): Promise<IntrospectedSchema> {
+  async introspect(
+    cwd: string,
+    configPath: string = 'keystone.config.ts',
+  ): Promise<IntrospectedSchema> {
     const fullPath = path.isAbsolute(configPath) ? configPath : path.join(cwd, configPath)
 
     // Try alternative paths
-    const paths = [
-      fullPath,
-      path.join(cwd, 'keystone.ts'),
-      path.join(cwd, 'keystone.config.js'),
-    ]
+    const paths = [fullPath, path.join(cwd, 'keystone.ts'), path.join(cwd, 'keystone.config.js')]
 
     let foundPath: string | undefined
     for (const p of paths) {
@@ -64,10 +63,11 @@ export class KeystoneIntrospector {
         moduleCache: false,
       })
 
-      const configModule = await jiti.import(foundPath) as { default?: unknown } | unknown
-      const config = (typeof configModule === 'object' && configModule !== null && 'default' in configModule)
-        ? configModule.default
-        : configModule
+      const configModule = (await jiti.import(foundPath)) as { default?: unknown } | unknown
+      const config =
+        typeof configModule === 'object' && configModule !== null && 'default' in configModule
+          ? configModule.default
+          : configModule
 
       const keystoneSchema = this.parseConfig(config)
 
@@ -163,7 +163,11 @@ export class KeystoneIntrospector {
         type = fieldDefObj.type
       } else if (typeof fieldDefObj._type === 'string') {
         type = fieldDefObj._type
-      } else if (fieldDefObj.constructor && typeof fieldDefObj.constructor === 'object' && fieldDefObj.constructor !== null) {
+      } else if (
+        fieldDefObj.constructor &&
+        typeof fieldDefObj.constructor === 'object' &&
+        fieldDefObj.constructor !== null
+      ) {
         const constructor = fieldDefObj.constructor as Record<string, unknown>
         if (typeof constructor.name === 'string') {
           type = constructor.name
@@ -185,8 +189,8 @@ export class KeystoneIntrospector {
    * Convert KeystoneSchema to IntrospectedSchema format
    */
   private convertToIntrospectedSchema(keystoneSchema: KeystoneSchema): IntrospectedSchema {
-    const models: IntrospectedModel[] = keystoneSchema.lists.map(list => {
-      const fields: IntrospectedField[] = list.fields.map(field => {
+    const models: IntrospectedModel[] = keystoneSchema.lists.map((list) => {
+      const fields: IntrospectedField[] = list.fields.map((field) => {
         const isRelationship = field.type.toLowerCase() === 'relationship'
         const isRequired = field.options?.isRequired === true
 
@@ -221,7 +225,7 @@ export class KeystoneIntrospector {
       return {
         name: list.name,
         fields,
-        hasRelations: fields.some(f => f.relation !== undefined),
+        hasRelations: fields.some((f) => f.relation !== undefined),
         primaryKey: 'id',
       }
     })
@@ -239,22 +243,22 @@ export class KeystoneIntrospector {
   mapKeystoneTypeToOpenSaas(keystoneType: string): { type: string; import: string } {
     // KeystoneJS → OpenSaaS is mostly 1:1
     const mappings: Record<string, { type: string; import: string }> = {
-      'text': { type: 'text', import: 'text' },
-      'integer': { type: 'integer', import: 'integer' },
-      'float': { type: 'float', import: 'float' },
-      'checkbox': { type: 'checkbox', import: 'checkbox' },
-      'timestamp': { type: 'timestamp', import: 'timestamp' },
-      'select': { type: 'select', import: 'select' },
-      'relationship': { type: 'relationship', import: 'relationship' },
-      'password': { type: 'password', import: 'password' },
-      'json': { type: 'json', import: 'json' },
+      text: { type: 'text', import: 'text' },
+      integer: { type: 'integer', import: 'integer' },
+      float: { type: 'float', import: 'float' },
+      checkbox: { type: 'checkbox', import: 'checkbox' },
+      timestamp: { type: 'timestamp', import: 'timestamp' },
+      select: { type: 'select', import: 'select' },
+      relationship: { type: 'relationship', import: 'relationship' },
+      password: { type: 'password', import: 'password' },
+      json: { type: 'json', import: 'json' },
       // Storage field types (from @opensaas/stack-storage)
-      'image': { type: 'image', import: 'image' },
-      'file': { type: 'file', import: 'file' },
+      image: { type: 'image', import: 'image' },
+      file: { type: 'file', import: 'file' },
       // Virtual/computed fields
-      'virtual': { type: 'virtual', import: 'virtual' },
+      virtual: { type: 'virtual', import: 'virtual' },
       // Other field types
-      'calendarDay': { type: 'timestamp', import: 'timestamp' },
+      calendarDay: { type: 'timestamp', import: 'timestamp' },
     }
 
     const lower = keystoneType.toLowerCase()
@@ -266,21 +270,25 @@ export class KeystoneIntrospector {
    */
   getWarnings(schema: IntrospectedSchema): string[] {
     const warnings: string[] = []
-    const hasFileOrImageFields = schema.models.some(model =>
-      model.fields.some(field => ['image', 'file'].includes(field.type.toLowerCase()))
+    const hasFileOrImageFields = schema.models.some((model) =>
+      model.fields.some((field) => ['image', 'file'].includes(field.type.toLowerCase())),
     )
-    const hasVirtualFields = schema.models.some(model =>
-      model.fields.some(field => field.type.toLowerCase() === 'virtual')
+    const hasVirtualFields = schema.models.some((model) =>
+      model.fields.some((field) => field.type.toLowerCase() === 'virtual'),
     )
 
     // Add storage configuration reminder if file/image fields are present
     if (hasFileOrImageFields) {
-      warnings.push("Your schema uses file/image fields - you'll need to configure storage providers in your OpenSaaS config")
+      warnings.push(
+        "Your schema uses file/image fields - you'll need to configure storage providers in your OpenSaaS config",
+      )
     }
 
     // Add virtual field migration reminder
     if (hasVirtualFields) {
-      warnings.push("Your schema uses virtual fields - you'll need to manually migrate the resolveOutput hooks to compute field values")
+      warnings.push(
+        "Your schema uses virtual fields - you'll need to manually migrate the resolveOutput hooks to compute field values",
+      )
     }
 
     return warnings
