@@ -5,6 +5,7 @@ import { generateCommand } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
 import { devCommand } from './commands/dev.js'
 import { createMCPCommand } from './commands/mcp.js'
+import { createMigrateCommand } from './commands/migrate.js'
 
 const program = new Command()
 
@@ -38,5 +39,8 @@ program
 
 // Add MCP command group
 program.addCommand(createMCPCommand())
+
+// Add migrate command
+program.addCommand(createMigrateCommand())
 
 program.parse()
