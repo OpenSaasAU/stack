@@ -82,8 +82,8 @@ export default {
   })
 
   it('should handle file and image fields', () => {
-    expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({ type: 'text', import: 'text' })
-    expect(introspector.mapKeystoneTypeToOpenSaas('file')).toEqual({ type: 'text', import: 'text' })
+    expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({ type: 'image', import: 'image' })
+    expect(introspector.mapKeystoneTypeToOpenSaas('file')).toEqual({ type: 'file', import: 'file' })
   })
 
   it('should generate warnings for unsupported features', async () => {
@@ -115,8 +115,9 @@ export default {
     const warnings = introspector.getWarnings(result)
 
     expect(warnings.length).toBeGreaterThan(0)
-    expect(warnings.some(w => w.includes('image'))).toBe(true)
-    expect(warnings.some(w => w.includes('file'))).toBe(true)
+    // Should warn about storage configuration (helpful reminder)
+    expect(warnings.some(w => w.includes('storage'))).toBe(true)
+    // Should warn about virtual fields (actually unsupported)
     expect(warnings.some(w => w.includes('virtual'))).toBe(true)
   })
 

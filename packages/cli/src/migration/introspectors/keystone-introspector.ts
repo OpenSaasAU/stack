@@ -229,10 +229,11 @@ export class KeystoneIntrospector {
       'relationship': { type: 'relationship', import: 'relationship' },
       'password': { type: 'password', import: 'password' },
       'json': { type: 'json', import: 'json' },
-      // KeystoneJS-specific types
-      'image': { type: 'text', import: 'text' }, // Needs file storage plugin
-      'file': { type: 'text', import: 'text' }, // Needs file storage plugin
-      'virtual': { type: 'text', import: 'text' }, // Not supported
+      // Storage field types (from @opensaas/stack-storage)
+      'image': { type: 'image', import: 'image' },
+      'file': { type: 'file', import: 'file' },
+      // Unsupported types
+      'virtual': { type: 'text', import: 'text' }, // Not supported - computed fields
       'calendarDay': { type: 'timestamp', import: 'timestamp' },
     }
 
@@ -245,19 +246,23 @@ export class KeystoneIntrospector {
    */
   getWarnings(schema: IntrospectedSchema): string[] {
     const warnings: string[] = []
+    const hasFileOrImageFields = schema.models.some(model =>
+      model.fields.some(field => ['image', 'file'].includes(field.type.toLowerCase()))
+    )
 
     for (const model of schema.models) {
       for (const field of model.fields) {
         const lower = field.type.toLowerCase()
 
-        if (['image', 'file'].includes(lower)) {
-          warnings.push(`Field "${model.name}.${field.name}" uses "${field.type}" - consider adding file storage plugin`)
-        }
-
         if (lower === 'virtual') {
-          warnings.push(`Field "${model.name}.${field.name}" uses "virtual" - this is not supported, will be skipped`)
+          warnings.push(`Field "${model.name}.${field.name}" uses "virtual" - computed fields are not supported and will be skipped`)
         }
       }
+    }
+
+    // Add storage configuration reminder if file/image fields are present
+    if (hasFileOrImageFields) {
+      warnings.push('Your schema uses file/image fields - you\'ll need to configure storage providers in your OpenSaaS config')
     }
 
     return warnings
