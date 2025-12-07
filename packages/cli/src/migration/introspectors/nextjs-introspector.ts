@@ -53,8 +53,10 @@ export class NextjsIntrospector {
   /**
    * Get Next.js version from package.json
    */
-  private getNextVersion(pkg: any): string {
-    const version = pkg.dependencies?.next || pkg.devDependencies?.next || 'unknown'
+  private getNextVersion(pkg: Record<string, unknown>): string {
+    const deps = pkg.dependencies as Record<string, string> | undefined
+    const devDeps = pkg.devDependencies as Record<string, string> | undefined
+    const version = deps?.next || devDeps?.next || 'unknown'
     // Strip semver prefixes like ^ or ~
     return version.replace(/^[\^~]/, '')
   }
@@ -84,24 +86,28 @@ export class NextjsIntrospector {
   /**
    * Check if package.json has a dependency
    */
-  private hasDependency(pkg: any, name: string): boolean {
-    return !!(pkg.dependencies?.[name] || pkg.devDependencies?.[name])
+  private hasDependency(pkg: Record<string, unknown>, name: string): boolean {
+    const deps = pkg.dependencies as Record<string, string> | undefined
+    const devDeps = pkg.devDependencies as Record<string, string> | undefined
+    return !!(deps?.[name] || devDeps?.[name])
   }
 
   /**
    * Get all dependencies
    */
-  private getAllDependencies(pkg: any): string[] {
+  private getAllDependencies(pkg: Record<string, unknown>): string[] {
+    const deps = pkg.dependencies as Record<string, string> | undefined
+    const devDeps = pkg.devDependencies as Record<string, string> | undefined
     return [
-      ...Object.keys(pkg.dependencies || {}),
-      ...Object.keys(pkg.devDependencies || {}),
+      ...Object.keys(deps || {}),
+      ...Object.keys(devDeps || {}),
     ]
   }
 
   /**
    * Detect auth library being used
    */
-  private detectAuthLibrary(pkg: any): string | undefined {
+  private detectAuthLibrary(pkg: Record<string, unknown>): string | undefined {
     const authLibraries = [
       { name: 'next-auth', dep: 'next-auth' },
       { name: 'better-auth', dep: 'better-auth' },
@@ -124,7 +130,7 @@ export class NextjsIntrospector {
   /**
    * Detect database library being used
    */
-  private detectDatabaseLibrary(pkg: any): string | undefined {
+  private detectDatabaseLibrary(pkg: Record<string, unknown>): string | undefined {
     const dbLibraries = [
       { name: 'prisma', dep: '@prisma/client' },
       { name: 'drizzle', dep: 'drizzle-orm' },
@@ -159,11 +165,11 @@ export class NextjsIntrospector {
     }
 
     if (!analysis.hasPrisma) {
-      recommendations.push('OpenSaaS Stack uses Prisma - you\'ll need to set up your data models')
+      recommendations.push("OpenSaaS Stack uses Prisma - you'll need to set up your data models")
     }
 
     if (analysis.databaseLibrary && analysis.databaseLibrary !== 'prisma') {
-      recommendations.push(`You\'re using ${analysis.databaseLibrary} - you may need to migrate to Prisma or run both`)
+      recommendations.push(`You're using ${analysis.databaseLibrary} - you may need to migrate to Prisma or run both`)
     }
 
     if (!analysis.hasEnvFile) {

@@ -64,8 +64,10 @@ export class KeystoneIntrospector {
         moduleCache: false,
       })
 
-      const configModule = await jiti.import(foundPath)
-      const config = (configModule as any).default || configModule
+      const configModule = await jiti.import(foundPath) as { default?: unknown } | unknown
+      const config = (typeof configModule === 'object' && configModule !== null && 'default' in configModule)
+        ? configModule.default
+        : configModule
 
       const keystoneSchema = this.parseConfig(config)
 
@@ -80,22 +82,29 @@ export class KeystoneIntrospector {
   /**
    * Parse the loaded KeystoneJS config object
    */
-  private parseConfig(config: any): KeystoneSchema {
+  private parseConfig(config: unknown): KeystoneSchema {
     const result: KeystoneSchema = {
       lists: [],
     }
 
+    if (typeof config !== 'object' || config === null) {
+      return result
+    }
+
+    const configObj = config as Record<string, unknown>
+
     // Extract database config
-    if (config.db) {
+    if (configObj.db && typeof configObj.db === 'object' && configObj.db !== null) {
+      const db = configObj.db as Record<string, unknown>
       result.db = {
-        provider: config.db.provider || 'unknown',
-        url: config.db.url,
+        provider: typeof db.provider === 'string' ? db.provider : 'unknown',
+        url: typeof db.url === 'string' ? db.url : undefined,
       }
     }
 
     // Extract lists
-    if (config.lists) {
-      for (const [name, listDef] of Object.entries(config.lists)) {
+    if (configObj.lists && typeof configObj.lists === 'object' && configObj.lists !== null) {
+      for (const [name, listDef] of Object.entries(configObj.lists)) {
         const list = this.parseList(name, listDef)
         result.lists.push(list)
       }
@@ -107,26 +116,32 @@ export class KeystoneIntrospector {
   /**
    * Parse a single list definition
    */
-  private parseList(name: string, listDef: any): KeystoneList {
+  private parseList(name: string, listDef: unknown): KeystoneList {
     const list: KeystoneList = {
       name,
       fields: [],
     }
 
+    if (typeof listDef !== 'object' || listDef === null) {
+      return list
+    }
+
+    const listDefObj = listDef as Record<string, unknown>
+
     // Extract fields
-    if (listDef.fields) {
-      for (const [fieldName, fieldDef] of Object.entries(listDef.fields)) {
+    if (listDefObj.fields && typeof listDefObj.fields === 'object' && listDefObj.fields !== null) {
+      for (const [fieldName, fieldDef] of Object.entries(listDefObj.fields)) {
         const field = this.parseField(fieldName, fieldDef)
         list.fields.push(field)
       }
     }
 
     // Store access and hooks for reference (not used in migration but useful)
-    if (listDef.access) {
-      list.access = listDef.access
+    if (listDefObj.access && typeof listDefObj.access === 'object') {
+      list.access = listDefObj.access as Record<string, unknown>
     }
-    if (listDef.hooks) {
-      list.hooks = listDef.hooks
+    if (listDefObj.hooks && typeof listDefObj.hooks === 'object') {
+      list.hooks = listDefObj.hooks as Record<string, unknown>
     }
 
     return list
@@ -135,28 +150,32 @@ export class KeystoneIntrospector {
   /**
    * Parse a single field definition
    */
-  private parseField(name: string, fieldDef: any): KeystoneField {
+  private parseField(name: string, fieldDef: unknown): KeystoneField {
     // KeystoneJS fields are objects with a type property or function results
     let type = 'unknown'
     let options: Record<string, unknown> = {}
 
     if (typeof fieldDef === 'object' && fieldDef !== null) {
+      const fieldDefObj = fieldDef as Record<string, unknown>
+
       // Check for common field type patterns
-      if (fieldDef.type) {
-        type = fieldDef.type
-      } else if (fieldDef._type) {
-        type = fieldDef._type
-      } else if (fieldDef.constructor?.name) {
-        // Some field builders return objects with constructor name
-        type = fieldDef.constructor.name
+      if (typeof fieldDefObj.type === 'string') {
+        type = fieldDefObj.type
+      } else if (typeof fieldDefObj._type === 'string') {
+        type = fieldDefObj._type
+      } else if (fieldDefObj.constructor && typeof fieldDefObj.constructor === 'object' && fieldDefObj.constructor !== null) {
+        const constructor = fieldDefObj.constructor as Record<string, unknown>
+        if (typeof constructor.name === 'string') {
+          type = constructor.name
+        }
       }
 
       // Extract common options
-      if (fieldDef.validation) options.validation = fieldDef.validation
-      if (fieldDef.defaultValue !== undefined) options.defaultValue = fieldDef.defaultValue
-      if (fieldDef.isRequired !== undefined) options.isRequired = fieldDef.isRequired
-      if (fieldDef.ref) options.ref = fieldDef.ref
-      if (fieldDef.many !== undefined) options.many = fieldDef.many
+      if (fieldDefObj.validation !== undefined) options.validation = fieldDefObj.validation
+      if (fieldDefObj.defaultValue !== undefined) options.defaultValue = fieldDefObj.defaultValue
+      if (fieldDefObj.isRequired !== undefined) options.isRequired = fieldDefObj.isRequired
+      if (fieldDefObj.ref !== undefined) options.ref = fieldDefObj.ref
+      if (fieldDefObj.many !== undefined) options.many = fieldDefObj.many
     }
 
     return { name, type, options }
@@ -256,12 +275,12 @@ export class KeystoneIntrospector {
 
     // Add storage configuration reminder if file/image fields are present
     if (hasFileOrImageFields) {
-      warnings.push('Your schema uses file/image fields - you\'ll need to configure storage providers in your OpenSaaS config')
+      warnings.push("Your schema uses file/image fields - you'll need to configure storage providers in your OpenSaaS config")
     }
 
     // Add virtual field migration reminder
     if (hasVirtualFields) {
-      warnings.push('Your schema uses virtual fields - you\'ll need to manually migrate the resolveOutput hooks to compute field values')
+      warnings.push("Your schema uses virtual fields - you'll need to manually migrate the resolveOutput hooks to compute field values")
     }
 
     return warnings
