@@ -1,5 +1,57 @@
 # @opensaas/stack-cli
 
+## 0.5.0
+
+### Minor Changes
+
+- [#198](https://github.com/OpenSaasAU/stack/pull/198) [`c84405e`](https://github.com/OpenSaasAU/stack/commit/c84405e669e03dbc38fb094e813a105abbb448b8) Thanks [@borisno2](https://github.com/borisno2)! - Add Phase 2 MCP migration tools and enhanced documentation provider
+
+  This update adds 6 new MCP server tools to assist with project migration:
+
+  **New MCP Tools:**
+  - `opensaas_start_migration`: Start migration wizard for Prisma/Keystone/Next.js projects
+  - `opensaas_answer_migration`: Answer migration wizard questions
+  - `opensaas_introspect_prisma`: Analyze Prisma schema files
+  - `opensaas_introspect_keystone`: Analyze KeystoneJS config files
+  - `opensaas_search_migration_docs`: Search local and online documentation
+  - `opensaas_get_example`: Retrieve curated code examples
+
+  **Enhanced Documentation Provider:**
+  - Local CLAUDE.md file search with relevance scoring
+  - Curated code examples for common patterns (blog-with-auth, access-control, relationships, hooks, custom-fields)
+  - Project-specific migration guides for Prisma, KeystoneJS, and Next.js
+
+  **Dependencies:**
+  - Added `fs-extra` and `glob` for local file search capabilities
+  - Added `@types/fs-extra` for TypeScript support
+
+  Note: Migration wizard and introspectors are currently stubs and will be fully implemented in future phases.
+
+- [#196](https://github.com/OpenSaasAU/stack/pull/196) [`2f364b6`](https://github.com/OpenSaasAU/stack/commit/2f364b6b8295dfd205dfb3d0a11eb0bdb5ea2621) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas migrate` CLI command for project migration
+
+  Implements a new CLI command that helps users migrate existing Prisma, KeystoneJS, and Next.js projects to OpenSaaS Stack. The command provides both automatic project analysis and AI-guided migration through Claude Code integration.
+
+  Features:
+  - Auto-detects project type (Prisma, KeystoneJS, Next.js)
+  - Analyzes existing schema (models, fields, database provider)
+  - Optional AI-guided migration with `--with-ai` flag
+  - Creates `.claude/` directory with migration assistant agent
+  - Generates command files for schema analysis and config generation
+  - Provides clear next steps and documentation links
+
+  Usage:
+
+  ```bash
+  opensaas migrate           # Analyze current project
+  opensaas migrate --with-ai # Enable AI-guided migration
+  opensaas migrate --type prisma # Force project type
+  ```
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
