@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Specifications and design docs:** All specs, design documents, and technical documentation should be saved to and read from the `specs/` directory
 - **CLAUDE.md:** This file contains general guidance and architectural patterns
 - **README files:** Each package and example has its own README for specific usage instructions
-- **Claude Agents:** Specialized agents for common tasks are in `.claude/agents/` (see below)
+- **Claude Skills:** Specialized skills for common tasks are in `.claude/skills/`
+  - `pr-changeset`: **REQUIRED** - Use when modifying any package code to create proper changeset files
 
 ## Project Overview
 
@@ -859,6 +860,21 @@ pnpm test
 ## Publishing Packages
 
 This monorepo uses changesets for versioning and publishing. Every change to a package must be accompanied by a new changeset file.
+
+**IMPORTANT:** When working with Claude Code, you MUST use the `pr-changeset` skill to create changeset files. The changeset CLI doesn't work in the Claude Code environment, so use the skill instead.
+
+The `pr-changeset` skill:
+- Automatically creates changeset files in `.changeset/` directory
+- Enforces versioning rules (patch for bug fixes, minor for features, major only when explicitly requested)
+- Provides templates and examples for proper changeset format
+- Ensures consistent changeset descriptions across the project
+
+**Versioning Rules:**
+- **patch**: Bug fixes only (max 2 lines)
+- **minor**: New features or enhancements (include usage examples)
+- **major**: Breaking changes (only when user explicitly requests, include migration guide)
+
+**Manual changeset creation (if not using Claude Code):**
 
 1. Create a changeset:
 
