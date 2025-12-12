@@ -121,17 +121,18 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
   ensureDir(agentsDir)
   ensureDir(commandsDir)
 
-  // Create settings.json
-  const settings = {
+  // Create .mcp.json at project root (project-scoped MCP configuration)
+  const mcpConfig = {
     mcpServers: {
       'opensaas-migration': {
+        type: 'stdio',
         command: 'npx',
-        args: ['@opensaas/stack-cli', 'mcp', 'start'],
-        disabled: false,
+        args: ['-y', '@opensaas/stack-cli', 'mcp', 'start'],
+        env: {},
       },
     },
   }
-  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify(settings, null, 2))
+  fs.writeFileSync(path.join(cwd, '.mcp.json'), JSON.stringify(mcpConfig, null, 2))
 
   // Create README template
   const readmeTemplate = `# OpenSaaS Stack Migration
@@ -157,6 +158,25 @@ Claude will guide you through:
 2. Configuring access control
 3. Setting up authentication (optional)
 4. Generating \`opensaas.config.ts\`
+
+## MCP Server Setup
+
+This project includes a \`.mcp.json\` file that configures the OpenSaaS migration MCP server for Claude Code.
+
+When you open this project in Claude Code, you may be prompted to approve the MCP server. This server provides:
+- Schema analysis tools
+- Interactive migration wizard
+- Documentation search
+- Code generation assistance
+
+To manually manage the MCP server:
+\`\`\`bash
+# List MCP servers
+claude mcp list
+
+# Get details
+claude mcp get opensaas-migration
+\`\`\`
 
 ## Available Commands
 
@@ -485,7 +505,8 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
 
       console.log(chalk.dim('   ├─ Created .claude directory'))
       console.log(chalk.dim('   ├─ Generated migration assistant'))
-      console.log(chalk.dim('   └─ Registered MCP server'))
+      console.log(chalk.dim('   ├─ Created .mcp.json (project MCP config)'))
+      console.log(chalk.dim('   └─ Registered opensaas-migration MCP server'))
     } catch (error) {
       claudeSpinner.fail(chalk.red('Failed to setup Claude Code'))
       console.error(error)
