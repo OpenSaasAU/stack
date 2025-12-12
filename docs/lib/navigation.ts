@@ -80,6 +80,10 @@ export const navigation: NavItem[] = [
         href: '/docs/guides/claude-code',
       },
       {
+        title: 'Migration Guide',
+        href: '/docs/guides/migration',
+      },
+      {
         title: 'Custom Fields',
         href: '/docs/guides/custom-fields',
       },

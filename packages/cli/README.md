@@ -143,6 +143,82 @@ pnpm db:push     # Create database
 pnpm dev         # Start dev server
 ```
 
+### `opensaas migrate`
+
+Migrate an existing Prisma, KeystoneJS, or Next.js project to OpenSaas Stack.
+
+```bash
+opensaas migrate [options]
+```
+
+**Options:**
+
+- `--with-ai` - Enable AI-guided migration with Claude Code
+- `--type <type>` - Force project type detection (prisma, nextjs, keystone)
+
+**What it does:**
+
+1. Detects project type (Prisma, KeystoneJS, Next.js)
+2. Analyzes schema and counts models
+3. With `--with-ai`: Sets up Claude Code integration
+4. Provides next steps for migration
+
+**Examples:**
+
+```bash
+# Basic migration analysis
+opensaas migrate
+
+# AI-guided migration (recommended)
+opensaas migrate --with-ai
+
+# Force project type
+opensaas migrate --type prisma --with-ai
+```
+
+**AI-Assisted Migration (with --with-ai):**
+
+```
+🚀 OpenSaas Stack Migration
+
+✔ Detected: prisma, nextjs
+✔ Found 8 models
+   ├─ User (6 fields)
+   ├─ Post (10 fields)
+   ├─ Comment (5 fields)
+   └─ ...
+✔ Claude Code ready
+   ├─ Created .claude directory
+   ├─ Generated migration assistant
+   └─ Registered MCP server
+
+✅ Analysis complete!
+
+🤖 Next Steps:
+
+   1. Open this project in Claude Code
+   2. Ask: "Help me migrate to OpenSaas Stack"
+   3. Follow the interactive wizard
+```
+
+**After running:**
+
+1. Open project in Claude Code
+2. Ask: "Help me migrate to OpenSaas Stack"
+3. Answer wizard questions about:
+   - Database configuration
+   - Authentication needs
+   - Access control patterns
+   - Admin UI preferences
+4. Claude generates `opensaas.config.ts`
+5. Install dependencies and run `opensaas generate`
+
+**Manual Migration:**
+
+Without `--with-ai`, the command provides project analysis and you create the config manually.
+
+**See also:** [Migration Guide](https://stack.opensaas.au/docs/guides/migration)
+
 ## Usage in Projects
 
 ### Quick Start (New Projects)
