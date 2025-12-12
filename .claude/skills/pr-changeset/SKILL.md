@@ -18,6 +18,7 @@ This skill helps you create proper changeset files when making changes to packag
 ## Versioning Rules
 
 ### Patch (bug fixes only)
+
 - **Use for**: Bug fixes, typos, documentation fixes, minor refactors that don't change behavior
 - **Format**: Maximum 2 lines
 - **Example**:
@@ -26,9 +27,11 @@ This skill helps you create proper changeset files when making changes to packag
   ```
 
 ### Minor (feature improvements)
+
 - **Use for**: New features, enhancements, non-breaking API changes
 - **Format**: Explain the new feature and any steps required to implement it
 - **Example**:
+
   ```
   Add support for custom field validation functions
 
@@ -48,10 +51,12 @@ This skill helps you create proper changeset files when making changes to packag
   ```
 
 ### Major (breaking changes)
+
 - **Use for**: Breaking API changes, removed features, changed behavior
 - **ONLY when user explicitly requests a major version bump**
 - **Format**: Detailed explanation of breaking changes and migration steps
 - **Example**:
+
   ```
   BREAKING: Remove deprecated `useAuth` hook
 
@@ -75,6 +80,7 @@ This skill helps you create proper changeset files when making changes to packag
 ### Step 2: Determine Version Bump Type
 
 For each changed package, ask yourself:
+
 - **Is this a bug fix?** → Use `patch`
 - **Is this a new feature or enhancement?** → Use `minor`
 - **Is this a breaking change?** → Only use `major` if user explicitly requested it, otherwise ask user
@@ -84,24 +90,27 @@ For each changed package, ask yourself:
 Changesets are stored in `.changeset/` directory with random names. Use this format:
 
 **File name**: `.changeset/[random-words].md`
+
 - Generate random filename like: `brave-lions-smile.md`, `quiet-trees-dance.md`
 - Use 3 random dictionary words separated by hyphens
 - Must end with `.md`
 
 **File format**:
+
 ```markdown
 ---
-"@opensaas/package-name": patch
+'@opensaas/package-name': patch
 ---
 
 Brief description of the change
 ```
 
 **For multiple packages**:
+
 ```markdown
 ---
-"@opensaas/stack-core": minor
-"@opensaas/stack-ui": patch
+'@opensaas/stack-core': minor
+'@opensaas/stack-ui': patch
 ---
 
 Description of changes affecting both packages
@@ -110,17 +119,20 @@ Description of changes affecting both packages
 ### Step 4: Write the Changeset Description
 
 **For patch versions** (bug fixes):
+
 - Maximum 2 lines
 - State what was fixed
 - Be concise and clear
 
 **For minor versions** (features):
+
 - Explain what the feature does
 - Provide code examples showing how to use it
 - Include any configuration or setup steps
 - Show before/after if applicable
 
 **For major versions** (breaking changes):
+
 - Clearly mark as BREAKING
 - Explain what changed and why
 - Provide migration guide with before/after code examples
@@ -131,18 +143,20 @@ Description of changes affecting both packages
 Use this template when creating changeset files:
 
 ### Patch Template
+
 ```markdown
 ---
-"@opensaas/stack-[package]": patch
+'@opensaas/stack-[package]': patch
 ---
 
 [One line describing the bug fix]
 ```
 
 ### Minor Template
+
 ```markdown
 ---
-"@opensaas/stack-[package]": minor
+'@opensaas/stack-[package]': minor
 ---
 
 [Feature description]
@@ -151,9 +165,10 @@ Use this template when creating changeset files:
 ```
 
 ### Major Template
+
 ```markdown
 ---
-"@opensaas/stack-[package]": major
+'@opensaas/stack-[package]': major
 ---
 
 BREAKING: [What changed]
@@ -175,9 +190,10 @@ Migration guide:
 ### Example 1: Patch (Bug Fix)
 
 File: `.changeset/calm-eagles-rest.md`
+
 ```markdown
 ---
-"@opensaas/stack-core": patch
+'@opensaas/stack-core': patch
 ---
 
 Fix validation error in text field when value is null
@@ -186,9 +202,10 @@ Fix validation error in text field when value is null
 ### Example 2: Minor (New Feature)
 
 File: `.changeset/brave-lions-smile.md`
+
 ```markdown
 ---
-"@opensaas/stack-ui": minor
+'@opensaas/stack-ui': minor
 ---
 
 Add dark mode support to AdminUI component
@@ -213,10 +230,11 @@ Or use system preference:
 ### Example 3: Multiple Packages (Minor)
 
 File: `.changeset/quiet-trees-dance.md`
+
 ```markdown
 ---
-"@opensaas/stack-core": minor
-"@opensaas/stack-auth": minor
+'@opensaas/stack-core': minor
+'@opensaas/stack-auth': minor
 ---
 
 Add support for custom session fields in access control
@@ -225,25 +243,26 @@ You can now access custom session fields in access control functions:
 
 // In authConfig
 authConfig({
-  sessionFields: ['userId', 'email', 'role', 'tenantId']
+sessionFields: ['userId', 'email', 'role', 'tenantId']
 })
 
 // In access control
 access: {
-  operation: {
-    query: ({ session }) => {
-      return { tenantId: session.tenantId }
-    }
-  }
+operation: {
+query: ({ session }) => {
+return { tenantId: session.tenantId }
+}
+}
 }
 ```
 
 ### Example 4: Major (Breaking Change) - Only if explicitly requested
 
 File: `.changeset/ancient-stars-fall.md`
+
 ```markdown
 ---
-"@opensaas/stack-core": major
+'@opensaas/stack-core': major
 ---
 
 BREAKING: Remove `getContext()` synchronous variant
@@ -262,12 +281,12 @@ Make sure to add `async` to any functions that call `getContext()`:
 
 // Before
 function myAction() {
-  const context = getContext({ userId })
+const context = getContext({ userId })
 }
 
 // After
 async function myAction() {
-  const context = await getContext({ userId })
+const context = await getContext({ userId })
 }
 ```
 

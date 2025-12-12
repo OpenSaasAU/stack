@@ -864,12 +864,14 @@ This monorepo uses changesets for versioning and publishing. Every change to a p
 **IMPORTANT:** When working with Claude Code, you MUST use the `pr-changeset` skill to create changeset files. The changeset CLI doesn't work in the Claude Code environment, so use the skill instead.
 
 The `pr-changeset` skill:
+
 - Automatically creates changeset files in `.changeset/` directory
 - Enforces versioning rules (patch for bug fixes, minor for features, major only when explicitly requested)
 - Provides templates and examples for proper changeset format
 - Ensures consistent changeset descriptions across the project
 
 **Versioning Rules:**
+
 - **patch**: Bug fixes only (max 2 lines)
 - **minor**: New features or enhancements (include usage examples)
 - **major**: Breaking changes (only when user explicitly requests, include migration guide)
