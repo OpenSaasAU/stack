@@ -390,6 +390,7 @@ export interface MigrationSession {
 **Purpose:** Deep analysis of project schemas
 
 **Files:**
+
 - `introspectors/prisma-introspector.ts` - Parse Prisma schema to AST
 - `introspectors/keystone-introspector.ts` - Load and analyze Keystone config
 - `introspectors/nextjs-introspector.ts` - Detect Next.js patterns
@@ -475,7 +476,7 @@ Questions can depend on previous answers:
 class MigrationGenerator {
   async generateConfig(
     session: MigrationSession,
-    schema: IntrospectedSchema
+    schema: IntrospectedSchema,
   ): Promise<MigrationOutput> {
     // 1. Generate imports
     // 2. Convert models to lists
@@ -489,13 +490,13 @@ class MigrationGenerator {
 
 **Field Type Mapping:**
 
-| Prisma Type | OpenSaaS Field | Import |
-|------------|---------------|--------|
-| `String` | `text()` | `@opensaas/stack-core/fields` |
-| `Int` | `integer()` | `@opensaas/stack-core/fields` |
-| `Boolean` | `checkbox()` | `@opensaas/stack-core/fields` |
-| `DateTime` | `timestamp()` | `@opensaas/stack-core/fields` |
-| Relations | `relationship()` | `@opensaas/stack-core/fields` |
+| Prisma Type | OpenSaaS Field   | Import                        |
+| ----------- | ---------------- | ----------------------------- |
+| `String`    | `text()`         | `@opensaas/stack-core/fields` |
+| `Int`       | `integer()`      | `@opensaas/stack-core/fields` |
+| `Boolean`   | `checkbox()`     | `@opensaas/stack-core/fields` |
+| `DateTime`  | `timestamp()`    | `@opensaas/stack-core/fields` |
+| Relations   | `relationship()` | `@opensaas/stack-core/fields` |
 
 **Access Control Patterns:**
 
@@ -510,16 +511,17 @@ Based on `default_access` answer:
 
 ```typescript
 interface MigrationOutput {
-  configContent: string         // opensaas.config.ts content
-  dependencies: string[]         // npm packages to install
-  files: Array<{                 // Additional files to create
+  configContent: string // opensaas.config.ts content
+  dependencies: string[] // npm packages to install
+  files: Array<{
+    // Additional files to create
     path: string
     content: string
     language: string
     description: string
   }>
-  steps: string[]                // Next steps for user
-  warnings: string[]             // Migration warnings
+  steps: string[] // Next steps for user
+  warnings: string[] // Migration warnings
 }
 ```
 
@@ -550,8 +552,8 @@ All tools return standardized format:
   content: [
     {
       type: 'text',
-      text: '# Markdown formatted response'
-    }
+      text: '# Markdown formatted response',
+    },
   ]
 }
 ```
@@ -584,30 +586,36 @@ All tools return standardized format:
 **Generated Slash Commands:**
 
 `.claude/commands/analyze-schema.md`:
+
 ```markdown
 Analyze the current project schema and provide a detailed breakdown.
 
 ## Instructions
+
 1. Use `opensaas_introspect_prisma` or `opensaas_introspect_keystone`
 2. Present results in clear format
 3. Highlight models, relations, potential access patterns
 ```
 
 `.claude/commands/generate-config.md`:
+
 ```markdown
 Generate the opensaas.config.ts file for this project.
 
 ## Instructions
+
 1. Start migration wizard if not started
 2. Guide through questions
 3. Display generated config and dependencies
 ```
 
 `.claude/commands/validate-migration.md`:
+
 ```markdown
 Validate the generated opensaas.config.ts file.
 
 ## Instructions
+
 1. Check file exists
 2. Verify syntax and imports
 3. Try running `opensaas generate`
@@ -653,7 +661,7 @@ async function analyzePrismaSchema(cwd: string) {
   while ((match = modelRegex.exec(schema)) !== null) {
     models.push({
       name: match[1],
-      fieldCount: countFields(match[2])
+      fieldCount: countFields(match[2]),
     })
   }
 
@@ -668,16 +676,14 @@ async function analyzePrismaSchema(cwd: string) {
 **Template Rendering:**
 
 ```typescript
-function generateTemplateContent(
-  template: string,
-  data: ProjectAnalysis
-): string {
+function generateTemplateContent(template: string, data: ProjectAnalysis): string {
   return template
     .replace(/\{\{PROJECT_TYPES\}\}/g, data.projectTypes.join(', '))
     .replace(/\{\{PROVIDER\}\}/g, data.provider || 'sqlite')
     .replace(/\{\{MODEL_COUNT\}\}/g, String(data.models?.length || 0))
-    .replace(/\{\{MODEL_LIST\}\}/g,
-      data.models?.map(m => `- ${m.name} (${m.fieldCount} fields)`).join('\n')
+    .replace(
+      /\{\{MODEL_LIST\}\}/g,
+      data.models?.map((m) => `- ${m.name} (${m.fieldCount} fields)`).join('\n'),
     )
 }
 ```
@@ -685,6 +691,7 @@ function generateTemplateContent(
 ### Error Handling
 
 **Project not detected:**
+
 ```typescript
 if (projectTypes.length === 0) {
   spinner.fail('No recognizable project found')
@@ -697,6 +704,7 @@ if (projectTypes.length === 0) {
 ```
 
 **Schema analysis failure:**
+
 ```typescript
 try {
   const analysis = await analyzePrismaSchema(cwd)
@@ -767,7 +775,7 @@ const questions: MigrationQuestion[] = [
     options: ['option1', 'option2'],
     defaultValue: 'option1',
     required: true,
-  }
+  },
 ]
 ```
 

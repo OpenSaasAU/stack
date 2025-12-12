@@ -27,6 +27,7 @@ npx @opensaas/stack-cli migrate --with-ai
 ```
 
 This command will:
+
 1. Detect your project type (Prisma, KeystoneJS, or Next.js)
 2. Analyze your schema and count models
 3. Set up Claude Code integration with migration tools
@@ -68,6 +69,7 @@ This command will:
 After running the migration command, open your project in Claude Code:
 
 1. **Start the conversation:**
+
    ```
    Help me migrate to OpenSaaS Stack
    ```
@@ -105,6 +107,7 @@ pnpm add -D prisma typescript tsx
 ```
 
 Add authentication if needed:
+
 ```bash
 pnpm add @opensaas/stack-auth better-auth
 ```
@@ -167,10 +170,8 @@ export default config({
         operation: {
           query: () => true,
           create: ({ session }) => !!session,
-          update: ({ session, item }) =>
-            session?.userId === item.id,
-          delete: ({ session, item }) =>
-            session?.userId === item.id,
+          update: ({ session, item }) => session?.userId === item.id,
+          delete: ({ session, item }) => session?.userId === item.id,
         },
       },
     }),
@@ -183,13 +184,10 @@ export default config({
       },
       access: {
         operation: {
-          query: ({ session, item }) =>
-            item?.published || session?.userId === item?.authorId,
+          query: ({ session, item }) => item?.published || session?.userId === item?.authorId,
           create: ({ session }) => !!session,
-          update: ({ session, item }) =>
-            session?.userId === item?.authorId,
-          delete: ({ session, item }) =>
-            session?.userId === item?.authorId,
+          update: ({ session, item }) => session?.userId === item?.authorId,
+          delete: ({ session, item }) => session?.userId === item?.authorId,
         },
       },
     }),
@@ -215,15 +213,17 @@ npx prisma db push
 Replace direct Prisma calls with context:
 
 **Before:**
+
 ```typescript
 import { prisma } from './lib/prisma'
 
 const posts = await prisma.post.findMany({
-  where: { published: true }
+  where: { published: true },
 })
 ```
 
 **After:**
+
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
@@ -238,6 +238,7 @@ const posts = await context.db.post.findMany()
 **Detection:** Looks for `prisma/schema.prisma`
 
 **What's Migrated:**
+
 - All models → Lists
 - Fields → Field types
 - Relations → Relationship fields
@@ -245,6 +246,7 @@ const posts = await context.db.post.findMany()
 - Database provider → DB config
 
 **Example:**
+
 ```bash
 npx @opensaas/stack-cli migrate --type prisma
 ```
@@ -254,6 +256,7 @@ npx @opensaas/stack-cli migrate --type prisma
 **Detection:** Looks for `keystone.config.ts` or `keystone.ts`
 
 **What's Migrated:**
+
 - Lists → Lists
 - Field types → OpenSaaS field types
 - Access control → Access control patterns
@@ -261,6 +264,7 @@ npx @opensaas/stack-cli migrate --type prisma
 - Authentication → Auth plugin
 
 **Example:**
+
 ```bash
 npx @opensaas/stack-cli migrate --type keystone
 ```
@@ -270,11 +274,13 @@ npx @opensaas/stack-cli migrate --type keystone
 **Detection:** Looks for `next` in `package.json`
 
 **What's Migrated:**
+
 - Existing Prisma models (if present)
 - API routes → Server actions (manual)
 - Authentication patterns → Auth plugin
 
 **Example:**
+
 ```bash
 npx @opensaas/stack-cli migrate --type nextjs
 ```
@@ -293,6 +299,7 @@ When using AI assistance, the wizard asks these questions:
 **Question:** "What database provider are you using?"
 
 Options:
+
 - PostgreSQL (production recommended)
 - MySQL
 - SQLite (development/simple apps)
@@ -307,6 +314,7 @@ Options:
 **Question:** "Which auth providers?" (if yes above)
 
 Options:
+
 - Email/Password
 - GitHub OAuth
 - Google OAuth
@@ -320,6 +328,7 @@ Options:
 Options:
 
 - **Public read, authenticated write** - Most common for blogs, content sites
+
   ```typescript
   access: {
     operation: {
@@ -332,6 +341,7 @@ Options:
   ```
 
 - **Private (owner-only)** - For user-specific data
+
   ```typescript
   access: {
     operation: {
@@ -344,6 +354,7 @@ Options:
   ```
 
 - **Admin only** - For protected resources
+
   ```typescript
   access: {
     operation: {
@@ -372,6 +383,7 @@ Options:
 **Question:** "Where should the admin UI be mounted?"
 
 Common options:
+
 - `/admin` (default)
 - `/dashboard`
 - `/manage`
@@ -383,26 +395,26 @@ The migration system automatically maps field types:
 
 ### Prisma → OpenSaaS
 
-| Prisma Type | OpenSaaS Field | Import |
-|------------|---------------|--------|
-| `String` | `text()` | `@opensaas/stack-core/fields` |
-| `Int` | `integer()` | `@opensaas/stack-core/fields` |
-| `Boolean` | `checkbox()` | `@opensaas/stack-core/fields` |
-| `DateTime` | `timestamp()` | `@opensaas/stack-core/fields` |
-| `Enum` | `select()` | `@opensaas/stack-core/fields` |
-| Relations | `relationship()` | `@opensaas/stack-core/fields` |
+| Prisma Type | OpenSaaS Field   | Import                        |
+| ----------- | ---------------- | ----------------------------- |
+| `String`    | `text()`         | `@opensaas/stack-core/fields` |
+| `Int`       | `integer()`      | `@opensaas/stack-core/fields` |
+| `Boolean`   | `checkbox()`     | `@opensaas/stack-core/fields` |
+| `DateTime`  | `timestamp()`    | `@opensaas/stack-core/fields` |
+| `Enum`      | `select()`       | `@opensaas/stack-core/fields` |
+| Relations   | `relationship()` | `@opensaas/stack-core/fields` |
 
 ### KeystoneJS → OpenSaaS
 
-| Keystone Field | OpenSaaS Field | Notes |
-|---------------|---------------|-------|
-| `text()` | `text()` | Direct mapping |
-| `integer()` | `integer()` | Direct mapping |
-| `checkbox()` | `checkbox()` | Direct mapping |
-| `timestamp()` | `timestamp()` | Direct mapping |
-| `select()` | `select()` | Options preserved |
+| Keystone Field   | OpenSaaS Field   | Notes              |
+| ---------------- | ---------------- | ------------------ |
+| `text()`         | `text()`         | Direct mapping     |
+| `integer()`      | `integer()`      | Direct mapping     |
+| `checkbox()`     | `checkbox()`     | Direct mapping     |
+| `timestamp()`    | `timestamp()`    | Direct mapping     |
+| `select()`       | `select()`       | Options preserved  |
 | `relationship()` | `relationship()` | Ref format differs |
-| `password()` | `password()` | Direct mapping |
+| `password()`     | `password()`     | Direct mapping     |
 
 ## Claude Code Integration
 
@@ -411,21 +423,25 @@ The migration system automatically maps field types:
 The migration system provides these MCP tools to Claude:
 
 #### Schema Analysis
+
 - **`opensaas_introspect_prisma`** - Detailed Prisma schema analysis
 - **`opensaas_introspect_keystone`** - KeystoneJS config analysis
 - **`opensaas_introspect_nextjs`** - Next.js project structure
 
 #### Migration Wizard
+
 - **`opensaas_start_migration`** - Begin interactive migration
 - **`opensaas_answer_migration`** - Answer wizard questions
 - **`opensaas_get_migration_status`** - Check wizard progress
 
 #### Documentation
+
 - **`opensaas_search_migration_docs`** - Search migration docs
 - **`opensaas_get_migration_example`** - Get code examples
 - **`opensaas_list_field_types`** - Available field types
 
 #### Validation
+
 - **`opensaas_validate_migration`** - Validate generated config
 - **`opensaas_generate_config_file`** - Write config to disk
 
@@ -453,6 +469,7 @@ The migration creates a specialized agent (`.claude/agents/migration-assistant.m
 ### Blog with Authentication
 
 **Original Prisma:**
+
 ```prisma
 model User {
   id       String   @id @default(cuid())
@@ -473,6 +490,7 @@ model Post {
 ```
 
 **Generated Config:**
+
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox, relationship } from '@opensaas/stack-core/fields'
@@ -498,10 +516,8 @@ export default config({
         operation: {
           query: ({ item }) => item?.published || !!session,
           create: ({ session }) => !!session,
-          update: ({ session, item }) =>
-            session?.userId === item?.authorId,
-          delete: ({ session, item }) =>
-            session?.userId === item?.authorId,
+          update: ({ session, item }) => session?.userId === item?.authorId,
+          delete: ({ session, item }) => session?.userId === item?.authorId,
         },
       },
     }),
@@ -514,18 +530,21 @@ export default config({
 ### E-commerce Platform
 
 **Key Considerations:**
+
 - Product catalog (public read)
 - Orders (owner-only access)
 - Admin management (role-based)
 - Inventory tracking
 
 **Migration Steps:**
+
 1. Identify public vs. private models
 2. Set up role-based access (admin, customer)
 3. Configure relationships (Order → Product)
 4. Add hooks for inventory updates
 
 **Access Control Pattern:**
+
 ```typescript
 Product: list({
   access: {
@@ -554,18 +573,21 @@ Order: list({
 ### SaaS Application with Teams
 
 **Key Considerations:**
+
 - Multi-tenant data isolation
 - Team-based access
 - Role hierarchies (owner, admin, member)
 - Shared resources
 
 **Migration Steps:**
+
 1. Add Team model if not present
 2. Link resources to teams
 3. Implement team-scoped access
 4. Add role checks
 
 **Access Control Pattern:**
+
 ```typescript
 Project: list({
   fields: {
@@ -603,11 +625,13 @@ Project: list({
 To preserve your existing database:
 
 1. **Keep the same DATABASE_URL:**
+
    ```env
    DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
    ```
 
 2. **Use `db push` instead of migrations:**
+
    ```bash
    npx prisma db push
    ```
@@ -629,6 +653,7 @@ The migration system is **non-destructive**:
 - ⚠️ No automatic backups (back up manually first!)
 
 **Best Practice:**
+
 ```bash
 # Backup before migration
 pg_dump mydb > backup.sql
@@ -645,11 +670,13 @@ npx @opensaas/stack-cli migrate --with-ai
 ### Project Not Detected
 
 **Error:**
+
 ```
 No recognizable project found
 ```
 
 **Solutions:**
+
 - Ensure you're in the project root
 - Check for `prisma/schema.prisma` (Prisma)
 - Check for `keystone.config.ts` (Keystone)
@@ -662,11 +689,13 @@ No recognizable project found
 ### Schema Analysis Failed
 
 **Error:**
+
 ```
 Failed to analyze schema
 ```
 
 **Solutions:**
+
 - Verify Prisma schema syntax
 - Ensure schema file is readable
 - Check for TypeScript errors in Keystone config
@@ -675,11 +704,13 @@ Failed to analyze schema
 ### Claude Code Not Working
 
 **Error:**
+
 ```
 MCP server not responding
 ```
 
 **Solutions:**
+
 1. Check `.claude/settings.json` was created
 2. Restart Claude Code
 3. Verify MCP server registration:
@@ -698,11 +729,13 @@ MCP server not responding
 ### Generated Config Errors
 
 **Error:**
+
 ```
 TypeScript errors in opensaas.config.ts
 ```
 
 **Solutions:**
+
 - Check imports are correct
 - Verify field types are valid
 - Ensure database config is complete
@@ -712,11 +745,13 @@ TypeScript errors in opensaas.config.ts
 ### Database Connection Issues
 
 **Error:**
+
 ```
 Can't reach database server
 ```
 
 **Solutions:**
+
 - Check DATABASE_URL in `.env`
 - Verify database is running
 - Test connection with Prisma:
@@ -815,7 +850,7 @@ export async function GET() {
 
 // After (Server action)
 // app/actions/posts.ts
-'use server'
+;('use server')
 import { getContext } from '@/.opensaas/context'
 import { auth } from '@/lib/auth'
 
@@ -899,6 +934,7 @@ git reset --hard pre-opensaas-migration
 ### AI Assistance
 
 Use Claude Code for help:
+
 - "Explain this access control pattern"
 - "How do I migrate this Prisma relation?"
 - "What's the OpenSaaS equivalent of this Keystone field?"
