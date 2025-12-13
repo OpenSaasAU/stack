@@ -133,7 +133,11 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   // Configure Claude Code plugin in settings.json
   const settingsPath = path.join(claudeDir, 'settings.json')
-  let settings: any = {}
+  let settings: {
+    plugins?: {
+      installed?: Array<string | { id: string; source: string; enabled: boolean }>
+    }
+  } = {}
 
   // Read existing settings if they exist
   if (fs.existsSync(settingsPath)) {
@@ -158,8 +162,9 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   // Check if plugin is already installed
   const pluginId = 'opensaas-migration@local'
-  const isInstalled = settings.plugins.installed.some((p: any) =>
-    typeof p === 'string' ? p === pluginId : p.id === pluginId,
+  const isInstalled = settings.plugins.installed.some(
+    (p: string | { id: string; source: string; enabled: boolean }) =>
+      typeof p === 'string' ? p === pluginId : p.id === pluginId,
   )
 
   if (!isInstalled) {
@@ -276,7 +281,7 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
       const prismaAnalysis = await analyzePrismaSchema(cwd)
       analysis.models = prismaAnalysis.models
       analysis.provider = prismaAnalysis.provider
-    } catch (_error) {
+    } catch {
       // Prisma analysis failed, continue without it
     }
   }
