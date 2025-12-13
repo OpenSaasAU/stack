@@ -88,12 +88,24 @@ function ensureDir(dirPath: string): void {
 }
 
 /**
- * Get plugin source path (relative to CLI package)
+ * Get marketplace source for OpenSaaS Stack plugins
  */
-function getPluginSourcePath(): string {
-  // This will be the path to the plugin directory within the installed CLI package
+function getMarketplaceSource():
+  | { source: 'github'; repo: string }
+  | { source: 'git'; url: string }
+  | { source: 'local'; path: string } {
+  // Try to detect if we're in development (local monorepo)
   const cliPackageDir = path.dirname(path.dirname(new URL(import.meta.url).pathname))
-  return path.join(cliPackageDir, 'plugin')
+  const potentialMonorepoRoot = path.join(cliPackageDir, '..', '..')
+  const marketplacePath = path.join(potentialMonorepoRoot, 'claude-plugins', 'marketplace.json')
+
+  if (fs.existsSync(marketplacePath)) {
+    // Development mode - use local marketplace
+    return { source: 'local', path: path.join(potentialMonorepoRoot, 'claude-plugins') }
+  }
+
+  // Production mode - use GitHub marketplace
+  return { source: 'github', repo: 'OpenSaasAU/stack' }
 }
 
 /**
@@ -104,19 +116,6 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   // Create .claude directory
   ensureDir(claudeDir)
-
-  // Create .mcp.json at project root (project-scoped MCP configuration)
-  const mcpConfig = {
-    mcpServers: {
-      'opensaas-migration': {
-        type: 'stdio',
-        command: 'npx',
-        args: ['-y', '@opensaas/stack-cli', 'mcp', 'start'],
-        env: {},
-      },
-    },
-  }
-  fs.writeFileSync(path.join(cwd, '.mcp.json'), JSON.stringify(mcpConfig, null, 2))
 
   // Write project metadata file for the plugin to read
   const projectMetadata = {
@@ -131,12 +130,19 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     JSON.stringify(projectMetadata, null, 2),
   )
 
-  // Configure Claude Code plugin in settings.json
+  // Configure Claude Code marketplace and plugins in settings.json
   const settingsPath = path.join(claudeDir, 'settings.json')
   let settings: {
-    plugins?: {
-      installed?: Array<string | { id: string; source: string; enabled: boolean }>
-    }
+    extraKnownMarketplaces?: Record<
+      string,
+      {
+        source:
+          | { source: 'github'; repo: string }
+          | { source: 'git'; url: string }
+          | { source: 'local'; path: string }
+      }
+    >
+    enabledPlugins?: string[]
   } = {}
 
   // Read existing settings if they exist
@@ -149,30 +155,27 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     }
   }
 
-  // Get the plugin source path
-  const pluginSource = getPluginSourcePath()
+  // Get the marketplace source
+  const marketplaceSource = getMarketplaceSource()
 
-  // Add plugin configuration
-  if (!settings.plugins) {
-    settings.plugins = {}
-  }
-  if (!settings.plugins.installed) {
-    settings.plugins.installed = []
+  // Add marketplace configuration
+  if (!settings.extraKnownMarketplaces) {
+    settings.extraKnownMarketplaces = {}
   }
 
-  // Check if plugin is already installed
-  const pluginId = 'opensaas-migration@local'
-  const isInstalled = settings.plugins.installed.some(
-    (p: string | { id: string; source: string; enabled: boolean }) =>
-      typeof p === 'string' ? p === pluginId : p.id === pluginId,
-  )
+  settings.extraKnownMarketplaces['opensaas-stack-marketplace'] = {
+    source: marketplaceSource,
+  }
 
-  if (!isInstalled) {
-    settings.plugins.installed.push({
-      id: pluginId,
-      source: pluginSource,
-      enabled: true,
-    })
+  // Add enabled plugins
+  if (!settings.enabledPlugins) {
+    settings.enabledPlugins = []
+  }
+
+  // Add migration plugin if not already enabled
+  const migrationPluginId = 'opensaas-migration@opensaas-stack-marketplace'
+  if (!settings.enabledPlugins.includes(migrationPluginId)) {
+    settings.enabledPlugins.push(migrationPluginId)
   }
 
   // Write settings back
@@ -207,6 +210,12 @@ Claude will guide you through:
 
 ## What's Configured
 
+### OpenSaaS Stack Marketplace
+
+The marketplace provides access to official OpenSaaS plugins:
+- **opensaas-migration**: Migration assistant for converting existing projects
+- **opensaas-stack**: Development tools for building with OpenSaaS Stack
+
 ### OpenSaaS Migration Plugin
 
 The migration assistant plugin provides:
@@ -216,13 +225,13 @@ The migration assistant plugin provides:
 
 ### MCP Server
 
-The \`.mcp.json\` file configures the OpenSaaS migration MCP server with tools for:
+The migration plugin includes MCP server integration with tools for:
 - Schema analysis
 - Interactive migration wizard
 - Documentation search
 - Code generation
 
-When you open this project in Claude Code, you may be prompted to approve the MCP server.
+When you open this project in Claude Code, the MCP server will be automatically configured through the plugin.
 
 ## Resources
 
@@ -308,10 +317,10 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
       claudeSpinner.succeed(chalk.green('Claude Code ready'))
 
       console.log(chalk.dim('   ├─ Created .claude directory'))
-      console.log(chalk.dim('   ├─ Installed opensaas-migration plugin'))
+      console.log(chalk.dim('   ├─ Added opensaas-stack-marketplace'))
+      console.log(chalk.dim('   ├─ Enabled opensaas-migration plugin (with MCP server)'))
       console.log(chalk.dim('   ├─ Configured .claude/settings.json'))
-      console.log(chalk.dim('   ├─ Wrote opensaas-project.json (project metadata)'))
-      console.log(chalk.dim('   └─ Created .mcp.json (MCP server config)'))
+      console.log(chalk.dim('   └─ Wrote opensaas-project.json (project metadata)'))
     } catch (error) {
       claudeSpinner.fail(chalk.red('Failed to setup Claude Code'))
       console.error(error)

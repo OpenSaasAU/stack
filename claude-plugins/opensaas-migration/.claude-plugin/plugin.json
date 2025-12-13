@@ -9,7 +9,11 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/OpenSaasAU/stack",
-    "directory": "packages/cli/plugin"
+    "directory": "claude-plugins/opensaas-migration"
   },
-  "keywords": ["migration", "opensaas", "prisma", "keystone", "nextjs", "code-generation"]
+  "keywords": ["migration", "opensaas", "prisma", "keystone", "nextjs", "code-generation"],
+  "mcp": {
+    "server": "@opensaas/stack-cli",
+    "install": "npx @opensaas/stack-cli mcp install"
+  }
 }

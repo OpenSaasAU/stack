@@ -19,10 +19,22 @@ npx @opensaas/stack-cli migrate --with-ai
 
 The CLI will:
 
-1. Install this plugin to your project
-2. Create `.claude/opensaas-project.json` with your project metadata
-3. Configure `.claude/settings.json` to enable the plugin
-4. Set up `.mcp.json` for MCP server integration
+1. Add the OpenSaaS Stack marketplace to your project
+2. Install this plugin from the marketplace
+3. Create `.claude/opensaas-project.json` with your project metadata
+4. Configure `.claude/settings.json` with marketplace and plugin settings
+
+The plugin automatically sets up MCP server integration for migration tools.
+
+### Manual Installation
+
+You can also install this plugin manually by adding the marketplace:
+
+```bash
+# In Claude Code
+/plugin marketplace add OpenSaasAU/stack
+/plugin install opensaas-migration@opensaas-stack-marketplace
+```
 
 ## What's Included
 
