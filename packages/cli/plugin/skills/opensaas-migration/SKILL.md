@@ -10,6 +10,7 @@ Expert guidance for migrating existing projects to OpenSaaS Stack.
 ## When to Use This Skill
 
 Use this skill when:
+
 - Planning a migration from Prisma, KeystoneJS, or Next.js
 - Designing access control patterns
 - Configuring `opensaas.config.ts`
@@ -21,11 +22,13 @@ Use this skill when:
 ### 1. Schema Analysis
 
 **Prisma Projects:**
+
 - Analyze existing `schema.prisma`
 - Identify models, fields, and relationships
 - Note any Prisma-specific features used
 
 **KeystoneJS Projects:**
+
 - Review list definitions
 - Map KeystoneJS fields to OpenSaaS fields
 - Identify access control patterns
@@ -70,30 +73,31 @@ operation: {
 
 **Prisma to OpenSaaS:**
 
-| Prisma Type | OpenSaaS Field |
-|-------------|----------------|
-| `String` | `text()` |
-| `Int` | `integer()` |
-| `Boolean` | `checkbox()` |
-| `DateTime` | `timestamp()` |
-| `Enum` | `select({ options: [...] })` |
-| `Relation` | `relationship({ ref: '...' })` |
+| Prisma Type | OpenSaaS Field                 |
+| ----------- | ------------------------------ |
+| `String`    | `text()`                       |
+| `Int`       | `integer()`                    |
+| `Boolean`   | `checkbox()`                   |
+| `DateTime`  | `timestamp()`                  |
+| `Enum`      | `select({ options: [...] })`   |
+| `Relation`  | `relationship({ ref: '...' })` |
 
 **KeystoneJS to OpenSaaS:**
 
-| KeystoneJS Field | OpenSaaS Field |
-|------------------|----------------|
-| `text` | `text()` |
-| `integer` | `integer()` |
-| `checkbox` | `checkbox()` |
-| `timestamp` | `timestamp()` |
-| `select` | `select()` |
-| `relationship` | `relationship()` |
-| `password` | `password()` |
+| KeystoneJS Field | OpenSaaS Field   |
+| ---------------- | ---------------- |
+| `text`           | `text()`         |
+| `integer`        | `integer()`      |
+| `checkbox`       | `checkbox()`     |
+| `timestamp`      | `timestamp()`    |
+| `select`         | `select()`       |
+| `relationship`   | `relationship()` |
+| `password`       | `password()`     |
 
 ### 4. Database Configuration
 
 **SQLite (Development):**
+
 ```typescript
 import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
 import Database from 'better-sqlite3'
@@ -112,6 +116,7 @@ export default config({
 ```
 
 **PostgreSQL (Production):**
+
 ```typescript
 import { PrismaPg } from '@prisma/adapter-pg'
 import pg from 'pg'
@@ -134,6 +139,7 @@ export default config({
 ### Challenge: Preserving Existing Data
 
 **Solution:**
+
 - Use `opensaas generate` to create Prisma schema
 - Use `prisma db push` instead of migrations for existing databases
 - Never use `prisma migrate dev` with existing data
@@ -141,6 +147,7 @@ export default config({
 ### Challenge: Complex Access Control
 
 **Solution:**
+
 - Start with simple boolean access control
 - Iterate to filter-based access as needed
 - Use field-level access for sensitive data
@@ -148,6 +155,7 @@ export default config({
 ### Challenge: Custom Field Types
 
 **Solution:**
+
 - Create custom field builders extending `BaseFieldConfig`
 - Implement `getZodSchema`, `getPrismaType`, `getTypeScriptType`
 - Register UI components for admin interface

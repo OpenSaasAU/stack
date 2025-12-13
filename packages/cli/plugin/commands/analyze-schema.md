@@ -22,8 +22,8 @@ Present like this:
 ### Models Summary
 
 | Model | Fields | Has Relations | Suggested Access |
-|-------|--------|---------------|------------------|
-| ... | ... | ... | ... |
+| ----- | ------ | ------------- | ---------------- |
+| ...   | ...    | ...           | ...              |
 
 ### Detailed Analysis
 

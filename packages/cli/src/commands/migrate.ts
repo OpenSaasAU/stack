@@ -158,8 +158,8 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   // Check if plugin is already installed
   const pluginId = 'opensaas-migration@local'
-  const isInstalled = settings.plugins.installed.some(
-    (p: any) => typeof p === 'string' ? p === pluginId : p.id === pluginId
+  const isInstalled = settings.plugins.installed.some((p: any) =>
+    typeof p === 'string' ? p === pluginId : p.id === pluginId,
   )
 
   if (!isInstalled) {

@@ -18,6 +18,7 @@ npx @opensaas/stack-cli migrate --with-ai
 ```
 
 The CLI will:
+
 1. Install this plugin to your project
 2. Create `.claude/opensaas-project.json` with your project metadata
 3. Configure `.claude/settings.json` to enable the plugin
@@ -28,6 +29,7 @@ The CLI will:
 ### Migration Assistant Agent
 
 A specialized agent that:
+
 - Reads your project metadata from `.claude/opensaas-project.json`
 - Guides you through the migration wizard
 - Explains access control patterns
@@ -42,6 +44,7 @@ A specialized agent that:
 ### Migration Skill
 
 Expert knowledge including:
+
 - Access control patterns
 - Field type mappings
 - Database configuration examples
@@ -56,6 +59,7 @@ Help me migrate to OpenSaaS Stack
 ```
 
 The migration assistant will:
+
 1. Read your project details
 2. Start the interactive wizard
 3. Guide you through configuration

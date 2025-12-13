@@ -15,6 +15,7 @@ Validate the generated opensaas.config.ts file.
    - Lists match original schema
 
 3. Try running:
+
    ```bash
    npx @opensaas/stack-cli generate
    ```
