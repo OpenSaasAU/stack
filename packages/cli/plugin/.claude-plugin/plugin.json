@@ -1,0 +1,22 @@
+{
+  "name": "opensaas-migration",
+  "description": "OpenSaaS Stack migration assistant with AI-guided configuration, schema analysis, and code generation support",
+  "version": "1.0.0",
+  "author": {
+    "name": "OpenSaaS Team",
+    "url": "https://github.com/OpenSaasAU/stack"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSaasAU/stack",
+    "directory": "packages/cli/plugin"
+  },
+  "keywords": [
+    "migration",
+    "opensaas",
+    "prisma",
+    "keystone",
+    "nextjs",
+    "code-generation"
+  ]
+}

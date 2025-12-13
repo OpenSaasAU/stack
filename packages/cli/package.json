@@ -18,6 +18,11 @@
   "bin": {
     "opensaas": "./bin/opensaas.js"
   },
+  "files": [
+    "dist",
+    "bin",
+    "plugin"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
