@@ -1,5 +1,58 @@
 # @opensaas/stack-cli
 
+## 0.6.0
+
+### Minor Changes
+
+- [#223](https://github.com/OpenSaasAU/stack/pull/223) [`7f7270e`](https://github.com/OpenSaasAU/stack/commit/7f7270e5fa8e7ba6df4d4dedb9dfa1351756312a) Thanks [@borisno2](https://github.com/borisno2)! - Migrate AI migration assistant to Claude Code plugin system
+
+  The `opensaas migrate --with-ai` command now uses a Claude Code plugin instead of writing templated files to the user's `.claude/` directory. This provides several benefits:
+
+  **What changed:**
+  - Migration assistant is now distributed as a plugin within `@opensaas/stack-cli`
+  - CLI writes project metadata to `.claude/opensaas-project.json` instead of templated files
+  - Plugin is automatically configured in `.claude/settings.json`
+
+  **Benefits:**
+  - Migration assistant content can be updated by upgrading `@opensaas/stack-cli`
+  - Cleaner separation between generic content and project-specific data
+  - Easier to maintain and update migration logic
+
+  **Usage remains the same:**
+
+  ```bash
+  npx @opensaas/stack-cli migrate --with-ai
+  ```
+
+  Then open the project in Claude Code and ask: "Help me migrate to OpenSaaS Stack"
+
+  The migration assistant agent will read your project metadata and guide you through the migration wizard as before.
+
+### Patch Changes
+
+- [#219](https://github.com/OpenSaasAU/stack/pull/219) [`f2d78e5`](https://github.com/OpenSaasAU/stack/commit/f2d78e5946c28be0b9ae61dae76ee2534b9a4efc) Thanks [@borisno2](https://github.com/borisno2)! - Fix MCP configuration and add agent/skill support to migration wizard
+
+  **MCP Configuration:**
+  - Fixed MCP server configuration to use correct `.mcp.json` format at project root
+  - Added `type: 'stdio'` field and proper structure
+  - Added `-y` flag to npx command for auto-accepting prompts
+
+  **Migration Assistant Agent:**
+  - Added required YAML frontmatter with `name`, `description`, `model`, and `skills` fields
+  - Agent is now properly discoverable by Claude Code
+  - Auto-loads the `opensaas-migration` skill for expert knowledge
+
+  **Migration Skill:**
+  - Created comprehensive `opensaas-migration` skill with migration guidance
+  - Includes access control patterns, field type mappings, database configs
+  - Provides migration checklist and best practices
+  - Stored in `.claude/skills/opensaas-migration/SKILL.md`
+
+  When users run `opensaas migrate --with-ai`, they now get a fully configured Claude Code environment with agents, skills, and MCP tools working together.
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
