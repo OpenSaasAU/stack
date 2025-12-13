@@ -44,6 +44,7 @@ This plugin is part of the OpenSaaS Stack marketplace. Install by adding the mar
 ```
 
 The marketplace also provides:
+
 - **opensaas-migration** - Migration assistant for converting existing projects
 
 Alternatively, set up via MCP:

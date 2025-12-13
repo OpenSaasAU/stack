@@ -11,6 +11,7 @@ This marketplace provides two official plugins for working with OpenSaaS Stack:
 Feature-driven development assistant for building OpenSaaS Stack applications.
 
 **Features:**
+
 - **opensaas-helper agent** - Specialized agent that understands OpenSaaS patterns
 - **opensaas-builder skill** - Proactively helps implement features from high-level requirements
 - `/opensaas-features` - List available features
@@ -24,6 +25,7 @@ Feature-driven development assistant for building OpenSaaS Stack applications.
 AI-guided migration assistant for converting existing projects to OpenSaaS Stack.
 
 **Features:**
+
 - **migration-assistant agent** - Guides you through migration from Prisma/KeystoneJS/Next.js
 - **opensaas-migration skill** - Expert migration patterns
 - `/analyze-schema` - Analyze existing schemas
@@ -70,6 +72,7 @@ npx @opensaas/stack-cli migrate --with-ai
 ```
 
 This sets up:
+
 - The marketplace in `.claude/settings.json`
 - The migration plugin enabled (with MCP server integration)
 - Project metadata in `.claude/opensaas-project.json`
