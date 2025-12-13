@@ -19,7 +19,58 @@ Use this skill when:
 
 ## Migration Process
 
-### 1. Schema Analysis
+### 1. Install Required Packages
+
+**IMPORTANT: Always install packages before starting migration**
+
+Detect the user's package manager (check for `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, or `bun.lockb`) and use their preferred package manager.
+
+**Required packages:**
+
+```bash
+# Using npm
+npm install --save-dev @opensaas/stack-cli
+npm install @opensaas/stack-core
+
+# Using pnpm
+pnpm add -D @opensaas/stack-cli
+pnpm add @opensaas/stack-core
+
+# Using yarn
+yarn add -D @opensaas/stack-cli
+yarn add @opensaas/stack-core
+
+# Using bun
+bun add -D @opensaas/stack-cli
+bun add @opensaas/stack-core
+```
+
+**Optional packages (based on user needs):**
+
+- `@opensaas/stack-auth` - If the project needs authentication
+- `@opensaas/stack-ui` - If the project needs the admin UI
+- `@opensaas/stack-tiptap` - If the project needs rich text editing
+- `@opensaas/stack-storage` - If the project needs file storage
+- `@opensaas/stack-rag` - If the project needs semantic search/RAG
+
+**Database adapters (required for Prisma 7):**
+
+SQLite:
+```bash
+npm install better-sqlite3 @prisma/adapter-better-sqlite3
+```
+
+PostgreSQL:
+```bash
+npm install pg @prisma/adapter-pg
+```
+
+Neon (serverless PostgreSQL):
+```bash
+npm install @neondatabase/serverless @prisma/adapter-neon ws
+```
+
+### 2. Schema Analysis
 
 **Prisma Projects:**
 
@@ -33,7 +84,7 @@ Use this skill when:
 - Map KeystoneJS fields to OpenSaaS fields
 - Identify access control patterns
 
-### 2. Access Control Design
+### 3. Access Control Design
 
 **Common Patterns:**
 
@@ -69,7 +120,7 @@ operation: {
 }
 ```
 
-### 3. Field Mapping
+### 4. Field Mapping
 
 **Prisma to OpenSaaS:**
 
@@ -94,7 +145,7 @@ operation: {
 | `relationship`   | `relationship()` |
 | `password`       | `password()`     |
 
-### 4. Database Configuration
+### 5. Database Configuration
 
 **SQLite (Development):**
 
@@ -162,15 +213,19 @@ export default config({
 
 ## Migration Checklist
 
+- [ ] **Detect package manager** (npm, pnpm, yarn, or bun)
+- [ ] **Install required packages** (@opensaas/stack-cli, @opensaas/stack-core)
+- [ ] **Install optional packages** (auth, ui, etc. based on needs)
+- [ ] **Install database adapter** (better-sqlite3, pg, etc.)
 - [ ] Analyze existing schema
 - [ ] Design access control patterns
 - [ ] Create `opensaas.config.ts`
-- [ ] Configure database adapter
-- [ ] Run `opensaas generate`
-- [ ] Run `prisma generate`
-- [ ] Run `prisma db push`
+- [ ] Configure database adapter in config
+- [ ] Run `opensaas generate` (or `npx opensaas generate`)
+- [ ] Run `prisma generate` (or `npx prisma generate`)
+- [ ] Run `prisma db push` (or `npx prisma db push`)
 - [ ] Test access control
-- [ ] Verify admin UI
+- [ ] Verify admin UI (if using @opensaas/stack-ui)
 - [ ] Update application code to use context
 - [ ] Test all CRUD operations
 - [ ] Deploy to production
