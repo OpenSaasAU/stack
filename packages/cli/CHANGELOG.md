@@ -1,5 +1,14 @@
 # @opensaas/stack-cli
 
+## 0.6.1
+
+### Patch Changes
+
+- [#224](https://github.com/OpenSaasAU/stack/pull/224) [`d90b8c0`](https://github.com/OpenSaasAU/stack/commit/d90b8c00ec3b94683e2be8fa80e7ae497c71ae7a) Thanks [@borisno2](https://github.com/borisno2)! - Migrate plugin installation to marketplace architecture, removing need for separate .mcp.json file
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.6.1
+
 ## 0.6.0
 
 ### Minor Changes
