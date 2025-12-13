@@ -97,11 +97,11 @@ function getMarketplaceSource():
   // Try to detect if we're in development (local monorepo)
   const cliPackageDir = path.dirname(path.dirname(new URL(import.meta.url).pathname))
   const potentialMonorepoRoot = path.join(cliPackageDir, '..', '..')
-  const marketplacePath = path.join(potentialMonorepoRoot, '.claude-plugin', 'marketplace.json')
+  const marketplacePath = path.join(potentialMonorepoRoot, 'claude-plugins', 'marketplace.json')
 
   if (fs.existsSync(marketplacePath)) {
     // Development mode - use local marketplace
-    return { source: 'local', path: potentialMonorepoRoot }
+    return { source: 'local', path: path.join(potentialMonorepoRoot, 'claude-plugins') }
   }
 
   // Production mode - use GitHub marketplace

@@ -89,22 +89,23 @@ This allows testing plugin changes before publishing.
 ## Marketplace Structure
 
 ```
-.claude-plugin/
+claude-plugins/
 ├── marketplace.json          # Marketplace manifest
-├── plugin.json               # opensaas-stack plugin manifest
 ├── MARKETPLACE.md            # This file
-├── README.md                 # opensaas-stack plugin docs
-├── agents/                   # opensaas-stack agents
-├── commands/                 # opensaas-stack commands
-└── skills/                   # opensaas-stack skills
-
-packages/cli/plugin/
-├── .claude-plugin/
-│   └── plugin.json           # opensaas-migration plugin manifest
-├── README.md                 # opensaas-migration plugin docs
-├── agents/                   # opensaas-migration agents
-├── commands/                 # opensaas-migration commands
-└── skills/                   # opensaas-migration skills
+├── opensaas-stack/
+│   ├── .claude-plugin/
+│   │   └── plugin.json       # opensaas-stack plugin manifest
+│   ├── README.md             # opensaas-stack plugin docs
+│   ├── agents/               # opensaas-stack agents
+│   ├── commands/             # opensaas-stack commands
+│   └── skills/               # opensaas-stack skills
+└── opensaas-migration/
+    ├── .claude-plugin/
+    │   └── plugin.json       # opensaas-migration plugin manifest
+    ├── README.md             # opensaas-migration plugin docs
+    ├── agents/               # opensaas-migration agents
+    ├── commands/             # opensaas-migration commands
+    └── skills/               # opensaas-migration skills
 ```
 
 ## Links

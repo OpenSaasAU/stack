@@ -8,7 +8,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/OpenSaasAU/stack"
+    "url": "https://github.com/OpenSaasAU/stack",
+    "directory": "claude-plugins/opensaas-stack"
   },
   "homepage": "https://stack.opensaas.au/",
   "keywords": ["opensaas", "nextjs", "prisma", "feature-driven", "code-generation"],

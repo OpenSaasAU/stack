@@ -12,7 +12,7 @@
   "plugins": [
     {
       "name": "opensaas-stack",
-      "source": ".",
+      "source": "./opensaas-stack",
       "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
       "version": "0.1.0",
       "author": {
@@ -27,7 +27,7 @@
     },
     {
       "name": "opensaas-migration",
-      "source": "../packages/cli/plugin",
+      "source": "./opensaas-migration",
       "description": "OpenSaaS Stack migration assistant with AI-guided configuration, schema analysis, and code generation support",
       "version": "1.0.0",
       "author": {
