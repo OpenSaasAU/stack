@@ -192,3 +192,36 @@ Authentication + Custom Topic/Post lists + Comments
 Authentication + Custom metrics/data lists + potentially Search
 
 For each scenario, adapt the wizard questions to their specific needs!
+
+## Reporting Issues
+
+**When you encounter bugs or missing features in OpenSaaS Stack:**
+
+If while building the application you discover:
+
+- Bugs in OpenSaaS Stack packages
+- Missing features that the user needs
+- Documentation gaps or errors
+- API inconsistencies or unexpected behavior
+- Field types that should exist but don't
+
+**Use the `github-issue-creator` agent** to create a GitHub issue on the `OpenSaasAU/stack` repository:
+
+```
+Invoke the github-issue-creator agent with:
+- Clear description of the bug or missing feature
+- User's use case that triggered the discovery
+- Expected vs actual behavior
+- Affected files and line numbers
+- Your suggested solution (if you have one)
+```
+
+This ensures bugs and feature requests are properly tracked and addressed by the OpenSaaS Stack team.
+
+**Example:**
+
+If a user needs geolocation tracking but there's no built-in field type for coordinates:
+
+> "Feature request: Add geolocation field type for storing latitude/longitude coordinates. User needs this for a location-based app. Should support validation, map UI component, and distance queries."
+
+The agent will create a detailed GitHub issue with the use case and proposed implementation.

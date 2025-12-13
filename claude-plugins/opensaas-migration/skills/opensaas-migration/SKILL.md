@@ -184,6 +184,38 @@ export default config({
 5. **Version Control**: Commit `opensaas.config.ts` to git
 6. **Document Decisions**: Comment complex access control logic
 
+## Reporting Issues
+
+**When you encounter bugs or missing features in OpenSaaS Stack:**
+
+If during migration you discover:
+
+- Bugs in OpenSaaS Stack packages
+- Missing features that would improve the migration experience
+- Documentation gaps or errors
+- API inconsistencies or unexpected behavior
+
+**Use the `github-issue-creator` agent** to create a GitHub issue on the `OpenSaasAU/stack` repository:
+
+```
+Invoke the github-issue-creator agent with:
+- Clear description of the bug or missing feature
+- Steps to reproduce (if applicable)
+- Expected vs actual behavior
+- Affected files and line numbers
+- Your suggested solution (if you have one)
+```
+
+This ensures bugs and feature requests are properly tracked and addressed by the OpenSaaS Stack team, improving the experience for future users.
+
+**Example:**
+
+If you notice that the migration command doesn't properly handle Prisma enums, invoke the github-issue-creator agent:
+
+> "Found a bug: The migration generator doesn't convert Prisma enums to OpenSaaS select fields. Enums are being ignored during schema analysis in packages/cli/src/migration/introspectors/prisma-introspector.ts"
+
+The agent will create a detailed GitHub issue with reproduction steps and proposed solution.
+
 ## Resources
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
