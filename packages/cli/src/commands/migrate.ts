@@ -133,7 +133,15 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
   // Configure Claude Code marketplace and plugins in settings.json
   const settingsPath = path.join(claudeDir, 'settings.json')
   let settings: {
-    extraKnownMarketplaces?: Record<string, { source: any }>
+    extraKnownMarketplaces?: Record<
+      string,
+      {
+        source:
+          | { source: 'github'; repo: string }
+          | { source: 'git'; url: string }
+          | { source: 'local'; path: string }
+      }
+    >
     enabledPlugins?: string[]
   } = {}
 
