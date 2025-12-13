@@ -35,7 +35,18 @@ If you're working in the OpenSaaS Stack repository, the plugin is automatically 
 
 ### For External Projects
 
-Install the MCP server:
+This plugin is part of the OpenSaaS Stack marketplace. Install by adding the marketplace in Claude Code:
+
+```bash
+# In Claude Code
+/plugin marketplace add OpenSaasAU/stack
+/plugin install opensaas-stack@opensaas-stack-marketplace
+```
+
+The marketplace also provides:
+- **opensaas-migration** - Migration assistant for converting existing projects
+
+Alternatively, set up via MCP:
 
 ```bash
 npx @opensaas/stack-cli mcp install

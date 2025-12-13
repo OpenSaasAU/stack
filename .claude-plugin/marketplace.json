@@ -1,0 +1,43 @@
+{
+  "name": "opensaas-stack-marketplace",
+  "owner": {
+    "name": "OpenSaaS Team",
+    "email": "team@opensaas.au"
+  },
+  "metadata": {
+    "description": "Official OpenSaaS Stack plugin marketplace for development and migration tools",
+    "version": "1.0.0",
+    "homepage": "https://stack.opensaas.au/"
+  },
+  "plugins": [
+    {
+      "name": "opensaas-stack",
+      "source": ".",
+      "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
+      "version": "0.1.0",
+      "author": {
+        "name": "OpenSaaS",
+        "url": "https://opensaas.au"
+      },
+      "homepage": "https://stack.opensaas.au/",
+      "repository": "https://github.com/OpenSaasAU/stack",
+      "keywords": ["opensaas", "nextjs", "prisma", "feature-driven", "code-generation"],
+      "category": "development",
+      "tags": ["development", "feature-driven", "code-generation"]
+    },
+    {
+      "name": "opensaas-migration",
+      "source": "../packages/cli/plugin",
+      "description": "OpenSaaS Stack migration assistant with AI-guided configuration, schema analysis, and code generation support",
+      "version": "1.0.0",
+      "author": {
+        "name": "OpenSaaS Team",
+        "url": "https://github.com/OpenSaasAU/stack"
+      },
+      "repository": "https://github.com/OpenSaasAU/stack",
+      "keywords": ["migration", "opensaas", "prisma", "keystone", "nextjs", "code-generation"],
+      "category": "migration",
+      "tags": ["migration", "schema-analysis", "code-generation"]
+    }
+  ]
+}

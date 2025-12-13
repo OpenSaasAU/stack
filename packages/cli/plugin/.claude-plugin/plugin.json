@@ -11,5 +11,9 @@
     "url": "https://github.com/OpenSaasAU/stack",
     "directory": "packages/cli/plugin"
   },
-  "keywords": ["migration", "opensaas", "prisma", "keystone", "nextjs", "code-generation"]
+  "keywords": ["migration", "opensaas", "prisma", "keystone", "nextjs", "code-generation"],
+  "mcp": {
+    "server": "@opensaas/stack-cli",
+    "install": "npx @opensaas/stack-cli mcp install"
+  }
 }
