@@ -91,7 +91,7 @@ function ensureDir(dirPath: string): void {
  * Get marketplace source for OpenSaaS Stack plugins
  */
 function getMarketplaceSource():
-  | { source: 'github'; repo: string }
+  | { source: 'github'; path: string }
   | { source: 'git'; url: string }
   | { source: 'local'; path: string } {
   // Try to detect if we're in development (local monorepo)
@@ -105,7 +105,7 @@ function getMarketplaceSource():
   }
 
   // Production mode - use GitHub marketplace
-  return { source: 'github', repo: 'OpenSaasAU/stack' }
+  return { source: 'github', path: 'OpenSaasAU/stack' }
 }
 
 /**
@@ -137,12 +137,12 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
       string,
       {
         source:
-          | { source: 'github'; repo: string }
+          | { source: 'github'; path: string }
           | { source: 'git'; url: string }
           | { source: 'local'; path: string }
       }
     >
-    enabledPlugins?: string[]
+    enabledPlugins?: Record<string, boolean>
   } = {}
 
   // Read existing settings if they exist
@@ -169,14 +169,12 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   // Add enabled plugins
   if (!settings.enabledPlugins) {
-    settings.enabledPlugins = []
+    settings.enabledPlugins = {}
   }
 
   // Add migration plugin if not already enabled
   const migrationPluginId = 'opensaas-migration@opensaas-stack-marketplace'
-  if (!settings.enabledPlugins.includes(migrationPluginId)) {
-    settings.enabledPlugins.push(migrationPluginId)
-  }
+  settings.enabledPlugins[migrationPluginId] = true
 
   // Write settings back
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
