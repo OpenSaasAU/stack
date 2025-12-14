@@ -1,5 +1,14 @@
 # @opensaas/stack-cli
 
+## 0.6.2
+
+### Patch Changes
+
+- [#227](https://github.com/OpenSaasAU/stack/pull/227) [`6d7c1a2`](https://github.com/OpenSaasAU/stack/commit/6d7c1a2aee112c3b60588f89bcabd8aeb28886f0) Thanks [@borisno2](https://github.com/borisno2)! - Fix Claude settings format in migrate command to use object for enabledPlugins and path for GitHub marketplace source
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes
