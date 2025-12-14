@@ -6,15 +6,13 @@
     "name": "OpenSaaS",
     "url": "https://opensaas.au"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/OpenSaasAU/stack",
-    "directory": "claude-plugins/opensaas-stack"
-  },
+  "repository": "https://github.com/OpenSaasAU/stack",
   "homepage": "https://stack.opensaas.au/",
   "keywords": ["opensaas", "nextjs", "prisma", "feature-driven", "code-generation"],
-  "mcp": {
-    "server": "@opensaas/stack-cli",
-    "install": "npx @opensaas/stack-cli mcp install"
+  "mcpServers": {
+    "opensaas-stack": {
+      "command": "npx",
+      "args": ["-y", "@opensaas/stack-cli@latest", "mcp", "start"]
+    }
   }
 }
