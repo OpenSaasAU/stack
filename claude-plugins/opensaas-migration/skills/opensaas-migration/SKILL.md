@@ -248,12 +248,12 @@ Do NOT create a new project structure. Instead:
 
 ### Import Mapping
 
-| KeystoneJS Import               | OpenSaaS Import                |
-| ------------------------------- | ------------------------------ |
-| `@keystone-6/core`              | `@opensaas/stack-core`         |
-| `@keystone-6/core/fields`       | `@opensaas/stack-core/fields`  |
-| `@keystone-6/auth`              | `@opensaas/stack-auth`         |
-| `@keystone-6/fields-document`   | `@opensaas/stack-tiptap`       |
+| KeystoneJS Import             | OpenSaaS Import               |
+| ----------------------------- | ----------------------------- |
+| `@keystone-6/core`            | `@opensaas/stack-core`        |
+| `@keystone-6/core/fields`     | `@opensaas/stack-core/fields` |
+| `@keystone-6/auth`            | `@opensaas/stack-auth`        |
+| `@keystone-6/fields-document` | `@opensaas/stack-tiptap`      |
 
 ### Example: KeystoneJS to OpenSaaS Config
 
