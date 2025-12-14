@@ -56,21 +56,39 @@ bun add @opensaas/stack-core
 **Database adapters (required for Prisma 7):**
 
 SQLite:
+
 ```bash
 npm install better-sqlite3 @prisma/adapter-better-sqlite3
 ```
 
 PostgreSQL:
+
 ```bash
 npm install pg @prisma/adapter-pg
 ```
 
 Neon (serverless PostgreSQL):
+
 ```bash
 npm install @neondatabase/serverless @prisma/adapter-neon ws
 ```
 
-### 2. Schema Analysis
+### 2. Uninstall Old Packages (KeystoneJS Only)
+
+**IMPORTANT: For KeystoneJS projects, uninstall KeystoneJS packages before installing OpenSaaS**
+
+KeystoneJS migrations should preserve the existing file structure and just swap packages. Do NOT create a new project structure.
+
+```bash
+# Detect package manager and uninstall KeystoneJS packages
+npm uninstall @keystone-6/core @keystone-6/auth @keystone-6/fields-document
+# Or with pnpm
+pnpm remove @keystone-6/core @keystone-6/auth @keystone-6/fields-document
+```
+
+Remove all `@keystone-6/*` packages from `package.json`.
+
+### 3. Schema Analysis
 
 **Prisma Projects:**
 
@@ -80,11 +98,12 @@ npm install @neondatabase/serverless @prisma/adapter-neon ws
 
 **KeystoneJS Projects:**
 
-- Review list definitions
+- Review list definitions in `keystone.config.ts` or `keystone.ts`
 - Map KeystoneJS fields to OpenSaaS fields
 - Identify access control patterns
+- **Note the existing file structure** - preserve it during migration
 
-### 3. Access Control Design
+### 4. Access Control Design
 
 **Common Patterns:**
 
@@ -120,7 +139,7 @@ operation: {
 }
 ```
 
-### 4. Field Mapping
+### 5. Field Mapping
 
 **Prisma to OpenSaaS:**
 
@@ -145,7 +164,7 @@ operation: {
 | `relationship`   | `relationship()` |
 | `password`       | `password()`     |
 
-### 5. Database Configuration
+### 6. Database Configuration
 
 **SQLite (Development):**
 
@@ -185,6 +204,141 @@ export default config({
 })
 ```
 
+## KeystoneJS Migration Strategy
+
+**CRITICAL: KeystoneJS projects should be migrated IN PLACE**
+
+Do NOT create a new project structure. Instead:
+
+### File Structure Preservation
+
+**Keep existing files and update them:**
+
+1. **Rename config file:**
+   - `keystone.config.ts` → `opensaas.config.ts`
+   - OR `keystone.ts` → `opensaas.config.ts`
+
+2. **Update imports in ALL files:**
+
+   ```typescript
+   // Before (KeystoneJS)
+   import { config, list } from '@keystone-6/core'
+   import { text, relationship, timestamp } from '@keystone-6/core/fields'
+
+   // After (OpenSaaS)
+   import { config, list } from '@opensaas/stack-core'
+   import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
+   ```
+
+3. **Rename KeystoneJS concepts to OpenSaaS:**
+   - `keystone.config.ts` → `opensaas.config.ts`
+   - `Keystone` references → `OpenSaaS` or remove entirely
+   - Keep all other file names and structure as-is
+
+4. **Update schema/list definitions:**
+   - Keep existing list definitions
+   - Update field imports from `@keystone-6/core/fields` to `@opensaas/stack-core/fields`
+   - Adapt access control syntax (KeystoneJS and OpenSaaS are similar)
+   - Keep existing GraphQL API file structure
+
+5. **Preserve API routes and pages:**
+   - Keep existing Next.js pages
+   - Update any KeystoneJS context calls to use OpenSaaS context
+   - Maintain existing route structure
+
+### Import Mapping
+
+| KeystoneJS Import               | OpenSaaS Import                |
+| ------------------------------- | ------------------------------ |
+| `@keystone-6/core`              | `@opensaas/stack-core`         |
+| `@keystone-6/core/fields`       | `@opensaas/stack-core/fields`  |
+| `@keystone-6/auth`              | `@opensaas/stack-auth`         |
+| `@keystone-6/fields-document`   | `@opensaas/stack-tiptap`       |
+
+### Example: KeystoneJS to OpenSaaS Config
+
+**Before (keystone.config.ts):**
+
+```typescript
+import { config, list } from '@keystone-6/core'
+import { text, relationship, timestamp } from '@keystone-6/core/fields'
+
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+  },
+  lists: {
+    Post: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        content: text({ ui: { displayMode: 'textarea' } }),
+        author: relationship({ ref: 'User.posts' }),
+        publishedAt: timestamp(),
+      },
+    }),
+  },
+})
+```
+
+**After (opensaas.config.ts):**
+
+```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
+
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+    prismaClientConstructor: (PrismaClient) => {
+      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+      const adapter = new PrismaPg(pool)
+      return new PrismaClient({ adapter })
+    },
+  },
+  lists: {
+    Post: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        content: text(), // Note: OpenSaaS text() doesn't have ui.displayMode
+        author: relationship({ ref: 'User.posts' }),
+        publishedAt: timestamp(),
+      },
+    }),
+  },
+})
+```
+
+### Steps for KeystoneJS Migration
+
+1. **Uninstall KeystoneJS packages** (see step 2 above)
+2. **Install OpenSaaS packages** (see step 1 above)
+3. **Rename** `keystone.config.ts` to `opensaas.config.ts`
+4. **Find and replace** in ALL project files:
+   - `@keystone-6/core` → `@opensaas/stack-core`
+   - `@keystone-6/core/fields` → `@opensaas/stack-core/fields`
+   - `@keystone-6/auth` → `@opensaas/stack-auth`
+5. **Add Prisma adapter** to database config (required for Prisma 7)
+6. **Update context creation** in API routes/pages
+7. **Test** - the app structure should remain identical
+
+**DO NOT:**
+
+- Create new folders or reorganize the project
+- Move files to different locations
+- Create a new "OpenSaaS structure"
+- Change API endpoints or routes
+
+**DO:**
+
+- Keep existing file structure
+- Update imports only
+- Adapt config to OpenSaaS syntax
+- Preserve existing API routes and pages
+
 ## Common Migration Challenges
 
 ### Challenge: Preserving Existing Data
@@ -211,7 +365,17 @@ export default config({
 - Implement `getZodSchema`, `getPrismaType`, `getTypeScriptType`
 - Register UI components for admin interface
 
+### Challenge: KeystoneJS Document Field
+
+**Solution:**
+
+- Replace with `@opensaas/stack-tiptap` rich text field
+- Or create custom field type for document structure
+- May require data migration for existing documents
+
 ## Migration Checklist
+
+### For Prisma Projects:
 
 - [ ] **Detect package manager** (npm, pnpm, yarn, or bun)
 - [ ] **Install required packages** (@opensaas/stack-cli, @opensaas/stack-core)
@@ -228,6 +392,28 @@ export default config({
 - [ ] Verify admin UI (if using @opensaas/stack-ui)
 - [ ] Update application code to use context
 - [ ] Test all CRUD operations
+- [ ] Deploy to production
+
+### For KeystoneJS Projects:
+
+- [ ] **Detect package manager** (npm, pnpm, yarn, or bun)
+- [ ] **Uninstall ALL KeystoneJS packages** (@keystone-6/\*)
+- [ ] **Install required packages** (@opensaas/stack-cli, @opensaas/stack-core)
+- [ ] **Install optional packages** (auth, ui, tiptap for document fields)
+- [ ] **Install database adapter** (pg, @prisma/adapter-pg for PostgreSQL)
+- [ ] **Rename** `keystone.config.ts` to `opensaas.config.ts`
+- [ ] **Update imports** in config file (KeystoneJS → OpenSaaS)
+- [ ] **Find and replace imports** in ALL project files
+- [ ] **Add Prisma adapter** to database config
+- [ ] **Update context creation** in API routes
+- [ ] Analyze and adapt access control patterns
+- [ ] Run `opensaas generate`
+- [ ] Run `prisma generate`
+- [ ] Run `prisma db push`
+- [ ] Test existing API routes
+- [ ] Test existing pages/UI
+- [ ] Test all CRUD operations
+- [ ] Verify no broken imports
 - [ ] Deploy to production
 
 ## Best Practices
