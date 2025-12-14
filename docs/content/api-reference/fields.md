@@ -918,7 +918,7 @@ const user = await context.db.user.findUnique({
 // user.fullName is "John Doe"
 ```
 
-{% callout type="note" %}
+{% callout type="info" %}
 The `resolveOutput` hook must be provided. Virtual fields cannot exist without a computation function.
 {% /callout %}
 

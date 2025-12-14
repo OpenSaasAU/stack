@@ -264,7 +264,7 @@ const user = await context.db.user.findUnique({
 console.log(user.fullName) // "John Doe"
 ```
 
-{% callout type="note" %}
+{% callout type="info" %}
 Virtual fields are only computed when explicitly included in `select` or `include` clauses. They are not computed by default to optimize performance.
 {% /callout %}
 
