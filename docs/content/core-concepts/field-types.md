@@ -200,6 +200,103 @@ fields: {
 - `ref`: String in format `'ListName.fieldName'`
 - `many`: Boolean - true for one-to-many relationships
 
+### Virtual Field
+
+Computed field that is not stored in the database:
+
+```typescript
+import { virtual } from '@opensaas/stack-core/fields'
+
+fields: {
+  firstName: text(),
+  lastName: text(),
+  // Computed from other fields
+  fullName: virtual({
+    type: 'string', // TypeScript output type
+    hooks: {
+      resolveOutput: ({ item }) => {
+        return `${item.firstName} ${item.lastName}`
+      },
+    },
+  }),
+
+  // External API sync example
+  syncStatus: virtual({
+    type: 'boolean',
+    hooks: {
+      resolveInput: async ({ item }) => {
+        // Side effect: sync to external API
+        await syncToExternalAPI(item)
+        return undefined // Don't store anything
+      },
+      resolveOutput: () => true,
+    },
+  }),
+}
+```
+
+**Options:**
+
+- `type`: TypeScript type string (e.g., `'string'`, `'number'`, `'boolean'`)
+- `hooks.resolveOutput`: **Required** - Compute field value from other fields
+- `hooks.resolveInput`: Optional - Side effects during create/update
+
+**Key Features:**
+
+- Does not create a database column
+- Only computed when explicitly selected/included in queries
+- Can combine data from multiple fields
+- Useful for derived values, computed properties, and external sync
+
+**Usage Example:**
+
+```typescript
+// Query with virtual field
+const user = await context.db.user.findUnique({
+  where: { id },
+  select: {
+    firstName: true,
+    lastName: true,
+    fullName: true, // Virtual field is computed on demand
+  },
+})
+
+console.log(user.fullName) // "John Doe"
+```
+
+{% callout type="note" %}
+Virtual fields are only computed when explicitly included in `select` or `include` clauses. They are not computed by default to optimize performance.
+{% /callout %}
+
+### JSON Field
+
+Field for storing arbitrary JSON data:
+
+```typescript
+import { json } from '@opensaas/stack-core/fields'
+
+fields: {
+  metadata: json({
+    validation: { isRequired: false },
+    ui: {
+      placeholder: 'Enter JSON data...',
+      rows: 10,
+      formatted: true,
+    },
+  }),
+  settings: json({
+    validation: { isRequired: true },
+  }),
+}
+```
+
+**Options:**
+
+- `validation.isRequired`: Boolean
+- `ui.placeholder`: Placeholder text
+- `ui.rows`: Number of textarea rows
+- `ui.formatted`: Format JSON with indentation
+
 ## Third-Party Field Types
 
 ### Rich Text Field

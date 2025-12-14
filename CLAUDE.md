@@ -305,6 +305,8 @@ This separation allows CLI commands to work while keeping the runtime flexible w
 - `password()` - String field (excluded from reads)
 - `select()` - Enum field with predefined options
 - `relationship()` - Foreign key relationship (one-to-one, one-to-many)
+- `json()` - JSON field for storing arbitrary JSON data
+- `virtual()` - Computed field not stored in database, computed via hooks
 
 **Third-party field types:**
 

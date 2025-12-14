@@ -31,6 +31,8 @@ Built-in fields:
 - `password({ validation, ui, hooks })` - Hashed password (excluded from reads)
 - `select({ options, validation, ui, hooks })` - Enum field
 - `relationship({ ref, many, ui })` - Foreign key relationship
+- `json({ validation, ui, hooks })` - JSON field for arbitrary JSON data
+- `virtual({ type, hooks })` - Computed field not stored in database
 
 ### Access Control (`src/access/`)
 
@@ -300,6 +302,41 @@ Post: list({
   },
 })
 ```
+
+### Virtual Fields
+
+Virtual fields are computed fields that are not stored in the database:
+
+```typescript
+// Read-only computed field
+User: list({
+  fields: {
+    firstName: text(),
+    lastName: text(),
+    fullName: virtual({
+      type: 'string', // TypeScript output type
+      hooks: {
+        resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+      },
+    }),
+  },
+})
+
+// Usage
+const user = await context.db.user.findUnique({
+  where: { id },
+  select: { firstName: true, lastName: true, fullName: true }, // fullName computed on demand
+})
+console.log(user.fullName) // "John Doe"
+```
+
+**Key characteristics:**
+
+- Not stored in database (no Prisma column created)
+- Only computed when explicitly selected/included in queries
+- Must provide `type` (TypeScript type string) and `resolveOutput` hook
+- Can optionally provide `resolveInput` for write side effects
+- Useful for derived values, computed properties, and external API sync
 
 ## Type Safety
 
