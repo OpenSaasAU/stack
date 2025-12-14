@@ -688,6 +688,254 @@ Prisma: `Json` (native JSON in PostgreSQL/MySQL, TEXT in SQLite)
 
 ---
 
+### `virtual()`
+
+Computed field that is not stored in the database.
+
+```typescript
+import { virtual } from '@opensaas/stack-core/fields'
+
+virtual(options: {
+  type: string
+  hooks: {
+    resolveOutput: (args: {
+      operation: 'query'
+      value: unknown
+      item: TItem
+      listKey: string
+      fieldName: string
+      context: AccessContext
+    }) => unknown
+    resolveInput?: (args: {
+      operation: 'create' | 'update'
+      inputValue: unknown
+      item?: TItem
+      listKey: string
+      fieldName: string
+      context: AccessContext
+    }) => Promise<unknown> | unknown
+  }
+  ui?: {
+    [key: string]: unknown
+  }
+  access?: FieldAccess
+})
+```
+
+#### Options
+
+##### `type` (required)
+
+TypeScript type string for the virtual field output.
+
+**Type:** `string`
+
+**Examples:**
+
+- `'string'` - For string values
+- `'number'` - For numeric values
+- `'boolean'` - For boolean values
+- `'string[]'` - For arrays
+- `'{ key: string; value: number }'` - For objects
+
+**Example:**
+
+```typescript
+fullName: virtual({
+  type: 'string',
+  hooks: {
+    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  },
+})
+```
+
+##### `hooks.resolveOutput` (required)
+
+Compute the field value from other fields in the item.
+
+**Type:** Function
+
+**Parameters:**
+
+- `operation` - Always `'query'` for virtual fields
+- `value` - Database value (always `undefined` for virtual fields)
+- `item` - The full item with all selected fields
+- `listKey` - The list name (e.g., `'User'`)
+- `fieldName` - The field name (e.g., `'fullName'`)
+- `context` - Access context with session and db
+
+**Returns:** Computed value of the type specified in `type` option
+
+**Example:**
+
+```typescript
+displayName: virtual({
+  type: 'string',
+  hooks: {
+    resolveOutput: ({ item }) => {
+      return `${item.name} (${item.email})`
+    },
+  },
+})
+```
+
+##### `hooks.resolveInput` (optional)
+
+Perform side effects during create/update operations.
+
+**Type:** Function (optional)
+
+**Parameters:**
+
+- `operation` - Either `'create'` or `'update'`
+- `inputValue` - Input value provided (if any)
+- `item` - Existing item (undefined for create)
+- `listKey` - The list name
+- `fieldName` - The field name
+- `context` - Access context
+
+**Returns:** `undefined` (return value is ignored, use for side effects only)
+
+**Use cases:**
+
+- Sync data to external API
+- Trigger webhooks
+- Update related records
+
+**Example:**
+
+```typescript
+syncToExternal: virtual({
+  type: 'boolean',
+  hooks: {
+    resolveInput: async ({ item, operation }) => {
+      // Side effect: sync to external API
+      if (operation === 'update') {
+        await syncToExternalAPI(item)
+      }
+      return undefined // Return value is ignored
+    },
+    resolveOutput: () => true,
+  },
+})
+```
+
+#### Key Characteristics
+
+1. **No Database Storage**: Virtual fields do not create database columns
+2. **On-Demand Computation**: Only computed when explicitly selected/included
+3. **Type Safety**: TypeScript type is generated from `type` option
+4. **Performance**: Efficient - only computed for requested fields
+5. **Flexible**: Can combine multiple fields or perform complex computations
+
+#### Usage Examples
+
+##### Read-Only Computed Field
+
+```typescript
+User: list({
+  fields: {
+    firstName: text(),
+    lastName: text(),
+    fullName: virtual({
+      type: 'string',
+      hooks: {
+        resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+      },
+    }),
+  },
+})
+
+// Usage
+const user = await context.db.user.findUnique({
+  where: { id },
+  select: { firstName: true, lastName: true, fullName: true },
+})
+console.log(user.fullName) // "John Doe"
+```
+
+##### Complex Computed Value
+
+```typescript
+Order: list({
+  fields: {
+    items: json(), // Array of { price: number, quantity: number }
+    total: virtual({
+      type: 'number',
+      hooks: {
+        resolveOutput: ({ item }) => {
+          if (!item.items || !Array.isArray(item.items)) return 0
+          return item.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+        },
+      },
+    }),
+  },
+})
+```
+
+##### Write Side Effects
+
+```typescript
+Post: list({
+  fields: {
+    title: text(),
+    content: text(),
+    searchIndexSync: virtual({
+      type: 'boolean',
+      hooks: {
+        resolveInput: async ({ item, operation }) => {
+          // Update search index when post is created or updated
+          if (operation === 'create' || operation === 'update') {
+            await updateSearchIndex(item)
+          }
+          return undefined
+        },
+        resolveOutput: () => true,
+      },
+    }),
+  },
+})
+```
+
+#### Important Notes
+
+{% callout type="warning" %}
+Virtual fields must be explicitly selected in queries. They are not included by default.
+{% /callout %}
+
+```typescript
+// ❌ Virtual field NOT computed
+const user = await context.db.user.findUnique({
+  where: { id },
+})
+// user.fullName is undefined
+
+// ✅ Virtual field IS computed
+const user = await context.db.user.findUnique({
+  where: { id },
+  select: { firstName: true, lastName: true, fullName: true },
+})
+// user.fullName is "John Doe"
+```
+
+{% callout type="info" %}
+The `resolveOutput` hook must be provided. Virtual fields cannot exist without a computation function.
+{% /callout %}
+
+#### Database Type
+
+None - virtual fields do not create database columns
+
+#### TypeScript Type
+
+Type specified in `type` option
+
+#### Validation
+
+Virtual fields do not accept input and cannot be validated. The `getZodSchema` method returns `z.never()`.
+
+---
+
 ## Common Field Options
 
 All field types support these common options:

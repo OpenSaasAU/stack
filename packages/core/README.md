@@ -145,6 +145,8 @@ export async function createPost(userId: string, data: any) {
 - **password()** - Password field (excluded from reads)
 - **select()** - Enum field with options
 - **relationship()** - Foreign key relationship
+- **json()** - JSON field for arbitrary data
+- **virtual()** - Computed field not stored in database
 
 ### Field Options
 
