@@ -540,6 +540,58 @@ export function json<
 }
 
 /**
+ * Convert a TypeDescriptor to a TypeScript type string
+ * Handles three formats:
+ * 1. Primitive string: 'string', 'number', 'boolean' -> returned as-is
+ * 2. Import string: "import('decimal.js').Decimal" -> returned as-is
+ * 3. Type object: { value: Decimal, from: 'decimal.js' } -> "import('decimal.js').Decimal"
+ */
+function typeDescriptorToString(descriptor: import('../config/types.js').TypeDescriptor): string {
+  if (typeof descriptor === 'string') {
+    return descriptor
+  }
+
+  // Extract type name from constructor or use provided name
+  const typeName = descriptor.name || descriptor.value.name
+
+  // Generate import string
+  return `import('${descriptor.from}').${typeName}`
+}
+
+/**
+ * Extract TypeScript imports from a TypeDescriptor
+ * Returns array of import statements needed for type generation
+ */
+function typeDescriptorToImports(
+  descriptor: import('../config/types.js').TypeDescriptor,
+): Array<{ names: string[]; from: string; typeOnly?: boolean }> {
+  // If it's a string, check if it's an import string
+  if (typeof descriptor === 'string') {
+    const importMatch = descriptor.match(/import\('([^']+)'\)\.(\w+)/)
+    if (importMatch) {
+      return [
+        {
+          names: [importMatch[2]],
+          from: importMatch[1],
+          typeOnly: true,
+        },
+      ]
+    }
+    return []
+  }
+
+  // Type object descriptor
+  const typeName = descriptor.name || descriptor.value.name
+  return [
+    {
+      names: [typeName],
+      from: descriptor.from,
+      typeOnly: true,
+    },
+  ]
+}
+
+/**
  * Virtual field - not stored in database, computed via hooks
  *
  * **Features:**
@@ -548,10 +600,11 @@ export function json<
  * - Optionally uses resolveInput hook for write side effects (e.g., sync to external API)
  * - Only computed when explicitly selected/included in queries
  * - Supports both read and write operations via hooks
+ * - Supports custom scalar types (e.g., Decimal) for financial precision
  *
- * **Usage Example:**
+ * **Usage Examples:**
  * ```typescript
- * // Read-only computed field
+ * // Read-only computed field with primitive type
  * fields: {
  *   firstName: text(),
  *   lastName: text(),
@@ -559,6 +612,28 @@ export function json<
  *     type: 'string',
  *     hooks: {
  *       resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`
+ *     }
+ *   })
+ * }
+ *
+ * // Custom scalar type using import string
+ * fields: {
+ *   totalPrice: virtual({
+ *     type: "import('decimal.js').Decimal",
+ *     hooks: {
+ *       resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity)
+ *     }
+ *   })
+ * }
+ *
+ * // Custom scalar type using type descriptor (recommended)
+ * import Decimal from 'decimal.js'
+ *
+ * fields: {
+ *   totalPrice: virtual({
+ *     type: { value: Decimal, from: 'decimal.js' },
+ *     hooks: {
+ *       resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity)
  *     }
  *   })
  * }
@@ -576,16 +651,10 @@ export function json<
  *     }
  *   })
  * }
- *
- * // Query with select
- * const user = await context.db.user.findUnique({
- *   where: { id },
- *   select: { firstName: true, lastName: true, fullName: true } // fullName computed
- * })
  * ```
  *
  * **Requirements:**
- * - Must provide `type` (TypeScript type string)
+ * - Must provide `type` (TypeScript type string, import string, or type descriptor)
  * - Must provide `resolveOutput` hook (for reads)
  * - Optional `resolveInput` hook (for write side effects)
  *
@@ -593,7 +662,9 @@ export function json<
  * @returns Virtual field configuration
  */
 export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  options: Omit<VirtualField<TTypeInfo>, 'virtual' | 'outputType' | 'type'> & { type: string },
+  options: Omit<VirtualField<TTypeInfo>, 'virtual' | 'outputType' | 'type'> & {
+    type: import('../config/types.js').TypeDescriptor
+  },
 ): VirtualField<TTypeInfo> {
   // Validate that resolveOutput is provided
   if (!options.hooks?.resolveOutput) {
@@ -603,7 +674,11 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     )
   }
 
-  const { type: outputType, ...rest } = options
+  // Convert type descriptor to string
+  const outputType = typeDescriptorToString(options.type)
+  const imports = typeDescriptorToImports(options.type)
+
+  const { type: _, ...rest } = options
 
   return {
     type: 'virtual',
@@ -616,10 +691,12 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     // Virtual fields appear in output types with their specified type
     getTypeScriptType: () => {
       return {
-        type: options.type,
+        type: outputType,
         optional: false, // Virtual fields always compute a value
       }
     },
+    // Add import statements if needed
+    getTypeScriptImports: imports.length > 0 ? () => imports : undefined,
     // Virtual fields never validate input (they don't accept database input)
     getZodSchema: () => {
       return z.never()

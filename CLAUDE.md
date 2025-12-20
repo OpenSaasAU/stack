@@ -322,6 +322,81 @@ Each field builder function returns an object with these methods:
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
 
+#### Virtual Fields with Custom Scalar Types
+
+Virtual fields now support custom scalar types (like `Decimal` for financial precision) through three different approaches:
+
+**1. Primitive type strings** (for built-in JavaScript types):
+
+```typescript
+fields: {
+  fullName: virtual({
+    type: 'string',
+    hooks: {
+      resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+    },
+  })
+}
+```
+
+**2. Import strings** (for custom types, explicit format):
+
+```typescript
+fields: {
+  totalPrice: virtual({
+    type: "import('decimal.js').Decimal",
+    hooks: {
+      resolveOutput: ({ item }) => {
+        return new Decimal(item.price).times(item.quantity)
+      },
+    },
+  })
+}
+```
+
+**3. Type descriptor objects** (recommended for custom types):
+
+```typescript
+import Decimal from 'decimal.js'
+
+fields: {
+  totalPrice: virtual({
+    type: { value: Decimal, from: 'decimal.js' },
+    hooks: {
+      resolveOutput: ({ item }) => {
+        return new Decimal(item.price).times(item.quantity)
+      }
+    }
+  }),
+
+  // With custom name (when constructor name doesn't match export)
+  customField: virtual({
+    type: {
+      value: MyClass,
+      from: '@myorg/types',
+      name: 'MyExportedType' // Optional
+    },
+    hooks: {
+      resolveOutput: ({ item }) => new MyClass(item.data)
+    }
+  })
+}
+```
+
+**Type generation:**
+
+- Primitive strings are used as-is in generated types
+- Import strings and type descriptors generate proper TypeScript import statements
+- The type generator automatically collects and deduplicates imports from all fields
+
+**Use cases:**
+
+- **Financial calculations**: Use `Decimal` from `decimal.js` for precise currency calculations
+- **Custom data structures**: Return domain-specific types from virtual fields
+- **Third-party libraries**: Integrate types from any npm package
+
+This feature addresses the need for precision in financial applications (billing, invoicing, e-commerce) where JavaScript's `number` type loses precision for monetary values.
+
 ### Authentication System
 
 The stack provides optional Better-auth integration through `@opensaas/stack-auth`.
