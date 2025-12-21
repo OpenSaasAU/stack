@@ -88,6 +88,10 @@ export const navigation: NavItem[] = [
         href: '/docs/guides/custom-fields',
       },
       {
+        title: 'Storage Setup',
+        href: '/docs/guides/storage-setup',
+      },
+      {
         title: 'Composability',
         href: '/docs/guides/composability',
       },
