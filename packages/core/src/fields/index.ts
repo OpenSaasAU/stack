@@ -439,11 +439,11 @@ export function relationship<
     throw new Error('Relationship field must have a ref')
   }
 
-  // Validate ref format: 'ListName.fieldName'
+  // Validate ref format: 'ListName.fieldName' or 'ListName'
   const refParts = options.ref.split('.')
-  if (refParts.length !== 2) {
+  if (refParts.length !== 1 && refParts.length !== 2) {
     throw new Error(
-      `Invalid relationship ref format: "${options.ref}". Expected format: "ListName.fieldName"`,
+      `Invalid relationship ref format: "${options.ref}". Expected format: "ListName.fieldName" or "ListName"`,
     )
   }
 

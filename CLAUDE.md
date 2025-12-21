@@ -583,11 +583,77 @@ Fields `id`, `createdAt`, `updatedAt` are automatically:
 
 ### 5. Relationship Patterns
 
-Relationships use a `ref` format: `'ListName.fieldName'`
+Relationships support two `ref` formats: `'ListName.fieldName'` (bidirectional) or `'ListName'` (list-only)
+
+**Bidirectional relationships** (both sides define the relationship):
 
 - One-to-many: `posts: relationship({ ref: 'Post.author', many: true })`
 - Many-to-one: `author: relationship({ ref: 'User.posts' })`
-- Prisma generates foreign keys automatically
+
+**List-only relationships** (only one side defines the relationship):
+
+- Many-to-one: `category: relationship({ ref: 'Category' })`
+- One-to-many: `tags: relationship({ ref: 'Tag', many: true })`
+
+**How list-only refs work:**
+
+- When you use `ref: 'Category'` (no field specified), the stack automatically creates a synthetic relation field on the Category model
+- The synthetic field is named `from_<SourceList>_<field>` (e.g., `from_Post_category`)
+- This matches Keystone's behavior and is useful when you don't need to access the relationship from both sides
+- Prisma generates foreign keys automatically and uses named relations for list-only refs
+
+**Example:**
+
+```typescript
+// Blog example with both patterns
+lists: {
+  User: list({
+    fields: {
+      name: text(),
+      // Bidirectional: User has many Posts
+      posts: relationship({ ref: 'Post.author', many: true }),
+    },
+  }),
+  Category: list({
+    fields: {
+      name: text(),
+      // No relationship field needed here!
+    },
+  }),
+  Post: list({
+    fields: {
+      title: text(),
+      // Bidirectional: Post belongs to User
+      author: relationship({ ref: 'User.posts' }),
+      // List-only: Post belongs to Category
+      category: relationship({ ref: 'Category' }),
+    },
+  }),
+}
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model Category {
+  id                 String   @id @default(cuid())
+  name               String
+  from_Post_category Post[]   @relation("Post_category") // Auto-generated
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Post {
+  id         String    @id @default(cuid())
+  title      String
+  authorId   String?
+  author     User?     @relation(fields: [authorId], references: [id])
+  categoryId String?
+  category   Category? @relation("Post_category", fields: [categoryId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+```
 
 ## Development Workflow
 

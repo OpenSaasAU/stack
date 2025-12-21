@@ -559,19 +559,32 @@ describe('Field Types', () => {
         }).toThrow('ref')
       })
 
-      test('throws error when ref format is invalid', () => {
+      test('throws error when ref format has too many parts', () => {
         expect(() => {
-          relationship({ ref: 'InvalidFormat' })
+          relationship({ ref: 'Invalid.Format.TooManyParts' })
         }).toThrow('Invalid relationship ref format')
       })
 
-      test('accepts valid ref format', () => {
+      test('accepts valid bidirectional ref format (ListName.fieldName)', () => {
         const field = relationship({ ref: 'User.posts' })
 
         expect(field.ref).toBe('User.posts')
       })
 
-      test('accepts many option', () => {
+      test('accepts valid list-only ref format (ListName)', () => {
+        const field = relationship({ ref: 'Category' })
+
+        expect(field.ref).toBe('Category')
+      })
+
+      test('accepts list-only ref with many option', () => {
+        const field = relationship({ ref: 'Tag', many: true })
+
+        expect(field.ref).toBe('Tag')
+        expect(field.many).toBe(true)
+      })
+
+      test('accepts bidirectional ref with many option', () => {
         const field = relationship({ ref: 'Post.author', many: true })
 
         expect(field.ref).toBe('Post.author')
