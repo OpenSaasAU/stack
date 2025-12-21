@@ -771,7 +771,7 @@ customField: virtual({
   type: {
     value: MyClass,
     from: '@myorg/types',
-    name: 'MyExportedType' // Optional
+    name: 'MyExportedType', // Optional
   },
   hooks: {
     resolveOutput: ({ item }) => new MyClass(item.data),
@@ -785,9 +785,9 @@ customField: virtual({
 type TypeDescriptor =
   | string // Primitive or import string
   | {
-      value: new (...args: any[]) => any  // Constructor/class
-      from: string                         // Import path
-      name?: string                        // Optional custom name
+      value: new (...args: any[]) => any // Constructor/class
+      from: string // Import path
+      name?: string // Optional custom name
     }
 ```
 
@@ -805,6 +805,7 @@ The TypeScript type generator automatically collects and generates the necessary
 {% /callout %}
 
 **Use cases:**
+
 - **Financial calculations**: Use `Decimal` from `decimal.js` for precise currency calculations
 - **Custom data structures**: Return domain-specific types from virtual fields
 - **Third-party libraries**: Integrate types from any npm package
