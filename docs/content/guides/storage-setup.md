@@ -474,10 +474,7 @@ import { createStorageProvider } from '@opensaas/stack-storage/runtime'
 import config from '@/opensaas.config'
 import { getContext } from '@/.opensaas/context'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { filename: string } },
-) {
+export async function GET(request: NextRequest, { params }: { params: { filename: string } }) {
   // Check authentication
   const context = await getContext()
   if (!context.session) {
