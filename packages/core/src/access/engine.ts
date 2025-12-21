@@ -42,9 +42,9 @@ export function getRelatedListConfig(
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): { listName: string; listConfig: ListConfig<any> } | null {
-  // Parse ref format: "ListName.fieldName"
+  // Parse ref format: "ListName.fieldName" or "ListName"
   const parts = relationshipRef.split('.')
-  if (parts.length !== 2) {
+  if (parts.length !== 1 && parts.length !== 2) {
     return null
   }
 

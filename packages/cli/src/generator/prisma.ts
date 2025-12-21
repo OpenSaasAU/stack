@@ -46,14 +46,28 @@ function getFieldModifiers(fieldName: string, field: FieldConfig): string {
 }
 
 /**
- * Parse relationship ref to get target list and field
+ * Parse relationship ref to get target list and optional field
+ * Supports both 'ListName.fieldName' and 'ListName' formats
  */
-function parseRelationshipRef(ref: string): { list: string; field: string } {
-  const [list, field] = ref.split('.')
-  if (!list || !field) {
+function parseRelationshipRef(ref: string): { list: string; field?: string } {
+  const parts = ref.split('.')
+  if (parts.length === 1) {
+    // List-only ref (e.g., 'Term')
+    const list = parts[0]
+    if (!list) {
+      throw new Error(`Invalid relationship ref: ${ref}`)
+    }
+    return { list }
+  } else if (parts.length === 2) {
+    // List and field ref (e.g., 'User.posts')
+    const [list, field] = parts
+    if (!list || !field) {
+      throw new Error(`Invalid relationship ref: ${ref}`)
+    }
+    return { list, field }
+  } else {
     throw new Error(`Invalid relationship ref: ${ref}`)
   }
-  return { list, field }
 }
 
 /**
@@ -74,6 +88,39 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   lines.push(`  provider = "${config.db.provider}"`)
   lines.push('}')
   lines.push('')
+
+  // Track synthetic relation fields that need to be added to target lists
+  // Map of listName -> array of synthetic fields
+  const syntheticFields: Map<
+    string,
+    Array<{ fieldName: string; sourceList: string; sourceField: string; relationName: string }>
+  > = new Map()
+
+  // First pass: collect all relationship info and identify synthetic fields
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
+    for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      if (fieldConfig.type === 'relationship') {
+        const relField = fieldConfig as RelationshipField
+        const { list: targetList, field: targetField } = parseRelationshipRef(relField.ref)
+
+        // If no target field specified, we need to add a synthetic field
+        if (!targetField) {
+          const syntheticFieldName = `from_${listName}_${fieldName}`
+          const relationName = `${listName}_${fieldName}`
+
+          if (!syntheticFields.has(targetList)) {
+            syntheticFields.set(targetList, [])
+          }
+          syntheticFields.get(targetList)!.push({
+            fieldName: syntheticFieldName,
+            sourceList: listName,
+            sourceField: fieldName,
+            relationName,
+          })
+        }
+      }
+    }
+  }
 
   // Generate models for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
@@ -115,22 +162,52 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
     // Add relationship fields
     for (const { name: fieldName, field: relField } of relationshipFields) {
-      const { list: targetList } = parseRelationshipRef(relField.ref)
+      const { list: targetList, field: targetField } = parseRelationshipRef(relField.ref)
       const _modifiers = getFieldModifiers(fieldName, relField)
       const paddedName = fieldName.padEnd(12)
 
       if (relField.many) {
         // One-to-many relationship
-        lines.push(`  ${paddedName} ${targetList}[]`)
+        if (targetField) {
+          // Standard bidirectional relationship
+          lines.push(`  ${paddedName} ${targetList}[]`)
+        } else {
+          // List-only ref: use named relation
+          const relationName = `${listName}_${fieldName}`
+          lines.push(`  ${paddedName} ${targetList}[]  @relation("${relationName}")`)
+        }
       } else {
         // Many-to-one relationship (add foreign key field)
         const foreignKeyField = `${fieldName}Id`
         const fkPaddedName = foreignKeyField.padEnd(12)
 
         lines.push(`  ${fkPaddedName} String?`)
-        lines.push(
-          `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`,
-        )
+
+        if (targetField) {
+          // Standard bidirectional relationship
+          lines.push(
+            `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`,
+          )
+        } else {
+          // List-only ref: use named relation
+          const relationName = `${listName}_${fieldName}`
+          lines.push(
+            `  ${paddedName} ${targetList}?  @relation("${relationName}", fields: [${foreignKeyField}], references: [id])`,
+          )
+        }
+      }
+    }
+
+    // Add synthetic relation fields for list-only refs pointing to this list
+    const syntheticFieldsForList = syntheticFields.get(listName)
+    if (syntheticFieldsForList) {
+      for (const {
+        fieldName: syntheticFieldName,
+        sourceList,
+        relationName,
+      } of syntheticFieldsForList) {
+        const paddedName = syntheticFieldName.padEnd(12)
+        lines.push(`  ${paddedName} ${sourceList}[]  @relation("${relationName}")`)
       }
     }
 
