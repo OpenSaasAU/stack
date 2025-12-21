@@ -14,6 +14,7 @@ export type {
   RelationshipField,
   JsonField,
   VirtualField,
+  TypeDescriptor,
   TypeInfo,
   OperationAccess,
   Hooks,

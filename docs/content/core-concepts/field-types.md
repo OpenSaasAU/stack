@@ -237,9 +237,64 @@ fields: {
 
 **Options:**
 
-- `type`: TypeScript type string (e.g., `'string'`, `'number'`, `'boolean'`)
+- `type`: TypeScript type string, import string, or type descriptor (see Custom Scalar Types below)
 - `hooks.resolveOutput`: **Required** - Compute field value from other fields
 - `hooks.resolveInput`: Optional - Side effects during create/update
+
+#### Custom Scalar Types
+
+Virtual fields support custom scalar types (like `Decimal` for financial precision) through three approaches:
+
+**1. Primitive type strings** (for built-in JavaScript types):
+
+```typescript
+fullName: virtual({
+  type: 'string',
+  hooks: {
+    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  },
+})
+```
+
+**2. Import strings** (for custom types, explicit format):
+
+```typescript
+import Decimal from 'decimal.js'
+
+totalPrice: virtual({
+  type: "import('decimal.js').Decimal",
+  hooks: {
+    resolveOutput: ({ item }) => {
+      return new Decimal(item.price).times(item.quantity)
+    },
+  },
+})
+```
+
+**3. Type descriptor objects** (recommended for custom types):
+
+```typescript
+import Decimal from 'decimal.js'
+
+totalPrice: virtual({
+  type: { value: Decimal, from: 'decimal.js' },
+  hooks: {
+    resolveOutput: ({ item }) => {
+      return new Decimal(item.price).times(item.quantity)
+    },
+  },
+})
+```
+
+{% callout type="info" %}
+The TypeScript type generator automatically collects and generates the necessary import statements. This enables precise financial calculations and integration with third-party types while maintaining full type safety.
+{% /callout %}
+
+**Use Cases:**
+
+- **Financial calculations**: Use `Decimal` from `decimal.js` for precise currency calculations
+- **Custom data structures**: Return domain-specific types from virtual fields
+- **Third-party libraries**: Integrate types from any npm package
 
 **Key Features:**
 
@@ -247,6 +302,7 @@ fields: {
 - Only computed when explicitly selected/included in queries
 - Can combine data from multiple fields
 - Useful for derived values, computed properties, and external sync
+- Supports custom scalar types for financial precision
 
 **Usage Example:**
 

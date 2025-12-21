@@ -324,6 +324,37 @@ export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<T
   }
 }
 
+/**
+ * Type descriptor for virtual fields
+ * Supports three formats:
+ * 1. Primitive string: 'string', 'number', 'boolean', 'Date', etc.
+ * 2. Import string: "import('decimal.js').Decimal"
+ * 3. Type object descriptor: { value: Decimal, from: 'decimal.js', name: 'Decimal' }
+ */
+export type TypeDescriptor =
+  | string
+  | {
+      /**
+       * The type constructor or class
+       * @example Decimal (from decimal.js)
+       * @example MyCustomClass
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Constructor can have any signature
+      value: new (...args: any[]) => any
+      /**
+       * The module to import from
+       * @example 'decimal.js'
+       * @example '@myorg/custom-types'
+       */
+      from: string
+      /**
+       * Optional custom name (defaults to constructor.name)
+       * Useful when constructor name doesn't match export name
+       * @example 'Decimal' when constructor.name is different
+       */
+      name?: string
+    }
+
 export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'virtual'
   virtual: true
