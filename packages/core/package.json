@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-core",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Core stack for OpenSaas - schema definition, access control, and runtime utilities",
   "type": "module",
   "main": "./dist/index.js",
