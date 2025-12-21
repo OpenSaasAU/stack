@@ -292,6 +292,52 @@ Prisma 7 requires two separate configurations:
 
 This separation allows CLI commands to work while keeping the runtime flexible with custom adapters.
 
+**Extending the Generated Prisma Schema:**
+
+The `extendPrismaSchema` function in the database configuration allows you to modify the generated Prisma schema before it's written to disk. This is useful for advanced Prisma features not directly supported by the config API.
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    prismaClientConstructor: (PrismaClient) => {
+      // ... adapter setup
+    },
+    extendPrismaSchema: (schema) => {
+      // Modify the schema as needed
+      let modifiedSchema = schema
+
+      // Example: Add multi-schema support for PostgreSQL
+      modifiedSchema = modifiedSchema.replace(
+        /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
+        '$1\n  schemas = ["public", "auth"]',
+      )
+
+      // Example: Add @@schema attribute to all models
+      modifiedSchema = modifiedSchema.replace(
+        /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
+        (match, modelContent) => {
+          if (!modelContent.includes('@@schema')) {
+            return `${modelContent}\n  @@schema("public")\n}`
+          }
+          return match
+        },
+      )
+
+      return modifiedSchema
+    },
+  },
+  // ... rest of config
+})
+```
+
+**Common use cases:**
+
+- **Multi-schema support**: Add Prisma's multi-schema support for PostgreSQL
+- **Custom attributes**: Add model-level or field-level attributes not exposed in the config API
+- **Output path modifications**: Adjust the Prisma Client output path
+- **Preview features**: Enable Prisma preview features via datasource or generator configuration
+
 ### Field Types
 
 **Key file:** `packages/core/src/fields/index.ts`

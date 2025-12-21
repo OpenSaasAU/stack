@@ -646,6 +646,37 @@ export type DatabaseConfig = {
   // Different database adapters have varying type signatures that are hard to unify
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prismaClientConstructor: (PrismaClientClass: any) => any
+  /**
+   * Optional function to extend or modify the generated Prisma schema
+   * Receives the generated schema as a string and should return the modified schema
+   * Useful for advanced Prisma features not directly supported by the config API
+   *
+   * @example Add multi-schema support for PostgreSQL
+   * ```typescript
+   * extendPrismaSchema: (schema) => {
+   *   // Add schemas array to datasource
+   *   let modifiedSchema = schema
+   *     .replace(
+   *       /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
+   *       '$1\n  schemas = ["public", "auth"]'
+   *     )
+   *
+   *   // Add @@schema("public") to all models
+   *   modifiedSchema = modifiedSchema.replace(
+   *     /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
+   *     (match, modelContent) => {
+   *       if (!modelContent.includes('@@schema')) {
+   *         return `${modelContent}\n  @@schema("public")\n}`
+   *       }
+   *       return match
+   *     }
+   *   )
+   *
+   *   return modifiedSchema
+   * }
+   * ```
+   */
+  extendPrismaSchema?: (schema: string) => string
 }
 
 /**

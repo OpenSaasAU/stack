@@ -219,7 +219,14 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     lines.push('')
   }
 
-  return lines.join('\n')
+  let schema = lines.join('\n')
+
+  // Apply extendPrismaSchema function if provided
+  if (config.db.extendPrismaSchema) {
+    schema = config.db.extendPrismaSchema(schema)
+  }
+
+  return schema
 }
 
 /**
