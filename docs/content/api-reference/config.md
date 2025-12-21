@@ -206,6 +206,54 @@ db: {
 }
 ```
 
+##### `extendPrismaSchema`
+
+Optional function to extend or modify the generated Prisma schema before it's written to disk. Receives the generated schema as a string and should return the modified schema.
+
+This is useful for advanced Prisma features not directly supported by the config API.
+
+**Type:** `(schema: string) => string`
+
+**Example - Multi-schema support for PostgreSQL:**
+
+```typescript
+db: {
+  provider: 'postgresql',
+  prismaClientConstructor: (PrismaClient) => {
+    // ... adapter setup
+  },
+  extendPrismaSchema: (schema) => {
+    let modifiedSchema = schema
+
+    // Add schemas array to datasource
+    modifiedSchema = modifiedSchema.replace(
+      /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
+      '$1\n  schemas = ["public", "auth"]',
+    )
+
+    // Add @@schema("public") to all models
+    modifiedSchema = modifiedSchema.replace(
+      /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
+      (match, modelContent) => {
+        if (!modelContent.includes('@@schema')) {
+          return `${modelContent}\n  @@schema("public")\n}`
+        }
+        return match
+      },
+    )
+
+    return modifiedSchema
+  },
+}
+```
+
+**Common use cases:**
+
+- Multi-schema support for PostgreSQL
+- Custom model or field attributes
+- Prisma preview features
+- Output path modifications
+
 ---
 
 ### `ListConfig`
