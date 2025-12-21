@@ -726,9 +726,70 @@ virtual(options: {
 
 ##### `type` (required)
 
-TypeScript type string for the virtual field output.
+TypeScript type for the virtual field output. Supports three formats:
 
-**Type:** `string`
+**Type:** `string | TypeDescriptor`
+
+**Format 1: Primitive type strings** (for built-in JavaScript types):
+
+```typescript
+fullName: virtual({
+  type: 'string', // or 'number', 'boolean', 'Date', etc.
+  hooks: {
+    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  },
+})
+```
+
+**Format 2: Import strings** (for custom types):
+
+```typescript
+import Decimal from 'decimal.js'
+
+totalPrice: virtual({
+  type: "import('decimal.js').Decimal",
+  hooks: {
+    resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity),
+  },
+})
+```
+
+**Format 3: Type descriptor objects** (recommended for custom types):
+
+```typescript
+import Decimal from 'decimal.js'
+
+totalPrice: virtual({
+  type: { value: Decimal, from: 'decimal.js' },
+  hooks: {
+    resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity),
+  },
+})
+
+// With custom name (when constructor name doesn't match export)
+customField: virtual({
+  type: {
+    value: MyClass,
+    from: '@myorg/types',
+    name: 'MyExportedType' // Optional
+  },
+  hooks: {
+    resolveOutput: ({ item }) => new MyClass(item.data),
+  },
+})
+```
+
+**TypeDescriptor interface:**
+
+```typescript
+type TypeDescriptor =
+  | string // Primitive or import string
+  | {
+      value: new (...args: any[]) => any  // Constructor/class
+      from: string                         // Import path
+      name?: string                        // Optional custom name
+    }
+```
 
 **Examples:**
 
@@ -736,18 +797,17 @@ TypeScript type string for the virtual field output.
 - `'number'` - For numeric values
 - `'boolean'` - For boolean values
 - `'string[]'` - For arrays
-- `'{ key: string; value: number }'` - For objects
+- `"import('decimal.js').Decimal"` - For Decimal type
+- `{ value: Decimal, from: 'decimal.js' }` - Type descriptor for Decimal
 
-**Example:**
+{% callout type="info" %}
+The TypeScript type generator automatically collects and generates the necessary import statements when using import strings or type descriptors.
+{% /callout %}
 
-```typescript
-fullName: virtual({
-  type: 'string',
-  hooks: {
-    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
-  },
-})
-```
+**Use cases:**
+- **Financial calculations**: Use `Decimal` from `decimal.js` for precise currency calculations
+- **Custom data structures**: Return domain-specific types from virtual fields
+- **Third-party libraries**: Integrate types from any npm package
 
 ##### `hooks.resolveOutput` (required)
 
