@@ -1,5 +1,57 @@
 # @opensaas/stack-cli
 
+## 0.8.0
+
+### Minor Changes
+
+- [#253](https://github.com/OpenSaasAU/stack/pull/253) [`595aa82`](https://github.com/OpenSaasAU/stack/commit/595aa82ccd93e11454b2a70cbd90e5ace2bb5ae3) Thanks [@list({](https://github.com/list({), [@relationship({](https://github.com/relationship({)! - Add support for flexible relationship refs (list-only refs)
+
+  You can now specify relationship refs using just the list name, without requiring a corresponding field on the target list. This matches Keystone's behavior and simplifies one-way relationships.
+
+  **Bidirectional refs** (existing behavior, still works):
+
+  ```typescript
+  lists: {
+
+      fields: {
+        posts: relationship({ ref: 'Post.author', many: true }),
+      },
+    }),
+    Post: list({
+      fields: {
+   ref: 'User.posts' }),
+      },
+    }),
+  }
+  ```
+
+  **List-only refs** (new feature):
+
+  ```typescript
+  lists: {
+    Category: list({
+      fields: {
+        name: text(),
+        // No relationship field needed!
+      },
+    }),
+    Post: list({
+      fields: {
+        title: text(),
+        // Just reference the list name
+        category: relationship({ ref: 'Category' }),
+      },
+    }),
+  }
+  ```
+
+  The generator automatically creates a synthetic field `from_Post_category` on the Category model with a named Prisma relation to avoid ambiguity. This is useful when you only need one-way access to the relationship.
+
+### Patch Changes
+
+- Updated dependencies [[`595aa82`](https://github.com/OpenSaasAU/stack/commit/595aa82ccd93e11454b2a70cbd90e5ace2bb5ae3)]:
+  - @opensaas/stack-core@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
