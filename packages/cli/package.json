@@ -13,6 +13,10 @@
     "./generator": {
       "types": "./dist/generator/index.d.ts",
       "default": "./dist/generator/index.js"
+    },
+    "./generator/prisma": {
+      "types": "./dist/generator/prisma.d.ts",
+      "default": "./dist/generator/prisma.js"
     }
   },
   "bin": {

@@ -447,6 +447,25 @@ export function relationship<
     )
   }
 
+  // Validate db.foreignKey usage
+  if (options.db?.foreignKey !== undefined) {
+    // Can only be used on single relationships (not many)
+    if (options.many) {
+      throw new Error(
+        'db.foreignKey can only be used on single relationships (many: false or undefined). ' +
+          'Many-side of a relationship never stores the foreign key.',
+      )
+    }
+
+    // Can only be used on bidirectional relationships (with target field)
+    if (refParts.length === 1) {
+      throw new Error(
+        'db.foreignKey can only be used on bidirectional relationships (ref: "ListName.fieldName"). ' +
+          'List-only refs (ref: "ListName") always create foreign keys automatically.',
+      )
+    }
+  }
+
   return {
     type: 'relationship',
     ...options,
