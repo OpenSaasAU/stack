@@ -104,9 +104,7 @@ function isOneToOneRelationship(
     )
   }
   if (targetFieldConfig.type !== 'relationship') {
-    throw new Error(
-      `Referenced field "${targetList}.${targetField}" is not a relationship field`,
-    )
+    throw new Error(`Referenced field "${targetList}.${targetField}" is not a relationship field`)
   }
 
   const targetRelField = targetFieldConfig as RelationshipField
