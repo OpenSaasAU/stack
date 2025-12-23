@@ -139,6 +139,25 @@ export async function generateCommand() {
           throw err
         }
       }
+
+      // Format Prisma schema
+      const formatSpinner = ora('Formatting Prisma schema...').start()
+      try {
+        execSync('npx prisma format', {
+          cwd,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        })
+        formatSpinner.succeed(chalk.green('Prisma schema formatted'))
+        console.log(chalk.green('✅ Prisma schema formatted'))
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (_err) {
+        // Formatting is optional - don't fail generation if it doesn't work
+        formatSpinner.warn(chalk.yellow('Prisma schema formatting skipped'))
+        console.log(
+          chalk.yellow('⚠️  Prisma format failed (this is non-critical, continuing generation)'),
+        )
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       generatorSpinner.fail(chalk.red('Failed to generate'))
