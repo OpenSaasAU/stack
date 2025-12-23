@@ -27,7 +27,7 @@ fields: {
 fields: {
   author: relationship({
     ref: 'User.posts',
-    db: { foreignKey: { map: 'author_user_id' } }
+    db: { foreignKey: { map: 'author_user_id' } },
   })
 }
 ```

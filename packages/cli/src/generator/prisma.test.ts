@@ -351,5 +351,178 @@ describe('Prisma Schema Generator', () => {
         'term         Term?  @relation("Invoice_term", fields: [termId], references: [id])',
       )
     })
+
+    it('should generate @map attribute for regular fields with db.map', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              firstName: text({
+                validation: { isRequired: true },
+                db: { map: 'first_name' },
+              }),
+              lastName: text({
+                validation: { isRequired: true },
+                db: { map: 'last_name' },
+              }),
+              email: text({
+                validation: { isRequired: true },
+                isIndexed: 'unique',
+                db: { map: 'email_address' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('firstName    String @map("first_name")')
+      expect(schema).toContain('lastName     String @map("last_name")')
+      expect(schema).toContain('email        String @unique @map("email_address")')
+    })
+
+    it('should generate @map attribute for fields with different types', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text({ db: { map: 'post_title' } }),
+              viewCount: integer({ db: { map: 'view_count' } }),
+              isPublished: checkbox({ db: { map: 'is_published' } }),
+              publishedAt: timestamp({ db: { map: 'published_at' } }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('title        String? @map("post_title")')
+      expect(schema).toContain('viewCount    Int? @map("view_count")')
+      expect(schema).toContain('isPublished  Boolean @map("is_published")')
+      expect(schema).toContain('publishedAt  DateTime? @map("published_at")')
+    })
+
+    it('should generate @map attribute for foreign key with custom map', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({
+                ref: 'User.posts',
+                db: { foreignKey: { map: 'author_user_id' } },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String? @map("author_user_id")')
+      expect(schema).toContain(
+        'author       User?  @relation(fields: [authorId], references: [id])',
+      )
+    })
+
+    it('should default foreign key @map to field name for bidirectional relationships', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              profile: relationship({
+                ref: 'Profile.user',
+                db: { foreignKey: true },
+              }),
+            },
+          },
+          Profile: {
+            fields: {
+              bio: text(),
+              user: relationship({ ref: 'User.profile' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should default to field name 'profile', not 'profileId'
+      expect(schema).toContain('profileId    String? @unique @map("profile")')
+      expect(schema).toContain(
+        'profile      Profile?  @relation(fields: [profileId], references: [id])',
+      )
+    })
+
+    it('should handle mix of fields with and without db.map', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text({ db: { map: 'user_name' } }),
+              email: text({ validation: { isRequired: true } }), // No db.map
+              age: integer({ db: { map: 'user_age' } }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('name         String? @map("user_name")')
+      expect(schema).toContain('email        String')
+      expect(schema).not.toContain('email        String @map')
+      expect(schema).toContain('age          Int? @map("user_age")')
+    })
+
+    it('should generate @map for list-only relationship foreign keys', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Category: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              category: relationship({ ref: 'Category' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // List-only refs should default to field name
+      expect(schema).toContain('categoryId   String? @map("category")')
+    })
   })
 })
