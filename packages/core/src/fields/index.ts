@@ -405,7 +405,13 @@ export function select<
       return schema
     },
     getPrismaType: () => {
-      let modifiers = '?'
+      const isRequired = options.validation?.isRequired
+      let modifiers = ''
+
+      // Required fields don't get the ? modifier
+      if (!isRequired) {
+        modifiers = '?'
+      }
 
       // Add default value if provided
       if (options.defaultValue !== undefined) {
@@ -414,7 +420,7 @@ export function select<
 
       return {
         type: 'String',
-        modifiers,
+        modifiers: modifiers || undefined,
       }
     },
     getTypeScriptType: () => {
