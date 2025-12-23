@@ -1,5 +1,63 @@
 # @opensaas/stack-cli
 
+## 0.10.0
+
+### Minor Changes
+
+- [#259](https://github.com/OpenSaasAU/stack/pull/259) [`9aa5d8f`](https://github.com/OpenSaasAU/stack/commit/9aa5d8f60578abfdf7c36f3460b61b2fcfea6066) Thanks [@list({](https://github.com/list({), [@relationship({](https://github.com/relationship({)! - Add db.foreignKey configuration for one-to-one relationships
+
+  Fixes issue #258 where one-to-one relationships generated invalid Prisma schemas with foreign keys on both sides. You can now explicitly control which side of a one-to-one relationship stores the foreign key.
+
+  **Usage:**
+
+  ```typescript
+  // Specify which side has the foreign key
+  lists: {
+
+      fields: {
+        account: relationship({
+          ref: 'Account.user',
+          db: { foreignKey: true }
+        })
+      }
+    }),
+    Account: list({
+      fields: {
+   ref: 'User.account' })
+      }
+    })
+  }
+  ```
+
+  **Default behavior (without explicit db.foreignKey):**
+
+  For one-to-one relationships without explicit configuration, the foreign key is placed on the alphabetically first list name. For example, in a `User ↔ Profile` relationship, the `Profile` model will have the `userId` foreign key.
+
+  **Generated Prisma schema:**
+
+  ```prisma
+  model User {
+    id        String   @id @default(cuid())
+    accountId String?  @unique
+    account   Account? @relation(fields: [accountId], references: [id])
+  }
+
+  model Account {
+    id   String @id @default(cuid())
+    user User?
+  }
+  ```
+
+  **Validation:**
+  - `db.foreignKey` can only be used on single relationships (not many-side)
+  - Cannot be set to `true` on both sides of a one-to-one relationship
+  - Only applies to bidirectional relationships (with target field specified)
+
+### Patch Changes
+
+- Updated dependencies [[`9aa5d8f`](https://github.com/OpenSaasAU/stack/commit/9aa5d8f60578abfdf7c36f3460b61b2fcfea6066)]:
+  - @opensaas/stack-core@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes

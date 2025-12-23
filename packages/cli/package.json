@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-cli",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "CLI tools for OpenSaas Stack",
   "type": "module",
   "main": "./dist/index.js",
