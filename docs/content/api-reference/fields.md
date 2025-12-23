@@ -467,6 +467,9 @@ import { relationship } from '@opensaas/stack-core/fields'
 relationship(options: {
   ref: string
   many?: boolean
+  db?: {
+    foreignKey?: boolean
+  }
   ui?: {
     displayMode?: 'select' | 'cards'
     [key: string]: unknown
@@ -479,19 +482,19 @@ relationship(options: {
 
 ##### `ref` (required)
 
-Reference to related list in format `'ListName.fieldName'`.
+Reference to related list in format `'ListName.fieldName'` (bidirectional) or `'ListName'` (list-only).
 
 **Type:** `string`
 
 **Format:** `'ListName.fieldName'` where:
 
 - `ListName` - The target list (PascalCase)
-- `fieldName` - The field on the target list that references back
+- `fieldName` - The field on the target list that references back (optional)
 
 **Example:**
 
 ```typescript
-// User.posts -> Post.author relationship
+// Bidirectional relationship
 User: list({
   fields: {
     posts: relationship({
@@ -508,6 +511,15 @@ Post: list({
     }),
   },
 })
+
+// List-only relationship
+Post: list({
+  fields: {
+    category: relationship({
+      ref: 'Category', // No field specified - creates synthetic field
+    }),
+  },
+})
 ```
 
 ##### `many`
@@ -521,6 +533,66 @@ Whether this is a one-to-many relationship.
 
 - `true` - One-to-many (e.g., User has many Posts)
 - `false` - Many-to-one or one-to-one (e.g., Post has one Author)
+
+##### `db.foreignKey`
+
+Controls which side stores the foreign key in one-to-one relationships.
+
+**Type:** `boolean`
+**Default:** `undefined` (uses alphabetical ordering)
+
+**Constraints:**
+
+- Only valid on single relationships (`many: false` or undefined)
+- Only valid on bidirectional relationships (ref includes target field)
+- Cannot be `true` on both sides of a one-to-one relationship
+
+**Example:**
+
+```typescript
+// Explicit foreign key placement
+User: list({
+  fields: {
+    account: relationship({
+      ref: 'Account.user',
+      db: { foreignKey: true }, // User table stores accountId
+    }),
+  },
+}),
+Account: list({
+  fields: {
+    user: relationship({
+      ref: 'User.account', // No foreign key on this side
+    }),
+  },
+})
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model User {
+  accountId String?  @unique
+  account   Account? @relation(fields: [accountId], references: [id])
+}
+
+model Account {
+  user User?
+}
+```
+
+**Default behavior:** If `db.foreignKey` is not specified on either side, the foreign key is placed on the alphabetically first list. For example:
+
+- `User ↔ Profile`: Profile stores `userId`
+- `Account ↔ Billing`: Account stores `billingId`
+
+{% callout type="info" %}
+The `db.foreignKey` option is only needed for one-to-one relationships where you want explicit control over foreign key placement. One-to-many and many-to-one relationships automatically place the foreign key on the correct side.
+{% /callout %}
+
+{% callout type="warning" %}
+Setting `db.foreignKey: true` on both sides of a one-to-one relationship will cause a validation error. Only one side can store the foreign key.
+{% /callout %}
 
 ##### `ui.displayMode`
 

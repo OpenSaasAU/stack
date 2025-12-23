@@ -71,6 +71,110 @@ function parseRelationshipRef(ref: string): { list: string; field?: string } {
 }
 
 /**
+ * Check if a relationship is one-to-one (bidirectional with both sides having many: false)
+ */
+function isOneToOneRelationship(
+  listName: string,
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  // Must be bidirectional (has target field)
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  if (!targetField) {
+    return false
+  }
+
+  // This side must be single (many: false or undefined)
+  if (field.many) {
+    return false
+  }
+
+  // Check if target list exists
+  const targetListConfig = config.lists[targetList]
+  if (!targetListConfig) {
+    throw new Error(`Referenced list "${targetList}" not found in config`)
+  }
+
+  // Check if target field exists and is a relationship
+  const targetFieldConfig = targetListConfig.fields[targetField]
+  if (!targetFieldConfig) {
+    throw new Error(
+      `Referenced field "${targetList}.${targetField}" not found. If you want a one-sided relationship, use ref: "${targetList}" instead of ref: "${targetList}.${targetField}"`,
+    )
+  }
+  if (targetFieldConfig.type !== 'relationship') {
+    throw new Error(`Referenced field "${targetList}.${targetField}" is not a relationship field`)
+  }
+
+  const targetRelField = targetFieldConfig as RelationshipField
+  return !targetRelField.many
+}
+
+/**
+ * Determine if this side of a relationship should have the foreign key
+ * For one-to-one relationships, only one side should have the foreign key
+ */
+function shouldHaveForeignKey(
+  listName: string,
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  // List-only refs always create foreign keys
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  if (!targetField) {
+    return true
+  }
+
+  // Many-side never has foreign key (it's on the one-side)
+  if (field.many) {
+    return false
+  }
+
+  // Check if this is a one-to-one relationship
+  const isOneToOne = isOneToOneRelationship(listName, fieldName, field, config)
+  if (!isOneToOne) {
+    // One-to-many or many-to-one: the single side has the foreign key
+    return true
+  }
+
+  // One-to-one relationship: check db.foreignKey configuration
+  const targetListConfig = config.lists[targetList]!
+  const targetFieldConfig = targetListConfig.fields[targetField] as RelationshipField
+
+  const thisSideExplicit = field.db?.foreignKey
+  const otherSideExplicit = targetFieldConfig.db?.foreignKey
+
+  // Validate: both sides cannot be true
+  if (thisSideExplicit === true && otherSideExplicit === true) {
+    throw new Error(
+      `Invalid one-to-one relationship: both "${listName}.${fieldName}" and "${targetList}.${targetField}" have db.foreignKey set to true. Only one side can store the foreign key.`,
+    )
+  }
+
+  // If this side explicitly wants the foreign key, use it
+  if (thisSideExplicit === true) {
+    return true
+  }
+
+  // If other side explicitly wants it, don't use it on this side
+  if (otherSideExplicit === true) {
+    return false
+  }
+
+  // Default: use alphabetical ordering to ensure consistency
+  // The "smaller" list name (alphabetically) gets the foreign key
+  const comparison = listName.localeCompare(targetList)
+  if (comparison !== 0) {
+    return comparison < 0
+  }
+
+  // Same list (self-referential): use field name ordering
+  return fieldName.localeCompare(targetField) < 0
+}
+
+/**
  * Generate Prisma schema from OpenSaas config
  */
 export function generatePrismaSchema(config: OpenSaasConfig): string {
@@ -177,23 +281,36 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
           lines.push(`  ${paddedName} ${targetList}[]  @relation("${relationName}")`)
         }
       } else {
-        // Many-to-one relationship (add foreign key field)
-        const foreignKeyField = `${fieldName}Id`
-        const fkPaddedName = foreignKeyField.padEnd(12)
+        // Single relationship - check if this side should have the foreign key
+        const hasForeignKey = shouldHaveForeignKey(listName, fieldName, relField, config)
 
-        lines.push(`  ${fkPaddedName} String?`)
+        if (hasForeignKey) {
+          // This side has the foreign key
+          const foreignKeyField = `${fieldName}Id`
+          const fkPaddedName = foreignKeyField.padEnd(12)
 
-        if (targetField) {
-          // Standard bidirectional relationship
-          lines.push(
-            `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`,
-          )
+          // Check if this is a one-to-one relationship
+          const isOneToOne = isOneToOneRelationship(listName, fieldName, relField, config)
+          const uniqueModifier = isOneToOne ? ' @unique' : ''
+
+          lines.push(`  ${fkPaddedName} String?${uniqueModifier}`)
+
+          if (targetField) {
+            // Standard bidirectional relationship
+            lines.push(
+              `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`,
+            )
+          } else {
+            // List-only ref: use named relation
+            const relationName = `${listName}_${fieldName}`
+            lines.push(
+              `  ${paddedName} ${targetList}?  @relation("${relationName}", fields: [${foreignKeyField}], references: [id])`,
+            )
+          }
         } else {
-          // List-only ref: use named relation
-          const relationName = `${listName}_${fieldName}`
-          lines.push(
-            `  ${paddedName} ${targetList}?  @relation("${relationName}", fields: [${foreignKeyField}], references: [id])`,
-          )
+          // This side does NOT have the foreign key (other side of one-to-one)
+          // Just add the relation field without foreign key
+          lines.push(`  ${paddedName} ${targetList}?`)
         }
       }
     }

@@ -305,8 +305,31 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
 export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
   BaseFieldConfig<TTypeInfo> & {
     type: 'relationship'
-    ref: string // Format: 'ListName.fieldName'
+    ref: string // Format: 'ListName.fieldName' or 'ListName'
     many?: boolean
+    db?: {
+      /**
+       * Controls foreign key placement for bidirectional relationships
+       * Only valid on single (non-many) relationships
+       * Cannot be true on both sides of a one-to-one relationship
+       *
+       * @example
+       * ```typescript
+       * // One-to-one: User has one Account
+       * User: list({
+       *   fields: {
+       *     account: relationship({ ref: 'Account.user', db: { foreignKey: true } })
+       *   }
+       * })
+       * Account: list({
+       *   fields: {
+       *     user: relationship({ ref: 'User.account' }) // No foreign key on this side
+       *   }
+       * })
+       * ```
+       */
+      foreignKey?: boolean
+    }
     ui?: {
       displayMode?: 'select' | 'cards'
     }

@@ -25,6 +25,7 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
+  from_Post_author Post[]  @relation("Post_author")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -33,7 +34,7 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   authorId     String?
-  author       User?  @relation(fields: [authorId], references: [id])
+  author       User?  @relation("Post_author", fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

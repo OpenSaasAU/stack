@@ -188,17 +188,61 @@ fields: {
     ref: 'User.posts',
   }),
 
-  // One-to-one
-  profile: relationship({
-    ref: 'Profile.user',
+  // One-to-one with explicit foreign key placement
+  account: relationship({
+    ref: 'Account.user',
+    db: { foreignKey: true }, // This side stores the foreign key
   }),
 }
 ```
 
 **Options:**
 
-- `ref`: String in format `'ListName.fieldName'`
+- `ref`: String in format `'ListName.fieldName'` (bidirectional) or `'ListName'` (list-only)
 - `many`: Boolean - true for one-to-many relationships
+- `db.foreignKey`: Boolean - controls which side stores the foreign key in one-to-one relationships
+
+#### One-to-One Relationships
+
+For one-to-one relationships, only one side should store the foreign key. Use `db.foreignKey` to control placement:
+
+```typescript
+// Explicit foreign key placement
+User: list({
+  fields: {
+    account: relationship({
+      ref: 'Account.user',
+      db: { foreignKey: true }, // User stores accountId
+    }),
+  },
+}),
+Account: list({
+  fields: {
+    user: relationship({
+      ref: 'User.account', // No foreign key on this side
+    }),
+  },
+}),
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model User {
+  accountId String?  @unique
+  account   Account? @relation(fields: [accountId], references: [id])
+}
+
+model Account {
+  user User?
+}
+```
+
+**Default behavior:** If `db.foreignKey` is not specified, the foreign key is placed on the alphabetically first list. For example, in a `User ↔ Profile` relationship, `Profile` would store the `userId`.
+
+{% callout type="warning" %}
+You cannot set `db.foreignKey: true` on both sides of a one-to-one relationship. The generator will throw an error if you attempt this.
+{% /callout %}
 
 ### Virtual Field
 

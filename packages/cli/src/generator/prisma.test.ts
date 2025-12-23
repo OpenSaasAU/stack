@@ -107,7 +107,7 @@ describe('Prisma Schema Generator', () => {
           Post: {
             fields: {
               title: text(),
-              author: relationship({ ref: 'User.posts' }),
+              author: relationship({ ref: 'User' }), // List-only reference (one-sided)
             },
           },
         },
