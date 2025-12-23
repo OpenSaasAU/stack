@@ -64,7 +64,7 @@ export function text<
 
       return !isRequired ? withMax.optional().nullable() : withMax
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const validation = options?.validation
       const isRequired = validation?.isRequired
       let modifiers = ''
@@ -79,6 +79,11 @@ export function text<
         modifiers += ' @unique'
       } else if (options?.isIndexed === true) {
         modifiers += ' @index'
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
       }
 
       return {
@@ -130,12 +135,23 @@ export function integer<
         ? withMax.optional().nullable()
         : withMax
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const isRequired = options?.validation?.isRequired
+      let modifiers = ''
+
+      // Optional modifier
+      if (!isRequired) {
+        modifiers += '?'
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
+      }
 
       return {
         type: 'Int',
-        modifiers: isRequired ? undefined : '?',
+        modifiers: modifiers || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -161,12 +177,17 @@ export function checkbox<
     getZodSchema: () => {
       return z.boolean().optional().nullable()
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const hasDefault = options?.defaultValue !== undefined
       let modifiers = ''
 
       if (hasDefault) {
         modifiers = ` @default(${options.defaultValue})`
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
       }
 
       return {
@@ -195,7 +216,7 @@ export function timestamp<
     getZodSchema: () => {
       return z.union([z.date(), z.iso.datetime()]).optional().nullable()
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       let modifiers = '?'
 
       // Check for default value
@@ -206,6 +227,11 @@ export function timestamp<
         options.defaultValue.kind === 'now'
       ) {
         modifiers = ' @default(now())'
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
       }
 
       return {
@@ -360,12 +386,23 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
           .nullable()
       }
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const isRequired = options?.validation?.isRequired
+      let modifiers = ''
+
+      // Optional modifier
+      if (!isRequired) {
+        modifiers += '?'
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
+      }
 
       return {
         type: 'String',
-        modifiers: isRequired ? undefined : '?',
+        modifiers: modifiers || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -404,7 +441,7 @@ export function select<
 
       return schema
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const isRequired = options.validation?.isRequired
       let modifiers = ''
 
@@ -416,6 +453,11 @@ export function select<
       // Add default value if provided
       if (options.defaultValue !== undefined) {
         modifiers = ` @default("${options.defaultValue}")`
+      }
+
+      // Map modifier
+      if (options.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
       }
 
       return {
@@ -545,12 +587,23 @@ export function json<
         return baseSchema.optional().nullable()
       }
     },
-    getPrismaType: () => {
+    getPrismaType: (_fieldName: string) => {
       const isRequired = options?.validation?.isRequired
+      let modifiers = ''
+
+      // Optional modifier
+      if (!isRequired) {
+        modifiers += '?'
+      }
+
+      // Map modifier
+      if (options?.db?.map) {
+        modifiers += ` @map("${options.db.map}")`
+      }
 
       return {
         type: 'Json',
-        modifiers: isRequired ? undefined : '?',
+        modifiers: modifiers || undefined,
       }
     },
     getTypeScriptType: () => {
