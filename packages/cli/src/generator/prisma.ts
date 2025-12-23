@@ -90,17 +90,16 @@ function isOneToOneRelationship(
     return false
   }
 
-  // Check if target field exists and is also single
+  // Check if target list exists
   const targetListConfig = config.lists[targetList]
   if (!targetListConfig) {
-    throw new Error(`Referenced list "${targetList}" not found in config`)
+    return false // Target list doesn't exist, not a valid bidirectional relationship
   }
 
+  // Check if target field exists and is a relationship
   const targetFieldConfig = targetListConfig.fields[targetField]
   if (!targetFieldConfig || targetFieldConfig.type !== 'relationship') {
-    throw new Error(
-      `Referenced field "${targetList}.${targetField}" not found or is not a relationship`,
-    )
+    return false // Target field doesn't exist or isn't a relationship, not bidirectional
   }
 
   const targetRelField = targetFieldConfig as RelationshipField
