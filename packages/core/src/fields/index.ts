@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type {
   TextField,
   IntegerField,
+  DecimalField,
   CheckboxField,
   TimestampField,
   PasswordField,
@@ -145,6 +146,172 @@ export function integer<
         type: 'number',
         optional: !isRequired,
       }
+    },
+  }
+}
+
+/**
+ * Decimal field for precise numeric values (e.g., currency, measurements)
+ *
+ * **Features:**
+ * - Stores decimal numbers with configurable precision and scale
+ * - Uses Prisma's Decimal type (backed by decimal.js for precision)
+ * - Default precision: 18 digits, scale: 4 decimal places
+ * - Validation for min/max values
+ * - Optional database column mapping and nullability control
+ * - Index support (boolean or 'unique')
+ *
+ * **Usage Example:**
+ * ```typescript
+ * // In opensaas.config.ts
+ * fields: {
+ *   price: decimal({
+ *     precision: 10,
+ *     scale: 2,
+ *     validation: {
+ *       isRequired: true,
+ *       min: '0',
+ *       max: '999999.99'
+ *     }
+ *   }),
+ *   coordinates: decimal({
+ *     precision: 18,
+ *     scale: 8,
+ *     db: { map: 'coord_value' }
+ *   })
+ * }
+ *
+ * // Creating with decimal values
+ * const product = await context.db.product.create({
+ *   data: {
+ *     price: '19.99', // Can use string
+ *     // price: 19.99,  // or number (converted to Decimal)
+ *   }
+ * })
+ * ```
+ *
+ * @param options - Field configuration options
+ * @returns Decimal field configuration
+ */
+export function decimal<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<DecimalField<TTypeInfo>, 'type'>): DecimalField<TTypeInfo> {
+  const precision = options?.precision ?? 18
+  const scale = options?.scale ?? 4
+
+  return {
+    type: 'decimal',
+    precision,
+    scale,
+    ...options,
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      // Decimal values can be provided as strings or numbers
+      // Prisma will convert them to Decimal instances
+      const baseSchema = z.union(
+        [
+          z.string({
+            message: `${formatFieldName(fieldName)} must be a decimal value (string or number)`,
+          }),
+          z.number({
+            message: `${formatFieldName(fieldName)} must be a decimal value (string or number)`,
+          }),
+        ],
+        {
+          message: `${formatFieldName(fieldName)} must be a decimal value`,
+        },
+      )
+
+      let schema = baseSchema
+
+      // Add min validation if specified
+      if (options?.validation?.min !== undefined) {
+        const minValue = parseFloat(options.validation.min)
+        schema = schema.refine(
+          (val) => {
+            const numVal = typeof val === 'string' ? parseFloat(val) : val
+            return !isNaN(numVal) && numVal >= minValue
+          },
+          {
+            message: `${formatFieldName(fieldName)} must be at least ${options.validation.min}`,
+          },
+        )
+      }
+
+      // Add max validation if specified
+      if (options?.validation?.max !== undefined) {
+        const maxValue = parseFloat(options.validation.max)
+        schema = schema.refine(
+          (val) => {
+            const numVal = typeof val === 'string' ? parseFloat(val) : val
+            return !isNaN(numVal) && numVal <= maxValue
+          },
+          {
+            message: `${formatFieldName(fieldName)} must be at most ${options.validation.max}`,
+          },
+        )
+      }
+
+      return !options?.validation?.isRequired || operation === 'update'
+        ? schema.optional().nullable()
+        : schema
+    },
+    getPrismaType: (_fieldName: string) => {
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
+
+      let modifiers = ''
+
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
+
+      // Precision and scale
+      modifiers += ` @db.Decimal(${precision}, ${scale})`
+
+      // Default value if provided
+      if (options?.defaultValue !== undefined) {
+        modifiers += ` @default(${options.defaultValue})`
+      }
+
+      // Database mapping
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
+      }
+
+      // Unique/index modifiers
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      } else if (options?.isIndexed === true) {
+        modifiers += ' @index'
+      }
+
+      return {
+        type: 'Decimal',
+        modifiers: modifiers.trimStart() || undefined,
+      }
+    },
+    getTypeScriptType: () => {
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
+
+      return {
+        type: "import('decimal.js').Decimal",
+        optional: isNullable,
+      }
+    },
+    getTypeScriptImports: () => {
+      return [
+        {
+          names: ['Decimal'],
+          from: 'decimal.js',
+          typeOnly: true,
+        },
+      ]
     },
   }
 }
