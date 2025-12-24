@@ -324,6 +324,37 @@ export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<T
     }
   }
   isIndexed?: boolean | 'unique'
+  db?: {
+    map?: string
+    /**
+     * Prisma native database type attribute
+     * Allows overriding the default String type for the database provider
+     * @example
+     * ```typescript
+     * // PostgreSQL/MySQL
+     * fields: {
+     *   description: text({ db: { nativeType: 'Text' } })
+     *   // Generates: description String @db.Text
+     * }
+     * ```
+     */
+    nativeType?: string
+    /**
+     * Controls nullability in the database schema
+     * When specified, overrides the default behavior (isRequired determines nullability)
+     * @example
+     * ```typescript
+     * fields: {
+     *   description: text({
+     *     validation: { isRequired: true },
+     *     db: { isNullable: false }
+     *   })
+     *   // Generates: description String (non-nullable)
+     * }
+     * ```
+     */
+    isNullable?: boolean
+  }
   ui?: {
     displayMode?: 'input' | 'textarea'
   }
