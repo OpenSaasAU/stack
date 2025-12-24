@@ -1,5 +1,14 @@
 # @opensaas/stack-cli
 
+## 0.12.1
+
+### Patch Changes
+
+- [#279](https://github.com/OpenSaasAU/stack/pull/279) [`da903a2`](https://github.com/OpenSaasAU/stack/commit/da903a2024993348944017b30155a693c276a53a) Thanks [@borisno2](https://github.com/borisno2)! - make prisma config point to prisma folder
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
