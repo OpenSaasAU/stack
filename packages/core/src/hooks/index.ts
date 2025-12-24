@@ -48,13 +48,13 @@ export async function executeResolveInput<
     | {
         operation: 'create'
         resolvedData: TCreateInput
-        item?: undefined
+        item: undefined
         context: AccessContext
       }
     | {
         operation: 'update'
         resolvedData: TUpdateInput
-        item?: TOutput
+        item: TOutput
         context: AccessContext
       },
 ): Promise<TCreateInput | TUpdateInput> {
@@ -62,9 +62,7 @@ export async function executeResolveInput<
     return args.resolvedData
   }
 
-  // Type assertion is safe because we've constrained the args type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await hooks.resolveInput(args as any)
+  const result = await hooks.resolveInput(args)
   return result
 }
 
@@ -78,12 +76,19 @@ export async function executeValidateInput<
   TUpdateInput = Record<string, unknown>,
 >(
   hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update'
-    resolvedData: TCreateInput | TUpdateInput
-    item?: TOutput
-    context: AccessContext
-  },
+  args:
+    | {
+        operation: 'create'
+        resolvedData: TCreateInput
+        item: undefined
+        context: AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: TUpdateInput
+        item: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.validateInput) {
     return
@@ -109,18 +114,18 @@ export async function executeValidateInput<
  * Execute beforeOperation hook
  * Runs before database operation (cannot modify data)
  */
-export async function executeBeforeOperation<
-  TOutput = Record<string, unknown>,
-  TCreateInput = Record<string, unknown>,
-  TUpdateInput = Record<string, unknown>,
->(
-  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update' | 'delete'
-    resolvedData?: TCreateInput | TUpdateInput
-    item?: TOutput
-    context: AccessContext
-  },
+export async function executeBeforeOperation<TOutput = Record<string, unknown>>(
+  hooks: Hooks<TOutput> | undefined,
+  args:
+    | {
+        operation: 'create'
+        context: AccessContext
+      }
+    | {
+        operation: 'update' | 'delete'
+        item: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
     return
@@ -133,19 +138,21 @@ export async function executeBeforeOperation<
  * Execute afterOperation hook
  * Runs after database operation
  */
-export async function executeAfterOperation<
-  TOutput = Record<string, unknown>,
-  TCreateInput = Record<string, unknown>,
-  TUpdateInput = Record<string, unknown>,
->(
-  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update' | 'delete'
-    resolvedData?: TCreateInput | TUpdateInput
-    item: TOutput
-    originalItem?: TOutput
-    context: AccessContext
-  },
+export async function executeAfterOperation<TOutput = Record<string, unknown>>(
+  hooks: Hooks<TOutput> | undefined,
+  args:
+    | {
+        operation: 'create'
+        item: TOutput
+        originalItem: undefined
+        context: AccessContext
+      }
+    | {
+        operation: 'update' | 'delete'
+        item: TOutput
+        originalItem: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
     return

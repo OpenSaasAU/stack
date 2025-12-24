@@ -168,12 +168,16 @@ export default config({
           }
         },
         // Example beforeOperation: log the operation
-        beforeOperation: async ({ operation, item }) => {
-          console.log(`About to ${operation} post:`, item?.id || 'new')
+        beforeOperation: async (args) => {
+          if (args.operation === 'create') {
+            console.log(`About to ${args.operation} post: new`)
+          } else {
+            console.log(`About to ${args.operation} post:`, args.item?.id)
+          }
         },
         // Example afterOperation: log the result
-        afterOperation: async ({ operation, item }) => {
-          console.log(`Successfully ${operation}d post:`, item?.id)
+        afterOperation: async (args) => {
+          console.log(`Successfully ${args.operation}d post:`, args.item?.id)
         },
       },
     }),
