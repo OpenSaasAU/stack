@@ -28,6 +28,7 @@ fields: {
 ```
 
 Features:
+
 - Configurable precision (default: 18) and scale (default: 4)
 - Min/max validation with string values for precision
 - Database column mapping via `db.map`

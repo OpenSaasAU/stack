@@ -690,7 +690,7 @@ age: integer({ validation: { min: 0, max: 150 } })
 price: decimal({
   precision: 10,
   scale: 2,
-  validation: { min: '0' }
+  validation: { min: '0' },
 })
 
 // ❌ Bad: Don't use text for numbers
