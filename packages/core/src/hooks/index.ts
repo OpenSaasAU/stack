@@ -62,9 +62,7 @@ export async function executeResolveInput<
     return args.resolvedData
   }
 
-  // Type assertion is safe because we've constrained the args type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await hooks.resolveInput(args as any)
+  const result = await hooks.resolveInput(args)
   return result
 }
 
@@ -103,11 +101,10 @@ export async function executeValidateInput<
   }
 
   // Type assertion is safe because we've constrained the args type to match ValidateInputHookArgs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await hooks.validateInput({
     ...args,
     addValidationError,
-  } as any)
+  })
 
   if (errors.length > 0) {
     throw new ValidationError(errors)
@@ -135,9 +132,7 @@ export async function executeBeforeOperation<TOutput = Record<string, unknown>>(
     return
   }
 
-  // Type assertion is safe because args matches BeforeOperationHookArgs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await hooks.beforeOperation(args as any)
+  await hooks.beforeOperation(args)
 }
 
 /**
@@ -164,9 +159,7 @@ export async function executeAfterOperation<TOutput = Record<string, unknown>>(
     return
   }
 
-  // Type assertion is safe because args matches AfterOperationHookArgs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await hooks.afterOperation(args as any)
+  await hooks.afterOperation(args)
 }
 
 /**
