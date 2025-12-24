@@ -9,22 +9,22 @@ datasource db {
 
 model User {
   id        String   @id @default(cuid())
-  name         String
-  email        String
-  avatar       Json?
-  posts        Post[]
+  name      String
+  email     String
+  avatar    Json?
+  posts     Post[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Post {
-  id        String   @id @default(cuid())
-  title        String
-  content      String?
-  coverImage   Json?
-  attachment   Json?
-  authorId     String? @map("author")
-  author       User?  @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  title      String
+  content    String?
+  coverImage Json?
+  attachment Json?
+  authorId   String?  @map("author")
+  author     User?    @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

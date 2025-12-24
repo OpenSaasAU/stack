@@ -8,66 +8,66 @@ datasource db {
 }
 
 model Post {
-  id        String   @id @default(cuid())
-  title        String
-  slug         String @unique
-  content      String?
+  id            String    @id @default(cuid())
+  title         String
+  slug          String    @unique
+  content       String?
   internalNotes String?
-  status       String @default("draft")
-  publishedAt  DateTime?
-  authorId     String? @map("author")
-  author       User?  @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status        String    @default("draft")
+  publishedAt   DateTime?
+  authorId      String?   @map("author")
+  author        User?     @relation(fields: [authorId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name         String
-  email        String @unique
-  emailVerified Boolean @default(false)
-  image        String?
-  sessions     Session[]
-  accounts     Account[]
-  posts        Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  sessions      Session[]
+  accounts      Account[]
+  posts         Post[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  token        String @unique
-  expiresAt    DateTime?
-  ipAddress    String?
-  userAgent    String?
-  userId       String? @map("user")
-  user         User?  @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String    @id @default(cuid())
+  token     String    @unique
+  expiresAt DateTime?
+  ipAddress String?
+  userAgent String?
+  userId    String?   @map("user")
+  user      User?     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Account {
-  id        String   @id @default(cuid())
-  accountId    String
-  providerId   String
-  accessToken  String?
-  refreshToken String?
-  accessTokenExpiresAt DateTime?
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope        String?
-  idToken      String?
-  password     String?
-  userId       String? @map("user")
-  user         User?  @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  scope                 String?
+  idToken               String?
+  password              String?
+  userId                String?   @map("user")
+  user                  User?     @relation(fields: [userId], references: [id])
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 model Verification {
-  id        String   @id @default(cuid())
-  identifier   String
-  value        String
-  expiresAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
