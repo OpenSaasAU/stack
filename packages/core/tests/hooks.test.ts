@@ -252,6 +252,70 @@ describe('Hooks', () => {
         context: mockContext,
       })
     })
+
+    it('should pass originalItem to afterOperation hook for update operation', async () => {
+      const originalItem = { id: '1', name: 'John' }
+      const updatedItem = { id: '1', name: 'Jane' }
+      const hooks: Hooks = {
+        afterOperation: vi.fn(async () => {}),
+      }
+
+      await executeAfterOperation(hooks, {
+        operation: 'update',
+        item: updatedItem,
+        originalItem,
+        context: mockContext,
+      })
+
+      expect(hooks.afterOperation).toHaveBeenCalledWith({
+        operation: 'update',
+        item: updatedItem,
+        originalItem,
+        context: mockContext,
+      })
+    })
+
+    it('should pass originalItem to afterOperation hook for delete operation', async () => {
+      const item = { id: '1', name: 'John' }
+      const hooks: Hooks = {
+        afterOperation: vi.fn(async () => {}),
+      }
+
+      await executeAfterOperation(hooks, {
+        operation: 'delete',
+        item,
+        originalItem: item,
+        context: mockContext,
+      })
+
+      expect(hooks.afterOperation).toHaveBeenCalledWith({
+        operation: 'delete',
+        item,
+        originalItem: item,
+        context: mockContext,
+      })
+    })
+
+    it('should pass undefined originalItem for create operation', async () => {
+      const item = { id: '1', name: 'John' }
+      const hooks: Hooks = {
+        afterOperation: vi.fn(async () => {}),
+      }
+
+      await executeAfterOperation(hooks, {
+        operation: 'create',
+        item,
+        originalItem: undefined,
+        context: mockContext,
+      })
+
+      expect(hooks.afterOperation).toHaveBeenCalledWith({
+        operation: 'create',
+        item,
+        originalItem: undefined,
+        context: mockContext,
+      })
+    })
   })
 
   describe('validateFieldRules', () => {

@@ -438,12 +438,26 @@ Side effects after database operation. Does NOT modify data.
 
 **Use cases:** Cache invalidation, webhooks, post-operation cleanup
 
+**Parameters:**
+
+- `operation` - The operation that was performed
+- `item` - The item after the operation
+- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create`)
+- `context` - Access context with session and database access
+
 **Example:**
 
 ```typescript
-afterOperation: async ({ operation, item, context }) => {
+afterOperation: async ({ operation, item, originalItem, context }) => {
   await invalidateCache(`post:${item.id}`)
   await sendWebhook({ event: `post.${operation}`, data: item })
+
+  // Compare previous and new values for update operations
+  if (operation === 'update' && originalItem) {
+    if (originalItem.status !== item.status) {
+      await notifyStatusChange(originalItem.status, item.status)
+    }
+  }
 }
 ```
 
@@ -649,14 +663,34 @@ Side effects after database operation. Does NOT modify data.
 
 **When called:** After `create`, `update`, `delete`, or `query` operations
 
+**Parameters:**
+
+- `operation` - The operation that was performed
+- `value` - The field value after the operation
+- `item` - The item after the operation
+- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create` and `query`)
+- `fieldName` - The name of the field
+- `listKey` - The name of the list
+- `context` - Access context with session and database access
+
 **Example:**
 
 ```typescript
 thumbnail: text({
   hooks: {
-    afterOperation: async ({ operation, value, item }) => {
+    afterOperation: async ({ operation, value, item, originalItem }) => {
       if (operation === 'delete') {
         await deleteFromCDN(value) // Cleanup on delete
+      }
+
+      // For updates, check if the value changed
+      if (operation === 'update' && originalItem) {
+        const oldValue = originalItem.thumbnail
+        if (oldValue !== value) {
+          console.log(`Thumbnail changed from ${oldValue} to ${value}`)
+          // Clean up old thumbnail
+          if (oldValue) await deleteFromCDN(oldValue)
+        }
       }
     },
   },

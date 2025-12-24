@@ -143,6 +143,7 @@ export async function executeAfterOperation<
     operation: 'create' | 'update' | 'delete'
     resolvedData?: TCreateInput | TUpdateInput
     item: TOutput
+    originalItem?: TOutput
     context: AccessContext
   },
 ): Promise<void> {
