@@ -292,6 +292,23 @@ export type IntegerField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
   }
 }
 
+export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+  type: 'decimal'
+  defaultValue?: string
+  precision?: number
+  scale?: number
+  db?: {
+    map?: string
+    isNullable?: boolean
+  }
+  validation?: {
+    isRequired?: boolean
+    min?: string
+    max?: string
+  }
+  isIndexed?: boolean | 'unique'
+}
+
 export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'checkbox'
 }
