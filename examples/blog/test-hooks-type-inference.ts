@@ -48,16 +48,16 @@ const testHooksTypeInference = list<Lists.Post.TypeInfo>({
     },
 
     // Test 3: beforeOperation should receive typed item
-    beforeOperation: async ({ operation, item, resolvedData }) => {
-      if (operation === 'update' && item) {
-        // item should be typed as Post with all fields
-        const _existingTitle: string = item.title
-        const _existingContent: string | null = item.content
-        const _id: string = item.id
-        const _createdAt: Date = item.createdAt
+    beforeOperation: async (args) => {
+      if (args.operation === 'update' || args.operation === 'delete') {
+        // item is available for update and delete operations
+        const _existingTitle: string = args.item.title
+        const _existingContent: string | null = args.item.content
+        const _id: string = args.item.id
+        const _createdAt: Date = args.item.createdAt
       }
 
-      if (operation === 'create' && !item) {
+      if (args.operation === 'create') {
         // Item is undefined on create
         console.log('Creating new post')
       }
