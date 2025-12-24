@@ -441,6 +441,96 @@ See the [Storage package documentation](/docs/packages/storage) for more details
 
 All field types support these common options:
 
+### Database Configuration
+
+Control how fields are mapped to database columns:
+
+```typescript
+text({
+  db: {
+    map: 'custom_column_name', // Custom database column name
+  },
+})
+```
+
+The `db.map` option adds a Prisma `@map` attribute to customize the column name in the database. This is useful for:
+
+- **Legacy database compatibility**: Match existing column naming conventions
+- **Database naming standards**: Use snake_case in the database while using camelCase in code
+- **Multiple databases**: Support different column names across database providers
+
+**Example:**
+
+```typescript
+fields: {
+  firstName: text({
+    validation: { isRequired: true },
+    db: { map: 'first_name' }, // Database column: first_name
+  }),
+  emailAddress: text({
+    isIndexed: 'unique',
+    db: { map: 'email' }, // Database column: email
+  }),
+}
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model User {
+  firstName    String @map("first_name")
+  emailAddress String @unique @map("email")
+}
+```
+
+{% callout type="info" %}
+The `db.map` option affects only the database column name. Your application code continues to use the field name defined in the config (e.g., `firstName`, `emailAddress`).
+{% /callout %}
+
+#### Relationship Foreign Key Mapping
+
+For relationship fields, use `db.foreignKey` to control foreign key placement and column naming:
+
+```typescript
+author: relationship({
+  ref: 'User.posts',
+  db: {
+    foreignKey: { map: 'author_user_id' }, // Custom foreign key column name
+  },
+})
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model Post {
+  authorId String? @map("author_user_id")
+  author   User?   @relation(fields: [authorId], references: [id])
+}
+```
+
+**Default behavior:** When `db.foreignKey` is `true` (without `map`), the foreign key column defaults to the field name:
+
+```typescript
+author: relationship({
+  ref: 'User.posts',
+  db: { foreignKey: true }, // Foreign key column defaults to 'author'
+})
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model Post {
+  authorId String? @map("author")
+  author   User?   @relation(fields: [authorId], references: [id])
+}
+```
+
+{% callout type="info" %}
+For list-only relationships (ref without field name), the foreign key column automatically maps to the field name for consistency with Keystone's behavior.
+{% /callout %}
+
 ### Access Control
 
 ```typescript

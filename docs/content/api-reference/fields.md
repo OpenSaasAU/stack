@@ -17,6 +17,9 @@ text(options?: {
     length?: { min?: number; max?: number }
   }
   isIndexed?: boolean | 'unique'
+  db?: {
+    map?: string
+  }
   ui?: {
     displayMode?: 'input' | 'textarea'
     [key: string]: unknown
@@ -73,6 +76,42 @@ email: text({
   validation: { isRequired: true },
 })
 ```
+
+##### `db.map`
+
+Custom database column name.
+
+**Type:** `string`
+
+**Purpose:**
+
+Customize the column name in the database using Prisma's `@map` attribute. Useful for:
+
+- **Legacy databases**: Match existing column names
+- **Naming conventions**: Use snake_case in database, camelCase in code
+- **Migration compatibility**: Maintain existing column names
+
+**Example:**
+
+```typescript
+firstName: text({
+  db: { map: 'first_name' },
+})
+
+emailAddress: text({
+  isIndexed: 'unique',
+  db: { map: 'email' },
+})
+```
+
+**Generated Prisma schema:**
+
+```prisma
+firstName    String @map("first_name")
+emailAddress String @unique @map("email")
+```
+
+The field names in your code (`firstName`, `emailAddress`) remain unchanged, but the database columns will use the mapped names.
 
 ##### `ui.displayMode`
 
