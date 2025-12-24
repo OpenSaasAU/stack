@@ -92,7 +92,11 @@ export type FieldHooks<
    *
    * @example
    * ```typescript
-   * afterOperation: async ({ operation, value, item }) => {
+   * afterOperation: async ({ operation, value, item, originalItem }) => {
+   *   // For update operations, compare previous and new values
+   *   if (operation === 'update' && originalItem) {
+   *     console.log('Changed from:', originalItem[fieldName], 'to:', value)
+   *   }
    *   await invalidateCache({ listKey, itemId: item.id })
    *   await sendWebhook({ operation, item })
    * }
@@ -102,6 +106,13 @@ export type FieldHooks<
     operation: 'create' | 'update' | 'delete' | 'query'
     value: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
     item: TTypeInfo['item']
+    /**
+     * The original item before the operation (for update/delete operations)
+     * - For 'create' and 'query' operations: undefined
+     * - For 'update' operations: the item before the update
+     * - For 'delete' operations: the item before deletion (same as item)
+     */
+    originalItem?: TTypeInfo['item']
     listKey: string
     fieldName: TFieldKey
     context: import('../access/types.js').AccessContext
@@ -626,6 +637,13 @@ export type HookArgs<
   operation: 'create' | 'update' | 'delete'
   resolvedData?: TCreateInput | TUpdateInput
   item?: TOutput
+  /**
+   * The original item before the operation (for update/delete operations)
+   * - For 'create' operations: undefined
+   * - For 'update' operations: the item before the update
+   * - For 'delete' operations: the item before deletion (same as item)
+   */
+  originalItem?: TOutput
   context: import('../access/types.js').AccessContext
 }
 

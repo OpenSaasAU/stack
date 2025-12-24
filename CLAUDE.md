@@ -151,29 +151,29 @@ The hooks system provides data transformation and side effects during database o
 6. Field-level `beforeOperation` - Side effects for individual fields
 7. List-level `beforeOperation` - Side effects at list level
 8. **Database operation**
-9. List-level `afterOperation` - Side effects at list level
-10. Field-level `afterOperation` - Side effects for individual fields
+9. List-level `afterOperation` - Side effects at list level (receives `item` and `originalItem`)
+10. Field-level `afterOperation` - Side effects for individual fields (receives `value`, `item`, and `originalItem`)
 
 **Hook execution order (read operations - query):**
 
 1. **Database operation**
 2. Field-level access control - Filter readable fields
 3. Field-level `resolveOutput` - Transform individual field values (e.g., wrap passwords)
-4. Field-level `afterOperation` - Side effects for individual fields
+4. Field-level `afterOperation` - Side effects for individual fields (receives `value` and `item`, no `originalItem` for queries)
 
 **List-level hook use cases:**
 
 - `resolveInput`: Auto-set publishedAt when status changes to "published"
 - `validateInput`: Business logic validation (e.g., "title cannot contain spam")
 - `beforeOperation`: Logging, sending notifications
-- `afterOperation`: Cache invalidation, webhooks
+- `afterOperation`: Cache invalidation, webhooks, comparing previous and new values using `originalItem`
 
 **Field-level hook use cases:**
 
 - `resolveInput`: Hash passwords, normalize phone numbers, resize images
 - `resolveOutput`: Wrap passwords with HashedPassword class, format dates
 - `beforeOperation`: Log field changes, validate external constraints
-- `afterOperation`: Update search indexes, invalidate CDN caches
+- `afterOperation`: Update search indexes, invalidate CDN caches, cleanup old files by comparing `originalItem` field values
 
 ### Config System
 

@@ -40,10 +40,14 @@ Post: list({
       // Side effects before database operation
       console.log(`About to ${operation} a post`)
     },
-    afterOperation: async ({ operation, item, context }) => {
+    afterOperation: async ({ operation, item, originalItem, context }) => {
       // Side effects after database operation
       if (operation === 'create') {
         // Send notification, invalidate cache, etc.
+      }
+      if (operation === 'update' && originalItem) {
+        // Compare previous and new values
+        console.log('Changed from:', originalItem, 'to:', item)
       }
     },
   },
@@ -107,7 +111,8 @@ interface HookContext {
   context: Context
   listKey: string
   resolvedData?: any // For input hooks
-  item?: any // For output hooks
+  item?: any // Current item (after operation)
+  originalItem?: any // Original item before operation (for update/delete)
   originalInput?: any // Original input before transformations
 }
 ```
@@ -166,10 +171,17 @@ password: password({
 ### Cache Invalidation
 
 ```typescript
-afterOperation: async ({ operation, item, context }) => {
+afterOperation: async ({ operation, item, originalItem, context }) => {
   if (['create', 'update', 'delete'].includes(operation)) {
     // Invalidate cache
     await redis.del(`post:${item.id}`)
+
+    // For updates, you can compare previous and new values
+    if (operation === 'update' && originalItem) {
+      if (originalItem.status !== item.status) {
+        console.log(`Status changed from ${originalItem.status} to ${item.status}`)
+      }
+    }
   }
 }
 ```

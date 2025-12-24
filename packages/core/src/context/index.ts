@@ -107,6 +107,8 @@ async function executeFieldAfterOperationHooks(
   operation: 'create' | 'update' | 'delete' | 'query',
   context: AccessContext,
   listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  originalItem?: any,
 ): Promise<void> {
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     // Skip if no hooks defined
@@ -122,6 +124,7 @@ async function executeFieldAfterOperationHooks(
       fieldName,
       listKey,
       item,
+      originalItem,
       context,
     })
   }
@@ -483,6 +486,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       'query',
       context,
       listName,
+      undefined, // originalItem is undefined for query operations
     )
 
     return filtered
@@ -579,6 +583,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           'query',
           context,
           listName,
+          undefined, // originalItem is undefined for query operations
         ),
       ),
     )
@@ -677,6 +682,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     await executeAfterOperation(listConfig.hooks, {
       operation: 'create',
       item,
+      originalItem: undefined,
       context,
     })
 
@@ -688,6 +694,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
       'create',
       context,
       listName,
+      undefined, // originalItem is undefined for create operations
     )
 
     // 11. Filter readable fields and apply resolveOutput hooks (including nested relationships)
@@ -832,6 +839,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     await executeAfterOperation(listConfig.hooks, {
       operation: 'update',
       item: updated,
+      originalItem: item, // item is the original item before the update
       context,
     })
 
@@ -843,6 +851,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       'update',
       context,
       listName,
+      item, // item is the original item before the update
     )
 
     // 12. Filter readable fields and apply resolveOutput hooks (including nested relationships)
@@ -930,6 +939,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
     await executeAfterOperation(listConfig.hooks, {
       operation: 'delete',
       item: deleted,
+      originalItem: item, // item is the original item before deletion
       context,
     })
 
@@ -941,6 +951,7 @@ function createDelete<TPrisma extends PrismaClientLike>(
       'delete',
       context,
       listName,
+      item, // item is the original item before deletion
     )
 
     return deleted
