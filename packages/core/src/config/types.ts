@@ -329,6 +329,19 @@ export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
   defaultValue?: { kind: 'now' } | Date
 }
 
+export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+  type: 'calendarDay'
+  defaultValue?: string
+  db?: {
+    map?: string
+    isNullable?: boolean
+  }
+  validation?: {
+    isRequired?: boolean
+  }
+  isIndexed?: boolean | 'unique'
+}
+
 export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'password'
   validation?: {

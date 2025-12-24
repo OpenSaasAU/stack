@@ -4,6 +4,7 @@ import {
   relationship,
   select,
   timestamp,
+  calendarDay,
   password,
   virtual,
 } from '@opensaas/stack-core/fields'
@@ -122,6 +123,10 @@ export default config({
           ],
           defaultValue: 'draft',
           ui: { displayMode: 'segmented-control' },
+        }),
+        publishDate: calendarDay({
+          validation: { isRequired: false },
+          db: { map: 'publish_date' },
         }),
         publishedAt: timestamp(),
         author: relationship({
