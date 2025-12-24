@@ -8,20 +8,20 @@ datasource db {
 }
 
 model Product {
-  id        String   @id @default(cuid())
-  name         String
-  metadata     Json?
-  settings     Json?
+  id            String   @id @default(cuid())
+  name          String
+  metadata      Json?
+  settings      Json?
   configuration Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Article {
   id        String   @id @default(cuid())
-  title        String
-  content      Json?
-  taxonomy     Json?
+  title     String
+  content   Json?
+  taxonomy  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

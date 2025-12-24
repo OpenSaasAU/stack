@@ -8,26 +8,26 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name         String
-  email        String @unique
-  password     String
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
   favoriteColor String?
-  posts        Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  posts         Post[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Post {
-  id        String   @id @default(cuid())
-  title        String
-  slug         String @unique
-  content      String?
-  themeColor   String?
-  status       String @default("draft")
-  publishedAt  DateTime?
-  authorId     String? @map("author")
-  author       User?  @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  content     String?
+  themeColor  String?
+  status      String    @default("draft")
+  publishedAt DateTime?
+  authorId    String?   @map("author")
+  author      User?     @relation(fields: [authorId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }

@@ -20,7 +20,7 @@ export function generatePrismaConfig(_config: OpenSaasConfig): string {
   lines.push("import { defineConfig, env } from 'prisma/config'")
   lines.push('')
   lines.push('export default defineConfig({')
-  lines.push("  schema: 'prisma/schema.prisma',")
+  lines.push("  schema: 'prisma',")
   lines.push('  datasource: {')
   lines.push("    url: env('DATABASE_URL'),")
   lines.push('  },')
