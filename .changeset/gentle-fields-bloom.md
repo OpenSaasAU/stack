@@ -24,6 +24,7 @@ fields: {
 ```
 
 The field:
+
 - Stores dates in ISO8601 format (YYYY-MM-DD)
 - Uses native DATE type on PostgreSQL/MySQL via `@db.Date`
 - Uses string representation on SQLite
