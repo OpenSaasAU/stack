@@ -67,12 +67,19 @@ export function text<
     },
     getPrismaType: (_fieldName: string) => {
       const validation = options?.validation
+      const db = options?.db
       const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
       // Optional modifier
-      if (!isRequired) {
+      if (isNullable) {
         modifiers += '?'
+      }
+
+      // Native type modifier (e.g., @db.Text)
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
       }
 
       // Unique/index modifiers
@@ -83,8 +90,8 @@ export function text<
       }
 
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
