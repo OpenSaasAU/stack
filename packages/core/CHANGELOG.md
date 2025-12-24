@@ -1,5 +1,126 @@
 # @opensaas/stack-core
 
+## 0.11.0
+
+### Minor Changes
+
+- [#271](https://github.com/OpenSaasAU/stack/pull/271) [`ec53708`](https://github.com/OpenSaasAU/stack/commit/ec53708898579dcc7de80eb9fc9a3a99c45367c9) Thanks [@borisno2](https://github.com/borisno2)! - Add decimal field type for precise numeric values
+
+  You can now use the `decimal()` field type for storing precise decimal numbers, ideal for currency, measurements, and financial calculations:
+
+  ```typescript
+  import { decimal } from '@opensaas/stack-core/fields'
+
+  fields: {
+    price: decimal({
+      precision: 10,
+      scale: 2,
+      validation: {
+        isRequired: true,
+        min: '0',
+        max: '999999.99'
+      }
+    }),
+    latitude: decimal({
+      precision: 18,
+      scale: 8,
+      db: { map: 'lat' }
+    })
+  }
+  ```
+
+  Features:
+  - Configurable precision (default: 18) and scale (default: 4)
+  - Min/max validation with string values for precision
+  - Database column mapping via `db.map`
+  - Nullability control via `db.isNullable`
+  - Index support (`isIndexed: true` or `isIndexed: 'unique'`)
+  - Uses Prisma's Decimal type backed by decimal.js for precision
+  - Generates proper TypeScript types with `import('decimal.js').Decimal`
+
+- [#270](https://github.com/OpenSaasAU/stack/pull/270) [`8a476a5`](https://github.com/OpenSaasAU/stack/commit/8a476a563761f3b268ad43269058267871e43b73) Thanks [@relationship({](https://github.com/relationship({)! - Add support for custom database column names via `db.map`
+
+  You can now customize database column names using Prisma's @map attribute, following Keystone's pattern:
+
+  **Regular fields:**
+
+  ```typescript
+  fields: {
+    firstName: text({
+      db: { map: 'first_name' }
+    }),
+    email: text({
+      isIndexed: 'unique',
+      db: { map: 'email_address' }
+    })
+  }
+  ```
+
+  **Relationship foreign keys:**
+
+  ```typescript
+  fields: {
+
+      ref: 'User.posts',
+      db: { foreignKey: { map: 'author_user_id' } },
+    })
+  }
+  ```
+
+  Foreign key columns now default to the field name (not `fieldNameId`) for better consistency with Keystone's behavior.
+
+- [#273](https://github.com/OpenSaasAU/stack/pull/273) [`bbe7f05`](https://github.com/OpenSaasAU/stack/commit/bbe7f051428013b327cbadc5fda7920d5885a6bc) Thanks [@borisno2](https://github.com/borisno2)! - Add `originalItem` parameter to `afterOperation` hooks for comparing previous and new values
+
+  Both field-level and list-level `afterOperation` hooks now receive an `originalItem` parameter containing the item's state before the operation. This enables use cases like detecting field changes, cleaning up old files, tracking state transitions, and sending conditional notifications.
+
+  Usage in list-level hooks:
+
+  ```typescript
+  Post: list({
+    hooks: {
+      afterOperation: async ({ operation, item, originalItem, context }) => {
+        if (operation === 'update' && originalItem) {
+          // Compare previous and new values
+          if (originalItem.status !== item.status) {
+            await notifyStatusChange(originalItem.status, item.status)
+          }
+        }
+      },
+    },
+  })
+  ```
+
+  Usage in field-level hooks:
+
+  ```typescript
+  fields: {
+    thumbnail: text({
+      hooks: {
+        afterOperation: async ({ operation, value, item, originalItem }) => {
+          if (operation === 'update' && originalItem) {
+            const oldValue = originalItem.thumbnail
+            if (oldValue !== value && oldValue) {
+              // Clean up old file when thumbnail changes
+              await deleteFromCDN(oldValue)
+            }
+          }
+        },
+      },
+    })
+  }
+  ```
+
+  The `originalItem` parameter is:
+  - `undefined` for `create` and `query` operations (no previous state)
+  - The item before the update for `update` operations
+  - The item before deletion for `delete` operations
+
+### Patch Changes
+
+- [#269](https://github.com/OpenSaasAU/stack/pull/269) [`ba9bfa8`](https://github.com/OpenSaasAU/stack/commit/ba9bfa80e88f125d00d621e3b7fe8e39ffaeb145) Thanks [@borisno2](https://github.com/borisno2)! - Fix select field ignoring validation.isRequired in Prisma schema generation
+
+- [#274](https://github.com/OpenSaasAU/stack/pull/274) [`38337cc`](https://github.com/OpenSaasAU/stack/commit/38337ccc17a9c3e78b3767bf2422d0ca9ea16230) Thanks [@borisno2](https://github.com/borisno2)! - Fix hook argument types for operations
+
 ## 0.10.0
 
 ### Minor Changes
