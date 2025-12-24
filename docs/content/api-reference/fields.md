@@ -712,13 +712,13 @@ eventDate  DateTime? @db.Date @index
 
 #### Comparison with `timestamp()`
 
-| Feature | `calendarDay()` | `timestamp()` |
-|---------|----------------|---------------|
-| **Time component** | No (date only) | Yes (date + time) |
-| **Database type** | DATE (PostgreSQL/MySQL) | DATETIME/TIMESTAMP |
-| **Input format** | ISO8601 date (YYYY-MM-DD) | Date object or ISO datetime |
-| **Use case** | Birth dates, events | Created/updated timestamps |
-| **Storage size** | Smaller (date only) | Larger (includes time) |
+| Feature            | `calendarDay()`           | `timestamp()`               |
+| ------------------ | ------------------------- | --------------------------- |
+| **Time component** | No (date only)            | Yes (date + time)           |
+| **Database type**  | DATE (PostgreSQL/MySQL)   | DATETIME/TIMESTAMP          |
+| **Input format**   | ISO8601 date (YYYY-MM-DD) | Date object or ISO datetime |
+| **Use case**       | Birth dates, events       | Created/updated timestamps  |
+| **Storage size**   | Smaller (date only)       | Larger (includes time)      |
 
 ---
 
