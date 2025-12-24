@@ -26,7 +26,7 @@ model Post {
   themeColor   String?
   status       String @default("draft")
   publishedAt  DateTime?
-  authorId     String?
+  authorId     String? @map("author")
   author       User?  @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

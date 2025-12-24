@@ -491,7 +491,7 @@ export function calendarDay<
         return dateSchema.optional().nullable()
       }
     },
-    getPrismaType: (_fieldName: string) => {
+    getPrismaType: (_fieldName: string, provider?: string) => {
       const validation = options?.validation
       const db = options?.db
       const isRequired = validation?.isRequired
@@ -505,9 +505,11 @@ export function calendarDay<
       }
 
       // Add @db.Date attribute for date-only storage
-      // PostgreSQL/MySQL: Uses native DATE type
-      // SQLite: Prisma automatically handles as string
-      modifiers += ' @db.Date'
+      // Only for PostgreSQL/MySQL - SQLite doesn't support native DATE type
+      // SQLite will use TEXT for DateTime fields
+      if (provider && provider.toLowerCase() !== 'sqlite') {
+        modifiers += ' @db.Date'
+      }
 
       // Default value if provided
       if (options?.defaultValue !== undefined) {

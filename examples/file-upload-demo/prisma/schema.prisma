@@ -23,7 +23,7 @@ model Post {
   content      String?
   coverImage   Json?
   attachment   Json?
-  authorId     String?
+  authorId     String? @map("author")
   author       User?  @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

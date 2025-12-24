@@ -1,5 +1,6 @@
 ---
 '@opensaas/stack-core': minor
+'@opensaas/stack-cli': minor
 ---
 
 Add calendarDay field type for date-only values in ISO8601 format

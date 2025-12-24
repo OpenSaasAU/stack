@@ -5,7 +5,11 @@ import * as path from 'path'
 /**
  * Map OpenSaas field types to Prisma field types
  */
-function mapFieldTypeToPrisma(fieldName: string, field: FieldConfig): string | null {
+function mapFieldTypeToPrisma(
+  fieldName: string,
+  field: FieldConfig,
+  provider?: string,
+): string | null {
   // Relationships are handled separately
   if (field.type === 'relationship') {
     return null
@@ -13,7 +17,7 @@ function mapFieldTypeToPrisma(fieldName: string, field: FieldConfig): string | n
 
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName)
+    const result = field.getPrismaType(fieldName, provider)
     return result.type
   }
 
@@ -24,7 +28,7 @@ function mapFieldTypeToPrisma(fieldName: string, field: FieldConfig): string | n
 /**
  * Get field modifiers (?, @default, @unique, etc.)
  */
-function getFieldModifiers(fieldName: string, field: FieldConfig): string {
+function getFieldModifiers(fieldName: string, field: FieldConfig, provider?: string): string {
   // Handle relationships separately
   if (field.type === 'relationship') {
     const relField = field as RelationshipField
@@ -37,7 +41,7 @@ function getFieldModifiers(fieldName: string, field: FieldConfig): string {
 
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName)
+    const result = field.getPrismaType(fieldName, provider)
     return result.modifiers || ''
   }
 
@@ -254,10 +258,10 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
         continue
       }
 
-      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig)
+      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig, config.db.provider)
       if (!prismaType) continue // Skip if no type returned
 
-      const modifiers = getFieldModifiers(fieldName, fieldConfig)
+      const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider)
 
       // Format with proper spacing
       const paddedName = fieldName.padEnd(12)
@@ -267,7 +271,7 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     // Add relationship fields
     for (const { name: fieldName, field: relField } of relationshipFields) {
       const { list: targetList, field: targetField } = parseRelationshipRef(relField.ref)
-      const _modifiers = getFieldModifiers(fieldName, relField)
+      const _modifiers = getFieldModifiers(fieldName, relField, config.db.provider)
       const paddedName = fieldName.padEnd(12)
 
       if (relField.many) {

@@ -15,7 +15,7 @@ model Post {
   internalNotes String?
   status       String @default("draft")
   publishedAt  DateTime?
-  authorId     String?
+  authorId     String? @map("author")
   author       User?  @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -40,7 +40,7 @@ model Session {
   expiresAt    DateTime?
   ipAddress    String?
   userAgent    String?
-  userId       String?
+  userId       String? @map("user")
   user         User?  @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -57,7 +57,7 @@ model Account {
   scope        String?
   idToken      String?
   password     String?
-  userId       String?
+  userId       String? @map("user")
   user         User?  @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
