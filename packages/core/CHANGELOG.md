@@ -1,5 +1,61 @@
 # @opensaas/stack-core
 
+## 0.12.0
+
+### Minor Changes
+
+- [#277](https://github.com/OpenSaasAU/stack/pull/277) [`152e3bc`](https://github.com/OpenSaasAU/stack/commit/152e3bc7e7c703ad981ad54d32f5f7251233e66d) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.nativeType` and `db.isNullable` options to text field
+
+  You can now specify Prisma native database type attributes and control nullability independently:
+
+  ```typescript
+  // Use PostgreSQL Text type instead of default String
+  fields: {
+    description: text({
+      validation: { isRequired: true },
+      db: {
+        nativeType: 'Text',
+        isNullable: false,
+      },
+    }),
+  }
+  ```
+
+  This generates:
+
+  ```prisma
+  description String @db.Text
+  ```
+
+  The `db.nativeType` option allows you to override the default Prisma type for your database provider (e.g., `Text`, `VarChar(255)`, `MediumText`), while `db.isNullable` lets you control nullability independently from the `isRequired` validation.
+
+- [#275](https://github.com/OpenSaasAU/stack/pull/275) [`02e9ab1`](https://github.com/OpenSaasAU/stack/commit/02e9ab1578741e9fd32cbc3a7938c66002c4d5f6) Thanks [@borisno2](https://github.com/borisno2)! - Add calendarDay field type for date-only values in ISO8601 format
+
+  You can now use the `calendarDay` field for storing date values without time components:
+
+  ```typescript
+  import { calendarDay } from '@opensaas/stack-core/fields'
+
+  fields: {
+    birthDate: calendarDay({
+      validation: { isRequired: true }
+    }),
+    startDate: calendarDay({
+      defaultValue: '2025-01-01',
+      db: { map: 'start_date' }
+    }),
+    eventDate: calendarDay({
+      isIndexed: true
+    })
+  }
+  ```
+
+  The field:
+  - Stores dates in ISO8601 format (YYYY-MM-DD)
+  - Uses native DATE type on PostgreSQL/MySQL via `@db.Date`
+  - Uses string representation on SQLite
+  - Supports all standard field options (validation, database mapping, indexing)
+
 ## 0.11.0
 
 ### Minor Changes
