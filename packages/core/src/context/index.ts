@@ -637,6 +637,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     await executeValidateInput(listConfig.hooks, {
       operation: 'create',
       resolvedData,
+      item: undefined,
       context,
     })
 

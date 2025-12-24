@@ -78,12 +78,19 @@ export async function executeValidateInput<
   TUpdateInput = Record<string, unknown>,
 >(
   hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update'
-    resolvedData: TCreateInput | TUpdateInput
-    item?: TOutput
-    context: AccessContext
-  },
+  args:
+    | {
+        operation: 'create'
+        resolvedData: TCreateInput
+        item?: undefined
+        context: AccessContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: TUpdateInput
+        item: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.validateInput) {
     return
@@ -95,10 +102,12 @@ export async function executeValidateInput<
     errors.push(msg)
   }
 
+  // Type assertion is safe because we've constrained the args type to match ValidateInputHookArgs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await hooks.validateInput({
     ...args,
     addValidationError,
-  })
+  } as any)
 
   if (errors.length > 0) {
     throw new ValidationError(errors)
@@ -109,49 +118,55 @@ export async function executeValidateInput<
  * Execute beforeOperation hook
  * Runs before database operation (cannot modify data)
  */
-export async function executeBeforeOperation<
-  TOutput = Record<string, unknown>,
-  TCreateInput = Record<string, unknown>,
-  TUpdateInput = Record<string, unknown>,
->(
-  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update' | 'delete'
-    resolvedData?: TCreateInput | TUpdateInput
-    item?: TOutput
-    context: AccessContext
-  },
+export async function executeBeforeOperation<TOutput = Record<string, unknown>>(
+  hooks: Hooks<TOutput> | undefined,
+  args:
+    | {
+        operation: 'create'
+        context: AccessContext
+      }
+    | {
+        operation: 'update' | 'delete'
+        item: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
     return
   }
 
-  await hooks.beforeOperation(args)
+  // Type assertion is safe because args matches BeforeOperationHookArgs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await hooks.beforeOperation(args as any)
 }
 
 /**
  * Execute afterOperation hook
  * Runs after database operation
  */
-export async function executeAfterOperation<
-  TOutput = Record<string, unknown>,
-  TCreateInput = Record<string, unknown>,
-  TUpdateInput = Record<string, unknown>,
->(
-  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
-  args: {
-    operation: 'create' | 'update' | 'delete'
-    resolvedData?: TCreateInput | TUpdateInput
-    item: TOutput
-    originalItem?: TOutput
-    context: AccessContext
-  },
+export async function executeAfterOperation<TOutput = Record<string, unknown>>(
+  hooks: Hooks<TOutput> | undefined,
+  args:
+    | {
+        operation: 'create'
+        item: TOutput
+        originalItem: undefined
+        context: AccessContext
+      }
+    | {
+        operation: 'update' | 'delete'
+        item: TOutput
+        originalItem: TOutput
+        context: AccessContext
+      },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
     return
   }
 
-  await hooks.afterOperation(args)
+  // Type assertion is safe because args matches AfterOperationHookArgs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await hooks.afterOperation(args as any)
 }
 
 /**
