@@ -245,7 +245,10 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
    * @returns Prisma type string and optional modifiers
    */
-  getPrismaType?: (fieldName: string, provider?: string) => {
+  getPrismaType?: (
+    fieldName: string,
+    provider?: string,
+  ) => {
     type: string
     modifiers?: string
   }
