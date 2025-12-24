@@ -293,7 +293,18 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
           const isOneToOne = isOneToOneRelationship(listName, fieldName, relField, config)
           const uniqueModifier = isOneToOne ? ' @unique' : ''
 
-          lines.push(`  ${fkPaddedName} String?${uniqueModifier}`)
+          // Get the map attribute
+          // If foreignKey is an object with map property, use it
+          // Otherwise, default to fieldName (not fieldNameId)
+          let mapModifier = ''
+          if (typeof relField.db?.foreignKey === 'object' && relField.db.foreignKey.map) {
+            mapModifier = ` @map("${relField.db.foreignKey.map}")`
+          } else {
+            // Default to field name (not fieldNameId)
+            mapModifier = ` @map("${fieldName}")`
+          }
+
+          lines.push(`  ${fkPaddedName} String?${uniqueModifier}${mapModifier}`)
 
           if (targetField) {
             // Standard bidirectional relationship

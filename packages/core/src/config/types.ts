@@ -175,6 +175,23 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * Transforms field values and types in query results using Prisma's native extension system
    */
   resultExtension?: ResultExtensionConfig
+  /**
+   * Database configuration
+   */
+  db?: {
+    /**
+     * Custom database column name
+     * Adds a @map attribute in Prisma schema
+     * @example
+     * ```typescript
+     * fields: {
+     *   firstName: text({ db: { map: 'first_name' } })
+     * }
+     * // Generates: firstName String @map("first_name")
+     * ```
+     */
+    map?: string
+  }
   ui?: {
     /**
      * Custom React component to render this field
@@ -309,18 +326,32 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     many?: boolean
     db?: {
       /**
-       * Controls foreign key placement for bidirectional relationships
+       * Controls foreign key placement and column name for bidirectional relationships
+       * Can be a boolean or an object with a map property
        * Only valid on single (non-many) relationships
        * Cannot be true on both sides of a one-to-one relationship
        *
+       * When a boolean, defaults the foreign key column name to the field name
+       * When an object with map, uses the provided column name
+       *
        * @example
        * ```typescript
-       * // One-to-one: User has one Account
+       * // One-to-one: User has one Account (default foreign key name)
        * User: list({
        *   fields: {
        *     account: relationship({ ref: 'Account.user', db: { foreignKey: true } })
+       *     // Generates: accountId String? @unique
        *   }
        * })
+       *
+       * // One-to-one: User has one Account (custom foreign key name)
+       * User: list({
+       *   fields: {
+       *     account: relationship({ ref: 'Account.user', db: { foreignKey: { map: 'account_id' } } })
+       *     // Generates: accountId String? @unique @map("account_id")
+       *   }
+       * })
+       *
        * Account: list({
        *   fields: {
        *     user: relationship({ ref: 'User.account' }) // No foreign key on this side
@@ -328,7 +359,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * })
        * ```
        */
-      foreignKey?: boolean
+      foreignKey?: boolean | { map?: string }
     }
     ui?: {
       displayMode?: 'select' | 'cards'

@@ -33,7 +33,7 @@ model User {
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  authorId     String?
+  authorId     String? @map("author")
   author       User?  @relation("Post_author", fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
