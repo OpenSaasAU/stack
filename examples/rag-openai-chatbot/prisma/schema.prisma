@@ -11,7 +11,7 @@ model KnowledgeBase {
   id        String   @id @default(cuid())
   title        String
   content      String
-  category     String?
+  category     String
   published    Boolean @default(true)
   contentEmbedding Json?
   createdAt DateTime @default(now())

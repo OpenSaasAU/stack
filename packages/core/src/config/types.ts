@@ -277,9 +277,13 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   /**
    * Get Prisma type and modifiers for schema generation
    * @param fieldName - The name of the field (for generating modifiers)
+   * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
    * @returns Prisma type string and optional modifiers
    */
-  getPrismaType?: (fieldName: string) => {
+  getPrismaType?: (
+    fieldName: string,
+    provider?: string,
+  ) => {
     type: string
     modifiers?: string
   }
@@ -393,6 +397,19 @@ export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
 export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
+}
+
+export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+  type: 'calendarDay'
+  defaultValue?: string
+  db?: {
+    map?: string
+    isNullable?: boolean
+  }
+  validation?: {
+    isRequired?: boolean
+  }
+  isIndexed?: boolean | 'unique'
 }
 
 export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {

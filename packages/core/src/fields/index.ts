@@ -5,6 +5,7 @@ import type {
   DecimalField,
   CheckboxField,
   TimestampField,
+  CalendarDayField,
   PasswordField,
   SelectField,
   RelationshipField,
@@ -423,6 +424,131 @@ export function timestamp<
       return {
         type: 'Date',
         optional: !hasDefault,
+      }
+    },
+  }
+}
+
+/**
+ * Calendar Day field - date only (no time) in ISO8601 format
+ *
+ * **Features:**
+ * - Stores date values only (no time component)
+ * - PostgreSQL/MySQL: Uses native DATE type via @db.Date
+ * - SQLite: Uses String representation
+ * - Accepts ISO8601 date strings (YYYY-MM-DD format)
+ * - Optional validation for required fields
+ * - Database column mapping and nullability control
+ * - Index support (boolean or 'unique')
+ *
+ * **Usage Example:**
+ * ```typescript
+ * // In opensaas.config.ts
+ * fields: {
+ *   birthDate: calendarDay({
+ *     validation: { isRequired: true }
+ *   }),
+ *   startDate: calendarDay({
+ *     defaultValue: '2025-01-01',
+ *     db: { map: 'start_date' }
+ *   }),
+ *   endDate: calendarDay({
+ *     isIndexed: true
+ *   })
+ * }
+ *
+ * // Creating with date values
+ * const event = await context.db.event.create({
+ *   data: {
+ *     startDate: '2025-01-15',
+ *     endDate: '2025-01-20'
+ *   }
+ * })
+ * ```
+ *
+ * @param options - Field configuration options
+ * @returns Calendar Day field configuration
+ */
+export function calendarDay<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<CalendarDayField<TTypeInfo>, 'type'>): CalendarDayField<TTypeInfo> {
+  return {
+    type: 'calendarDay',
+    ...options,
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
+
+      // Accept ISO8601 date strings (YYYY-MM-DD)
+      const baseSchema = z.string({
+        message: `${formatFieldName(fieldName)} must be a valid date in ISO8601 format (YYYY-MM-DD)`,
+      })
+
+      // Validate ISO8601 date format (YYYY-MM-DD)
+      const dateSchema = baseSchema.regex(/^\d{4}-\d{2}-\d{2}$/, {
+        message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
+      })
+
+      if (isRequired && operation === 'create') {
+        return dateSchema
+      } else if (isRequired && operation === 'update') {
+        // Required in update mode: can be undefined for partial updates
+        return z.union([dateSchema, z.undefined()])
+      } else {
+        return dateSchema.optional().nullable()
+      }
+    },
+    getPrismaType: (_fieldName: string, provider?: string) => {
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
+
+      let modifiers = ''
+
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
+
+      // Add @db.Date attribute for date-only storage
+      // Only for PostgreSQL/MySQL - SQLite doesn't support native DATE type
+      // SQLite will use TEXT for DateTime fields
+      if (provider && provider.toLowerCase() !== 'sqlite') {
+        modifiers += ' @db.Date'
+      }
+
+      // Default value if provided
+      if (options?.defaultValue !== undefined) {
+        modifiers += ` @default("${options.defaultValue}")`
+      }
+
+      // Database mapping
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
+      }
+
+      // Unique/index modifiers
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      } else if (options?.isIndexed === true) {
+        modifiers += ' @index'
+      }
+
+      return {
+        type: 'DateTime',
+        modifiers: modifiers.trimStart() || undefined,
+      }
+    },
+    getTypeScriptType: () => {
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
+
+      return {
+        type: 'Date',
+        optional: isNullable,
       }
     },
   }
