@@ -559,6 +559,169 @@ Accepts:
 
 ---
 
+### `calendarDay()`
+
+Date-only field (no time component) stored in ISO8601 format (YYYY-MM-DD).
+
+```typescript
+import { calendarDay } from '@opensaas/stack-core/fields'
+
+calendarDay(options?: {
+  validation?: {
+    isRequired?: boolean
+  }
+  defaultValue?: string
+  isIndexed?: boolean | 'unique'
+  db?: {
+    map?: string
+    isNullable?: boolean
+  }
+  ui?: {
+    [key: string]: unknown
+  }
+  access?: FieldAccess
+  hooks?: FieldHooks<Date, Date>
+})
+```
+
+#### Options
+
+##### `validation`
+
+Validation rules for the calendar day field.
+
+**Type:** `object`
+
+**Properties:**
+
+- `isRequired?: boolean` - Field is required on create
+
+**Example:**
+
+```typescript
+birthDate: calendarDay({
+  validation: { isRequired: true },
+})
+```
+
+##### `defaultValue`
+
+Default date value in ISO8601 format (YYYY-MM-DD).
+
+**Type:** `string`
+
+**Format:** `YYYY-MM-DD` (e.g., `'2025-01-15'`)
+
+**Example:**
+
+```typescript
+startDate: calendarDay({
+  defaultValue: '2025-01-01',
+})
+```
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster date queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+**Example:**
+
+```typescript
+eventDate: calendarDay({
+  isIndexed: true,
+})
+```
+
+##### `db.map`
+
+Custom database column name.
+
+**Type:** `string`
+
+**Example:**
+
+```typescript
+publishDate: calendarDay({
+  db: { map: 'publish_date' },
+})
+```
+
+##### `db.isNullable`
+
+Override nullability independent of `isRequired`.
+
+**Type:** `boolean`
+
+**Default:** Based on `validation.isRequired` (required fields are non-nullable)
+
+**Example:**
+
+```typescript
+endDate: calendarDay({
+  db: { isNullable: false },
+})
+```
+
+#### Database Type
+
+Prisma: `DateTime` with `@db.Date` attribute
+
+- **PostgreSQL/MySQL**: Native `DATE` type (date only, no time)
+- **SQLite**: String representation in ISO8601 format
+
+**Generated Prisma:**
+
+```prisma
+birthDate  DateTime  @db.Date
+startDate  DateTime? @db.Date @default("2025-01-01")
+eventDate  DateTime? @db.Date @index
+```
+
+#### TypeScript Type
+
+`Date` (nullable if not required)
+
+#### Validation
+
+**Format:** ISO8601 date string (YYYY-MM-DD)
+
+**Validation Rules:**
+
+- Must match regex: `/^\d{4}-\d{2}-\d{2}$/`
+- Examples: `'2025-01-15'`, `'2024-12-31'`, `'2023-07-04'`
+
+**Error Messages:**
+
+- Invalid format: "Field name must be in YYYY-MM-DD format"
+- Required but missing: "Field name is required"
+
+#### Use Cases
+
+- Birth dates, anniversaries, or other personal dates
+- Event dates (conferences, meetings, deadlines)
+- Publication dates or scheduled dates
+- Any date where the time component is not relevant
+
+#### Comparison with `timestamp()`
+
+| Feature | `calendarDay()` | `timestamp()` |
+|---------|----------------|---------------|
+| **Time component** | No (date only) | Yes (date + time) |
+| **Database type** | DATE (PostgreSQL/MySQL) | DATETIME/TIMESTAMP |
+| **Input format** | ISO8601 date (YYYY-MM-DD) | Date object or ISO datetime |
+| **Use case** | Birth dates, events | Created/updated timestamps |
+| **Storage size** | Smaller (date only) | Larger (includes time) |
+
+---
+
 ### `password()`
 
 String field with automatic bcrypt hashing and secure handling.

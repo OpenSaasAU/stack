@@ -202,6 +202,105 @@ fields: {
 - `defaultValue.kind`: `'now'` for current timestamp
 - `db.updatedAt`: Boolean - auto-update on record changes
 
+### Calendar Day Field
+
+Date-only field (no time component) stored in ISO8601 format:
+
+```typescript
+import { calendarDay } from '@opensaas/stack-core/fields'
+
+fields: {
+  birthDate: calendarDay({
+    validation: { isRequired: true },
+  }),
+  startDate: calendarDay({
+    defaultValue: '2025-01-01',
+    db: { map: 'start_date' },
+  }),
+  eventDate: calendarDay({
+    isIndexed: true,
+  }),
+  endDate: calendarDay({
+    db: { isNullable: false },
+  }),
+}
+```
+
+**Options:**
+
+- `validation.isRequired`: Boolean - require the field
+- `defaultValue`: Default date string in ISO8601 format (YYYY-MM-DD)
+- `db.map`: Custom database column name
+- `db.isNullable`: Override nullability (default: based on `isRequired`)
+- `isIndexed`: Boolean or `'unique'` for indexing
+
+**Database Type:**
+
+Uses Prisma's `DateTime` type with the `@db.Date` attribute:
+
+- **PostgreSQL/MySQL**: Native DATE type (stores date only, no time)
+- **SQLite**: String representation in ISO8601 format
+
+**Generated Prisma schema:**
+
+```prisma
+birthDate  DateTime  @db.Date
+startDate  DateTime? @db.Date @default("2025-01-01") @map("start_date")
+eventDate  DateTime? @db.Date @index
+```
+
+**TypeScript Type:**
+
+Uses JavaScript's native `Date` object:
+
+```typescript
+birthDate: Date
+startDate: Date | null
+```
+
+**Usage Example:**
+
+```typescript
+// Creating records with calendar day values
+const event = await context.db.event.create({
+  data: {
+    name: 'Annual Conference',
+    startDate: '2025-06-15',
+    endDate: '2025-06-17',
+  },
+})
+
+// Querying by date
+const upcomingEvents = await context.db.event.findMany({
+  where: {
+    startDate: {
+      gte: '2025-01-01',
+    },
+  },
+})
+```
+
+{% callout type="info" %}
+The calendarDay field is ideal for dates without time components like birth dates, event dates, deadlines, or publish dates. Use the `timestamp` field when you need both date and time information.
+{% /callout %}
+
+{% callout type="warning" %}
+Always use ISO8601 date format (YYYY-MM-DD) when setting values. The field validates the format and will reject invalid dates.
+{% /callout %}
+
+**When to use:**
+
+- Birth dates, anniversaries, or other personal dates
+- Event dates (conferences, meetings, deadlines)
+- Publication dates or scheduled dates
+- Any date where the time component is not relevant
+
+**When not to use:**
+
+- Timestamps with specific times (use `timestamp` field instead)
+- Date ranges that need precise time boundaries
+- Audit trails that need exact timestamps
+
 ### Password Field
 
 String field automatically excluded from reads:
