@@ -87,6 +87,7 @@ async function processNestedCreate(
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         operation: 'create',
         resolvedData: item,
+        item: undefined,
         context,
       })
 
@@ -113,6 +114,7 @@ async function processNestedCreate(
       await executeValidateInput(relatedListConfig.hooks, {
         operation: 'create',
         resolvedData,
+        item: undefined,
         context,
       })
 

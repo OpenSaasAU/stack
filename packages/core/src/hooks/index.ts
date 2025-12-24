@@ -48,13 +48,13 @@ export async function executeResolveInput<
     | {
         operation: 'create'
         resolvedData: TCreateInput
-        item?: undefined
+        item: undefined
         context: AccessContext
       }
     | {
         operation: 'update'
         resolvedData: TUpdateInput
-        item?: TOutput
+        item: TOutput
         context: AccessContext
       },
 ): Promise<TCreateInput | TUpdateInput> {
@@ -80,7 +80,7 @@ export async function executeValidateInput<
     | {
         operation: 'create'
         resolvedData: TCreateInput
-        item?: undefined
+        item: undefined
         context: AccessContext
       }
     | {
@@ -100,7 +100,6 @@ export async function executeValidateInput<
     errors.push(msg)
   }
 
-  // Type assertion is safe because we've constrained the args type to match ValidateInputHookArgs
   await hooks.validateInput({
     ...args,
     addValidationError,

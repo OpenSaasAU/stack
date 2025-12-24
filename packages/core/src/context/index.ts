@@ -621,6 +621,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     let resolvedData = await executeResolveInput(listConfig.hooks, {
       operation: 'create',
       resolvedData: args.data,
+      item: undefined,
       context,
     })
 
