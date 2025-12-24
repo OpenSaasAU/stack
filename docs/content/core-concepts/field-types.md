@@ -68,6 +68,98 @@ fields: {
 - `validation.max`: Maximum value
 - `defaultValue`: Default integer value
 
+### Decimal Field
+
+Precise decimal field ideal for currency, financial calculations, and measurements:
+
+```typescript
+import { decimal } from '@opensaas/stack-core/fields'
+
+fields: {
+  price: decimal({
+    precision: 10,
+    scale: 2,
+    validation: {
+      isRequired: true,
+      min: '0',
+      max: '999999.99',
+    },
+  }),
+  latitude: decimal({
+    precision: 18,
+    scale: 8,
+    db: {
+      map: 'lat',
+      isNullable: false,
+    },
+  }),
+  balance: decimal({
+    precision: 18,
+    scale: 4,
+    defaultValue: '0.0000',
+    isIndexed: true,
+  }),
+}
+```
+
+**Options:**
+
+- `precision`: Maximum number of digits (default: 18)
+- `scale`: Maximum decimal places (default: 4)
+- `validation.isRequired`: Boolean
+- `validation.min`: Minimum value (as string for precision)
+- `validation.max`: Maximum value (as string for precision)
+- `defaultValue`: Default value as string
+- `db.map`: Custom database column name
+- `db.isNullable`: Override nullability (default: based on `isRequired`)
+- `isIndexed`: Boolean or `'unique'` for indexing
+
+**Database Type:**
+
+Generates Prisma's `Decimal` type with precision and scale:
+
+```prisma
+price Decimal @db.Decimal(10, 2)
+```
+
+**TypeScript Type:**
+
+Uses `Decimal` from `decimal.js` for precise arithmetic:
+
+```typescript
+import type { Decimal } from 'decimal.js'
+
+// In your types
+price: Decimal | null
+```
+
+**Usage with Decimal.js:**
+
+```typescript
+import { Decimal } from 'decimal.js'
+
+// Creating records
+const product = await context.db.product.create({
+  data: {
+    name: 'Widget',
+    price: '19.99', // Can use string
+    // price: 19.99,  // or number (converted to Decimal)
+  },
+})
+
+// Performing calculations
+const total = product.price.times(quantity) // Precise multiplication
+const withTax = product.price.times('1.1') // Add 10% tax
+```
+
+{% callout type="info" %}
+The decimal field type uses Prisma's `Decimal` type, which is backed by the `decimal.js` library. This ensures precise decimal arithmetic without floating-point errors, making it ideal for financial applications where accuracy is critical.
+{% /callout %}
+
+{% callout type="warning" %}
+Always use string values for `validation.min`, `validation.max`, and `defaultValue` to maintain precision. Using JavaScript numbers may introduce floating-point errors.
+{% /callout %}
+
 ### Checkbox Field
 
 Boolean field:
@@ -591,11 +683,21 @@ getTypeScriptType: () => {
 ### 1. Use Appropriate Field Types
 
 ```typescript
-// ✅ Good: Use integer for numbers
+// ✅ Good: Use integer for whole numbers
 age: integer({ validation: { min: 0, max: 150 } })
+
+// ✅ Good: Use decimal for currency and precise values
+price: decimal({
+  precision: 10,
+  scale: 2,
+  validation: { min: '0' }
+})
 
 // ❌ Bad: Don't use text for numbers
 age: text({ validation: { length: { max: 3 } } })
+
+// ❌ Bad: Don't use integer for currency (loses precision)
+price: integer()
 ```
 
 ### 2. Add Validation Rules

@@ -169,6 +169,258 @@ Prisma: `Int`
 
 ---
 
+### `decimal()`
+
+Precise decimal field for currency, financial calculations, and measurements.
+
+```typescript
+import { decimal } from '@opensaas/stack-core/fields'
+
+decimal(options?: {
+  precision?: number
+  scale?: number
+  validation?: {
+    isRequired?: boolean
+    min?: string
+    max?: string
+  }
+  defaultValue?: string
+  db?: {
+    map?: string
+    isNullable?: boolean
+  }
+  isIndexed?: boolean | 'unique'
+  ui?: {
+    [key: string]: unknown
+  }
+  access?: FieldAccess
+  hooks?: FieldHooks<Decimal, Decimal>
+})
+```
+
+#### Options
+
+##### `precision`
+
+Maximum number of digits in the decimal number.
+
+**Type:** `number`
+**Default:** `18`
+
+**Example:**
+
+```typescript
+price: decimal({
+  precision: 10, // Max 10 digits total
+  scale: 2, // 2 decimal places
+})
+// Can store: 12345678.90 (10 digits, 2 decimals)
+```
+
+##### `scale`
+
+Maximum number of decimal places.
+
+**Type:** `number`
+**Default:** `4`
+
+**Example:**
+
+```typescript
+coordinates: decimal({
+  precision: 18,
+  scale: 8, // 8 decimal places for GPS precision
+})
+```
+
+##### `validation`
+
+Validation rules for the decimal field.
+
+**Type:** `object`
+
+**Properties:**
+
+- `isRequired?: boolean` - Field is required on create
+- `min?: string` - Minimum value (as string for precision)
+- `max?: string` - Maximum value (as string for precision)
+
+**Example:**
+
+```typescript
+price: decimal({
+  precision: 10,
+  scale: 2,
+  validation: {
+    isRequired: true,
+    min: '0',
+    max: '999999.99',
+  },
+})
+```
+
+{% callout type="warning" %}
+Always use string values for `min`, `max`, and `defaultValue` to maintain precision. Using JavaScript numbers may introduce floating-point errors.
+{% /callout %}
+
+##### `defaultValue`
+
+Default value when creating new items.
+
+**Type:** `string`
+
+**Example:**
+
+```typescript
+balance: decimal({
+  defaultValue: '0.0000',
+  precision: 18,
+  scale: 4,
+})
+```
+
+##### `db.map`
+
+Custom database column name.
+
+**Type:** `string`
+
+**Example:**
+
+```typescript
+latitude: decimal({
+  db: { map: 'lat' },
+  precision: 18,
+  scale: 8,
+})
+```
+
+##### `db.isNullable`
+
+Override nullability independent of `isRequired`.
+
+**Type:** `boolean`
+**Default:** Based on `validation.isRequired`
+
+**Example:**
+
+```typescript
+price: decimal({
+  validation: { isRequired: true },
+  db: { isNullable: false }, // Enforce NOT NULL at database level
+})
+```
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+**Example:**
+
+```typescript
+accountNumber: decimal({
+  isIndexed: 'unique',
+  precision: 20,
+  scale: 0,
+})
+```
+
+#### Database Type
+
+Prisma: `Decimal` with precision and scale
+
+**Generated Prisma schema:**
+
+```prisma
+price Decimal @db.Decimal(10, 2)
+```
+
+#### TypeScript Type
+
+`import('decimal.js').Decimal` (from `decimal.js` library)
+
+**Import:**
+
+```typescript
+import type { Decimal } from 'decimal.js'
+```
+
+#### Usage Example
+
+```typescript
+import { Decimal } from 'decimal.js'
+
+// Creating records
+const product = await context.db.product.create({
+  data: {
+    name: 'Widget',
+    price: '19.99', // Can use string
+    // price: 19.99,  // or number (converted to Decimal)
+  },
+})
+
+// Performing precise calculations
+const quantity = 3
+const subtotal = product.price.times(quantity) // Decimal: 59.97
+const tax = subtotal.times('0.1') // Decimal: 5.997
+const total = subtotal.plus(tax) // Decimal: 65.967
+
+// Rounding for currency
+const totalCents = total.toDecimalPlaces(2) // Decimal: 65.97
+
+// Converting to string/number
+const priceString = product.price.toString() // '19.99'
+const priceNumber = product.price.toNumber() // 19.99
+```
+
+#### Decimal.js API
+
+The `Decimal` type from `decimal.js` provides precise arithmetic operations:
+
+**Common methods:**
+
+- `.plus(n)` - Addition
+- `.minus(n)` - Subtraction
+- `.times(n)` - Multiplication
+- `.div(n)` - Division
+- `.toDecimalPlaces(dp)` - Round to decimal places
+- `.toString()` - Convert to string
+- `.toNumber()` - Convert to number (may lose precision)
+- `.lessThan(n)` - Comparison
+- `.greaterThan(n)` - Comparison
+- `.equals(n)` - Equality check
+
+**See:** [decimal.js documentation](https://github.com/MikeMcl/decimal.js/) for complete API
+
+{% callout type="info" %}
+The decimal field type uses Prisma's `Decimal` type, which is backed by the `decimal.js` library. This ensures precise decimal arithmetic without floating-point errors, making it ideal for financial applications where accuracy is critical.
+{% /callout %}
+
+#### Key Features
+
+1. **Precision**: No floating-point errors (unlike JavaScript's `number`)
+2. **Configurable**: Set precision and scale for your use case
+3. **Validation**: String-based min/max for precise bounds
+4. **Database-Native**: Uses native `DECIMAL` type in PostgreSQL/MySQL
+5. **Type-Safe**: Full TypeScript support with `Decimal` type
+
+#### Use Cases
+
+- **Currency**: Prices, balances, payments
+- **Financial**: Interest rates, exchange rates, percentages
+- **Measurements**: GPS coordinates, scientific data
+- **Accounting**: Monetary calculations requiring precision
+
+---
+
 ### `checkbox()`
 
 Boolean field for true/false values.
