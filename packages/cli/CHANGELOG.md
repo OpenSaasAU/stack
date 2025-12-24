@@ -1,5 +1,53 @@
 # @opensaas/stack-cli
 
+## 0.11.0
+
+### Minor Changes
+
+- [#270](https://github.com/OpenSaasAU/stack/pull/270) [`8a476a5`](https://github.com/OpenSaasAU/stack/commit/8a476a563761f3b268ad43269058267871e43b73) Thanks [@relationship({](https://github.com/relationship({)! - Add support for custom database column names via `db.map`
+
+  You can now customize database column names using Prisma's @map attribute, following Keystone's pattern:
+
+  **Regular fields:**
+
+  ```typescript
+  fields: {
+    firstName: text({
+      db: { map: 'first_name' }
+    }),
+    email: text({
+      isIndexed: 'unique',
+      db: { map: 'email_address' }
+    })
+  }
+  ```
+
+  **Relationship foreign keys:**
+
+  ```typescript
+  fields: {
+
+      ref: 'User.posts',
+      db: { foreignKey: { map: 'author_user_id' } },
+    })
+  }
+  ```
+
+  Foreign key columns now default to the field name (not `fieldNameId`) for better consistency with Keystone's behavior.
+
+- [#265](https://github.com/OpenSaasAU/stack/pull/265) [`27a211d`](https://github.com/OpenSaasAU/stack/commit/27a211dbb8c9c3d462cdc8cf2c717386b76548b6) Thanks [@borisno2](https://github.com/borisno2)! - Add automatic Prisma schema formatting after generation
+
+  The `opensaas generate` command now automatically runs `prisma format` after generating the schema file. This ensures consistent formatting of the generated `prisma/schema.prisma` file.
+
+  The formatting step is non-critical - if it fails (e.g., due to missing environment variables or network issues), generation will continue with a warning instead of failing.
+
+  No action required - formatting happens automatically during `pnpm generate`.
+
+### Patch Changes
+
+- Updated dependencies [[`ec53708`](https://github.com/OpenSaasAU/stack/commit/ec53708898579dcc7de80eb9fc9a3a99c45367c9), [`8a476a5`](https://github.com/OpenSaasAU/stack/commit/8a476a563761f3b268ad43269058267871e43b73), [`bbe7f05`](https://github.com/OpenSaasAU/stack/commit/bbe7f051428013b327cbadc5fda7920d5885a6bc), [`ba9bfa8`](https://github.com/OpenSaasAU/stack/commit/ba9bfa80e88f125d00d621e3b7fe8e39ffaeb145), [`38337cc`](https://github.com/OpenSaasAU/stack/commit/38337ccc17a9c3e78b3767bf2422d0ca9ea16230)]:
+  - @opensaas/stack-core@0.11.0
+
 ## 0.10.0
 
 ### Minor Changes
