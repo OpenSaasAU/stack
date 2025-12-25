@@ -116,7 +116,6 @@ describe('Sudo Context', () => {
       const sudoResult = await sudoContext.db.post.findUnique({ where: { id: '1' } })
       expect(sudoResult?.secretField).toBe('secret-value')
     })
-
   })
 
   describe('Create Operations', () => {
