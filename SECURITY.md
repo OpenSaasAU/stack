@@ -96,7 +96,8 @@ For complex validation, use `validateInput` hooks:
 
 ```typescript
 hooks: {
-  validateInput: async ({ resolvedData, context }) => {
+  validateInput: async ({ operation, resolvedData, context }) => {
+    if (operation === 'delete') return
     if (resolvedData.url && !isValidUrl(resolvedData.url)) {
       throw new ValidationError([{ path: 'url', message: 'Invalid URL format' }])
     }

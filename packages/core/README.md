@@ -167,7 +167,8 @@ text({
   },
   hooks: {
     resolveInput: async ({ resolvedData }) => resolvedData,
-    validateInput: async ({ resolvedData }) => {
+    validateInput: async ({ operation, resolvedData }) => {
+      if (operation === 'delete') return
       /* validate */
     },
   },
@@ -284,7 +285,8 @@ hooks: {
   },
 
   // Custom validation
-  validateInput: async ({ resolvedData, fieldPath }) => {
+  validateInput: async ({ operation, resolvedData, fieldPath }) => {
+    if (operation === 'delete') return
     if (resolvedData.title?.includes('spam')) {
       throw new Error('Title contains prohibited content')
     }
@@ -395,7 +397,8 @@ Custom validation in hooks:
 
 ```typescript
 hooks: {
-  validateInput: async ({ resolvedData }) => {
+  validateInput: async ({ operation, resolvedData }) => {
+    if (operation === 'delete') return
     const { title } = resolvedData
     if (title && !isValidSlug(slugify(title))) {
       throw new ValidationError('Title contains invalid characters')

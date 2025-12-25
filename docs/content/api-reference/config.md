@@ -403,7 +403,8 @@ Custom validation logic beyond field-level validation rules.
 **Example:**
 
 ```typescript
-validateInput: async ({ resolvedData, addValidationError }) => {
+validateInput: async ({ operation, resolvedData, addValidationError }) => {
+  if (operation === 'delete') return
   if (resolvedData.endDate < resolvedData.startDate) {
     addValidationError('End date must be after start date')
   }

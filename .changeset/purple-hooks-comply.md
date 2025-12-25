@@ -62,6 +62,7 @@ validate: async ({
   context,
   addValidationError,
 }) => {
+  if (operation === 'delete') return
   if (resolvedData.title?.includes('spam')) {
     addValidationError('Title cannot contain spam')
   }

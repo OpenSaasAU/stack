@@ -140,6 +140,7 @@ export default config({
           return resolvedData
         },
         validateInput: async ({ operation, resolvedData, item, context, addValidationError }) => {
+          if (operation === 'delete') return
           // Custom validation
         },
         beforeOperation: async ({ operation, item, context }) => {

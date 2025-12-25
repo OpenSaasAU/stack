@@ -87,6 +87,7 @@ export type FieldHooks<
    * @example
    * ```typescript
    * validate: async ({ listKey, fieldKey, operation, inputData, item, resolvedData, context, addValidationError }) => {
+   *   if (operation === 'delete') return
    *   const fieldValue = resolvedData[fieldKey]
    *   if (typeof fieldValue === 'string' && fieldValue.includes('spam')) {
    *     addValidationError('Field cannot contain spam')
