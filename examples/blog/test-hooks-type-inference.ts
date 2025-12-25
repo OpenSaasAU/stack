@@ -64,15 +64,17 @@ const testHooksTypeInference = list<Lists.Post.TypeInfo>({
     },
 
     // Test 4: afterOperation should receive typed item
-    afterOperation: async ({ operation, item }) => {
-      // item should exist in afterOperation for most operations
-      if (item) {
-        const _title: string = item.title
-        const _content: string | null = item.content
-        const _id: string = item.id
+    afterOperation: async (args) => {
+      // item exists for create/update, originalItem for delete
+      if (args.operation === 'create' || args.operation === 'update') {
+        const _title: string = args.item.title
+        const _content: string | null = args.item.content
+        const _id: string = args.item.id
 
         // Can access all Post fields
-        console.log(`Operation ${operation} completed on post: ${item.title}`)
+        console.log(`Operation ${args.operation} completed on post: ${args.item.title}`)
+      } else if (args.operation === 'delete') {
+        console.log(`Operation delete completed on post: ${args.originalItem.title}`)
       }
     },
   },

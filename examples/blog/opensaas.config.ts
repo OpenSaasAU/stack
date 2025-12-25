@@ -182,7 +182,11 @@ export default config({
         },
         // Example afterOperation: log the result
         afterOperation: async (args) => {
-          console.log(`Successfully ${args.operation}d post:`, args.item?.id)
+          if (args.operation === 'create' || args.operation === 'update') {
+            console.log(`Successfully ${args.operation}d post:`, args.item.id)
+          } else if (args.operation === 'delete') {
+            console.log(`Successfully deleted post:`, args.originalItem.id)
+          }
         },
       },
     }),
