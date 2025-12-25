@@ -37,8 +37,9 @@ const testHooksTypeInference = list<Lists.Post.TypeInfo>({
     },
 
     // Test 2: validateInput should receive typed data
-    validateInput: async ({ operation, resolvedData, addValidationError }) => {
-      if (operation === 'delete') return
+    validateInput: async (args) => {
+      if (args.operation === 'delete') return
+      const { resolvedData, addValidationError } = args
       // Should know resolvedData has Post fields for create/update
       const title = resolvedData.title
       if (title && typeof title === 'string' && title.length < 3) {

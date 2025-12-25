@@ -138,8 +138,9 @@ export default config({
           return { ...resolvedData }
         },
         // Example validation: title must not contain "spam"
-        validateInput: async ({ operation, resolvedData, addValidationError }) => {
-          if (operation === 'delete') return
+        validateInput: async (args) => {
+          if (args.operation === 'delete') return
+          const { resolvedData, addValidationError } = args
           if (
             resolvedData.title &&
             typeof resolvedData.title === 'string' &&
