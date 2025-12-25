@@ -165,7 +165,7 @@ The hooks system provides data transformation and side effects during database o
 All hooks receive these common arguments:
 
 - `listKey` - The name of the list being operated on
-- `operation` - The operation type ('create', 'update', 'delete', or 'query')
+- `operation` - The operation type ('create', 'update', or 'delete'). For `resolveOutput` hooks, this is 'query'
 - `context` - The AccessContext object
 
 **List-level hooks** additionally receive:
