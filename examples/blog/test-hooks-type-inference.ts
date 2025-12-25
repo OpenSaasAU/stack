@@ -38,12 +38,11 @@ const testHooksTypeInference = list<Lists.Post.TypeInfo>({
 
     // Test 2: validateInput should receive typed data
     validateInput: async ({ operation, resolvedData, addValidationError }) => {
-      // Should know resolvedData has Post fields
-      if (resolvedData) {
-        const title = resolvedData.title
-        if (title && typeof title === 'string' && title.length < 3) {
-          addValidationError('Title must be at least 3 characters')
-        }
+      if (operation === 'delete') return
+      // Should know resolvedData has Post fields for create/update
+      const title = resolvedData.title
+      if (title && typeof title === 'string' && title.length < 3) {
+        addValidationError('Title must be at least 3 characters')
       }
     },
 
