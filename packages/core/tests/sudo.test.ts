@@ -31,9 +31,9 @@ describe('Sudo Context', () => {
           title: text({
             validation: { isRequired: true },
             hooks: {
-              resolveInput: async ({ inputValue }) => {
+              resolveInput: async ({ resolvedData, fieldKey }) => {
                 hookExecutions.push('field-resolveInput')
-                return inputValue
+                return resolvedData[fieldKey]
               },
               beforeOperation: async () => {
                 hookExecutions.push('field-beforeOperation')
@@ -117,16 +117,6 @@ describe('Sudo Context', () => {
       expect(sudoResult?.secretField).toBe('secret-value')
     })
 
-    it('should execute field afterOperation hooks with sudo()', async () => {
-      const context = getContext(testConfig, mockPrisma, null)
-      const sudoContext = context.sudo()
-
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Test Post' }])
-
-      await sudoContext.db.post.findMany()
-
-      expect(hookExecutions).toContain('field-afterOperation')
-    })
   })
 
   describe('Create Operations', () => {

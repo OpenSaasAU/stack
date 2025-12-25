@@ -50,7 +50,10 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
   describe('Nested Create Operations', () => {
     it('should run hooks and access control for nested create', async () => {
-      const userResolveInputHook = vi.fn(async ({ inputValue }) => inputValue?.toUpperCase())
+      const userResolveInputHook = vi.fn(async ({ resolvedData, fieldKey }) => {
+        const value = resolvedData[fieldKey]
+        return typeof value === 'string' ? value.toUpperCase() : value
+      })
       const userListResolveInputHook = vi.fn(async ({ resolvedData }) => resolvedData)
       const userValidateInputHook = vi.fn(async () => {})
       const postResolveInputHook = vi.fn(async ({ resolvedData }) => resolvedData)
@@ -140,9 +143,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       expect(userResolveInputHook).toHaveBeenCalledWith(
         expect.objectContaining({
-          inputValue: 'john',
+          fieldKey: 'name',
           operation: 'create',
-          fieldName: 'name',
+          resolvedData: expect.objectContaining({
+            name: 'john',
+          }),
         }),
       )
 

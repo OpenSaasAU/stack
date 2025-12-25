@@ -25,7 +25,7 @@ async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<Record<string, unknown>> {
-  const result = { ...resolvedData }
+  let result = { ...resolvedData }
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     // Skip if field not in data
@@ -41,11 +41,12 @@ async function executeFieldResolveInputHooks(
       operation,
       inputData,
       item,
-      resolvedData: result,
+      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
       context,
     } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
 
-    result[fieldKey] = transformedValue
+    // Create new object with updated field to avoid mutating the passed reference
+    result = { ...result, [fieldKey]: transformedValue }
   }
 
   return result
