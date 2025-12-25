@@ -128,7 +128,7 @@ The stack's primary innovation is its access control engine that automatically s
 
 ### Hooks System
 
-The hooks system provides data transformation and side effects during database operations. Hooks are available at both the list level and field level.
+The hooks system provides data transformation and side effects during database operations. Hooks are available at both the list level and field level. **The hooks API is compliant with Keystone's hooks specification.**
 
 **Key files:**
 
@@ -139,32 +139,79 @@ The hooks system provides data transformation and side effects during database o
 
 - **Data Transformation Hooks**: `resolveInput` and `resolveOutput` - Transform data going in or out
 - **Side Effect Hooks**: `beforeOperation` and `afterOperation` - Perform actions without modifying data
-- **Validation Hooks**: `validateInput` - Custom validation logic
+- **Validation Hooks**: `validate` (or `validateInput` for backwards compatibility) - Custom validation logic
 
 **Hook execution order (write operations - create/update):**
 
 1. List-level `resolveInput` - Transform input data at list level
 2. Field-level `resolveInput` - Transform individual field values (e.g., hash passwords)
-3. List-level `validateInput` - Custom validation logic
+3. List-level `validate` - Custom validation logic
 4. Field validation - Built-in rules (isRequired, length, min/max)
 5. Field-level access control - Filter writable fields
 6. Field-level `beforeOperation` - Side effects for individual fields
 7. List-level `beforeOperation` - Side effects at list level
 8. **Database operation**
-9. List-level `afterOperation` - Side effects at list level (receives `item` and `originalItem`)
-10. Field-level `afterOperation` - Side effects for individual fields (receives `value`, `item`, and `originalItem`)
+9. List-level `afterOperation` - Side effects at list level
+10. Field-level `afterOperation` - Side effects for individual fields
 
 **Hook execution order (read operations - query):**
 
 1. **Database operation**
 2. Field-level access control - Filter readable fields
 3. Field-level `resolveOutput` - Transform individual field values (e.g., wrap passwords)
-4. Field-level `afterOperation` - Side effects for individual fields (receives `value` and `item`, no `originalItem` for queries)
+
+**Hook Arguments (Keystone-compliant):**
+
+All hooks receive these common arguments:
+
+- `listKey` - The name of the list being operated on
+- `operation` - The operation type ('create', 'update', or 'delete'). For `resolveOutput` hooks, this is 'query'
+- `context` - The AccessContext object
+
+**List-level hooks** additionally receive:
+
+- `resolveInput`: `{ listKey, operation, inputData, resolvedData, item, context }`
+  - Returns the modified `resolvedData`
+- `validate`: `{ listKey, operation, inputData, resolvedData, item, context, addValidationError }`
+  - Use `addValidationError(msg)` to report validation failures
+- `beforeOperation`:
+  - create/update: `{ listKey, operation, inputData, resolvedData, context }`
+  - delete: `{ listKey, operation, item, context }`
+- `afterOperation`:
+  - create: `{ listKey, operation, inputData, item, resolvedData, context }`
+  - update: `{ listKey, operation, inputData, originalItem, item, resolvedData, context }`
+  - delete: `{ listKey, operation, originalItem, context }`
+
+**Field-level hooks** additionally receive:
+
+- `fieldKey` - The name of the field (use `fieldKey`, not `fieldName`)
+- `resolveInput`: `{ listKey, fieldKey, operation, inputData, item, resolvedData, context }`
+  - Access field value via `resolvedData[fieldKey]`
+  - Returns the modified field value
+- `validate`:
+  - create/update: `{ listKey, fieldKey, operation, inputData, item, resolvedData, context, addValidationError }`
+  - delete: `{ listKey, fieldKey, operation, item, context, addValidationError }`
+- `beforeOperation`:
+  - create: `{ listKey, fieldKey, operation, inputData, resolvedData, context }`
+  - update: `{ listKey, fieldKey, operation, inputData, item, resolvedData, context }`
+  - delete: `{ listKey, fieldKey, operation, item, context }`
+- `afterOperation`:
+  - create: `{ listKey, fieldKey, operation, inputData, item, resolvedData, context }`
+  - update: `{ listKey, fieldKey, operation, inputData, originalItem, item, resolvedData, context }`
+  - delete: `{ listKey, fieldKey, operation, originalItem, context }`
+- `resolveOutput`: `{ operation, value, item, listKey, fieldName, context }` (query operations only)
+
+**Key Concepts:**
+
+- `inputData` - The original data passed to the operation (before any transformations)
+- `resolvedData` - The data after transformations (updated by `resolveInput` hooks)
+- `item` - The existing item from the database (undefined for create, present for update/delete)
+- `originalItem` - The item before the operation (undefined for create, present for update/delete in `afterOperation`)
 
 **List-level hook use cases:**
 
 - `resolveInput`: Auto-set publishedAt when status changes to "published"
-- `validateInput`: Business logic validation (e.g., "title cannot contain spam")
+- `validate`: Business logic validation (e.g., "title cannot contain spam")
 - `beforeOperation`: Logging, sending notifications
 - `afterOperation`: Cache invalidation, webhooks, comparing previous and new values using `originalItem`
 

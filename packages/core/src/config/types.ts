@@ -43,32 +43,35 @@ export type FieldHooks<
    *
    * @example
    * ```typescript
-   * resolveInput: async ({ inputValue, operation, item }) => {
+   * resolveInput: async ({ listKey, fieldKey, operation, inputData, item, resolvedData, context }) => {
    *   // For create operations, item is undefined
    *   // For update operations, item is the existing record
-   *   if (typeof inputValue === 'string' && !isHashedPassword(inputValue)) {
-   *     return await hashPassword(inputValue)
+   *   const fieldValue = resolvedData[fieldKey]
+   *   if (typeof fieldValue === 'string' && !isHashedPassword(fieldValue)) {
+   *     return await hashPassword(fieldValue)
    *   }
-   *   return inputValue
+   *   return fieldValue
    * }
    * ```
    */
   resolveInput?: (
     args:
       | {
-          operation: 'create'
-          inputValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: undefined
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'create'
+          inputData: TTypeInfo['inputs']['create']
+          item: undefined
+          resolvedData: TTypeInfo['inputs']['create']
           context: import('../access/types.js').AccessContext
         }
       | {
-          operation: 'update'
-          inputValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: TTypeInfo['item']
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'update'
+          inputData: TTypeInfo['inputs']['update']
+          item: TTypeInfo['item']
+          resolvedData: TTypeInfo['inputs']['update']
           context: import('../access/types.js').AccessContext
         },
   ) =>
@@ -77,17 +80,66 @@ export type FieldHooks<
     | undefined
 
   /**
+   * Validate field value after resolveInput
+   * Called during create/update operations after resolveInput hooks but before database write
+   * Use addValidationError to report validation failures
+   *
+   * @example
+   * ```typescript
+   * validate: async ({ listKey, fieldKey, operation, inputData, item, resolvedData, context, addValidationError }) => {
+   *   if (operation === 'delete') return
+   *   const fieldValue = resolvedData[fieldKey]
+   *   if (typeof fieldValue === 'string' && fieldValue.includes('spam')) {
+   *     addValidationError('Field cannot contain spam')
+   *   }
+   * }
+   * ```
+   */
+  validate?: (
+    args:
+      | {
+          listKey: string
+          fieldKey: TFieldKey
+          operation: 'create'
+          inputData: TTypeInfo['inputs']['create']
+          item: undefined
+          resolvedData: TTypeInfo['inputs']['create']
+          context: import('../access/types.js').AccessContext
+          addValidationError: (msg: string) => void
+        }
+      | {
+          listKey: string
+          fieldKey: TFieldKey
+          operation: 'update'
+          inputData: TTypeInfo['inputs']['update']
+          item: TTypeInfo['item']
+          resolvedData: TTypeInfo['inputs']['update']
+          context: import('../access/types.js').AccessContext
+          addValidationError: (msg: string) => void
+        }
+      | {
+          listKey: string
+          fieldKey: TFieldKey
+          operation: 'delete'
+          item: TTypeInfo['item']
+          context: import('../access/types.js').AccessContext
+          addValidationError: (msg: string) => void
+        },
+  ) => Promise<void> | void
+
+  /**
    * Perform side effects before database write
    * Called during create/update/delete operations after validation and access control
    * This should ONLY contain side effects (logging, notifications, etc.), not data transformation
    *
    * @example
    * ```typescript
-   * beforeOperation: async ({ resolvedValue, operation, item }) => {
+   * beforeOperation: async ({ listKey, fieldKey, operation, inputData, item, resolvedData, context }) => {
    *   // For create operations, item is undefined
    *   // For update/delete operations, item is the existing record
+   *   const fieldValue = resolvedData?.[fieldKey]
    *   if (operation === 'update' && item) {
-   *     console.log(`Updating field from ${item.fieldName} to ${resolvedValue}`)
+   *     console.log(`Updating field from ${item[fieldKey]} to ${fieldValue}`)
    *   }
    *   await sendAuditLog({ operation, item })
    * }
@@ -96,35 +148,43 @@ export type FieldHooks<
   beforeOperation?: (
     args:
       | {
-          operation: 'create'
-          resolvedValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: undefined
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'create'
+          inputData: TTypeInfo['inputs']['create']
+          resolvedData: TTypeInfo['inputs']['create']
           context: import('../access/types.js').AccessContext
         }
       | {
-          operation: 'update' | 'delete'
-          resolvedValue: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: TTypeInfo['item']
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'update'
+          inputData: TTypeInfo['inputs']['update']
+          item: TTypeInfo['item']
+          resolvedData: TTypeInfo['inputs']['update']
+          context: import('../access/types.js').AccessContext
+        }
+      | {
+          listKey: string
+          fieldKey: TFieldKey
+          operation: 'delete'
+          item: TTypeInfo['item']
           context: import('../access/types.js').AccessContext
         },
   ) => Promise<void> | void
 
   /**
    * Perform side effects after database operation
-   * Called after any database operation (create/update/delete/query)
+   * Called after any database operation (create/update/delete)
    * This should ONLY contain side effects (logging, cache invalidation, etc.), not data transformation
    *
    * @example
    * ```typescript
-   * afterOperation: async ({ operation, value, item, originalItem }) => {
-   *   // For query/create operations, originalItem is undefined
+   * afterOperation: async ({ listKey, fieldKey, operation, inputData, item, originalItem, resolvedData, context }) => {
+   *   // For create operations, originalItem is undefined
    *   // For update/delete operations, originalItem is the item before the operation
    *   if (operation === 'update' && originalItem) {
-   *     console.log('Changed from:', originalItem[fieldName], 'to:', value)
+   *     console.log('Changed from:', originalItem[fieldKey], 'to:', item[fieldKey])
    *   }
    *   await invalidateCache({ listKey, itemId: item.id })
    *   await sendWebhook({ operation, item })
@@ -134,21 +194,29 @@ export type FieldHooks<
   afterOperation?: (
     args:
       | {
-          operation: 'query' | 'create'
-          value: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: TTypeInfo['item']
-          originalItem: undefined
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'create'
+          inputData: TTypeInfo['inputs']['create']
+          item: TTypeInfo['item']
+          resolvedData: TTypeInfo['inputs']['create']
           context: import('../access/types.js').AccessContext
         }
       | {
-          operation: 'update' | 'delete'
-          value: GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
-          item: TTypeInfo['item']
-          originalItem: TTypeInfo['item']
           listKey: string
-          fieldName: TFieldKey
+          fieldKey: TFieldKey
+          operation: 'update'
+          inputData: TTypeInfo['inputs']['update']
+          originalItem: TTypeInfo['item']
+          item: TTypeInfo['item']
+          resolvedData: TTypeInfo['inputs']['update']
+          context: import('../access/types.js').AccessContext
+        }
+      | {
+          listKey: string
+          fieldKey: TFieldKey
+          operation: 'delete'
+          originalItem: TTypeInfo['item']
           context: import('../access/types.js').AccessContext
         },
   ) => Promise<void> | void
@@ -696,39 +764,55 @@ export type ResolveInputHookArgs<
   TUpdateInput = Record<string, unknown>,
 > =
   | {
+      listKey: string
       operation: 'create'
+      inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
       context: import('../access/types.js').AccessContext
     }
   | {
+      listKey: string
       operation: 'update'
+      inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
       context: import('../access/types.js').AccessContext
     }
 
 /**
- * Hook arguments for validateInput hook
+ * Hook arguments for validate hook (renamed from validateInput for Keystone compatibility)
  * Uses discriminated union to provide proper types based on operation
  * - create: resolvedData is CreateInput, item is undefined
  * - update: resolvedData is UpdateInput, item is the existing record
+ * - delete: item is the item being deleted
  */
-export type ValidateInputHookArgs<
+export type ValidateHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
 > =
   | {
+      listKey: string
       operation: 'create'
+      inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
       context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
   | {
+      listKey: string
       operation: 'update'
+      inputData: TUpdateInput
       resolvedData: TUpdateInput
+      item: TOutput
+      context: import('../access/types.js').AccessContext
+      addValidationError: (msg: string) => void
+    }
+  | {
+      listKey: string
+      operation: 'delete'
       item: TOutput
       context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
@@ -737,17 +821,33 @@ export type ValidateInputHookArgs<
 /**
  * Hook arguments for beforeOperation hook
  * Uses discriminated union to provide proper types based on operation
- * - create: no resolvedData, no item
- * - update: no resolvedData, has item
- * - delete: no resolvedData, has item
+ * - create: has inputData and resolvedData, no item
+ * - update: has inputData, resolvedData, and item
+ * - delete: has item only
  */
-export type BeforeOperationHookArgs<TOutput = Record<string, unknown>> =
+export type BeforeOperationHookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
   | {
+      listKey: string
       operation: 'create'
+      inputData: TCreateInput
+      resolvedData: TCreateInput
       context: import('../access/types.js').AccessContext
     }
   | {
-      operation: 'update' | 'delete'
+      listKey: string
+      operation: 'update'
+      inputData: TUpdateInput
+      item: TOutput
+      resolvedData: TUpdateInput
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'delete'
       item: TOutput
       context: import('../access/types.js').AccessContext
     }
@@ -755,20 +855,35 @@ export type BeforeOperationHookArgs<TOutput = Record<string, unknown>> =
 /**
  * Hook arguments for afterOperation hook
  * Uses discriminated union to provide proper types based on operation
- * - create: has item, no originalItem
- * - update: has item, has originalItem
- * - delete: has item, has originalItem
+ * - create: has item, inputData, and resolvedData, no originalItem
+ * - update: has item, originalItem, inputData, and resolvedData
+ * - delete: has originalItem only
  */
-export type AfterOperationHookArgs<TOutput = Record<string, unknown>> =
+export type AfterOperationHookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
   | {
+      listKey: string
       operation: 'create'
+      inputData: TCreateInput
       item: TOutput
-      originalItem: undefined
+      resolvedData: TCreateInput
       context: import('../access/types.js').AccessContext
     }
   | {
-      operation: 'update' | 'delete'
+      listKey: string
+      operation: 'update'
+      inputData: TUpdateInput
+      originalItem: TOutput
       item: TOutput
+      resolvedData: TUpdateInput
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'delete'
       originalItem: TOutput
       context: import('../access/types.js').AccessContext
     }
@@ -781,11 +896,17 @@ export type Hooks<
   resolveInput?: (
     args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<TCreateInput | TUpdateInput>
-  validateInput?: (
-    args: ValidateInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
+  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  beforeOperation?: (
+    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void>
-  beforeOperation?: (args: BeforeOperationHookArgs<TOutput>) => Promise<void>
-  afterOperation?: (args: AfterOperationHookArgs<TOutput>) => Promise<void>
+  afterOperation?: (
+    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
+  ) => Promise<void>
+  /**
+   * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
+   */
+  validateInput?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
 }
 
 // Generic `any` default allows ListConfig to work with any list item type

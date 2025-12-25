@@ -30,7 +30,8 @@ Post: list({
       }
       return resolvedData
     },
-    validateInput: async ({ resolvedData, addValidationError }) => {
+    validateInput: async ({ operation, resolvedData, addValidationError }) => {
+      if (operation === 'delete') return
       // Custom validation logic
       if (resolvedData.title?.includes('spam')) {
         addValidationError('Title cannot contain spam')

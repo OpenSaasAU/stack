@@ -9,7 +9,7 @@ import {
 } from '../access/index.js'
 import {
   executeResolveInput,
-  executeValidateInput,
+  executeValidate,
   executeBeforeOperation,
   executeAfterOperation,
   validateFieldRules,
@@ -27,7 +27,9 @@ import type { FieldConfig } from '../config/types.js'
  */
 async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>,
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
   context: AccessContext,
@@ -35,11 +37,11 @@ async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<Record<string, unknown>> {
-  const result = { ...data }
+  let result = { ...resolvedData }
 
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     // Skip if field not in data
-    if (!(fieldName in result)) continue
+    if (!(fieldKey in result)) continue
 
     // Skip if no hooks defined
     if (!fieldConfig.hooks?.resolveInput) continue
@@ -49,18 +51,90 @@ async function executeFieldResolveInputHooks(
     // and we're working with runtime values that match those types
 
     const transformedValue = await fieldConfig.hooks.resolveInput({
-      inputValue: result[fieldName],
-      operation,
-      fieldName,
       listKey,
+      fieldKey,
+      operation,
+      inputData,
       item,
+      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
       context,
-    })
+    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
 
-    result[fieldName] = transformedValue
+    // Create new object with updated field to avoid mutating the passed reference
+    result = { ...result, [fieldKey]: transformedValue }
   }
 
   return result
+}
+
+/**
+ * Execute field-level validate hooks
+ * Allows fields to perform custom validation after resolveInput but before database write
+ */
+async function executeFieldValidateHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputData: Record<string, any> | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any> | undefined,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update' | 'delete',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<void> {
+  const errors: string[] = []
+  const fieldErrors: Record<string, string> = {}
+
+  const addValidationError = (fieldKey: string) => (msg: string) => {
+    errors.push(msg)
+    fieldErrors[fieldKey] = msg
+  }
+
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.validate) continue
+
+    // Execute field hook
+    // Type assertion is safe here because hooks are typed correctly in field definitions
+    if (operation === 'delete') {
+      await fieldConfig.hooks.validate({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        item,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+    } else if (operation === 'create') {
+      await fieldConfig.hooks.validate({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        item: undefined,
+        resolvedData,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+    } else {
+      // operation === 'update'
+      await fieldConfig.hooks.validate({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        item,
+        resolvedData,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new ValidationError(errors, fieldErrors)
+  }
 }
 
 /**
@@ -69,7 +143,9 @@ async function executeFieldResolveInputHooks(
  */
 async function executeFieldBeforeOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>,
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
@@ -77,21 +153,43 @@ async function executeFieldBeforeOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<void> {
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip if field not in data (for create/update) or if no hooks defined
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Skip if no hooks defined
     if (!fieldConfig.hooks?.beforeOperation) continue
-    if (operation !== 'delete' && !(fieldName in data)) continue
+    // Skip if field not in data (for create/update)
+    if (operation !== 'delete' && !(fieldKey in resolvedData)) continue
 
     // Execute field hook (side effects only, no return value used)
     // Type assertion is safe here because hooks are typed correctly in field definitions
-    await fieldConfig.hooks.beforeOperation({
-      resolvedValue: data[fieldName],
-      operation,
-      fieldName,
-      listKey,
-      item,
-      context,
-    })
+    if (operation === 'delete') {
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        item,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    } else if (operation === 'create') {
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    } else {
+      // operation === 'update'
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    }
   }
 }
 
@@ -102,31 +200,51 @@ async function executeFieldBeforeOperationHooks(
 async function executeFieldAfterOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: any,
-  data: Record<string, unknown> | undefined,
+  inputData: Record<string, unknown> | undefined,
+  resolvedData: Record<string, unknown> | undefined,
   fields: Record<string, FieldConfig>,
-  operation: 'create' | 'update' | 'delete' | 'query',
+  operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   originalItem?: any,
 ): Promise<void> {
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     // Skip if no hooks defined
     if (!fieldConfig.hooks?.afterOperation) continue
 
-    // Get the value from item (for all operations)
-    const value = item?.[fieldName]
-
     // Execute field hook (side effects only, no return value used)
-    await fieldConfig.hooks.afterOperation({
-      value,
-      operation,
-      fieldName,
-      listKey,
-      item,
-      originalItem,
-      context,
-    })
+    if (operation === 'delete') {
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        originalItem,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    } else if (operation === 'create') {
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    } else {
+      // operation === 'update'
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        originalItem,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    }
   }
 }
 
@@ -478,17 +596,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       listName,
     )
 
-    // Execute field afterOperation hooks (side effects only)
-    await executeFieldAfterOperationHooks(
-      filtered,
-      undefined,
-      listConfig.fields,
-      'query',
-      context,
-      listName,
-      undefined, // originalItem is undefined for query operations
-    )
-
     return filtered
   }
 }
@@ -573,21 +680,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       ),
     )
 
-    // Execute field afterOperation hooks for each item (side effects only)
-    await Promise.all(
-      filtered.map((item) =>
-        executeFieldAfterOperationHooks(
-          item,
-          undefined,
-          listConfig.fields,
-          'query',
-          context,
-          listName,
-          undefined, // originalItem is undefined for query operations
-        ),
-      ),
-    )
-
     return filtered
   }
 }
@@ -619,7 +711,9 @@ function createCreate<TPrisma extends PrismaClientLike>(
 
     // 2. Execute list-level resolveInput hook
     let resolvedData = await executeResolveInput(listConfig.hooks, {
+      listKey: listName,
       operation: 'create',
+      inputData: args.data,
       resolvedData: args.data,
       item: undefined,
       context,
@@ -627,6 +721,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
 
     // 2.5. Execute field-level resolveInput hooks (e.g., hash passwords)
     resolvedData = await executeFieldResolveInputHooks(
+      args.data,
       resolvedData,
       listConfig.fields,
       'create',
@@ -634,13 +729,25 @@ function createCreate<TPrisma extends PrismaClientLike>(
       listName,
     )
 
-    // 3. Execute validateInput hook
-    await executeValidateInput(listConfig.hooks, {
+    // 3. Execute list-level validate hook
+    await executeValidate(listConfig.hooks, {
+      listKey: listName,
       operation: 'create',
+      inputData: args.data,
       resolvedData,
       item: undefined,
       context,
     })
+
+    // 3.5. Execute field-level validate hooks
+    await executeFieldValidateHooks(
+      args.data,
+      resolvedData,
+      listConfig.fields,
+      'create',
+      context,
+      listName,
+    )
 
     // 4. Field validation (isRequired, length, etc.)
     const validation = validateFieldRules(resolvedData, listConfig.fields, 'create')
@@ -664,11 +771,21 @@ function createCreate<TPrisma extends PrismaClientLike>(
     )
 
     // 6. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(data, listConfig.fields, 'create', context, listName)
+    await executeFieldBeforeOperationHooks(
+      args.data,
+      resolvedData,
+      listConfig.fields,
+      'create',
+      context,
+      listName,
+    )
 
     // 7. Execute list-level beforeOperation hook
     await executeBeforeOperation(listConfig.hooks, {
+      listKey: listName,
       operation: 'create',
+      inputData: args.data,
+      resolvedData,
       context,
     })
 
@@ -682,16 +799,19 @@ function createCreate<TPrisma extends PrismaClientLike>(
 
     // 9. Execute list-level afterOperation hook
     await executeAfterOperation(listConfig.hooks, {
+      listKey: listName,
       operation: 'create',
+      inputData: args.data,
       item,
-      originalItem: undefined,
+      resolvedData,
       context,
     })
 
     // 10. Execute field-level afterOperation hooks (side effects only)
     await executeFieldAfterOperationHooks(
       item,
-      data,
+      args.data,
+      resolvedData,
       listConfig.fields,
       'create',
       context,
@@ -768,7 +888,9 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // 3. Execute list-level resolveInput hook
     let resolvedData = await executeResolveInput(listConfig.hooks, {
+      listKey: listName,
       operation: 'update',
+      inputData: args.data,
       resolvedData: args.data,
       item,
       context,
@@ -776,6 +898,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // 3.5. Execute field-level resolveInput hooks (e.g., hash passwords)
     resolvedData = await executeFieldResolveInputHooks(
+      args.data,
       resolvedData,
       listConfig.fields,
       'update',
@@ -784,13 +907,26 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       item,
     )
 
-    // 4. Execute validateInput hook
-    await executeValidateInput(listConfig.hooks, {
+    // 4. Execute list-level validate hook
+    await executeValidate(listConfig.hooks, {
+      listKey: listName,
       operation: 'update',
+      inputData: args.data,
       resolvedData,
       item,
       context,
     })
+
+    // 4.5. Execute field-level validate hooks
+    await executeFieldValidateHooks(
+      args.data,
+      resolvedData,
+      listConfig.fields,
+      'update',
+      context,
+      listName,
+      item,
+    )
 
     // 5. Field validation (isRequired, length, etc.)
     const validation = validateFieldRules(resolvedData, listConfig.fields, 'update')
@@ -816,7 +952,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // 7. Execute field-level beforeOperation hooks (side effects only)
     await executeFieldBeforeOperationHooks(
-      data,
+      args.data,
+      resolvedData,
       listConfig.fields,
       'update',
       context,
@@ -826,8 +963,11 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // 8. Execute list-level beforeOperation hook
     await executeBeforeOperation(listConfig.hooks, {
+      listKey: listName,
       operation: 'update',
+      inputData: args.data,
       item,
+      resolvedData,
       context,
     })
 
@@ -839,16 +979,20 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
     // 10. Execute list-level afterOperation hook
     await executeAfterOperation(listConfig.hooks, {
+      listKey: listName,
       operation: 'update',
-      item: updated,
+      inputData: args.data,
       originalItem: item, // item is the original item before the update
+      item: updated,
+      resolvedData,
       context,
     })
 
     // 11. Execute field-level afterOperation hooks (side effects only)
     await executeFieldAfterOperationHooks(
       updated,
-      data,
+      args.data,
+      resolvedData,
       listConfig.fields,
       'update',
       context,
@@ -922,32 +1066,61 @@ function createDelete<TPrisma extends PrismaClientLike>(
       }
     }
 
-    // 3. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks({}, listConfig.fields, 'delete', context, listName, item)
-
-    // 4. Execute list-level beforeOperation hook
-    await executeBeforeOperation(listConfig.hooks, {
+    // 3. Execute list-level validate hook
+    await executeValidate(listConfig.hooks, {
+      listKey: listName,
       operation: 'delete',
       item,
       context,
     })
 
-    // 5. Execute database delete
+    // 3.5. Execute field-level validate hooks
+    await executeFieldValidateHooks(
+      undefined,
+      undefined,
+      listConfig.fields,
+      'delete',
+      context,
+      listName,
+      item,
+    )
+
+    // 4. Execute field-level beforeOperation hooks (side effects only)
+    await executeFieldBeforeOperationHooks(
+      {},
+      {},
+      listConfig.fields,
+      'delete',
+      context,
+      listName,
+      item,
+    )
+
+    // 5. Execute list-level beforeOperation hook
+    await executeBeforeOperation(listConfig.hooks, {
+      listKey: listName,
+      operation: 'delete',
+      item,
+      context,
+    })
+
+    // 6. Execute database delete
     const deleted = await model.delete({
       where: args.where,
     })
 
-    // 6. Execute list-level afterOperation hook
+    // 7. Execute list-level afterOperation hook
     await executeAfterOperation(listConfig.hooks, {
+      listKey: listName,
       operation: 'delete',
-      item: deleted,
       originalItem: item, // item is the original item before deletion
       context,
     })
 
-    // 7. Execute field-level afterOperation hooks (side effects only)
+    // 8. Execute field-level afterOperation hooks (side effects only)
     await executeFieldAfterOperationHooks(
       deleted,
+      undefined,
       undefined,
       listConfig.fields,
       'delete',

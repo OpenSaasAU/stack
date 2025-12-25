@@ -349,7 +349,8 @@ export function validationPlugin(): Plugin {
       for (const listName of Object.keys(context.config.lists)) {
         context.extendList(listName, {
           hooks: {
-            validateInput: async ({ resolvedData, addValidationError }) => {
+            validateInput: async ({ operation, resolvedData, addValidationError }) => {
+              if (operation === 'delete') return
               if (resolvedData.spam) {
                 addValidationError('Spam detected')
               }

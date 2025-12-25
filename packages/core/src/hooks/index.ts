@@ -46,13 +46,17 @@ export async function executeResolveInput<
   hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args:
     | {
+        listKey: string
         operation: 'create'
+        inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
         context: AccessContext
       }
     | {
+        listKey: string
         operation: 'update'
+        inputData: TUpdateInput
         resolvedData: TUpdateInput
         item: TOutput
         context: AccessContext
@@ -67,10 +71,10 @@ export async function executeResolveInput<
 }
 
 /**
- * Execute validateInput hook
+ * Execute validate hook (supports both 'validate' and deprecated 'validateInput')
  * Allows custom validation logic
  */
-export async function executeValidateInput<
+export async function executeValidate<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
@@ -78,19 +82,31 @@ export async function executeValidateInput<
   hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args:
     | {
+        listKey: string
         operation: 'create'
+        inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
         context: AccessContext
       }
     | {
+        listKey: string
         operation: 'update'
+        inputData: TUpdateInput
         resolvedData: TUpdateInput
+        item: TOutput
+        context: AccessContext
+      }
+    | {
+        listKey: string
+        operation: 'delete'
         item: TOutput
         context: AccessContext
       },
 ): Promise<void> {
-  if (!hooks?.validateInput) {
+  // Support both 'validate' (new) and 'validateInput' (deprecated) for backwards compatibility
+  const validateHook = hooks?.validate || hooks?.validateInput
+  if (!validateHook) {
     return
   }
 
@@ -100,10 +116,10 @@ export async function executeValidateInput<
     errors.push(msg)
   }
 
-  await hooks.validateInput({
+  await validateHook({
     ...args,
     addValidationError,
-  })
+  } as Parameters<typeof validateHook>[0])
 
   if (errors.length > 0) {
     throw new ValidationError(errors)
@@ -111,18 +127,39 @@ export async function executeValidateInput<
 }
 
 /**
+ * @deprecated Use executeValidate instead. This alias is provided for backwards compatibility.
+ */
+export const executeValidateInput = executeValidate
+
+/**
  * Execute beforeOperation hook
  * Runs before database operation (cannot modify data)
  */
-export async function executeBeforeOperation<TOutput = Record<string, unknown>>(
-  hooks: Hooks<TOutput> | undefined,
+export async function executeBeforeOperation<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args:
     | {
+        listKey: string
         operation: 'create'
+        inputData: TCreateInput
+        resolvedData: TCreateInput
         context: AccessContext
       }
     | {
-        operation: 'update' | 'delete'
+        listKey: string
+        operation: 'update'
+        inputData: TUpdateInput
+        item: TOutput
+        resolvedData: TUpdateInput
+        context: AccessContext
+      }
+    | {
+        listKey: string
+        operation: 'delete'
         item: TOutput
         context: AccessContext
       },
@@ -131,25 +168,40 @@ export async function executeBeforeOperation<TOutput = Record<string, unknown>>(
     return
   }
 
-  await hooks.beforeOperation(args)
+  await hooks.beforeOperation(args as Parameters<typeof hooks.beforeOperation>[0])
 }
 
 /**
  * Execute afterOperation hook
  * Runs after database operation
  */
-export async function executeAfterOperation<TOutput = Record<string, unknown>>(
-  hooks: Hooks<TOutput> | undefined,
+export async function executeAfterOperation<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+>(
+  hooks: Hooks<TOutput, TCreateInput, TUpdateInput> | undefined,
   args:
     | {
+        listKey: string
         operation: 'create'
+        inputData: TCreateInput
         item: TOutput
-        originalItem: undefined
+        resolvedData: TCreateInput
         context: AccessContext
       }
     | {
-        operation: 'update' | 'delete'
+        listKey: string
+        operation: 'update'
+        inputData: TUpdateInput
+        originalItem: TOutput
         item: TOutput
+        resolvedData: TUpdateInput
+        context: AccessContext
+      }
+    | {
+        listKey: string
+        operation: 'delete'
         originalItem: TOutput
         context: AccessContext
       },
@@ -158,7 +210,7 @@ export async function executeAfterOperation<TOutput = Record<string, unknown>>(
     return
   }
 
-  await hooks.afterOperation(args)
+  await hooks.afterOperation(args as Parameters<typeof hooks.afterOperation>[0])
 }
 
 /**

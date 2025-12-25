@@ -3,7 +3,7 @@ import type { AccessContext } from '../access/types.js'
 import { checkAccess, filterWritableFields, getRelatedListConfig } from '../access/index.js'
 import {
   executeResolveInput,
-  executeValidateInput,
+  executeValidate,
   validateFieldRules,
   ValidationError,
 } from '../hooks/index.js'
@@ -15,7 +15,9 @@ import { getDbKey } from '../lib/case-utils.js'
  */
 async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>,
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
   context: AccessContext,
@@ -23,26 +25,28 @@ async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<Record<string, unknown>> {
-  const result = { ...data }
+  let result = { ...resolvedData }
 
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     // Skip if field not in data
-    if (!(fieldName in result)) continue
+    if (!(fieldKey in result)) continue
 
     // Skip if no hooks defined
     if (!fieldConfig.hooks?.resolveInput) continue
 
     // Execute field hook
     const transformedValue = await fieldConfig.hooks.resolveInput({
-      inputValue: result[fieldName],
-      operation,
-      fieldName,
       listKey,
+      fieldKey,
+      operation,
+      inputData,
       item,
+      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
       context,
-    })
+    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
 
-    result[fieldName] = transformedValue
+    // Create new object with updated field to avoid mutating the passed reference
+    result = { ...result, [fieldKey]: transformedValue }
   }
 
   return result
@@ -83,17 +87,7 @@ async function processNestedCreate(
         }
       }
 
-      // 2. Execute list-level resolveInput hook
-      let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
-        operation: 'create',
-        resolvedData: item,
-        item: undefined,
-        context,
-      })
-
-      // 2.5. Execute field-level resolveInput hooks
-      // We need to get the list name for this related config
-      // Since we don't have it directly, we'll need to find it from the config
+      // 2. Get the list name for this related config
       let relatedListName = ''
       for (const [listKey, listCfg] of Object.entries(config.lists)) {
         if (listCfg === relatedListConfig) {
@@ -102,7 +96,19 @@ async function processNestedCreate(
         }
       }
 
+      // 3. Execute list-level resolveInput hook
+      let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
+        listKey: relatedListName,
+        operation: 'create',
+        inputData: item,
+        resolvedData: item,
+        item: undefined,
+        context,
+      })
+
+      // 4. Execute field-level resolveInput hooks
       resolvedData = await executeFieldResolveInputHooks(
+        item,
         resolvedData,
         relatedListConfig.fields,
         'create',
@@ -110,9 +116,11 @@ async function processNestedCreate(
         relatedListName,
       )
 
-      // 3. Execute validateInput hook
-      await executeValidateInput(relatedListConfig.hooks, {
+      // 5. Execute validate hook
+      await executeValidate(relatedListConfig.hooks, {
+        listKey: relatedListName,
         operation: 'create',
+        inputData: item,
         resolvedData,
         item: undefined,
         context,
@@ -257,7 +265,9 @@ async function processNestedUpdate(
       // Execute list-level resolveInput hook
       const updateData = (update as Record<string, unknown>).data as Record<string, unknown>
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
+        listKey: relatedListName,
         operation: 'update',
+        inputData: updateData,
         resolvedData: updateData,
         item,
         context,
@@ -265,6 +275,7 @@ async function processNestedUpdate(
 
       // Execute field-level resolveInput hooks
       resolvedData = await executeFieldResolveInputHooks(
+        updateData,
         resolvedData,
         relatedListConfig.fields,
         'update',
@@ -273,9 +284,11 @@ async function processNestedUpdate(
         item,
       )
 
-      // Execute validateInput hook
-      await executeValidateInput(relatedListConfig.hooks, {
+      // Execute validate hook
+      await executeValidate(relatedListConfig.hooks, {
+        listKey: relatedListName,
         operation: 'update',
+        inputData: updateData,
         resolvedData,
         item,
         context,

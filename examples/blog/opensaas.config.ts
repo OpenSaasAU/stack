@@ -161,10 +161,10 @@ export default config({
           return { ...resolvedData }
         },
         // Example validation: title must not contain "spam"
-        validateInput: async ({ resolvedData, addValidationError }) => {
+        validateInput: async (args) => {
+          if (args.operation === 'delete') return
+          const { resolvedData, addValidationError } = args
           if (
-            resolvedData &&
-            'title' in resolvedData &&
             resolvedData.title &&
             typeof resolvedData.title === 'string' &&
             resolvedData.title.toLowerCase().includes('spam')
@@ -182,7 +182,11 @@ export default config({
         },
         // Example afterOperation: log the result
         afterOperation: async (args) => {
-          console.log(`Successfully ${args.operation}d post:`, args.item?.id)
+          if (args.operation === 'create' || args.operation === 'update') {
+            console.log(`Successfully ${args.operation}d post:`, args.item.id)
+          } else if (args.operation === 'delete') {
+            console.log(`Successfully deleted post:`, args.originalItem.id)
+          }
         },
       },
     }),
