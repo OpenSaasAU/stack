@@ -1,5 +1,210 @@
 # @opensaas/stack-core
 
+## 0.14.0
+
+### Minor Changes
+
+- [#298](https://github.com/OpenSaasAU/stack/pull/298) [`5f1bfb5`](https://github.com/OpenSaasAU/stack/commit/5f1bfb5d286b3b43c61fceeae6d78588c126d488) Thanks [@borisno2](https://github.com/borisno2)! - Add field-level `extendPrismaSchema` support for relationship fields
+
+  Relationship fields now support `extendPrismaSchema` in their `db` config, allowing granular modification of generated Prisma schema lines. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions.
+
+  ```typescript
+  parent: relationship({
+    ref: 'Category.children',
+    db: {
+      foreignKey: true,
+      extendPrismaSchema: ({ fkLine, relationLine }) => ({
+        fkLine,
+        relationLine: relationLine.replace(
+          '@relation(',
+          '@relation(onDelete: SetNull, onUpdate: Cascade, ',
+        ),
+      }),
+    },
+  })
+  ```
+
+  The function receives `fkLine` (the foreign key field line, only present for single relationships that own the FK) and `relationLine` (the relation field line), and returns the modified lines.
+
+  Fixes #284
+
+- [#295](https://github.com/OpenSaasAU/stack/pull/295) [`6f8d37a`](https://github.com/OpenSaasAU/stack/commit/6f8d37a0761d50b9b9b707f26b39176304428770) Thanks [@borisno2](https://github.com/borisno2)! - Add singleton lists support for single-record tables
+
+  You can now create singleton lists (lists that should only ever have one record) by setting `isSingleton: true`. This is useful for Settings, Configuration, or other global single-record tables.
+
+  Features:
+  - Prevents creating multiple records (throws error on second create)
+  - Auto-creates record with field defaults on first access (configurable)
+  - Provides a `get()` method for easy access to the singleton record
+  - Blocks `delete` and `findMany` operations on singleton lists
+  - Works with all existing access control and hooks
+
+  Usage:
+
+  ```typescript
+  import { config, list } from '@opensaas/stack-core'
+  import { text, checkbox, integer } from '@opensaas/stack-core/fields'
+
+  export default config({
+    lists: {
+      Settings: list({
+        fields: {
+          siteName: text({ defaultValue: 'My Site' }),
+          maintenanceMode: checkbox({ defaultValue: false }),
+          maxUploadSize: integer({ defaultValue: 10 }),
+        },
+        access: {
+          operation: {
+            query: () => true,
+            update: isAdmin,
+          },
+        },
+        isSingleton: true, // Enable singleton mode
+      }),
+    },
+  })
+  ```
+
+  Access the singleton record:
+
+  ```typescript
+  // Auto-creates with defaults if no record exists
+  const settings = await context.db.settings.get()
+
+  // Update the singleton
+  await context.db.settings.update({
+    where: { id: settings.id },
+    data: { siteName: 'Updated Site' },
+  })
+  ```
+
+  Disable auto-create:
+
+  ```typescript
+  Settings: list({
+    fields: {
+      /* ... */
+    },
+    isSingleton: {
+      autoCreate: false, // Must manually create the record
+    },
+  })
+  ```
+
+- [#291](https://github.com/OpenSaasAU/stack/pull/291) [`ed25cc5`](https://github.com/OpenSaasAU/stack/commit/ed25cc5aba43709d40ad256c982364ca8a8b0f2e) Thanks [@borisno2](https://github.com/borisno2)! - Add access control function shorthand to ListConfig
+
+  List configurations now support a function shorthand for access control that applies to all operations:
+
+  ```typescript
+  // Instead of this:
+  Post: list({
+    fields: { title: text() },
+    access: {
+      operation: {
+        query: isAuthenticated,
+        create: isAuthenticated,
+        update: isAuthenticated,
+        delete: isAuthenticated,
+      },
+    },
+  })
+
+  // You can now write:
+  Post: list({
+    fields: { title: text() },
+    access: isAuthenticated,
+  })
+  ```
+
+  The `list()` function normalizes the shorthand to the object form at runtime, so existing code continues to work unchanged.
+
+  New exports:
+  - `ListAccessControl<T>` - Union type accepting either a function or operation object
+  - `ListConfigInput<TTypeInfo>` - Input type for `list()` function with flexible access control
+
+  Fixes #285.
+
+- [#297](https://github.com/OpenSaasAU/stack/pull/297) [`c2263d2`](https://github.com/OpenSaasAU/stack/commit/c2263d21cc7a4eaffc0b06af04eb7b3a1a3ce437) Thanks [@borisno2](https://github.com/borisno2)! - Add inputData parameter to field-level access control functions
+
+  Field-level access control functions now receive an `inputData` parameter for create and update operations, allowing you to validate incoming data before it's written to the database.
+
+  This is particularly useful for validating relationship connections:
+
+  ```typescript
+  lists: {
+    Student: list({
+      fields: {
+        account: relationship({
+          ref: 'Account.students',
+          access: {
+            create: ({ inputData, session }) => {
+              // Ensure students can only connect to their own account
+              if (session?.data?.role !== 'ADMIN') {
+                return inputData?.account?.connect?.id === session?.data?.accountId
+              }
+              return true
+            },
+          },
+        }),
+      },
+    }),
+  }
+  ```
+
+  The `inputData` parameter contains the original input data passed to create/update operations:
+  - For **create** operations: contains all input data including relationship connection syntax
+  - For **update** operations: contains only the fields being updated
+  - For **read** operations: `inputData` is undefined
+
+  **Backward compatibility:**
+  - Existing field access control functions continue to work without modification since `inputData` is optional
+  - `AccessControl` functions (operation-level) can be reused in field-level contexts for convenience
+  - If a filter is returned from field-level access, it's ignored and defaults to allowing access (only boolean results are used)
+
+- [#293](https://github.com/OpenSaasAU/stack/pull/293) [`0c66ebc`](https://github.com/OpenSaasAU/stack/commit/0c66ebc4492fac47f2028569b080d496328c18bf) Thanks [@borisno2](https://github.com/borisno2)! - Export hook argument types for better TypeScript support
+
+  You can now import and use hook argument types to annotate your hook parameters, eliminating implicit `any` errors with strict TypeScript settings:
+
+  **List-level hooks:**
+
+  ```typescript
+  import type { AfterOperationHookArgs } from '@opensaas/stack-core'
+
+  Post: list({
+    hooks: {
+      afterOperation: async (args: AfterOperationHookArgs) => {
+        if (args.operation === 'update') {
+          console.log('Updated:', args.item)
+        }
+      },
+    },
+  })
+  ```
+
+  **Field-level hooks:**
+
+  ```typescript
+  import type { FieldValidateHookArgs } from '@opensaas/stack-core'
+
+  fields: {
+    email: text({
+      hooks: {
+        validate: async (args: FieldValidateHookArgs) => {
+          if (!args.resolvedData.email?.includes('@')) {
+            args.addValidationError('Invalid email')
+          }
+        },
+      },
+    })
+  }
+  ```
+
+  **Available types:**
+  - List-level: `ResolveInputHookArgs`, `ValidateHookArgs`, `BeforeOperationHookArgs`, `AfterOperationHookArgs`
+  - Field-level: `FieldResolveInputHookArgs`, `FieldValidateHookArgs`, `FieldBeforeOperationHookArgs`, `FieldAfterOperationHookArgs`, `FieldResolveOutputHookArgs`
+
+  Additionally, field-level hooks now support `validateInput` as a deprecated alias for `validate` for backwards compatibility with Keystone patterns.
+
 ## 0.13.0
 
 ### Minor Changes
