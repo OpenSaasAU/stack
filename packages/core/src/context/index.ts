@@ -92,22 +92,23 @@ async function executeFieldValidateHooks(
   }
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if no hooks defined
-    if (!fieldConfig.hooks?.validate) continue
+    // Support both 'validate' (new) and 'validateInput' (deprecated) for backwards compatibility
+    const validateHook = fieldConfig.hooks?.validate ?? fieldConfig.hooks?.validateInput
+    if (!validateHook) continue
 
     // Execute field hook
     // Type assertion is safe here because hooks are typed correctly in field definitions
     if (operation === 'delete') {
-      await fieldConfig.hooks.validate({
+      await validateHook({
         listKey,
         fieldKey,
         operation: 'delete',
         item,
         context,
         addValidationError: addValidationError(fieldKey),
-      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+      } as Parameters<typeof validateHook>[0])
     } else if (operation === 'create') {
-      await fieldConfig.hooks.validate({
+      await validateHook({
         listKey,
         fieldKey,
         operation: 'create',
@@ -116,10 +117,10 @@ async function executeFieldValidateHooks(
         resolvedData,
         context,
         addValidationError: addValidationError(fieldKey),
-      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+      } as Parameters<typeof validateHook>[0])
     } else {
       // operation === 'update'
-      await fieldConfig.hooks.validate({
+      await validateHook({
         listKey,
         fieldKey,
         operation: 'update',
@@ -128,7 +129,7 @@ async function executeFieldValidateHooks(
         resolvedData,
         context,
         addValidationError: addValidationError(fieldKey),
-      } as Parameters<typeof fieldConfig.hooks.validate>[0])
+      } as Parameters<typeof validateHook>[0])
     }
   }
 

@@ -15,6 +15,158 @@ export type FieldType =
   | string // Allow custom field types from third-party packages
 
 /**
+ * Field-level hook argument types (exported for user annotations)
+ */
+
+/**
+ * Arguments for field-level resolveInput hook
+ * Used to transform field values before database write
+ */
+export type FieldResolveInputHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      inputData: TTypeInfo['inputs']['create']
+      item: undefined
+      resolvedData: TTypeInfo['inputs']['create']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      inputData: TTypeInfo['inputs']['update']
+      item: TTypeInfo['item']
+      resolvedData: TTypeInfo['inputs']['update']
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Arguments for field-level validate hook
+ * Used for custom validation logic
+ */
+export type FieldValidateHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      inputData: TTypeInfo['inputs']['create']
+      item: undefined
+      resolvedData: TTypeInfo['inputs']['create']
+      context: import('../access/types.js').AccessContext
+      addValidationError: (msg: string) => void
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      inputData: TTypeInfo['inputs']['update']
+      item: TTypeInfo['item']
+      resolvedData: TTypeInfo['inputs']['update']
+      context: import('../access/types.js').AccessContext
+      addValidationError: (msg: string) => void
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      item: TTypeInfo['item']
+      context: import('../access/types.js').AccessContext
+      addValidationError: (msg: string) => void
+    }
+
+/**
+ * Arguments for field-level beforeOperation hook
+ * Used for side effects before database write
+ */
+export type FieldBeforeOperationHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      inputData: TTypeInfo['inputs']['create']
+      resolvedData: TTypeInfo['inputs']['create']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      inputData: TTypeInfo['inputs']['update']
+      item: TTypeInfo['item']
+      resolvedData: TTypeInfo['inputs']['update']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      item: TTypeInfo['item']
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Arguments for field-level afterOperation hook
+ * Used for side effects after database operation
+ */
+export type FieldAfterOperationHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      inputData: TTypeInfo['inputs']['create']
+      item: TTypeInfo['item']
+      resolvedData: TTypeInfo['inputs']['create']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      inputData: TTypeInfo['inputs']['update']
+      originalItem: TTypeInfo['item']
+      item: TTypeInfo['item']
+      resolvedData: TTypeInfo['inputs']['update']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      originalItem: TTypeInfo['item']
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Arguments for field-level resolveOutput hook
+ * Used to transform field values after database read
+ */
+export type FieldResolveOutputHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = {
+  operation: 'query'
+  value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+  item: TTypeInfo['item']
+  listKey: string
+  fieldName: TFieldKey
+  context: import('../access/types.js').AccessContext
+}
+
+/**
  * Field-level hooks for data transformation and side effects
  * Allows field types to define custom behavior during operations
  *
@@ -55,25 +207,7 @@ export type FieldHooks<
    * ```
    */
   resolveInput?: (
-    args:
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'create'
-          inputData: TTypeInfo['inputs']['create']
-          item: undefined
-          resolvedData: TTypeInfo['inputs']['create']
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'update'
-          inputData: TTypeInfo['inputs']['update']
-          item: TTypeInfo['item']
-          resolvedData: TTypeInfo['inputs']['update']
-          context: import('../access/types.js').AccessContext
-        },
+    args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
     | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
     | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
@@ -95,37 +229,12 @@ export type FieldHooks<
    * }
    * ```
    */
-  validate?: (
-    args:
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'create'
-          inputData: TTypeInfo['inputs']['create']
-          item: undefined
-          resolvedData: TTypeInfo['inputs']['create']
-          context: import('../access/types.js').AccessContext
-          addValidationError: (msg: string) => void
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'update'
-          inputData: TTypeInfo['inputs']['update']
-          item: TTypeInfo['item']
-          resolvedData: TTypeInfo['inputs']['update']
-          context: import('../access/types.js').AccessContext
-          addValidationError: (msg: string) => void
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'delete'
-          item: TTypeInfo['item']
-          context: import('../access/types.js').AccessContext
-          addValidationError: (msg: string) => void
-        },
-  ) => Promise<void> | void
+  validate?: (args: FieldValidateHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+
+  /**
+   * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
+   */
+  validateInput?: (args: FieldValidateHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
 
   /**
    * Perform side effects before database write
@@ -146,31 +255,7 @@ export type FieldHooks<
    * ```
    */
   beforeOperation?: (
-    args:
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'create'
-          inputData: TTypeInfo['inputs']['create']
-          resolvedData: TTypeInfo['inputs']['create']
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'update'
-          inputData: TTypeInfo['inputs']['update']
-          item: TTypeInfo['item']
-          resolvedData: TTypeInfo['inputs']['update']
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'delete'
-          item: TTypeInfo['item']
-          context: import('../access/types.js').AccessContext
-        },
+    args: FieldBeforeOperationHookArgs<TTypeInfo, TFieldKey>,
   ) => Promise<void> | void
 
   /**
@@ -191,35 +276,7 @@ export type FieldHooks<
    * }
    * ```
    */
-  afterOperation?: (
-    args:
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'create'
-          inputData: TTypeInfo['inputs']['create']
-          item: TTypeInfo['item']
-          resolvedData: TTypeInfo['inputs']['create']
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'update'
-          inputData: TTypeInfo['inputs']['update']
-          originalItem: TTypeInfo['item']
-          item: TTypeInfo['item']
-          resolvedData: TTypeInfo['inputs']['update']
-          context: import('../access/types.js').AccessContext
-        }
-      | {
-          listKey: string
-          fieldKey: TFieldKey
-          operation: 'delete'
-          originalItem: TTypeInfo['item']
-          context: import('../access/types.js').AccessContext
-        },
-  ) => Promise<void> | void
+  afterOperation?: (args: FieldAfterOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
 
   /**
    * Transform field value after database read
@@ -236,14 +293,9 @@ export type FieldHooks<
    * }
    * ```
    */
-  resolveOutput?: (args: {
-    operation: 'query'
-    value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
-    item: TTypeInfo['item']
-    listKey: string
-    fieldName: TFieldKey
-    context: import('../access/types.js').AccessContext
-  }) => GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
+  resolveOutput?: (
+    args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>,
+  ) => GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
 }
 
 /**
