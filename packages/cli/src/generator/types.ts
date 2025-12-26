@@ -357,8 +357,19 @@ ${virtualFieldLines}
 /**
  * Generate Include type that includes virtual fields
  * Extends Prisma's Include type with virtual field inclusion support
+ * Note: Only generates Include type if the list has relationship fields,
+ * since Prisma only generates Include types for models with relations
  */
-function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string {
+function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string | null {
+  // Check if list has any relationship fields
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  // Prisma only generates Include types for models with relationships
+  // If there are no relationships, don't generate an Include type
+  if (!hasRelationships) {
+    return null
+  }
+
   const virtualFields = getVirtualFieldNames(fields)
 
   if (virtualFields.length === 0) {
@@ -592,8 +603,12 @@ export function generateTypes(config: OpenSaasConfig): string {
     // Generate Select and Include types with virtual field support
     lines.push(generateSelectType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateIncludeType(listName, listConfig.fields))
-    lines.push('')
+    // Only generate Include type if the list has relationships
+    const includeType = generateIncludeType(listName, listConfig.fields)
+    if (includeType) {
+      lines.push(includeType)
+      lines.push('')
+    }
   }
 
   // Generate CustomDB interface
