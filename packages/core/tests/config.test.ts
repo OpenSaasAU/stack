@@ -76,7 +76,7 @@ describe('config helpers', () => {
   })
 
   describe('list', () => {
-    it('should return the same list config', () => {
+    it('should return normalized list config', () => {
       const testList: ListConfig = {
         fields: {
           name: { type: 'text' },
@@ -85,7 +85,9 @@ describe('config helpers', () => {
       }
 
       const result = list(testList)
-      expect(result).toBe(testList)
+      // list() normalizes access control, so it creates a new object
+      expect(result.fields).toEqual(testList.fields)
+      expect(result.access).toBeUndefined()
     })
 
     it('should support text fields', () => {
@@ -161,7 +163,7 @@ describe('config helpers', () => {
       expect(testList.fields.author.type).toBe('relationship')
     })
 
-    it('should support access control', () => {
+    it('should support access control object form', () => {
       const testList = list({
         fields: { name: { type: 'text' } },
         access: {
@@ -175,6 +177,21 @@ describe('config helpers', () => {
       })
 
       expect(testList.access?.operation).toBeDefined()
+    })
+
+    it('should support access control function shorthand', () => {
+      const isAdmin = () => true
+      const testList = list({
+        fields: { name: { type: 'text' } },
+        access: isAdmin,
+      })
+
+      // Function shorthand should be normalized to object form
+      expect(testList.access?.operation).toBeDefined()
+      expect(testList.access?.operation?.query).toBe(isAdmin)
+      expect(testList.access?.operation?.create).toBe(isAdmin)
+      expect(testList.access?.operation?.update).toBe(isAdmin)
+      expect(testList.access?.operation?.delete).toBe(isAdmin)
     })
 
     it('should support hooks', () => {

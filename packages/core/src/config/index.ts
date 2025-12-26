@@ -1,5 +1,38 @@
-import type { OpenSaasConfig, ListConfig, OperationAccess, Hooks } from './types.js'
+import type {
+  OpenSaasConfig,
+  ListConfig,
+  ListConfigInput,
+  OperationAccess,
+  ListAccessControl,
+} from './types.js'
 import { executePlugins } from './plugin-engine.js'
+import type { AccessControl } from '../access/types.js'
+
+/**
+ * Normalize access control shorthand to object form
+ * Converts function shorthand to { operation: { query, create, update, delete } } form
+ */
+function normalizeListAccess<T>(
+  access: ListAccessControl<T> | undefined,
+): { operation?: OperationAccess<T> } | undefined {
+  if (!access) return undefined
+
+  // If it's a function, convert to object form applying to all operations
+  if (typeof access === 'function') {
+    const fn = access as AccessControl<T>
+    return {
+      operation: {
+        query: fn,
+        create: fn,
+        update: fn,
+        delete: fn,
+      },
+    }
+  }
+
+  // Already in object form
+  return access
+}
 
 /**
  * Helper function to define configuration with type safety
@@ -61,25 +94,37 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
  *   fields: { title: text() },
  *   hooks: { ... }
  * })
+ *
+ * // Access control shorthand
+ * const isAdmin = ({ session }) => session?.role === 'admin'
+ *
+ * Settings: list({
+ *   access: isAdmin,  // Applies to all operations
+ *   isSingleton: true,
+ *   fields: { ... }
+ * })
  * ```
  */
-export function list<TTypeInfo extends import('./types.js').TypeInfo>(config: {
-  fields: import('./types.js').FieldsWithTypeInfo<TTypeInfo>
-  access?: {
-    operation?: OperationAccess<TTypeInfo['item']>
+export function list<TTypeInfo extends import('./types.js').TypeInfo>(
+  config: ListConfigInput<TTypeInfo>,
+): ListConfig<TTypeInfo> {
+  // Normalize access control shorthand to object form
+  const normalizedConfig = {
+    ...config,
+    access: normalizeListAccess(config.access),
   }
-  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
-  mcp?: import('./types.js').ListMcpConfig
-}): ListConfig<TTypeInfo> {
+
   // At runtime, field configs are unchanged
   // At type level, they're transformed to inject TypeInfo types
-  return config as ListConfig<TTypeInfo>
+  return normalizedConfig as ListConfig<TTypeInfo>
 }
 
 // Re-export all types
 export type {
   OpenSaasConfig,
   ListConfig,
+  ListConfigInput,
+  ListAccessControl,
   FieldConfig,
   BaseFieldConfig,
   TextField,

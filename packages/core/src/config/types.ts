@@ -753,6 +753,48 @@ export type OperationAccess<T = any> = {
 }
 
 /**
+ * List-level access control configuration
+ * Supports two patterns:
+ *
+ * 1. Function shorthand - applies to all CRUD operations:
+ *    `access: isAdmin`
+ *
+ * 2. Object form - configure operations individually:
+ *    `access: { operation: { query: () => true, create: isAdmin } }`
+ *
+ * @example Function shorthand
+ * ```typescript
+ * const isAdmin = ({ session }) => session?.role === 'admin'
+ *
+ * list({
+ *   access: isAdmin,  // Applies to query, create, update, delete
+ *   fields: { ... }
+ * })
+ * ```
+ *
+ * @example Object form
+ * ```typescript
+ * list({
+ *   access: {
+ *     operation: {
+ *       query: () => true,
+ *       create: isAdmin,
+ *       update: isOwner,
+ *       delete: isAdmin,
+ *     }
+ *   },
+ *   fields: { ... }
+ * })
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ListAccessControl<T = any> =
+  | AccessControl<T>
+  | {
+      operation?: OperationAccess<T>
+    }
+
+/**
  * Hook arguments for resolveInput hook
  * Uses discriminated union to provide proper types based on operation
  * - create: resolvedData is CreateInput, item is undefined
@@ -911,10 +953,19 @@ export type Hooks<
 
 // Generic `any` default allows ListConfig to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
+/**
+ * Internal list configuration type (after normalization by list() function)
+ * Access control is always in object form internally.
+ * Use list() function which accepts both function shorthand and object form.
+ */
 export type ListConfig<TTypeInfo extends TypeInfo> = {
   // Field configs are automatically transformed to inject the full TypeInfo
   // This enables proper typing in field hooks where item, create input, and update input are all typed
   fields: FieldsWithTypeInfo<TTypeInfo>
+  /**
+   * Access control configuration for this list (normalized object form).
+   * The list() function normalizes function shorthand to this object form.
+   */
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
@@ -923,6 +974,28 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * MCP server configuration for this list
    */
   mcp?: ListMcpConfig
+}
+
+/**
+ * Input type for the list() function
+ * Accepts both function shorthand and object form for access control.
+ */
+export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeInfo>, 'access'> & {
+  /**
+   * Access control configuration for this list.
+   * Supports both function shorthand and object form.
+   *
+   * @example Function shorthand (applies to all operations)
+   * ```typescript
+   * access: isAdmin
+   * ```
+   *
+   * @example Object form (per-operation)
+   * ```typescript
+   * access: { operation: { query: () => true, create: isAdmin } }
+   * ```
+   */
+  access?: ListAccessControl<TTypeInfo['item']>
 }
 
 /**
