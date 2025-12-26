@@ -174,6 +174,10 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
 /**
  * Field-level access control function.
  * For create/update operations, receives inputData to validate incoming values.
+ *
+ * Note: While this type accepts filters for backward compatibility with AccessControl,
+ * filters are ignored in field-level access. Only boolean results are used.
+ * If a filter is returned, it defaults to allowing access (true).
  */
 export type FieldAccessControl<T = Record<string, unknown>> = (args: {
   session: Session | null
@@ -184,7 +188,7 @@ export type FieldAccessControl<T = Record<string, unknown>> = (args: {
    * For read operations, this is undefined.
    */
   inputData?: Record<string, unknown>
-}) => boolean | Promise<boolean>
+}) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
 
 /**
  * Field-level access control

@@ -35,4 +35,8 @@ The `inputData` parameter contains the original input data passed to create/upda
 - For **update** operations: contains only the fields being updated
 - For **read** operations: `inputData` is undefined
 
-Existing field access control functions continue to work without modification since `inputData` is optional.
+**Backward compatibility:**
+
+- Existing field access control functions continue to work without modification since `inputData` is optional
+- `AccessControl` functions (operation-level) can be reused in field-level contexts for convenience
+- If a filter is returned from field-level access, it's ignored and defaults to allowing access (only boolean results are used)
