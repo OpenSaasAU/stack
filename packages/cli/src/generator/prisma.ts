@@ -271,19 +271,27 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     // Add relationship fields
     for (const { name: fieldName, field: relField } of relationshipFields) {
       const { list: targetList, field: targetField } = parseRelationshipRef(relField.ref)
-      const _modifiers = getFieldModifiers(fieldName, relField, config.db.provider)
       const paddedName = fieldName.padEnd(12)
 
       if (relField.many) {
         // One-to-many relationship
+        let relationLine: string
         if (targetField) {
           // Standard bidirectional relationship
-          lines.push(`  ${paddedName} ${targetList}[]`)
+          relationLine = `  ${paddedName} ${targetList}[]`
         } else {
           // List-only ref: use named relation
           const relationName = `${listName}_${fieldName}`
-          lines.push(`  ${paddedName} ${targetList}[]  @relation("${relationName}")`)
+          relationLine = `  ${paddedName} ${targetList}[]  @relation("${relationName}")`
         }
+
+        // Apply extendPrismaSchema if defined (many side has no FK line)
+        if (relField.db?.extendPrismaSchema) {
+          const extended = relField.db.extendPrismaSchema({ relationLine })
+          relationLine = extended.relationLine
+        }
+
+        lines.push(relationLine)
       } else {
         // Single relationship - check if this side should have the foreign key
         const hasForeignKey = shouldHaveForeignKey(listName, fieldName, relField, config)
@@ -308,24 +316,39 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
             mapModifier = ` @map("${fieldName}")`
           }
 
-          lines.push(`  ${fkPaddedName} String?${uniqueModifier}${mapModifier}`)
+          let fkLine = `  ${fkPaddedName} String?${uniqueModifier}${mapModifier}`
+          let relationLine: string
 
           if (targetField) {
             // Standard bidirectional relationship
-            lines.push(
-              `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`,
-            )
+            relationLine = `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`
           } else {
             // List-only ref: use named relation
             const relationName = `${listName}_${fieldName}`
-            lines.push(
-              `  ${paddedName} ${targetList}?  @relation("${relationName}", fields: [${foreignKeyField}], references: [id])`,
-            )
+            relationLine = `  ${paddedName} ${targetList}?  @relation("${relationName}", fields: [${foreignKeyField}], references: [id])`
           }
+
+          // Apply extendPrismaSchema if defined
+          if (relField.db?.extendPrismaSchema) {
+            const extended = relField.db.extendPrismaSchema({ fkLine, relationLine })
+            fkLine = extended.fkLine ?? fkLine
+            relationLine = extended.relationLine
+          }
+
+          lines.push(fkLine)
+          lines.push(relationLine)
         } else {
           // This side does NOT have the foreign key (other side of one-to-one)
           // Just add the relation field without foreign key
-          lines.push(`  ${paddedName} ${targetList}?`)
+          let relationLine = `  ${paddedName} ${targetList}?`
+
+          // Apply extendPrismaSchema if defined (no FK line on this side)
+          if (relField.db?.extendPrismaSchema) {
+            const extended = relField.db.extendPrismaSchema({ relationLine })
+            relationLine = extended.relationLine
+          }
+
+          lines.push(relationLine)
         }
       }
     }

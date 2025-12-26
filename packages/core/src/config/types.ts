@@ -595,6 +595,37 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * ```
        */
       foreignKey?: boolean | { map?: string }
+      /**
+       * Extend or modify the generated Prisma schema lines for this relationship field
+       * Receives the generated FK line (if applicable) and relation line
+       * Returns the modified lines
+       *
+       * @example Add onDelete cascade for self-referential relationship
+       * ```typescript
+       * parent: relationship({
+       *   ref: 'Category.children',
+       *   db: {
+       *     foreignKey: true,
+       *     extendPrismaSchema: ({ fkLine, relationLine }) => ({
+       *       fkLine,
+       *       relationLine: relationLine.replace(
+       *         '@relation(',
+       *         '@relation(onDelete: SetNull, '
+       *       )
+       *     })
+       *   }
+       * })
+       * ```
+       */
+      extendPrismaSchema?: (lines: {
+        /** The foreign key field line (e.g., "parentId String?"), only present for single relationships that own the FK */
+        fkLine?: string
+        /** The relation field line (e.g., "parent Category? @relation(...)") */
+        relationLine: string
+      }) => {
+        fkLine?: string
+        relationLine: string
+      }
     }
     ui?: {
       displayMode?: 'select' | 'cards'
