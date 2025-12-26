@@ -1,5 +1,188 @@
 # @opensaas/stack-cli
 
+## 0.14.0
+
+### Minor Changes
+
+- [#298](https://github.com/OpenSaasAU/stack/pull/298) [`5f1bfb5`](https://github.com/OpenSaasAU/stack/commit/5f1bfb5d286b3b43c61fceeae6d78588c126d488) Thanks [@borisno2](https://github.com/borisno2)! - Add field-level `extendPrismaSchema` support for relationship fields
+
+  Relationship fields now support `extendPrismaSchema` in their `db` config, allowing granular modification of generated Prisma schema lines. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions.
+
+  ```typescript
+  parent: relationship({
+    ref: 'Category.children',
+    db: {
+      foreignKey: true,
+      extendPrismaSchema: ({ fkLine, relationLine }) => ({
+        fkLine,
+        relationLine: relationLine.replace(
+          '@relation(',
+          '@relation(onDelete: SetNull, onUpdate: Cascade, ',
+        ),
+      }),
+    },
+  })
+  ```
+
+  The function receives `fkLine` (the foreign key field line, only present for single relationships that own the FK) and `relationLine` (the relation field line), and returns the modified lines.
+
+  Fixes #284
+
+- [#294](https://github.com/OpenSaasAU/stack/pull/294) [`fdda49d`](https://github.com/OpenSaasAU/stack/commit/fdda49dfb63feaa37d01c0c0bf2f79df8be8ae9e) Thanks [@{](https://github.com/{), [@{](https://github.com/{), [@{](https://github.com/{)! - Add relationship field support to WhereInput types
+
+  Generated WhereInput types now include relationship fields, enabling access control filters that traverse relationships:
+
+  ```typescript
+  // One-to-many relationships use some/every/none
+  const userFilter: UserWhereInput = {
+    posts: {
+      some: {
+        status: { equals: 'published' },
+      },
+    },
+  }
+
+  // Many-to-one relationships use direct nesting
+  const postFilter: PostWhereInput = {
+
+      email: { equals: 'user@example.com' },
+    },
+  }
+
+  // Complex nested filters are now possible
+  const complexFilter: PostWhereInput = {
+    AND: [
+      { status: { equals: 'published' } },
+      {
+
+          posts: {
+            some: { status: { equals: 'published' } },
+          },
+        },
+      },
+    ],
+  }
+  ```
+
+  This enables common access control patterns like filtering students by their account's user:
+
+  ```typescript
+  export function studentFilter({ session }: { session: Session | null }): StudentWhereInput {
+    return {
+      account: {
+   id: { equals: session?.userId } },
+      },
+    }
+  }
+  ```
+
+- [#296](https://github.com/OpenSaasAU/stack/pull/296) [`71584da`](https://github.com/OpenSaasAU/stack/commit/71584da61b89e66685d7e1b7c3e22adaa57b7490) Thanks [@borisno2](https://github.com/borisno2)! - Add Select and Include types with virtual field support
+
+  Virtual fields are now included in generated Select and Include types, enabling proper TypeScript type checking when selecting virtual fields:
+
+  ```typescript
+  import type { UserSelect } from '@/.opensaas/types'
+
+  // Before: This would cause a type error
+  const select = {
+    id: true,
+    name: true,
+    displayName: true, // Error: 'displayName' does not exist in Prisma.UserSelect
+  } satisfies Prisma.UserSelect
+
+  // After: Virtual fields work correctly
+  const select = {
+    id: true,
+    name: true,
+    displayName: true, // ✓ Works! Virtual field is included in UserSelect
+  } satisfies UserSelect
+  ```
+
+  For lists without virtual fields, the generated types simply re-export Prisma's types:
+
+  ```typescript
+  export type PostSelect = Prisma.PostSelect
+  export type PostInclude = Prisma.PostInclude
+  ```
+
+  For lists with virtual fields, the types extend Prisma's types:
+
+  ```typescript
+  export type UserSelect = Prisma.UserSelect & {
+    displayName?: boolean
+  }
+  ```
+
+  This resolves the issue where virtual fields couldn't be used in select/include objects with the `satisfies` operator.
+
+- [#295](https://github.com/OpenSaasAU/stack/pull/295) [`6f8d37a`](https://github.com/OpenSaasAU/stack/commit/6f8d37a0761d50b9b9b707f26b39176304428770) Thanks [@borisno2](https://github.com/borisno2)! - Add singleton lists support for single-record tables
+
+  You can now create singleton lists (lists that should only ever have one record) by setting `isSingleton: true`. This is useful for Settings, Configuration, or other global single-record tables.
+
+  Features:
+  - Prevents creating multiple records (throws error on second create)
+  - Auto-creates record with field defaults on first access (configurable)
+  - Provides a `get()` method for easy access to the singleton record
+  - Blocks `delete` and `findMany` operations on singleton lists
+  - Works with all existing access control and hooks
+
+  Usage:
+
+  ```typescript
+  import { config, list } from '@opensaas/stack-core'
+  import { text, checkbox, integer } from '@opensaas/stack-core/fields'
+
+  export default config({
+    lists: {
+      Settings: list({
+        fields: {
+          siteName: text({ defaultValue: 'My Site' }),
+          maintenanceMode: checkbox({ defaultValue: false }),
+          maxUploadSize: integer({ defaultValue: 10 }),
+        },
+        access: {
+          operation: {
+            query: () => true,
+            update: isAdmin,
+          },
+        },
+        isSingleton: true, // Enable singleton mode
+      }),
+    },
+  })
+  ```
+
+  Access the singleton record:
+
+  ```typescript
+  // Auto-creates with defaults if no record exists
+  const settings = await context.db.settings.get()
+
+  // Update the singleton
+  await context.db.settings.update({
+    where: { id: settings.id },
+    data: { siteName: 'Updated Site' },
+  })
+  ```
+
+  Disable auto-create:
+
+  ```typescript
+  Settings: list({
+    fields: {
+      /* ... */
+    },
+    isSingleton: {
+      autoCreate: false, // Must manually create the record
+    },
+  })
+  ```
+
+### Patch Changes
+
+- Updated dependencies [[`5f1bfb5`](https://github.com/OpenSaasAU/stack/commit/5f1bfb5d286b3b43c61fceeae6d78588c126d488), [`6f8d37a`](https://github.com/OpenSaasAU/stack/commit/6f8d37a0761d50b9b9b707f26b39176304428770), [`ed25cc5`](https://github.com/OpenSaasAU/stack/commit/ed25cc5aba43709d40ad256c982364ca8a8b0f2e), [`c2263d2`](https://github.com/OpenSaasAU/stack/commit/c2263d21cc7a4eaffc0b06af04eb7b3a1a3ce437), [`0c66ebc`](https://github.com/OpenSaasAU/stack/commit/0c66ebc4492fac47f2028569b080d496328c18bf)]:
+  - @opensaas/stack-core@0.14.0
+
 ## 0.13.0
 
 ### Patch Changes
