@@ -11,16 +11,16 @@ Generated WhereInput types now include relationship fields, enabling access cont
 const userFilter: UserWhereInput = {
   posts: {
     some: {
-      status: { equals: 'published' }
-    }
-  }
+      status: { equals: 'published' },
+    },
+  },
 }
 
 // Many-to-one relationships use direct nesting
 const postFilter: PostWhereInput = {
   author: {
-    email: { equals: 'user@example.com' }
-  }
+    email: { equals: 'user@example.com' },
+  },
 }
 
 // Complex nested filters are now possible
@@ -30,11 +30,11 @@ const complexFilter: PostWhereInput = {
     {
       author: {
         posts: {
-          some: { status: { equals: 'published' } }
-        }
-      }
-    }
-  ]
+          some: { status: { equals: 'published' } },
+        },
+      },
+    },
+  ],
 }
 ```
 
@@ -44,8 +44,8 @@ This enables common access control patterns like filtering students by their acc
 export function studentFilter({ session }: { session: Session | null }): StudentWhereInput {
   return {
     account: {
-      user: { id: { equals: session?.userId } }
-    }
+      user: { id: { equals: session?.userId } },
+    },
   }
 }
 ```
