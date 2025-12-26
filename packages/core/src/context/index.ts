@@ -255,6 +255,49 @@ export type ServerActionProps =
   | { listKey: string; action: 'delete'; id: string }
 
 /**
+ * Check if a list is configured as a singleton
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function isSingletonList(listConfig: ListConfig<any>): boolean {
+  return !!listConfig.isSingleton
+}
+
+/**
+ * Check if auto-create is enabled for a singleton list
+ * Defaults to true if not explicitly set to false
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
+  if (!listConfig.isSingleton) return false
+  if (typeof listConfig.isSingleton === 'boolean') return true
+  return listConfig.isSingleton.autoCreate !== false
+}
+
+/**
+ * Extract default values from field configs
+ * Used to auto-create singleton records with sensible defaults
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
+  const data: Record<string, unknown> = {}
+
+  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
+    // Skip virtual fields - they're not stored in database
+    if (fieldConfig.virtual) continue
+
+    // Skip system fields (id, createdAt, updatedAt)
+    if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
+
+    // Add default value if present
+    if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
+      data[fieldKey] = fieldConfig.defaultValue
+    }
+  }
+
+  return data
+}
+
+/**
  * Parse Prisma error and convert to user-friendly DatabaseError
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -393,14 +436,23 @@ export function getContext<
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const dbKey = getDbKey(listName)
 
-    db[dbKey] = {
+    // Create base operations
+    const createOp = createCreate(listName, listConfig, prisma, context, config)
+    const operations: Record<string, unknown> = {
       findUnique: createFindUnique(listName, listConfig, prisma, context, config),
       findMany: createFindMany(listName, listConfig, prisma, context, config),
-      create: createCreate(listName, listConfig, prisma, context, config),
+      create: createOp,
       update: createUpdate(listName, listConfig, prisma, context, config),
       delete: createDelete(listName, listConfig, prisma, context),
       count: createCount(listName, listConfig, prisma, context),
     }
+
+    // Add get() method for singleton lists
+    if (isSingletonList(listConfig)) {
+      operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
+    }
+
+    db[dbKey] = operations
   }
 
   // Execute plugin runtime functions and populate context.plugins
@@ -618,6 +670,14 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     skip?: number
     include?: Record<string, unknown>
   }) => {
+    // Check singleton constraint (throw error instead of silently returning empty)
+    if (isSingletonList(listConfig)) {
+      throw new ValidationError(
+        [`Cannot use findMany: ${listName} is a singleton list. Use get() instead.`],
+        {},
+      )
+    }
+
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
@@ -697,6 +757,21 @@ function createCreate<TPrisma extends PrismaClientLike>(
   config: OpenSaasConfig,
 ) {
   return async (args: { data: Record<string, unknown> }) => {
+    // 0. Check singleton constraint (enforce even in sudo mode)
+    if (isSingletonList(listConfig)) {
+      // Access Prisma model dynamically - required because model names are generated at runtime
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (prisma as any)[getDbKey(listName)]
+      const existingCount = await model.count()
+
+      if (existingCount > 0) {
+        throw new ValidationError(
+          [`Cannot create: ${listName} is a singleton list with an existing record`],
+          {},
+        )
+      }
+    }
+
     // 1. Check create access (skip if sudo mode)
     if (!context._isSudo) {
       const createAccess = listConfig.access?.operation?.create
@@ -1030,6 +1105,11 @@ function createDelete<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
 ) {
   return async (args: { where: { id: string } }) => {
+    // 0. Check singleton constraint (enforce even in sudo mode)
+    if (isSingletonList(listConfig)) {
+      throw new ValidationError([`Cannot delete: ${listName} is a singleton list`], {})
+    }
+
     // 1. Fetch the item to pass to access control and hooks
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1175,5 +1255,88 @@ function createCount<TPrisma extends PrismaClientLike>(
     })
 
     return count
+  }
+}
+
+/**
+ * Create get operation for singleton lists
+ * Returns the single record, or auto-creates it if enabled
+ */
+function createGet<TPrisma extends PrismaClientLike>(
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  prisma: TPrisma,
+  context: AccessContext<TPrisma>,
+  config: OpenSaasConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createFn: any,
+) {
+  return async () => {
+    // First try to find the existing record
+    // Access Prisma model dynamically - required because model names are generated at runtime
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const model = (prisma as any)[getDbKey(listName)]
+
+    // Check query access (skip if sudo mode)
+    let where: Record<string, unknown> = {}
+    if (!context._isSudo) {
+      const queryAccess = listConfig.access?.operation?.query
+      const accessResult = await checkAccess(queryAccess, {
+        session: context.session,
+        context,
+      })
+
+      if (accessResult === false) {
+        return null
+      }
+
+      // Merge access filter (for singleton, we don't have a specific where clause)
+      if (accessResult && typeof accessResult === 'object') {
+        where = accessResult
+      }
+    }
+
+    // Build include with access control filters
+    const accessControlledInclude = await buildIncludeWithAccessControl(
+      listConfig.fields,
+      {
+        session: context.session,
+        context,
+      },
+      config,
+    )
+
+    // Try to find the record
+    const item = await model.findFirst({
+      where,
+      include: accessControlledInclude,
+    })
+
+    // If record exists, return it
+    if (item) {
+      // Filter readable fields and apply resolveOutput hooks
+      const filtered = await filterReadableFields(
+        item,
+        listConfig.fields,
+        {
+          session: context.session,
+          context: { ...context, _isSudo: context._isSudo },
+        },
+        config,
+        0,
+        listName,
+      )
+      return filtered
+    }
+
+    // If no record and auto-create is enabled, create it
+    if (shouldAutoCreate(listConfig)) {
+      const defaultData = getDefaultData(listConfig)
+      return await createFn({ data: defaultData })
+    }
+
+    // No record and auto-create is disabled
+    return null
   }
 }

@@ -7,6 +7,8 @@ import {
   calendarDay,
   password,
   virtual,
+  checkbox,
+  integer,
 } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
@@ -44,6 +46,30 @@ export default config({
   },
 
   lists: {
+    Settings: list<Lists.Settings.TypeInfo>({
+      fields: {
+        siteName: text({
+          validation: { isRequired: true },
+          defaultValue: 'My Blog',
+        }),
+        maintenanceMode: checkbox({
+          defaultValue: false,
+        }),
+        maxUploadSize: integer({
+          defaultValue: 10,
+        }),
+      },
+      access: {
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
+      },
+      isSingleton: true,
+    }),
+
     User: list<Lists.User.TypeInfo>({
       fields: {
         name: text({

@@ -338,6 +338,8 @@ function generateCustomDBType(config: OpenSaasConfig): string {
   // For each list, create strongly-typed methods using Prisma's conditional types
   for (const listName of Object.keys(config.lists)) {
     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
+    const listConfig = config.lists[listName]
+    const isSingleton = !!listConfig?.isSingleton
 
     lines.push(`  ${dbKey}: {`)
 
@@ -378,6 +380,13 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
     // count - no changes to return type
     lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
+
+    // get - only for singleton lists
+    if (isSingleton) {
+      lines.push(
+        `    get: () => Promise<Omit<Prisma.${listName}GetPayload<{}>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields | null>`,
+      )
+    }
 
     lines.push(`  }`)
   }
