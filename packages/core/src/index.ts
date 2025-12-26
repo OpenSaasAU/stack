@@ -38,6 +38,17 @@ export type {
   Plugin,
   PluginContext,
   GeneratedFiles,
+  // List-level hook argument types
+  ResolveInputHookArgs,
+  ValidateHookArgs,
+  BeforeOperationHookArgs,
+  AfterOperationHookArgs,
+  // Field-level hook argument types
+  FieldResolveInputHookArgs,
+  FieldValidateHookArgs,
+  FieldBeforeOperationHookArgs,
+  FieldAfterOperationHookArgs,
+  FieldResolveOutputHookArgs,
 } from './config/index.js'
 
 // Access control
