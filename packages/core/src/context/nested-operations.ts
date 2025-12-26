@@ -140,6 +140,7 @@ async function processNestedCreate(
         {
           session: context.session,
           context,
+          inputData: item,
         },
       )
 
@@ -309,6 +310,7 @@ async function processNestedUpdate(
           session: context.session,
           item,
           context,
+          inputData: updateData,
         },
       )
 

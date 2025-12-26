@@ -118,6 +118,7 @@ export async function checkFieldAccess(
     session: Session | null
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
+    inputData?: Record<string, unknown>
   },
 ): Promise<boolean> {
   // Skip access check in sudo mode
@@ -134,7 +135,12 @@ export async function checkFieldAccess(
     return true // No specific access control means allow
   }
 
-  const result = await accessControl(args)
+  const result = await accessControl({
+    session: args.session,
+    item: args.item,
+    context: args.context,
+    inputData: args.inputData,
+  })
 
   // If result is false, deny access
   if (result === false) {
@@ -144,12 +150,6 @@ export async function checkFieldAccess(
   // If result is true, allow access
   if (result === true) {
     return true
-  }
-
-  // If result is a filter object, check if the item matches
-  // For field-level access, we need to evaluate the filter against the item
-  if (typeof result === 'object' && args.item) {
-    return matchesFilter(args.item, result)
   }
 
   // Default to allowing access if we can't determine
@@ -410,6 +410,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     session: Session | null
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
+    inputData?: Record<string, unknown>
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
@@ -450,6 +451,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // Check field access (checkFieldAccess already handles sudo mode)
     const canWrite = await checkFieldAccess(fieldConfig?.access, operation, {
       ...args,
+      inputData: args.inputData,
     })
 
     if (canWrite) {

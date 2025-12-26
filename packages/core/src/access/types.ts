@@ -172,10 +172,25 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
 
 /**
+ * Field-level access control function.
+ * For create/update operations, receives inputData to validate incoming values.
+ */
+export type FieldAccessControl<T = Record<string, unknown>> = (args: {
+  session: Session | null
+  item?: T
+  context: AccessContext
+  /**
+   * The input data being written. Only present for create/update operations.
+   * For read operations, this is undefined.
+   */
+  inputData?: Record<string, unknown>
+}) => boolean | Promise<boolean>
+
+/**
  * Field-level access control
  */
-export type FieldAccess = {
-  read?: AccessControl
-  create?: AccessControl
-  update?: AccessControl
+export type FieldAccess<T = Record<string, unknown>> = {
+  read?: FieldAccessControl<T>
+  create?: FieldAccessControl<T>
+  update?: FieldAccessControl<T>
 }

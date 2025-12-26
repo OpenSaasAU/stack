@@ -35,6 +35,7 @@ describe('filterWritableFields', () => {
         _isSudo: true, // Use sudo to bypass access control checks
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
+      inputData: data,
     })
 
     // authorId should be filtered out
@@ -70,6 +71,7 @@ describe('filterWritableFields', () => {
         _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
+      inputData: data,
     })
 
     // System fields should be filtered out
@@ -106,6 +108,7 @@ describe('filterWritableFields', () => {
         _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
+      inputData: data,
     })
 
     expect(filtered).not.toHaveProperty('authorId')
@@ -134,6 +137,7 @@ describe('filterWritableFields', () => {
         _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
+      inputData: data,
     })
 
     // trackingId is a defined field, so it should remain
