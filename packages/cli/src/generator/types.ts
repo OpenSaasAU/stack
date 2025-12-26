@@ -233,7 +233,16 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
 }
 
 /**
- * Generate WhereInput type (simplified)
+ * Extract the related list name from a relationship ref
+ * @param ref - Relationship ref in format 'ListName' or 'ListName.fieldName'
+ * @returns The list name (first part before '.')
+ */
+function getRelatedListName(ref: string): string {
+  return ref.split('.')[0]
+}
+
+/**
+ * Generate WhereInput type with relationship field support
  */
 function generateWhereInputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
@@ -245,8 +254,25 @@ function generateWhereInputType(listName: string, fields: Record<string, FieldCo
   lines.push('  NOT?: ' + listName + 'WhereInput')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    // Skip virtual fields - they don't exist in database
+    if (fieldConfig.virtual) continue
+
     if (fieldConfig.type === 'relationship') {
-      continue // Skip for now
+      const relField = fieldConfig as RelationshipField
+      const relatedListName = getRelatedListName(relField.ref)
+      const relatedWhereInput = `${relatedListName}WhereInput`
+
+      if (relField.many) {
+        // One-to-many or many-to-many relationship
+        lines.push(`  ${fieldName}?: {`)
+        lines.push(`    some?: ${relatedWhereInput}`)
+        lines.push(`    every?: ${relatedWhereInput}`)
+        lines.push(`    none?: ${relatedWhereInput}`)
+        lines.push(`  }`)
+      } else {
+        // One-to-one or many-to-one relationship
+        lines.push(`  ${fieldName}?: ${relatedWhereInput}`)
+      }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig)
       if (!tsType) continue // Skip if no type returned
