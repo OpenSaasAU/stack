@@ -208,9 +208,7 @@ describe('Access Control', () => {
       })
 
       expect(result).toBe(true)
-      expect(fieldAccess.create).toHaveBeenCalledWith(
-        expect.objectContaining({ inputData }),
-      )
+      expect(fieldAccess.create).toHaveBeenCalledWith(expect.objectContaining({ inputData }))
     })
 
     it('should receive inputData for update operations', async () => {
@@ -231,9 +229,7 @@ describe('Access Control', () => {
       })
 
       expect(result).toBe(true)
-      expect(fieldAccess.update).toHaveBeenCalledWith(
-        expect.objectContaining({ inputData, item }),
-      )
+      expect(fieldAccess.update).toHaveBeenCalledWith(expect.objectContaining({ inputData, item }))
     })
 
     it('should not receive inputData for read operations', async () => {

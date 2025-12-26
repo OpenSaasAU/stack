@@ -30,6 +30,7 @@ lists: {
 ```
 
 The `inputData` parameter contains the original input data passed to create/update operations:
+
 - For **create** operations: contains all input data including relationship connection syntax
 - For **update** operations: contains only the fields being updated
 - For **read** operations: `inputData` is undefined
