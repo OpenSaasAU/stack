@@ -247,9 +247,7 @@ describe('Singleton Lists', () => {
 
       await expect(context.db.settings.findMany()).rejects.toThrow(ValidationError)
 
-      await expect(context.db.settings.findMany()).rejects.toThrow(
-        'Cannot use findMany',
-      )
+      await expect(context.db.settings.findMany()).rejects.toThrow('Cannot use findMany')
     })
 
     it('should allow findMany on non-singleton lists', async () => {

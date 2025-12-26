@@ -8,6 +8,7 @@ Add singleton lists support for single-record tables
 You can now create singleton lists (lists that should only ever have one record) by setting `isSingleton: true`. This is useful for Settings, Configuration, or other global single-record tables.
 
 Features:
+
 - Prevents creating multiple records (throws error on second create)
 - Auto-creates record with field defaults on first access (configurable)
 - Provides a `get()` method for easy access to the singleton record
@@ -57,7 +58,9 @@ Disable auto-create:
 
 ```typescript
 Settings: list({
-  fields: { /* ... */ },
+  fields: {
+    /* ... */
+  },
   isSingleton: {
     autoCreate: false, // Must manually create the record
   },

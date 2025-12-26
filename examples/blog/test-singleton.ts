@@ -108,9 +108,7 @@ async function main() {
       throw new Error('get() should return the existing record')
     }
     if (settingsAgain.siteName !== 'Updated Blog') {
-      throw new Error(
-        `Expected siteName='Updated Blog', got '${settingsAgain.siteName}'`,
-      )
+      throw new Error(`Expected siteName='Updated Blog', got '${settingsAgain.siteName}'`)
     }
     console.log('   ✓ get() returns the updated record')
     console.log('   Settings:', settingsAgain)
