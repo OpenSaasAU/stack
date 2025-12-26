@@ -435,6 +435,52 @@ model Account {
 You cannot set `db.foreignKey: true` on both sides of a one-to-one relationship. The generator will throw an error if you attempt this.
 {% /callout %}
 
+#### Extending Relationship Schema
+
+Relationship fields support `extendPrismaSchema` in their `db` config for granular modification of the generated Prisma schema. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions:
+
+```typescript
+fields: {
+  parent: relationship({
+    ref: 'Category.children',
+    db: {
+      foreignKey: true,
+      extendPrismaSchema: ({ fkLine, relationLine }) => ({
+        fkLine,
+        relationLine: relationLine.replace(
+          '@relation(',
+          '@relation(onDelete: SetNull, onUpdate: Cascade, '
+        ),
+      }),
+    },
+  }),
+  children: relationship({ ref: 'Category.parent', many: true }),
+}
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model Category {
+  id        String      @id @default(cuid())
+  name      String
+  parentId  String?     @unique @map("parent")
+  parent    Category?   @relation(onDelete: SetNull, onUpdate: Cascade, fields: [parentId], references: [id])
+  children  Category[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+```
+
+The function receives:
+
+- `fkLine`: The foreign key field line (e.g., `"parentId String?"`), only present for single relationships that own the FK
+- `relationLine`: The relation field line (e.g., `"parent Category? @relation(...)"`)
+
+{% callout type="info" %}
+Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular field modifications and broad schema-wide changes.
+{% /callout %}
+
 ### Virtual Field
 
 Computed field that is not stored in the database:

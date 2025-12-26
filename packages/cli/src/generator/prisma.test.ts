@@ -524,5 +524,146 @@ describe('Prisma Schema Generator', () => {
       // List-only refs should default to field name
       expect(schema).toContain('categoryId   String? @map("category")')
     })
+
+    it('should apply extendPrismaSchema to self-referential relationship with onDelete', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Category: {
+            fields: {
+              name: text(),
+              parent: relationship({
+                ref: 'Category.children',
+                db: {
+                  foreignKey: true,
+                  extendPrismaSchema: ({ fkLine, relationLine }) => ({
+                    fkLine,
+                    relationLine: relationLine.replace(
+                      '@relation(',
+                      '@relation(onDelete: SetNull, ',
+                    ),
+                  }),
+                },
+              }),
+              children: relationship({ ref: 'Category.parent', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('onDelete: SetNull')
+      expect(schema).toContain(
+        'parent       Category?  @relation(onDelete: SetNull, fields: [parentId], references: [id])',
+      )
+    })
+
+    it('should apply extendPrismaSchema to modify FK line', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({
+                ref: 'User.posts',
+                db: {
+                  extendPrismaSchema: ({ fkLine, relationLine }) => ({
+                    // Add comment to FK field
+                    fkLine: fkLine + ' // Author reference',
+                    relationLine,
+                  }),
+                },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String? @map("author") // Author reference')
+    })
+
+    it('should apply extendPrismaSchema to many side relationship', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({
+                ref: 'Post.author',
+                many: true,
+                db: {
+                  extendPrismaSchema: ({ relationLine }) => ({
+                    relationLine: relationLine + ' // User posts',
+                  }),
+                },
+              }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('posts        Post[] // User posts')
+    })
+
+    it('should apply extendPrismaSchema to relationship without FK (other side of one-to-one)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              profile: relationship({
+                ref: 'Profile.user',
+                db: { foreignKey: true },
+              }),
+            },
+          },
+          Profile: {
+            fields: {
+              bio: text(),
+              user: relationship({
+                ref: 'User.profile',
+                db: {
+                  extendPrismaSchema: ({ relationLine }) => ({
+                    relationLine: relationLine + ' // Back reference',
+                  }),
+                },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('user         User? // Back reference')
+    })
   })
 })

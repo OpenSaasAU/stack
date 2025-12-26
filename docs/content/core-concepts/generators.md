@@ -160,6 +160,36 @@ export default config({
 - **Preview features**: Enable Prisma preview features via datasource or generator configuration
 - **Output path modifications**: Adjust the Prisma Client output path
 
+### Field-Level Schema Extension
+
+For more granular control, relationship fields support `extendPrismaSchema` in their `db` config. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions:
+
+```typescript
+fields: {
+  parent: relationship({
+    ref: 'Category.children',
+    db: {
+      foreignKey: true,
+      extendPrismaSchema: ({ fkLine, relationLine }) => ({
+        fkLine,
+        relationLine: relationLine.replace(
+          '@relation(',
+          '@relation(onDelete: SetNull, onUpdate: Cascade, '
+        ),
+      }),
+    },
+  }),
+  children: relationship({ ref: 'Category.parent', many: true }),
+}
+```
+
+The function receives:
+
+- `fkLine`: The foreign key field line (only present for single relationships that own the FK)
+- `relationLine`: The relation field line
+
+Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular and broad modifications.
+
 ## Generator Limitations
 
 Current generators are basic:
