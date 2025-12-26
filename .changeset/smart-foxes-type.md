@@ -17,8 +17,8 @@ Post: list({
       if (args.operation === 'update') {
         console.log('Updated:', args.item)
       }
-    }
-  }
+    },
+  },
 })
 ```
 
@@ -34,13 +34,14 @@ fields: {
         if (!args.resolvedData.email?.includes('@')) {
           args.addValidationError('Invalid email')
         }
-      }
-    }
+      },
+    },
   })
 }
 ```
 
 **Available types:**
+
 - List-level: `ResolveInputHookArgs`, `ValidateHookArgs`, `BeforeOperationHookArgs`, `AfterOperationHookArgs`
 - Field-level: `FieldResolveInputHookArgs`, `FieldValidateHookArgs`, `FieldBeforeOperationHookArgs`, `FieldAfterOperationHookArgs`, `FieldResolveOutputHookArgs`
 
