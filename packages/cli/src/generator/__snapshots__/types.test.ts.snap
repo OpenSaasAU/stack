@@ -1049,6 +1049,7 @@ export type PostWhereInput = {
   OR?: Array<PostWhereInput>
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
+  author?: UserWhereInput
 }
 
 /**
@@ -1283,6 +1284,7 @@ export type PostWhereInput = {
   OR?: Array<PostWhereInput>
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
+  author?: UserWhereInput
 }
 
 /**
@@ -1516,6 +1518,11 @@ export type UserWhereInput = {
   OR?: Array<UserWhereInput>
   NOT?: UserWhereInput
   name?: { equals?: string, not?: string }
+  posts?: {
+    some?: PostWhereInput
+    every?: PostWhereInput
+    none?: PostWhereInput
+  }
 }
 
 /**
@@ -1601,6 +1608,7 @@ export type PostWhereInput = {
   OR?: Array<PostWhereInput>
   NOT?: PostWhereInput
   title?: { equals?: string, not?: string }
+  author?: UserWhereInput
 }
 
 /**
