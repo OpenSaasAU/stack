@@ -274,7 +274,11 @@ export type ResultExtensionConfig = {
 
 export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   type: string
-  access?: FieldAccess
+  access?: FieldAccess<
+    TTypeInfo['item'],
+    TTypeInfo['inputs']['create'],
+    TTypeInfo['inputs']['update']
+  >
   defaultValue?: unknown
   hooks?: FieldHooks<TTypeInfo>
   /**

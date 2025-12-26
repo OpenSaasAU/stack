@@ -140,7 +140,8 @@ export async function checkFieldAccess(
     item: args.item,
     context: args.context,
     inputData: args.inputData,
-  })
+    operation,
+  } as Parameters<typeof accessControl>[0])
 
   // If result is false, deny access
   if (result === false) {

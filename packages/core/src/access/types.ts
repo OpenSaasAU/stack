@@ -179,22 +179,44 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
  * filters are ignored in field-level access. Only boolean results are used.
  * If a filter is returned, it defaults to allowing access (true).
  */
-export type FieldAccessControl<T = Record<string, unknown>> = (args: {
-  session: Session | null
-  item?: T
-  context: AccessContext
-  /**
-   * The input data being written. Only present for create/update operations.
-   * For read operations, this is undefined.
-   */
-  inputData?: Record<string, unknown>
-}) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
+export type FieldAccessControl<
+  TItem = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> = (
+  args:
+    | {
+        session: Session | null
+        item?: undefined
+        context: AccessContext
+        inputData?: undefined
+        operation: 'read'
+      }
+    | {
+        session: Session | null
+        item?: undefined
+        context: AccessContext
+        inputData: TCreateInput
+        operation: 'create'
+      }
+    | {
+        session: Session | null
+        item: TItem
+        context: AccessContext
+        inputData: TUpdateInput
+        operation: 'update'
+      },
+) => boolean | PrismaFilter<TItem> | Promise<boolean | PrismaFilter<TItem>>
 
 /**
  * Field-level access control
  */
-export type FieldAccess<T = Record<string, unknown>> = {
-  read?: FieldAccessControl<T>
-  create?: FieldAccessControl<T>
-  update?: FieldAccessControl<T>
+export type FieldAccess<
+  TItem = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> = {
+  read?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
+  create?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
+  update?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
 }

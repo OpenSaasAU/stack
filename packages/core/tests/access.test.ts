@@ -484,12 +484,15 @@ describe('Access Control', () => {
         session: { userId: '123' },
         item,
         context: mockContext,
+        inputData: data,
       })
 
       expect(accessFn).toHaveBeenCalledWith({
         session: { userId: '123' },
         item,
         context: mockContext,
+        inputData: data,
+        operation: 'update',
       })
     })
   })
