@@ -30,6 +30,7 @@ Post: list({
 The `list()` function normalizes the shorthand to the object form at runtime, so existing code continues to work unchanged.
 
 New exports:
+
 - `ListAccessControl<T>` - Union type accepting either a function or operation object
 - `ListConfigInput<TTypeInfo>` - Input type for `list()` function with flexible access control
 
