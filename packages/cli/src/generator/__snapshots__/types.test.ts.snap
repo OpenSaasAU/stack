@@ -92,6 +92,18 @@ export type UserHooks = {
 }
 
 /**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -225,6 +237,18 @@ export type PostHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -362,6 +386,18 @@ export type PostHooks = {
 }
 
 /**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -491,6 +527,18 @@ export type UserHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -628,6 +676,18 @@ export type UserHooks = {
 }
 
 /**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -759,6 +819,18 @@ export type UserHooks = {
 }
 
 /**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -840,6 +912,18 @@ export type PostHooks = {
 }
 
 /**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
+
+/**
  * Virtual fields for Comment - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -919,6 +1003,18 @@ export type CommentHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for Comment
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type CommentSelect = Prisma.CommentSelect
+
+/**
+ * Include type for Comment
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type CommentInclude = Prisma.CommentInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -1092,6 +1188,18 @@ export type PostHooks = {
 }
 
 /**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
+
+/**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -1171,6 +1279,18 @@ export type UserHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -1326,6 +1446,18 @@ export type PostHooks = {
 }
 
 /**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
+
+/**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -1405,6 +1537,18 @@ export type UserHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -1559,6 +1703,18 @@ export type UserHooks = {
 }
 
 /**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -1642,6 +1798,18 @@ export type PostHooks = {
     context: import('@opensaas/stack-core').AccessContext
   }) => Promise<void>
 }
+
+/**
+ * Select type for Post
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type PostSelect = Prisma.PostSelect
+
+/**
+ * Include type for Post
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type PostInclude = Prisma.PostInclude
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support

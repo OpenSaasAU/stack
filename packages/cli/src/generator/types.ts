@@ -41,6 +41,15 @@ function isFieldOptional(field: FieldConfig): boolean {
 }
 
 /**
+ * Get names of virtual fields in a list
+ */
+function getVirtualFieldNames(fields: Record<string, FieldConfig>): string[] {
+  return Object.entries(fields)
+    .filter(([_, config]) => config.type === 'virtual')
+    .map(([name, _]) => name)
+}
+
+/**
  * Generate virtual fields type - only contains virtual fields
  * This is intersected with Prisma's GetPayload to add virtual fields to query results
  */
@@ -310,6 +319,77 @@ function generateHookTypes(listName: string): string {
 }
 
 /**
+ * Generate Select type that includes virtual fields
+ * Extends Prisma's Select type with virtual field selection support
+ */
+function generateSelectType(listName: string, fields: Record<string, FieldConfig>): string {
+  const virtualFields = getVirtualFieldNames(fields)
+
+  if (virtualFields.length === 0) {
+    // No virtual fields - just re-export Prisma type
+    return `/**
+ * Select type for ${listName}
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type ${listName}Select = Prisma.${listName}Select`
+  }
+
+  // Extend Prisma type with virtual fields
+  const virtualFieldLines = virtualFields.map((name) => `  ${name}?: boolean`).join('\n')
+
+  return `/**
+ * Select type for ${listName} with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+${virtualFields.map((name) => ` *   ${name}: true, // Virtual field`).join('\n')}
+ * } satisfies ${listName}Select
+ */
+export type ${listName}Select = Prisma.${listName}Select & {
+${virtualFieldLines}
+}`
+}
+
+/**
+ * Generate Include type that includes virtual fields
+ * Extends Prisma's Include type with virtual field inclusion support
+ */
+function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string {
+  const virtualFields = getVirtualFieldNames(fields)
+
+  if (virtualFields.length === 0) {
+    // No virtual fields - just re-export Prisma type
+    return `/**
+ * Include type for ${listName}
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type ${listName}Include = Prisma.${listName}Include`
+  }
+
+  // Extend Prisma type with virtual fields
+  const virtualFieldLines = virtualFields.map((name) => `  ${name}?: boolean`).join('\n')
+
+  return `/**
+ * Include type for ${listName} with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+${virtualFields.map((name) => ` *   ${name}: true, // Virtual field`).join('\n')}
+ * } satisfies ${listName}Include
+ */
+export type ${listName}Include = Prisma.${listName}Include & {
+${virtualFieldLines}
+}`
+}
+
+/**
  * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
  * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
@@ -508,6 +588,11 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(generateWhereInputType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateHookTypes(listName))
+    lines.push('')
+    // Generate Select and Include types with virtual field support
+    lines.push(generateSelectType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateIncludeType(listName, listConfig.fields))
     lines.push('')
   }
 

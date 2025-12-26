@@ -236,6 +236,18 @@ export type UserHooks = {
 }
 
 /**
+ * Select type for User
+ * No virtual fields defined, uses Prisma's Select type directly
+ */
+export type UserSelect = Prisma.UserSelect
+
+/**
+ * Include type for User
+ * No virtual fields defined, uses Prisma's Include type directly
+ */
+export type UserInclude = Prisma.UserInclude
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
