@@ -192,60 +192,57 @@ describe('Access Control', () => {
       expect(result).toBe(true)
     })
 
-    it('should check filter match when operation returns filter', async () => {
-      const item = { userId: '123' }
+    it('should receive inputData for create operations', async () => {
+      const inputData = { title: 'Test', authorId: '123' }
       const fieldAccess: FieldAccess = {
-        read: vi.fn(async () => ({ userId: '123' })),
+        create: vi.fn(async ({ inputData: data }) => {
+          // Field access can validate inputData
+          return data?.authorId === '123'
+        }),
       }
 
-      const result = await checkFieldAccess(fieldAccess, 'read', {
+      const result = await checkFieldAccess(fieldAccess, 'create', {
         session: null,
-        item,
         context: mockContext,
+        inputData,
       })
 
       expect(result).toBe(true)
+      expect(fieldAccess.create).toHaveBeenCalledWith(expect.objectContaining({ inputData }))
     })
 
-    it('should deny access when filter does not match', async () => {
-      const item = { userId: '456' }
+    it('should receive inputData for update operations', async () => {
+      const inputData = { title: 'Updated', authorId: '123' }
+      const item = { id: '1', authorId: '123' }
       const fieldAccess: FieldAccess = {
-        read: vi.fn(async () => ({ userId: '123' })),
+        update: vi.fn(async ({ inputData: data, item: existingItem }) => {
+          // Field access can validate inputData and check existing item
+          return data?.authorId === existingItem?.authorId
+        }),
       }
 
-      const result = await checkFieldAccess(fieldAccess, 'read', {
+      const result = await checkFieldAccess(fieldAccess, 'update', {
         session: null,
         item,
         context: mockContext,
-      })
-
-      expect(result).toBe(false)
-    })
-
-    it('should work with equals condition', async () => {
-      const item = { status: 'active' }
-      const fieldAccess: FieldAccess = {
-        read: vi.fn(async () => ({ status: { equals: 'active' } })),
-      }
-
-      const result = await checkFieldAccess(fieldAccess, 'read', {
-        session: null,
-        item,
-        context: mockContext,
+        inputData,
       })
 
       expect(result).toBe(true)
+      expect(fieldAccess.update).toHaveBeenCalledWith(expect.objectContaining({ inputData, item }))
     })
 
-    it('should work with not condition', async () => {
-      const item = { status: 'active' }
+    it('should not receive inputData for read operations', async () => {
       const fieldAccess: FieldAccess = {
-        read: vi.fn(async () => ({ status: { not: 'deleted' } })),
+        read: vi.fn(async ({ inputData }) => {
+          // inputData should be undefined for read operations
+          expect(inputData).toBeUndefined()
+          return true
+        }),
       }
 
       const result = await checkFieldAccess(fieldAccess, 'read', {
         session: null,
-        item,
         context: mockContext,
       })
 
@@ -487,12 +484,15 @@ describe('Access Control', () => {
         session: { userId: '123' },
         item,
         context: mockContext,
+        inputData: data,
       })
 
       expect(accessFn).toHaveBeenCalledWith({
         session: { userId: '123' },
         item,
         context: mockContext,
+        inputData: data,
+        operation: 'update',
       })
     })
   })

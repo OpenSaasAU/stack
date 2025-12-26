@@ -835,6 +835,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     const filteredData = await filterWritableFields(resolvedData, listConfig.fields, 'create', {
       session: context.session,
       context: { ...context, _isSudo: context._isSudo },
+      inputData: args.data,
     })
 
     // 5.5. Process nested relationship operations
@@ -1015,6 +1016,7 @@ function createUpdate<TPrisma extends PrismaClientLike>(
       session: context.session,
       item,
       context: { ...context, _isSudo: context._isSudo },
+      inputData: args.data,
     })
 
     // 6.5. Process nested relationship operations
