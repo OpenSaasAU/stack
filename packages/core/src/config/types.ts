@@ -974,6 +974,36 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * MCP server configuration for this list
    */
   mcp?: ListMcpConfig
+  /**
+   * Restricts this list to a single record (singleton pattern)
+   * When true:
+   * - Prevents creating multiple records
+   * - Auto-creates the single record on first access (if autoCreate: true, which is the default)
+   * - Provides a get() method for easy access to the singleton
+   * - Blocks delete and findMany operations
+   * - Changes UI to show edit form instead of list view
+   *
+   * @example Simple boolean (auto-create enabled)
+   * ```typescript
+   * isSingleton: true
+   * ```
+   *
+   * @example With options
+   * ```typescript
+   * isSingleton: {
+   *   autoCreate: false  // Don't auto-create, must be created manually
+   * }
+   * ```
+   */
+  isSingleton?:
+    | boolean
+    | {
+        /**
+         * Auto-create the singleton record on first access using field defaults
+         * @default true
+         */
+        autoCreate?: boolean
+      }
 }
 
 /**
