@@ -1,5 +1,35 @@
 # @opensaas/stack-core
 
+## 0.15.0
+
+### Minor Changes
+
+- [#310](https://github.com/OpenSaasAU/stack/pull/310) [`19f04b1`](https://github.com/OpenSaasAU/stack/commit/19f04b1c5e0b172257936c366bd28d56aa825a24) Thanks [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({)! - Add automatic foreign key indexing for relationship fields (matching Keystone behavior)
+
+  Relationship fields now automatically generate `@@index` directives on their foreign key fields by default. This matches Keystone's behavior and prevents performance regression when migrating from Keystone.
+
+  **Default behavior (indexed):**
+
+  ```typescript
+   ref: 'User.posts' })
+  // Generates: @@index([authorId])
+  ```
+
+  **Explicit control:**
+
+  ```typescript
+  // Force indexing
+   ref: 'User.posts', isIndexed: true })
+
+  // Unique constraint (for one-to-one)
+   ref: 'User.posts', isIndexed: 'unique' })
+
+  // Disable indexing (not recommended)
+   ref: 'User.posts', isIndexed: false })
+  ```
+
+  This resolves the issue where migrations from Keystone would drop all foreign key indexes, causing performance degradation on queries filtering or joining on foreign keys.
+
 ## 0.14.0
 
 ### Minor Changes
