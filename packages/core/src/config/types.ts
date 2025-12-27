@@ -619,6 +619,34 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       foreignKey?: boolean | { map?: string }
       /**
+       * Custom relation name for many-to-many relationships
+       * Overrides the global joinTableNaming setting
+       * Prisma will create an implicit join table named _relationName
+       * Only needs to be set on one side of a bidirectional relationship
+       *
+       * @example KeystoneJS-style naming for migration
+       * ```typescript
+       * Lesson: list({
+       *   fields: {
+       *     teachers: relationship({
+       *       ref: 'Teacher.lessons',
+       *       many: true,
+       *       db: { relationName: 'Lesson_teachers' }
+       *       // Prisma creates join table _Lesson_teachers
+       *     })
+       *   }
+       * })
+       *
+       * Teacher: list({
+       *   fields: {
+       *     lessons: relationship({ ref: 'Lesson.teachers', many: true })
+       *     // Automatically uses same relationName from other side
+       *   }
+       * })
+       * ```
+       */
+      relationName?: string
+      /**
        * Extend or modify the generated Prisma schema lines for this relationship field
        * Receives the generated FK line (if applicable) and relation line
        * Returns the modified lines
@@ -1192,6 +1220,28 @@ export type DatabaseConfig = {
   // Different database adapters have varying type signatures that are hard to unify
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prismaClientConstructor: (PrismaClientClass: any) => any
+  /**
+   * Join table naming strategy for many-to-many relationships
+   * - 'prisma': Use Prisma's default alphabetically-sorted naming (e.g., `_LessonToTeacher`)
+   * - 'keystone': Use KeystoneJS-compatible naming based on field location (e.g., `_Lesson_teachers`)
+   *
+   * Default: 'prisma'
+   *
+   * **Important for KeystoneJS migration:**
+   * When migrating from KeystoneJS, set this to 'keystone' to preserve existing join table names
+   * and avoid data loss. Keystone names join tables as `_Model_fieldName` based on where the
+   * relationship is defined in the schema.
+   *
+   * @example Preserve Keystone join table names during migration
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   joinTableNaming: 'keystone',  // Use KeystoneJS naming convention
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  joinTableNaming?: 'prisma' | 'keystone'
   /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema
