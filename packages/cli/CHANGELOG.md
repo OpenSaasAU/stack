@@ -1,5 +1,14 @@
 # @opensaas/stack-cli
 
+## 0.17.0
+
+### Patch Changes
+
+- [#317](https://github.com/OpenSaasAU/stack/pull/317) [`69b7af6`](https://github.com/OpenSaasAU/stack/commit/69b7af631c784e7ca0fbe4d1c3979b12fc8c9afe) Thanks [@borisno2](https://github.com/borisno2)! - Fix synthetic field generation for one-sided relationships when using joinTableNaming: 'keystone'
+
+- Updated dependencies [[`538bc20`](https://github.com/OpenSaasAU/stack/commit/538bc20698b7d0f3c6600741f4553306008dec64)]:
+  - @opensaas/stack-core@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

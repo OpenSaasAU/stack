@@ -1,5 +1,34 @@
 # @opensaas/stack-core
 
+## 0.17.0
+
+### Minor Changes
+
+- [#315](https://github.com/OpenSaasAU/stack/pull/315) [`538bc20`](https://github.com/OpenSaasAU/stack/commit/538bc20698b7d0f3c6600741f4553306008dec64) Thanks [@borisno2](https://github.com/borisno2)! - Add `createMany` and `updateMany` batch operations to `context.db`
+
+  You can now use `createMany` to create multiple items at once:
+
+  ```typescript
+  await context.db.billItem.createMany({
+    data: [
+      { billId: '1', name: 'Item 1', quantity: 2, amount: 100 },
+      { billId: '1', name: 'Item 2', quantity: 1, amount: 50 },
+      { billId: '1', name: 'Item 3', quantity: 3, amount: 75 },
+    ],
+  })
+  ```
+
+  And `updateMany` to update multiple items based on a filter:
+
+  ```typescript
+  await context.db.bill.updateMany({
+    where: { id: { in: ['1', '2', '3'] } },
+    data: { status: 'PAID' },
+  })
+  ```
+
+  Both methods run individual operations in a loop to ensure all hooks and access control rules are properly executed for each item, maintaining data integrity and security.
+
 ## 0.16.0
 
 ### Minor Changes
