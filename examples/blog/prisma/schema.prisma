@@ -7,6 +7,15 @@ datasource db {
   provider = "sqlite"
 }
 
+model Settings {
+  id        String   @id @default(cuid())
+  siteName     String
+  maintenanceMode Boolean @default(false)
+  maxUploadSize Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model User {
   id        String   @id @default(cuid())
   name         String
@@ -30,4 +39,5 @@ model Post {
   author       User?  @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@index([authorId])
 }
