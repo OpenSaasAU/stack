@@ -52,7 +52,9 @@ export type UserBasic = UserGetPayload<{
 
 // ✅ SOLUTION 4: Using with context.db
 // Virtual fields are automatically included in context.db return types
-export async function example(context: any) {
+export async function example(context: {
+  db: { user: { findUnique: (args: unknown) => Promise<unknown> } }
+}) {
   // Using the select object with context.db
   const user = await context.db.user.findUnique({
     where: { id: '1' },

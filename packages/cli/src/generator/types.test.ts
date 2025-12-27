@@ -278,7 +278,8 @@ describe('Types Generator', () => {
               fullName: virtual({
                 type: 'string',
                 hooks: {
-                  resolveOutput: ({ item }: any) => `${item.firstName} ${item.lastName}`,
+                  resolveOutput: ({ item }: { firstName: string; lastName: string }) =>
+                    `${item.firstName} ${item.lastName}`,
                 },
               }),
             },
@@ -318,7 +319,7 @@ describe('Types Generator', () => {
               postCount: virtual({
                 type: 'number',
                 hooks: {
-                  resolveOutput: ({ item }: any) => item.posts?.length || 0,
+                  resolveOutput: ({ item }: { posts?: unknown[] }) => item.posts?.length || 0,
                 },
               }),
             },
