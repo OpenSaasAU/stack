@@ -98,6 +98,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -106,20 +149,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -239,6 +282,49 @@ export type PostHooks = {
 export type PostSelect = Prisma.PostSelect
 
 /**
+ * Default args type for Post with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -247,20 +333,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'post'
 > & {
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
@@ -380,6 +466,7 @@ export type UserHooks = {
 /**
  * Select type for User with virtual field support
  * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
  * Use this type when selecting fields to enable virtual field selection
  *
  * @example
@@ -391,11 +478,13 @@ export type UserHooks = {
  */
 export type UserSelect = Prisma.UserSelect & {
   postCount?: boolean
+  posts?: boolean | PostDefaultArgs
 }
 
 /**
  * Include type for User with virtual field support
  * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
  * Use this type when including relationships to enable virtual field selection
  *
  * @example
@@ -406,6 +495,7 @@ export type UserSelect = Prisma.UserSelect & {
  */
 export type UserInclude = Prisma.UserInclude & {
   postCount?: boolean
+  posts?: boolean | PostDefaultArgs
 }
 
 /**
@@ -448,6 +538,55 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
             }
         : UserVirtualFields
   )
+
+/**
+ * Default args type for User with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support in nested relationships
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support in nested relationships
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support in nested relationships
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support in nested relationships
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support in nested relationships
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
 
 /**
  * Virtual fields for Post - computed fields not in database
@@ -536,16 +675,86 @@ export type PostHooks = {
 }
 
 /**
- * Select type for Post
- * No virtual fields defined, uses Prisma's Select type directly
+ * Select type for Post with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = Prisma.PostSelect & {
+  author?: boolean | UserDefaultArgs
+}
 
 /**
- * Include type for Post
- * No virtual fields defined, uses Prisma's Include type directly
+ * Include type for Post with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude
+export type PostInclude = Prisma.PostInclude & {
+  author?: boolean | UserDefaultArgs
+}
+
+/**
+ * Default args type for Post with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support in nested relationships
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -556,38 +765,38 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user' | 'post'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
@@ -703,6 +912,7 @@ export type UserHooks = {
 /**
  * Select type for User with virtual field support
  * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
  * Use this type when selecting fields to enable virtual field selection
  *
  * @example
@@ -758,6 +968,49 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
   )
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -766,20 +1019,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -899,6 +1152,49 @@ export type PostHooks = {
 export type PostSelect = Prisma.PostSelect
 
 /**
+ * Default args type for Post with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -907,20 +1203,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'post'
 > & {
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
@@ -1036,6 +1332,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1044,20 +1383,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -1177,6 +1516,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1185,20 +1567,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -1314,6 +1696,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -1399,6 +1824,49 @@ export type PostHooks = {
  * No virtual fields defined, uses Prisma's Select type directly
  */
 export type PostSelect = Prisma.PostSelect
+
+/**
+ * Default args type for Post with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select'> & {
+  select?: PostSelect | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+  select?: PostSelect | null
+}
 
 /**
  * Virtual fields for Comment - computed fields not in database
@@ -1488,6 +1956,49 @@ export type CommentHooks = {
 export type CommentSelect = Prisma.CommentSelect
 
 /**
+ * Default args type for Comment with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type CommentDefaultArgs = {
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for Comment with virtual field support
+ */
+export type CommentFindUniqueArgs = Omit<Prisma.CommentFindUniqueArgs, 'select'> & {
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom FindManyArgs for Comment with virtual field support
+ */
+export type CommentFindManyArgs = Omit<Prisma.CommentFindManyArgs, 'select'> & {
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom CreateArgs for Comment with virtual field support
+ */
+export type CommentCreateArgs = Omit<Prisma.CommentCreateArgs, 'select'> & {
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom UpdateArgs for Comment with virtual field support
+ */
+export type CommentUpdateArgs = Omit<Prisma.CommentUpdateArgs, 'select'> & {
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom DeleteArgs for Comment with virtual field support
+ */
+export type CommentDeleteArgs = Omit<Prisma.CommentDeleteArgs, 'select'> & {
+  select?: CommentSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1496,56 +2007,56 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user' | 'post' | 'comment'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   comment: {
-    findUnique: <T extends Prisma.CommentFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.CommentFindUniqueArgs>
+    findUnique: <T extends CommentFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
     ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
-    findMany: <T extends Prisma.CommentFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.CommentFindManyArgs>
+    findMany: <T extends CommentFindManyArgs>(
+      args?: Prisma.SelectSubset<T, CommentFindManyArgs>
     ) => Promise<Array<Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields>>
-    create: <T extends Prisma.CommentCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.CommentCreateArgs>
+    create: <T extends CommentCreateArgs>(
+      args: Prisma.SelectSubset<T, CommentCreateArgs>
     ) => Promise<Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields>
-    update: <T extends Prisma.CommentUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.CommentUpdateArgs>
+    update: <T extends CommentUpdateArgs>(
+      args: Prisma.SelectSubset<T, CommentUpdateArgs>
     ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
-    delete: <T extends Prisma.CommentDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.CommentDeleteArgs>
+    delete: <T extends CommentDeleteArgs>(
+      args: Prisma.SelectSubset<T, CommentDeleteArgs>
     ) => Promise<(Omit<Prisma.CommentGetPayload<T>, keyof CommentTransformedFields> & CommentTransformedFields & CommentVirtualFields) | null>
     count: (args?: Prisma.CommentCountArgs) => Promise<number>
   }
@@ -1660,16 +2171,86 @@ export type PostHooks = {
 }
 
 /**
- * Select type for Post
- * No virtual fields defined, uses Prisma's Select type directly
+ * Select type for Post with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = Prisma.PostSelect & {
+  author?: boolean | UserDefaultArgs
+}
 
 /**
- * Include type for Post
- * No virtual fields defined, uses Prisma's Include type directly
+ * Include type for Post with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude
+export type PostInclude = Prisma.PostInclude & {
+  author?: boolean | UserDefaultArgs
+}
+
+/**
+ * Default args type for Post with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support in nested relationships
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
 
 /**
  * Virtual fields for User - computed fields not in database
@@ -1759,6 +2340,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1767,38 +2391,38 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'post' | 'user'
 > & {
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -1913,16 +2537,86 @@ export type PostHooks = {
 }
 
 /**
- * Select type for Post
- * No virtual fields defined, uses Prisma's Select type directly
+ * Select type for Post with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = Prisma.PostSelect & {
+  author?: boolean | UserDefaultArgs
+}
 
 /**
- * Include type for Post
- * No virtual fields defined, uses Prisma's Include type directly
+ * Include type for Post with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude
+export type PostInclude = Prisma.PostInclude & {
+  author?: boolean | UserDefaultArgs
+}
+
+/**
+ * Default args type for Post with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support in nested relationships
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
 
 /**
  * Virtual fields for User - computed fields not in database
@@ -2012,6 +2706,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -2020,38 +2757,38 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'post' | 'user'
 > & {
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
@@ -2169,16 +2906,86 @@ export type UserHooks = {
 }
 
 /**
- * Select type for User
- * No virtual fields defined, uses Prisma's Select type directly
+ * Select type for User with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies UserSelect
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = Prisma.UserSelect & {
+  posts?: boolean | PostDefaultArgs
+}
 
 /**
- * Include type for User
- * No virtual fields defined, uses Prisma's Include type directly
+ * Include type for User with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies UserInclude
  */
-export type UserInclude = Prisma.UserInclude
+export type UserInclude = Prisma.UserInclude & {
+  posts?: boolean | PostDefaultArgs
+}
+
+/**
+ * Default args type for User with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support in nested relationships
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support in nested relationships
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support in nested relationships
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support in nested relationships
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support in nested relationships
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
 
 /**
  * Virtual fields for Post - computed fields not in database
@@ -2267,16 +3074,86 @@ export type PostHooks = {
 }
 
 /**
- * Select type for Post
- * No virtual fields defined, uses Prisma's Select type directly
+ * Select type for Post with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = Prisma.PostSelect & {
+  author?: boolean | UserDefaultArgs
+}
 
 /**
- * Include type for Post
- * No virtual fields defined, uses Prisma's Include type directly
+ * Include type for Post with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude
+export type PostInclude = Prisma.PostInclude & {
+  author?: boolean | UserDefaultArgs
+}
+
+/**
+ * Default args type for Post with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type PostDefaultArgs = {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom CreateArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Post with virtual field support in nested relationships
+ */
+export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
@@ -2287,38 +3164,38 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user' | 'post'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
   post: {
-    findUnique: <T extends Prisma.PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostFindUniqueArgs>
+    findUnique: <T extends PostFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    findMany: <T extends Prisma.PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.PostFindManyArgs>
+    findMany: <T extends PostFindManyArgs>(
+      args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>>
-    create: <T extends Prisma.PostCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostCreateArgs>
+    create: <T extends PostCreateArgs>(
+      args: Prisma.SelectSubset<T, PostCreateArgs>
     ) => Promise<Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields>
-    update: <T extends Prisma.PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostUpdateArgs>
+    update: <T extends PostUpdateArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
-    delete: <T extends Prisma.PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.PostDeleteArgs>
+    delete: <T extends PostDeleteArgs>(
+      args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<(Omit<Prisma.PostGetPayload<T>, keyof PostTransformedFields> & PostTransformedFields & PostVirtualFields) | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
   }

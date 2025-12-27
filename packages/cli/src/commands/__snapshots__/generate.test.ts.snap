@@ -242,6 +242,49 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * Default args type for User with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type UserDefaultArgs = {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindUniqueArgs for User with virtual field support
+ */
+export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom FindManyArgs for User with virtual field support
+ */
+export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom CreateArgs for User with virtual field support
+ */
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateArgs for User with virtual field support
+ */
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
+ * Custom DeleteArgs for User with virtual field support
+ */
+export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -250,20 +293,20 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   'user'
 > & {
   user: {
-    findUnique: <T extends Prisma.UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserFindUniqueArgs>
+    findUnique: <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    findMany: <T extends Prisma.UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, Prisma.UserFindManyArgs>
+    findMany: <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
-    create: <T extends Prisma.UserCreateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserCreateArgs>
+    create: <T extends UserCreateArgs>(
+      args: Prisma.SelectSubset<T, UserCreateArgs>
     ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
-    update: <T extends Prisma.UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserUpdateArgs>
+    update: <T extends UserUpdateArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
-    delete: <T extends Prisma.UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, Prisma.UserDeleteArgs>
+    delete: <T extends UserDeleteArgs>(
+      args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
