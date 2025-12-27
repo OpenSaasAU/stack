@@ -354,9 +354,7 @@ describe('getContext', () => {
         { id: '2', name: 'Jane', email: 'jane@example.com' },
       ]
 
-      mockPrisma.user.create
-        .mockResolvedValueOnce(mockUsers[0])
-        .mockResolvedValueOnce(mockUsers[1])
+      mockPrisma.user.create.mockResolvedValueOnce(mockUsers[0]).mockResolvedValueOnce(mockUsers[1])
 
       // Config with hook
       const configWithHook: OpenSaasConfig = {

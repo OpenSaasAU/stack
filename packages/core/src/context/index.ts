@@ -448,7 +448,15 @@ export function getContext<
       delete: createDelete(listName, listConfig, prisma, context),
       count: createCount(listName, listConfig, prisma, context),
       createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
-      updateMany: createUpdateMany(listName, listConfig, prisma, context, config, findManyOp, updateOp),
+      updateMany: createUpdateMany(
+        listName,
+        listConfig,
+        prisma,
+        context,
+        config,
+        findManyOp,
+        updateOp,
+      ),
     }
 
     // Add get() method for singleton lists
