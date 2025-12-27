@@ -1,5 +1,11 @@
 # @opensaas/stack-storage
 
+## 0.16.0
+
+### Patch Changes
+
+- [#313](https://github.com/OpenSaasAU/stack/pull/313) [`41349a4`](https://github.com/OpenSaasAU/stack/commit/41349a498faaf52fc5ed2c69b84bd84adfe06628) Thanks [@borisno2](https://github.com/borisno2)! - Fix image and file field typing in context.db operations
+
 ## 0.15.0
 
 ### Patch Changes
