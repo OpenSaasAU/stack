@@ -375,9 +375,9 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
         }
 
         // If no target field specified, we need to add a synthetic field
-        // (unless per-field relationName is set or global Keystone naming is enabled)
+        // (unless it's a many-to-many relationship or per-field relationName is set)
         const hasExplicitRelationName = relField.db?.relationName
-        if (!targetField && !hasExplicitRelationName && joinTableNaming !== 'keystone') {
+        if (!targetField && !hasExplicitRelationName && !m2mCheck.isManyToMany) {
           const syntheticFieldName = `from_${listName}_${fieldName}`
           const relationName = `${listName}_${fieldName}`
 
