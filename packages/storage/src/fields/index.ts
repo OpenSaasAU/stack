@@ -101,6 +101,11 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     type: 'file',
     ...restOptions,
 
+    // Override Prisma's Json type with FileMetadata | null in context.db types
+    resultExtension: {
+      outputType: "import('@opensaas/stack-storage').FileMetadata | null",
+    },
+
     hooks: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
       resolveInput: async ({ inputValue, context, item, fieldName }: any) => {
@@ -245,6 +250,11 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
   const fieldConfig: ImageFieldConfig<TTypeInfo> = {
     type: 'image',
     ...restOptions,
+
+    // Override Prisma's Json type with ImageMetadata | null in context.db types
+    resultExtension: {
+      outputType: "import('@opensaas/stack-storage').ImageMetadata | null",
+    },
 
     hooks: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
