@@ -1,5 +1,89 @@
 # @opensaas/stack-cli
 
+## 0.15.0
+
+### Minor Changes
+
+- [#306](https://github.com/OpenSaasAU/stack/pull/306) [`e7b3542`](https://github.com/OpenSaasAU/stack/commit/e7b354246e40c6d91c459a50791f6eef12f9521d) Thanks [@borisno2](https://github.com/borisno2)! - Add GetPayload helper types for virtual fields
+
+  Virtual fields are now fully type-safe in Prisma select queries. The type generator now creates `{ListName}GetPayload<T>` helper types that conditionally include virtual fields based on selection.
+
+  Before this change, virtual fields were not recognized in Prisma select types:
+
+  ```typescript
+  import { Prisma } from '@/.opensaas/prisma-client/client'
+
+  const select = {
+    id: true,
+    age: true, // ❌ TS Error: 'age' does not exist in type 'StudentSelect'
+  } satisfies Prisma.StudentSelect
+  ```
+
+  After this change, you can use the generated types from `.opensaas/types`:
+
+  ```typescript
+  import { StudentSelect, StudentGetPayload } from '@/.opensaas/types'
+
+  const studentSelect = {
+    id: true,
+    firstName: true,
+    age: true, // ✅ Virtual field - fully typed!
+  } satisfies StudentSelect
+
+  type StudentDetail = StudentGetPayload<{ select: typeof studentSelect }>
+  // ✅ StudentDetail includes: { id: string, firstName: string, age: number }
+  ```
+
+  The helper type only includes virtual fields that are explicitly selected:
+
+  ```typescript
+  const basicSelect = {
+    id: true,
+    firstName: true,
+    // age NOT selected
+  } satisfies StudentSelect
+
+  type BasicStudent = StudentGetPayload<{ select: typeof basicSelect }>
+  // ✅ BasicStudent includes: { id: string, firstName: string }
+  // age is NOT included
+  ```
+
+  No migration needed - this is purely additive. Existing code continues to work, and you can adopt the new types incrementally by:
+  1. Running `pnpm generate` to regenerate types
+  2. Importing from `.opensaas/types` instead of `@/.opensaas/prisma-client/client`
+  3. Using `{ListName}Select` and `{ListName}GetPayload<T>` for type-safe virtual field queries
+
+- [#310](https://github.com/OpenSaasAU/stack/pull/310) [`19f04b1`](https://github.com/OpenSaasAU/stack/commit/19f04b1c5e0b172257936c366bd28d56aa825a24) Thanks [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({)! - Add automatic foreign key indexing for relationship fields (matching Keystone behavior)
+
+  Relationship fields now automatically generate `@@index` directives on their foreign key fields by default. This matches Keystone's behavior and prevents performance regression when migrating from Keystone.
+
+  **Default behavior (indexed):**
+
+  ```typescript
+   ref: 'User.posts' })
+  // Generates: @@index([authorId])
+  ```
+
+  **Explicit control:**
+
+  ```typescript
+  // Force indexing
+   ref: 'User.posts', isIndexed: true })
+
+  // Unique constraint (for one-to-one)
+   ref: 'User.posts', isIndexed: 'unique' })
+
+  // Disable indexing (not recommended)
+   ref: 'User.posts', isIndexed: false })
+  ```
+
+  This resolves the issue where migrations from Keystone would drop all foreign key indexes, causing performance degradation on queries filtering or joining on foreign keys.
+
+### Patch Changes
+
+- Updated dependencies [[`19f04b1`](https://github.com/OpenSaasAU/stack/commit/19f04b1c5e0b172257936c366bd28d56aa825a24)]:
+  - @opensaas/stack-core@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes

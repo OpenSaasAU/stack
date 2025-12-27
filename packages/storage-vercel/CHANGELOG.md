@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-vercel
 
+## 0.15.0
+
+### Patch Changes
+
+- [#308](https://github.com/OpenSaasAU/stack/pull/308) [`43dfa2e`](https://github.com/OpenSaasAU/stack/commit/43dfa2e15aa59d70e898ba52a014ed8d67ada7c6) Thanks [@borisno2](https://github.com/borisno2)! - Fix TypeScript type errors in image and file fields. Add missing index signature to VercelBlobStorageConfig and getTypeScriptImports() method to properly import ImageMetadata and FileMetadata types.
+
 ## 0.14.0
 
 ## 0.13.0
