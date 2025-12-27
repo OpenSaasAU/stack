@@ -246,7 +246,7 @@ describe('Prisma Schema Generator', () => {
           provider: 'sqlite',
         },
         lists: {
-          Tag: {
+          Category: {
             fields: {
               name: text(),
             },
@@ -254,7 +254,7 @@ describe('Prisma Schema Generator', () => {
           Post: {
             fields: {
               title: text(),
-              tags: relationship({ ref: 'Tag', many: true }),
+              category: relationship({ ref: 'Category' }), // Many-to-one (no many: true)
             },
           },
         },
@@ -262,11 +262,12 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Post should have one-to-many with named relation
-      expect(schema).toContain('tags         Tag[]  @relation("Post_tags")')
+      // Post should have foreign key and relation
+      expect(schema).toContain('categoryId   String?')
+      expect(schema).toContain('category     Category?  @relation("Post_category"')
 
-      // Tag should have synthetic field with matching relation name
-      expect(schema).toContain('from_Post_tags Post[]  @relation("Post_tags")')
+      // Category should have synthetic field with matching relation name
+      expect(schema).toContain('from_Post_category Post[]  @relation("Post_category")')
     })
 
     it('should handle mix of bidirectional and list-only refs', () => {
@@ -1016,6 +1017,67 @@ describe('Prisma Schema Generator', () => {
 
       // Should NOT have synthetic field (handled by implicit join table)
       expect(schema).not.toContain('from_Post_tags')
+    })
+
+    it('should generate synthetic fields for one-sided many-to-one with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Term: {
+            fields: {
+              name: text(),
+            },
+          },
+          Bill: {
+            fields: {
+              title: text(),
+              term: relationship({ ref: 'Term' }), // One-sided many-to-one
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Bill should have foreign key and relation
+      expect(schema).toContain('termId       String?')
+      expect(schema).toContain('term         Term?')
+      expect(schema).toContain('@relation("Bill_term"')
+
+      // Term should have synthetic back-reference field
+      expect(schema).toContain('from_Bill_term Bill[]')
+      expect(schema).toContain('@relation("Bill_term")')
+    })
+
+    it('should generate synthetic fields for self-referential one-sided with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Term: {
+            fields: {
+              name: text(),
+              copyFrom: relationship({ ref: 'Term' }), // Self-referential, one-sided
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Term should have foreign key and relation
+      expect(schema).toContain('copyFromId   String?')
+      expect(schema).toContain('copyFrom     Term?')
+      expect(schema).toContain('@relation("Term_copyFrom"')
+
+      // Term should also have synthetic back-reference field
+      expect(schema).toContain('from_Term_copyFrom Term[]')
+      expect(schema).toContain('@relation("Term_copyFrom")')
     })
 
     it('should use per-field relationName when specified on one side', () => {
