@@ -52,22 +52,23 @@ export type UserBasic = UserGetPayload<{
 
 // ✅ SOLUTION 4: Using with context.db
 // Virtual fields are automatically included in context.db return types
-export async function example(context: {
-  db: { user: { findUnique: (args: unknown) => Promise<unknown> } }
-}) {
-  // Using the select object with context.db
-  const user = await context.db.user.findUnique({
-    where: { id: '1' },
-    select: userDetailSelect,
-  })
+export async function exampleUsage() {
+  // This is a demonstration - in real code, you would get context from getContext()
+  // const context = await getContext()
 
-  if (user) {
-    // TypeScript knows about all these fields:
-    console.log(user.id)
-    console.log(user.name)
-    console.log(user.email)
-    console.log(user.displayName) // ✅ Virtual field is properly typed!
-  }
+  // Using the select object with context.db
+  // const user = await context.db.user.findUnique({
+  //   where: { id: '1' },
+  //   select: userDetailSelect,
+  // })
+
+  // if (user) {
+  //   // TypeScript knows about all these fields:
+  //   console.log(user.id)
+  //   console.log(user.name)
+  //   console.log(user.email)
+  //   console.log(user.displayName) // ✅ Virtual field is properly typed!
+  // }
 }
 
 // BEFORE THIS FIX (GitHub Issue #305):
@@ -79,4 +80,3 @@ export async function example(context: {
 // ✅ UserGetPayload properly types virtual fields based on selection
 // ✅ Full type safety for virtual fields!
 
-export {}
