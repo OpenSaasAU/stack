@@ -438,13 +438,25 @@ export function getContext<
 
     // Create base operations
     const createOp = createCreate(listName, listConfig, prisma, context, config)
+    const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
+    const updateOp = createUpdate(listName, listConfig, prisma, context, config)
     const operations: Record<string, unknown> = {
       findUnique: createFindUnique(listName, listConfig, prisma, context, config),
-      findMany: createFindMany(listName, listConfig, prisma, context, config),
+      findMany: findManyOp,
       create: createOp,
-      update: createUpdate(listName, listConfig, prisma, context, config),
+      update: updateOp,
       delete: createDelete(listName, listConfig, prisma, context),
       count: createCount(listName, listConfig, prisma, context),
+      createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
+      updateMany: createUpdateMany(
+        listName,
+        listConfig,
+        prisma,
+        context,
+        config,
+        findManyOp,
+        updateOp,
+      ),
     }
 
     // Add get() method for singleton lists
@@ -915,6 +927,32 @@ function createCreate<TPrisma extends PrismaClientLike>(
 }
 
 /**
+ * Create createMany operation with access control and hooks
+ * Runs create in a loop to ensure all hooks and access control are executed for each item
+ */
+function createCreateMany<TPrisma extends PrismaClientLike>(
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  prisma: TPrisma,
+  context: AccessContext<TPrisma>,
+  config: OpenSaasConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createFn: any,
+) {
+  return async (args: { data: Record<string, unknown>[] }) => {
+    const results = []
+
+    for (const item of args.data) {
+      const result = await createFn({ data: item })
+      results.push(result)
+    }
+
+    return results
+  }
+}
+
+/**
  * Create update operation with access control and hooks
  */
 function createUpdate<TPrisma extends PrismaClientLike>(
@@ -1093,6 +1131,37 @@ function createUpdate<TPrisma extends PrismaClientLike>(
     )
 
     return filtered
+  }
+}
+
+/**
+ * Create updateMany operation with access control and hooks
+ * Runs findMany to get records, then update in a loop to ensure all hooks and access control are executed
+ */
+function createUpdateMany<TPrisma extends PrismaClientLike>(
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  prisma: TPrisma,
+  context: AccessContext<TPrisma>,
+  config: OpenSaasConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  findManyFn: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updateFn: any,
+) {
+  return async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
+    // First, find all matching records (respects access control)
+    const items = await findManyFn({ where: args.where })
+
+    // Then update each one individually (runs hooks and access control for each)
+    const results = []
+    for (const item of items) {
+      const result = await updateFn({ where: { id: item.id }, data: args.data })
+      results.push(result)
+    }
+
+    return results
   }
 }
 

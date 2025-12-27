@@ -276,5 +276,153 @@ describe('getContext', () => {
       expect(mockPrisma.user.count).toHaveBeenCalled()
       expect(result).toBe(5)
     })
+
+    it('should batch create items via createMany', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com' },
+        { id: '2', name: 'Jane', email: 'jane@example.com' },
+        { id: '3', name: 'Bob', email: 'bob@example.com' },
+      ]
+
+      // Mock create to return each user in sequence
+      mockPrisma.user.create
+        .mockResolvedValueOnce(mockUsers[0])
+        .mockResolvedValueOnce(mockUsers[1])
+        .mockResolvedValueOnce(mockUsers[2])
+
+      const context = await getContext(config, mockPrisma, null)
+      const result = await context.db.user.createMany({
+        data: [
+          { name: 'John', email: 'john@example.com' },
+          { name: 'Jane', email: 'jane@example.com' },
+          { name: 'Bob', email: 'bob@example.com' },
+        ],
+      })
+
+      // Should call create 3 times (once for each item)
+      expect(mockPrisma.user.create).toHaveBeenCalledTimes(3)
+      expect(result).toEqual(mockUsers)
+    })
+
+    it('should batch update items via updateMany', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com' },
+        { id: '2', name: 'Jane', email: 'jane@example.com' },
+      ]
+
+      const updatedUsers = [
+        { id: '1', name: 'John Updated', email: 'john@example.com' },
+        { id: '2', name: 'Jane Updated', email: 'jane@example.com' },
+      ]
+
+      // Mock findMany to return the users
+      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+
+      // Mock findUnique for each update's access check
+      mockPrisma.user.findUnique
+        .mockResolvedValueOnce(mockUsers[0])
+        .mockResolvedValueOnce(mockUsers[1])
+
+      // Mock update to return updated users
+      mockPrisma.user.update
+        .mockResolvedValueOnce(updatedUsers[0])
+        .mockResolvedValueOnce(updatedUsers[1])
+
+      const context = await getContext(config, mockPrisma, null)
+      const result = await context.db.user.updateMany({
+        where: { id: { in: ['1', '2'] } },
+        data: { name: 'Updated' },
+      })
+
+      // Should call findMany once to get records
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['1', '2'] } },
+        take: undefined,
+        skip: undefined,
+        include: undefined,
+      })
+
+      // Should call update twice (once for each item)
+      expect(mockPrisma.user.update).toHaveBeenCalledTimes(2)
+      expect(result).toEqual(updatedUsers)
+    })
+
+    it('should run hooks and access control for each item in createMany', async () => {
+      // Test that hooks are called for each item
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com' },
+        { id: '2', name: 'Jane', email: 'jane@example.com' },
+      ]
+
+      mockPrisma.user.create.mockResolvedValueOnce(mockUsers[0]).mockResolvedValueOnce(mockUsers[1])
+
+      // Config with hook
+      const configWithHook: OpenSaasConfig = {
+        ...config,
+        lists: {
+          ...config.lists,
+          User: {
+            ...config.lists.User,
+            hooks: {
+              resolveInput: vi.fn(async ({ resolvedData }) => resolvedData),
+            },
+          },
+        },
+      }
+
+      const context = await getContext(configWithHook, mockPrisma, null)
+      await context.db.user.createMany({
+        data: [
+          { name: 'John', email: 'john@example.com' },
+          { name: 'Jane', email: 'jane@example.com' },
+        ],
+      })
+
+      // Hook should be called twice (once for each item)
+      expect(configWithHook.lists.User.hooks?.resolveInput).toHaveBeenCalledTimes(2)
+    })
+
+    it('should run hooks and access control for each item in updateMany', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com' },
+        { id: '2', name: 'Jane', email: 'jane@example.com' },
+      ]
+
+      const updatedUsers = [
+        { id: '1', name: 'John Updated', email: 'john@example.com' },
+        { id: '2', name: 'Jane Updated', email: 'jane@example.com' },
+      ]
+
+      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+      mockPrisma.user.findUnique
+        .mockResolvedValueOnce(mockUsers[0])
+        .mockResolvedValueOnce(mockUsers[1])
+      mockPrisma.user.update
+        .mockResolvedValueOnce(updatedUsers[0])
+        .mockResolvedValueOnce(updatedUsers[1])
+
+      // Config with hook
+      const configWithHook: OpenSaasConfig = {
+        ...config,
+        lists: {
+          ...config.lists,
+          User: {
+            ...config.lists.User,
+            hooks: {
+              resolveInput: vi.fn(async ({ resolvedData }) => resolvedData),
+            },
+          },
+        },
+      }
+
+      const context = await getContext(configWithHook, mockPrisma, null)
+      await context.db.user.updateMany({
+        where: { id: { in: ['1', '2'] } },
+        data: { name: 'Updated' },
+      })
+
+      // Hook should be called twice (once for each item)
+      expect(configWithHook.lists.User.hooks?.resolveInput).toHaveBeenCalledTimes(2)
+    })
   })
 })
