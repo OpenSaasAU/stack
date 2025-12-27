@@ -791,16 +791,19 @@ model Post {
 
 - **Prisma (default):** Uses alphabetically-sorted names like `_LessonToTeacher`
 - **Keystone:** Uses field-location-based names like `_Lesson_teachers`
+- **Custom:** Use per-field `db.relationName` for full control
 
-**Configuration:**
+**Configuration Options:**
 
-To preserve existing Keystone join table names during migration and avoid data loss, set `joinTableNaming: 'keystone'` in your database config:
+**Option 1: Global Keystone Naming (recommended for migrations)**
+
+Set `joinTableNaming: 'keystone'` in your database config to automatically apply Keystone naming to all M2M relationships:
 
 ```typescript
 export default config({
   db: {
     provider: 'postgresql',
-    joinTableNaming: 'keystone', // Use KeystoneJS naming convention
+    joinTableNaming: 'keystone', // Auto-apply Keystone naming
     prismaClientConstructor: (PrismaClient) => {
       // ... your adapter setup
     },
@@ -809,8 +812,7 @@ export default config({
     Lesson: {
       fields: {
         title: text(),
-        // This will create join table named _Lesson_teachers (Keystone style)
-        // instead of _LessonToTeacher (Prisma default)
+        // Prisma creates implicit join table _Lesson_teachers
         teachers: relationship({ ref: 'Teacher.lessons', many: true }),
       },
     },
@@ -824,7 +826,69 @@ export default config({
 })
 ```
 
-**Generated Prisma Schema with Keystone Naming:**
+**Option 2: Per-Field Relation Name (recommended for fine-grained control)**
+
+Use `db.relationName` on individual relationships to specify custom names:
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    prismaClientConstructor: (PrismaClient) => {
+      // ... your adapter setup
+    },
+  },
+  lists: {
+    Lesson: {
+      fields: {
+        title: text(),
+        // Only need to set on ONE side of the relationship
+        teachers: relationship({
+          ref: 'Teacher.lessons',
+          many: true,
+          db: { relationName: 'Lesson_teachers' },
+        }),
+      },
+    },
+    Teacher: {
+      fields: {
+        name: text(),
+        // Automatically uses same relationName from other side
+        lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+      },
+    },
+  },
+})
+```
+
+**Option 3: Hybrid (per-field overrides global)**
+
+Combine both for flexibility:
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    joinTableNaming: 'keystone', // Default for most relationships
+  },
+  lists: {
+    Lesson: {
+      fields: {
+        // Uses global Keystone naming → _Lesson_students
+        students: relationship({ ref: 'Student.lessons', many: true }),
+        // Per-field overrides global → _CustomTeachers
+        teachers: relationship({
+          ref: 'Teacher.lessons',
+          many: true,
+          db: { relationName: 'CustomTeachers' },
+        }),
+      },
+    },
+  },
+})
+```
+
+**Generated Prisma Schema:**
 
 ```prisma
 model Lesson {
@@ -843,34 +907,32 @@ model Teacher {
   updatedAt DateTime @updatedAt
 }
 
-// Explicit join table for Lesson.teachers ↔ Teacher.lessons
-model LessonTeachers {
-  lesson     Lesson  @relation("Lesson_teachers", fields: [lessonId], references: [id], onDelete: Cascade)
-  lessonId   String
-
-  teacher    Teacher @relation("Lesson_teachers", fields: [teacherId], references: [id], onDelete: Cascade)
-  teacherId  String
-
-  @@id([lessonId, teacherId])
-  @@index([teacherId])
-  @@map("_Lesson_teachers")  // Maps to Keystone's table name
-}
+// Note: Prisma automatically creates implicit join table _Lesson_teachers
+// No explicit model needed - controlled via @relation("name") attribute
 ```
 
 **Migration Guide:**
 
 1. **Before Migration:** Identify all many-to-many relationships in your Keystone schema
-2. **Set Configuration:** Add `joinTableNaming: 'keystone'` to your database config
+2. **Choose Strategy:**
+   - For full migration: Use global `joinTableNaming: 'keystone'`
+   - For specific tables: Use per-field `db.relationName`
 3. **Run Generator:** Generate Prisma schema with `pnpm generate`
-4. **Verify Schema:** Check that join table names match your existing database (e.g., `_Lesson_teachers`)
+4. **Verify Schema:** Check that relation names match (e.g., `@relation("Lesson_teachers")`)
 5. **Test Migration:** Use `prisma db pull` to introspect existing database and compare schemas
 6. **Apply Changes:** Use `prisma db push` to sync schema (should detect no changes if names match)
+
+**Validation:**
+
+- If both sides specify `db.relationName`, they must match or an error is thrown
+- Only need to set `db.relationName` on one side of bidirectional relationships
+- Per-field `db.relationName` takes precedence over global `joinTableNaming`
 
 **Important Notes:**
 
 - Keystone naming uses **deterministic selection** for bidirectional many-to-many relationships (alphabetically sorted)
-- Join tables include `onDelete: Cascade` by default to maintain referential integrity
-- For new projects, use the default Prisma naming unless you need Keystone compatibility
+- Prisma automatically creates join tables named `_relationName` when you use `@relation("relationName")`
+- For new projects, use the default Prisma naming unless you need Keystone compatibility or have specific naming requirements
 
 ## Development Workflow
 

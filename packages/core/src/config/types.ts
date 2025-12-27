@@ -619,6 +619,34 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       foreignKey?: boolean | { map?: string }
       /**
+       * Custom relation name for many-to-many relationships
+       * Overrides the global joinTableNaming setting
+       * Prisma will create an implicit join table named _relationName
+       * Only needs to be set on one side of a bidirectional relationship
+       *
+       * @example KeystoneJS-style naming for migration
+       * ```typescript
+       * Lesson: list({
+       *   fields: {
+       *     teachers: relationship({
+       *       ref: 'Teacher.lessons',
+       *       many: true,
+       *       db: { relationName: 'Lesson_teachers' }
+       *       // Prisma creates join table _Lesson_teachers
+       *     })
+       *   }
+       * })
+       *
+       * Teacher: list({
+       *   fields: {
+       *     lessons: relationship({ ref: 'Lesson.teachers', many: true })
+       *     // Automatically uses same relationName from other side
+       *   }
+       * })
+       * ```
+       */
+      relationName?: string
+      /**
        * Extend or modify the generated Prisma schema lines for this relationship field
        * Receives the generated FK line (if applicable) and relation line
        * Returns the modified lines

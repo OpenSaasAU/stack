@@ -285,7 +285,7 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
           ? isManyToManyRelationship(listName, fieldName, relField, config)
           : { isManyToMany: false, targetList: '', targetField: undefined }
 
-        if (m2mCheck.isManyToMany && joinTableNaming === 'keystone') {
+        if (m2mCheck.isManyToMany) {
           // Create a unique key to avoid processing the same relationship twice
           const relationshipKey = targetField
             ? // Bidirectional: use sorted list names to ensure uniqueness
@@ -296,44 +296,84 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
           if (!processedManyToMany.has(relationshipKey)) {
             processedManyToMany.add(relationshipKey)
 
-            // For Keystone naming, we need to determine which side owns the join table name
-            // Keystone uses the side where the relationship is defined
-            // For bidirectional many-to-many, we need to pick one side deterministically
-            let ownerSide: 'source' | 'target' = 'source'
-            let joinTableName = `_${listName}_${fieldName}`
-            let relationName = `${listName}_${fieldName}`
+            // Check for per-field relationName (takes precedence)
+            const sourceRelationName = relField.db?.relationName
+            let targetRelationName: string | undefined
 
             if (targetField) {
-              // Bidirectional many-to-many
-              // Use alphabetical ordering to determine owner (ensures both sides agree)
-              const sourceKey = `${listName}.${fieldName}`
-              const targetKey = `${targetList}.${targetField}`
-
-              if (sourceKey.localeCompare(targetKey) < 0) {
-                ownerSide = 'source'
-                joinTableName = `_${listName}_${fieldName}`
-                relationName = `${listName}_${fieldName}`
-              } else {
-                ownerSide = 'target'
-                joinTableName = `_${targetList}_${targetField}`
-                relationName = `${targetList}_${targetField}`
+              const targetListConfig = config.lists[targetList]
+              const targetFieldConfig = targetListConfig?.fields[targetField]
+              if (targetFieldConfig?.type === 'relationship') {
+                targetRelationName = (targetFieldConfig as RelationshipField).db?.relationName
               }
             }
 
-            manyToManyRelationships.push({
-              sourceList: listName,
-              sourceField: fieldName,
-              targetList,
-              targetField,
-              ownerSide,
-              joinTableName,
-              relationName,
-            })
+            // Validate both sides match if both specify relationName
+            if (sourceRelationName && targetRelationName && sourceRelationName !== targetRelationName) {
+              throw new Error(
+                `Relation name mismatch: ${listName}.${fieldName} has relationName "${sourceRelationName}" but ${targetList}.${targetField} has "${targetRelationName}". Both sides must use the same relationName.`,
+              )
+            }
+
+            // Use per-field relationName if set (either side), otherwise fall back to global naming
+            const explicitRelationName = sourceRelationName || targetRelationName
+            let relationName: string
+            let joinTableName: string
+            let ownerSide: 'source' | 'target' = 'source'
+
+            if (explicitRelationName) {
+              // Per-field relationName takes precedence
+              relationName = explicitRelationName
+              joinTableName = `_${explicitRelationName}`
+            } else if (joinTableNaming === 'keystone') {
+              // For Keystone naming, we need to determine which side owns the join table name
+              // Keystone uses the side where the relationship is defined
+              // For bidirectional many-to-many, we need to pick one side deterministically
+              joinTableName = `_${listName}_${fieldName}`
+              relationName = `${listName}_${fieldName}`
+
+              if (targetField) {
+                // Bidirectional many-to-many
+                // Use alphabetical ordering to determine owner (ensures both sides agree)
+                const sourceKey = `${listName}.${fieldName}`
+                const targetKey = `${targetList}.${targetField}`
+
+                if (sourceKey.localeCompare(targetKey) < 0) {
+                  ownerSide = 'source'
+                  joinTableName = `_${listName}_${fieldName}`
+                  relationName = `${listName}_${fieldName}`
+                } else {
+                  ownerSide = 'target'
+                  joinTableName = `_${targetList}_${targetField}`
+                  relationName = `${targetList}_${targetField}`
+                }
+              }
+            } else {
+              // Default Prisma naming - no explicit relation name needed
+              // Prisma will auto-generate join table name
+              relationName = ''
+              joinTableName = ''
+            }
+
+            // Only track M2M relationships that need explicit relation names
+            if (relationName) {
+              manyToManyRelationships.push({
+                sourceList: listName,
+                sourceField: fieldName,
+                targetList,
+                targetField,
+                ownerSide,
+                joinTableName,
+                relationName,
+              })
+            }
           }
         }
 
-        // If no target field specified, we need to add a synthetic field (for non-many-to-many or Prisma naming)
-        if (!targetField && joinTableNaming !== 'keystone') {
+        // If no target field specified, we need to add a synthetic field
+        // (unless per-field relationName is set or global Keystone naming is enabled)
+        const hasExplicitRelationName = relField.db?.relationName
+        if (!targetField && !hasExplicitRelationName && joinTableNaming !== 'keystone') {
           const syntheticFieldName = `from_${listName}_${fieldName}`
           const relationName = `${listName}_${fieldName}`
 
@@ -406,21 +446,15 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
         let relationLine: string
 
-        if (m2mCheck.isManyToMany && joinTableNaming === 'keystone') {
-          // Many-to-many with Keystone naming - find the relationship details
-          const m2mRel = manyToManyRelationships.find(
-            (rel) =>
-              (rel.sourceList === listName && rel.sourceField === fieldName) ||
-              (rel.targetList === listName && rel.targetField === fieldName),
-          )
+        // Check if this M2M relationship has an explicit relation name (per-field or global Keystone naming)
+        const m2mRel = manyToManyRelationships.find(
+          (rel) =>
+            (rel.sourceList === listName && rel.sourceField === fieldName) ||
+            (rel.targetList === listName && rel.targetField === fieldName),
+        )
 
-          if (!m2mRel) {
-            throw new Error(
-              `Many-to-many relationship not found for ${listName}.${fieldName}. This should not happen.`,
-            )
-          }
-
-          // Use the relation name for explicit join table
+        if (m2mCheck.isManyToMany && m2mRel) {
+          // Many-to-many with explicit relation name (per-field or Keystone naming)
           relationLine = `  ${paddedName} ${targetList}[]  @relation("${m2mRel.relationName}")`
         } else if (targetField) {
           // Standard bidirectional one-to-many or many-to-many with Prisma naming
