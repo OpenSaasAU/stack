@@ -570,8 +570,11 @@ function generateGetPayloadType(
  * Generate DefaultArgs type for nested relationship selections
  * This type is used when selecting relationships to enable custom Select/Include types
  */
-function generateDefaultArgsType(listName: string): string {
-  return `/**
+function generateDefaultArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Default args type for ${listName} with custom Select/Include support
  * Used in nested relationship selections to support virtual fields
  */
@@ -579,71 +582,135 @@ export type ${listName}DefaultArgs = {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Default args type for ${listName} with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type ${listName}DefaultArgs = {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
  * Generate custom FindUniqueArgs type that uses our extended Select/Include
  */
-function generateFindUniqueArgsType(listName: string): string {
-  return `/**
+function generateFindUniqueArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Custom FindUniqueArgs for ${listName} with virtual field support in nested relationships
  */
 export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Custom FindUniqueArgs for ${listName} with virtual field support
+ */
+export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
  * Generate custom FindManyArgs type that uses our extended Select/Include
  */
-function generateFindManyArgsType(listName: string): string {
-  return `/**
+function generateFindManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Custom FindManyArgs for ${listName} with virtual field support in nested relationships
  */
 export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Custom FindManyArgs for ${listName} with virtual field support
+ */
+export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
  * Generate custom CreateArgs type that uses our extended Select/Include
  */
-function generateCreateArgsType(listName: string): string {
-  return `/**
+function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Custom CreateArgs for ${listName} with virtual field support in nested relationships
  */
 export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Custom CreateArgs for ${listName} with virtual field support
+ */
+export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
  * Generate custom UpdateArgs type that uses our extended Select/Include
  */
-function generateUpdateArgsType(listName: string): string {
-  return `/**
+function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Custom UpdateArgs for ${listName} with virtual field support in nested relationships
  */
 export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Custom UpdateArgs for ${listName} with virtual field support
+ */
+export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
  * Generate custom DeleteArgs type that uses our extended Select/Include
  */
-function generateDeleteArgsType(listName: string): string {
-  return `/**
+function generateDeleteArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
  * Custom DeleteArgs for ${listName} with virtual field support in nested relationships
  */
 export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
+  } else {
+    return `/**
+ * Custom DeleteArgs for ${listName} with virtual field support
+ */
+export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
 }
 
 /**
@@ -871,18 +938,18 @@ export function generateTypes(config: OpenSaasConfig): string {
       lines.push('')
     }
     // Generate DefaultArgs type for nested relationship support
-    lines.push(generateDefaultArgsType(listName))
+    lines.push(generateDefaultArgsType(listName, listConfig.fields))
     lines.push('')
     // Generate custom Args types with virtual field support
-    lines.push(generateFindUniqueArgsType(listName))
+    lines.push(generateFindUniqueArgsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateFindManyArgsType(listName))
+    lines.push(generateFindManyArgsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateCreateArgsType(listName))
+    lines.push(generateCreateArgsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateUpdateArgsType(listName))
+    lines.push(generateUpdateArgsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateDeleteArgsType(listName))
+    lines.push(generateDeleteArgsType(listName, listConfig.fields))
     lines.push('')
   }
 
