@@ -351,7 +351,7 @@ function generateHookTypes(listName: string): string {
 function generateSelectType(
   listName: string,
   fields: Record<string, FieldConfig>,
-  allLists: Record<string, any>,
+  _allLists: OpenSaasConfig['lists'],
 ): string {
   const virtualFields = getVirtualFieldNames(fields)
   const relationshipFields = Object.entries(fields)
@@ -426,7 +426,7 @@ ${lines.join('\n')}
 function generateIncludeType(
   listName: string,
   fields: Record<string, FieldConfig>,
-  allLists: Record<string, any>,
+  _allLists: OpenSaasConfig['lists'],
 ): string | null {
   // Check if list has any relationship fields
   const relationshipFields = Object.entries(fields)
