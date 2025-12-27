@@ -559,6 +559,29 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     type: 'relationship'
     ref: string // Format: 'ListName.fieldName' or 'ListName'
     many?: boolean
+    /**
+     * Controls whether to create an index on the foreign key field
+     * Defaults to true for all foreign key fields (matching Keystone behavior)
+     * Can be set to 'unique' for unique constraints or false to disable indexing
+     *
+     * @default true (for foreign key fields)
+     *
+     * @example
+     * ```typescript
+     * // Standard indexed foreign key (default)
+     * author: relationship({ ref: 'User.posts' })
+     * // Generates: @@index([authorId])
+     *
+     * // Unique foreign key (one-to-one)
+     * author: relationship({ ref: 'User.posts', isIndexed: 'unique' })
+     * // Generates: @@unique([authorId])
+     *
+     * // Disable indexing (not recommended, may cause performance issues)
+     * author: relationship({ ref: 'User.posts', isIndexed: false })
+     * // No index generated
+     * ```
+     */
+    isIndexed?: boolean | 'unique'
     db?: {
       /**
        * Controls foreign key placement and column name for bidirectional relationships

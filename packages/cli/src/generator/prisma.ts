@@ -243,6 +243,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
       field: RelationshipField
     }> = []
 
+    // Track foreign key fields that need indexes
+    const foreignKeyIndexes: Array<{
+      foreignKeyField: string
+      indexType: boolean | 'unique'
+    }> = []
+
     // Add regular fields
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       // Skip virtual fields - they don't create database columns
@@ -337,6 +343,16 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
           lines.push(fkLine)
           lines.push(relationLine)
+
+          // Track foreign key for index generation
+          // Default to true (matching Keystone behavior) unless explicitly set to false
+          const indexType = relField.isIndexed ?? true
+          if (indexType !== false) {
+            foreignKeyIndexes.push({
+              foreignKeyField,
+              indexType,
+            })
+          }
         } else {
           // This side does NOT have the foreign key (other side of one-to-one)
           // Just add the relation field without foreign key
@@ -369,6 +385,15 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     // Always add timestamps
     lines.push('  createdAt DateTime @default(now())')
     lines.push('  updatedAt DateTime @updatedAt')
+
+    // Add indexes for foreign key fields
+    for (const { foreignKeyField, indexType } of foreignKeyIndexes) {
+      if (indexType === 'unique') {
+        lines.push(`  @@unique([${foreignKeyField}])`)
+      } else if (indexType === true) {
+        lines.push(`  @@index([${foreignKeyField}])`)
+      }
+    }
 
     lines.push('}')
     lines.push('')
