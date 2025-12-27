@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { generateTypes } from './types.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { text, integer, relationship, checkbox } from '@opensaas/stack-core/fields'
+import { text, integer, relationship, checkbox, virtual } from '@opensaas/stack-core/fields'
 
 describe('Types Generator', () => {
   describe('generateTypes', () => {
@@ -263,6 +263,80 @@ describe('Types Generator', () => {
       expect(types).toContain('/**')
       expect(types).toContain('Generated types from OpenSaas configuration')
       expect(types).toContain('DO NOT EDIT')
+    })
+
+    it('should generate Select and GetPayload types with virtual fields', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              firstName: text({ validation: { isRequired: true } }),
+              lastName: text({ validation: { isRequired: true } }),
+              fullName: virtual({
+                type: 'string',
+                hooks: {
+                  resolveOutput: ({ item }: any) => `${item.firstName} ${item.lastName}`,
+                },
+              }),
+            },
+          },
+        },
+      }
+
+      const types = generateTypes(config)
+
+      // Should generate UserVirtualFields type
+      expect(types).toContain('export type UserVirtualFields = {')
+      expect(types).toContain('fullName: string')
+
+      // Should generate UserSelect with virtual field
+      expect(types).toContain('export type UserSelect = Prisma.UserSelect & {')
+      expect(types).toContain('fullName?: boolean')
+
+      // Should generate UserGetPayload helper type
+      expect(types).toContain('export type UserGetPayload<T extends { select?: any; include?: any } = {}> =')
+      expect(types).toContain('Prisma.UserGetPayload<T> &')
+
+      expect(types).toMatchSnapshot()
+    })
+
+    it('should generate Include type with virtual fields for models with relationships', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+              postCount: virtual({
+                type: 'number',
+                hooks: {
+                  resolveOutput: ({ item }: any) => item.posts?.length || 0,
+                },
+              }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+          },
+        },
+      }
+
+      const types = generateTypes(config)
+
+      // Should generate UserInclude with virtual field
+      expect(types).toContain('export type UserInclude = Prisma.UserInclude & {')
+      expect(types).toContain('postCount?: boolean')
+
+      expect(types).toMatchSnapshot()
     })
   })
 })

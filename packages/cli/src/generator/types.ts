@@ -427,6 +427,97 @@ ${virtualFieldLines}
 }
 
 /**
+ * Generate GetPayload helper type that adds virtual fields support to Prisma's GetPayload
+ * This allows users to use Prisma.{ListName}GetPayload<T> pattern with virtual fields
+ */
+function generateGetPayloadType(
+  listName: string,
+  fields: Record<string, FieldConfig>,
+): string | null {
+  const virtualFields = getVirtualFieldNames(fields)
+  const transformedFieldNames = Object.entries(fields)
+    .filter(([_, config]) => config.resultExtension)
+    .map(([name, _]) => name)
+
+  if (virtualFields.length === 0 && transformedFieldNames.length === 0) {
+    // No virtual or transformed fields - just re-export Prisma type
+    return null
+  }
+
+  const lines: string[] = []
+
+  lines.push(`/**`)
+  lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
+  lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
+  lines.push(` * Use this type to get properly typed results with virtual fields`)
+  lines.push(` *`)
+  lines.push(` * @example`)
+  lines.push(` * const select = {`)
+  lines.push(` *   id: true,`)
+  lines.push(` *   name: true,`)
+  if (virtualFields.length > 0) {
+    virtualFields.forEach((fieldName) => {
+      lines.push(` *   ${fieldName}: true, // Virtual field`)
+    })
+  }
+  lines.push(` * } satisfies ${listName}Select`)
+  lines.push(` *`)
+  lines.push(` * type Result = ${listName}GetPayload<{ select: typeof select }>`)
+  lines.push(` * // Result includes id, name, and ${virtualFields.join(', ')} with proper types`)
+  lines.push(` */`)
+
+  lines.push(
+    `export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`,
+  )
+
+  // Build the transformed fields part
+  if (transformedFieldNames.length > 0) {
+    lines.push(
+      `  Omit<Prisma.${listName}GetPayload<T>, ${transformedFieldNames.map((n) => `'${n}'`).join(' | ')}> &`,
+    )
+    lines.push(`  ${listName}TransformedFields &`)
+  } else {
+    lines.push(`  Prisma.${listName}GetPayload<T> &`)
+  }
+
+  // Build the virtual fields conditional type
+  if (virtualFields.length > 0) {
+    lines.push(`  (`)
+    lines.push(`    T extends { select: any }`)
+    lines.push(`      ? T['select'] extends true`)
+    lines.push(`        ? ${listName}VirtualFields`)
+    lines.push(`        : {`)
+    lines.push(
+      `            [K in keyof ${listName}VirtualFields as K extends keyof T['select']`,
+    )
+    lines.push(`              ? T['select'][K] extends true`)
+    lines.push(`                ? K`)
+    lines.push(`                : never`)
+    lines.push(`              : never]: ${listName}VirtualFields[K]`)
+    lines.push(`          }`)
+    lines.push(`      : T extends { include: any }`)
+    lines.push(`        ? T['include'] extends true`)
+    lines.push(`          ? ${listName}VirtualFields`)
+    lines.push(`          : {`)
+    lines.push(
+      `              [K in keyof ${listName}VirtualFields as K extends keyof T['include']`,
+    )
+    lines.push(`                ? T['include'][K] extends true`)
+    lines.push(`                  ? K`)
+    lines.push(`                  : never`)
+    lines.push(`                : never]: ${listName}VirtualFields[K]`)
+    lines.push(`            }`)
+    lines.push(`        : ${listName}VirtualFields`)
+    lines.push(`  )`)
+  } else {
+    // No virtual fields, just use empty object
+    lines.push(`  {}`)
+  }
+
+  return lines.join('\n')
+}
+
+/**
  * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
  * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
@@ -642,6 +733,12 @@ export function generateTypes(config: OpenSaasConfig): string {
     const includeType = generateIncludeType(listName, listConfig.fields)
     if (includeType) {
       lines.push(includeType)
+      lines.push('')
+    }
+    // Generate GetPayload helper type with virtual field support
+    const getPayloadType = generateGetPayloadType(listName, listConfig.fields)
+    if (getPayloadType) {
+      lines.push(getPayloadType)
       lines.push('')
     }
   }
