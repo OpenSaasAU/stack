@@ -665,5 +665,177 @@ describe('Prisma Schema Generator', () => {
 
       expect(schema).toContain('user         User? // Back reference')
     })
+
+    it('should generate @@index for foreign keys by default (matching Keystone behavior)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should have foreign key field
+      expect(schema).toContain('authorId     String?')
+      // Should have index on foreign key
+      expect(schema).toContain('@@index([authorId])')
+    })
+
+    it('should generate @@index when isIndexed is explicitly true', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User', isIndexed: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String?')
+      expect(schema).toContain('@@index([authorId])')
+    })
+
+    it('should generate @@unique when isIndexed is "unique"', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User', isIndexed: 'unique' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String?')
+      expect(schema).toContain('@@unique([authorId])')
+    })
+
+    it('should not generate index when isIndexed is false', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User', isIndexed: false }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String?')
+      // Should not have index
+      expect(schema).not.toContain('@@index([authorId])')
+      expect(schema).not.toContain('@@unique([authorId])')
+    })
+
+    it('should generate indexes for multiple foreign keys', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Category: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User' }),
+              category: relationship({ ref: 'Category' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should have both foreign keys
+      expect(schema).toContain('authorId     String?')
+      expect(schema).toContain('categoryId   String?')
+      // Should have indexes for both
+      expect(schema).toContain('@@index([authorId])')
+      expect(schema).toContain('@@index([categoryId])')
+    })
+
+    it('should work with bidirectional relationships', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Post should have foreign key and index
+      expect(schema).toContain('authorId     String?')
+      expect(schema).toContain('@@index([authorId])')
+    })
   })
 })
