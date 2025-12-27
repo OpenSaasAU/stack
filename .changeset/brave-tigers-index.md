@@ -8,12 +8,14 @@ Add automatic foreign key indexing for relationship fields (matching Keystone be
 Relationship fields now automatically generate `@@index` directives on their foreign key fields by default. This matches Keystone's behavior and prevents performance regression when migrating from Keystone.
 
 **Default behavior (indexed):**
+
 ```typescript
 author: relationship({ ref: 'User.posts' })
 // Generates: @@index([authorId])
 ```
 
 **Explicit control:**
+
 ```typescript
 // Force indexing
 author: relationship({ ref: 'User.posts', isIndexed: true })
