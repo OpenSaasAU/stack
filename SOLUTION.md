@@ -11,6 +11,7 @@ This solution adds full type-safety support for virtual fields in Prisma select 
 **File**: `packages/cli/src/generator/types.ts`
 
 Generated a new `GetPayload` helper type for each list that:
+
 - Extends Prisma's `GetPayload` type
 - Conditionally includes virtual fields based on selection
 - Handles `select` and `include` modes correctly
@@ -19,32 +20,32 @@ Generated a new `GetPayload` helper type for each list that:
 **Example Generated Type**:
 
 ```typescript
-export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.UserGetPayload<T>, 'password'> &
+export type UserGetPayload<T extends { select?: any; include?: any } = {}> = Omit<
+  Prisma.UserGetPayload<T>,
+  'password'
+> &
   UserTransformedFields &
-  (
-    T extends { select: any }
-      ? T['select'] extends true
+  (T extends { select: any }
+    ? T['select'] extends true
+      ? UserVirtualFields
+      : {
+          [K in keyof UserVirtualFields as K extends keyof T['select']
+            ? T['select'][K] extends true
+              ? K
+              : never
+            : never]: UserVirtualFields[K]
+        }
+    : T extends { include: any }
+      ? T['include'] extends true
         ? UserVirtualFields
         : {
-            [K in keyof UserVirtualFields as K extends keyof T['select']
-              ? T['select'][K] extends true
+            [K in keyof UserVirtualFields as K extends keyof T['include']
+              ? T['include'][K] extends true
                 ? K
                 : never
               : never]: UserVirtualFields[K]
           }
-      : T extends { include: any }
-        ? T['include'] extends true
-          ? UserVirtualFields
-          : {
-              [K in keyof UserVirtualFields as K extends keyof T['include']
-                ? T['include'][K] extends true
-                  ? K
-                  : never
-                : never]: UserVirtualFields[K]
-            }
-        : UserVirtualFields
-  )
+      : UserVirtualFields)
 ```
 
 ### 2. Enhanced Type Generation Pipeline
@@ -52,6 +53,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
 **File**: `packages/cli/src/generator/types.ts`
 
 Added `generateGetPayloadType()` function that:
+
 - Checks if list has virtual or transformed fields
 - Generates conditional type logic for selective field inclusion
 - Includes comprehensive JSDoc documentation
@@ -62,10 +64,12 @@ Added `generateGetPayloadType()` function that:
 **File**: `packages/cli/src/generator/types.test.ts`
 
 Added two new test cases:
+
 - `should generate Select and GetPayload types with virtual fields`
 - `should generate Include type with virtual fields for models with relationships`
 
 Both tests verify:
+
 - `{ListName}VirtualFields` type is generated
 - `{ListName}Select` extends `Prisma.{ListName}Select` with virtual fields
 - `{ListName}GetPayload` helper type is generated
@@ -133,9 +137,9 @@ const student = await context.db.student.findUnique({
 })
 
 if (student) {
-  console.log(student.id)        // ✅ Typed
+  console.log(student.id) // ✅ Typed
   console.log(student.firstName) // ✅ Typed
-  console.log(student.age)       // ✅ Typed - virtual field!
+  console.log(student.age) // ✅ Typed - virtual field!
 }
 ```
 
@@ -169,6 +173,7 @@ pnpm test
 ```
 
 The test suite includes:
+
 - Unit tests for `generateGetPayloadType()`
 - Integration tests with full config examples
 - Snapshot tests for generated output
@@ -191,6 +196,7 @@ No migration needed! This is a pure type enhancement. Existing code continues to
 ## Future Enhancements
 
 Potential future improvements:
+
 - Generate `{ListName}Args` types that wrap all Prisma args with virtual field support
 - Module augmentation to extend `Prisma` namespace directly (optional)
 - Documentation examples in official docs

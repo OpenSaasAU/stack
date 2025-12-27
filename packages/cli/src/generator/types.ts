@@ -466,9 +466,7 @@ function generateGetPayloadType(
   lines.push(` * // Result includes id, name, and ${virtualFields.join(', ')} with proper types`)
   lines.push(` */`)
 
-  lines.push(
-    `export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`,
-  )
+  lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
 
   // Build the transformed fields part
   if (transformedFieldNames.length > 0) {
@@ -487,9 +485,7 @@ function generateGetPayloadType(
     lines.push(`      ? T['select'] extends true`)
     lines.push(`        ? ${listName}VirtualFields`)
     lines.push(`        : {`)
-    lines.push(
-      `            [K in keyof ${listName}VirtualFields as K extends keyof T['select']`,
-    )
+    lines.push(`            [K in keyof ${listName}VirtualFields as K extends keyof T['select']`)
     lines.push(`              ? T['select'][K] extends true`)
     lines.push(`                ? K`)
     lines.push(`                : never`)
@@ -499,9 +495,7 @@ function generateGetPayloadType(
     lines.push(`        ? T['include'] extends true`)
     lines.push(`          ? ${listName}VirtualFields`)
     lines.push(`          : {`)
-    lines.push(
-      `              [K in keyof ${listName}VirtualFields as K extends keyof T['include']`,
-    )
+    lines.push(`              [K in keyof ${listName}VirtualFields as K extends keyof T['include']`)
     lines.push(`                ? T['include'][K] extends true`)
     lines.push(`                  ? K`)
     lines.push(`                  : never`)

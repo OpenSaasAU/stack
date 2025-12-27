@@ -297,7 +297,9 @@ describe('Types Generator', () => {
       expect(types).toContain('fullName?: boolean')
 
       // Should generate UserGetPayload helper type
-      expect(types).toContain('export type UserGetPayload<T extends { select?: any; include?: any } = {}> =')
+      expect(types).toContain(
+        'export type UserGetPayload<T extends { select?: any; include?: any } = {}> =',
+      )
       expect(types).toContain('Prisma.UserGetPayload<T> &')
 
       expect(types).toMatchSnapshot()
