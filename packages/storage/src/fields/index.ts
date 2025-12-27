@@ -196,9 +196,19 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     getTypeScriptType: () => {
       // TypeScript type is FileMetadata | null
       return {
-        type: 'import("@opensaas/stack-storage").FileMetadata | null',
+        type: 'FileMetadata | null',
         optional: true,
       }
+    },
+
+    getTypeScriptImports: () => {
+      return [
+        {
+          names: ['FileMetadata'],
+          from: '@opensaas/stack-storage',
+          typeOnly: true,
+        },
+      ]
     },
   }
 
@@ -356,9 +366,19 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
     getTypeScriptType: () => {
       // TypeScript type is ImageMetadata | null
       return {
-        type: 'import("@opensaas/stack-storage").ImageMetadata | null',
+        type: 'ImageMetadata | null',
         optional: true,
       }
+    },
+
+    getTypeScriptImports: () => {
+      return [
+        {
+          names: ['ImageMetadata'],
+          from: '@opensaas/stack-storage',
+          typeOnly: true,
+        },
+      ]
     },
   }
 

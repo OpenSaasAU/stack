@@ -17,6 +17,8 @@ export interface VercelBlobStorageConfig {
   public?: boolean
   /** Cache control header (default: 'public, max-age=31536000, immutable') */
   cacheControlMaxAge?: number
+  /** Allow additional properties */
+  [key: string]: unknown
 }
 
 /**
