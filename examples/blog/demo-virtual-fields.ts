@@ -55,13 +55,11 @@ export type UserBasic = UserGetPayload<{
 export async function exampleUsage() {
   // This is a demonstration - in real code, you would get context from getContext()
   // const context = await getContext()
-
   // Using the select object with context.db
   // const user = await context.db.user.findUnique({
   //   where: { id: '1' },
   //   select: userDetailSelect,
   // })
-
   // if (user) {
   //   // TypeScript knows about all these fields:
   //   console.log(user.id)
@@ -79,4 +77,3 @@ export async function exampleUsage() {
 // ✅ UserSelect extends Prisma.UserSelect with virtual fields
 // ✅ UserGetPayload properly types virtual fields based on selection
 // ✅ Full type safety for virtual fields!
-
