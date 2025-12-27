@@ -783,6 +783,95 @@ model Post {
 }
 ```
 
+### 6. Join Table Naming and KeystoneJS Migration
+
+**Problem:** When migrating from KeystoneJS to OpenSaaS Stack, many-to-many relationship join tables have different naming conventions, which can cause data loss if not handled correctly.
+
+**Join Table Naming Strategies:**
+
+- **Prisma (default):** Uses alphabetically-sorted names like `_LessonToTeacher`
+- **Keystone:** Uses field-location-based names like `_Lesson_teachers`
+
+**Configuration:**
+
+To preserve existing Keystone join table names during migration and avoid data loss, set `joinTableNaming: 'keystone'` in your database config:
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    joinTableNaming: 'keystone', // Use KeystoneJS naming convention
+    prismaClientConstructor: (PrismaClient) => {
+      // ... your adapter setup
+    },
+  },
+  lists: {
+    Lesson: {
+      fields: {
+        title: text(),
+        // This will create join table named _Lesson_teachers (Keystone style)
+        // instead of _LessonToTeacher (Prisma default)
+        teachers: relationship({ ref: 'Teacher.lessons', many: true }),
+      },
+    },
+    Teacher: {
+      fields: {
+        name: text(),
+        lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+      },
+    },
+  },
+})
+```
+
+**Generated Prisma Schema with Keystone Naming:**
+
+```prisma
+model Lesson {
+  id        String    @id @default(cuid())
+  title     String?
+  teachers  Teacher[] @relation("Lesson_teachers")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Teacher {
+  id       String   @id @default(cuid())
+  name     String?
+  lessons  Lesson[] @relation("Lesson_teachers")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Explicit join table for Lesson.teachers ↔ Teacher.lessons
+model LessonTeachers {
+  lesson     Lesson  @relation("Lesson_teachers", fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId   String
+
+  teacher    Teacher @relation("Lesson_teachers", fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId  String
+
+  @@id([lessonId, teacherId])
+  @@index([teacherId])
+  @@map("_Lesson_teachers")  // Maps to Keystone's table name
+}
+```
+
+**Migration Guide:**
+
+1. **Before Migration:** Identify all many-to-many relationships in your Keystone schema
+2. **Set Configuration:** Add `joinTableNaming: 'keystone'` to your database config
+3. **Run Generator:** Generate Prisma schema with `pnpm generate`
+4. **Verify Schema:** Check that join table names match your existing database (e.g., `_Lesson_teachers`)
+5. **Test Migration:** Use `prisma db pull` to introspect existing database and compare schemas
+6. **Apply Changes:** Use `prisma db push` to sync schema (should detect no changes if names match)
+
+**Important Notes:**
+
+- Keystone naming uses **deterministic selection** for bidirectional many-to-many relationships (alphabetically sorted)
+- Join tables include `onDelete: Cascade` by default to maintain referential integrity
+- For new projects, use the default Prisma naming unless you need Keystone compatibility
+
 ## Development Workflow
 
 ### Making Changes to Core

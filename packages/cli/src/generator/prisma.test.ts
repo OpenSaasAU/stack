@@ -837,5 +837,208 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('authorId     String?')
       expect(schema).toContain('@@index([authorId])')
     })
+
+    it('should generate implicit many-to-many join table with Prisma naming (default)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Lesson: {
+            fields: {
+              title: text(),
+              teachers: relationship({ ref: 'Teacher.lessons', many: true }),
+            },
+          },
+          Teacher: {
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should use implicit many-to-many (no explicit join table model)
+      expect(schema).toContain('teachers     Teacher[]')
+      expect(schema).toContain('lessons      Lesson[]')
+      // Should NOT have explicit join table model
+      expect(schema).not.toContain('model LessonTeachers')
+      expect(schema).not.toContain('@@map("_Lesson_teachers")')
+    })
+
+    it('should generate explicit many-to-many join table with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Lesson: {
+            fields: {
+              title: text(),
+              teachers: relationship({ ref: 'Teacher.lessons', many: true }),
+            },
+          },
+          Teacher: {
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should use named relation
+      expect(schema).toContain('teachers     Teacher[]  @relation("Lesson_teachers")')
+      expect(schema).toContain('lessons      Lesson[]  @relation("Lesson_teachers")')
+
+      // Should have explicit join table model
+      expect(schema).toContain('model LessonTeachers {')
+      expect(schema).toContain('@@map("_Lesson_teachers")')
+
+      // Join table should have both foreign keys
+      expect(schema).toContain('lesson       Lesson')
+      expect(schema).toContain('teacher      Teacher')
+      expect(schema).toContain('lessonId     String')
+      expect(schema).toContain('teacherId    String')
+
+      // Join table should have composite primary key
+      expect(schema).toContain('@@id([lessonId, teacherId])')
+      expect(schema).toContain('@@index([teacherId])')
+    })
+
+    it('should generate multiple explicit join tables with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Lesson: {
+            fields: {
+              title: text(),
+              teachers: relationship({ ref: 'Teacher.lessons', many: true }),
+              instruments: relationship({ ref: 'Instrument.lessons', many: true }),
+            },
+          },
+          Teacher: {
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+            },
+          },
+          Instrument: {
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'Lesson.instruments', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should have two explicit join table models
+      expect(schema).toContain('model InstrumentLessons {')
+      expect(schema).toContain('@@map("_Instrument_lessons")')
+
+      expect(schema).toContain('model LessonTeachers {')
+      expect(schema).toContain('@@map("_Lesson_teachers")')
+
+      // Relationships should use named relations
+      expect(schema).toContain('teachers     Teacher[]  @relation("Lesson_teachers")')
+      expect(schema).toContain('instruments  Instrument[]  @relation("Instrument_lessons")')
+    })
+
+    it('should use deterministic naming for bidirectional many-to-many', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Tag: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.tags', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              tags: relationship({ ref: 'Tag.posts', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should pick one side deterministically (alphabetically)
+      // Post.tags < Tag.posts, so should use Post_tags
+      expect(schema).toContain('@@map("_Post_tags")')
+      expect(schema).toContain('@relation("Post_tags")')
+    })
+
+    it('should handle list-only many-to-many with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Tag: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              tags: relationship({ ref: 'Tag', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should generate explicit join table for list-only many-to-many
+      expect(schema).toContain('model PostTags {')
+      expect(schema).toContain('@@map("_Post_tags")')
+      expect(schema).toContain('@relation("Post_tags")')
+    })
+
+    it('should not generate synthetic fields for list-only many-to-many with Keystone naming', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          joinTableNaming: 'keystone',
+        },
+        lists: {
+          Tag: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              tags: relationship({ ref: 'Tag', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should NOT have synthetic field (handled by explicit join table)
+      expect(schema).not.toContain('from_Post_tags')
+    })
   })
 })

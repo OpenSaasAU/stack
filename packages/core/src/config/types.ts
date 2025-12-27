@@ -1193,6 +1193,28 @@ export type DatabaseConfig = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   prismaClientConstructor: (PrismaClientClass: any) => any
   /**
+   * Join table naming strategy for many-to-many relationships
+   * - 'prisma': Use Prisma's default alphabetically-sorted naming (e.g., `_LessonToTeacher`)
+   * - 'keystone': Use KeystoneJS-compatible naming based on field location (e.g., `_Lesson_teachers`)
+   *
+   * Default: 'prisma'
+   *
+   * **Important for KeystoneJS migration:**
+   * When migrating from KeystoneJS, set this to 'keystone' to preserve existing join table names
+   * and avoid data loss. Keystone names join tables as `_Model_fieldName` based on where the
+   * relationship is defined in the schema.
+   *
+   * @example Preserve Keystone join table names during migration
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   joinTableNaming: 'keystone',  // Use KeystoneJS naming convention
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  joinTableNaming?: 'prisma' | 'keystone'
+  /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema
    * Useful for advanced Prisma features not directly supported by the config API
