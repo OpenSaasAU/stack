@@ -85,6 +85,14 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
         update: TPrisma[K]['update']
         delete: TPrisma[K]['delete']
         count: TPrisma[K]['count']
+        // Batch operations - run individual operations in a loop to ensure hooks and access control
+        createMany: (args: {
+          data: Parameters<TPrisma[K]['create']>[0]['data'][]
+        }) => Promise<Awaited<ReturnType<TPrisma[K]['create']>>[]>
+        updateMany: (args: {
+          where?: Parameters<TPrisma[K]['findMany']>[0]['where']
+          data: Parameters<TPrisma[K]['update']>[0]['data']
+        }) => Promise<Awaited<ReturnType<TPrisma[K]['update']>>[]>
       }
     : never
 } & {
