@@ -348,11 +348,7 @@ function generateHookTypes(listName: string): string {
  * Generate Select type that includes virtual fields
  * Extends Prisma's Select type with virtual field selection support and nested relationship overrides
  */
-function generateSelectType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-  _allLists: OpenSaasConfig['lists'],
-): string {
+function generateSelectType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
@@ -423,11 +419,7 @@ ${lines.join('\n')}
  * Note: Only generates Include type if the list has relationship fields,
  * since Prisma only generates Include types for models with relations
  */
-function generateIncludeType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-  _allLists: OpenSaasConfig['lists'],
-): string | null {
+function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string | null {
   // Check if list has any relationship fields
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
@@ -864,10 +856,10 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(generateHookTypes(listName))
     lines.push('')
     // Generate Select and Include types with virtual field support
-    lines.push(generateSelectType(listName, listConfig.fields, config.lists))
+    lines.push(generateSelectType(listName, listConfig.fields))
     lines.push('')
     // Only generate Include type if the list has relationships
-    const includeType = generateIncludeType(listName, listConfig.fields, config.lists)
+    const includeType = generateIncludeType(listName, listConfig.fields)
     if (includeType) {
       lines.push(includeType)
       lines.push('')
