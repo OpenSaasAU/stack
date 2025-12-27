@@ -309,7 +309,11 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
             }
 
             // Validate both sides match if both specify relationName
-            if (sourceRelationName && targetRelationName && sourceRelationName !== targetRelationName) {
+            if (
+              sourceRelationName &&
+              targetRelationName &&
+              sourceRelationName !== targetRelationName
+            ) {
               throw new Error(
                 `Relation name mismatch: ${listName}.${fieldName} has relationName "${sourceRelationName}" but ${targetList}.${targetField} has "${targetRelationName}". Both sides must use the same relationName.`,
               )
