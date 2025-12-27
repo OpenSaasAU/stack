@@ -869,7 +869,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).not.toContain('@@map("_Lesson_teachers")')
     })
 
-    it('should generate explicit many-to-many join table with Keystone naming', () => {
+    it('should generate many-to-many relationships with Keystone naming', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -893,26 +893,12 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should use named relation
+      // Should use named relation (Prisma creates implicit join table _Lesson_teachers)
       expect(schema).toContain('teachers     Teacher[]  @relation("Lesson_teachers")')
       expect(schema).toContain('lessons      Lesson[]  @relation("Lesson_teachers")')
-
-      // Should have explicit join table model
-      expect(schema).toContain('model LessonTeachers {')
-      expect(schema).toContain('@@map("_Lesson_teachers")')
-
-      // Join table should have both foreign keys
-      expect(schema).toContain('lesson       Lesson')
-      expect(schema).toContain('teacher      Teacher')
-      expect(schema).toContain('lessonId     String')
-      expect(schema).toContain('teacherId    String')
-
-      // Join table should have composite primary key
-      expect(schema).toContain('@@id([lessonId, teacherId])')
-      expect(schema).toContain('@@index([teacherId])')
     })
 
-    it('should generate multiple explicit join tables with Keystone naming', () => {
+    it('should generate multiple many-to-many relationships with Keystone naming', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'postgresql',
@@ -943,14 +929,7 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should have two explicit join table models
-      expect(schema).toContain('model InstrumentLessons {')
-      expect(schema).toContain('@@map("_Instrument_lessons")')
-
-      expect(schema).toContain('model LessonTeachers {')
-      expect(schema).toContain('@@map("_Lesson_teachers")')
-
-      // Relationships should use named relations
+      // Relationships should use named relations (Prisma creates implicit join tables)
       expect(schema).toContain('teachers     Teacher[]  @relation("Lesson_teachers")')
       expect(schema).toContain('instruments  Instrument[]  @relation("Instrument_lessons")')
     })
@@ -980,8 +959,8 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       // Should pick one side deterministically (alphabetically)
-      // Post.tags < Tag.posts, so should use Post_tags
-      expect(schema).toContain('@@map("_Post_tags")')
+      // Post.tags < Tag.posts, so should use Post_tags relation name
+      // Prisma will create implicit join table _Post_tags
       expect(schema).toContain('@relation("Post_tags")')
     })
 
@@ -1008,9 +987,7 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should generate explicit join table for list-only many-to-many
-      expect(schema).toContain('model PostTags {')
-      expect(schema).toContain('@@map("_Post_tags")')
+      // Should use named relation (Prisma creates implicit join table _Post_tags)
       expect(schema).toContain('@relation("Post_tags")')
     })
 
@@ -1037,7 +1014,7 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should NOT have synthetic field (handled by explicit join table)
+      // Should NOT have synthetic field (handled by implicit join table)
       expect(schema).not.toContain('from_Post_tags')
     })
   })

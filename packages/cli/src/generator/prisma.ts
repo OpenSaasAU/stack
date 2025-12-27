@@ -539,40 +539,9 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     lines.push('')
   }
 
-  // Generate explicit join table models for Keystone naming
-  if (joinTableNaming === 'keystone' && manyToManyRelationships.length > 0) {
-    for (const m2m of manyToManyRelationships) {
-      const { sourceList, sourceField, targetList, targetField, joinTableName, relationName } = m2m
-
-      // Generate a PascalCase model name from the join table name
-      // Remove leading underscore and convert to PascalCase
-      const modelName = joinTableName
-        .substring(1)
-        .split('_')
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join('')
-
-      lines.push(
-        `// Explicit join table for ${sourceList}.${sourceField} ↔ ${targetList}.${targetField || '(implicit)'}`,
-      )
-      lines.push(`model ${modelName} {`)
-      lines.push(
-        `  ${sourceList.toLowerCase().padEnd(12)} ${sourceList}  @relation("${relationName}", fields: [${sourceList.toLowerCase()}Id], references: [id], onDelete: Cascade)`,
-      )
-      lines.push(`  ${(sourceList.toLowerCase() + 'Id').padEnd(12)} String`)
-      lines.push('')
-      lines.push(
-        `  ${targetList.toLowerCase().padEnd(12)} ${targetList}  @relation("${relationName}", fields: [${targetList.toLowerCase()}Id], references: [id], onDelete: Cascade)`,
-      )
-      lines.push(`  ${(targetList.toLowerCase() + 'Id').padEnd(12)} String`)
-      lines.push('')
-      lines.push(`  @@id([${sourceList.toLowerCase()}Id, ${targetList.toLowerCase()}Id])`)
-      lines.push(`  @@index([${targetList.toLowerCase()}Id])`)
-      lines.push(`  @@map("${joinTableName}")`)
-      lines.push('}')
-      lines.push('')
-    }
-  }
+  // Note: For Keystone naming, we use @relation("relationName") on both sides
+  // Prisma automatically creates the join table named _relationName
+  // No need to generate explicit join table models
 
   let schema = lines.join('\n')
 
