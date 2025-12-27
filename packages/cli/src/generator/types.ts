@@ -346,13 +346,19 @@ function generateHookTypes(listName: string): string {
 
 /**
  * Generate Select type that includes virtual fields
- * Extends Prisma's Select type with virtual field selection support
+ * Extends Prisma's Select type with virtual field selection support and nested relationship overrides
  */
 function generateSelectType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
+  const relationshipFields = Object.entries(fields)
+    .filter(([_, config]) => config.type === 'relationship')
+    .map(([name, config]) => ({
+      name,
+      targetList: (config as RelationshipField).ref.split('.')[0],
+    }))
 
-  if (virtualFields.length === 0) {
-    // No virtual fields - just re-export Prisma type
+  if (virtualFields.length === 0 && relationshipFields.length === 0) {
+    // No virtual fields and no relationships - just re-export Prisma type
     return `/**
  * Select type for ${listName}
  * No virtual fields defined, uses Prisma's Select type directly
@@ -360,45 +366,91 @@ function generateSelectType(listName: string, fields: Record<string, FieldConfig
 export type ${listName}Select = Prisma.${listName}Select`
   }
 
-  // Extend Prisma type with virtual fields
-  const virtualFieldLines = virtualFields.map((name) => `  ${name}?: boolean`).join('\n')
+  const lines: string[] = []
+
+  // Add virtual field properties
+  if (virtualFields.length > 0) {
+    virtualFields.forEach((name) => {
+      lines.push(`  ${name}?: boolean`)
+    })
+  }
+
+  // Override relationship properties to use custom DefaultArgs
+  if (relationshipFields.length > 0) {
+    relationshipFields.forEach(({ name, targetList }) => {
+      lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
+    })
+  }
+
+  if (lines.length === 0) {
+    return `/**
+ * Select type for ${listName}
+ * Uses Prisma's Select type directly
+ */
+export type ${listName}Select = Prisma.${listName}Select`
+  }
+
+  const exampleLines: string[] = []
+  if (virtualFields.length > 0) {
+    exampleLines.push(...virtualFields.map((name) => ` *   ${name}: true, // Virtual field`))
+  }
 
   return `/**
  * Select type for ${listName} with virtual field support
  * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
  * Use this type when selecting fields to enable virtual field selection
  *
  * @example
  * const select = {
  *   id: true,
  *   name: true,
-${virtualFields.map((name) => ` *   ${name}: true, // Virtual field`).join('\n')}
+${exampleLines.join('\n')}
  * } satisfies ${listName}Select
  */
 export type ${listName}Select = Prisma.${listName}Select & {
-${virtualFieldLines}
+${lines.join('\n')}
 }`
 }
 
 /**
  * Generate Include type that includes virtual fields
- * Extends Prisma's Include type with virtual field inclusion support
+ * Extends Prisma's Include type with virtual field inclusion support and nested relationship overrides
  * Note: Only generates Include type if the list has relationship fields,
  * since Prisma only generates Include types for models with relations
  */
 function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string | null {
   // Check if list has any relationship fields
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+  const relationshipFields = Object.entries(fields)
+    .filter(([_, config]) => config.type === 'relationship')
+    .map(([name, config]) => ({
+      name,
+      targetList: (config as RelationshipField).ref.split('.')[0],
+    }))
 
   // Prisma only generates Include types for models with relationships
   // If there are no relationships, don't generate an Include type
-  if (!hasRelationships) {
+  if (relationshipFields.length === 0) {
     return null
   }
 
   const virtualFields = getVirtualFieldNames(fields)
 
-  if (virtualFields.length === 0) {
+  const lines: string[] = []
+
+  // Add virtual field properties
+  if (virtualFields.length > 0) {
+    virtualFields.forEach((name) => {
+      lines.push(`  ${name}?: boolean`)
+    })
+  }
+
+  // Override relationship properties to use custom DefaultArgs
+  relationshipFields.forEach(({ name, targetList }) => {
+    lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
+  })
+
+  if (lines.length === 0) {
     // No virtual fields - just re-export Prisma type
     return `/**
  * Include type for ${listName}
@@ -407,22 +459,25 @@ function generateIncludeType(listName: string, fields: Record<string, FieldConfi
 export type ${listName}Include = Prisma.${listName}Include`
   }
 
-  // Extend Prisma type with virtual fields
-  const virtualFieldLines = virtualFields.map((name) => `  ${name}?: boolean`).join('\n')
+  const exampleLines: string[] = []
+  if (virtualFields.length > 0) {
+    exampleLines.push(...virtualFields.map((name) => ` *   ${name}: true, // Virtual field`))
+  }
 
   return `/**
  * Include type for ${listName} with virtual field support
  * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
  * Use this type when including relationships to enable virtual field selection
  *
  * @example
  * const include = {
  *   author: true,
-${virtualFields.map((name) => ` *   ${name}: true, // Virtual field`).join('\n')}
+${exampleLines.join('\n')}
  * } satisfies ${listName}Include
  */
 export type ${listName}Include = Prisma.${listName}Include & {
-${virtualFieldLines}
+${lines.join('\n')}
 }`
 }
 
@@ -512,6 +567,153 @@ function generateGetPayloadType(
 }
 
 /**
+ * Generate DefaultArgs type for nested relationship selections
+ * This type is used when selecting relationships to enable custom Select/Include types
+ */
+function generateDefaultArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Default args type for ${listName} with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type ${listName}DefaultArgs = {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Default args type for ${listName} with custom Select support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type ${listName}DefaultArgs = {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom FindUniqueArgs type that uses our extended Select/Include
+ */
+function generateFindUniqueArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom FindUniqueArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom FindUniqueArgs for ${listName} with virtual field support
+ */
+export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom FindManyArgs type that uses our extended Select/Include
+ */
+function generateFindManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom FindManyArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom FindManyArgs for ${listName} with virtual field support
+ */
+export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom CreateArgs type that uses our extended Select/Include
+ */
+function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom CreateArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom CreateArgs for ${listName} with virtual field support
+ */
+export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom UpdateArgs type that uses our extended Select/Include
+ */
+function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom UpdateArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom UpdateArgs for ${listName} with virtual field support
+ */
+export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom DeleteArgs type that uses our extended Select/Include
+ */
+function generateDeleteArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom DeleteArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom DeleteArgs for ${listName} with virtual field support
+ */
+export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'> & {
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
  * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
  * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
@@ -545,37 +747,37 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
     lines.push(`  ${dbKey}: {`)
 
-    // findUnique - generic to preserve Prisma's conditional return type
-    lines.push(`    findUnique: <T extends Prisma.${listName}FindUniqueArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}FindUniqueArgs>`)
+    // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    findUnique: <T extends ${listName}FindUniqueArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
     lines.push(
       `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
     )
 
-    // findMany - generic to preserve Prisma's conditional return type
-    lines.push(`    findMany: <T extends Prisma.${listName}FindManyArgs>(`)
-    lines.push(`      args?: Prisma.SelectSubset<T, Prisma.${listName}FindManyArgs>`)
+    // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    findMany: <T extends ${listName}FindManyArgs>(`)
+    lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
     lines.push(
       `    ) => Promise<Array<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>>`,
     )
 
-    // create - generic to preserve Prisma's conditional return type
-    lines.push(`    create: <T extends Prisma.${listName}CreateArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}CreateArgs>`)
+    // create - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    create: <T extends ${listName}CreateArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
     lines.push(
       `    ) => Promise<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>`,
     )
 
-    // update - generic to preserve Prisma's conditional return type
-    lines.push(`    update: <T extends Prisma.${listName}UpdateArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}UpdateArgs>`)
+    // update - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    update: <T extends ${listName}UpdateArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
     lines.push(
       `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
     )
 
-    // delete - generic to preserve Prisma's conditional return type
-    lines.push(`    delete: <T extends Prisma.${listName}DeleteArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, Prisma.${listName}DeleteArgs>`)
+    // delete - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    delete: <T extends ${listName}DeleteArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
     lines.push(
       `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
     )
@@ -735,6 +937,20 @@ export function generateTypes(config: OpenSaasConfig): string {
       lines.push(getPayloadType)
       lines.push('')
     }
+    // Generate DefaultArgs type for nested relationship support
+    lines.push(generateDefaultArgsType(listName, listConfig.fields))
+    lines.push('')
+    // Generate custom Args types with virtual field support
+    lines.push(generateFindUniqueArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateFindManyArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateCreateArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateUpdateArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateDeleteArgsType(listName, listConfig.fields))
+    lines.push('')
   }
 
   // Generate CustomDB interface
