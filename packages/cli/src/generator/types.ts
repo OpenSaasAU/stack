@@ -484,53 +484,107 @@ ${lines.join('\n')}
 /**
  * Generate GetPayload helper type that adds virtual fields support to Prisma's GetPayload
  * This allows users to use Prisma.{ListName}GetPayload<T> pattern with virtual fields
+ * Always generated to ensure consistency in CustomDB type signatures
+ * Even lists without virtual fields need this to support nested relations with virtual fields
  */
-function generateGetPayloadType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-): string | null {
+function generateGetPayloadType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
   const transformedFieldNames = Object.entries(fields)
     .filter(([_, config]) => config.resultExtension)
     .map(([name, _]) => name)
 
-  if (virtualFields.length === 0 && transformedFieldNames.length === 0) {
-    // No virtual or transformed fields - just re-export Prisma type
-    return null
-  }
+  // Get relationship fields to override with custom GetPayload types
+  const relationshipFields = Object.entries(fields)
+    .filter(([_, config]) => config.type === 'relationship')
+    .map(([name, config]) => ({
+      name,
+      targetList: (config as RelationshipField).ref.split('.')[0],
+      many: !!(config as RelationshipField).many,
+    }))
 
   const lines: string[] = []
 
+  // Build documentation
   lines.push(`/**`)
-  lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
-  lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
+  if (virtualFields.length > 0 || transformedFieldNames.length > 0) {
+    lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
+    lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
+  } else {
+    lines.push(` * GetPayload type for ${listName}`)
+    lines.push(` * Wraps Prisma's GetPayload to ensure nested relations support virtual fields`)
+  }
   lines.push(` * Use this type to get properly typed results with virtual fields`)
   lines.push(` *`)
   lines.push(` * @example`)
   lines.push(` * const select = {`)
   lines.push(` *   id: true,`)
-  lines.push(` *   name: true,`)
   if (virtualFields.length > 0) {
     virtualFields.forEach((fieldName) => {
       lines.push(` *   ${fieldName}: true, // Virtual field`)
     })
+  } else {
+    lines.push(` *   // Relations can include virtual fields from related lists`)
   }
   lines.push(` * } satisfies ${listName}Select`)
   lines.push(` *`)
   lines.push(` * type Result = ${listName}GetPayload<{ select: typeof select }>`)
-  lines.push(` * // Result includes id, name, and ${virtualFields.join(', ')} with proper types`)
   lines.push(` */`)
 
   lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
 
-  // Build the transformed fields part
-  if (transformedFieldNames.length > 0) {
+  // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
+  const fieldsToOmit = [...transformedFieldNames, ...relationshipFields.map((r) => r.name)]
+  if (fieldsToOmit.length > 0) {
     lines.push(
-      `  Omit<Prisma.${listName}GetPayload<T>, ${transformedFieldNames.map((n) => `'${n}'`).join(' | ')}> &`,
+      `  Omit<Prisma.${listName}GetPayload<T>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
     )
-    lines.push(`  ${listName}TransformedFields &`)
   } else {
     lines.push(`  Prisma.${listName}GetPayload<T> &`)
+  }
+
+  // Add transformed fields back
+  if (transformedFieldNames.length > 0) {
+    lines.push(`  ${listName}TransformedFields &`)
+  }
+
+  // Add relationship fields back with custom GetPayload types
+  if (relationshipFields.length > 0) {
+    lines.push(`  {`)
+    for (const rel of relationshipFields) {
+      lines.push(`    ${rel.name}?:`)
+      lines.push(`      T extends { select: any }`)
+      lines.push(`        ? '${rel.name}' extends keyof T['select']`)
+      lines.push(`          ? T['select']['${rel.name}'] extends true`)
+      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`            : T['select']['${rel.name}'] extends { select: any }`)
+      lines.push(
+        `              ? ${rel.targetList}GetPayload<{ select: T['select']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`              : T['select']['${rel.name}'] extends { include: any }`)
+      lines.push(
+        `                ? ${rel.targetList}GetPayload<{ include: T['select']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                : ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`          : never`)
+      lines.push(`        : T extends { include: any }`)
+      lines.push(`          ? T['include'] extends true`)
+      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`            : '${rel.name}' extends keyof T['include']`)
+      lines.push(`              ? T['include']['${rel.name}'] extends true`)
+      lines.push(`                ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`                : T['include']['${rel.name}'] extends { select: any }`)
+      lines.push(
+        `                  ? ${rel.targetList}GetPayload<{ select: T['include']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                  : T['include']['${rel.name}'] extends { include: any }`)
+      lines.push(
+        `                    ? ${rel.targetList}GetPayload<{ include: T['include']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                    : ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`              : never`)
+      lines.push(`          : ${rel.targetList}${rel.many ? '[]' : ''}`)
+    }
+    lines.push(`  } &`)
   }
 
   // Build the virtual fields conditional type
@@ -750,46 +804,34 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    findUnique: <T extends ${listName}FindUniqueArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
-    lines.push(
-      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
-    )
+    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
 
     // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    findMany: <T extends ${listName}FindManyArgs>(`)
     lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
-    lines.push(
-      `    ) => Promise<Array<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>>`,
-    )
+    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
 
     // create - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    create: <T extends ${listName}CreateArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
-    lines.push(
-      `    ) => Promise<Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields>`,
-    )
+    lines.push(`    ) => Promise<${listName}GetPayload<T>>`)
 
     // update - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    update: <T extends ${listName}UpdateArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
-    lines.push(
-      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
-    )
+    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
 
     // delete - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    delete: <T extends ${listName}DeleteArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
-    lines.push(
-      `    ) => Promise<(Omit<Prisma.${listName}GetPayload<T>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields) | null>`,
-    )
+    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
 
     // count - no changes to return type
     lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
 
     // get - only for singleton lists
     if (isSingleton) {
-      lines.push(
-        `    get: () => Promise<Omit<Prisma.${listName}GetPayload<{}>, keyof ${listName}TransformedFields> & ${listName}TransformedFields & ${listName}VirtualFields | null>`,
-      )
+      lines.push(`    get: () => Promise<${listName}GetPayload<{}> | null>`)
     }
 
     lines.push(`  }`)
@@ -932,11 +974,8 @@ export function generateTypes(config: OpenSaasConfig): string {
       lines.push('')
     }
     // Generate GetPayload helper type with virtual field support
-    const getPayloadType = generateGetPayloadType(listName, listConfig.fields)
-    if (getPayloadType) {
-      lines.push(getPayloadType)
-      lines.push('')
-    }
+    lines.push(generateGetPayloadType(listName, listConfig.fields))
+    lines.push('')
     // Generate DefaultArgs type for nested relationship support
     lines.push(generateDefaultArgsType(listName, listConfig.fields))
     lines.push('')

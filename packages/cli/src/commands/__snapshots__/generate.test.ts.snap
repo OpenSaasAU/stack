@@ -242,6 +242,23 @@ export type UserHooks = {
 export type UserSelect = Prisma.UserSelect
 
 /**
+ * GetPayload type for User
+ * Wraps Prisma's GetPayload to ensure nested relations support virtual fields
+ * Use this type to get properly typed results with virtual fields
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   // Relations can include virtual fields from related lists
+ * } satisfies UserSelect
+ *
+ * type Result = UserGetPayload<{ select: typeof select }>
+ */
+export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
+  Prisma.UserGetPayload<T> &
+  {}
+
+/**
  * Default args type for User with custom Select support
  * Used in nested relationship selections to support virtual fields
  */
@@ -295,19 +312,19 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>>
+    ) => Promise<Array<UserGetPayload<T>>>
     create: <T extends UserCreateArgs>(
       args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields>
+    ) => Promise<UserGetPayload<T>>
     update: <T extends UserUpdateArgs>(
       args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    ) => Promise<UserGetPayload<T> | null>
     delete: <T extends UserDeleteArgs>(
       args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<(Omit<Prisma.UserGetPayload<T>, keyof UserTransformedFields> & UserTransformedFields & UserVirtualFields) | null>
+    ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
   }
 }

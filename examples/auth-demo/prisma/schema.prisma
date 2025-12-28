@@ -19,6 +19,8 @@ model Post {
   author        User?     @relation(fields: [authorId], references: [id])
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([authorId])
 }
 
 model User {
@@ -44,6 +46,8 @@ model Session {
   user      User?     @relation(fields: [userId], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Account {
@@ -61,6 +65,8 @@ model Account {
   user                  User?     @relation(fields: [userId], references: [id])
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Verification {
