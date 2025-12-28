@@ -251,48 +251,13 @@ function getRelatedListName(ref: string): string {
 }
 
 /**
- * Generate WhereInput type with relationship field support
+ * Generate WhereInput type by re-exporting Prisma's native WhereInput
+ * This ensures compatibility with all Prisma versions and includes all filter operators
  */
-function generateWhereInputType(listName: string, fields: Record<string, FieldConfig>): string {
-  const lines: string[] = []
-
-  lines.push(`export type ${listName}WhereInput = {`)
-  lines.push('  id?: string')
-  lines.push('  AND?: Array<' + listName + 'WhereInput>')
-  lines.push('  OR?: Array<' + listName + 'WhereInput>')
-  lines.push('  NOT?: ' + listName + 'WhereInput')
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip virtual fields - they don't exist in database
-    if (fieldConfig.virtual) continue
-
-    if (fieldConfig.type === 'relationship') {
-      const relField = fieldConfig as RelationshipField
-      const relatedListName = getRelatedListName(relField.ref)
-      const relatedWhereInput = `${relatedListName}WhereInput`
-
-      if (relField.many) {
-        // One-to-many or many-to-many relationship
-        lines.push(`  ${fieldName}?: {`)
-        lines.push(`    some?: ${relatedWhereInput}`)
-        lines.push(`    every?: ${relatedWhereInput}`)
-        lines.push(`    none?: ${relatedWhereInput}`)
-        lines.push(`  }`)
-      } else {
-        // One-to-one or many-to-one relationship
-        lines.push(`  ${fieldName}?: ${relatedWhereInput}`)
-      }
-    } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue // Skip if no type returned
-
-      lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`)
-    }
-  }
-
-  lines.push('}')
-
-  return lines.join('\n')
+function generateWhereInputType(listName: string, _fields: Record<string, FieldConfig>): string {
+  // Simply re-export Prisma's generated WhereInput type
+  // Prisma already generates comprehensive WhereInput types with all filter operators
+  return `export type ${listName}WhereInput = Prisma.${listName}WhereInput`
 }
 
 /**
