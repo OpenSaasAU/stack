@@ -550,7 +550,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     posts?:
       T extends { select: any }
-        ? T['select'] extends { posts: any }
+        ? 'posts' extends keyof T['select']
           ? T['select']['posts'] extends true
             ? Post[]
             : T['select']['posts'] extends { select: any }
@@ -562,7 +562,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? Post[]
-            : T['include'] extends { posts: any }
+            : 'posts' extends keyof T['include']
               ? T['include']['posts'] extends true
                 ? Post[]
                 : T['include']['posts'] extends { select: any }
@@ -783,7 +783,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     author?:
       T extends { select: any }
-        ? T['select'] extends { author: any }
+        ? 'author' extends keyof T['select']
           ? T['select']['author'] extends true
             ? User
             : T['select']['author'] extends { select: any }
@@ -795,7 +795,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? User
-            : T['include'] extends { author: any }
+            : 'author' extends keyof T['include']
               ? T['include']['author'] extends true
                 ? User
                 : T['include']['author'] extends { select: any }
@@ -2422,7 +2422,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     author?:
       T extends { select: any }
-        ? T['select'] extends { author: any }
+        ? 'author' extends keyof T['select']
           ? T['select']['author'] extends true
             ? User
             : T['select']['author'] extends { select: any }
@@ -2434,7 +2434,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? User
-            : T['include'] extends { author: any }
+            : 'author' extends keyof T['include']
               ? T['include']['author'] extends true
                 ? User
                 : T['include']['author'] extends { select: any }
@@ -2848,7 +2848,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     author?:
       T extends { select: any }
-        ? T['select'] extends { author: any }
+        ? 'author' extends keyof T['select']
           ? T['select']['author'] extends true
             ? User
             : T['select']['author'] extends { select: any }
@@ -2860,7 +2860,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? User
-            : T['include'] extends { author: any }
+            : 'author' extends keyof T['include']
               ? T['include']['author'] extends true
                 ? User
                 : T['include']['author'] extends { select: any }
@@ -3277,7 +3277,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     posts?:
       T extends { select: any }
-        ? T['select'] extends { posts: any }
+        ? 'posts' extends keyof T['select']
           ? T['select']['posts'] extends true
             ? Post[]
             : T['select']['posts'] extends { select: any }
@@ -3289,7 +3289,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? Post[]
-            : T['include'] extends { posts: any }
+            : 'posts' extends keyof T['include']
               ? T['include']['posts'] extends true
                 ? Post[]
                 : T['include']['posts'] extends { select: any }
@@ -3488,7 +3488,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
   {
     author?:
       T extends { select: any }
-        ? T['select'] extends { author: any }
+        ? 'author' extends keyof T['select']
           ? T['select']['author'] extends true
             ? User
             : T['select']['author'] extends { select: any }
@@ -3500,7 +3500,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
         : T extends { include: any }
           ? T['include'] extends true
             ? User
-            : T['include'] extends { author: any }
+            : 'author' extends keyof T['include']
               ? T['include']['author'] extends true
                 ? User
                 : T['include']['author'] extends { select: any }

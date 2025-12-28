@@ -553,7 +553,7 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     for (const rel of relationshipFields) {
       lines.push(`    ${rel.name}?:`)
       lines.push(`      T extends { select: any }`)
-      lines.push(`        ? T['select'] extends { ${rel.name}: any }`)
+      lines.push(`        ? '${rel.name}' extends keyof T['select']`)
       lines.push(`          ? T['select']['${rel.name}'] extends true`)
       lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
       lines.push(`            : T['select']['${rel.name}'] extends { select: any }`)
@@ -569,7 +569,7 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
       lines.push(`        : T extends { include: any }`)
       lines.push(`          ? T['include'] extends true`)
       lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`            : T['include'] extends { ${rel.name}: any }`)
+      lines.push(`            : '${rel.name}' extends keyof T['include']`)
       lines.push(`              ? T['include']['${rel.name}'] extends true`)
       lines.push(`                ? ${rel.targetList}${rel.many ? '[]' : ''}`)
       lines.push(`                : T['include']['${rel.name}'] extends { select: any }`)
