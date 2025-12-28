@@ -546,7 +546,33 @@ export type UserInclude = Prisma.UserInclude & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  Omit<Prisma.UserGetPayload<T>, 'posts'> &
+  {
+    posts?:
+      T extends { select: any }
+        ? T['select'] extends { posts: any }
+          ? T['select']['posts'] extends true
+            ? Post[]
+            : T['select']['posts'] extends { select: any }
+              ? PostGetPayload<{ select: T['select']['posts']['select'] }>[]
+              : T['select']['posts'] extends { include: any }
+                ? PostGetPayload<{ include: T['select']['posts']['include'] }>[]
+                : Post[]
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { posts?: true }
+            ? Post[]
+            : T['include'] extends { posts: any }
+              ? T['include']['posts'] extends true
+                ? Post[]
+                : T['include']['posts'] extends { select: any }
+                  ? PostGetPayload<{ select: T['include']['posts']['select'] }>[]
+                  : T['include']['posts'] extends { include: any }
+                    ? PostGetPayload<{ include: T['include']['posts']['include'] }>[]
+                    : Post[]
+              : never
+          : never
+  } &
   (
     T extends { select: any }
       ? T['select'] extends true
@@ -753,7 +779,33 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  {
+    author?:
+      T extends { select: any }
+        ? T['select'] extends { author: any }
+          ? T['select']['author'] extends true
+            ? User
+            : T['select']['author'] extends { select: any }
+              ? UserGetPayload<{ select: T['select']['author']['select'] }>
+              : T['select']['author'] extends { include: any }
+                ? UserGetPayload<{ include: T['select']['author']['include'] }>
+                : User
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { author?: true }
+            ? User
+            : T['include'] extends { author: any }
+              ? T['include']['author'] extends true
+                ? User
+                : T['include']['author'] extends { select: any }
+                  ? UserGetPayload<{ select: T['include']['author']['select'] }>
+                  : T['include']['author'] extends { include: any }
+                    ? UserGetPayload<{ include: T['include']['author']['include'] }>
+                    : User
+              : never
+          : never
+  } &
   {}
 
 /**
@@ -2366,7 +2418,33 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  {
+    author?:
+      T extends { select: any }
+        ? T['select'] extends { author: any }
+          ? T['select']['author'] extends true
+            ? User
+            : T['select']['author'] extends { select: any }
+              ? UserGetPayload<{ select: T['select']['author']['select'] }>
+              : T['select']['author'] extends { include: any }
+                ? UserGetPayload<{ include: T['select']['author']['include'] }>
+                : User
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { author?: true }
+            ? User
+            : T['include'] extends { author: any }
+              ? T['include']['author'] extends true
+                ? User
+                : T['include']['author'] extends { select: any }
+                  ? UserGetPayload<{ select: T['include']['author']['select'] }>
+                  : T['include']['author'] extends { include: any }
+                    ? UserGetPayload<{ include: T['include']['author']['include'] }>
+                    : User
+              : never
+          : never
+  } &
   {}
 
 /**
@@ -2766,7 +2844,33 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  {
+    author?:
+      T extends { select: any }
+        ? T['select'] extends { author: any }
+          ? T['select']['author'] extends true
+            ? User
+            : T['select']['author'] extends { select: any }
+              ? UserGetPayload<{ select: T['select']['author']['select'] }>
+              : T['select']['author'] extends { include: any }
+                ? UserGetPayload<{ include: T['select']['author']['include'] }>
+                : User
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { author?: true }
+            ? User
+            : T['include'] extends { author: any }
+              ? T['include']['author'] extends true
+                ? User
+                : T['include']['author'] extends { select: any }
+                  ? UserGetPayload<{ select: T['include']['author']['select'] }>
+                  : T['include']['author'] extends { include: any }
+                    ? UserGetPayload<{ include: T['include']['author']['include'] }>
+                    : User
+              : never
+          : never
+  } &
   {}
 
 /**
@@ -3169,7 +3273,33 @@ export type UserInclude = Prisma.UserInclude & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  Omit<Prisma.UserGetPayload<T>, 'posts'> &
+  {
+    posts?:
+      T extends { select: any }
+        ? T['select'] extends { posts: any }
+          ? T['select']['posts'] extends true
+            ? Post[]
+            : T['select']['posts'] extends { select: any }
+              ? PostGetPayload<{ select: T['select']['posts']['select'] }>[]
+              : T['select']['posts'] extends { include: any }
+                ? PostGetPayload<{ include: T['select']['posts']['include'] }>[]
+                : Post[]
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { posts?: true }
+            ? Post[]
+            : T['include'] extends { posts: any }
+              ? T['include']['posts'] extends true
+                ? Post[]
+                : T['include']['posts'] extends { select: any }
+                  ? PostGetPayload<{ select: T['include']['posts']['select'] }>[]
+                  : T['include']['posts'] extends { include: any }
+                    ? PostGetPayload<{ include: T['include']['posts']['include'] }>[]
+                    : Post[]
+              : never
+          : never
+  } &
   {}
 
 /**
@@ -3354,7 +3484,33 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  {
+    author?:
+      T extends { select: any }
+        ? T['select'] extends { author: any }
+          ? T['select']['author'] extends true
+            ? User
+            : T['select']['author'] extends { select: any }
+              ? UserGetPayload<{ select: T['select']['author']['select'] }>
+              : T['select']['author'] extends { include: any }
+                ? UserGetPayload<{ include: T['select']['author']['include'] }>
+                : User
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true | { author?: true }
+            ? User
+            : T['include'] extends { author: any }
+              ? T['include']['author'] extends true
+                ? User
+                : T['include']['author'] extends { select: any }
+                  ? UserGetPayload<{ select: T['include']['author']['select'] }>
+                  : T['include']['author'] extends { include: any }
+                    ? UserGetPayload<{ include: T['include']['author']['include'] }>
+                    : User
+              : never
+          : never
+  } &
   {}
 
 /**

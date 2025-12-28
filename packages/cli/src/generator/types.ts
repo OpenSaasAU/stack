@@ -493,6 +493,15 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     .filter(([_, config]) => config.resultExtension)
     .map(([name, _]) => name)
 
+  // Get relationship fields to override with custom GetPayload types
+  const relationshipFields = Object.entries(fields)
+    .filter(([_, config]) => config.type === 'relationship')
+    .map(([name, config]) => ({
+      name,
+      targetList: (config as RelationshipField).ref.split('.')[0],
+      many: !!(config as RelationshipField).many,
+    }))
+
   const lines: string[] = []
 
   // Build documentation
@@ -523,14 +532,59 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
 
   lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
 
-  // Build the transformed fields part
-  if (transformedFieldNames.length > 0) {
+  // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
+  const fieldsToOmit = [...transformedFieldNames, ...relationshipFields.map((r) => r.name)]
+  if (fieldsToOmit.length > 0) {
     lines.push(
-      `  Omit<Prisma.${listName}GetPayload<T>, ${transformedFieldNames.map((n) => `'${n}'`).join(' | ')}> &`,
+      `  Omit<Prisma.${listName}GetPayload<T>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
     )
-    lines.push(`  ${listName}TransformedFields &`)
   } else {
     lines.push(`  Prisma.${listName}GetPayload<T> &`)
+  }
+
+  // Add transformed fields back
+  if (transformedFieldNames.length > 0) {
+    lines.push(`  ${listName}TransformedFields &`)
+  }
+
+  // Add relationship fields back with custom GetPayload types
+  if (relationshipFields.length > 0) {
+    lines.push(`  {`)
+    for (const rel of relationshipFields) {
+      lines.push(`    ${rel.name}?:`)
+      lines.push(`      T extends { select: any }`)
+      lines.push(`        ? T['select'] extends { ${rel.name}: any }`)
+      lines.push(`          ? T['select']['${rel.name}'] extends true`)
+      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`            : T['select']['${rel.name}'] extends { select: any }`)
+      lines.push(
+        `              ? ${rel.targetList}GetPayload<{ select: T['select']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`              : T['select']['${rel.name}'] extends { include: any }`)
+      lines.push(
+        `                ? ${rel.targetList}GetPayload<{ include: T['select']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                : ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`          : never`)
+      lines.push(`        : T extends { include: any }`)
+      lines.push(`          ? T['include'] extends true | { ${rel.name}?: true }`)
+      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`            : T['include'] extends { ${rel.name}: any }`)
+      lines.push(`              ? T['include']['${rel.name}'] extends true`)
+      lines.push(`                ? ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`                : T['include']['${rel.name}'] extends { select: any }`)
+      lines.push(
+        `                  ? ${rel.targetList}GetPayload<{ select: T['include']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                  : T['include']['${rel.name}'] extends { include: any }`)
+      lines.push(
+        `                    ? ${rel.targetList}GetPayload<{ include: T['include']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
+      )
+      lines.push(`                    : ${rel.targetList}${rel.many ? '[]' : ''}`)
+      lines.push(`              : never`)
+      lines.push(`          : never`)
+    }
+    lines.push(`  } &`)
   }
 
   // Build the virtual fields conditional type
