@@ -623,8 +623,10 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
     hooks: {
       // Hash password before writing to database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
-      resolveInput: async ({ inputValue }: { inputValue: any }) => {
+      resolveInput: async ({ inputData, fieldKey }: { inputData: any; fieldKey: string }) => {
         // Skip if undefined or null (allows partial updates)
+        const inputValue = inputData[fieldKey]
+        console.log('Password resolveInput called with value:', inputValue)
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
@@ -640,7 +642,7 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
         }
 
         // Hash the password
-        return await hashPassword(inputValue)
+        return (await hashPassword(inputValue)).toString()
       },
       // Wrap password with HashedPassword class after reading from database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic

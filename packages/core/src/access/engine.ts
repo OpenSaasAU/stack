@@ -204,6 +204,14 @@ export async function buildIncludeWithAccessControl(
     return undefined
   }
 
+  // Skip auto-including relationships when inside a resolveOutput hook
+  // This prevents infinite loops when hooks make DB queries that include
+  // relationships back to the same entity (e.g., User virtual field queries Posts
+  // which includes author back to User, triggering the virtual field again)
+  if (args.context._resolveOutputCounter.depth > 0) {
+    return undefined
+  }
+
   type IncludeEntry = boolean | { where?: PrismaFilter; include?: Record<string, IncludeEntry> }
 
   const include: Record<string, IncludeEntry> = {}
@@ -347,17 +355,24 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         // Cast to runtime type for generic execution
         // At runtime, the hook will receive the correct value type for the field
         const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
-        // Use Promise.resolve() to handle both sync and async hooks
-        filtered[fieldName] = await Promise.resolve(
-          hook({
-            value,
-            operation: 'query',
-            fieldName,
-            listKey,
-            item,
-            context: args.context,
-          }),
-        )
+        // Increment depth counter to prevent infinite loops from hooks making DB queries
+        // that include relationships back to the same entity
+        args.context._resolveOutputCounter.depth++
+        try {
+          // Use Promise.resolve() to handle both sync and async hooks
+          filtered[fieldName] = await Promise.resolve(
+            hook({
+              value,
+              operation: 'query',
+              fieldName,
+              listKey,
+              item,
+              context: args.context,
+            }),
+          )
+        } finally {
+          args.context._resolveOutputCounter.depth--
+        }
       } else {
         filtered[fieldName] = value
       }
@@ -390,17 +405,24 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // Virtual fields must have resolveOutput hook to compute their value
     if (fieldConfig.hooks?.resolveOutput && listKey) {
       const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
-      // Use Promise.resolve() to handle both sync and async hooks
-      filtered[fieldName] = await Promise.resolve(
-        hook({
-          value: undefined, // Virtual fields don't have a database value
-          operation: 'query',
-          fieldName,
-          listKey,
-          item: filtered, // Pass filtered item so virtual field can access other fields
-          context: args.context,
-        }),
-      )
+      // Increment depth counter to prevent infinite loops from hooks making DB queries
+      // that include relationships back to the same entity
+      args.context._resolveOutputCounter.depth++
+      try {
+        // Use Promise.resolve() to handle both sync and async hooks
+        filtered[fieldName] = await Promise.resolve(
+          hook({
+            value: undefined, // Virtual fields don't have a database value
+            operation: 'query',
+            fieldName,
+            listKey,
+            item: filtered, // Pass filtered item so virtual field can access other fields
+            context: args.context,
+          }),
+        )
+      } finally {
+        args.context._resolveOutputCounter.depth--
+      }
     }
   }
 

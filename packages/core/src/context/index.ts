@@ -38,6 +38,16 @@ async function executeFieldResolveInputHooks(
   item?: any,
 ): Promise<Record<string, unknown>> {
   let result = { ...resolvedData }
+  console.log(
+    'Executing field resolveInput hooks for list:',
+    listKey,
+    'operation:',
+    operation,
+    'inputData:',
+    inputData,
+    'resolvedData before field hooks:',
+    resolvedData,
+  )
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     // Skip if field not in data
@@ -430,6 +440,7 @@ export function getContext<
     },
     plugins: {}, // Will be populated with plugin runtime services
     _isSudo,
+    _resolveOutputCounter: { depth: 0 },
   }
 
   // Create access-controlled operations for each list
