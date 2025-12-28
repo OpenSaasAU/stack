@@ -186,12 +186,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -387,12 +396,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -904,12 +922,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1138,12 +1165,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1339,12 +1375,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1536,12 +1581,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1737,12 +1791,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -2264,12 +2327,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -2690,12 +2762,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -3116,12 +3197,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -3609,12 +3699,21 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
 }
 
 /**
- * Context type compatible with AccessContext but with CustomDB for virtual field typing
- * Extends AccessContext and overrides db property to include virtual fields in output types
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
   db: CustomDB
   session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
