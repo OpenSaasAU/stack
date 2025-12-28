@@ -163,6 +163,13 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean
+  /**
+   * Internal mutable counter to track resolveOutput hook depth.
+   * When depth > 0, we skip auto-including relationships to prevent infinite loops
+   * when hooks make database queries that include relationships back to the original entity.
+   * We use a mutable object so that spreading the context preserves the reference.
+   */
+  _resolveOutputCounter: { depth: number }
 }
 
 /**

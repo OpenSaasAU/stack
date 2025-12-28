@@ -7,6 +7,23 @@ describe('Relationship Access Control', () => {
     session: null,
     prisma: {},
     db: {},
+    storage: {
+      uploadFile: async () => {
+        throw new Error('Not implemented')
+      },
+      uploadImage: async () => {
+        throw new Error('Not implemented')
+      },
+      deleteFile: async () => {
+        throw new Error('Not implemented')
+      },
+      deleteImage: async () => {
+        throw new Error('Not implemented')
+      },
+    },
+    plugins: {},
+    _isSudo: false,
+    _resolveOutputCounter: { depth: 0 },
   }
 
   describe('getRelatedListConfig', () => {
