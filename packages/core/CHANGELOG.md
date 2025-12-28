@@ -1,5 +1,13 @@
 # @opensaas/stack-core
 
+## 0.18.1
+
+### Patch Changes
+
+- [#327](https://github.com/OpenSaasAU/stack/pull/327) [`3f59454`](https://github.com/OpenSaasAU/stack/commit/3f59454e03976f7ff4f401c661624d1934910a17) Thanks [@borisno2](https://github.com/borisno2)! - Fix async resolveOutput hooks not being awaited in filterReadableFields
+
+  The `resolveOutput` hooks for fields (especially virtual fields) were being called but not awaited, causing Promise objects to appear in output instead of resolved values. This fix properly awaits async `resolveOutput` hooks using `Promise.resolve()` wrapper for backwards compatibility with sync hooks.
+
 ## 0.18.0
 
 ## 0.17.0
