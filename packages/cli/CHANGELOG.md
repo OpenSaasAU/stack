@@ -1,5 +1,150 @@
 # @opensaas/stack-cli
 
+## 0.17.0
+
+### Minor Changes
+
+- [#322](https://github.com/OpenSaasAU/stack/pull/322) [`9032dca`](https://github.com/OpenSaasAU/stack/commit/9032dca163bcaa51d3b2386a8e76b28e6c712cbb) Thanks [@borisno2](https://github.com/borisno2)! - Add BaseContext type for shared services between hooks and server actions
+
+  The type generator now exports a `BaseContext` type that contains only the core context properties (`db`, `session`, `storage`, `plugins`, `_isSudo`). This allows services to accept a base context type that works with both:
+  - **Field hooks** (which receive `AccessContext`)
+  - **Server actions** (which receive full `Context`)
+
+  Previously, services had to choose between accepting `Context` (incompatible with hooks) or using type assertions. Now you can write services that work in both contexts:
+
+  ```typescript
+  // In your generated .opensaas/types.ts, you'll now have both:
+  export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = {
+    db: CustomDB
+    session: TSession
+    // ... other base properties
+  }
+
+  export type Context<TSession extends OpensaasSession = OpensaasSession> =
+    BaseContext<TSession> & {
+      serverAction: (props: ServerActionProps) => Promise<unknown>
+      sudo: () => Context<TSession>
+    }
+  ```
+
+  **Usage example:**
+
+  ```typescript
+  // Service that works with both hooks and server actions
+  export class ScheduleService {
+    private context: BaseContext // ✅ Accepts BaseContext instead of Context
+
+    constructor(context: BaseContext) {
+      this.context = context
+    }
+
+    async checkConflicts(userId: string) {
+      // Only uses db and session - works everywhere
+      return this.context.db.schedule.findMany({
+        where: { userId },
+      })
+    }
+  }
+
+  // Factory function
+  export function createScheduleService(context: BaseContext): ScheduleService {
+    return new ScheduleService(context)
+  }
+
+  // ✅ Works in field hooks
+  fields: {
+    schedule: relationship({
+      ref: 'Schedule',
+      hooks: {
+        validateInput: async ({ context, addValidationError }) => {
+          const service = createScheduleService(context) // No type error!
+          const hasConflict = await service.checkConflicts(userId)
+          if (hasConflict) {
+            addValidationError('Schedule conflict detected')
+          }
+        },
+      },
+    })
+  }
+
+  // ✅ Also works in server actions
+  export async function checkSchedule(context: Context, userId: string) {
+    const service = createScheduleService(context) // Also works!
+    return service.checkConflicts(userId)
+  }
+  ```
+
+  This resolves the type incompatibility issue where services needed to use type assertions or duplicate code to work in both hooks and server actions.
+
+- [#323](https://github.com/OpenSaasAU/stack/pull/323) [`247a259`](https://github.com/OpenSaasAU/stack/commit/247a2590f699b0e27b3661942295064d640e225f) Thanks [@borisno2](https://github.com/borisno2)! - Add full Prisma filter operator support to WhereInput types
+
+  The generated `WhereInput` types now expose all of Prisma's filter operators instead of just `equals` and `not`. This resolves GitHub issue #318.
+
+  **String fields** now support:
+
+  ```typescript
+  const where: PostWhereInput = {
+    title: {
+      contains: 'search',
+      startsWith: 'Hello',
+      endsWith: '!',
+      in: ['Post 1', 'Post 2'],
+      notIn: ['Spam'],
+      mode: 'insensitive', // case-insensitive search
+    },
+  }
+  ```
+
+  **Number fields** now support:
+
+  ```typescript
+  const where: PostWhereInput = {
+    viewCount: {
+      gte: 100, // greater than or equal
+      lte: 1000, // less than or equal
+      gt: 50, // greater than
+      lt: 500, // less than
+      in: [10, 20, 30],
+      notIn: [0],
+    },
+  }
+  ```
+
+  **DateTime fields** now support:
+
+  ```typescript
+  const where: PostWhereInput = {
+    publishDate: {
+      gte: new Date('2024-01-01'),
+      lte: new Date('2024-12-31'),
+    },
+  }
+  ```
+
+  **Boolean operators** now match Prisma's structure:
+
+  ```typescript
+  const where: PostWhereInput = {
+    // AND can be single object OR array
+    AND: { status: { equals: 'published' } },
+    // OR is array-only
+    OR: [{ status: { in: ['published', 'draft'] } }, { title: { contains: 'important' } }],
+    // NOT can be single object OR array
+    NOT: { status: { equals: 'archived' } },
+  }
+  ```
+
+  No migration required - this change is fully backward compatible. Existing code using `equals` and `not` will continue to work.
+
+### Patch Changes
+
+- [#317](https://github.com/OpenSaasAU/stack/pull/317) [`69b7af6`](https://github.com/OpenSaasAU/stack/commit/69b7af631c784e7ca0fbe4d1c3979b12fc8c9afe) Thanks [@borisno2](https://github.com/borisno2)! - Fix synthetic field generation for one-sided relationships when using joinTableNaming: 'keystone'
+
+- [#321](https://github.com/OpenSaasAU/stack/pull/321) [`834d437`](https://github.com/OpenSaasAU/stack/commit/834d437ab47f6246d58f1aa005847321796bfdc3) Thanks [@borisno2](https://github.com/borisno2)! - Fix select type narrowing to properly include virtual fields and nested relations in query results
+
+- Updated dependencies [[`538bc20`](https://github.com/OpenSaasAU/stack/commit/538bc20698b7d0f3c6600741f4553306008dec64)]:
+  - @opensaas/stack-core@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes
