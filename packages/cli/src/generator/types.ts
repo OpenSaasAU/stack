@@ -485,6 +485,7 @@ ${lines.join('\n')}
  * Generate GetPayload helper type that adds virtual fields support to Prisma's GetPayload
  * This allows users to use Prisma.{ListName}GetPayload<T> pattern with virtual fields
  * Always generated to ensure consistency in CustomDB type signatures
+ * Even lists without virtual fields need this to support nested relations with virtual fields
  */
 function generateGetPayloadType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
@@ -492,35 +493,32 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     .filter(([_, config]) => config.resultExtension)
     .map(([name, _]) => name)
 
-  if (virtualFields.length === 0 && transformedFieldNames.length === 0) {
-    // No virtual or transformed fields - just re-export Prisma type
-    return `/**
- * GetPayload type for ${listName}
- * No virtual or transformed fields, uses Prisma's GetPayload directly
- */
-export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> = Prisma.${listName}GetPayload<T>`
-  }
-
   const lines: string[] = []
 
+  // Build documentation
   lines.push(`/**`)
-  lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
-  lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
+  if (virtualFields.length > 0 || transformedFieldNames.length > 0) {
+    lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
+    lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
+  } else {
+    lines.push(` * GetPayload type for ${listName}`)
+    lines.push(` * Wraps Prisma's GetPayload to ensure nested relations support virtual fields`)
+  }
   lines.push(` * Use this type to get properly typed results with virtual fields`)
   lines.push(` *`)
   lines.push(` * @example`)
   lines.push(` * const select = {`)
   lines.push(` *   id: true,`)
-  lines.push(` *   name: true,`)
   if (virtualFields.length > 0) {
     virtualFields.forEach((fieldName) => {
       lines.push(` *   ${fieldName}: true, // Virtual field`)
     })
+  } else {
+    lines.push(` *   // Relations can include virtual fields from related lists`)
   }
   lines.push(` * } satisfies ${listName}Select`)
   lines.push(` *`)
   lines.push(` * type Result = ${listName}GetPayload<{ select: typeof select }>`)
-  lines.push(` * // Result includes id, name, and ${virtualFields.join(', ')} with proper types`)
   lines.push(` */`)
 
   lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
