@@ -843,24 +843,36 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 }
 
 /**
- * Generate Context type that is compatible with AccessContext
+ * Generate BaseContext and Context types that are compatible with AccessContext
  */
 function generateContextType(_config: OpenSaasConfig): string {
   const lines: string[] = []
 
+  // Generate BaseContext - minimal interface for services that only need db and session
   lines.push('/**')
-  lines.push(
-    ' * Context type compatible with AccessContext but with CustomDB for virtual field typing',
-  )
-  lines.push(
-    ' * Extends AccessContext and overrides db property to include virtual fields in output types',
-  )
+  lines.push(' * Base context type for services that only need database and session access')
+  lines.push(' * Compatible with both AccessContext (from hooks) and Context (from server actions)')
+  lines.push(' * Use this type for services that should work in both contexts')
   lines.push(' */')
   lines.push(
-    "export type Context<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {",
+    "export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {",
   )
   lines.push('  db: CustomDB')
   lines.push('  session: TSession')
+  lines.push('}')
+  lines.push('')
+
+  // Generate Context - extends BaseContext and adds server action capabilities
+  lines.push('/**')
+  lines.push(
+    ' * Full context type with server action capabilities and virtual field typing',
+  )
+  lines.push(' * Extends BaseContext and adds serverAction and sudo methods')
+  lines.push(' * Use this type in server actions and components that need full context capabilities')
+  lines.push(' */')
+  lines.push(
+    'export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {',
+  )
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
   lines.push('  sudo: () => Context<TSession>')
   lines.push('}')
