@@ -30,7 +30,7 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseCo
 ```typescript
 // Service that works with both hooks and server actions
 export class ScheduleService {
-  private context: BaseContext  // ✅ Accepts BaseContext instead of Context
+  private context: BaseContext // ✅ Accepts BaseContext instead of Context
 
   constructor(context: BaseContext) {
     this.context = context
@@ -39,7 +39,7 @@ export class ScheduleService {
   async checkConflicts(userId: string) {
     // Only uses db and session - works everywhere
     return this.context.db.schedule.findMany({
-      where: { userId }
+      where: { userId },
     })
   }
 }
@@ -55,19 +55,19 @@ fields: {
     ref: 'Schedule',
     hooks: {
       validateInput: async ({ context, addValidationError }) => {
-        const service = createScheduleService(context)  // No type error!
+        const service = createScheduleService(context) // No type error!
         const hasConflict = await service.checkConflicts(userId)
         if (hasConflict) {
           addValidationError('Schedule conflict detected')
         }
-      }
-    }
+      },
+    },
   })
 }
 
 // ✅ Also works in server actions
 export async function checkSchedule(context: Context, userId: string) {
-  const service = createScheduleService(context)  // Also works!
+  const service = createScheduleService(context) // Also works!
   return service.checkConflicts(userId)
 }
 ```

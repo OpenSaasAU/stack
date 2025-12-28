@@ -864,11 +864,11 @@ function generateContextType(_config: OpenSaasConfig): string {
 
   // Generate Context - extends BaseContext and adds server action capabilities
   lines.push('/**')
-  lines.push(
-    ' * Full context type with server action capabilities and virtual field typing',
-  )
+  lines.push(' * Full context type with server action capabilities and virtual field typing')
   lines.push(' * Extends BaseContext and adds serverAction and sudo methods')
-  lines.push(' * Use this type in server actions and components that need full context capabilities')
+  lines.push(
+    ' * Use this type in server actions and components that need full context capabilities',
+  )
   lines.push(' */')
   lines.push(
     'export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {',
