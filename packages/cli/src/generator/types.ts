@@ -251,16 +251,44 @@ function getRelatedListName(ref: string): string {
 }
 
 /**
+ * Map Prisma scalar types to their corresponding filter types
+ * @param prismaType - The Prisma scalar type (e.g., 'String', 'Int', 'Boolean')
+ * @param listName - The list name for the filter type generic
+ * @returns The Prisma filter type with primitive fallback (e.g., 'Prisma.StringFilter<"Post"> | string')
+ */
+function getPrismaFilterType(prismaType: string, listName: string): string {
+  const filterMap: Record<string, { filter: string; primitive: string }> = {
+    String: { filter: 'StringFilter', primitive: 'string' },
+    Int: { filter: 'IntFilter', primitive: 'number' },
+    Decimal: { filter: 'DecimalFilter', primitive: 'Prisma.Decimal | number | string' },
+    Boolean: { filter: 'BoolFilter', primitive: 'boolean' },
+    DateTime: { filter: 'DateTimeFilter', primitive: 'Date' },
+    Json: { filter: 'JsonFilter', primitive: 'Prisma.InputJsonValue' },
+  }
+
+  const mapping = filterMap[prismaType]
+  if (!mapping) {
+    // Fallback for unknown types - shouldn't happen but provides safety
+    return `{ equals?: ${prismaType.toLowerCase()}, not?: ${prismaType.toLowerCase()} }`
+  }
+
+  return `Prisma.${mapping.filter}<"${listName}"> | ${mapping.primitive}`
+}
+
+/**
  * Generate WhereInput type with relationship field support
+ * Uses Prisma's built-in filter types for all scalar fields
  */
 function generateWhereInputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
 
   lines.push(`export type ${listName}WhereInput = {`)
-  lines.push('  id?: string')
-  lines.push('  AND?: Array<' + listName + 'WhereInput>')
-  lines.push('  OR?: Array<' + listName + 'WhereInput>')
-  lines.push('  NOT?: ' + listName + 'WhereInput')
+  // Use Prisma's StringFilter for id field
+  lines.push(`  id?: Prisma.StringFilter<"${listName}"> | string`)
+  // Fix AND/OR/NOT to match Prisma's structure (support both single object and array)
+  lines.push(`  AND?: ${listName}WhereInput | ${listName}WhereInput[]`)
+  lines.push(`  OR?: ${listName}WhereInput[]`)
+  lines.push(`  NOT?: ${listName}WhereInput | ${listName}WhereInput[]`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     // Skip virtual fields - they don't exist in database
@@ -280,13 +308,21 @@ function generateWhereInputType(listName: string, fields: Record<string, FieldCo
         lines.push(`  }`)
       } else {
         // One-to-one or many-to-one relationship
-        lines.push(`  ${fieldName}?: ${relatedWhereInput}`)
+        lines.push(`  ${fieldName}?: ${relatedWhereInput} | null`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue // Skip if no type returned
-
-      lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`)
+      // Use field's Prisma type to get the correct filter type
+      if (fieldConfig.getPrismaType) {
+        const { type: prismaType } = fieldConfig.getPrismaType(fieldName)
+        const filterType = getPrismaFilterType(prismaType, listName)
+        lines.push(`  ${fieldName}?: ${filterType}`)
+      } else {
+        // Fallback for fields without getPrismaType (shouldn't happen)
+        const tsType = mapFieldTypeToTypeScript(fieldConfig)
+        if (tsType) {
+          lines.push(`  ${fieldName}?: { equals?: ${tsType}, not?: ${tsType} }`)
+        }
+      }
     }
   }
 
