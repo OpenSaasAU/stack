@@ -905,4 +905,187 @@ describe('Nested Operations - Access Control and Hooks', () => {
       ).rejects.toThrow('Access denied: Cannot update related item')
     })
   })
+
+  describe('Async resolveOutput Hooks', () => {
+    it('should await async resolveOutput hooks for regular fields', async () => {
+      const asyncResolveOutputHook = vi.fn(async ({ value }) => {
+        // Simulate async operation (e.g., external API call, database lookup)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return `async:${value}`
+      })
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Post: list({
+            fields: {
+              title: text({
+                hooks: {
+                  resolveOutput: asyncResolveOutputHook,
+                },
+              }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', title: 'Hello World', createdAt: new Date(), updatedAt: new Date() },
+      ])
+
+      const context = getContext(testConfig, mockPrisma, null)
+      const results = await context.db.post.findMany()
+
+      // The resolved value should be the async result, not a Promise object
+      expect(results[0].title).toBe('async:Hello World')
+      expect(results[0].title).not.toBeInstanceOf(Promise)
+      expect(asyncResolveOutputHook).toHaveBeenCalled()
+    })
+
+    it('should await async resolveOutput hooks for virtual fields', async () => {
+      const asyncVirtualHook = vi.fn(async ({ item }) => {
+        // Simulate async operation (e.g., compute from related data)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return `computed:${item.firstName}-${item.lastName}`
+      })
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          User: list({
+            fields: {
+              firstName: text(),
+              lastName: text(),
+              fullName: {
+                type: 'virtual',
+                virtual: true,
+                outputType: 'string',
+                hooks: {
+                  resolveOutput: asyncVirtualHook,
+                },
+              },
+            },
+            access: {
+              operation: {
+                query: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.user.findMany.mockResolvedValue([
+        {
+          id: '1',
+          firstName: 'John',
+          lastName: 'Doe',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ])
+
+      const context = getContext(testConfig, mockPrisma, null)
+      const results = await context.db.user.findMany()
+
+      // The resolved value should be the async result, not a Promise object
+      expect(results[0].fullName).toBe('computed:John-Doe')
+      expect(results[0].fullName).not.toBeInstanceOf(Promise)
+      expect(asyncVirtualHook).toHaveBeenCalled()
+    })
+
+    it('should still work with sync resolveOutput hooks (backwards compatibility)', async () => {
+      const syncResolveOutputHook = vi.fn(({ value }) => {
+        // Synchronous transformation
+        return value.toUpperCase()
+      })
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Post: list({
+            fields: {
+              title: text({
+                hooks: {
+                  resolveOutput: syncResolveOutputHook,
+                },
+              }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', title: 'hello world', createdAt: new Date(), updatedAt: new Date() },
+      ])
+
+      const context = getContext(testConfig, mockPrisma, null)
+      const results = await context.db.post.findMany()
+
+      // Sync hooks should still work as before
+      expect(results[0].title).toBe('HELLO WORLD')
+      expect(syncResolveOutputHook).toHaveBeenCalled()
+    })
+
+    it('should pass context to async resolveOutput hooks', async () => {
+      const asyncHookWithContext = vi.fn(async ({ value, context }) => {
+        // Verify context is passed correctly
+        expect(context).toBeDefined()
+        expect(context.session).toEqual({ userId: 'user-123' })
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return `${value}:${context.session?.userId}`
+      })
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Post: list({
+            fields: {
+              title: text({
+                hooks: {
+                  resolveOutput: asyncHookWithContext,
+                },
+              }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', title: 'Test', createdAt: new Date(), updatedAt: new Date() },
+      ])
+
+      const context = getContext(testConfig, mockPrisma, { userId: 'user-123' })
+      const results = await context.db.post.findMany()
+
+      expect(results[0].title).toBe('Test:user-123')
+      expect(asyncHookWithContext).toHaveBeenCalled()
+    })
+  })
 })
