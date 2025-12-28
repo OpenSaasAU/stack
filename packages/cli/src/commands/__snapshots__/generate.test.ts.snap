@@ -186,14 +186,7 @@ export type UserUpdateInput = {
   email?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-  email?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list

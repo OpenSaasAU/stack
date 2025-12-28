@@ -43,13 +43,7 @@ export type UserUpdateInput = {
   name?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -252,14 +246,7 @@ export type PostUpdateInput = {
   content?: string
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  content?: Prisma.StringFilter<"Post"> | string
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -462,18 +449,7 @@ export type UserUpdateInput = {
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-  posts?: {
-    some?: PostWhereInput
-    every?: PostWhereInput
-    none?: PostWhereInput
-  }
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -701,14 +677,7 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  author?: UserWhereInput | null
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -988,14 +957,7 @@ export type UserUpdateInput = {
   lastName?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  firstName?: Prisma.StringFilter<"User"> | string
-  lastName?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -1231,14 +1193,7 @@ export type PostUpdateInput = {
   content?: string
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  content?: Prisma.StringFilter<"Post"> | string
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -1438,13 +1393,7 @@ export type UserUpdateInput = {
   name?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -1647,14 +1596,7 @@ export type UserUpdateInput = {
   email?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-  email?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -1854,13 +1796,7 @@ export type UserUpdateInput = {
   name?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -2001,13 +1937,7 @@ export type PostUpdateInput = {
   title?: string
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -2148,13 +2078,7 @@ export type CommentUpdateInput = {
   content?: string
 }
 
-export type CommentWhereInput = {
-  id?: Prisma.StringFilter<"Comment"> | string
-  AND?: CommentWhereInput | CommentWhereInput[]
-  OR?: CommentWhereInput[]
-  NOT?: CommentWhereInput | CommentWhereInput[]
-  content?: Prisma.StringFilter<"Comment"> | string
-}
+export type CommentWhereInput = Prisma.CommentWhereInput
 
 /**
  * Hook types for Comment list
@@ -2394,14 +2318,7 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  author?: UserWhereInput | null
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -2601,13 +2518,7 @@ export type UserUpdateInput = {
   name?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -2829,14 +2740,7 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  author?: UserWhereInput | null
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
@@ -3036,13 +2940,7 @@ export type UserUpdateInput = {
   name?: string
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -3263,18 +3161,7 @@ export type UserUpdateInput = {
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
-export type UserWhereInput = {
-  id?: Prisma.StringFilter<"User"> | string
-  AND?: UserWhereInput | UserWhereInput[]
-  OR?: UserWhereInput[]
-  NOT?: UserWhereInput | UserWhereInput[]
-  name?: Prisma.StringFilter<"User"> | string
-  posts?: {
-    some?: PostWhereInput
-    every?: PostWhereInput
-    none?: PostWhereInput
-  }
-}
+export type UserWhereInput = Prisma.UserWhereInput
 
 /**
  * Hook types for User list
@@ -3478,14 +3365,7 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = {
-  id?: Prisma.StringFilter<"Post"> | string
-  AND?: PostWhereInput | PostWhereInput[]
-  OR?: PostWhereInput[]
-  NOT?: PostWhereInput | PostWhereInput[]
-  title?: Prisma.StringFilter<"Post"> | string
-  author?: UserWhereInput | null
-}
+export type PostWhereInput = Prisma.PostWhereInput
 
 /**
  * Hook types for Post list
