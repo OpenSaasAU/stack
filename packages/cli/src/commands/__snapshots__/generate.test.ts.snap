@@ -198,33 +198,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -295,6 +295,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -319,6 +336,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 

@@ -55,33 +55,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -152,6 +152,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -176,6 +193,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -258,33 +281,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -355,6 +378,23 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -379,6 +419,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
 }
 
@@ -461,33 +507,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -641,6 +687,25 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support in nested relationships
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support in nested relationships
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -689,33 +754,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -845,6 +910,25 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -869,6 +953,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
@@ -887,6 +977,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
 }
 
@@ -969,33 +1065,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -1099,6 +1195,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1123,6 +1236,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -1205,33 +1324,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -1302,6 +1421,23 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1326,6 +1462,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
 }
 
@@ -1405,33 +1547,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -1502,6 +1644,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1526,6 +1685,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -1608,33 +1773,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -1705,6 +1870,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -1729,6 +1911,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -1808,33 +1996,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -1905,6 +2093,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -1949,33 +2154,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -2046,6 +2251,23 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+}
+
+/**
  * Virtual fields for Comment - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -2090,33 +2312,33 @@ export type CommentHooks = {
         operation: 'create'
         resolvedData: Prisma.CommentCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.CommentUpdateInput
         item: Comment
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.CommentCreateInput | Prisma.CommentUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
     item?: Comment
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
     item?: Comment
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
     item?: Comment
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -2187,6 +2409,23 @@ export type CommentDeleteArgs = Omit<Prisma.CommentDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for Comment with virtual field support
+ */
+export type CommentCreateManyArgs = {
+  data: Prisma.CommentCreateInput[]
+  select?: CommentSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for Comment with virtual field support
+ */
+export type CommentUpdateManyArgs = {
+  where?: CommentWhereInput
+  data: Prisma.CommentUpdateInput
+  select?: CommentSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -2211,6 +2450,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
@@ -2229,6 +2474,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
   comment: {
     findUnique: <T extends CommentFindUniqueArgs>(
@@ -2247,6 +2498,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, CommentDeleteArgs>
     ) => Promise<CommentGetPayload<T> | null>
     count: (args?: Prisma.CommentCountArgs) => Promise<number>
+    createMany: <T extends CommentCreateManyArgs>(
+      args: Prisma.SelectSubset<T, CommentCreateManyArgs>
+    ) => Promise<Array<CommentGetPayload<T>>>
+    updateMany: <T extends CommentUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, CommentUpdateManyArgs>
+    ) => Promise<Array<CommentGetPayload<T>>>
   }
 }
 
@@ -2330,33 +2587,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -2486,6 +2743,25 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -2530,33 +2806,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -2627,6 +2903,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -2651,6 +2944,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
@@ -2669,6 +2968,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -2752,33 +3057,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -2908,6 +3213,25 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -2952,33 +3276,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -3049,6 +3373,23 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -3073,6 +3414,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
@@ -3091,6 +3438,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
 }
 
@@ -3173,33 +3526,33 @@ export type UserHooks = {
         operation: 'create'
         resolvedData: Prisma.UserCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.UserUpdateInput
         item: User
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
     item?: User
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -3329,6 +3682,25 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for User with virtual field support in nested relationships
+ */
+export type UserCreateManyArgs = {
+  data: Prisma.UserCreateInput[]
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for User with virtual field support in nested relationships
+ */
+export type UserUpdateManyArgs = {
+  where?: UserWhereInput
+  data: Prisma.UserUpdateInput
+  select?: UserSelect | null
+  include?: UserInclude | null
+}
+
+/**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
  */
@@ -3377,33 +3749,33 @@ export type PostHooks = {
         operation: 'create'
         resolvedData: Prisma.PostCreateInput
         item: undefined
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
     | {
         operation: 'update'
         resolvedData: Prisma.PostUpdateInput
         item: Post
-        context: import('@opensaas/stack-core').AccessContext
+        context: BaseContext
       }
   ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
     resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
     resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
     item?: Post
-    context: import('@opensaas/stack-core').AccessContext
+    context: BaseContext
   }) => Promise<void>
 }
 
@@ -3533,6 +3905,25 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
 }
 
 /**
+ * Custom CreateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostCreateManyArgs = {
+  data: Prisma.PostCreateInput[]
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Post with virtual field support in nested relationships
+ */
+export type PostUpdateManyArgs = {
+  where?: PostWhereInput
+  data: Prisma.PostUpdateInput
+  select?: PostSelect | null
+  include?: PostInclude | null
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
@@ -3557,6 +3948,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, UserDeleteArgs>
     ) => Promise<UserGetPayload<T> | null>
     count: (args?: Prisma.UserCountArgs) => Promise<number>
+    createMany: <T extends UserCreateManyArgs>(
+      args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
+    updateMany: <T extends UserUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    ) => Promise<Array<UserGetPayload<T>>>
   }
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
@@ -3575,6 +3972,12 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
       args: Prisma.SelectSubset<T, PostDeleteArgs>
     ) => Promise<PostGetPayload<T> | null>
     count: (args?: Prisma.PostCountArgs) => Promise<number>
+    createMany: <T extends PostCreateManyArgs>(
+      args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
+    updateMany: <T extends PostUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    ) => Promise<Array<PostGetPayload<T>>>
   }
 }
 

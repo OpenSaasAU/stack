@@ -276,33 +276,33 @@ function generateHookTypes(listName: string): string {
   lines.push(`        operation: 'create'`)
   lines.push(`        resolvedData: Prisma.${listName}CreateInput`)
   lines.push(`        item: undefined`)
-  lines.push(`        context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`        context: BaseContext`)
   lines.push(`      }`)
   lines.push(`    | {`)
   lines.push(`        operation: 'update'`)
   lines.push(`        resolvedData: Prisma.${listName}UpdateInput`)
   lines.push(`        item: ${listName}`)
-  lines.push(`        context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`        context: BaseContext`)
   lines.push(`      }`)
   lines.push(`  ) => Promise<Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput>`)
   lines.push(`  validateInput?: (args: {`)
   lines.push(`    operation: 'create' | 'update'`)
   lines.push(`    resolvedData: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
-  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`    context: BaseContext`)
   lines.push(`    addValidationError: (msg: string) => void`)
   lines.push(`  }) => Promise<void>`)
   lines.push(`  beforeOperation?: (args: {`)
   lines.push(`    operation: 'create' | 'update' | 'delete'`)
   lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
-  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`    context: BaseContext`)
   lines.push(`  }) => Promise<void>`)
   lines.push(`  afterOperation?: (args: {`)
   lines.push(`    operation: 'create' | 'update' | 'delete'`)
   lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
-  lines.push(`    context: import('@opensaas/stack-core').AccessContext`)
+  lines.push(`    context: BaseContext`)
   lines.push(`  }) => Promise<void>`)
   lines.push(`}`)
 
@@ -733,6 +733,60 @@ export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'>
 }
 
 /**
+ * Generate custom CreateManyArgs type that uses our extended Select/Include
+ */
+function generateCreateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom CreateManyArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}CreateManyArgs = {
+  data: Prisma.${listName}CreateInput[]
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom CreateManyArgs for ${listName} with virtual field support
+ */
+export type ${listName}CreateManyArgs = {
+  data: Prisma.${listName}CreateInput[]
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
+ * Generate custom UpdateManyArgs type that uses our extended Select/Include
+ */
+function generateUpdateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom UpdateManyArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}UpdateManyArgs = {
+  where?: ${listName}WhereInput
+  data: Prisma.${listName}UpdateInput
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+}`
+  } else {
+    return `/**
+ * Custom UpdateManyArgs for ${listName} with virtual field support
+ */
+export type ${listName}UpdateManyArgs = {
+  where?: ${listName}WhereInput
+  data: Prisma.${listName}UpdateInput
+  select?: ${listName}Select | null
+}`
+  }
+}
+
+/**
  * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
  * This leverages Prisma's GetPayload utility to get correct types based on select/include
  */
@@ -793,6 +847,16 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 
     // count - no changes to return type
     lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
+
+    // createMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    createMany: <T extends ${listName}CreateManyArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}CreateManyArgs>`)
+    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
+
+    // updateMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    updateMany: <T extends ${listName}UpdateManyArgs>(`)
+    lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
+    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
 
     // get - only for singleton lists
     if (isSingleton) {
@@ -966,6 +1030,10 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(generateUpdateArgsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateDeleteArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateCreateManyArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateUpdateManyArgsType(listName, listConfig.fields))
     lines.push('')
   }
 
