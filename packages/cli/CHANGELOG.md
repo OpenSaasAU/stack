@@ -1,5 +1,12 @@
 # @opensaas/stack-cli
 
+## 0.18.1
+
+### Patch Changes
+
+- Updated dependencies [[`3f59454`](https://github.com/OpenSaasAU/stack/commit/3f59454e03976f7ff4f401c661624d1934910a17)]:
+  - @opensaas/stack-core@0.18.1
+
 ## 0.18.0
 
 ### Minor Changes
