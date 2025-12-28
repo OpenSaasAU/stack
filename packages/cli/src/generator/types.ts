@@ -567,7 +567,7 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
       lines.push(`                : ${rel.targetList}${rel.many ? '[]' : ''}`)
       lines.push(`          : never`)
       lines.push(`        : T extends { include: any }`)
-      lines.push(`          ? T['include'] extends true | { ${rel.name}?: true }`)
+      lines.push(`          ? T['include'] extends true`)
       lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
       lines.push(`            : T['include'] extends { ${rel.name}: any }`)
       lines.push(`              ? T['include']['${rel.name}'] extends true`)
@@ -582,7 +582,7 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
       )
       lines.push(`                    : ${rel.targetList}${rel.many ? '[]' : ''}`)
       lines.push(`              : never`)
-      lines.push(`          : never`)
+      lines.push(`          : ${rel.targetList}${rel.many ? '[]' : ''}`)
     }
     lines.push(`  } &`)
   }

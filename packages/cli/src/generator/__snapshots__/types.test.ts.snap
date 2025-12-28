@@ -560,7 +560,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
                 : Post[]
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { posts?: true }
+          ? T['include'] extends true
             ? Post[]
             : T['include'] extends { posts: any }
               ? T['include']['posts'] extends true
@@ -571,7 +571,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? PostGetPayload<{ include: T['include']['posts']['include'] }>[]
                     : Post[]
               : never
-          : never
+          : Post[]
   } &
   (
     T extends { select: any }
@@ -793,7 +793,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                 : User
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { author?: true }
+          ? T['include'] extends true
             ? User
             : T['include'] extends { author: any }
               ? T['include']['author'] extends true
@@ -804,7 +804,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? UserGetPayload<{ include: T['include']['author']['include'] }>
                     : User
               : never
-          : never
+          : User
   } &
   {}
 
@@ -2432,7 +2432,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                 : User
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { author?: true }
+          ? T['include'] extends true
             ? User
             : T['include'] extends { author: any }
               ? T['include']['author'] extends true
@@ -2443,7 +2443,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? UserGetPayload<{ include: T['include']['author']['include'] }>
                     : User
               : never
-          : never
+          : User
   } &
   {}
 
@@ -2858,7 +2858,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                 : User
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { author?: true }
+          ? T['include'] extends true
             ? User
             : T['include'] extends { author: any }
               ? T['include']['author'] extends true
@@ -2869,7 +2869,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? UserGetPayload<{ include: T['include']['author']['include'] }>
                     : User
               : never
-          : never
+          : User
   } &
   {}
 
@@ -3287,7 +3287,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
                 : Post[]
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { posts?: true }
+          ? T['include'] extends true
             ? Post[]
             : T['include'] extends { posts: any }
               ? T['include']['posts'] extends true
@@ -3298,7 +3298,7 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? PostGetPayload<{ include: T['include']['posts']['include'] }>[]
                     : Post[]
               : never
-          : never
+          : Post[]
   } &
   {}
 
@@ -3498,7 +3498,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                 : User
           : never
         : T extends { include: any }
-          ? T['include'] extends true | { author?: true }
+          ? T['include'] extends true
             ? User
             : T['include'] extends { author: any }
               ? T['include']['author'] extends true
@@ -3509,7 +3509,7 @@ export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
                     ? UserGetPayload<{ include: T['include']['author']['include'] }>
                     : User
               : never
-          : never
+          : User
   } &
   {}
 
