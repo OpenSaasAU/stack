@@ -187,12 +187,12 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
-  email?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
+  email?: Prisma.StringFilter<"User"> | string
 }
 
 /**

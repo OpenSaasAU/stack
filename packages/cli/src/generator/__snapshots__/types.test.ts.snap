@@ -44,11 +44,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -253,12 +253,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  content?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  content?: Prisma.StringFilter<"Post"> | string
 }
 
 /**
@@ -463,11 +463,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
   posts?: {
     some?: PostWhereInput
     every?: PostWhereInput
@@ -702,12 +702,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  author?: UserWhereInput
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  author?: UserWhereInput | null
 }
 
 /**
@@ -989,12 +989,12 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  firstName?: { equals?: string, not?: string }
-  lastName?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  firstName?: Prisma.StringFilter<"User"> | string
+  lastName?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -1232,12 +1232,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  content?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  content?: Prisma.StringFilter<"Post"> | string
 }
 
 /**
@@ -1439,11 +1439,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -1648,12 +1648,12 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
-  email?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
+  email?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -1855,11 +1855,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -2002,11 +2002,11 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
 }
 
 /**
@@ -2149,11 +2149,11 @@ export type CommentUpdateInput = {
 }
 
 export type CommentWhereInput = {
-  id?: string
-  AND?: Array<CommentWhereInput>
-  OR?: Array<CommentWhereInput>
-  NOT?: CommentWhereInput
-  content?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"Comment"> | string
+  AND?: CommentWhereInput | CommentWhereInput[]
+  OR?: CommentWhereInput[]
+  NOT?: CommentWhereInput | CommentWhereInput[]
+  content?: Prisma.StringFilter<"Comment"> | string
 }
 
 /**
@@ -2395,12 +2395,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  author?: UserWhereInput
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  author?: UserWhereInput | null
 }
 
 /**
@@ -2602,11 +2602,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -2830,12 +2830,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  author?: UserWhereInput
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  author?: UserWhereInput | null
 }
 
 /**
@@ -3037,11 +3037,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
 }
 
 /**
@@ -3264,11 +3264,11 @@ export type UserUpdateInput = {
 }
 
 export type UserWhereInput = {
-  id?: string
-  AND?: Array<UserWhereInput>
-  OR?: Array<UserWhereInput>
-  NOT?: UserWhereInput
-  name?: { equals?: string, not?: string }
+  id?: Prisma.StringFilter<"User"> | string
+  AND?: UserWhereInput | UserWhereInput[]
+  OR?: UserWhereInput[]
+  NOT?: UserWhereInput | UserWhereInput[]
+  name?: Prisma.StringFilter<"User"> | string
   posts?: {
     some?: PostWhereInput
     every?: PostWhereInput
@@ -3479,12 +3479,12 @@ export type PostUpdateInput = {
 }
 
 export type PostWhereInput = {
-  id?: string
-  AND?: Array<PostWhereInput>
-  OR?: Array<PostWhereInput>
-  NOT?: PostWhereInput
-  title?: { equals?: string, not?: string }
-  author?: UserWhereInput
+  id?: Prisma.StringFilter<"Post"> | string
+  AND?: PostWhereInput | PostWhereInput[]
+  OR?: PostWhereInput[]
+  NOT?: PostWhereInput | PostWhereInput[]
+  title?: Prisma.StringFilter<"Post"> | string
+  author?: UserWhereInput | null
 }
 
 /**
