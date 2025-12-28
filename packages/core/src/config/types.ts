@@ -283,19 +283,32 @@ export type FieldHooks<
    * Called when returning results from query operations
    * This is where you should transform output data (e.g., wrap passwords, format values)
    *
+   * Supports both sync and async implementations. When async, the hook will be
+   * properly awaited before returning results.
+   *
    * @example
    * ```typescript
+   * // Sync example
    * resolveOutput: ({ value }) => {
    *   if (typeof value === 'string' && value.length > 0) {
    *     return new HashedPassword(value)
    *   }
    *   return value
    * }
+   *
+   * // Async example (e.g., for virtual fields that query the database)
+   * resolveOutput: async ({ item, context }) => {
+   *   const related = await context.db.otherList.findUnique({ where: { id: item.relatedId } })
+   *   return related?.name
+   * }
    * ```
    */
   resolveOutput?: (
     args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>,
-  ) => GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined
+  ) =>
+    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | undefined
+    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
 }
 
 /**

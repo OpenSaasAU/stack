@@ -5,6 +5,7 @@ import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js
 /**
  * Runtime type for resolveOutput hooks
  * Used when we need to call hooks generically without knowing the specific field type
+ * Supports both sync and async implementations
  */
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
@@ -13,7 +14,7 @@ type ResolveOutputHookRuntime = (args: {
   listKey: string
   fieldName: string
   context: AccessContext
-}) => unknown
+}) => unknown | Promise<unknown>
 
 /**
  * Check if access control result is a boolean
@@ -346,14 +347,17 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         // Cast to runtime type for generic execution
         // At runtime, the hook will receive the correct value type for the field
         const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
-        filtered[fieldName] = hook({
-          value,
-          operation: 'query',
-          fieldName,
-          listKey,
-          item,
-          context: args.context,
-        })
+        // Use Promise.resolve() to handle both sync and async hooks
+        filtered[fieldName] = await Promise.resolve(
+          hook({
+            value,
+            operation: 'query',
+            fieldName,
+            listKey,
+            item,
+            context: args.context,
+          }),
+        )
       } else {
         filtered[fieldName] = value
       }
@@ -386,14 +390,17 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // Virtual fields must have resolveOutput hook to compute their value
     if (fieldConfig.hooks?.resolveOutput && listKey) {
       const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
-      filtered[fieldName] = hook({
-        value: undefined, // Virtual fields don't have a database value
-        operation: 'query',
-        fieldName,
-        listKey,
-        item: filtered, // Pass filtered item so virtual field can access other fields
-        context: args.context,
-      })
+      // Use Promise.resolve() to handle both sync and async hooks
+      filtered[fieldName] = await Promise.resolve(
+        hook({
+          value: undefined, // Virtual fields don't have a database value
+          operation: 'query',
+          fieldName,
+          listKey,
+          item: filtered, // Pass filtered item so virtual field can access other fields
+          context: args.context,
+        }),
+      )
     }
   }
 
