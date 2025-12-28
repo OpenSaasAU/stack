@@ -1,5 +1,13 @@
 # @opensaas/stack-core
 
+## 0.18.2
+
+### Patch Changes
+
+- [#329](https://github.com/OpenSaasAU/stack/pull/329) [`0b0f322`](https://github.com/OpenSaasAU/stack/commit/0b0f3223e3703014164d49c8f3b455752a6468c1) Thanks [@borisno2](https://github.com/borisno2)! - Fix infinite loop when virtual field resolveOutput hooks make database queries
+
+  When a virtual field's resolveOutput hook called context.db methods, it could cause an infinite loop if the query included relationships back to the original entity. This is now prevented by tracking resolveOutput hook execution depth and skipping auto-inclusion of relationships when inside a hook.
+
 ## 0.18.1
 
 ### Patch Changes
