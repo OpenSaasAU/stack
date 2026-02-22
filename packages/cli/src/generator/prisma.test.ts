@@ -190,7 +190,7 @@ describe('Prisma Schema Generator', () => {
 
       expect(schema).toContain('id        String   @id @default(cuid())')
       expect(schema).toContain('createdAt DateTime @default(now())')
-      expect(schema).toContain('updatedAt DateTime @updatedAt')
+      expect(schema).toContain('updatedAt DateTime @default(now()) @updatedAt')
     })
 
     it('should handle empty lists config', () => {
