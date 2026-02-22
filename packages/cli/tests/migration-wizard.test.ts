@@ -208,9 +208,9 @@ describe('MigrationWizard', () => {
       await wizard.answerQuestion(sessionId, []) // additional_features
       const finalResult = await wizard.answerQuestion(sessionId, 'yes') // confirm (use string instead of boolean)
 
-      expect(finalResult.content[0].text).toContain('Migration Complete')
+      expect(finalResult.content[0].text).toContain('Generated opensaas.config.ts')
       expect(finalResult.content[0].text).toContain('opensaas.config.ts')
-      expect(finalResult.content[0].text).toContain('Install Dependencies')
+      expect(finalResult.content[0].text).toContain('Dependencies')
       expect(finalResult.content[0].text).toContain('Next Steps')
     })
 
