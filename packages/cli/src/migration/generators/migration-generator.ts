@@ -1,7 +1,11 @@
 /**
  * Migration Config Generator
  *
- * Generates opensaas.config.ts from migration session data.
+ * For KeystoneJS projects: produces a targeted migration guide showing specific
+ * changes needed (imports, db config, auth). Lists, fields, hooks, and access
+ * control copy over unchanged.
+ *
+ * For Prisma/Next.js projects: generates a full opensaas.config.ts from scratch.
  */
 
 import type {
@@ -39,6 +43,13 @@ export class MigrationGenerator {
       }
     } catch {
       // Continue without schema - will generate example config
+    }
+
+    // For Keystone projects, produce a targeted migration guide rather than
+    // regenerating a full config. Lists, fields, hooks, and access control are
+    // identical between Keystone and OpenSaaS Stack.
+    if (projectType === 'keystone') {
+      return this.generateKeystoneMigrationGuide(schema, answers)
     }
 
     // Collect used field types for imports
@@ -98,6 +109,253 @@ export class MigrationGenerator {
       steps,
       warnings,
     }
+  }
+
+  /**
+   * Generate a targeted migration guide for KeystoneJS projects.
+   *
+   * KeystoneJS and OpenSaaS Stack share the same list/field/hook/access API.
+   * The guide focuses only on what actually needs to change rather than
+   * regenerating the entire config.
+   */
+  private generateKeystoneMigrationGuide(
+    schema: IntrospectedSchema | undefined,
+    answers: Record<string, unknown>,
+  ): MigrationOutput {
+    const dbProvider = (answers.db_provider as string) || schema?.provider || 'sqlite'
+    const useAuth = answers.enable_auth === true
+    const hasM2M = schema?.models.some((m) => m.fields.some((f) => f.relation && f.isList))
+
+    const warnings: string[] = []
+    if (schema) {
+      warnings.push(...this.keystoneIntrospector.getWarnings(schema))
+    }
+
+    // Build the targeted migration guide as the "config content"
+    const dbAdapterExample = this.generateDatabaseAdapterExample(dbProvider)
+    const authMigrationExample = useAuth ? this.generateAuthMigrationExample(answers) : ''
+    const m2mNote = hasM2M
+      ? `\n### Many-to-Many Join Tables\n\nKeystone and Prisma use different join table naming conventions. Add \`joinTableNaming: 'keystone'\` to preserve your existing data:\n\n\`\`\`typescript\ndb: {\n  provider: '${dbProvider}',\n  joinTableNaming: 'keystone', // Preserves Keystone join table names (e.g. _Post_tags)\n  prismaClientConstructor: ...\n}\n\`\`\`\n\nOr set per-relationship with \`db: { relationName: 'Post_tags' }\` on the relationship field.\n`
+      : ''
+
+    const configContent = `# KeystoneJS → OpenSaaS Stack: What to Change
+
+Your lists, fields, hooks, and access control are **identical** between Keystone and OpenSaaS Stack.
+Copy them to \`opensaas.config.ts\` unchanged. Only the following need updating:
+
+---
+
+## Step 1: Update Imports
+
+\`\`\`diff
+- import { config, list } from '@keystone-6/core'
+- import { text, relationship, ... } from '@keystone-6/core/fields'
++ import { config, list } from '@opensaas/stack-core'
++ import { text, relationship, ... } from '@opensaas/stack-core/fields'
+\`\`\`
+
+${useAuth ? `\`\`\`diff\n- import { createAuth } from '@keystone-6/auth'\n- import { statelessSessions } from '@keystone-6/core/session'\n+ import { authPlugin } from '@opensaas/stack-auth'\n\`\`\`\n` : ''}
+If you import types from \`.keystone/types\`, replace with:
+\`\`\`diff
+- import type { Session } from '.keystone/types'
++ import type { AccessControl } from '@opensaas/stack-core'
+\`\`\`
+
+---
+
+## Step 2: Update Database Config
+
+Add \`prismaClientConstructor\` — Prisma 7 requires a driver adapter.
+
+${dbAdapterExample}
+${m2mNote}
+---
+
+## Step 3: Update Session References
+
+If your access control references \`session.data.id\`, change to \`session.userId\`:
+
+\`\`\`diff
+- const isAuthor = ({ session, item }) => item.authorId === session?.data.id
++ const isAuthor: AccessControl = ({ session, item }) => (item as { authorId: string }).authorId === session?.userId
+\`\`\`
+${authMigrationExample}
+---
+
+## Step 4: Keep Everything Else
+
+Your lists, fields, hooks, and access control functions copy over unchanged.
+The \`list()\`, field builders (\`text()\`, \`relationship()\`, etc.), and hook signatures are identical.
+`
+
+    const dependencies = this.generateKeystoneDependencies(dbProvider, useAuth)
+    const steps = this.generateKeystoneSteps(useAuth)
+
+    return {
+      configContent,
+      dependencies,
+      files: [],
+      steps,
+      warnings,
+    }
+  }
+
+  /**
+   * Generate the database adapter example for the migration guide
+   */
+  private generateDatabaseAdapterExample(provider: string): string {
+    switch (provider) {
+      case 'postgresql':
+        return `\`\`\`typescript
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
+
+db: {
+  provider: 'postgresql',
+  url: process.env.DATABASE_URL,
+  prismaClientConstructor: (PrismaClient) => {
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+    const adapter = new PrismaPg(pool)
+    return new PrismaClient({ adapter })
+  },
+},
+\`\`\``
+
+      case 'mysql':
+        return `\`\`\`typescript
+import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
+
+db: {
+  provider: 'mysql',
+  url: process.env.DATABASE_URL,
+  prismaClientConstructor: (PrismaClient) => {
+    const adapter = new PrismaPlanetScale({ url: process.env.DATABASE_URL! })
+    return new PrismaClient({ adapter })
+  },
+},
+\`\`\``
+
+      case 'sqlite':
+      default:
+        return `\`\`\`typescript
+import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
+import Database from 'better-sqlite3'
+
+db: {
+  provider: 'sqlite',
+  url: process.env.DATABASE_URL || 'file:./dev.db',
+  prismaClientConstructor: (PrismaClient) => {
+    const db = new Database(process.env.DATABASE_URL?.replace('file:', '') || './dev.db')
+    const adapter = new PrismaBetterSQLite3(db)
+    return new PrismaClient({ adapter })
+  },
+},
+\`\`\``
+    }
+  }
+
+  /**
+   * Generate auth migration section for the guide
+   */
+  private generateAuthMigrationExample(answers: Record<string, unknown>): string {
+    const authMethods = (answers.auth_methods as string[]) || ['email-password']
+    const options: string[] = []
+
+    if (authMethods.includes('email-password')) {
+      options.push(`      emailAndPassword: { enabled: true },`)
+    }
+    if (authMethods.includes('magic-link')) {
+      options.push(`      magicLink: { enabled: true },`)
+    }
+    if (authMethods.includes('google')) {
+      options.push(
+        `      // google: { clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET! },`,
+      )
+    }
+    if (authMethods.includes('github')) {
+      options.push(
+        `      // github: { clientId: process.env.GITHUB_CLIENT_ID!, clientSecret: process.env.GITHUB_CLIENT_SECRET! },`,
+      )
+    }
+    options.push(`      sessionFields: ['userId', 'email', 'name'],`)
+
+    return `
+---
+
+## Auth Migration
+
+Replace \`createAuth\`/\`withAuth\`/\`statelessSessions\` with \`authPlugin\`:
+
+\`\`\`diff
+- const { withAuth } = createAuth({ listKey: 'User', identityField: 'email', ... })
+- export default withAuth(config({ ... }))
++ export default config({
++   plugins: [
++     authPlugin({
+${options.map((o) => `+   ${o}`).join('\n')}
++     }),
++   ],
++   ...
++ })
+\`\`\`
+
+The auth plugin automatically provides User, Session, Account, and Verification lists.
+**Remove those from your own \`lists\` config** if you have them.
+`
+  }
+
+  /**
+   * Generate Keystone-specific dependency list
+   */
+  private generateKeystoneDependencies(dbProvider: string, useAuth: boolean): string[] {
+    const remove = ['@keystone-6/core', '@keystone-6/auth', '@keystone-6/fields-document']
+    const add: string[] = ['@opensaas/stack-core', '@opensaas/stack-ui']
+
+    switch (dbProvider) {
+      case 'postgresql':
+        add.push('@prisma/adapter-pg', 'pg', '@types/pg')
+        break
+      case 'mysql':
+        add.push('@prisma/adapter-planetscale')
+        break
+      case 'sqlite':
+      default:
+        add.push('@prisma/adapter-better-sqlite3', 'better-sqlite3')
+        break
+    }
+
+    if (useAuth) {
+      add.push('@opensaas/stack-auth', 'better-auth')
+    }
+
+    // Return as annotated strings so wizard output is readable
+    return [`# Remove: ${remove.join(', ')}`, `# Add: ${add.join(', ')}`, ...add]
+  }
+
+  /**
+   * Generate next steps for a Keystone migration
+   */
+  private generateKeystoneSteps(useAuth: boolean): string[] {
+    const steps = [
+      'Rename keystone.ts → opensaas.config.ts',
+      'Update imports: @keystone-6/core → @opensaas/stack-core',
+      'Add prismaClientConstructor to db config (see guide above)',
+    ]
+
+    if (useAuth) {
+      steps.push('Replace createAuth/withAuth with authPlugin (see guide above)')
+      steps.push('Remove User/Session/Account lists from your config (auth plugin provides them)')
+    }
+
+    steps.push(
+      'Update session.data.id → session.userId in access control functions',
+      'Run: pnpm opensaas generate',
+      'Run: npx prisma db push',
+      'Run: pnpm dev',
+      'Visit admin UI at http://localhost:3000/admin',
+    )
+
+    return steps
   }
 
   /**

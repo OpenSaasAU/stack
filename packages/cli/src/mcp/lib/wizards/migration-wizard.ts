@@ -24,7 +24,13 @@ export class MigrationWizard {
   }
 
   /**
-   * Start a new migration wizard session
+   * Start a new migration wizard session.
+   *
+   * For KeystoneJS projects, uses a minimal fast-path: only asks about
+   * database provider and auth, since lists/fields/hooks/access copy over
+   * unchanged. Produces a targeted migration guide rather than a full rewrite.
+   *
+   * For Prisma/Next.js projects, uses the full interactive question flow.
    */
   async startMigration(
     projectType: ProjectType,
@@ -61,21 +67,27 @@ export class MigrationWizard {
     const firstQuestion = questions[0]
     const progressBar = this.renderProgressBar(1, totalQuestions)
 
+    // For Keystone, add a note that this is a fast-path (only a few questions)
+    const keystoneNote =
+      projectType === 'keystone'
+        ? `\n> **Note:** For KeystoneJS migrations, only a few questions are needed. Your lists, fields, hooks, and access control copy over unchanged — we just need to know about your database and auth setup.\n`
+        : ''
+
     return {
       content: [
         {
           type: 'text' as const,
-          text: `# 🚀 OpenSaaS Stack Migration Wizard
+          text: `# OpenSaaS Stack Migration Wizard
 
 ## Project Analysis
 
 - **Project Type:** ${projectType}
 - **Models:** ${analysis?.models?.length || 0}
 - **Database:** ${analysis?.provider || 'Not detected'}
-
+${keystoneNote}
 ---
 
-## Let's Configure Your Migration
+## Configuration Questions
 
 ${this.renderQuestion(firstQuestion, 1, totalQuestions)}
 
@@ -84,7 +96,7 @@ ${this.renderQuestion(firstQuestion, 1, totalQuestions)}
 **Progress:** ${progressBar} 1/${totalQuestions}
 
 <details>
-<summary>💡 **Instructions for Claude**</summary>
+<summary>Instructions for Claude</summary>
 
 1. Present this question naturally to the user
 2. When they answer, call \`opensaas_answer_migration\` with:
@@ -194,12 +206,75 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
   }
 
   /**
-   * Generate questions based on project type and analysis
+   * Generate questions based on project type and analysis.
+   *
+   * KeystoneJS fast-path: only asks about db provider and auth.
+   * Lists, fields, hooks, and access control are 1:1 compatible and need no input.
+   *
+   * Prisma/Next.js full flow: asks about access control strategy, per-model config, etc.
    */
   private generateQuestions(
     projectType: ProjectType,
     analysis?: IntrospectedSchema,
   ): MigrationQuestion[] {
+    if (projectType === 'keystone') {
+      return this.generateKeystoneQuestions(analysis)
+    }
+    return this.generateFullQuestions(analysis)
+  }
+
+  /**
+   * Minimal question set for KeystoneJS migrations.
+   *
+   * Keystone and OpenSaaS Stack share the same list/field/hook/access API so we
+   * only need to know the database provider (to generate the adapter config) and
+   * whether the user wants auth (so we know if they're migrating Keystone auth).
+   */
+  private generateKeystoneQuestions(analysis?: IntrospectedSchema): MigrationQuestion[] {
+    const questions: MigrationQuestion[] = []
+
+    questions.push({
+      id: 'db_provider',
+      text: 'Which database are you using?',
+      type: 'select',
+      options: ['sqlite', 'postgresql', 'mysql'],
+      defaultValue: analysis?.provider || 'sqlite',
+    })
+
+    questions.push({
+      id: 'enable_auth',
+      text: 'Are you currently using Keystone auth (createAuth / withAuth)?',
+      type: 'boolean',
+      defaultValue: this.hasAuthModels(analysis),
+    })
+
+    questions.push({
+      id: 'auth_methods',
+      text: 'Which auth methods do you want in OpenSaaS Stack?',
+      type: 'multiselect',
+      options: ['email-password', 'google', 'github', 'magic-link'],
+      defaultValue: ['email-password'],
+      dependsOn: {
+        questionId: 'enable_auth',
+        value: true,
+      },
+    })
+
+    questions.push({
+      id: 'confirm',
+      text: 'Ready to generate the migration guide?',
+      type: 'boolean',
+      defaultValue: true,
+    })
+
+    return questions
+  }
+
+  /**
+   * Full question set for Prisma/Next.js migrations where a new config is
+   * generated from scratch.
+   */
+  private generateFullQuestions(analysis?: IntrospectedSchema): MigrationQuestion[] {
     const questions: MigrationQuestion[] = []
 
     // 1. Database configuration
@@ -249,7 +324,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
 
     // 4. Per-model configuration (if models detected)
     if (analysis?.models && analysis.models.length > 0) {
-      // Ask about special models
       const modelNames = analysis.models.map((m) => m.name)
 
       if (modelNames.some((n) => ['User', 'Account', 'Session'].includes(n))) {
@@ -261,7 +335,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
         })
       }
 
-      // Ask about models that need special access control
       const nonAuthModels = modelNames.filter(
         (n) => !['User', 'Account', 'Session', 'Verification'].includes(n),
       )
@@ -269,7 +342,7 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       if (nonAuthModels.length > 0) {
         questions.push({
           id: 'models_with_owner',
-          text: `Which models should have owner-based access control? (User can only access their own)`,
+          text: 'Which models should have owner-based access control? (user can only access their own records)',
           type: 'multiselect',
           options: nonAuthModels,
           defaultValue: this.guessOwnerModels(analysis.models, nonAuthModels),
@@ -317,24 +390,34 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       // Clean up session
       delete this.sessions[session.id]
 
+      const isKeystoneMigration = session.projectType === 'keystone'
+      const heading = isKeystoneMigration ? '# Migration Guide' : '# Generated opensaas.config.ts'
+      const codeBlock = isKeystoneMigration
+        ? output.configContent // Already formatted as a markdown guide
+        : `\`\`\`typescript\n${output.configContent}\n\`\`\``
+
+      // For Keystone, filter out annotation-only dependency lines (# Remove / # Add)
+      const installDeps = output.dependencies.filter((d) => !d.startsWith('#'))
+      const removeDeps = output.dependencies
+        .filter((d) => d.startsWith('# Remove:'))
+        .map((d) => d.replace('# Remove: ', ''))
+        .join(', ')
+
       return {
         content: [
           {
             type: 'text' as const,
-            text: `# ✅ Migration Complete!
+            text: `${heading}
 
-## Generated opensaas.config.ts
-
-\`\`\`typescript
-${output.configContent}
-\`\`\`
+${codeBlock}
 
 ---
 
-## Install Dependencies
+## Dependencies
 
+${removeDeps ? `Remove Keystone packages:\n\`\`\`bash\npnpm remove ${removeDeps}\n\`\`\`\n\n` : ''}Install OpenSaaS packages:
 \`\`\`bash
-${output.dependencies.map((d) => `pnpm add ${d}`).join('\n')}
+${installDeps.map((d) => `pnpm add ${d}`).join('\n')}
 \`\`\`
 
 ---
@@ -359,31 +442,23 @@ ${f.content}
 
 `
     : ''
-}
-
-${
-  output.warnings.length > 0
-    ? `## ⚠️ Warnings
+}${
+              output.warnings.length > 0
+                ? `## Warnings
 
 ${output.warnings.map((w) => `- ${w}`).join('\n')}
 
 ---
 
 `
-    : ''
-}
-
-## Next Steps
+                : ''
+            }## Next Steps
 
 ${output.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}
 
 ---
 
-🎉 **Your migration is ready!**
-
-The generated config creates an OpenSaaS Stack application that matches your existing schema.
-
-📚 **Documentation:** https://stack.opensaas.au/`,
+Documentation: https://stack.opensaas.au/`,
           },
         ],
       }
