@@ -135,7 +135,7 @@ model User {
   name         String
   email        String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -380,7 +380,7 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -488,7 +488,7 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -507,7 +507,7 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;

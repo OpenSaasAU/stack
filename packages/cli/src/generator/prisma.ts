@@ -562,7 +562,7 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
     // Always add timestamps
     lines.push('  createdAt DateTime @default(now())')
-    lines.push('  updatedAt DateTime @updatedAt')
+    lines.push('  updatedAt DateTime @default(now()) @updatedAt')
 
     // Add indexes for foreign key fields
     for (const { foreignKeyField, indexType } of foreignKeyIndexes) {
