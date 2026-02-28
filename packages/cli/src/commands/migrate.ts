@@ -91,7 +91,7 @@ function ensureDir(dirPath: string): void {
  * Get marketplace source for OpenSaaS Stack plugins
  */
 function getMarketplaceSource():
-  | { source: 'github'; path: string }
+  | { source: 'github'; repo: string }
   | { source: 'git'; url: string }
   | { source: 'local'; path: string } {
   // Try to detect if we're in development (local monorepo)
@@ -105,7 +105,7 @@ function getMarketplaceSource():
   }
 
   // Production mode - use GitHub marketplace
-  return { source: 'github', path: 'OpenSaasAU/stack' }
+  return { source: 'github', repo: 'OpenSaasAU/stack' }
 }
 
 /**
@@ -137,7 +137,7 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
       string,
       {
         source:
-          | { source: 'github'; path: string }
+          | { source: 'github'; repo: string }
           | { source: 'git'; url: string }
           | { source: 'local'; path: string }
       }
