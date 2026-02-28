@@ -154,15 +154,16 @@ operation: {
 
 **KeystoneJS to OpenSaaS:**
 
-| KeystoneJS Field | OpenSaaS Field   |
-| ---------------- | ---------------- |
-| `text`           | `text()`         |
-| `integer`        | `integer()`      |
-| `checkbox`       | `checkbox()`     |
-| `timestamp`      | `timestamp()`    |
-| `select`         | `select()`       |
-| `relationship`   | `relationship()` |
-| `password`       | `password()`     |
+| KeystoneJS Field | OpenSaaS Field                                                             |
+| ---------------- | -------------------------------------------------------------------------- |
+| `text`           | `text()`                                                                   |
+| `integer`        | `integer()`                                                                |
+| `checkbox`       | `checkbox()`                                                               |
+| `timestamp`      | `timestamp()`                                                              |
+| `select`         | `select()`                                                                 |
+| `relationship`   | `relationship()`                                                           |
+| `password`       | `password()`                                                               |
+| `virtual`        | `virtual()` — **requires changes** (no GraphQL, use `hooks.resolveOutput`) |
 
 ### 6. Database Configuration
 
@@ -322,8 +323,9 @@ export default config({
    - `@keystone-6/core/fields` → `@opensaas/stack-core/fields`
    - `@keystone-6/auth` → `@opensaas/stack-auth`
 5. **Add Prisma adapter** to database config (required for Prisma 7)
-6. **Update context creation** in API routes/pages
-7. **Test** - the app structure should remain identical
+6. **Migrate virtual fields** — if any `virtual()` fields exist, invoke the `keystone-virtual-fields-context` skill
+7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.` and replace with `context.db.*` calls; invoke the `keystone-virtual-fields-context` skill for patterns
+8. **Test** - the app structure should remain identical
 
 **DO NOT:**
 
@@ -373,6 +375,52 @@ export default config({
 - Or create custom field type for document structure
 - May require data migration for existing documents
 
+### Challenge: Virtual Fields
+
+Keystone virtual fields use `graphql.field({ type: graphql.String, resolve })`. OpenSaaS Stack has no GraphQL — virtual fields use `hooks.resolveOutput` with a `type` property instead.
+
+**Quick example:**
+
+```typescript
+// Keystone
+fullName: virtual({
+  field: graphql.field({
+    type: graphql.String,
+    resolve: (item) => `${item.firstName} ${item.lastName}`,
+  }),
+})
+
+// OpenSaaS Stack
+fullName: virtual({
+  type: 'string',
+  hooks: {
+    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  },
+})
+```
+
+Field arguments are not supported in OpenSaaS Stack. For detailed patterns including context queries and custom types, **invoke the `keystone-virtual-fields-context` skill**.
+
+### Challenge: context.graphql Calls
+
+Keystone apps often use `context.graphql.run()` for type-safe data access from routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly instead.
+
+**Quick example:**
+
+```typescript
+// Keystone
+const { posts } = await context.graphql.run({
+  query: `query { posts(where: { status: { equals: published } }) { id title } }`,
+})
+
+// OpenSaaS Stack
+const posts = await context.db.post.findMany({
+  where: { status: { equals: 'published' } },
+})
+```
+
+List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`. Access control is enforced automatically. For detailed patterns including related data and sudo access, **invoke the `keystone-virtual-fields-context` skill**.
+
 ## Migration Checklist
 
 ### For Prisma Projects:
@@ -406,6 +454,8 @@ export default config({
 - [ ] **Find and replace imports** in ALL project files
 - [ ] **Add Prisma adapter** to database config
 - [ ] **Update context creation** in API routes
+- [ ] **Migrate virtual fields** (if any) — replace `graphql.field()` + `resolve()` with `hooks.resolveOutput`; invoke `keystone-virtual-fields-context` skill
+- [ ] **Migrate context.graphql calls** (if any) — replace with `context.db.*` calls; invoke `keystone-virtual-fields-context` skill
 - [ ] Analyze and adapt access control patterns
 - [ ] Run `opensaas generate`
 - [ ] Run `prisma generate`

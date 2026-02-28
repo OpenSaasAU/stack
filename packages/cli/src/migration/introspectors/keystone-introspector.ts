@@ -287,7 +287,7 @@ export class KeystoneIntrospector {
     // Add virtual field migration reminder
     if (hasVirtualFields) {
       warnings.push(
-        "Your schema uses virtual fields - you'll need to manually migrate the resolveOutput hooks to compute field values",
+        'Your schema uses virtual() fields — these require changes. OpenSaaS Stack has no GraphQL: replace graphql.field({ resolve }) with hooks: { resolveOutput } and declare the field type. See the migration guide Step 5 or invoke the keystone-virtual-fields-context skill.',
       )
     }
 

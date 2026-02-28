@@ -237,7 +237,58 @@ export default config({
 
 The auth plugin automatically injects User, Session, Account, and Verification lists — you can remove those from your own config.
 
-### 7. Many-to-Many Join Table Names
+### 7. Virtual Fields
+
+Virtual fields require changes — they use a different API with no GraphQL.
+
+**Keystone:**
+
+```typescript
+fullName: virtual({
+  field: graphql.field({
+    type: graphql.String,
+    resolve: (item) => `${item.firstName} ${item.lastName}`,
+  }),
+})
+```
+
+**OpenSaaS Stack:**
+
+```typescript
+fullName: virtual({
+  type: 'string',
+  hooks: {
+    resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  },
+})
+```
+
+If the project has virtual fields, **invoke the `keystone-virtual-fields-context` skill** for full type mappings, context query patterns, and the custom types approach.
+
+### 8. context.graphql → context.db
+
+Keystone apps commonly call `context.graphql.run()` or `context.query.*` in routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly.
+
+**Keystone:**
+
+```typescript
+const { posts } = await context.graphql.run({
+  query: `query { posts(where: { authorId: { equals: $id } }) { id title } }`,
+  variables: { id: userId },
+})
+```
+
+**OpenSaaS Stack:**
+
+```typescript
+const posts = await context.db.post.findMany({
+  where: { authorId: { equals: userId } },
+})
+```
+
+If the project uses `context.graphql.*` or `context.query.*`, **invoke the `keystone-virtual-fields-context` skill** for full patterns including related data queries and sudo access.
+
+### 9. Many-to-Many Join Table Names
 
 Keystone uses field-location-based join table names (`_Lesson_teachers`). Prisma uses alphabetical names (`_LessonToTeacher`). To preserve your existing data:
 
@@ -304,7 +355,15 @@ Replace `createAuth`/`withAuth`/`statelessSessions` with `authPlugin`. Remove Us
 
 Change `session.data.id` → `session.userId` in access control functions.
 
-### Step 6: Run generation and validate
+### Step 6: Migrate virtual fields (if present)
+
+If the config has `virtual()` fields, invoke the `keystone-virtual-fields-context` skill and apply the patterns.
+
+### Step 7: Migrate context.graphql calls (if present)
+
+Search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.` across all project files. If found, invoke the `keystone-virtual-fields-context` skill and apply the patterns.
+
+### Step 8: Run generation and validate
 
 ```bash
 pnpm opensaas generate   # Generates prisma schema
@@ -318,10 +377,12 @@ pnpm dev                 # Start dev server
 
 1. **Read project metadata** from `.claude/opensaas-project.json`
 2. **Introspect the Keystone config** with `opensaas_introspect_keystone`
-3. **Assess what needs to change** — look at: imports, db config, auth, session references
-4. **Show the specific diffs** for their config — not a full rewrite, just the targeted changes
-5. **Help them apply each change** step by step
-6. **Validate** the result with `pnpm opensaas generate`
+3. **Assess what needs to change** — look at: imports, db config, auth, session references, virtual fields, context.graphql usage
+4. **Check for virtual fields** — if the config has any `virtual()` fields, note this and invoke the `keystone-virtual-fields-context` skill
+5. **Check for context.graphql** — search the project for `context.graphql`, `context.graphql.run`, `context.graphql.raw`, `context.query.` usage; if found, invoke the `keystone-virtual-fields-context` skill
+6. **Show the specific diffs** for their config — not a full rewrite, just the targeted changes
+7. **Help them apply each change** step by step
+8. **Validate** the result with `pnpm opensaas generate`
 
 ### What to say first:
 
