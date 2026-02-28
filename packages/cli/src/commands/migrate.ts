@@ -234,7 +234,7 @@ When you open this project in Claude Code, the MCP server will be automatically 
 ## Resources
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
-- [Migration Guide](https://stack.opensaas.au/guides/migration)
+- [Migration Guide](https://stack.opensaas.au/docs/guides/migration)
 - [GitHub Repository](https://github.com/OpenSaasAU/stack)
 
 ---
@@ -337,10 +337,10 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     console.log(chalk.bold('📝 Next Steps:\n'))
     console.log(chalk.cyan('   1. Run with --with-ai for AI-guided migration'))
     console.log(chalk.cyan('   2. Or manually create opensaas.config.ts'))
-    console.log(chalk.dim('\n   See: https://stack.opensaas.au/guides/migration'))
+    console.log(chalk.dim('\n   See: https://stack.opensaas.au/docs/guides/migration'))
   }
 
-  console.log(chalk.dim(`\n📚 Documentation: https://stack.opensaas.au/guides/migration\n`))
+  console.log(chalk.dim(`\n📚 Documentation: https://stack.opensaas.au/docs/guides/migration\n`))
 }
 
 /**
