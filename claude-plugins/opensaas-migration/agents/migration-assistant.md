@@ -336,12 +336,11 @@ pnpm add @prisma/adapter-pg pg
 pnpm add -D @types/pg
 ```
 
-### Step 2: Update imports
+### Step 2: Update imports — delegate to subagent
 
-Change the import paths in `keystone.ts` → `opensaas.config.ts`:
+**Do not do this yourself.** Invoke the `migrate-imports` skill with the project root path. It will find every file with `@keystone-6` imports, update them, and rename the config file if needed.
 
-- `@keystone-6/core` → `@opensaas/stack-core`
-- `@keystone-6/core/fields` → `@opensaas/stack-core/fields`
+> Invoke `migrate-imports` with: "Project root: /path/to/project"
 
 ### Step 3: Update database config
 
@@ -355,17 +354,29 @@ Replace `createAuth`/`withAuth`/`statelessSessions` with `authPlugin`. Remove Us
 
 Change `session.data.id` → `session.userId` in access control functions.
 
-### Step 6: Migrate virtual fields (if present) — delegate to subagent
+### Step 6: Migrate image/file fields (if present) — delegate to subagent
 
-**Do not do this yourself.** Invoke the `migrate-virtual-fields` skill as a forked subagent, passing the config file path and the virtual field definitions as arguments. Example invocation:
+**Do not do this yourself.** If the config has `image()` or `file()` fields, invoke `migrate-image-fields`. Pass the config path, model names, field names, and database provider. The subagent updates the config and writes a SQL migration script.
+
+> Invoke `migrate-image-fields` with: "Config: /path/opensaas.config.ts. Database: postgresql. Models with image fields: Teacher (field: avatar), Post (field: coverImage)"
+
+**Important**: Remind the user to run the generated SQL BEFORE `prisma db push`.
+
+### Step 7: Migrate document fields (if present) — delegate to subagent
+
+**Do not do this yourself.** If the config uses `document()` from `@keystone-6/fields-document`, invoke `migrate-document-fields`. Pass the config path and the document field code.
+
+> Invoke `migrate-document-fields` with: "Config: /path/opensaas.config.ts. Document fields: Post.content, Page.body"
+
+### Step 8: Migrate virtual fields (if present) — delegate to subagent
+
+**Do not do this yourself.** Invoke the `migrate-virtual-fields` skill as a forked subagent, passing the config file path and the virtual field definitions:
 
 > Invoke `migrate-virtual-fields` with: "Config file: /path/to/opensaas.config.ts. The following virtual fields need migration: [paste the virtual field code from the config]"
 
-The subagent will edit the file and report what it changed.
+### Step 9: Migrate context.graphql calls (if present) — delegate to subagent
 
-### Step 7: Migrate context.graphql calls (if present) — delegate to subagent
-
-**Do not do this yourself.** First do a quick grep to confirm these patterns exist (`context.graphql`, `context.query.`). Then invoke the `migrate-context-calls` skill as a forked subagent, passing the project root:
+**Do not do this yourself.** First do a quick grep to confirm these patterns exist (`context.graphql`, `context.query.`). Then invoke `migrate-context-calls`:
 
 > Invoke `migrate-context-calls` with: "Project root: /path/to/project. The project uses context.graphql and/or context.query calls that need to be converted to context.db calls."
 
@@ -383,20 +394,22 @@ pnpm dev                 # Start dev server
 
 ### Overview: Plan → Execute → Delegate → Validate
 
-Your job is to plan and coordinate the migration, not to do all the editing yourself. Some tasks (virtual fields, context.graphql) are delegated to forked subagents so they run in their own isolated context and don't exhaust the main conversation window.
+Your job is to plan and coordinate the migration, not to do all the editing yourself. Search-heavy and complex editing tasks are delegated to forked subagents that run in their own isolated context, preventing the main conversation window from filling up.
 
 **Tasks you handle directly** (quick, bounded changes):
 
-- Rename config file
-- Update import paths (find/replace)
 - Add `prismaClientConstructor` to db config
 - Replace auth setup with `authPlugin`
 - Update `session.data.id` → `session.userId`
+- Update M2M join table naming if needed
 
 **Tasks you delegate to subagents** (search-heavy or complex edits):
 
+- Import path updates across all project files → `migrate-imports` skill
 - Virtual field migration → `migrate-virtual-fields` skill
 - context.graphql/context.query migration → `migrate-context-calls` skill
+- Image/file field migration (config + SQL) → `migrate-image-fields` skill
+- Document field migration (→ tiptap) → `migrate-document-fields` skill
 
 ### When the user says "help me migrate" or similar:
 
@@ -404,26 +417,39 @@ Your job is to plan and coordinate the migration, not to do all the editing your
 
 1. **Read project metadata** from `.claude/opensaas-project.json`
 2. **Introspect the Keystone config** with `opensaas_introspect_keystone`
-3. **Identify what needs to change**: imports, db config, auth, session refs, virtual fields, context.graphql usage
-4. **Check for virtual fields** in the config (look for `virtual(` with `graphql.field`)
-5. **Check for context.graphql** — quick grep for `context.graphql` and `context.query.` across the project
+3. **Identify what needs to change** — check for each of:
+   - `@keystone-6` imports in project files (always)
+   - image/file fields in config
+   - document fields from `@keystone-6/fields-document`
+   - virtual fields with `graphql.field()`
+   - `context.graphql` or `context.query.*` usage across the project
+   - auth setup (`createAuth`/`withAuth`)
+   - session references (`session.data.id`)
+   - M2M relationships (join table naming)
 
 **Phase 2 — Present plan:**
 
-After assessing, show the user a numbered list of what will change. Be specific: "Your config has 2 virtual fields that need migration" not "virtual fields may need changes."
+After assessing, show the user a numbered list of exactly what will change and which subagents will handle each task. Be specific: "Your config has 2 virtual fields, 1 image field, and context.graphql calls in 4 files."
 
-**Phase 3 — Execute simple changes** (do these yourself, one at a time):
+**Phase 3 — Execute simple changes yourself:**
 
-6. Rename file, update imports, update db config, update auth, update session refs
+- Add `prismaClientConstructor` to db config
+- Replace `createAuth`/`withAuth` with `authPlugin`
+- Update `session.data.id` → `session.userId`
+- Add `joinTableNaming: 'keystone'` if M2M detected
 
-**Phase 4 — Delegate complex tasks** (invoke forked subagents):
+**Phase 4 — Delegate to forked subagents** (one at a time, in this order):
 
-7. If virtual fields found → invoke `migrate-virtual-fields` skill with the config path and field code
-8. If context.graphql found → invoke `migrate-context-calls` skill with the project root path
+- **Always**: invoke `migrate-imports` with project root path (handles all @keystone-6 import replacements)
+- **If image/file fields**: invoke `migrate-image-fields` with config path, model names, field names, and database provider
+- **If document fields**: invoke `migrate-document-fields` with config path and document field code
+- **If virtual fields**: invoke `migrate-virtual-fields` with config path and virtual field code
+- **If context.graphql/context.query**: invoke `migrate-context-calls` with project root path
 
 **Phase 5 — Validate:**
 
-9. Run `pnpm opensaas generate` and report any errors
+- Run `pnpm opensaas generate` and report any errors
+- If image/file fields were found, remind the user to run the SQL migration script BEFORE `prisma db push`
 
 ### What to say first:
 
