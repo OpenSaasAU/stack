@@ -125,6 +125,9 @@ export class MigrationGenerator {
     const dbProvider = (answers.db_provider as string) || schema?.provider || 'sqlite'
     const useAuth = answers.enable_auth === true
     const hasM2M = schema?.models.some((m) => m.fields.some((f) => f.relation && f.isList))
+    const hasVirtualFields = schema?.models.some((m) =>
+      m.fields.some((f) => f.type.toLowerCase() === 'virtual'),
+    )
 
     const warnings: string[] = []
     if (schema) {
@@ -134,6 +137,10 @@ export class MigrationGenerator {
     // Build the targeted migration guide as the "config content"
     const dbAdapterExample = this.generateDatabaseAdapterExample(dbProvider)
     const authMigrationExample = useAuth ? this.generateAuthMigrationExample(answers) : ''
+    const virtualFieldsNote = hasVirtualFields
+      ? `\n## Step 5: Migrate Virtual Fields\n\nYour schema has \`virtual()\` fields. These work differently — OpenSaaS Stack has no GraphQL.\n\n\`\`\`diff\n- fullName: virtual({\n-   field: graphql.field({\n-     type: graphql.String,\n-     resolve: (item) => \`\${item.firstName} \${item.lastName}\`,\n-   }),\n- })\n+ fullName: virtual({\n+   type: 'string',\n+   hooks: {\n+     resolveOutput: ({ item }) => \`\${item.firstName} \${item.lastName}\`,\n+   },\n+ })\n\`\`\`\n\nKey changes: remove \`graphql.field()\` wrapper, replace \`resolve(item)\` with \`hooks.resolveOutput({ item })\`, declare \`type\` as a string. Field arguments are not supported. For context queries inside \`resolveOutput\`, use \`context.db.*\` instead of \`context.query.*\`.\n`
+      : ''
+    const contextGraphqlNote = `\n## Step ${hasVirtualFields ? '6' : '5'}: Migrate context.graphql Calls\n\nSearch your codebase for \`context.graphql.run(\`, \`context.graphql.raw(\`, and \`context.query.\`. Replace with \`context.db.{listName}.{method}()\` — list names are camelCase.\n\n\`\`\`diff\n- const { posts } = await context.graphql.run({\n-   query: \`query { posts(where: { status: { equals: published } }) { id title } }\`,\n- })\n+ const posts = await context.db.post.findMany({\n+   where: { status: { equals: 'published' } },\n+ })\n\`\`\`\n\nAccess control is enforced automatically. For nested data, make separate \`context.db\` calls per list.\n`
     const m2mNote = hasM2M
       ? `\n### Many-to-Many Join Tables\n\nKeystone and Prisma use different join table naming conventions. Add \`joinTableNaming: 'keystone'\` to preserve your existing data:\n\n\`\`\`typescript\ndb: {\n  provider: '${dbProvider}',\n  joinTableNaming: 'keystone', // Preserves Keystone join table names (e.g. _Post_tags)\n  prismaClientConstructor: ...\n}\n\`\`\`\n\nOr set per-relationship with \`db: { relationName: 'Post_tags' }\` on the relationship field.\n`
       : ''
@@ -186,10 +193,10 @@ ${authMigrationExample}
 
 Your lists, fields, hooks, and access control functions copy over unchanged.
 The \`list()\`, field builders (\`text()\`, \`relationship()\`, etc.), and hook signatures are identical.
-`
+${virtualFieldsNote}${contextGraphqlNote}`
 
     const dependencies = this.generateKeystoneDependencies(dbProvider, useAuth)
-    const steps = this.generateKeystoneSteps(useAuth)
+    const steps = this.generateKeystoneSteps(useAuth, hasVirtualFields ?? false)
 
     return {
       configContent,
@@ -335,7 +342,7 @@ The auth plugin automatically provides User, Session, Account, and Verification 
   /**
    * Generate next steps for a Keystone migration
    */
-  private generateKeystoneSteps(useAuth: boolean): string[] {
+  private generateKeystoneSteps(useAuth: boolean, hasVirtualFields: boolean): string[] {
     const steps = [
       'Rename keystone.ts → opensaas.config.ts',
       'Update imports: @keystone-6/core → @opensaas/stack-core',
@@ -347,8 +354,16 @@ The auth plugin automatically provides User, Session, Account, and Verification 
       steps.push('Remove User/Session/Account lists from your config (auth plugin provides them)')
     }
 
+    steps.push('Update session.data.id → session.userId in access control functions')
+
+    if (hasVirtualFields) {
+      steps.push(
+        'Migrate virtual fields: replace graphql.field() + resolve() with hooks.resolveOutput (see guide above)',
+      )
+    }
+
     steps.push(
-      'Update session.data.id → session.userId in access control functions',
+      'Search for context.graphql.run/raw and context.query.* calls and replace with context.db.* (see guide above)',
       'Run: pnpm opensaas generate',
       'Run: npx prisma db push',
       'Run: pnpm dev',
