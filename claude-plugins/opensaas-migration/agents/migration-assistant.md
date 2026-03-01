@@ -382,7 +382,22 @@ Change `session.data.id` → `session.userId` in access control functions.
 
 The subagent will search the project, edit all files, and report what it changed.
 
-### Step 8: Run generation and validate
+### Step 10: Set up Admin UI — ask the user, then delegate to subagent
+
+**Do not do this yourself.** Ask the user two questions:
+
+1. "Would you like to set up the OpenSaaS Stack Admin UI in this project? It provides a full CRUD interface for all your lists out of the box."
+2. "What path should the admin UI be mounted at? (default: `/admin`)"
+
+If the user wants the admin UI:
+
+> Invoke `setup-admin-ui` with: "Project root: /path/to/project. Admin path: /admin (or whatever they chose). Auth enabled: yes/no (based on whether authPlugin was detected in their config)."
+
+The subagent will install `@opensaas/stack-ui`, create `app/{path}/[[...{segment}]]/page.tsx`, and report next steps.
+
+If the user declines, skip this step and proceed to validation.
+
+### Step 11: Run generation and validate
 
 ```bash
 pnpm opensaas generate   # Generates prisma schema
@@ -410,6 +425,7 @@ Your job is to plan and coordinate the migration, not to do all the editing your
 - context.graphql/context.query migration → `migrate-context-calls` skill
 - Image/file field migration (config + SQL) → `migrate-image-fields` skill
 - Document field migration (→ tiptap) → `migrate-document-fields` skill
+- Admin UI setup (ask first, then delegate) → `setup-admin-ui` skill
 
 ### When the user says "help me migrate" or similar:
 
@@ -446,7 +462,16 @@ After assessing, show the user a numbered list of exactly what will change and w
 - **If virtual fields**: invoke `migrate-virtual-fields` with config path and virtual field code
 - **If context.graphql/context.query**: invoke `migrate-context-calls` with project root path
 
-**Phase 5 — Validate:**
+**Phase 5 — Admin UI:**
+
+Ask the user two questions (both required before delegating):
+1. "Would you like to set up the OpenSaaS Stack Admin UI? It gives you a full CRUD interface for all your lists out of the box, at a path you choose."
+2. "What path should it be mounted at?" (default: `/admin`)
+
+If yes → **invoke `setup-admin-ui`** with: project root, chosen admin path, and whether `authPlugin` is in their config.
+If no → skip and go to Phase 6.
+
+**Phase 6 — Validate:**
 
 - Run `pnpm opensaas generate` and report any errors
 - If image/file fields were found, remind the user to run the SQL migration script BEFORE `prisma db push`
@@ -515,4 +540,5 @@ Guide them through:
 2. Run `pnpm opensaas generate`
 3. Run `npx prisma db push`
 4. Start dev server: `pnpm dev`
-5. Visit the admin UI at `http://localhost:3000/admin`
+5. If Admin UI was set up: visit `http://localhost:3000/{adminPath}` (e.g. `http://localhost:3000/admin`)
+6. If Admin UI was skipped: mention that they can set it up any time — see https://stack.opensaas.au/admin-ui

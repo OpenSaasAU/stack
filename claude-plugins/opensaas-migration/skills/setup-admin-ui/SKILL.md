@@ -1,0 +1,174 @@
+---
+name: setup-admin-ui
+description: Set up the OpenSaaS Stack Admin UI in an existing Next.js App Router project. Invoke as a forked subagent after migration is complete, passing the project root, desired admin path, and whether auth is enabled.
+context: fork
+agent: general-purpose
+---
+
+Set up the OpenSaaS Stack Admin UI in the Next.js project described below.
+
+$ARGUMENTS
+
+## What This Skill Does
+
+1. Installs `@opensaas/stack-ui` if not already a dependency
+2. Creates the catch-all admin route page at `app/{adminPath}/[[...{segmentName}]]/page.tsx`
+3. Validates the generated file works with the project structure
+
+## Step 1 — Check if `@opensaas/stack-ui` Is Already Installed
+
+Read `package.json` in the project root. If `@opensaas/stack-ui` is **not** in `dependencies`, install it:
+
+```bash
+# Detect package manager
+# - If pnpm-lock.yaml exists → pnpm add @opensaas/stack-ui
+# - If yarn.lock exists → yarn add @opensaas/stack-ui
+# - Otherwise → npm install @opensaas/stack-ui
+```
+
+Check existing versions of `@opensaas/stack-core` in `package.json` and install `@opensaas/stack-ui` at the **same version** to avoid mismatches.
+
+## Step 2 — Determine the Admin Path
+
+The admin path comes from `$ARGUMENTS` (e.g. `/admin`, `/dashboard/admin`).
+
+- **Route path**: `app/{adminPath}/[[...{segmentName}]]/page.tsx`
+  - For `/admin` → `app/admin/[[...admin]]/page.tsx`
+  - For `/dashboard/admin` → `app/dashboard/admin/[[...admin]]/page.tsx`
+  - For `/cms` → `app/cms/[[...cms]]/page.tsx`
+- **Segment name** (used in both the directory name and the `params.{segmentName}` reference): the last path segment (e.g. `admin`, `cms`)
+- **`basePath`** prop on `<AdminUI>`: the full admin path (e.g. `/admin`, `/dashboard/admin`)
+
+Create all intermediate directories as needed.
+
+## Step 3 — Determine if Auth Is Enabled
+
+Check whether auth is configured:
+
+1. Look in `opensaas.config.ts` for `authPlugin` usage
+2. Check for a `lib/auth.ts` or `lib/auth/index.ts` that exports `getSession`
+
+This determines which page template to use.
+
+## Step 4 — Create the Admin Page
+
+### Template A — Without Auth
+
+Use this when auth is NOT configured:
+
+```typescript
+import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ {SEGMENT_NAME}?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  return (
+    <AdminUI
+      context={await getContext()}
+      config={await config}
+      params={resolvedParams.{SEGMENT_NAME}}
+      searchParams={resolvedSearchParams}
+      basePath="{ADMIN_PATH}"
+      serverAction={serverAction}
+    />
+  )
+}
+```
+
+### Template B — With Auth
+
+Use this when `authPlugin` is detected and `getSession` is available:
+
+```typescript
+import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext({ session: await getSession() })
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ {SEGMENT_NAME}?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  const session = await getSession()
+  if (!session) {
+    return (
+      <div className="p-8">
+        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
+          <h2 className="text-lg font-semibold mb-2">Access Denied</h2>
+          <p>You must be logged in to access the admin interface.</p>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <AdminUI
+      context={await getContext(session)}
+      config={await config}
+      params={resolvedParams.{SEGMENT_NAME}}
+      searchParams={resolvedSearchParams}
+      basePath="{ADMIN_PATH}"
+      serverAction={serverAction}
+    />
+  )
+}
+```
+
+Replace `{SEGMENT_NAME}` with the last segment of the admin path (e.g. `admin`) and `{ADMIN_PATH}` with the full path (e.g. `/admin`).
+
+**Important**: If `getSession` is not at `@/lib/auth`, check for it at its actual location (e.g. `@/lib/auth/index`, `@/app/lib/auth`) and use the correct import path.
+
+## Step 5 — Check for Missing `.opensaas/context`
+
+The admin page imports from `@/.opensaas/context`. This file is generated by `pnpm opensaas generate` (or `pnpm generate`). If it doesn't exist yet:
+
+- **Do not create it manually** — it's generated from `opensaas.config.ts`
+- Remind the user to run `pnpm generate` (or `pnpm opensaas generate`) before starting the dev server
+
+## Step 6 — Report What Was Done
+
+Report to the user:
+
+```
+✓ Admin UI set up at: {adminPath}
+✓ File created: app/{adminPath}/[[...{segmentName}]]/page.tsx
+✓ Auth-aware: yes/no
+✓ @opensaas/stack-ui: already installed / installed at version X.Y.Z
+
+Next steps:
+1. Run `pnpm generate` to generate the .opensaas/context.ts file (if not already done)
+2. Run `pnpm dev` to start the dev server
+3. Visit http://localhost:3000{adminPath} to access the admin UI
+
+Docs: https://stack.opensaas.au/admin-ui
+```
+
+## Notes
+
+- The `[[...{segmentName}]]` catch-all segment handles all admin routes: the list view, item detail, create, and edit pages — all from one file.
+- The `basePath` prop must match exactly the URL path where the admin is mounted.
+- The `serverAction` wrapper function is required — it provides the server action bridge between the client-side admin UI components and the database context.
+- If the user is using a custom `getSession` approach (not from `@opensaas/stack-auth`), the auth template still works — just update the import path and the session shape passed to `getContext`.
+- If Tailwind CSS is not configured in the project, mention that `@opensaas/stack-ui` uses Tailwind for styling and link to the docs for setup: https://stack.opensaas.au/admin-ui#tailwind
