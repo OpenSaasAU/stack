@@ -9,6 +9,7 @@ function mapFieldTypeToPrisma(
   fieldName: string,
   field: FieldConfig,
   provider?: string,
+  listName?: string,
 ): string | null {
   // Relationships are handled separately
   if (field.type === 'relationship') {
@@ -17,7 +18,7 @@ function mapFieldTypeToPrisma(
 
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider)
+    const result = field.getPrismaType(fieldName, provider, listName)
     return result.type
   }
 
@@ -28,7 +29,12 @@ function mapFieldTypeToPrisma(
 /**
  * Get field modifiers (?, @default, @unique, etc.)
  */
-function getFieldModifiers(fieldName: string, field: FieldConfig, provider?: string): string {
+function getFieldModifiers(
+  fieldName: string,
+  field: FieldConfig,
+  provider?: string,
+  listName?: string,
+): string {
   // Handle relationships separately
   if (field.type === 'relationship') {
     const relField = field as RelationshipField
@@ -41,7 +47,7 @@ function getFieldModifiers(fieldName: string, field: FieldConfig, provider?: str
 
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider)
+    const result = field.getPrismaType(fieldName, provider, listName)
     return result.modifiers || ''
   }
 
@@ -261,6 +267,30 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   lines.push('}')
   lines.push('')
 
+  // Collect enum definitions from all fields (first pass)
+  const enumDefinitions: Map<string, string[]> = new Map()
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
+    for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      if (fieldConfig.type === 'relationship' || fieldConfig.virtual) continue
+      if (fieldConfig.getPrismaType) {
+        const result = fieldConfig.getPrismaType(fieldName, config.db.provider, listName)
+        if (result.enumValues && result.enumValues.length > 0) {
+          enumDefinitions.set(result.type, result.enumValues)
+        }
+      }
+    }
+  }
+
+  // Generate enum blocks
+  for (const [enumName, values] of enumDefinitions) {
+    lines.push(`enum ${enumName} {`)
+    for (const value of values) {
+      lines.push(`  ${value}`)
+    }
+    lines.push('}')
+    lines.push('')
+  }
+
   // Track many-to-many relationships (for Keystone naming)
   const manyToManyRelationships: ManyToManyRelationship[] = []
 
@@ -429,10 +459,10 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
         continue
       }
 
-      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig, config.db.provider)
+      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig, config.db.provider, listName)
       if (!prismaType) continue // Skip if no type returned
 
-      const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider)
+      const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider, listName)
 
       // Format with proper spacing
       const paddedName = fieldName.padEnd(12)

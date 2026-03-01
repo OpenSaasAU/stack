@@ -174,3 +174,29 @@ datasource db {
 }
 "
 `;
+
+exports[`Prisma Schema Generator > select field with enum type > should match snapshot for enum select field 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum PostStatus {
+  draft
+  published
+  archived
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String
+  status       PostStatus @default(draft)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+"
+`;
