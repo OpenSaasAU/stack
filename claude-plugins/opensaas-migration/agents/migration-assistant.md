@@ -465,6 +465,7 @@ After assessing, show the user a numbered list of exactly what will change and w
 **Phase 5 — Admin UI:**
 
 Ask the user two questions (both required before delegating):
+
 1. "Would you like to set up the OpenSaaS Stack Admin UI? It gives you a full CRUD interface for all your lists out of the box, at a path you choose."
 2. "What path should it be mounted at?" (default: `/admin`)
 
