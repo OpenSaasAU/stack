@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@prisma/client": "^7.1.0",
-    "@types/node": "^24.10.1",
+    "@types/node": "^24.11.0",
     "@vitest/coverage-v8": "^4.0.15",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"
