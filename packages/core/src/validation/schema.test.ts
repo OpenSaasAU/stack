@@ -49,6 +49,22 @@ describe('Zod Schema Generation', () => {
       expect(schema).toBeDefined()
     })
 
+    it('should generate schema for enum select field', () => {
+      const fields: Record<string, FieldConfig> = {
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+          ],
+          db: { type: 'enum' },
+          validation: { isRequired: true },
+        }),
+      }
+
+      const schema = generateZodSchema(fields, 'create')
+      expect(schema).toBeDefined()
+    })
+
     it('should make fields optional in update mode', () => {
       const fields: Record<string, FieldConfig> = {
         name: text({ validation: { isRequired: true } }),
@@ -143,6 +159,41 @@ describe('Zod Schema Generation', () => {
       }
 
       const result = validateWithZod({ status: 'invalid' }, fields, 'create')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors.status).toBeDefined()
+      }
+    })
+
+    it('should pass validation for valid enum select value', () => {
+      const fields: Record<string, FieldConfig> = {
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+          ],
+          db: { type: 'enum' },
+          validation: { isRequired: true },
+        }),
+      }
+
+      const result = validateWithZod({ status: 'draft' }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+
+    it('should fail validation for invalid enum select value', () => {
+      const fields: Record<string, FieldConfig> = {
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+          ],
+          db: { type: 'enum' },
+          validation: { isRequired: true },
+        }),
+      }
+
+      const result = validateWithZod({ status: 'archived' }, fields, 'create')
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.errors.status).toBeDefined()

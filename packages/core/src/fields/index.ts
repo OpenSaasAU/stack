@@ -719,6 +719,11 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
 }
 
 /**
+ * Valid Prisma enum value pattern: starts with a letter, followed by letters, digits, or underscores
+ */
+const PRISMA_ENUM_VALUE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
+/**
  * Select field (enum-like)
  */
 export function select<
@@ -726,6 +731,20 @@ export function select<
 >(options: Omit<SelectField<TTypeInfo>, 'type'>): SelectField<TTypeInfo> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
+  }
+
+  const isNativeEnum = options.db?.type === 'enum'
+
+  if (isNativeEnum) {
+    const invalidValues = options.options
+      .map((opt) => opt.value)
+      .filter((value) => !PRISMA_ENUM_VALUE_PATTERN.test(value))
+
+    if (invalidValues.length > 0) {
+      throw new Error(
+        `Enum select field values must be valid Prisma identifiers (letters, numbers, and underscores, starting with a letter). Invalid values: ${invalidValues.join(', ')}`,
+      )
+    }
   }
 
   return {
@@ -743,9 +762,38 @@ export function select<
 
       return schema
     },
-    getPrismaType: (_fieldName: string) => {
+    getPrismaType: (fieldName: string, _provider?: string, listName?: string) => {
       const isRequired = options.validation?.isRequired
       let modifiers = ''
+
+      if (isNativeEnum) {
+        // Derive enum name from list name + field name in PascalCase
+        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+        const enumName = listName ? `${listName}${capitalizedField}` : capitalizedField
+
+        // Required fields don't get the ? modifier
+        if (!isRequired) {
+          modifiers = '?'
+        }
+
+        // Add default value if provided (no quotes for enum values)
+        if (options.defaultValue !== undefined) {
+          modifiers = ` @default(${options.defaultValue})`
+        }
+
+        // Map modifier
+        if (options.db?.map) {
+          modifiers += ` @map("${options.db.map}")`
+        }
+
+        return {
+          type: enumName,
+          modifiers: modifiers || undefined,
+          enumValues: options.options.map((opt) => opt.value),
+        }
+      }
+
+      // String type (default)
 
       // Required fields don't get the ? modifier
       if (!isRequired) {
@@ -768,7 +816,7 @@ export function select<
       }
     },
     getTypeScriptType: () => {
-      // Generate union type from options
+      // Generate union type from options (same for both string and enum db types)
       const unionType = options.options.map((opt) => `'${opt.value}'`).join(' | ')
 
       return {

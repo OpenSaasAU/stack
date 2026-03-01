@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { generatePrismaSchema } from './prisma.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { text, integer, relationship, checkbox, timestamp } from '@opensaas/stack-core/fields'
+import {
+  text,
+  integer,
+  relationship,
+  checkbox,
+  timestamp,
+  select,
+} from '@opensaas/stack-core/fields'
 
 describe('Prisma Schema Generator', () => {
   describe('generatePrismaSchema', () => {
@@ -1245,6 +1252,296 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('tags         Tag[]  @relation("Post_tags")')
       // Should NOT create synthetic field
       expect(schema).not.toContain('from_Post_tags')
+    })
+  })
+
+  describe('select field with enum type', () => {
+    it('should generate enum block and use enum type for enum select field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should generate enum block
+      expect(schema).toContain('enum PostStatus {')
+      expect(schema).toContain('  draft')
+      expect(schema).toContain('  published')
+      // Should use enum type in model
+      expect(schema).toContain('PostStatus')
+      // Should NOT use String type for this field
+      expect(schema).not.toMatch(/status\s+String/)
+    })
+
+    it('should use unquoted default value for enum select field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+                defaultValue: 'draft',
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Default value should be unquoted (Prisma enum syntax)
+      expect(schema).toContain('@default(draft)')
+      // Should NOT have quoted default (that would be string syntax)
+      expect(schema).not.toContain('@default("draft")')
+    })
+
+    it('should add ? modifier for optional enum select field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Optional field should have ?
+      expect(schema).toContain('PostStatus?')
+    })
+
+    it('should not add ? modifier for required enum select field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+                validation: { isRequired: true },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Required field should NOT have ?
+      expect(schema).not.toContain('PostStatus?')
+      expect(schema).toContain('PostStatus')
+    })
+
+    it('should generate separate enum blocks for different lists with same field name', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+          Comment: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Pending', value: 'pending' },
+                  { label: 'Approved', value: 'approved' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should generate separate enum blocks for each list
+      expect(schema).toContain('enum PostStatus {')
+      expect(schema).toContain('enum CommentStatus {')
+      expect(schema).toContain('  draft')
+      expect(schema).toContain('  published')
+      expect(schema).toContain('  pending')
+      expect(schema).toContain('  approved')
+    })
+
+    it('should generate separate enum blocks for multiple enum fields on same list', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+              type: select({
+                options: [
+                  { label: 'Article', value: 'article' },
+                  { label: 'Video', value: 'video' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Should generate separate enum blocks for each field
+      expect(schema).toContain('enum PostStatus {')
+      expect(schema).toContain('enum PostType {')
+    })
+
+    it('should generate string select field as String type (no enum)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Default (string type) should use String
+      expect(schema).toContain('String')
+      // Should NOT generate an enum block
+      expect(schema).not.toContain('enum PostStatus')
+    })
+
+    it('should throw for enum values that are not valid Prisma identifiers', () => {
+      expect(() => {
+        select({
+          options: [
+            { label: 'In Progress', value: 'in-progress' },
+            { label: 'Done', value: 'done' },
+          ],
+          db: { type: 'enum' },
+        })
+      }).toThrow(/valid Prisma identifiers/)
+    })
+
+    it('should throw for enum values starting with a number', () => {
+      expect(() => {
+        select({
+          options: [{ label: 'First', value: '1st' }],
+          db: { type: 'enum' },
+        })
+      }).toThrow(/valid Prisma identifiers/)
+    })
+
+    it('should accept enum values with underscores', () => {
+      expect(() => {
+        select({
+          options: [
+            { label: 'In Progress', value: 'in_progress' },
+            { label: 'Done', value: 'done' },
+          ],
+          db: { type: 'enum' },
+        })
+      }).not.toThrow()
+    })
+
+    it('should generate enum field with @map modifier', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum', map: 'post_status' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@map("post_status")')
+      expect(schema).toContain('enum PostStatus {')
+    })
+
+    it('should match snapshot for enum select field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              title: text({ validation: { isRequired: true } }),
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                  { label: 'Archived', value: 'archived' },
+                ],
+                db: { type: 'enum' },
+                defaultValue: 'draft',
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+      expect(schema).toMatchSnapshot()
     })
   })
 })

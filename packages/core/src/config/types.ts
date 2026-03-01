@@ -415,14 +415,21 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * Get Prisma type and modifiers for schema generation
    * @param fieldName - The name of the field (for generating modifiers)
    * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
-   * @returns Prisma type string and optional modifiers
+   * @param listName - Optional list name (used for generating enum type names)
+   * @returns Prisma type string, optional modifiers, and optional enum values
    */
   getPrismaType?: (
     fieldName: string,
     provider?: string,
+    listName?: string,
   ) => {
     type: string
     modifiers?: string
+    /**
+     * If set, this field requires a Prisma enum definition with these values.
+     * The enum name is the value of `type`.
+     */
+    enumValues?: string[]
   }
   /**
    * Get TypeScript type information for type generation
@@ -559,6 +566,21 @@ export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
 export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'select'
   options: Array<{ label: string; value: string }>
+  defaultValue?: string
+  db?: {
+    /**
+     * Whether to store as a native database enum type.
+     * - 'string' (default): stores as a plain string/varchar column
+     * - 'enum': stores as a Prisma enum, generating a native enum type in the schema
+     *
+     * Note: enum values must be valid Prisma identifiers (letters, numbers, underscores,
+     * starting with a letter) when using 'enum' type.
+     *
+     * @default 'string'
+     */
+    type?: 'string' | 'enum'
+    map?: string
+  }
   validation?: {
     isRequired?: boolean
   }
