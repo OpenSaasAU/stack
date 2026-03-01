@@ -355,13 +355,21 @@ Replace `createAuth`/`withAuth`/`statelessSessions` with `authPlugin`. Remove Us
 
 Change `session.data.id` → `session.userId` in access control functions.
 
-### Step 6: Migrate virtual fields (if present)
+### Step 6: Migrate virtual fields (if present) — delegate to subagent
 
-If the config has `virtual()` fields, invoke the `keystone-virtual-fields-context` skill and apply the patterns.
+**Do not do this yourself.** Invoke the `migrate-virtual-fields` skill as a forked subagent, passing the config file path and the virtual field definitions as arguments. Example invocation:
 
-### Step 7: Migrate context.graphql calls (if present)
+> Invoke `migrate-virtual-fields` with: "Config file: /path/to/opensaas.config.ts. The following virtual fields need migration: [paste the virtual field code from the config]"
 
-Search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.` across all project files. If found, invoke the `keystone-virtual-fields-context` skill and apply the patterns.
+The subagent will edit the file and report what it changed.
+
+### Step 7: Migrate context.graphql calls (if present) — delegate to subagent
+
+**Do not do this yourself.** First do a quick grep to confirm these patterns exist (`context.graphql`, `context.query.`). Then invoke the `migrate-context-calls` skill as a forked subagent, passing the project root:
+
+> Invoke `migrate-context-calls` with: "Project root: /path/to/project. The project uses context.graphql and/or context.query calls that need to be converted to context.db calls."
+
+The subagent will search the project, edit all files, and report what it changed.
 
 ### Step 8: Run generation and validate
 
@@ -373,16 +381,49 @@ pnpm dev                 # Start dev server
 
 ## Workflow
 
+### Overview: Plan → Execute → Delegate → Validate
+
+Your job is to plan and coordinate the migration, not to do all the editing yourself. Some tasks (virtual fields, context.graphql) are delegated to forked subagents so they run in their own isolated context and don't exhaust the main conversation window.
+
+**Tasks you handle directly** (quick, bounded changes):
+
+- Rename config file
+- Update import paths (find/replace)
+- Add `prismaClientConstructor` to db config
+- Replace auth setup with `authPlugin`
+- Update `session.data.id` → `session.userId`
+
+**Tasks you delegate to subagents** (search-heavy or complex edits):
+
+- Virtual field migration → `migrate-virtual-fields` skill
+- context.graphql/context.query migration → `migrate-context-calls` skill
+
 ### When the user says "help me migrate" or similar:
+
+**Phase 1 — Assess:**
 
 1. **Read project metadata** from `.claude/opensaas-project.json`
 2. **Introspect the Keystone config** with `opensaas_introspect_keystone`
-3. **Assess what needs to change** — look at: imports, db config, auth, session references, virtual fields, context.graphql usage
-4. **Check for virtual fields** — if the config has any `virtual()` fields, note this and invoke the `keystone-virtual-fields-context` skill
-5. **Check for context.graphql** — search the project for `context.graphql`, `context.graphql.run`, `context.graphql.raw`, `context.query.` usage; if found, invoke the `keystone-virtual-fields-context` skill
-6. **Show the specific diffs** for their config — not a full rewrite, just the targeted changes
-7. **Help them apply each change** step by step
-8. **Validate** the result with `pnpm opensaas generate`
+3. **Identify what needs to change**: imports, db config, auth, session refs, virtual fields, context.graphql usage
+4. **Check for virtual fields** in the config (look for `virtual(` with `graphql.field`)
+5. **Check for context.graphql** — quick grep for `context.graphql` and `context.query.` across the project
+
+**Phase 2 — Present plan:**
+
+After assessing, show the user a numbered list of what will change. Be specific: "Your config has 2 virtual fields that need migration" not "virtual fields may need changes."
+
+**Phase 3 — Execute simple changes** (do these yourself, one at a time):
+
+6. Rename file, update imports, update db config, update auth, update session refs
+
+**Phase 4 — Delegate complex tasks** (invoke forked subagents):
+
+7. If virtual fields found → invoke `migrate-virtual-fields` skill with the config path and field code
+8. If context.graphql found → invoke `migrate-context-calls` skill with the project root path
+
+**Phase 5 — Validate:**
+
+9. Run `pnpm opensaas generate` and report any errors
 
 ### What to say first:
 
