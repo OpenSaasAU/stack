@@ -97,7 +97,7 @@ export function text<
 
       return {
         type: 'String',
-        modifiers: modifiers || undefined,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -145,22 +145,30 @@ export function integer<
         : withMax
     },
     getPrismaType: (_fieldName: string) => {
-      const isRequired = options?.validation?.isRequired
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
       // Optional modifier
-      if (!isRequired) {
+      if (isNullable) {
         modifiers += '?'
       }
 
+      // Native type modifier (e.g., @db.SmallInt, @db.BigInt)
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
+      }
+
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
         type: 'Int',
-        modifiers: modifiers || undefined,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -353,21 +361,28 @@ export function checkbox<
       return z.boolean().optional().nullable()
     },
     getPrismaType: (_fieldName: string) => {
+      const db = options?.db
       const hasDefault = options?.defaultValue !== undefined
       let modifiers = ''
 
+      // Nullable modifier - checkbox fields are non-nullable by default (must be true or false)
+      // Use db.isNullable: true to allow NULL values in the database
+      if (db?.isNullable === true) {
+        modifiers += '?'
+      }
+
       if (hasDefault) {
-        modifiers = ` @default(${options.defaultValue})`
+        modifiers += ` @default(${options.defaultValue})`
       }
 
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
         type: 'Boolean',
-        modifiers: modifiers || undefined,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -392,26 +407,41 @@ export function timestamp<
       return z.union([z.date(), z.iso.datetime()]).optional().nullable()
     },
     getPrismaType: (_fieldName: string) => {
-      let modifiers = '?'
-
-      // Check for default value
-      if (
+      const db = options?.db
+      const hasDefaultNow =
         options?.defaultValue &&
         typeof options.defaultValue === 'object' &&
         'kind' in options.defaultValue &&
         options.defaultValue.kind === 'now'
-      ) {
-        modifiers = ' @default(now())'
+
+      // Nullability: explicit db.isNullable overrides the default (nullable unless @default(now()))
+      const isNullable = db?.isNullable ?? !hasDefaultNow
+
+      let modifiers = ''
+
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
+
+      // Default value
+      if (hasDefaultNow) {
+        modifiers += ' @default(now())'
+      }
+
+      // Native type modifier (e.g., @db.Timestamptz for PostgreSQL)
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
       }
 
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
         type: 'DateTime',
-        modifiers,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -689,22 +719,30 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
       }
     },
     getPrismaType: (_fieldName: string) => {
-      const isRequired = options?.validation?.isRequired
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
       // Optional modifier
-      if (!isRequired) {
+      if (isNullable) {
         modifiers += '?'
       }
 
+      // Native type modifier (e.g., @db.Text)
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
+      }
+
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
         type: 'String',
-        modifiers: modifiers || undefined,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {
@@ -938,22 +976,30 @@ export function json<
       }
     },
     getPrismaType: (_fieldName: string) => {
-      const isRequired = options?.validation?.isRequired
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
       // Optional modifier
-      if (!isRequired) {
+      if (isNullable) {
         modifiers += '?'
       }
 
+      // Native type modifier
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
+      }
+
       // Map modifier
-      if (options?.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
       }
 
       return {
         type: 'Json',
-        modifiers: modifiers || undefined,
+        modifiers: modifiers.trimStart() || undefined,
       }
     },
     getTypeScriptType: () => {

@@ -374,6 +374,52 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     map?: string
+    /**
+     * Controls DB-level nullability independently of validation.isRequired.
+     * When specified, overrides the default behavior where nullability is inferred
+     * from validation.isRequired (required = non-nullable, optional = nullable).
+     *
+     * This allows you to:
+     * - Make a field non-nullable at the DB level without making it API-required
+     * - Explicitly mark a field as nullable even when it has isRequired validation
+     *
+     * @example
+     * ```typescript
+     * // DB non-nullable, but API optional (relies on a default value or hook)
+     * fields: {
+     *   phoneNumber: text({
+     *     db: { isNullable: false }
+     *   })
+     *   // Generates: phoneNumber String (non-nullable)
+     *
+     *   // DB nullable (explicit), regardless of validation
+     *   lastMessagePreview: text({
+     *     db: { isNullable: true }
+     *   })
+     *   // Generates: lastMessagePreview String? (nullable)
+     * }
+     * ```
+     */
+    isNullable?: boolean
+    /**
+     * Override the native database type for the column.
+     * Generates a @db.<nativeType> attribute in the Prisma schema.
+     * The available types depend on your database provider.
+     *
+     * @example
+     * ```typescript
+     * // PostgreSQL: use TEXT instead of VARCHAR
+     * fields: {
+     *   description: text({ db: { nativeType: 'Text' } })
+     *   // Generates: description String? @db.Text
+     *
+     *   // PostgreSQL: use SMALLINT instead of INT
+     *   count: integer({ db: { nativeType: 'SmallInt' } })
+     *   // Generates: count Int? @db.SmallInt
+     * }
+     * ```
+     */
+    nativeType?: string
   }
   ui?: {
     /**
@@ -472,37 +518,6 @@ export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<T
     }
   }
   isIndexed?: boolean | 'unique'
-  db?: {
-    map?: string
-    /**
-     * Prisma native database type attribute
-     * Allows overriding the default String type for the database provider
-     * @example
-     * ```typescript
-     * // PostgreSQL/MySQL
-     * fields: {
-     *   description: text({ db: { nativeType: 'Text' } })
-     *   // Generates: description String @db.Text
-     * }
-     * ```
-     */
-    nativeType?: string
-    /**
-     * Controls nullability in the database schema
-     * When specified, overrides the default behavior (isRequired determines nullability)
-     * @example
-     * ```typescript
-     * fields: {
-     *   description: text({
-     *     validation: { isRequired: true },
-     *     db: { isNullable: false }
-     *   })
-     *   // Generates: description String (non-nullable)
-     * }
-     * ```
-     */
-    isNullable?: boolean
-  }
   ui?: {
     displayMode?: 'input' | 'textarea'
   }
@@ -522,10 +537,6 @@ export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
   defaultValue?: string
   precision?: number
   scale?: number
-  db?: {
-    map?: string
-    isNullable?: boolean
-  }
   validation?: {
     isRequired?: boolean
     min?: string
@@ -546,10 +557,6 @@ export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
 export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'calendarDay'
   defaultValue?: string
-  db?: {
-    map?: string
-    isNullable?: boolean
-  }
   validation?: {
     isRequired?: boolean
   }
