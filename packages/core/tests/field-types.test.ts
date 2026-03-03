@@ -110,6 +110,72 @@ describe('Field Types', () => {
         expect(prismaType.type).toBe('String')
         expect(prismaType.modifiers).toContain('@index')
       })
+
+      test('db.isNullable: true makes optional field explicitly nullable', () => {
+        const field = text({ db: { isNullable: true } })
+        const prismaType = field.getPrismaType('description')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toContain('?')
+      })
+
+      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
+        const field = text({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('phoneNumber')
+
+        expect(prismaType.type).toBe('String')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: false on required field keeps it non-nullable', () => {
+        const field = text({ validation: { isRequired: true }, db: { isNullable: false } })
+        const prismaType = field.getPrismaType('title')
+
+        expect(prismaType.type).toBe('String')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: true on required field overrides to nullable', () => {
+        const field = text({ validation: { isRequired: true }, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('title')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toContain('?')
+      })
+
+      test('db.nativeType generates @db. attribute', () => {
+        const field = text({ db: { nativeType: 'Text' } })
+        const prismaType = field.getPrismaType('medical')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toContain('@db.Text')
+      })
+
+      test('db.nativeType with nullable field includes both ? and @db. attribute', () => {
+        const field = text({ db: { isNullable: true, nativeType: 'Text' } })
+        const prismaType = field.getPrismaType('bio')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toBe('? @db.Text')
+      })
+
+      test('db.nativeType with non-nullable field excludes ? but includes @db. attribute', () => {
+        const field = text({ db: { isNullable: false, nativeType: 'Text' } })
+        const prismaType = field.getPrismaType('content')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toBe('@db.Text')
+      })
+
+      test('db.nativeType with required field generates non-nullable with @db. attribute', () => {
+        const field = text({ validation: { isRequired: true }, db: { nativeType: 'Text' } })
+        const prismaType = field.getPrismaType('content')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toBe('@db.Text')
+      })
     })
 
     describe('getTypeScriptType', () => {
@@ -203,6 +269,39 @@ describe('Field Types', () => {
         expect(prismaType.type).toBe('Int')
         expect(prismaType.modifiers).toBeUndefined()
       })
+
+      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
+        const field = integer({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('count')
+
+        expect(prismaType.type).toBe('Int')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: true on required field overrides to nullable', () => {
+        const field = integer({ validation: { isRequired: true }, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('count')
+
+        expect(prismaType.type).toBe('Int')
+        expect(prismaType.modifiers).toContain('?')
+      })
+
+      test('db.nativeType generates @db. attribute', () => {
+        const field = integer({ db: { nativeType: 'SmallInt' } })
+        const prismaType = field.getPrismaType('score')
+
+        expect(prismaType.type).toBe('Int')
+        expect(prismaType.modifiers).toContain('@db.SmallInt')
+      })
+
+      test('db.nativeType with non-nullable field excludes ? but includes @db. attribute', () => {
+        const field = integer({ db: { isNullable: false, nativeType: 'BigInt' } })
+        const prismaType = field.getPrismaType('largeId')
+
+        expect(prismaType.type).toBe('Int')
+        expect(prismaType.modifiers).toBe('@db.BigInt')
+      })
     })
 
     describe('getTypeScriptType', () => {
@@ -251,7 +350,7 @@ describe('Field Types', () => {
         const prismaType = field.getPrismaType('isActive')
 
         expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toBe(' @default(true)')
+        expect(prismaType.modifiers).toBe('@default(true)')
       })
 
       test('returns Boolean type with default false', () => {
@@ -259,7 +358,24 @@ describe('Field Types', () => {
         const prismaType = field.getPrismaType('isActive')
 
         expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toBe(' @default(false)')
+        expect(prismaType.modifiers).toBe('@default(false)')
+      })
+
+      test('db.isNullable: true makes Boolean field nullable', () => {
+        const field = checkbox({ db: { isNullable: true } })
+        const prismaType = field.getPrismaType('agreed')
+
+        expect(prismaType.type).toBe('Boolean')
+        expect(prismaType.modifiers).toContain('?')
+      })
+
+      test('db.isNullable: true with default value makes nullable Boolean with default', () => {
+        const field = checkbox({ defaultValue: false, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('agreed')
+
+        expect(prismaType.type).toBe('Boolean')
+        expect(prismaType.modifiers).toContain('?')
+        expect(prismaType.modifiers).toContain('@default(false)')
       })
     })
 
@@ -309,7 +425,33 @@ describe('Field Types', () => {
         const prismaType = field.getPrismaType('createdAt')
 
         expect(prismaType.type).toBe('DateTime')
-        expect(prismaType.modifiers).toBe(' @default(now())')
+        expect(prismaType.modifiers).toBe('@default(now())')
+      })
+
+      test('db.isNullable: false makes timestamp non-nullable without default', () => {
+        const field = timestamp({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('publishedAt')
+
+        expect(prismaType.type).toBe('DateTime')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: true on timestamp with @default(now()) overrides to nullable', () => {
+        const field = timestamp({ defaultValue: { kind: 'now' }, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('createdAt')
+
+        expect(prismaType.type).toBe('DateTime')
+        expect(prismaType.modifiers).toContain('?')
+        expect(prismaType.modifiers).toContain('@default(now())')
+      })
+
+      test('db.nativeType generates @db. attribute', () => {
+        const field = timestamp({ db: { nativeType: 'Timestamptz' } })
+        const prismaType = field.getPrismaType('scheduledAt')
+
+        expect(prismaType.type).toBe('DateTime')
+        expect(prismaType.modifiers).toContain('@db.Timestamptz')
       })
     })
 
@@ -376,6 +518,31 @@ describe('Field Types', () => {
 
         expect(prismaType.type).toBe('String')
         expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: false makes password non-nullable regardless of validation', () => {
+        const field = password({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('password')
+
+        expect(prismaType.type).toBe('String')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: true on required password overrides to nullable', () => {
+        const field = password({ validation: { isRequired: true }, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('password')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toContain('?')
+      })
+
+      test('db.nativeType generates @db. attribute', () => {
+        const field = password({ db: { nativeType: 'Text' } })
+        const prismaType = field.getPrismaType('password')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.modifiers).toContain('@db.Text')
       })
     })
 
@@ -640,6 +807,23 @@ describe('Field Types', () => {
 
         expect(prismaType.type).toBe('Json')
         expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: false makes Json field non-nullable regardless of validation', () => {
+        const field = json({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('settings')
+
+        expect(prismaType.type).toBe('Json')
+        // Non-nullable with no other modifiers → modifiers is undefined
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: true on required field overrides to nullable', () => {
+        const field = json({ validation: { isRequired: true }, db: { isNullable: true } })
+        const prismaType = field.getPrismaType('settings')
+
+        expect(prismaType.type).toBe('Json')
+        expect(prismaType.modifiers).toContain('?')
       })
     })
 

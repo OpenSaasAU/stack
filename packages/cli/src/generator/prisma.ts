@@ -468,9 +468,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
       const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider, listName)
 
-      // Format with proper spacing
+      // Format with proper spacing: '?' attaches to type directly, other modifiers get a space
       const paddedName = fieldName.padEnd(12)
-      lines.push(`  ${paddedName} ${prismaType}${modifiers}`)
+      const modStr = modifiers.trimStart()
+      const nullPart = modStr.startsWith('?') ? '?' : ''
+      const attrPart = modStr.startsWith('?') ? modStr.slice(1).trimStart() : modStr
+      lines.push(`  ${paddedName} ${prismaType}${nullPart}${attrPart ? ' ' + attrPart : ''}`)
     }
 
     // Add relationship fields
