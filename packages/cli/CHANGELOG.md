@@ -1,5 +1,150 @@
 # @opensaas/stack-cli
 
+## 0.19.0
+
+### Minor Changes
+
+- [#346](https://github.com/OpenSaasAU/stack/pull/346) [`aa5edec`](https://github.com/OpenSaasAU/stack/commit/aa5edecfbd2fc2dcab67479088d4c6ff2dd24600) Thanks [@borisno2](https://github.com/borisno2)! - Improve KeystoneJS migration guidance for virtual fields and context.graphql patterns
+
+  The Keystone migration guide now covers two areas that require changes beyond a simple import swap:
+
+  **Virtual fields** — detected automatically; the generated guide shows how to replace `graphql.field({ resolve })` with `hooks: { resolveOutput }` and a `type` declaration:
+
+  ```diff
+  - fullName: virtual({
+  -   field: graphql.field({
+  -     type: graphql.String,
+  -     resolve: (item) => `${item.firstName} ${item.lastName}`,
+  -   }),
+  - })
+  + fullName: virtual({
+  +   type: 'string',
+  +   hooks: {
+  +     resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+  +   },
+  + })
+  ```
+
+  **context.graphql calls** — the guide now includes a step showing how to replace `context.graphql.run()` and `context.query.*` with `context.db.{listName}.{method}()`:
+
+  ```diff
+  - const { posts } = await context.graphql.run({
+  -   query: `query { posts(where: { status: { equals: published } }) { id title } }`,
+  - })
+  + const posts = await context.db.post.findMany({
+  +   where: { status: { equals: 'published' } },
+  + })
+  ```
+
+  The introspector warning for virtual fields is also updated to give clearer guidance.
+
+- [#348](https://github.com/OpenSaasAU/stack/pull/348) [`5410cb6`](https://github.com/OpenSaasAU/stack/commit/5410cb604198e087762e39c8aec87fe3736d8c01) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.type: 'enum'` support to the `select` field for native database enum storage
+
+  The `select` field now supports `db.type: 'enum'` to store values as a native Prisma enum type rather than a plain string. This generates an `enum` block in the Prisma schema and uses the enum type in the model, matching Keystone 6's enum select behaviour.
+
+  ```typescript
+  import { select } from '@opensaas/stack-core/fields'
+
+  lists: {
+    Post: list({
+      fields: {
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+            { label: 'Archived', value: 'archived' },
+          ],
+          db: { type: 'enum' },   // generates a Prisma enum
+          defaultValue: 'draft',
+        }),
+      },
+    }),
+  }
+  ```
+
+  This generates the following Prisma schema:
+
+  ```prisma
+  enum PostStatus {
+    draft
+    published
+    archived
+  }
+
+  model Post {
+    id        String     @id @default(cuid())
+    status    PostStatus @default(draft)
+    createdAt DateTime   @default(now())
+    updatedAt DateTime   @default(now()) @updatedAt
+  }
+  ```
+
+  **Notes:**
+  - The enum name is derived from `<ListName><FieldName>` in PascalCase (e.g. `PostStatus`, `UserRole`)
+  - Default values use unquoted Prisma enum syntax (`@default(draft)` not `@default("draft")`)
+  - Enum option values must be valid Prisma identifiers: start with a letter, contain only letters, digits, and underscores (e.g. `in_progress` is valid, `in-progress` is not)
+  - The TypeScript union type (`'draft' | 'published'`) is generated identically to a string select field
+  - Omitting `db.type` or setting `db.type: 'string'` (the default) preserves the existing `String` column behaviour
+
+- [#342](https://github.com/OpenSaasAU/stack/pull/342) [`94b0df6`](https://github.com/OpenSaasAU/stack/commit/94b0df65c860348441200d914dbf37bda3bd25cf) Thanks [@borisno2](https://github.com/borisno2)! - Improve KeystoneJS migration agent with side-by-side examples and targeted update guidance
+
+  The Keystone migration wizard and agent now produce a targeted migration guide instead of
+  regenerating the entire config. Since Keystone and OpenSaaS Stack share the same
+  `list()`/field/hook/access API, only imports, the database adapter config, and auth setup
+  need to change.
+
+  Key improvements:
+  - The migration agent prompt now includes side-by-side Keystone vs OpenSaaS examples for
+    config structure, imports, access control, hooks, auth, and many-to-many join tables
+  - The wizard uses a minimal fast-path for Keystone projects (just 3 questions: db provider,
+    auth, auth methods) instead of the full question flow
+  - The generator produces a diff-style migration guide for Keystone showing exactly what to
+    change, rather than regenerating list definitions the user already has
+  - Many-to-many join table naming is now surfaced automatically when M2M relations are
+    detected, with `joinTableNaming: 'keystone'` guidance to preserve existing data
+
+### Patch Changes
+
+- [#345](https://github.com/OpenSaasAU/stack/pull/345) [`c815d2f`](https://github.com/OpenSaasAU/stack/commit/c815d2f02a81b16189e8eea0e635ea1aa0a1d6ec) Thanks [@borisno2](https://github.com/borisno2)! - Fix `migrate --with-ai` generating `path` instead of `repo` in Claude marketplace settings
+
+- [#345](https://github.com/OpenSaasAU/stack/pull/345) [`c815d2f`](https://github.com/OpenSaasAU/stack/commit/c815d2f02a81b16189e8eea0e635ea1aa0a1d6ec) Thanks [@borisno2](https://github.com/borisno2)! - Fix broken migration guide URL in `migrate` console output (missing `/docs` prefix)
+
+- [#352](https://github.com/OpenSaasAU/stack/pull/352) [`bd41b1e`](https://github.com/OpenSaasAU/stack/commit/bd41b1e75b78c2e9748422352e6a500ed26df4e9) Thanks [@borisno2](https://github.com/borisno2)! - Fix singleton lists to use `Int @id @default(1)` matching Keystone 6 behaviour
+
+  Singleton lists now generate `Int @id @default(1)` in the Prisma schema instead of
+  `String @id @default(cuid())`. This matches Keystone 6's behaviour where singleton
+  records always use integer primary key `1`, making migration from Keystone 6 straightforward
+  without data loss.
+
+  **Migration guide for existing singleton lists:**
+
+  If you have an existing database with singleton models that use `String @id`, you will need
+  to run an SQL migration to convert the id column from text to integer:
+
+  ```sql
+  -- Example for PostgreSQL (adjust table name as needed)
+  ALTER TABLE "EmailSettings" ALTER COLUMN id TYPE INTEGER USING id::integer;
+  UPDATE "EmailSettings" SET id = 1;
+  ```
+
+  For SQLite (which does not support ALTER COLUMN):
+
+  ```sql
+  -- Recreate the table with Int id
+  CREATE TABLE "EmailSettings_new" (id INTEGER PRIMARY KEY DEFAULT 1, ...);
+  INSERT INTO "EmailSettings_new" SELECT 1, ... FROM "EmailSettings";
+  DROP TABLE "EmailSettings";
+  ALTER TABLE "EmailSettings_new" RENAME TO "EmailSettings";
+  ```
+
+  New projects and fresh databases will work automatically without any migration steps.
+  Fixes #350.
+
+- [#344](https://github.com/OpenSaasAU/stack/pull/344) [`c259030`](https://github.com/OpenSaasAU/stack/commit/c259030dab3cdc641a9f40dd21746a1bd46fb76d) Thanks [@borisno2](https://github.com/borisno2)! - Fix updatedAt field to include @default(now()) in generated Prisma schema to prevent migration failures on databases with existing data
+
+- Updated dependencies [[`bd41b1e`](https://github.com/OpenSaasAU/stack/commit/bd41b1e75b78c2e9748422352e6a500ed26df4e9), [`28f2834`](https://github.com/OpenSaasAU/stack/commit/28f2834b199b93200c74cefb1594ba3704f0a839), [`5410cb6`](https://github.com/OpenSaasAU/stack/commit/5410cb604198e087762e39c8aec87fe3736d8c01)]:
+  - @opensaas/stack-core@0.19.0
+
 ## 0.18.2
 
 ### Patch Changes
