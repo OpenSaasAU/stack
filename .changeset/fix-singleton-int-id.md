@@ -22,6 +22,7 @@ UPDATE "EmailSettings" SET id = 1;
 ```
 
 For SQLite (which does not support ALTER COLUMN):
+
 ```sql
 -- Recreate the table with Int id
 CREATE TABLE "EmailSettings_new" (id INTEGER PRIMARY KEY DEFAULT 1, ...);
