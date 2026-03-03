@@ -9,6 +9,7 @@ All field types now support two new `db` configuration options that were previou
 ### `db.isNullable`
 
 Controls DB-level nullability independently of `validation.isRequired`. This allows you to:
+
 - Make a field non-nullable at the DB level without making it API-required
 - Explicitly mark a field as nullable regardless of other settings
 
