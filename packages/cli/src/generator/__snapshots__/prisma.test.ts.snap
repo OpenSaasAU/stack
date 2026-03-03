@@ -175,6 +175,26 @@ datasource db {
 "
 `;
 
+exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with Int @id @default(1) 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Settings {
+  id        Int      @id @default(1)
+  siteName     String
+  maintenanceMode Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+"
+`;
+
 exports[`Prisma Schema Generator > select field with enum type > should match snapshot for enum select field 1`] = `
 "generator client {
   provider = "prisma-client"

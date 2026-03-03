@@ -78,7 +78,7 @@ describe('Singleton Lists', () => {
     it('should allow creating the first record', async () => {
       mockPrisma.settings.count.mockResolvedValue(0)
       mockPrisma.settings.create.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'Test Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -146,7 +146,7 @@ describe('Singleton Lists', () => {
 
     it('should return existing record on get()', async () => {
       const mockSettings = {
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -168,7 +168,7 @@ describe('Singleton Lists', () => {
       mockPrisma.settings.findFirst.mockResolvedValue(null)
       mockPrisma.settings.count.mockResolvedValue(0)
       mockPrisma.settings.create.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -183,6 +183,7 @@ describe('Singleton Lists', () => {
       expect(result?.siteName).toBe('My Site')
       expect(mockPrisma.settings.create).toHaveBeenCalledWith({
         data: {
+          id: 1,
           siteName: 'My Site',
           maintenanceMode: false,
           maxUploadSize: 10,
@@ -207,7 +208,7 @@ describe('Singleton Lists', () => {
   describe('delete operation', () => {
     it('should block delete on singleton lists', async () => {
       mockPrisma.settings.findUnique.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -215,18 +216,18 @@ describe('Singleton Lists', () => {
 
       const context = getContext(config, mockPrisma, null)
 
-      await expect(context.db.settings.delete({ where: { id: '1' } })).rejects.toThrow(
+      await expect(context.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
         ValidationError,
       )
 
-      await expect(context.db.settings.delete({ where: { id: '1' } })).rejects.toThrow(
+      await expect(context.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
         'singleton list',
       )
     })
 
     it('should block delete even in sudo mode', async () => {
       mockPrisma.settings.findUnique.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -235,7 +236,7 @@ describe('Singleton Lists', () => {
       const context = getContext(config, mockPrisma, null)
       const sudoContext = context.sudo()
 
-      await expect(sudoContext.db.settings.delete({ where: { id: '1' } })).rejects.toThrow(
+      await expect(sudoContext.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
         ValidationError,
       )
     })
@@ -267,14 +268,14 @@ describe('Singleton Lists', () => {
   describe('update operation', () => {
     it('should allow updating the singleton record', async () => {
       mockPrisma.settings.findUnique.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
       })
 
       mockPrisma.settings.update.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'Updated Site',
         maintenanceMode: true,
         maxUploadSize: 20,
@@ -285,7 +286,7 @@ describe('Singleton Lists', () => {
       const context = getContext(config, mockPrisma, null)
 
       const result = await context.db.settings.update({
-        where: { id: '1' },
+        where: { id: 1 },
         data: { siteName: 'Updated Site', maintenanceMode: true, maxUploadSize: 20 },
       })
 
@@ -298,7 +299,7 @@ describe('Singleton Lists', () => {
   describe('findUnique operation', () => {
     it('should allow findUnique on singleton lists', async () => {
       mockPrisma.settings.findFirst.mockResolvedValue({
-        id: '1',
+        id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
@@ -307,7 +308,7 @@ describe('Singleton Lists', () => {
       })
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.findUnique({ where: { id: '1' } })
+      const result = await context.db.settings.findUnique({ where: { id: 1 } })
 
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('My Site')

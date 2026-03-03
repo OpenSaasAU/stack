@@ -429,8 +429,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     lines.push(`model ${listName} {`)
 
-    // Always add id field
-    lines.push('  id        String   @id @default(cuid())')
+    // Add id field - singleton lists use Int @id (always 1) to match Keystone 6 behaviour
+    if (listConfig.isSingleton) {
+      lines.push('  id        Int      @id @default(1)')
+    } else {
+      lines.push('  id        String   @id @default(cuid())')
+    }
 
     // Track relationship fields for later processing
     const relationshipFields: Array<{

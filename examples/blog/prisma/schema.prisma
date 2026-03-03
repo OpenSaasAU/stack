@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Settings {
-  id              String   @id @default(cuid())
+  id              Int      @id @default(1)
   siteName        String
   maintenanceMode Boolean  @default(false)
   maxUploadSize   Int?

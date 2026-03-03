@@ -121,11 +121,16 @@ function generateTransformedFieldsType(
  * Generate TypeScript Output type for a model (includes virtual fields)
  * This is kept for backwards compatibility but CustomDB uses Prisma's GetPayload + VirtualFields
  */
-function generateModelOutputType(listName: string, fields: Record<string, FieldConfig>): string {
+function generateModelOutputType(
+  listName: string,
+  fields: Record<string, FieldConfig>,
+  isSingleton: boolean,
+): string {
   const lines: string[] = []
 
   lines.push(`export type ${listName}Output = {`)
-  lines.push('  id: string')
+  // Singleton lists use Int @id (always 1) matching Keystone 6 behaviour
+  lines.push(isSingleton ? '  id: number' : '  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     // Skip virtual fields - they're in VirtualFields type
@@ -993,7 +998,7 @@ export function generateTypes(config: OpenSaasConfig): string {
     // Generate TransformedFields type (needed by CustomDB)
     lines.push(generateTransformedFieldsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateModelOutputType(listName, listConfig.fields))
+    lines.push(generateModelOutputType(listName, listConfig.fields, !!listConfig.isSingleton))
     lines.push('')
     lines.push(generateModelTypeAlias(listName))
     lines.push('')
