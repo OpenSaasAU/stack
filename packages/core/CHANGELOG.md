@@ -1,5 +1,150 @@
 # @opensaas/stack-core
 
+## 0.19.0
+
+### Minor Changes
+
+- [#353](https://github.com/OpenSaasAU/stack/pull/353) [`28f2834`](https://github.com/OpenSaasAU/stack/commit/28f2834b199b93200c74cefb1594ba3704f0a839) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.isNullable` and `db.nativeType` support to all field types
+
+  All field types now support two new `db` configuration options that were previously only available in Keystone 6:
+
+  ### `db.isNullable`
+
+  Controls DB-level nullability independently of `validation.isRequired`. This allows you to:
+  - Make a field non-nullable at the DB level without making it API-required
+  - Explicitly mark a field as nullable regardless of other settings
+
+  ```typescript
+  fields: {
+    // DB non-nullable, but API optional (relies on a default value or hook)
+    phoneNumber: text({
+      db: { isNullable: false }
+      // Generates: phoneNumber String (non-nullable)
+    }),
+
+    // DB nullable, explicitly set
+    lastMessagePreview: text({
+      db: { isNullable: true }
+      // Generates: lastMessagePreview String? (nullable)
+    }),
+
+    // DB non-nullable without API validation (field must always be set via hooks or defaults)
+    internalCode: integer({
+      db: { isNullable: false }
+      // Generates: internalCode Int (non-nullable)
+    })
+  }
+  ```
+
+  ### `db.nativeType`
+
+  Overrides the native database column type. Generates a `@db.<nativeType>` attribute in the Prisma schema. Available types depend on your database provider.
+
+  ```typescript
+  fields: {
+    // PostgreSQL: use TEXT instead of VARCHAR for long content
+    medical: text({
+      db: { isNullable: true, nativeType: 'Text' }
+      // Generates: medical String? @db.Text
+    }),
+
+    // PostgreSQL: use SMALLINT for small numbers
+    score: integer({
+      db: { nativeType: 'SmallInt' }
+      // Generates: score Int? @db.SmallInt
+    }),
+
+    // PostgreSQL: use TIMESTAMPTZ for timezone-aware timestamps
+    scheduledAt: timestamp({
+      db: { nativeType: 'Timestamptz' }
+      // Generates: scheduledAt DateTime? @db.Timestamptz
+    })
+  }
+  ```
+
+  Both options are supported on `text`, `integer`, `password`, `json`, `timestamp`, `checkbox` (isNullable only), `decimal`, and `calendarDay` fields.
+
+- [#348](https://github.com/OpenSaasAU/stack/pull/348) [`5410cb6`](https://github.com/OpenSaasAU/stack/commit/5410cb604198e087762e39c8aec87fe3736d8c01) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.type: 'enum'` support to the `select` field for native database enum storage
+
+  The `select` field now supports `db.type: 'enum'` to store values as a native Prisma enum type rather than a plain string. This generates an `enum` block in the Prisma schema and uses the enum type in the model, matching Keystone 6's enum select behaviour.
+
+  ```typescript
+  import { select } from '@opensaas/stack-core/fields'
+
+  lists: {
+    Post: list({
+      fields: {
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+            { label: 'Archived', value: 'archived' },
+          ],
+          db: { type: 'enum' },   // generates a Prisma enum
+          defaultValue: 'draft',
+        }),
+      },
+    }),
+  }
+  ```
+
+  This generates the following Prisma schema:
+
+  ```prisma
+  enum PostStatus {
+    draft
+    published
+    archived
+  }
+
+  model Post {
+    id        String     @id @default(cuid())
+    status    PostStatus @default(draft)
+    createdAt DateTime   @default(now())
+    updatedAt DateTime   @default(now()) @updatedAt
+  }
+  ```
+
+  **Notes:**
+  - The enum name is derived from `<ListName><FieldName>` in PascalCase (e.g. `PostStatus`, `UserRole`)
+  - Default values use unquoted Prisma enum syntax (`@default(draft)` not `@default("draft")`)
+  - Enum option values must be valid Prisma identifiers: start with a letter, contain only letters, digits, and underscores (e.g. `in_progress` is valid, `in-progress` is not)
+  - The TypeScript union type (`'draft' | 'published'`) is generated identically to a string select field
+  - Omitting `db.type` or setting `db.type: 'string'` (the default) preserves the existing `String` column behaviour
+
+### Patch Changes
+
+- [#352](https://github.com/OpenSaasAU/stack/pull/352) [`bd41b1e`](https://github.com/OpenSaasAU/stack/commit/bd41b1e75b78c2e9748422352e6a500ed26df4e9) Thanks [@borisno2](https://github.com/borisno2)! - Fix singleton lists to use `Int @id @default(1)` matching Keystone 6 behaviour
+
+  Singleton lists now generate `Int @id @default(1)` in the Prisma schema instead of
+  `String @id @default(cuid())`. This matches Keystone 6's behaviour where singleton
+  records always use integer primary key `1`, making migration from Keystone 6 straightforward
+  without data loss.
+
+  **Migration guide for existing singleton lists:**
+
+  If you have an existing database with singleton models that use `String @id`, you will need
+  to run an SQL migration to convert the id column from text to integer:
+
+  ```sql
+  -- Example for PostgreSQL (adjust table name as needed)
+  ALTER TABLE "EmailSettings" ALTER COLUMN id TYPE INTEGER USING id::integer;
+  UPDATE "EmailSettings" SET id = 1;
+  ```
+
+  For SQLite (which does not support ALTER COLUMN):
+
+  ```sql
+  -- Recreate the table with Int id
+  CREATE TABLE "EmailSettings_new" (id INTEGER PRIMARY KEY DEFAULT 1, ...);
+  INSERT INTO "EmailSettings_new" SELECT 1, ... FROM "EmailSettings";
+  DROP TABLE "EmailSettings";
+  ALTER TABLE "EmailSettings_new" RENAME TO "EmailSettings";
+  ```
+
+  New projects and fresh databases will work automatically without any migration steps.
+  Fixes #350.
+
 ## 0.18.2
 
 ### Patch Changes
