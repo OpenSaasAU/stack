@@ -893,8 +893,10 @@ function createCreate<TPrisma extends PrismaClientLike>(
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
+    // Singleton lists use Int @id with value always 1 (matching Keystone 6 behaviour)
+    const createData = isSingletonList(listConfig) ? { id: 1, ...data } : data
     const item = await model.create({
-      data,
+      data: createData,
     })
 
     // 9. Execute list-level afterOperation hook

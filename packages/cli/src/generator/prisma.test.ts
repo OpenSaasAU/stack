@@ -1543,5 +1543,48 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
       expect(schema).toMatchSnapshot()
     })
+
+    it('should generate singleton model with Int @id @default(1)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Settings: {
+            fields: {
+              siteName: text({ validation: { isRequired: true } }),
+              maintenanceMode: checkbox({ defaultValue: false }),
+            },
+            isSingleton: true,
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('id        Int      @id @default(1)')
+      expect(schema).not.toContain('id        String   @id @default(cuid())')
+      expect(schema).toMatchSnapshot()
+    })
+
+    it('should generate regular model with String @id @default(cuid())', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('id        String   @id @default(cuid())')
+      expect(schema).not.toContain('id        Int      @id @default(1)')
+    })
   })
 })
