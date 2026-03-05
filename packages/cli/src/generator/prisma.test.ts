@@ -319,6 +319,41 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('from_Post_category Post[]  @relation("Post_category")')
     })
 
+    it('should generate synthetic back-reference for list-only many-to-many (regression: 0.19.0)', () => {
+      // Regression test: relationship({ ref: 'User', many: true }) stopped generating
+      // back-reference fields on the target model in 0.19.0, causing Prisma validation errors:
+      // "The relation field `readBy` on model `TextMessage` is missing an opposite relation field"
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          TextMessage: {
+            fields: {
+              content: text(),
+              readBy: relationship({ ref: 'User', many: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // TextMessage should have the relationship with named relation
+      expect(schema).toContain('readBy       User[]  @relation("TextMessage_readBy")')
+
+      // User MUST have the synthetic back-reference — Prisma requires both sides
+      // of an implicit many-to-many to be defined or it throws a validation error
+      expect(schema).toContain(
+        'from_TextMessage_readBy TextMessage[]  @relation("TextMessage_readBy")',
+      )
+    })
+
     it('should handle multiple list-only refs pointing to same target', () => {
       const config: OpenSaasConfig = {
         db: {
@@ -999,7 +1034,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('@relation("Post_tags")')
     })
 
-    it('should not generate synthetic fields for list-only many-to-many with Keystone naming', () => {
+    it('should generate synthetic fields for list-only many-to-many with Keystone naming', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -1022,8 +1057,12 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should NOT have synthetic field (handled by implicit join table)
-      expect(schema).not.toContain('from_Post_tags')
+      // Post should have the relationship field with Keystone relation name
+      expect(schema).toContain('tags         Tag[]  @relation("Post_tags")')
+
+      // Tag MUST have a synthetic back-reference field — Prisma requires both sides
+      // of an implicit many-to-many relationship to be explicitly defined
+      expect(schema).toContain('from_Post_tags Post[]  @relation("Post_tags")')
     })
 
     it('should generate synthetic fields for one-sided many-to-one with Keystone naming', () => {
@@ -1248,10 +1287,12 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      // Should use per-field relationName
+      // Should use per-field relationName on the source side
       expect(schema).toContain('tags         Tag[]  @relation("Post_tags")')
-      // Should NOT create synthetic field
-      expect(schema).not.toContain('from_Post_tags')
+
+      // Tag MUST have a synthetic back-reference using the same explicit relation name
+      // Prisma requires both sides of implicit many-to-many to be defined
+      expect(schema).toContain('from_Post_tags Post[]  @relation("Post_tags")')
     })
   })
 

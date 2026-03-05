@@ -404,12 +404,14 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
           }
         }
 
-        // If no target field specified, we need to add a synthetic field
-        // (unless it's a many-to-many relationship or per-field relationName is set)
-        const hasExplicitRelationName = relField.db?.relationName
-        if (!targetField && !hasExplicitRelationName && !m2mCheck.isManyToMany) {
+        // If no target field specified, we need to add a synthetic back-reference field
+        // on the target model. Prisma requires both sides of any relationship to be
+        // defined, including implicit many-to-many relationships.
+        // This applies to all list-only refs (both many-to-many and many-to-one).
+        if (!targetField) {
           const syntheticFieldName = `from_${listName}_${fieldName}`
-          const relationName = `${listName}_${fieldName}`
+          // Use explicit relation name if set, otherwise auto-generate
+          const relationName = relField.db?.relationName ?? `${listName}_${fieldName}`
 
           if (!syntheticFields.has(targetList)) {
             syntheticFields.set(targetList, [])
