@@ -1,5 +1,14 @@
 # @opensaas/stack-cli
 
+## 0.19.1
+
+### Patch Changes
+
+- [#356](https://github.com/OpenSaasAU/stack/pull/356) [`6d771d1`](https://github.com/OpenSaasAU/stack/commit/6d771d11750eb4454b263b3db5bb1b44615be454) Thanks [@borisno2](https://github.com/borisno2)! - Fix regression where list-only many-to-many relationships no longer generated synthetic back-reference fields on the target model, causing Prisma schema validation errors
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.19.1
+
 ## 0.19.0
 
 ### Minor Changes
