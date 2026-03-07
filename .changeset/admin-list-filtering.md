@@ -1,5 +1,5 @@
 ---
-"@opensaas/stack-ui": minor
+'@opensaas/stack-ui': minor
 ---
 
 Add comprehensive filtering system for admin UI list pages with URL state management
@@ -7,6 +7,7 @@ Add comprehensive filtering system for admin UI list pages with URL state manage
 This adds a complete filtering system for admin list views with all filter state persisted in URL query parameters. Developers can use the built-in FilterBar component or build custom filter UIs using the exposed primitives.
 
 **Features:**
+
 - URL-based filter state (`filters[field][operator]=value` format)
 - Field type-specific filters (text, integer, checkbox, timestamp, select, relationship)
 - Operator support per field type (contains, equals, gt, gte, lt, lte, in, etc.)
@@ -17,6 +18,7 @@ This adds a complete filtering system for admin list views with all filter state
 - Full TypeScript type safety
 
 **New Components:**
+
 - `FilterBar` - Main filter UI with field/operator selection
 - `TextFilterInput`, `NumberFilterInput`, `BooleanFilterInput` - Text, number, and boolean filters
 - `DateFilterInput` - Timestamp field filtering
@@ -24,6 +26,7 @@ This adds a complete filtering system for admin list views with all filter state
 - `RelationshipFilterInput` - Related item filtering with multi-select
 
 **New Utilities:**
+
 - `parseFiltersFromURL()` - Parse filter state from URL search params
 - `serializeFiltersToURL()` - Serialize filters to URL string
 - `filtersToPrismaWhere()` - Convert filters to Prisma where clauses
