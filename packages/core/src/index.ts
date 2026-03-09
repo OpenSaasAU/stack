@@ -60,6 +60,9 @@ export type {
   PrismaFilter,
   AccessControlledDB,
   StorageUtils,
+  AugmentedFindMany,
+  AugmentedFindUnique,
+  FindManyQueryArgs,
 } from './access/index.js'
 
 // Context
@@ -96,6 +99,7 @@ export type {
   Fragment,
   FieldSelection,
   ResultOf,
+  RelationSelector,
   QueryArgs,
   QueryRunnerContext,
 } from './query/index.js'

@@ -7,6 +7,9 @@ export type {
   AccessControlledDB,
   PrismaClientLike,
   StorageUtils,
+  AugmentedFindMany,
+  AugmentedFindUnique,
+  FindManyQueryArgs,
 } from './types.js'
 export {
   checkAccess,
