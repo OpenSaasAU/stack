@@ -868,12 +868,13 @@ If you're migrating from KeystoneJS, your project likely uses `context.graphql.r
 
 ### Quick reference
 
-| Keystone | OpenSaaS Stack |
-|---|---|
-| GraphQL fragment string | `defineFragment<T>()(fields)` |
-| `ResultOf<typeof query>` (codegen) | `ResultOf<typeof fragment>` (built-in) |
-| `context.graphql.run({ query, variables })` — list | `runQuery(context, 'List', fragment, args)` |
-| `context.graphql.run({ query, variables })` — single | `runQueryOne(context, 'List', fragment, where)` |
+| Keystone                                             | OpenSaaS Stack                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
+| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
+| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, ... })`       |
+| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
+| Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
 
 ### Simple list query
 
@@ -883,14 +884,26 @@ const { posts } = await context.graphql.run({
   query: `query { posts(where: { published: true }) { id title } }`,
 })
 
-// After (OpenSaaS Stack)
+// After (OpenSaaS Stack) — pass the fragment directly to context.db
 import type { Post } from '.prisma/client'
-import { defineFragment, runQuery, type ResultOf } from '@opensaas/stack-core'
+import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const postFragment = defineFragment<Post>()({ id: true, title: true } as const)
-type PostData = ResultOf<typeof postFragment>  // { id: string; title: string }
+type PostData = ResultOf<typeof postFragment> // { id: string; title: string }
 
-const posts = await runQuery(context, 'Post', postFragment, { where: { published: true } })
+const posts = await context.db.post.findMany({
+  query: postFragment,
+  where: { published: true },
+})
+// posts: PostData[]
+
+// Single record
+const post = await context.db.post.findUnique({
+  where: { id: postId },
+  query: postFragment,
+})
+// post: PostData | null
+if (!post) return notFound()
 ```
 
 ### Nested / related data with reusable fragments
@@ -903,22 +916,24 @@ import type { User, Post, Tag } from '.prisma/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 export const authorFragment = defineFragment<User>()({
-  id: true, name: true, email: true,
+  id: true,
+  name: true,
+  email: true,
 } as const)
 
 export const tagFragment = defineFragment<Tag>()({ id: true, name: true } as const)
 
 export const postFragment = defineFragment<Post>()({
-  id:          true,
-  title:       true,
+  id: true,
+  title: true,
   publishedAt: true,
-  author:      authorFragment,   // nested — access-controlled include
-  tags:        tagFragment,      // many relationship
+  author: authorFragment, // nested — access-controlled include
+  tags: tagFragment,       // many relationship
 } as const)
 
 // Inferred types — no GraphQL codegen required
 export type AuthorData = ResultOf<typeof authorFragment>
-export type PostData   = ResultOf<typeof postFragment>
+export type PostData = ResultOf<typeof postFragment>
 // PostData → { id: string; title: string; publishedAt: Date | null;
 //              author: { id: string; name: string; email: string } | null;
 //              tags: { id: string; name: string }[] }
@@ -926,19 +941,64 @@ export type PostData   = ResultOf<typeof postFragment>
 
 ```typescript
 // Usage in a server action or route
-import { runQuery, runQueryOne } from '@opensaas/stack-core'
 import { postFragment } from './fragments'
 
-// List
-const posts = await runQuery(context, 'Post', postFragment, {
-  where:   { published: true },
+// List with pagination
+const posts = await context.db.post.findMany({
+  query: postFragment,
+  where: { published: true },
   orderBy: { publishedAt: 'desc' },
-  take:    10,
+  take: 10,
 })
 
 // Single record
-const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
+const post = await context.db.post.findUnique({ where: { id: postId }, query: postFragment })
 if (!post) return notFound()
+```
+
+### Nested relationship filtering with `RelationSelector`
+
+When you need to filter, sort, or paginate a nested relationship within the same query, use a `RelationSelector` object instead of a plain fragment:
+
+```typescript
+import type { Post, Comment } from '.prisma/client'
+import { defineFragment, type ResultOf } from '@opensaas/stack-core'
+
+const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
+
+const postWithApprovedComments = defineFragment<Post>()({
+  id: true,
+  title: true,
+  comments: {
+    query: commentFragment,       // nested fragment
+    where: { approved: true },    // Prisma filter on the relationship
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  },
+} as const)
+
+type PostWithComments = ResultOf<typeof postWithApprovedComments>
+// → { id: string; title: string; comments: { id: string; body: string }[] }
+
+const posts = await context.db.post.findMany({ query: postWithApprovedComments })
+```
+
+For dynamic filter values, use a factory function:
+
+```typescript
+function makePostFrag(status: string) {
+  return defineFragment<Post>()({
+    id: true,
+    comments: { query: commentFragment, where: { status } },
+  } as const)
+}
+
+type PostData = ResultOf<ReturnType<typeof makePostFrag>>
+
+const posts = await context.db.post.findMany({
+  query: makePostFrag('approved'),
+  where: { published: true },
+})
 ```
 
 All operations go through `context.db` under the hood, so access control is enforced automatically. See the full [Keystone migration spec](../../../specs/keystone-migration.md) for more patterns.
