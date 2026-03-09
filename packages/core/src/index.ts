@@ -60,6 +60,9 @@ export type {
   PrismaFilter,
   AccessControlledDB,
   StorageUtils,
+  AugmentedFindMany,
+  AugmentedFindUnique,
+  FindManyQueryArgs,
 } from './access/index.js'
 
 // Context
@@ -89,3 +92,14 @@ export {
   isHashedPassword,
   HashedPassword,
 } from './utils/password.js'
+
+// Query utilities — fragment-based, type-safe query helpers
+export { defineFragment, runQuery, runQueryOne } from './query/index.js'
+export type {
+  Fragment,
+  FieldSelection,
+  ResultOf,
+  RelationSelector,
+  QueryArgs,
+  QueryRunnerContext,
+} from './query/index.js'

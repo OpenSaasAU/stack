@@ -20,6 +20,7 @@ import { processNestedOperations } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
+import { buildInclude, pickFields, isFragment } from '../query/index.js'
 
 /**
  * Execute field-level resolveInput hooks
@@ -610,7 +611,12 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
-  return async (args: { where: { id: string }; include?: Record<string, unknown> }) => {
+  return async (args: {
+    where: { id: string }
+    include?: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query?: any
+  }) => {
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = args.where
     if (!context._isSudo) {
@@ -632,18 +638,26 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // Build include with access control filters
-    const accessControlledInclude = await buildIncludeWithAccessControl(
-      listConfig.fields,
-      {
-        session: context.session,
-        context,
-      },
-      config,
-    )
+    // When a query fragment is provided, build the include from the fragment
+    // instead of the access-controlled include. Access control still runs via
+    // filterReadableFields; the fragment then narrows to only the requested fields.
+    const fragment = isFragment(args.query) ? args.query : null
+    let include: Record<string, unknown> | undefined
 
-    // Merge user-provided include with access-controlled include
-    const include = args.include || accessControlledInclude
+    if (fragment) {
+      include = buildInclude(fragment._fields) ?? undefined
+    } else {
+      // Build include with access control filters
+      const accessControlledInclude = await buildIncludeWithAccessControl(
+        listConfig.fields,
+        {
+          session: context.session,
+          context,
+        },
+        config,
+      )
+      include = args.include || accessControlledInclude
+    }
 
     // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
@@ -672,6 +686,11 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       listName,
     )
 
+    // When a fragment is provided, pick only the requested fields from the result
+    if (fragment) {
+      return pickFields(filtered, fragment._fields)
+    }
+
     return filtered
   }
 }
@@ -689,9 +708,12 @@ function createFindMany<TPrisma extends PrismaClientLike>(
 ) {
   return async (args?: {
     where?: Record<string, unknown>
+    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
     take?: number
     skip?: number
     include?: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query?: any
   }) => {
     // Check singleton constraint (throw error instead of silently returning empty)
     if (isSingletonList(listConfig)) {
@@ -722,18 +744,23 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // Build include with access control filters
-    const accessControlledInclude = await buildIncludeWithAccessControl(
-      listConfig.fields,
-      {
-        session: context.session,
-        context,
-      },
-      config,
-    )
-
-    // Merge user-provided include with access-controlled include
-    const include = args?.include || accessControlledInclude
+    // When a query fragment is provided, build include from fragment fields
+    const fragment = isFragment(args?.query) ? args.query : null
+    let include: Record<string, unknown> | undefined
+    if (fragment) {
+      include = buildInclude(fragment._fields) ?? undefined
+    } else {
+      // Build include with access control filters
+      const accessControlledInclude = await buildIncludeWithAccessControl(
+        listConfig.fields,
+        {
+          session: context.session,
+          context,
+        },
+        config,
+      )
+      include = args?.include || accessControlledInclude
+    }
 
     // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
@@ -741,6 +768,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     const model = (prisma as any)[getDbKey(listName)]
     const items = await model.findMany({
       where,
+      orderBy: args?.orderBy,
       take: args?.take,
       skip: args?.skip,
       include,
@@ -763,6 +791,11 @@ function createFindMany<TPrisma extends PrismaClientLike>(
         ),
       ),
     )
+
+    // When a fragment is provided, pick only the requested fields from each result
+    if (fragment) {
+      return filtered.map((item: Record<string, unknown>) => pickFields(item, fragment._fields))
+    }
 
     return filtered
   }

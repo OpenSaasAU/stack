@@ -115,9 +115,91 @@ const { postsCount } = await context.graphql.run({
 const count = await context.db.post.count({ where: { status: { equals: 'published' } } })
 ```
 
-### Nested / related data
+### Nested / related data (fragment passed to context.db — recommended)
 
-GraphQL allows fetching related data in one query. OpenSaaS Stack requires separate `context.db` calls:
+OpenSaaS Stack provides `defineFragment` for composable, type-safe queries that include related data in a single call — the closest equivalent to Keystone's GraphQL fragments. Pass the fragment directly to `context.db` operations using the `query` parameter.
+
+```typescript
+// Before — one GraphQL query with nested author and tags
+const { posts } = await context.graphql.run({
+  query: `
+    fragment AuthorFields on User { id name }
+    query GetPosts {
+      posts(where: { published: true }) {
+        id title author { ...AuthorFields } tags { id name }
+      }
+    }
+  `,
+})
+
+// After — define fragments once, compose and reuse them
+import type { User, Post, Tag } from '.prisma/client'
+import { defineFragment, type ResultOf } from '@opensaas/stack-core'
+
+const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
+const tagFragment = defineFragment<Tag>()({ id: true, name: true } as const)
+const postFragment = defineFragment<Post>()({
+  id: true,
+  title: true,
+  author: authorFragment, // nested fragment → loaded via Prisma include
+  tags: tagFragment, // many relationship
+} as const)
+
+// Type-inferred — no codegen needed
+type PostData = ResultOf<typeof postFragment>
+// → { id: string; title: string; author: { id: string; name: string } | null; tags: { id: string; name: string }[] }
+
+// Primary API: pass query fragment to context.db.findMany
+const posts = await context.db.post.findMany({
+  query: postFragment,
+  where: { published: true },
+  orderBy: { publishedAt: 'desc' },
+})
+// posts: PostData[]
+```
+
+For single-record queries:
+
+```typescript
+const post = await context.db.post.findUnique({
+  where: { id: postId },
+  query: postFragment,
+})
+if (!post) return notFound()
+// post: PostData
+```
+
+For nested relationship filtering (e.g., only load approved comments):
+
+```typescript
+const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
+
+const postWithComments = defineFragment<Post>()({
+  id: true,
+  title: true,
+  comments: {
+    query: commentFragment,
+    where: { approved: true }, // filter nested relationship
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  },
+} as const)
+
+const posts = await context.db.post.findMany({ query: postWithComments })
+```
+
+Standalone `runQuery` / `runQueryOne` helpers are also available for use in hooks or utilities where `context.db` is available but direct method call is inconvenient:
+
+```typescript
+import { runQuery, runQueryOne } from '@opensaas/stack-core'
+
+const posts = await runQuery(context, 'Post', postFragment, { where: { published: true } })
+const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
+```
+
+### Nested / related data (separate context.db calls — simpler alternative)
+
+If you only need one level of nesting without fragment reuse, separate calls are fine:
 
 ```typescript
 // Before — one query with nested author
@@ -125,7 +207,6 @@ const { post } = await context.graphql.run({
   query: `query { post(where: { id: $id }) { id title author { id name } } }`,
   variables: { id: postId },
 })
-const authorName = post.author.name
 
 // After — separate calls
 const post = await context.db.post.findUnique({ where: { id: postId } })
@@ -150,9 +231,13 @@ const allPosts = await context.sudo().db.post.findMany()
 1. Use Grep to find all occurrences of `context.graphql`, `context.query`, and `context.sudo().graphql` in the project (search `.ts`, `.tsx` files, exclude `node_modules`)
 2. For each occurrence:
    a. Read the file to understand the full query/mutation
-   b. Identify the list name (convert to camelCase for `context.db`)
-   c. Identify the operation (findMany, findUnique, create, update, delete, count)
-   d. Rewrite using the `context.db` pattern above
-   e. For nested data: split into separate `context.db` calls
-3. After all edits: check that any `import ... from '@keystone-6/core'` imports used only for graphql types are removed or reduced
+   b. Identify the operation type:
+   - **Read with nested data** → prefer `context.db.{list}.findMany/findUnique({ query: fragment })` with `defineFragment` (see pattern above)
+   - **Simple read** → `context.db.{list}.findMany()` / `findUnique()`
+   - **Create / update / delete** → `context.db.{list}.create()` / `update()` / `delete()`
+   - **Count** → `context.db.{list}.count()`
+     c. Identify the list name (convert to camelCase for `context.db`)
+     d. Rewrite using the appropriate pattern above
+     e. For fragment-based rewrites: create a shared `fragments.ts` file and import from it
+3. After all edits: check that any `import ... from '@keystone-6/core'` imports used only for graphql types are removed or reduced; also remove any GraphQL codegen type imports (replace with `ResultOf<typeof fragment>`)
 4. Report: list every file changed and summarise what was replaced

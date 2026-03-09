@@ -1,3 +1,5 @@
+import type { Fragment, FieldSelection, ResultOf } from '../query/index.js'
+
 /**
  * Session interface - can be augmented by developers to add custom fields
  *
@@ -57,6 +59,85 @@ export type PrismaModelDelegate = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type PrismaClientLike = any
 
+// ─────────────────────────────────────────────────────────────
+// Augmented find operation types — add `query` overload to findMany / findUnique
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Extra query arguments accepted when a `query` Fragment is provided alongside
+ * `context.db.<list>.findMany({ query: myFragment, ... })`.
+ */
+export type FindManyQueryArgs = {
+  where?: Record<string, unknown>
+  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
+  take?: number
+  skip?: number
+}
+
+/**
+ * Overloaded `findMany` that accepts an optional `query` Fragment.
+ *
+ * - **With `query`**: builds the Prisma `include` from the fragment, executes the
+ *   query, applies access control, and returns records shaped to `ResultOf<fragment>[]`.
+ * - **Without `query`**: behaves exactly like the original Prisma `findMany`.
+ *
+ * TypeScript resolves the return type from the presence (or absence) of `query`
+ * in the argument object — no explicit type annotation is needed.
+ *
+ * @example
+ * ```ts
+ * // Narrowed return type from fragment
+ * const posts = await context.db.post.findMany({
+ *   query:   postFragment,
+ *   where:   { published: true },
+ *   orderBy: { createdAt: 'desc' },
+ *   take:    10,
+ * })
+ * // posts: ResultOf<typeof postFragment>[]
+ *
+ * // Original Prisma behaviour (no fragment)
+ * const posts = await context.db.post.findMany({ where: { published: true } })
+ * // posts: Post[]
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
+  // Overload 1: with query fragment — return type narrows to ResultOf<fragment>[]
+  <TItem, TFields extends FieldSelection<TItem>>(
+    args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
+  ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
+  // Overload 2: original Prisma behaviour
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
+
+/**
+ * Overloaded `findUnique` that accepts an optional `query` Fragment.
+ *
+ * - **With `query`**: builds the Prisma `include` from the fragment, executes the
+ *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
+ *   or `null`.
+ * - **Without `query`**: behaves exactly like the original Prisma `findUnique`.
+ *
+ * @example
+ * ```ts
+ * const post = await context.db.post.findUnique({
+ *   where: { id: postId },
+ *   query: postFragment,
+ * })
+ * // post: ResultOf<typeof postFragment> | null
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> {
+  // Overload 1: with query fragment — return type narrows to ResultOf<fragment> | null
+  <TItem, TFields extends FieldSelection<TItem>>(args: {
+    where: Record<string, unknown>
+    query: Fragment<TItem, TFields>
+  }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
+  // Overload 2: original Prisma behaviour
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
+
 /**
  * Map Prisma client to access-controlled database context
  * Preserves Prisma's type information for each model
@@ -79,8 +160,8 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
     count: any
   }
     ? {
-        findUnique: TPrisma[K]['findUnique']
-        findMany: TPrisma[K]['findMany']
+        findUnique: AugmentedFindUnique<TPrisma[K]['findUnique']>
+        findMany: AugmentedFindMany<TPrisma[K]['findMany']>
         create: TPrisma[K]['create']
         update: TPrisma[K]['update']
         delete: TPrisma[K]['delete']
