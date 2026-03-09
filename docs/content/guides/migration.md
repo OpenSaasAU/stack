@@ -262,6 +262,7 @@ npx @opensaas/stack-cli migrate --type prisma
 - Access control → Access control patterns
 - Hooks → Hooks
 - Authentication → Auth plugin
+- `context.graphql.run` queries → fragment-based query utilities (see [Migrating context.graphql.run](#migrating-contextgraphqlrun) below)
 
 **Example:**
 
@@ -860,6 +861,87 @@ export async function getPosts() {
   return await context.db.post.findMany()
 }
 ```
+
+## Migrating context.graphql.run
+
+If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. OpenSaaS Stack has no GraphQL layer — instead it provides **fragment-based query utilities** that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
+
+### Quick reference
+
+| Keystone | OpenSaaS Stack |
+|---|---|
+| GraphQL fragment string | `defineFragment<T>()(fields)` |
+| `ResultOf<typeof query>` (codegen) | `ResultOf<typeof fragment>` (built-in) |
+| `context.graphql.run({ query, variables })` — list | `runQuery(context, 'List', fragment, args)` |
+| `context.graphql.run({ query, variables })` — single | `runQueryOne(context, 'List', fragment, where)` |
+
+### Simple list query
+
+```typescript
+// Before (Keystone)
+const { posts } = await context.graphql.run({
+  query: `query { posts(where: { published: true }) { id title } }`,
+})
+
+// After (OpenSaaS Stack)
+import type { Post } from '.prisma/client'
+import { defineFragment, runQuery, type ResultOf } from '@opensaas/stack-core'
+
+const postFragment = defineFragment<Post>()({ id: true, title: true } as const)
+type PostData = ResultOf<typeof postFragment>  // { id: string; title: string }
+
+const posts = await runQuery(context, 'Post', postFragment, { where: { published: true } })
+```
+
+### Nested / related data with reusable fragments
+
+The biggest win from fragments is composability — define a fragment once and use it in many queries.
+
+```typescript
+// fragments.ts — define once, import everywhere
+import type { User, Post, Tag } from '.prisma/client'
+import { defineFragment, type ResultOf } from '@opensaas/stack-core'
+
+export const authorFragment = defineFragment<User>()({
+  id: true, name: true, email: true,
+} as const)
+
+export const tagFragment = defineFragment<Tag>()({ id: true, name: true } as const)
+
+export const postFragment = defineFragment<Post>()({
+  id:          true,
+  title:       true,
+  publishedAt: true,
+  author:      authorFragment,   // nested — access-controlled include
+  tags:        tagFragment,      // many relationship
+} as const)
+
+// Inferred types — no GraphQL codegen required
+export type AuthorData = ResultOf<typeof authorFragment>
+export type PostData   = ResultOf<typeof postFragment>
+// PostData → { id: string; title: string; publishedAt: Date | null;
+//              author: { id: string; name: string; email: string } | null;
+//              tags: { id: string; name: string }[] }
+```
+
+```typescript
+// Usage in a server action or route
+import { runQuery, runQueryOne } from '@opensaas/stack-core'
+import { postFragment } from './fragments'
+
+// List
+const posts = await runQuery(context, 'Post', postFragment, {
+  where:   { published: true },
+  orderBy: { publishedAt: 'desc' },
+  take:    10,
+})
+
+// Single record
+const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
+if (!post) return notFound()
+```
+
+All operations go through `context.db` under the hood, so access control is enforced automatically. See the full [Keystone migration spec](../../../specs/keystone-migration.md) for more patterns.
 
 ## Best Practices
 

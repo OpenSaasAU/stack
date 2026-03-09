@@ -324,7 +324,7 @@ export default config({
    - `@keystone-6/auth` → `@opensaas/stack-auth`
 5. **Add Prisma adapter** to database config (required for Prisma 7)
 6. **Migrate virtual fields** — if any `virtual()` fields exist, invoke the `keystone-virtual-fields-context` skill
-7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.` and replace with `context.db.*` calls; invoke the `keystone-virtual-fields-context` skill for patterns
+7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.`; for simple reads replace with `context.db.*`; for nested/joined data use `defineFragment` + `runQuery`/`runQueryOne`; invoke the `migrate-context-calls` skill for detailed patterns
 8. **Test** - the app structure should remain identical
 
 **DO NOT:**
@@ -403,9 +403,9 @@ Field arguments are not supported in OpenSaaS Stack. For detailed patterns inclu
 
 ### Challenge: context.graphql Calls
 
-Keystone apps often use `context.graphql.run()` for type-safe data access from routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly instead.
+Keystone apps often use `context.graphql.run()` for type-safe data access from routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly, or the new fragment-based query utilities for nested/joined data.
 
-**Quick example:**
+**Simple queries (no nesting):**
 
 ```typescript
 // Keystone
@@ -419,7 +419,40 @@ const posts = await context.db.post.findMany({
 })
 ```
 
-List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`. Access control is enforced automatically. For detailed patterns including related data and sudo access, **invoke the `keystone-virtual-fields-context` skill**.
+**Queries with nested/related data (fragments — recommended for Keystone migrations):**
+
+OpenSaaS Stack provides `defineFragment` + `runQuery` / `runQueryOne` for composable, fully typed queries — the closest equivalent to Keystone GraphQL fragments and codegen types.
+
+```typescript
+// Keystone — GraphQL fragment + codegen types
+import type { PostFragment } from './__generated__/graphql'
+
+const { posts } = await context.graphql.run({
+  query: `
+    fragment AuthorFields on User { id name }
+    query { posts { id title author { ...AuthorFields } } }
+  `,
+})
+
+// OpenSaaS Stack — defineFragment + ResultOf (no codegen)
+import type { User, Post } from '.prisma/client'
+import { defineFragment, runQuery, type ResultOf } from '@opensaas/stack-core'
+
+const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
+const postFragment   = defineFragment<Post>()({
+  id:     true,
+  title:  true,
+  author: authorFragment,
+} as const)
+
+type PostData = ResultOf<typeof postFragment>
+// → { id: string; title: string; author: { id: string; name: string } | null }
+
+const posts = await runQuery(context, 'Post', postFragment)
+// posts: PostData[]
+```
+
+List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`. Access control is enforced automatically. For detailed patterns including sudo access, **invoke the `migrate-context-calls` skill**.
 
 ## Migration Checklist
 
@@ -455,7 +488,7 @@ List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.
 - [ ] **Add Prisma adapter** to database config
 - [ ] **Update context creation** in API routes
 - [ ] **Migrate virtual fields** (if any) — replace `graphql.field()` + `resolve()` with `hooks.resolveOutput`; invoke `keystone-virtual-fields-context` skill
-- [ ] **Migrate context.graphql calls** (if any) — replace with `context.db.*` calls; invoke `keystone-virtual-fields-context` skill
+- [ ] **Migrate context.graphql calls** (if any) — for simple reads use `context.db.*`; for nested/related data use `defineFragment` + `runQuery`/`runQueryOne` from `@opensaas/stack-core`; invoke `migrate-context-calls` skill for detailed patterns
 - [ ] Analyze and adapt access control patterns
 - [ ] Run `opensaas generate`
 - [ ] Run `prisma generate`

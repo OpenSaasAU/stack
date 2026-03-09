@@ -89,3 +89,13 @@ export {
   isHashedPassword,
   HashedPassword,
 } from './utils/password.js'
+
+// Query utilities — fragment-based, type-safe query helpers
+export { defineFragment, runQuery, runQueryOne } from './query/index.js'
+export type {
+  Fragment,
+  FieldSelection,
+  ResultOf,
+  QueryArgs,
+  QueryRunnerContext,
+} from './query/index.js'
