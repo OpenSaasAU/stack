@@ -928,7 +928,7 @@ export const postFragment = defineFragment<Post>()({
   title: true,
   publishedAt: true,
   author: authorFragment, // nested — access-controlled include
-  tags: tagFragment,       // many relationship
+  tags: tagFragment, // many relationship
 } as const)
 
 // Inferred types — no GraphQL codegen required
@@ -970,8 +970,8 @@ const postWithApprovedComments = defineFragment<Post>()({
   id: true,
   title: true,
   comments: {
-    query: commentFragment,       // nested fragment
-    where: { approved: true },    // Prisma filter on the relationship
+    query: commentFragment, // nested fragment
+    where: { approved: true }, // Prisma filter on the relationship
     orderBy: { createdAt: 'desc' },
     take: 5,
   },

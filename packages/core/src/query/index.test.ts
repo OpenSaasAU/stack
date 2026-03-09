@@ -434,7 +434,7 @@ describe('runQueryOne', () => {
   it('returns null when findFirst returns undefined', async () => {
     const delegate = {
       findMany: vi.fn(async () => []),
-      findFirst: vi.fn(async () => undefined),
+      findFirst: vi.fn(async () => null),
     }
     const ctx = makeContext({ user: delegate })
 
@@ -645,7 +645,6 @@ describe('buildInclude with RelationSelector', () => {
     // Separate test: RelationSelector where inner fragment has nested relationships
     const commentSelector = defineFragment<Comment>()({
       id: true,
-      post: commentWithAuthorFrag._fields.post,
       author: userFrag,
     } as const)
     const result2 = buildInclude(commentWithAuthorFrag._fields as FieldSelection<unknown>)

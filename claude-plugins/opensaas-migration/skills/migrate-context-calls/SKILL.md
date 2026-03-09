@@ -142,7 +142,7 @@ const postFragment = defineFragment<Post>()({
   id: true,
   title: true,
   author: authorFragment, // nested fragment → loaded via Prisma include
-  tags: tagFragment,      // many relationship
+  tags: tagFragment, // many relationship
 } as const)
 
 // Type-inferred — no codegen needed
@@ -179,7 +179,7 @@ const postWithComments = defineFragment<Post>()({
   title: true,
   comments: {
     query: commentFragment,
-    where: { approved: true },   // filter nested relationship
+    where: { approved: true }, // filter nested relationship
     orderBy: { createdAt: 'desc' },
     take: 5,
   },

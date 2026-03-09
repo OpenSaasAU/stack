@@ -114,23 +114,19 @@ This is the most significant API change. OpenSaas Stack does **not** include a G
 
 ### Concept mapping
 
-| GraphQL / Keystone concept                  | OpenSaas Stack equivalent                                           |
-| ------------------------------------------- | ------------------------------------------------------------------- |
-| GraphQL fragment                            | `defineFragment<T>()(fields)`                                       |
-| `ResultOf<typeof query>`                    | `ResultOf<typeof fragment>`                                         |
-| `VariablesOf<typeof query>`                 | `QueryArgs` (or your own Prisma where type)                         |
-| `context.graphql.run({ query, variables })` | `context.db.post.findMany({ query: fragment, where, ... })`         |
-| Single-record query                         | `context.db.post.findUnique({ where: { id }, query: fragment })`    |
-| Standalone query helpers                    | `runQuery(context, listKey, fragment, args)` / `runQueryOne(...)`   |
+| GraphQL / Keystone concept                  | OpenSaas Stack equivalent                                         |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| GraphQL fragment                            | `defineFragment<T>()(fields)`                                     |
+| `ResultOf<typeof query>`                    | `ResultOf<typeof fragment>`                                       |
+| `VariablesOf<typeof query>`                 | `QueryArgs` (or your own Prisma where type)                       |
+| `context.graphql.run({ query, variables })` | `context.db.post.findMany({ query: fragment, where, ... })`       |
+| Single-record query                         | `context.db.post.findUnique({ where: { id }, query: fragment })`  |
+| Standalone query helpers                    | `runQuery(context, listKey, fragment, args)` / `runQueryOne(...)` |
 
 ### Import
 
 ```typescript
-import {
-  defineFragment,
-  type ResultOf,
-  type RelationSelector,
-} from '@opensaas/stack-core'
+import { defineFragment, type ResultOf, type RelationSelector } from '@opensaas/stack-core'
 ```
 
 ---

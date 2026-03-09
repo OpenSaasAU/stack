@@ -139,13 +139,10 @@ type ExtractFragment<TSelector> =
  * Map a FieldSelection over a model type, computing the picked output type.
  */
 type SelectedFields<TItem, TFields extends FieldSelection<TItem>> = {
-  [K in keyof TFields & keyof TItem]: ExtractFragment<TFields[K]> extends Fragment<
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any
-  >
-    ? // Relationship field — preserve array/null/undefined wrappers from the model
+  [K in keyof TFields & keyof TItem]: [ExtractFragment<TFields[K]>] extends [never]
+    ? // Scalar field (value is `true`) — tuple wrapping avoids the vacuous `never extends T` pitfall
+      TItem[K]
+    : // Relationship field — preserve array/null/undefined wrappers from the model
       TItem[K] extends Array<unknown>
       ? ResultOf<ExtractFragment<TFields[K]>>[]
       : null extends TItem[K]
@@ -153,8 +150,6 @@ type SelectedFields<TItem, TFields extends FieldSelection<TItem>> = {
         : undefined extends TItem[K]
           ? ResultOf<ExtractFragment<TFields[K]>> | undefined
           : ResultOf<ExtractFragment<TFields[K]>>
-    : // Scalar field (value is `true`)
-      TItem[K]
 }
 
 // ─────────────────────────────────────────────────────────────
