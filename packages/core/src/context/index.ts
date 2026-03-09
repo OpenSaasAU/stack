@@ -611,10 +611,10 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (args: {
     where: { id: string }
     include?: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query?: any
   }) => {
     // Check query access (skip if sudo mode)
