@@ -97,7 +97,10 @@ export function SignUpForm({
       })
 
       if (result.error) {
-        throw new Error(result.error.message)
+        // Strip [body.field] prefixes from better-call validation errors for user-friendly display
+        const rawMessage = result.error.message ?? 'Sign up failed'
+        const cleanMessage = rawMessage.replace(/\[body\.\w+\]\s*/g, '').trim()
+        throw new Error(cleanMessage)
       }
 
       // If onSuccess is provided, call it. Otherwise, automatically redirect
