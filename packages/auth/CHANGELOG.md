@@ -1,5 +1,11 @@
 # @opensaas/stack-auth
 
+## 0.20.0
+
+### Patch Changes
+
+- [#361](https://github.com/OpenSaasAU/stack/pull/361) [`6bf4254`](https://github.com/OpenSaasAU/stack/commit/6bf42546fa7f546fa6ecb5d89b586f02c61aacb4) Thanks [@borisno2](https://github.com/borisno2)! - Strip better-call validation error prefixes from SignUpForm error messages for user-friendly display
+
 ## 0.19.1
 
 ## 0.19.0

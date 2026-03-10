@@ -1,5 +1,7 @@
 # @opensaas/stack-storage
 
+## 0.20.0
+
 ## 0.19.1
 
 ## 0.19.0
