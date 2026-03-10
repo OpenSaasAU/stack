@@ -33,16 +33,16 @@
   "dependencies": {
     "mime-types": "^3.0.2",
     "sharp": "^0.34.5",
-    "zod": "^4.1.13"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^24.11.0",
-    "@types/react": "^19.2.7",
-    "@vitest/coverage-v8": "^4.0.15",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "@opensaas/stack-core": "^0"

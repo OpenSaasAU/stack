@@ -44,8 +44,8 @@ test.describe('Authentication', () => {
 
       await page.getByRole('button', { name: 'Sign Up' }).click()
 
-      // Should show error message from server (Better-auth returns "Invalid email")
-      await expect(page.locator('text="Invalid email"').first()).toBeVisible({
+      // Should show error message from server (Better-auth/Zod v4 returns "Invalid email address")
+      await expect(page.locator('text="Invalid email address"').first()).toBeVisible({
         timeout: 5000,
       })
     })

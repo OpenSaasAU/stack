@@ -68,16 +68,16 @@
     }
   },
   "dependencies": {
-    "dotenv": "^17.2.3",
-    "zod": "^4.1.13"
+    "dotenv": "^17.3.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
-    "@types/node": "^24.11.0",
-    "@vitest/coverage-v8": "^4.0.15",
-    "@vitest/ui": "^4.0.15",
-    "openai": "^6.10.0",
+    "@types/node": "^24.12.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
+    "openai": "^6.27.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
+    "vitest": "^4.0.18"
   }
 }
