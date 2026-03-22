@@ -13,7 +13,7 @@
     "generate:embeddings": "tsx scripts/generate-embeddings.ts"
   },
   "dependencies": {
-    "@markdoc/markdoc": "^0.5.5",
+    "@markdoc/markdoc": "^0.5.6",
     "@markdoc/next.js": "^0.5.0",
     "@opensaas/stack-rag": "workspace:*",
     "@vercel/analytics": "^1.6.1",
