@@ -18,7 +18,7 @@
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "@tailwindcss/postcss": "^4.2.1",
-    "better-auth": "^1.5.4",
+    "better-auth": "^1.5.5",
     "better-sqlite3": "^12.6.2",
     "next": "^16.1.6",
     "postcss": "^8.5.8",
