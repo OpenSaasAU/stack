@@ -39,7 +39,7 @@
     "dotenv": "^17.3.1",
     "postcss": "^8.5.8",
     "prettier": "^3.8.1",
-    "prisma": "^7.4.2",
+    "prisma": "^7.5.0",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
