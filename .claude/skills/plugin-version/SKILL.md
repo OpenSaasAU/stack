@@ -1,20 +1,12 @@
 ---
 name: plugin-version
-description: Bump plugin versions in the OpenSaaS Stack monorepo. Use whenever you modify files in claude-plugins/* or .claude-plugin/ (marketplace root files). Handles semver bumping with patch for fixes, minor for features, and major only when explicitly requested. Directly edits plugin.json and marketplace.json — no changeset files.
+description: Bump plugin versions in the OpenSaaS Stack monorepo. Invoke whenever any file under claude-plugins/* or .claude-plugin/ is modified — skills, commands, agents, or marketplace config. Plugin versions must be bumped before committing so users who install the plugin get the updated version. Note: this is separate from pr-changeset, which handles npm packages — plugin versions are managed directly in plugin.json and marketplace.json.
 allowed-tools: Read, Edit, Bash, Grep, Glob
 ---
 
 # Plugin Version Skill
 
-This skill bumps version numbers for Claude plugins and the marketplace manifest. Use it whenever you modify plugin code, skills, commands, agents, or the marketplace configuration itself.
-
-## When to Use
-
-- When modifying files in `claude-plugins/opensaas-stack/**`
-- When modifying files in `claude-plugins/opensaas-migration/**`
-- When modifying `.claude-plugin/marketplace.json` structure (not just version fields)
-- When modifying `.claude-plugin/MARKETPLACE.md` or other root marketplace files
-- Before committing any changes to plugins or the marketplace
+This skill bumps version numbers for Claude plugins and the marketplace manifest. Plugin versions live directly in JSON files (not changesets) — bumping them is what signals to the marketplace that something changed and triggers users to get the update.
 
 ## Files This Skill Manages
 
