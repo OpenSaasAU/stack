@@ -102,7 +102,7 @@ Write a comment in the code for any document fields that had existing content so
 ```typescript
 // NOTE: This field was migrated from Keystone document format.
 // Existing content may not render correctly until re-saved in the Tiptap editor.
-// See specs/keystone-image-migration.md for data migration guidance.
+// See specs/keystone-document-migration.md for data migration guidance.
 content: richText()
 ```
 

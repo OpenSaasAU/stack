@@ -1,19 +1,12 @@
 ---
 name: pr-changeset
-description: Create changesets for package changes in pull requests. Use whenever you modify code in any package (packages/*). Required before committing changes to packages. Handles versioning with patch for bug fixes, minor for features, and major only when explicitly requested.
+description: Create changesets for package changes in pull requests. Invoke whenever any file under packages/* is modified — including bug fixes, new features, and even documentation or typo changes. Changesets are required before committing; without one, the release pipeline won't know what changed or how to version it. Also trigger when the user asks about versioning, what changeset to create, or whether a change needs a changeset.
 allowed-tools: Write, Read, Bash, Grep, Glob
 ---
 
 # PR Changeset Skill
 
-This skill helps you create proper changeset files when making changes to packages in the monorepo. **You MUST use this skill whenever you modify code in any package.**
-
-## When to Use
-
-- **ALWAYS** when modifying files in `packages/*`
-- Before committing changes to any package
-- When creating or updating a pull request that affects packages
-- Even for small changes (typo fixes, documentation updates in packages)
+This skill creates the changeset file that tells the release pipeline what changed and how to version it. Every change to a package needs one — even small fixes — because changesets are how versions get bumped and changelogs get generated automatically.
 
 ## Versioning Rules
 

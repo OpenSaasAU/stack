@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Official OpenSaaS Stack plugin marketplace for development and migration tools",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "homepage": "https://stack.opensaas.au/"
   },
   "plugins": [
@@ -14,7 +14,7 @@
       "name": "opensaas-stack",
       "source": "./claude-plugins/opensaas-stack",
       "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "author": {
         "name": "OpenSaaS",
         "url": "https://opensaas.au"
@@ -29,7 +29,7 @@
       "name": "opensaas-migration",
       "source": "./claude-plugins/opensaas-migration",
       "description": "OpenSaaS Stack migration assistant with AI-guided configuration, schema analysis, and code generation support",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "author": {
         "name": "OpenSaaS Team",
         "url": "https://github.com/OpenSaasAU/stack"
