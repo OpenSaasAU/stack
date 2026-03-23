@@ -1,21 +1,11 @@
 ---
 name: opensaas-migration
-description: Expert knowledge for migrating projects to OpenSaaS Stack. Use when discussing migration strategies, access control patterns, or OpenSaaS Stack configuration best practices.
+description: Expert knowledge for migrating projects to OpenSaaS Stack. Invoke whenever the user mentions migrating from KeystoneJS, Prisma, or an existing Next.js project; asks about access control patterns or opensaas.config.ts; or is troubleshooting any aspect of an OpenSaaS Stack migration. Don't wait for the user to say "migration" — trigger whenever the conversation touches these areas.
 ---
 
 # OpenSaaS Stack Migration
 
 Expert guidance for migrating existing projects to OpenSaaS Stack.
-
-## When to Use This Skill
-
-Use this skill when:
-
-- Planning a migration from Prisma, KeystoneJS, or Next.js
-- Designing access control patterns
-- Configuring `opensaas.config.ts`
-- Troubleshooting migration issues
-- Explaining OpenSaaS Stack concepts
 
 ## Migration Process
 

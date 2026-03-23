@@ -1,6 +1,9 @@
-# OpenSaaS App Builder Skill
+---
+name: opensaas-builder
+description: Build applications and features on the OpenSaaS Stack. Use this whenever a user describes building an app, adding functionality, implementing a feature, or asks "how do I implement X" in an OpenSaaS Stack project. Also trigger when the user describes business requirements, data models, or use cases — even if they don't say "OpenSaaS" explicitly.
+---
 
-**When to invoke**: User describes wanting to build an application or add functionality to their OpenSaaS Stack app
+# OpenSaaS App Builder Skill
 
 ## Pattern Recognition
 
