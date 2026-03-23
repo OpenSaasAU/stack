@@ -18,11 +18,11 @@ This skill bumps version numbers for Claude plugins and the marketplace manifest
 
 ## Files This Skill Manages
 
-| Changed directory | Files to update |
-|---|---|
-| `claude-plugins/opensaas-stack/` | `claude-plugins/opensaas-stack/.claude-plugin/plugin.json` (version) AND `.claude-plugin/marketplace.json` (plugins[name="opensaas-stack"].version) |
+| Changed directory                    | Files to update                                                                                                                                             |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude-plugins/opensaas-stack/`     | `claude-plugins/opensaas-stack/.claude-plugin/plugin.json` (version) AND `.claude-plugin/marketplace.json` (plugins[name="opensaas-stack"].version)         |
 | `claude-plugins/opensaas-migration/` | `claude-plugins/opensaas-migration/.claude-plugin/plugin.json` (version) AND `.claude-plugin/marketplace.json` (plugins[name="opensaas-migration"].version) |
-| `.claude-plugin/` root files only | `.claude-plugin/marketplace.json` (metadata.version only) |
+| `.claude-plugin/` root files only    | `.claude-plugin/marketplace.json` (metadata.version only)                                                                                                   |
 
 ## Versioning Rules
 
@@ -59,6 +59,7 @@ git diff --name-only origin/main...HEAD
 ```
 
 Look for paths starting with:
+
 - `claude-plugins/opensaas-stack/` → opensaas-stack plugin changed
 - `claude-plugins/opensaas-migration/` → opensaas-migration plugin changed
 - `.claude-plugin/` → marketplace root changed (check if any file other than version fields changed)
@@ -112,10 +113,13 @@ For each changed plugin, make two targeted edits using the Edit tool.
 Find the `"version"` field near the top of the file and replace just that value.
 
 Example in `claude-plugins/opensaas-stack/.claude-plugin/plugin.json`:
+
 ```
 "version": "0.2.0",
 ```
+
 →
+
 ```
 "version": "0.2.1",
 ```
@@ -125,10 +129,13 @@ Example in `claude-plugins/opensaas-stack/.claude-plugin/plugin.json`:
 The `plugins` array in `.claude-plugin/marketplace.json` has one object per plugin. Find the object where `"name"` matches the plugin name and edit its `"version"` field.
 
 Example: find the block for `"name": "opensaas-stack"` and edit:
+
 ```
       "version": "0.2.0",
 ```
+
 →
+
 ```
       "version": "0.2.1",
 ```
@@ -140,6 +147,7 @@ Only bump `metadata.version` if files in the `.claude-plugin/` root directory we
 ### Step 6: Verify the Edits
 
 After editing, read back the affected files to confirm:
+
 - The version field shows the new version
 - No other fields were accidentally changed
 - Both plugin.json and the matching marketplace.json entry show the same new version number
@@ -153,9 +161,11 @@ Changed files: `claude-plugins/opensaas-stack/skills/some-skill/SKILL.md`
 Current version: `"0.2.0"` → New version: `"0.2.1"`
 
 Edit `claude-plugins/opensaas-stack/.claude-plugin/plugin.json`:
+
 - `"version": "0.2.0"` → `"version": "0.2.1"`
 
 Edit `.claude-plugin/marketplace.json` (in the `opensaas-stack` plugins entry):
+
 - `"version": "0.2.0"` → `"version": "0.2.1"`
 
 Do NOT change `metadata.version` — the marketplace structure itself did not change.
@@ -167,9 +177,11 @@ Changed files: `claude-plugins/opensaas-migration/skills/new-skill/SKILL.md` (ne
 Current version: `"0.2.0"` → New version: `"0.3.0"`
 
 Edit `claude-plugins/opensaas-migration/.claude-plugin/plugin.json`:
+
 - `"version": "0.2.0"` → `"version": "0.3.0"`
 
 Edit `.claude-plugin/marketplace.json` (in the `opensaas-migration` plugins entry):
+
 - `"version": "0.2.0"` → `"version": "0.3.0"`
 
 ### Example 3: Changes to both plugins
