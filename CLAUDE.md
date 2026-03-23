@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **README files:** Each package and example has its own README for specific usage instructions
 - **Claude Skills:** Specialized skills for common tasks are in `.claude/skills/`
   - `pr-changeset`: **REQUIRED** - Use when modifying any package code to create proper changeset files
+  - `plugin-version`: **REQUIRED** - Use when modifying any Claude plugin code to bump plugin and marketplace versions
 
 ## Project Overview
 
@@ -1310,6 +1311,20 @@ Then follow the prompts to select packages and version bumps.
 
 2. Commit changes including the changeset file.
    Version bumping and publishing is handled automatically by changesets during release in a GitHub Action.
+
+## Publishing Plugins
+
+Claude plugins in `claude-plugins/*` use direct semver versioning in JSON files. Whenever you modify plugin code, skills, commands, agents, or marketplace root files, you must bump the version using the `plugin-version` skill.
+
+**IMPORTANT:** When working with Claude Code, you MUST use the `plugin-version` skill to bump plugin versions. It handles both the plugin's own `plugin.json` and the matching entry in `.claude-plugin/marketplace.json`.
+
+The `plugin-version` skill:
+
+- Detects which plugin directories changed (`claude-plugins/opensaas-stack/`, `claude-plugins/opensaas-migration/`, `.claude-plugin/`)
+- Determines patch vs minor bump (patch for fixes, minor for new capabilities, major only when explicitly requested)
+- Directly edits version fields in JSON — no changeset files
+- Keeps `plugin.json` and `marketplace.json` plugin entries in sync
+- Only bumps `marketplace.metadata.version` when the marketplace structure itself changed (not just plugin version numbers)
 
 - Data passed in as props to a component that is marked with `"use client"` must be serialised and must only contain the minimum data required to make that component work
 - Avoid the use of the `any` type, and do not use type casting. All types must be strongly typed to ensure type satefy - the `unkown` and `any` types must never exposed as an exteral type and are only to be used internally (within a package) where absolutely necessary

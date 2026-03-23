@@ -1,6 +1,6 @@
 {
   "name": "opensaas-stack",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
   "author": {
     "name": "OpenSaaS",
