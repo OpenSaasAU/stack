@@ -20,7 +20,7 @@
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
-    "ai": "^5.0.150",
+    "ai": "^6.0.140",
     "next": "^16.1.6",
     "openai": "^6.32.0",
     "pg": "^8.20.0",
