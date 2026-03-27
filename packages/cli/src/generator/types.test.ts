@@ -297,11 +297,56 @@ describe('Types Generator', () => {
       expect(types).toContain('export type UserSelect = Prisma.UserSelect & {')
       expect(types).toContain('fullName?: boolean')
 
-      // Should generate UserGetPayload helper type
+      // Should generate UserGetPayload helper type using StripVirtualFromArgs
       expect(types).toContain(
         'export type UserGetPayload<T extends { select?: any; include?: any } = {}> =',
       )
-      expect(types).toContain('Prisma.UserGetPayload<T> &')
+      expect(types).toContain(
+        'Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>>',
+      )
+
+      expect(types).toMatchSnapshot()
+    })
+
+    it('should use StripVirtualFromArgs in GetPayload for lists with virtual + relation fields (regression #383)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Account: {
+            fields: {
+              name: text(),
+              bills: relationship({ ref: 'Bill.account', many: true }),
+            },
+          },
+          Bill: {
+            fields: {
+              name: text(),
+              total: virtual({
+                type: 'string',
+                hooks: {
+                  resolveOutput: async () => '100.00',
+                },
+              }),
+              account: relationship({ ref: 'Account.bills' }),
+            },
+          },
+        },
+      }
+
+      const types = generateTypes(config)
+
+      // The shared utility type must be emitted once
+      expect(types).toContain('type StripVirtualFromArgs<T, VirtualKeys extends string> =')
+
+      // Bill has virtual fields so its GetPayload must use StripVirtualFromArgs
+      expect(types).toContain(
+        'Prisma.BillGetPayload<StripVirtualFromArgs<T, keyof BillVirtualFields>>',
+      )
+
+      // Account has no virtual fields so its GetPayload must NOT use StripVirtualFromArgs
+      expect(types).not.toContain('Prisma.AccountGetPayload<StripVirtualFromArgs')
 
       expect(types).toMatchSnapshot()
     })

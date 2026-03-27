@@ -14,7 +14,7 @@ model Product {
   settings      Json?
   configuration Json
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  updatedAt     DateTime @default(now()) @updatedAt
 }
 
 model Article {
@@ -23,5 +23,5 @@ model Article {
   content   Json?
   taxonomy  Json?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }

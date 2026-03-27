@@ -10,6 +10,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -232,6 +240,14 @@ exports[`Types Generator > generateTypes > should generate CreateInput type 1`] 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Virtual fields for Post - computed fields not in database
@@ -459,6 +475,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -586,7 +610,7 @@ export type UserInclude = Prisma.UserInclude & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.UserGetPayload<T>, 'posts'> &
+  Omit<Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>>, 'posts'> &
   {
     posts?:
       T extends { select: any }
@@ -1017,6 +1041,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -1126,7 +1158,7 @@ export type UserSelect = Prisma.UserSelect & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>> &
   (
     T extends { select: any }
       ? T['select'] extends true
@@ -1275,6 +1307,14 @@ exports[`Types Generator > generateTypes > should generate UpdateInput type 1`] 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Virtual fields for Post - computed fields not in database
@@ -1502,6 +1542,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -1724,6 +1772,14 @@ exports[`Types Generator > generateTypes > should generate type definitions for 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Virtual fields for User - computed fields not in database
@@ -1950,6 +2006,14 @@ exports[`Types Generator > generateTypes > should generate types for multiple li
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Virtual fields for User - computed fields not in database
@@ -2538,6 +2602,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -3008,6 +3080,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for Post - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -3477,6 +3557,14 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Virtual fields for User - computed fields not in database
@@ -3978,6 +4066,572 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     updateMany: <T extends PostUpdateManyArgs>(
       args: Prisma.SelectSubset<T, PostUpdateManyArgs>
     ) => Promise<Array<PostGetPayload<T>>>
+  }
+}
+
+/**
+ * Base context type for services that only need database and session access
+ * Compatible with both AccessContext (from hooks) and Context (from server actions)
+ * Use this type for services that should work in both contexts
+ */
+export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+  db: CustomDB
+  session: TSession
+}
+
+/**
+ * Full context type with server action capabilities and virtual field typing
+ * Extends BaseContext and adds serverAction and sudo methods
+ * Use this type in server actions and components that need full context capabilities
+ */
+export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+  serverAction: (props: ServerActionProps) => Promise<unknown>
+  sudo: () => Context<TSession>
+}"
+`;
+
+exports[`Types Generator > generateTypes > should use StripVirtualFromArgs in GetPayload for lists with virtual + relation fields (regression #383) 1`] = `
+"/**
+ * Generated types from OpenSaas configuration
+ * DO NOT EDIT - This file is automatically generated
+ */
+
+import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
+import type { PrismaClient, Prisma } from './prisma-client/client'
+import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
+/**
+ * Virtual fields for Account - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type AccountVirtualFields = {
+  // No virtual fields defined
+}
+
+/**
+ * Transformed fields for Account - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type AccountTransformedFields = {
+  // No transformed fields defined
+}
+
+export type AccountOutput = {
+  id: string
+  name: string | null
+  bills?: BillOutput[]
+  createdAt: Date
+  updatedAt: Date
+} & AccountVirtualFields
+
+export type Account = AccountOutput
+
+export type AccountCreateInput = {
+  name?: string
+  bills?: { connect: Array<{ id: string }> }
+}
+
+export type AccountUpdateInput = {
+  name?: string
+  bills?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
+}
+
+export type AccountWhereInput = Prisma.AccountWhereInput
+
+/**
+ * Hook types for Account list
+ * Properly typed to use Prisma's generated input types
+ */
+export type AccountHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.AccountCreateInput
+        item: undefined
+        context: BaseContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.AccountUpdateInput
+        item: Account
+        context: BaseContext
+      }
+  ) => Promise<Prisma.AccountCreateInput | Prisma.AccountUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    item?: Account
+    context: BaseContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    item?: Account
+    context: BaseContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    item?: Account
+    context: BaseContext
+  }) => Promise<void>
+}
+
+/**
+ * Select type for Account with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+
+ * } satisfies AccountSelect
+ */
+export type AccountSelect = Prisma.AccountSelect & {
+  bills?: boolean | BillDefaultArgs
+}
+
+/**
+ * Include type for Account with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+
+ * } satisfies AccountInclude
+ */
+export type AccountInclude = Prisma.AccountInclude & {
+  bills?: boolean | BillDefaultArgs
+}
+
+/**
+ * GetPayload type for Account
+ * Wraps Prisma's GetPayload to ensure nested relations support virtual fields
+ * Use this type to get properly typed results with virtual fields
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   // Relations can include virtual fields from related lists
+ * } satisfies AccountSelect
+ *
+ * type Result = AccountGetPayload<{ select: typeof select }>
+ */
+export type AccountGetPayload<T extends { select?: any; include?: any } = {}> =
+  Omit<Prisma.AccountGetPayload<T>, 'bills'> &
+  {
+    bills?:
+      T extends { select: any }
+        ? 'bills' extends keyof T['select']
+          ? T['select']['bills'] extends true
+            ? Bill[]
+            : T['select']['bills'] extends { select: any }
+              ? BillGetPayload<{ select: T['select']['bills']['select'] }>[]
+              : T['select']['bills'] extends { include: any }
+                ? BillGetPayload<{ include: T['select']['bills']['include'] }>[]
+                : Bill[]
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true
+            ? Bill[]
+            : 'bills' extends keyof T['include']
+              ? T['include']['bills'] extends true
+                ? Bill[]
+                : T['include']['bills'] extends { select: any }
+                  ? BillGetPayload<{ select: T['include']['bills']['select'] }>[]
+                  : T['include']['bills'] extends { include: any }
+                    ? BillGetPayload<{ include: T['include']['bills']['include'] }>[]
+                    : Bill[]
+              : never
+          : Bill[]
+  } &
+  {}
+
+/**
+ * Default args type for Account with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type AccountDefaultArgs = {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Account with virtual field support in nested relationships
+ */
+export type AccountFindUniqueArgs = Omit<Prisma.AccountFindUniqueArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Account with virtual field support in nested relationships
+ */
+export type AccountFindManyArgs = Omit<Prisma.AccountFindManyArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom CreateArgs for Account with virtual field support in nested relationships
+ */
+export type AccountCreateArgs = Omit<Prisma.AccountCreateArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Account with virtual field support in nested relationships
+ */
+export type AccountUpdateArgs = Omit<Prisma.AccountUpdateArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Account with virtual field support in nested relationships
+ */
+export type AccountDeleteArgs = Omit<Prisma.AccountDeleteArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom CreateManyArgs for Account with virtual field support in nested relationships
+ */
+export type AccountCreateManyArgs = {
+  data: Prisma.AccountCreateInput[]
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Account with virtual field support in nested relationships
+ */
+export type AccountUpdateManyArgs = {
+  where?: AccountWhereInput
+  data: Prisma.AccountUpdateInput
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+}
+
+/**
+ * Virtual fields for Bill - computed fields not in database
+ * These are added to query results via resolveOutput hooks
+ */
+export type BillVirtualFields = {
+  total: string
+}
+
+/**
+ * Transformed fields for Bill - fields with resultExtension transformations
+ * These override Prisma's base types with transformed types via result extensions
+ */
+export type BillTransformedFields = {
+  // No transformed fields defined
+}
+
+export type BillOutput = {
+  id: string
+  name: string | null
+  accountId: string | null
+  account?: AccountOutput | null
+  createdAt: Date
+  updatedAt: Date
+} & BillVirtualFields
+
+export type Bill = BillOutput
+
+export type BillCreateInput = {
+  name?: string
+  account?: { connect: { id: string } }
+}
+
+export type BillUpdateInput = {
+  name?: string
+  account?: { connect: { id: string } } | { disconnect: true }
+}
+
+export type BillWhereInput = Prisma.BillWhereInput
+
+/**
+ * Hook types for Bill list
+ * Properly typed to use Prisma's generated input types
+ */
+export type BillHooks = {
+  resolveInput?: (args:
+    | {
+        operation: 'create'
+        resolvedData: Prisma.BillCreateInput
+        item: undefined
+        context: BaseContext
+      }
+    | {
+        operation: 'update'
+        resolvedData: Prisma.BillUpdateInput
+        item: Bill
+        context: BaseContext
+      }
+  ) => Promise<Prisma.BillCreateInput | Prisma.BillUpdateInput>
+  validateInput?: (args: {
+    operation: 'create' | 'update'
+    resolvedData: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    item?: Bill
+    context: BaseContext
+    addValidationError: (msg: string) => void
+  }) => Promise<void>
+  beforeOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    item?: Bill
+    context: BaseContext
+  }) => Promise<void>
+  afterOperation?: (args: {
+    operation: 'create' | 'update' | 'delete'
+    resolvedData?: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    item?: Bill
+    context: BaseContext
+  }) => Promise<void>
+}
+
+/**
+ * Select type for Bill with virtual field support
+ * Extends Prisma's Select type to include virtual fields
+ * and supports custom Select types in nested relationships
+ * Use this type when selecting fields to enable virtual field selection
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   name: true,
+ *   total: true, // Virtual field
+ * } satisfies BillSelect
+ */
+export type BillSelect = Prisma.BillSelect & {
+  total?: boolean
+  account?: boolean | AccountDefaultArgs
+}
+
+/**
+ * Include type for Bill with virtual field support
+ * Extends Prisma's Include type to include virtual fields
+ * and supports custom Include types in nested relationships
+ * Use this type when including relationships to enable virtual field selection
+ *
+ * @example
+ * const include = {
+ *   author: true,
+ *   total: true, // Virtual field
+ * } satisfies BillInclude
+ */
+export type BillInclude = Prisma.BillInclude & {
+  total?: boolean
+  account?: boolean | AccountDefaultArgs
+}
+
+/**
+ * GetPayload type for Bill with virtual and transformed field support
+ * Extends Prisma's GetPayload to include virtual and transformed fields
+ * Use this type to get properly typed results with virtual fields
+ *
+ * @example
+ * const select = {
+ *   id: true,
+ *   total: true, // Virtual field
+ * } satisfies BillSelect
+ *
+ * type Result = BillGetPayload<{ select: typeof select }>
+ */
+export type BillGetPayload<T extends { select?: any; include?: any } = {}> =
+  Omit<Prisma.BillGetPayload<StripVirtualFromArgs<T, keyof BillVirtualFields>>, 'account'> &
+  {
+    account?:
+      T extends { select: any }
+        ? 'account' extends keyof T['select']
+          ? T['select']['account'] extends true
+            ? Account
+            : T['select']['account'] extends { select: any }
+              ? AccountGetPayload<{ select: T['select']['account']['select'] }>
+              : T['select']['account'] extends { include: any }
+                ? AccountGetPayload<{ include: T['select']['account']['include'] }>
+                : Account
+          : never
+        : T extends { include: any }
+          ? T['include'] extends true
+            ? Account
+            : 'account' extends keyof T['include']
+              ? T['include']['account'] extends true
+                ? Account
+                : T['include']['account'] extends { select: any }
+                  ? AccountGetPayload<{ select: T['include']['account']['select'] }>
+                  : T['include']['account'] extends { include: any }
+                    ? AccountGetPayload<{ include: T['include']['account']['include'] }>
+                    : Account
+              : never
+          : Account
+  } &
+  (
+    T extends { select: any }
+      ? T['select'] extends true
+        ? BillVirtualFields
+        : {
+            [K in keyof BillVirtualFields as K extends keyof T['select']
+              ? T['select'][K] extends true
+                ? K
+                : never
+              : never]: BillVirtualFields[K]
+          }
+      : T extends { include: any }
+        ? T['include'] extends true
+          ? BillVirtualFields
+          : {
+              [K in keyof BillVirtualFields as K extends keyof T['include']
+                ? T['include'][K] extends true
+                  ? K
+                  : never
+                : never]: BillVirtualFields[K]
+            }
+        : BillVirtualFields
+  )
+
+/**
+ * Default args type for Bill with custom Select/Include support
+ * Used in nested relationship selections to support virtual fields
+ */
+export type BillDefaultArgs = {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom FindUniqueArgs for Bill with virtual field support in nested relationships
+ */
+export type BillFindUniqueArgs = Omit<Prisma.BillFindUniqueArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom FindManyArgs for Bill with virtual field support in nested relationships
+ */
+export type BillFindManyArgs = Omit<Prisma.BillFindManyArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom CreateArgs for Bill with virtual field support in nested relationships
+ */
+export type BillCreateArgs = Omit<Prisma.BillCreateArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom UpdateArgs for Bill with virtual field support in nested relationships
+ */
+export type BillUpdateArgs = Omit<Prisma.BillUpdateArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom DeleteArgs for Bill with virtual field support in nested relationships
+ */
+export type BillDeleteArgs = Omit<Prisma.BillDeleteArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom CreateManyArgs for Bill with virtual field support in nested relationships
+ */
+export type BillCreateManyArgs = {
+  data: Prisma.BillCreateInput[]
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom UpdateManyArgs for Bill with virtual field support in nested relationships
+ */
+export type BillUpdateManyArgs = {
+  where?: BillWhereInput
+  data: Prisma.BillUpdateInput
+  select?: BillSelect | null
+  include?: BillInclude | null
+}
+
+/**
+ * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
+ * Types change based on select/include - relationships only present when explicitly included
+ * Virtual fields and transformed fields are added to the base model type
+ */
+export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+  'account' | 'bill'
+> & {
+  account: {
+    findUnique: <T extends AccountFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
+    ) => Promise<AccountGetPayload<T> | null>
+    findMany: <T extends AccountFindManyArgs>(
+      args?: Prisma.SelectSubset<T, AccountFindManyArgs>
+    ) => Promise<Array<AccountGetPayload<T>>>
+    create: <T extends AccountCreateArgs>(
+      args: Prisma.SelectSubset<T, AccountCreateArgs>
+    ) => Promise<AccountGetPayload<T>>
+    update: <T extends AccountUpdateArgs>(
+      args: Prisma.SelectSubset<T, AccountUpdateArgs>
+    ) => Promise<AccountGetPayload<T> | null>
+    delete: <T extends AccountDeleteArgs>(
+      args: Prisma.SelectSubset<T, AccountDeleteArgs>
+    ) => Promise<AccountGetPayload<T> | null>
+    count: (args?: Prisma.AccountCountArgs) => Promise<number>
+    createMany: <T extends AccountCreateManyArgs>(
+      args: Prisma.SelectSubset<T, AccountCreateManyArgs>
+    ) => Promise<Array<AccountGetPayload<T>>>
+    updateMany: <T extends AccountUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, AccountUpdateManyArgs>
+    ) => Promise<Array<AccountGetPayload<T>>>
+  }
+  bill: {
+    findUnique: <T extends BillFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, BillFindUniqueArgs>
+    ) => Promise<BillGetPayload<T> | null>
+    findMany: <T extends BillFindManyArgs>(
+      args?: Prisma.SelectSubset<T, BillFindManyArgs>
+    ) => Promise<Array<BillGetPayload<T>>>
+    create: <T extends BillCreateArgs>(
+      args: Prisma.SelectSubset<T, BillCreateArgs>
+    ) => Promise<BillGetPayload<T>>
+    update: <T extends BillUpdateArgs>(
+      args: Prisma.SelectSubset<T, BillUpdateArgs>
+    ) => Promise<BillGetPayload<T> | null>
+    delete: <T extends BillDeleteArgs>(
+      args: Prisma.SelectSubset<T, BillDeleteArgs>
+    ) => Promise<BillGetPayload<T> | null>
+    count: (args?: Prisma.BillCountArgs) => Promise<number>
+    createMany: <T extends BillCreateManyArgs>(
+      args: Prisma.SelectSubset<T, BillCreateManyArgs>
+    ) => Promise<Array<BillGetPayload<T>>>
+    updateMany: <T extends BillUpdateManyArgs>(
+      args: Prisma.SelectSubset<T, BillUpdateManyArgs>
+    ) => Promise<Array<BillGetPayload<T>>>
   }
 }
 
