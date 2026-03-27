@@ -1,5 +1,18 @@
 # @opensaas/stack-cli
 
+## 0.20.1
+
+### Patch Changes
+
+- [#386](https://github.com/OpenSaasAU/stack/pull/386) [`fcb04d6`](https://github.com/OpenSaasAU/stack/commit/fcb04d6916ab5451080cface330431866b52826c) Thanks [@borisno2](https://github.com/borisno2)! - Fix missing `query` parameter in generated `FindManyArgs` and `FindUniqueArgs` types
+
+  Passing a fragment to `context.db.post.findMany({ query: fragment })` or `context.db.post.findUnique({ where: { id }, query: fragment })` no longer produces a TypeScript error. The generator now emits `query?: Fragment<PostOutput, FieldSelection<PostOutput>>` in the relevant args types.
+
+- [#384](https://github.com/OpenSaasAU/stack/pull/384) [`6b7284a`](https://github.com/OpenSaasAU/stack/commit/6b7284adc828d115aeb25416db45d2be1e68f828) Thanks [@borisno2](https://github.com/borisno2)! - Fix virtual fields typed as `never` when mixed with relation fields in `select` or when using `include`
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.20.1
+
 ## 0.20.0
 
 ### Patch Changes
