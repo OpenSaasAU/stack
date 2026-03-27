@@ -634,6 +634,7 @@ function generateFindUniqueArgsType(listName: string, fields: Record<string, Fie
 export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
   } else {
     return `/**
@@ -641,6 +642,7 @@ export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, '
  */
 export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select'> & {
   select?: ${listName}Select | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
   }
 }
@@ -658,6 +660,7 @@ function generateFindManyArgsType(listName: string, fields: Record<string, Field
 export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select' | 'include'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
   } else {
     return `/**
@@ -665,6 +668,7 @@ export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'sele
  */
 export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select'> & {
   select?: ${listName}Select | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
   }
 }
@@ -979,7 +983,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   // Add necessary imports
   // Use alias for Session to avoid conflicts if user has a list named "Session"
   lines.push(
-    "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'",
+    "import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext, Fragment, FieldSelection } from '@opensaas/stack-core'",
   )
   lines.push("import type { PrismaClient, Prisma } from './prisma-client/client'")
   lines.push("import type { PluginServices } from './plugin-types'")
