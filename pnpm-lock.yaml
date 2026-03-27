@@ -84,8 +84,8 @@ importers:
         specifier: ^16.1.6
         version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       openai:
-        specifier: ^6.27.0
-        version: 6.27.0(ws@8.20.0)(zod@4.3.6)
+        specifier: ^6.32.0
+        version: 6.32.0(ws@8.20.0)(zod@4.3.6)
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -576,8 +576,8 @@ importers:
         specifier: ^16.1.6
         version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       openai:
-        specifier: ^6.27.0
-        version: 6.27.0(ws@8.20.0)(zod@4.3.6)
+        specifier: ^6.32.0
+        version: 6.32.0(ws@8.20.0)(zod@4.3.6)
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -980,8 +980,8 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(vitest@4.1.0)
       openai:
-        specifier: ^6.27.0
-        version: 6.27.0(ws@8.20.0)(zod@4.3.6)
+        specifier: ^6.32.0
+        version: 6.32.0(ws@8.20.0)(zod@4.3.6)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -5953,8 +5953,8 @@ packages:
   oniguruma-to-es@4.3.5:
     resolution: {integrity: sha512-Zjygswjpsewa0NLTsiizVuMQZbp0MDyM6lIt66OxsF21npUDlzpHi1Mgb/qhQdkb+dWFTzJmFbEWdvZgRho8eQ==}
 
-  openai@6.27.0:
-    resolution: {integrity: sha512-osTKySlrdYrLYTt0zjhY8yp0JUBmWDCN+Q+QxsV4xMQnnoVFpylgKGgxwN8sSdTNw0G4y+WUXs4eCMWpyDNWZQ==}
+  openai@6.32.0:
+    resolution: {integrity: sha512-j3k+BjydAf8yQlcOI7WUQMQTbbF5GEIMAE2iZYCOzwwB3S2pCheaWYp+XZRNAch4jWVc52PMDGRRjutao3lLCg==}
     hasBin: true
     peerDependencies:
       ws: ^8.18.0
@@ -12339,7 +12339,7 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@6.27.0(ws@8.20.0)(zod@4.3.6):
+  openai@6.32.0(ws@8.20.0)(zod@4.3.6):
     optionalDependencies:
       ws: 8.20.0
       zod: 4.3.6
