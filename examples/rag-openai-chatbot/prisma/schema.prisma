@@ -15,5 +15,5 @@ model KnowledgeBase {
   published        Boolean  @default(true)
   contentEmbedding Json?
   createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  updatedAt        DateTime @default(now()) @updatedAt
 }

@@ -205,16 +205,10 @@ datasource db {
   provider = "sqlite"
 }
 
-enum PostStatus {
-  draft
-  published
-  archived
-}
-
 model Post {
   id        String   @id @default(cuid())
   title        String
-  status       PostStatus @default(draft)
+  status       String @default("draft")
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 }

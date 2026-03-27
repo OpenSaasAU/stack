@@ -15,7 +15,7 @@ model User {
   favoriteColor String?
   posts         Post[]
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  updatedAt     DateTime @default(now()) @updatedAt
 }
 
 model Post {
@@ -29,7 +29,7 @@ model Post {
   authorId    String?   @map("author")
   author      User?     @relation(fields: [authorId], references: [id])
   createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   @@index([authorId])
 }

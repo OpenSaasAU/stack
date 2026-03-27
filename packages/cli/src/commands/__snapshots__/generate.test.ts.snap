@@ -150,6 +150,14 @@ import type { Session as OpensaasSession, StorageUtils, ServerActionProps, Acces
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
 
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
+
 /**
  * Virtual fields for User - computed fields not in database
  * These are added to query results via resolveOutput hooks
@@ -442,6 +450,14 @@ exports[`Generate Command Integration > Generator Integration > should handle em
 import type { Session as OpensaasSession, StorageUtils, ServerActionProps, AccessControlledDB, AccessContext } from '@opensaas/stack-core'
 import type { PrismaClient, Prisma } from './prisma-client/client'
 import type { PluginServices } from './plugin-types'
+
+// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
+type StripVirtualFromArgs<T, VirtualKeys extends string> =
+  T extends { select: infer S extends object }
+    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }
+    : T extends { include: infer I extends object }
+      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }
+      : T
 
 /**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
