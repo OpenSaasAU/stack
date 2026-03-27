@@ -503,13 +503,17 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
   lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
 
   // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
+  // When virtual fields exist, strip them from T before passing to Prisma so Prisma never
+  // tries to resolve a virtual field name (which would produce `never` in its payload type).
   const fieldsToOmit = [...transformedFieldNames, ...relationshipFields.map((r) => r.name)]
+  const prismaT =
+    virtualFields.length > 0 ? `StripVirtualFromArgs<T, keyof ${listName}VirtualFields>` : 'T'
   if (fieldsToOmit.length > 0) {
     lines.push(
-      `  Omit<Prisma.${listName}GetPayload<T>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
+      `  Omit<Prisma.${listName}GetPayload<${prismaT}>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
     )
   } else {
-    lines.push(`  Prisma.${listName}GetPayload<T> &`)
+    lines.push(`  Prisma.${listName}GetPayload<${prismaT}> &`)
   }
 
   // Add transformed fields back
@@ -988,6 +992,19 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(`import ${typePrefix}{ ${names} } from '${imp.from}'`)
   }
 
+  lines.push('')
+
+  // Emit shared utility type used by GetPayload types to strip virtual field keys
+  // from select/include before passing to Prisma's GetPayload (prevents `never` intersection)
+  lines.push(
+    '// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them',
+  )
+  lines.push('type StripVirtualFromArgs<T, VirtualKeys extends string> =')
+  lines.push('  T extends { select: infer S extends object }')
+  lines.push("    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }")
+  lines.push('    : T extends { include: infer I extends object }')
+  lines.push("      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }")
+  lines.push('      : T')
   lines.push('')
 
   // Generate types for each list
