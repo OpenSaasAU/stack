@@ -1337,4 +1337,18 @@ The `plugin-version` skill:
 
 - Always run `pnpm lint` `pnpm manypkg fix` and `pnpm format` to ensure code quality and consistency before committing any changes
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`OpenSaasAU/stack`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 - The repo URL is `https://github.com/OpenSaasAU/stack` and the docs site is `https://stack.opensaas.au/`
