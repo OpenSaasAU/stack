@@ -72,14 +72,25 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Build packages
-        run: |
-          pnpm --filter @opensaas/stack-core build
-          pnpm --filter @opensaas/stack-auth build
-          pnpm --filter @opensaas/stack-ui build
-          pnpm --filter @opensaas/stack-cli build
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-core
+          --filter=@opensaas/stack-auth
+          --filter=@opensaas/stack-ui
+          --filter=@opensaas/stack-cli
 
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
+
+      # Cache the starter-auth Next.js build that Playwright's webServer compiles,
+      # so the production build is incremental instead of a full ~3 min build each run.
+      - name: Cache Next.js build
+        uses: actions/cache@v5
+        with:
+          path: examples/starter-auth/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('examples/starter-auth/**/*.{js,jsx,ts,tsx}') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run E2E tests
         run: pnpm test:e2e
