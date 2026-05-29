@@ -11,6 +11,9 @@ import type {
   RelationshipField,
   JsonField,
   VirtualField,
+  OpenSaasConfig,
+  FieldConfig,
+  PrismaRelationResult,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 
@@ -866,6 +869,284 @@ export function select<
 }
 
 /**
+ * Parse a relationship ref into its target list and optional target field.
+ * Supports both 'ListName.fieldName' (bidirectional) and 'ListName' (list-only) formats.
+ */
+function parseRelationshipRef(ref: string): { list: string; field?: string } {
+  const parts = ref.split('.')
+  if (parts.length === 1) {
+    const list = parts[0]
+    if (!list) {
+      throw new Error(`Invalid relationship ref: ${ref}`)
+    }
+    return { list }
+  } else if (parts.length === 2) {
+    const [list, field] = parts
+    if (!list || !field) {
+      throw new Error(`Invalid relationship ref: ${ref}`)
+    }
+    return { list, field }
+  } else {
+    throw new Error(`Invalid relationship ref: ${ref}`)
+  }
+}
+
+/**
+ * Check if a relationship is one-to-one (bidirectional with both sides having many: false).
+ */
+function isOneToOneRelationship(
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  if (!targetField) {
+    return false
+  }
+
+  if (field.many) {
+    return false
+  }
+
+  const targetListConfig = config.lists[targetList]
+  if (!targetListConfig) {
+    throw new Error(`Referenced list "${targetList}" not found in config`)
+  }
+
+  const targetFieldConfig = targetListConfig.fields[targetField]
+  if (!targetFieldConfig) {
+    throw new Error(
+      `Referenced field "${targetList}.${targetField}" not found. If you want a one-sided relationship, use ref: "${targetList}" instead of ref: "${targetList}.${targetField}"`,
+    )
+  }
+  if (targetFieldConfig.type !== 'relationship') {
+    throw new Error(`Referenced field "${targetList}.${targetField}" is not a relationship field`)
+  }
+
+  return !(targetFieldConfig as RelationshipField).many
+}
+
+/**
+ * Determine if this side of a relationship should store the foreign key.
+ * For one-to-one relationships, only one side stores the foreign key.
+ */
+function shouldHaveForeignKey(
+  listKey: string,
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  if (!targetField) {
+    return true
+  }
+
+  if (field.many) {
+    return false
+  }
+
+  const isOneToOne = isOneToOneRelationship(fieldName, field, config)
+  if (!isOneToOne) {
+    return true
+  }
+
+  const targetListConfig = config.lists[targetList]!
+  const targetFieldConfig = targetListConfig.fields[targetField] as RelationshipField
+
+  const thisSideExplicit = field.db?.foreignKey
+  const otherSideExplicit = targetFieldConfig.db?.foreignKey
+
+  if (thisSideExplicit === true && otherSideExplicit === true) {
+    throw new Error(
+      `Invalid one-to-one relationship: both "${listKey}.${fieldName}" and "${targetList}.${targetField}" have db.foreignKey set to true. Only one side can store the foreign key.`,
+    )
+  }
+
+  if (thisSideExplicit === true) {
+    return true
+  }
+
+  if (otherSideExplicit === true) {
+    return false
+  }
+
+  // Default: the alphabetically "smaller" list name gets the foreign key
+  const comparison = listKey.localeCompare(targetList)
+  if (comparison !== 0) {
+    return comparison < 0
+  }
+
+  // Self-referential: use field name ordering
+  return fieldName.localeCompare(targetField) < 0
+}
+
+/**
+ * Check whether a many relationship is a true many-to-many (both sides many).
+ */
+function isManyToMany(
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  if (!field.many) {
+    return false
+  }
+
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+
+  // List-only ref with many: true is implicitly many-to-many
+  if (!targetField) {
+    return true
+  }
+
+  const targetFieldConfig = config.lists[targetList]?.fields[targetField]
+  if (!targetFieldConfig || targetFieldConfig.type !== 'relationship') {
+    return false
+  }
+
+  return !!(targetFieldConfig as RelationshipField).many
+}
+
+/**
+ * Compute the explicit relation name for a bidirectional many-to-many relationship,
+ * or `undefined` when Prisma's default naming should be used.
+ *
+ * Honours per-field `db.relationName` (which must match on both sides) and the
+ * global `db.joinTableNaming: 'keystone'` setting, picking a deterministic owner
+ * for bidirectional relationships so both sides resolve to the same name.
+ */
+function computeManyToManyRelationName(
+  listKey: string,
+  fieldName: string,
+  field: RelationshipField,
+  config: OpenSaasConfig,
+): string | undefined {
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  const joinTableNaming = config.db.joinTableNaming || 'prisma'
+
+  const sourceRelationName = field.db?.relationName
+  let targetRelationName: string | undefined
+  if (targetField) {
+    const targetFieldConfig = config.lists[targetList]?.fields[targetField]
+    if (targetFieldConfig?.type === 'relationship') {
+      targetRelationName = (targetFieldConfig as RelationshipField).db?.relationName
+    }
+  }
+
+  if (sourceRelationName && targetRelationName && sourceRelationName !== targetRelationName) {
+    throw new Error(
+      `Relation name mismatch: ${listKey}.${fieldName} has relationName "${sourceRelationName}" but ${targetList}.${targetField} has "${targetRelationName}". Both sides must use the same relationName.`,
+    )
+  }
+
+  const explicitRelationName = sourceRelationName || targetRelationName
+  if (explicitRelationName) {
+    return explicitRelationName
+  }
+
+  if (joinTableNaming === 'keystone') {
+    if (targetField) {
+      // Pick a deterministic owner so both sides agree on the relation name
+      const sourceKey = `${listKey}.${fieldName}`
+      const targetKey = `${targetList}.${targetField}`
+      return sourceKey.localeCompare(targetKey) < 0
+        ? `${listKey}_${fieldName}`
+        : `${targetList}_${targetField}`
+    }
+    return `${listKey}_${fieldName}`
+  }
+
+  // Default Prisma naming - no explicit relation name needed
+  return undefined
+}
+
+/**
+ * Build the Prisma schema contribution for a relationship field.
+ */
+function getPrismaRelation(
+  field: RelationshipField,
+  fieldName: string,
+  listKey: string,
+  config: OpenSaasConfig,
+): PrismaRelationResult {
+  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
+  const paddedName = fieldName.padEnd(12)
+
+  // Synthetic back-relation for list-only refs (Prisma requires an opposite field)
+  let backRelation: PrismaRelationResult['backRelation']
+  if (!targetField) {
+    const syntheticFieldName = `from_${listKey}_${fieldName}`
+    const relationName = field.db?.relationName ?? `${listKey}_${fieldName}`
+    backRelation = {
+      targetList,
+      line: `  ${syntheticFieldName.padEnd(12)} ${listKey}[]  @relation("${relationName}")`,
+    }
+  }
+
+  if (field.many) {
+    let relationLine: string
+
+    if (targetField) {
+      // Bidirectional many side: use explicit relation name only for true many-to-many
+      const m2mName = isManyToMany(fieldName, field, config)
+        ? computeManyToManyRelationName(listKey, fieldName, field, config)
+        : undefined
+      relationLine = m2mName
+        ? `  ${paddedName} ${targetList}[]  @relation("${m2mName}")`
+        : `  ${paddedName} ${targetList}[]`
+    } else {
+      // List-only ref many side: always a named relation paired with the synthetic field
+      const relationName = field.db?.relationName ?? `${listKey}_${fieldName}`
+      relationLine = `  ${paddedName} ${targetList}[]  @relation("${relationName}")`
+    }
+
+    if (field.db?.extendPrismaSchema) {
+      relationLine = field.db.extendPrismaSchema({ relationLine }).relationLine
+    }
+
+    return { modelLines: [relationLine], backRelation }
+  }
+
+  // Single relationship
+  if (shouldHaveForeignKey(listKey, fieldName, field, config)) {
+    const foreignKeyField = `${fieldName}Id`
+    const fkPaddedName = foreignKeyField.padEnd(12)
+
+    const uniqueModifier = isOneToOneRelationship(fieldName, field, config) ? ' @unique' : ''
+
+    const mapModifier =
+      typeof field.db?.foreignKey === 'object' && field.db.foreignKey.map
+        ? ` @map("${field.db.foreignKey.map}")`
+        : ` @map("${fieldName}")`
+
+    let fkLine = `  ${fkPaddedName} String?${uniqueModifier}${mapModifier}`
+    let relationLine = targetField
+      ? `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`
+      : `  ${paddedName} ${targetList}?  @relation("${listKey}_${fieldName}", fields: [${foreignKeyField}], references: [id])`
+
+    if (field.db?.extendPrismaSchema) {
+      const extended = field.db.extendPrismaSchema({ fkLine, relationLine })
+      fkLine = extended.fkLine ?? fkLine
+      relationLine = extended.relationLine
+    }
+
+    // Default to indexing foreign keys (matching Keystone behaviour) unless disabled
+    const indexType = field.isIndexed ?? true
+    const foreignKeyIndex = indexType !== false ? { foreignKeyField, indexType } : undefined
+
+    return { modelLines: [fkLine, relationLine], foreignKeyIndex, backRelation }
+  }
+
+  // Non-FK side of a one-to-one relationship: just the relation field
+  let relationLine = `  ${paddedName} ${targetList}?`
+  if (field.db?.extendPrismaSchema) {
+    relationLine = field.db.extendPrismaSchema({ relationLine }).relationLine
+  }
+
+  return { modelLines: [relationLine], backRelation }
+}
+
+/**
  * Relationship field
  */
 export function relationship<
@@ -902,10 +1183,19 @@ export function relationship<
     }
   }
 
-  return {
+  const field: RelationshipField<TTypeInfo> = {
     type: 'relationship',
     ...options,
   }
+
+  field.getPrismaRelation = (
+    fieldName: string,
+    _allFields: Record<string, FieldConfig>,
+    listKey: string,
+    config: OpenSaasConfig,
+  ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
+
+  return field
 }
 
 /**

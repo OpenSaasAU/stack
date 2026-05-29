@@ -723,7 +723,56 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     ui?: {
       displayMode?: 'select' | 'cards'
     }
+    /**
+     * Get the complete Prisma schema contribution for this relationship field.
+     *
+     * Relationships are special: unlike scalar fields (which return a single
+     * type via `getPrismaType`), a relationship can contribute a foreign key
+     * line, a relation line on the owning model, and a synthetic back-relation
+     * line on the target model. This method encapsulates all of that logic so
+     * the generator can remain a neutral coordinator.
+     *
+     * @param fieldName - The name of this relationship field
+     * @param allFields - All fields on the list this relationship belongs to
+     * @param listKey - The name of the list this relationship belongs to
+     * @param config - The full OpenSaas config (used to resolve the target list/field)
+     */
+    getPrismaRelation?: (
+      fieldName: string,
+      allFields: Record<string, FieldConfig>,
+      listKey: string,
+      config: OpenSaasConfig,
+    ) => PrismaRelationResult
   }
+
+/**
+ * The complete Prisma schema contribution of a relationship field.
+ */
+export type PrismaRelationResult = {
+  /**
+   * Lines to add to the owning model.
+   * For an FK-owning single relationship this is `[fkLine, relationLine]`;
+   * for the many side or the non-FK side it is `[relationLine]`.
+   */
+  modelLines: string[]
+  /**
+   * Foreign key index to add to the owning model, if this side owns an
+   * indexed foreign key.
+   */
+  foreignKeyIndex?: {
+    foreignKeyField: string
+    indexType: boolean | 'unique'
+  }
+  /**
+   * Synthetic back-relation field to add to the target model. Only present
+   * for list-only refs (e.g., `ref: 'Category'`), where the target model
+   * needs an opposite relation field for Prisma to validate the relation.
+   */
+  backRelation?: {
+    targetList: string
+    line: string
+  }
+}
 
 export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'json'
