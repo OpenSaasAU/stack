@@ -134,6 +134,7 @@ export type {
   PasswordField,
   SelectField,
   RelationshipField,
+  PrismaRelationResult,
   JsonField,
   VirtualField,
   TypeDescriptor,
