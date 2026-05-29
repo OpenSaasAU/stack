@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: openai(process.env.OPENAI_CHAT_MODEL || 'gpt-5-nano'),
     system: systemMessage,
-    messages: convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages),
   })
 
   // Return streaming response with sources as metadata
