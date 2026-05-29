@@ -18,7 +18,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/adapter-pg": "^7.4.2",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.4.2",
     "ai": "^5.0.150",
     "next": "^16.1.6",
