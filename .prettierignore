@@ -18,3 +18,4 @@ next-env.d.ts
 .DS_Store
 *.log
 pnpm-lock.yaml
+.agents
