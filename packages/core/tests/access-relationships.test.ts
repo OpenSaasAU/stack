@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterReadableFields, getRelatedListConfig } from '../src/access/engine.js'
+import { filterReadableFields, getRelatedListConfig } from '../src/access/index.js'
 import type { OpenSaasConfig, AccessContext } from '../src/index.js'
 
 describe('Relationship Access Control', () => {
@@ -153,7 +153,7 @@ describe('Relationship Access Control', () => {
         }
 
         // Test that buildIncludeWithAccessControl excludes the denied relationship
-        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
+        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
 
         const include = await buildIncludeWithAccessControl(
           config.lists.Post.fields,
@@ -319,7 +319,7 @@ describe('Relationship Access Control', () => {
         }
 
         // Test that buildIncludeWithAccessControl creates the right where clause
-        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
+        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
 
         const include = await buildIncludeWithAccessControl(
           config.lists.User.fields,
@@ -486,7 +486,7 @@ describe('Relationship Access Control', () => {
         }
 
         // Test that buildIncludeWithAccessControl creates session-based where clause
-        const { buildIncludeWithAccessControl } = await import('../src/access/engine.js')
+        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
 
         const include = await buildIncludeWithAccessControl(
           config.lists.User.fields,
