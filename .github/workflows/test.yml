@@ -37,8 +37,7 @@ jobs:
           DATABASE_URL: 'file:./dev.db'
 
       - name: Install Playwright browsers
-        working-directory: ./packages/ui
-        run: pnpm exec playwright install --with-deps chromium
+        uses: ./.github/actions/playwright
 
       - name: Run browser tests with coverage
         working-directory: ./packages/ui
@@ -80,7 +79,7 @@ jobs:
           pnpm --filter @opensaas/stack-cli build
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        uses: ./.github/actions/playwright
 
       - name: Run E2E tests
         run: pnpm test:e2e
