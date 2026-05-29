@@ -1,0 +1,7 @@
+# Access control reads run in two phases that cannot be merged
+
+Reads are secured in two passes: **Access Filter** (pre-query) builds an access-scoped `include`/`where` from operation-level access so the database returns only permitted rows and relations, and **Field Visibility** (post-query) strips unreadable fields, runs `resolveOutput` hooks, and computes virtual fields on the returned rows.
+
+The split is not incidental and the phases cannot be collapsed into one. Field-level access functions receive the fetched `item`, so field visibility can depend on row contents that do not exist until after the query runs; virtual fields are likewise only computable post-query. A future reader is therefore likely to see field access being re-evaluated post-query as redundant and try to fold it into the pre-query pass — this is impossible for item-dependent access, and is recorded here so that optimization is not re-attempted.
+
+The two phases also evaluate different things with different return contracts: operation-level access returns `boolean | PrismaFilter` (a filter scopes rows), while field-level access returns `boolean` only (a denied field is removed, never used to exclude rows). They share no evaluator across phases. Field-level access is, however, evaluated by a single shared function (`checkFieldAccess`) across both the read and write paths — there is deliberately one field-access evaluator, not a per-phase copy.
