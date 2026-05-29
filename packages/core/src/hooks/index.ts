@@ -214,6 +214,233 @@ export async function executeAfterOperation<
 }
 
 /**
+ * Execute field-level resolveInput hooks
+ * Allows fields to transform their input values before database write
+ */
+export async function executeFieldResolveInputHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<Record<string, unknown>> {
+  let result = { ...resolvedData }
+
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Skip if field not in data
+    if (!(fieldKey in result)) continue
+
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.resolveInput) continue
+
+    // Execute field hook
+    // Type assertion is safe here because hooks are typed correctly in field definitions
+    // and we're working with runtime values that match those types
+    const transformedValue = await fieldConfig.hooks.resolveInput({
+      listKey,
+      fieldKey,
+      operation,
+      inputData,
+      item,
+      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
+      context,
+    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+
+    // Create new object with updated field to avoid mutating the passed reference
+    result = { ...result, [fieldKey]: transformedValue }
+  }
+
+  return result
+}
+
+/**
+ * Execute field-level validate hooks
+ * Allows fields to perform custom validation after resolveInput but before database write
+ */
+export async function executeFieldValidateHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputData: Record<string, any> | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any> | undefined,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update' | 'delete',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<void> {
+  const errors: string[] = []
+  const fieldErrors: Record<string, string> = {}
+
+  const addValidationError = (fieldKey: string) => (msg: string) => {
+    errors.push(msg)
+    fieldErrors[fieldKey] = msg
+  }
+
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Support both 'validate' (new) and 'validateInput' (deprecated) for backwards compatibility
+    const validateHook = fieldConfig.hooks?.validate ?? fieldConfig.hooks?.validateInput
+    if (!validateHook) continue
+
+    // Execute field hook
+    // Type assertion is safe here because hooks are typed correctly in field definitions
+    if (operation === 'delete') {
+      await validateHook({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        item,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof validateHook>[0])
+    } else if (operation === 'create') {
+      await validateHook({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        item: undefined,
+        resolvedData,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof validateHook>[0])
+    } else {
+      // operation === 'update'
+      await validateHook({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        item,
+        resolvedData,
+        context,
+        addValidationError: addValidationError(fieldKey),
+      } as Parameters<typeof validateHook>[0])
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new ValidationError(errors, fieldErrors)
+  }
+}
+
+/**
+ * Execute field-level beforeOperation hooks (side effects only)
+ * Allows fields to perform side effects before database write
+ */
+export async function executeFieldBeforeOperationHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update' | 'delete',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<void> {
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.beforeOperation) continue
+    // Skip if field not in data (for create/update)
+    if (operation !== 'delete' && !(fieldKey in resolvedData)) continue
+
+    // Execute field hook (side effects only, no return value used)
+    // Type assertion is safe here because hooks are typed correctly in field definitions
+    if (operation === 'delete') {
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        item,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    } else if (operation === 'create') {
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    } else {
+      // operation === 'update'
+      await fieldConfig.hooks.beforeOperation({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
+    }
+  }
+}
+
+/**
+ * Execute field-level afterOperation hooks (side effects only)
+ * Allows fields to perform side effects after database operations
+ */
+export async function executeFieldAfterOperationHooks(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: any,
+  inputData: Record<string, unknown> | undefined,
+  resolvedData: Record<string, unknown> | undefined,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update' | 'delete',
+  context: AccessContext,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  originalItem?: any,
+): Promise<void> {
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    // Skip if no hooks defined
+    if (!fieldConfig.hooks?.afterOperation) continue
+
+    // Execute field hook (side effects only, no return value used)
+    if (operation === 'delete') {
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'delete',
+        originalItem,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    } else if (operation === 'create') {
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'create',
+        inputData,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    } else {
+      // operation === 'update'
+      await fieldConfig.hooks.afterOperation({
+        listKey,
+        fieldKey,
+        operation: 'update',
+        inputData,
+        originalItem,
+        item,
+        resolvedData,
+        context,
+      } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
+    }
+  }
+}
+
+/**
  * Validate field-level validation rules using Zod
  * Checks isRequired, length constraints, etc.
  */

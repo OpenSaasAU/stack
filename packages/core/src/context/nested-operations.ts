@@ -4,53 +4,11 @@ import { checkAccess, filterWritableFields, getRelatedListConfig } from '../acce
 import {
   executeResolveInput,
   executeValidate,
+  executeFieldResolveInputHooks,
   validateFieldRules,
   ValidationError,
 } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
-
-/**
- * Execute field-level resolveInput hooks
- * Allows fields to transform their input values before database write
- */
-async function executeFieldResolveInputHooks(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  inputData: Record<string, any>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  resolvedData: Record<string, any>,
-  fields: Record<string, FieldConfig>,
-  operation: 'create' | 'update',
-  context: AccessContext,
-  listKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  item?: any,
-): Promise<Record<string, unknown>> {
-  let result = { ...resolvedData }
-
-  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if field not in data
-    if (!(fieldKey in result)) continue
-
-    // Skip if no hooks defined
-    if (!fieldConfig.hooks?.resolveInput) continue
-
-    // Execute field hook
-    const transformedValue = await fieldConfig.hooks.resolveInput({
-      listKey,
-      fieldKey,
-      operation,
-      inputData,
-      item,
-      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
-      context,
-    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
-
-    // Create new object with updated field to avoid mutating the passed reference
-    result = { ...result, [fieldKey]: transformedValue }
-  }
-
-  return result
-}
 
 /**
  * Check if a field config is a relationship field
