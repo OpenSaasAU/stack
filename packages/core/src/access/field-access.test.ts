@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterWritableFields } from './engine.js'
+import { filterWritableFields } from './field-access.js'
 
 describe('filterWritableFields', () => {
   it('should filter out foreign key fields when their corresponding relationship field exists', async () => {

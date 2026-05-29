@@ -7,7 +7,7 @@ import {
   filterWritableFields,
   isBoolean,
   isPrismaFilter,
-} from '../src/access/engine.js'
+} from '../src/access/index.js'
 import type { AccessControl, FieldAccess, AccessContext } from '../src/access/types.js'
 
 describe('Access Control', () => {
