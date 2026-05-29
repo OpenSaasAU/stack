@@ -32,3 +32,9 @@ runs:
     - name: Install Turbo
       shell: bash
       run: pnpm add -g turbo
+
+    # Back Turbo's remote cache with the GitHub Actions cache (no secrets required).
+    # Sets TURBO_API/TURBO_TOKEN/TURBO_TEAM env for subsequent turbo commands so
+    # build outputs are restored across runs and shared between the test and e2e jobs.
+    - name: Setup Turbo remote cache
+      uses: rharkor/caching-for-turbo@v2.4.2
