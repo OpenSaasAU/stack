@@ -98,6 +98,8 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+      // Skip non-relationship fields and virtual relationships (which contribute
+      // no database columns and therefore no Prisma schema lines).
       if (fieldConfig.type !== 'relationship' || fieldConfig.virtual) continue
 
       const relField = fieldConfig as RelationshipField
@@ -161,7 +163,7 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     }
 
     // Add relationship fields (lines + foreign key indexes) from the precomputed results
-    const foreignKeyIndexes: PrismaRelationResult['foreignKeyIndex'][] = []
+    const foreignKeyIndexes: NonNullable<PrismaRelationResult['foreignKeyIndex']>[] = []
     for (const fieldName of relationshipFieldNames) {
       const result = relationResults.get(`${listName}.${fieldName}`)!
       lines.push(...result.modelLines)
@@ -184,7 +186,6 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
     // Add indexes for foreign key fields
     for (const index of foreignKeyIndexes) {
-      if (!index) continue
       if (index.indexType === 'unique') {
         lines.push(`  @@unique([${index.foreignKeyField}])`)
       } else if (index.indexType === true) {
