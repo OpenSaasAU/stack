@@ -3,13 +3,15 @@
 '@opensaas/stack-ui': minor
 ---
 
-Add `getUIProps` to field builders, eliminating type-based branching in `FieldRenderer`
+Add `getUIProps` to field builders and eliminate type-based branching in `FieldRenderer`
 
-`BaseFieldConfig` now has an optional `getUIProps(context: UIPropsContext) => Record<string, unknown>` method. All built-in field builders implement it, and `FieldRenderer` delegates to it instead of checking `fieldConfig.type`.
+`BaseFieldConfig` now has an optional `getUIProps(context: UIPropsContext) => Record<string, unknown>` method. All built-in field builders implement it.
 
-**For third-party field packages:** no changes required. Fields that omit `getUIProps` continue to work via a data-presence fallback in `FieldRenderer`.
+`FieldRenderer` no longer checks `fieldConfig.type` to decide which props to pass. Instead it uses data-presence checks on the serialised field config (inspects `fieldConfig.options` for select fields, `fieldConfig.ref` for relationship fields, etc.) — the same approach as `getUIProps`, but safe across RSC boundaries where functions are stripped.
 
-**For custom field builders that need to pass extra UI props**, add `getUIProps` to your field config:
+**For third-party field packages:** no changes required. `FieldRenderer` works from the serialised config's data properties, not from `fieldConfig.type`.
+
+**For custom field builders**, you can optionally implement `getUIProps` for code that works with the original (non-serialised) field config:
 
 ```typescript
 import type { UIPropsContext } from '@opensaas/stack-core'

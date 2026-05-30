@@ -60,12 +60,8 @@ function FieldRendererInner({
 
   const context: UIPropsContext = { mode, relationshipItems, relationshipLoading, basePath }
 
-  // Delegate to getUIProps when available (set by field builders).
-  // Falls back to a data-presence extraction when the function was stripped
-  // at an RSC boundary — no branching on fieldConfig.type in either path.
-  const specificProps: Record<string, unknown> = fieldConfig.getUIProps
-    ? fieldConfig.getUIProps(context)
-    : buildFallbackUIProps(fieldConfig, context)
+  // Derive field-type-specific props from data-presence checks — no branching on fieldConfig.type.
+  const specificProps: Record<string, unknown> = buildFallbackUIProps(fieldConfig, context)
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
@@ -78,9 +74,8 @@ function FieldRendererInner({
 }
 
 /**
- * Derive field-specific UI props from the serialised field config when
- * `getUIProps` was stripped at an RSC boundary. Uses data-presence checks
- * rather than `fieldConfig.type` comparisons.
+ * Derive field-specific UI props from the serialised field config using
+ * data-presence checks rather than `fieldConfig.type` comparisons.
  */
 function buildFallbackUIProps(
   fieldConfig: SerializableFieldConfig,

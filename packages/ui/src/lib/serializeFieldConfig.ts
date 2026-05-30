@@ -1,4 +1,4 @@
-import type { FieldConfig, UIPropsContext } from '@opensaas/stack-core'
+import type { FieldConfig } from '@opensaas/stack-core'
 import type { ComponentType } from 'react'
 
 /**
@@ -23,12 +23,6 @@ export type SerializableFieldConfig = {
     fieldType?: string
     [key: string]: unknown
   }
-  /**
-   * Compute field-type-specific UI props from runtime context.
-   * Populated during serialization when the original FieldConfig has `getUIProps`.
-   * May be absent when the config crossed an RSC boundary (functions are stripped).
-   */
-  getUIProps?: (context: UIPropsContext) => Record<string, unknown>
 }
 
 /**
@@ -71,11 +65,6 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   // Extract ref for relationship fields
   if ('ref' in fieldConfig && fieldConfig.ref !== undefined) {
     config.ref = fieldConfig.ref as string
-  }
-
-  // Copy getUIProps if the field builder provides it
-  if (typeof fieldConfig.getUIProps === 'function') {
-    config.getUIProps = fieldConfig.getUIProps
   }
 
   return config
