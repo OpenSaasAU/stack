@@ -57,41 +57,52 @@ function FieldRendererInner({
     mode,
   }
 
-  // Add field-type-specific props
-  const specificProps: Record<string, unknown> = {}
-
-  if (fieldConfig.type === 'select' && 'options' in fieldConfig && fieldConfig.options) {
-    specificProps.options = fieldConfig.options.map(
-      (opt: string | { label: string; value: string }) =>
-        typeof opt === 'string' ? { label: opt, value: opt } : opt,
-    )
-  }
-
-  if (fieldConfig.type === 'password') {
-    specificProps.showConfirm = mode === 'edit'
-  }
-
-  if (fieldConfig.type === 'relationship') {
-    specificProps.items = relationshipItems
-    specificProps.isLoading = relationshipLoading
-    specificProps.many = fieldConfig.many || false
-
-    // Extract related list key from ref (format: 'ListName.fieldName')
-    if (fieldConfig.ref) {
-      const [relatedListName] = fieldConfig.ref.split('.')
-      specificProps.relatedListKey = getUrlKey(relatedListName)
-      specificProps.basePath = basePath
-    }
-  }
+  // Derive field-type-specific props from data-presence checks — no branching on fieldConfig.type.
+  const specificProps: Record<string, unknown> = buildFallbackUIProps(
+    fieldConfig,
+    relationshipItems,
+    relationshipLoading,
+    basePath,
+  )
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
-    const { _component, _fieldType, ...uiOptions } = fieldConfig.ui
+    const { component: _component, fieldType: _fieldType, ...uiOptions } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
   }
 
   const allProps = { ...baseProps, ...specificProps }
   return <Component {...allProps} />
+}
+
+/**
+ * Derive field-specific UI props from the serialised field config using
+ * data-presence checks rather than `fieldConfig.type` comparisons.
+ */
+function buildFallbackUIProps(
+  fieldConfig: SerializableFieldConfig,
+  relationshipItems: Array<{ id: string; label: string }> | undefined,
+  relationshipLoading: boolean | undefined,
+  basePath: string | undefined,
+): Record<string, unknown> {
+  const props: Record<string, unknown> = {}
+
+  // Select options — only present on select fields
+  if (fieldConfig.options) {
+    props.options = fieldConfig.options
+  }
+
+  // Relationship props — only present on relationship fields
+  if (fieldConfig.ref) {
+    const [relatedListName] = fieldConfig.ref.split('.')
+    props.relatedListKey = getUrlKey(relatedListName ?? '')
+    props.many = fieldConfig.many || false
+    props.items = relationshipItems
+    props.isLoading = relationshipLoading
+    props.basePath = basePath
+  }
+
+  return props
 }
 
 /**
