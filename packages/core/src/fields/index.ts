@@ -16,6 +16,7 @@ import type {
   PrismaRelationResult,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
+import { getUrlKey } from '../lib/case-utils.js'
 
 /**
  * Format field name for display in error messages
@@ -112,6 +113,7 @@ export function text<
         optional: !isRequired,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -182,6 +184,7 @@ export function integer<
         optional: !isRequired,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -348,6 +351,7 @@ export function decimal<
         },
       ]
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -394,6 +398,7 @@ export function checkbox<
         optional: options?.defaultValue === undefined,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -459,6 +464,7 @@ export function timestamp<
         optional: !hasDefault,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -584,6 +590,7 @@ export function calendarDay<
         optional: isNullable,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -756,6 +763,9 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
         optional: !isRequired,
       }
     },
+    getUIProps: ({ mode } = {}) => ({
+      showConfirm: mode === 'edit',
+    }),
   }
 }
 
@@ -865,6 +875,11 @@ export function select<
         optional: !options.validation?.isRequired || options.defaultValue !== undefined,
       }
     },
+    getUIProps: () => ({
+      options: options.options.map((opt: string | { label: string; value: string }) =>
+        typeof opt === 'string' ? { label: opt, value: opt } : opt,
+      ),
+    }),
   }
 }
 
@@ -1195,6 +1210,17 @@ export function relationship<
     config: OpenSaasConfig,
   ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
 
+  field.getUIProps = ({ relationshipItems, relationshipLoading, basePath } = {}) => {
+    const [relatedListName] = options.ref.split('.')
+    return {
+      items: relationshipItems,
+      isLoading: relationshipLoading,
+      many: options.many || false,
+      relatedListKey: getUrlKey(relatedListName ?? ''),
+      basePath,
+    }
+  }
+
   return field
 }
 
@@ -1300,6 +1326,7 @@ export function json<
         optional: !isRequired,
       }
     },
+    getUIProps: () => ({}),
   }
 }
 
@@ -1465,5 +1492,6 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     getZodSchema: () => {
       return z.never()
     },
+    getUIProps: () => ({}),
   }
 }

@@ -4,6 +4,7 @@ import * as React from 'react'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
+import type { UIPropsContext } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 
 export interface FieldRendererProps {
@@ -57,41 +58,57 @@ function FieldRendererInner({
     mode,
   }
 
-  // Add field-type-specific props
-  const specificProps: Record<string, unknown> = {}
+  const context: UIPropsContext = { mode, relationshipItems, relationshipLoading, basePath }
 
-  if (fieldConfig.type === 'select' && 'options' in fieldConfig && fieldConfig.options) {
-    specificProps.options = fieldConfig.options.map(
-      (opt: string | { label: string; value: string }) =>
-        typeof opt === 'string' ? { label: opt, value: opt } : opt,
-    )
-  }
-
-  if (fieldConfig.type === 'password') {
-    specificProps.showConfirm = mode === 'edit'
-  }
-
-  if (fieldConfig.type === 'relationship') {
-    specificProps.items = relationshipItems
-    specificProps.isLoading = relationshipLoading
-    specificProps.many = fieldConfig.many || false
-
-    // Extract related list key from ref (format: 'ListName.fieldName')
-    if (fieldConfig.ref) {
-      const [relatedListName] = fieldConfig.ref.split('.')
-      specificProps.relatedListKey = getUrlKey(relatedListName)
-      specificProps.basePath = basePath
-    }
-  }
+  // Delegate to getUIProps when available (set by field builders).
+  // Falls back to a data-presence extraction when the function was stripped
+  // at an RSC boundary — no branching on fieldConfig.type in either path.
+  const specificProps: Record<string, unknown> = fieldConfig.getUIProps
+    ? fieldConfig.getUIProps(context)
+    : buildFallbackUIProps(fieldConfig, context)
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
-    const { _component, _fieldType, ...uiOptions } = fieldConfig.ui
+    const { component: _component, fieldType: _fieldType, ...uiOptions } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
   }
 
   const allProps = { ...baseProps, ...specificProps }
   return <Component {...allProps} />
+}
+
+/**
+ * Derive field-specific UI props from the serialised field config when
+ * `getUIProps` was stripped at an RSC boundary. Uses data-presence checks
+ * rather than `fieldConfig.type` comparisons.
+ */
+function buildFallbackUIProps(
+  fieldConfig: SerializableFieldConfig,
+  { mode, relationshipItems, relationshipLoading, basePath }: UIPropsContext,
+): Record<string, unknown> {
+  const props: Record<string, unknown> = {}
+
+  // Select options — only present on select fields
+  if (fieldConfig.options) {
+    props.options = fieldConfig.options.map((opt: string | { label: string; value: string }) =>
+      typeof opt === 'string' ? { label: opt, value: opt } : opt,
+    )
+  }
+
+  // Relationship props — only present on relationship fields
+  if (fieldConfig.ref) {
+    const [relatedListName] = fieldConfig.ref.split('.')
+    props.relatedListKey = getUrlKey(relatedListName ?? '')
+    props.many = fieldConfig.many || false
+    props.items = relationshipItems
+    props.isLoading = relationshipLoading
+    props.basePath = basePath
+  }
+
+  // Password confirm — showConfirm is determined by mode; harmless for other field types
+  props.showConfirm = mode === 'edit'
+
+  return props
 }
 
 /**

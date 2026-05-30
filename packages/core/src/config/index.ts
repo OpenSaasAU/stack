@@ -172,4 +172,5 @@ export type {
   FieldBeforeOperationHookArgs,
   FieldAfterOperationHookArgs,
   FieldResolveOutputHookArgs,
+  UIPropsContext,
 } from './types.js'
