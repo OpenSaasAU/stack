@@ -22,9 +22,15 @@ export function myField(options) {
       myOption: options.myOption,
     }),
     // existing methods…
-    getZodSchema: (fieldName, operation) => { /* … */ },
-    getPrismaType: (fieldName) => { /* … */ },
-    getTypeScriptType: () => { /* … */ },
+    getZodSchema: (fieldName, operation) => {
+      /* … */
+    },
+    getPrismaType: (fieldName) => {
+      /* … */
+    },
+    getTypeScriptType: () => {
+      /* … */
+    },
   }
 }
 ```

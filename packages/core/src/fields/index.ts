@@ -875,11 +875,7 @@ export function select<
         optional: !options.validation?.isRequired || options.defaultValue !== undefined,
       }
     },
-    getUIProps: () => ({
-      options: options.options.map((opt: string | { label: string; value: string }) =>
-        typeof opt === 'string' ? { label: opt, value: opt } : opt,
-      ),
-    }),
+    getUIProps: () => ({ options: options.options }),
   }
 }
 
@@ -1216,7 +1212,7 @@ export function relationship<
       items: relationshipItems,
       isLoading: relationshipLoading,
       many: options.many || false,
-      relatedListKey: getUrlKey(relatedListName ?? ''),
+      relatedListKey: getUrlKey(relatedListName!),
       basePath,
     }
   }

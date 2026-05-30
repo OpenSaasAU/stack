@@ -90,9 +90,7 @@ function buildFallbackUIProps(
 
   // Select options — only present on select fields
   if (fieldConfig.options) {
-    props.options = fieldConfig.options.map((opt: string | { label: string; value: string }) =>
-      typeof opt === 'string' ? { label: opt, value: opt } : opt,
-    )
+    props.options = fieldConfig.options
   }
 
   // Relationship props — only present on relationship fields
@@ -105,8 +103,10 @@ function buildFallbackUIProps(
     props.basePath = basePath
   }
 
-  // Password confirm — showConfirm is determined by mode; harmless for other field types
-  props.showConfirm = mode === 'edit'
+  // Password confirm — only set for non-select, non-relationship fields
+  if (!fieldConfig.options && !fieldConfig.ref) {
+    props.showConfirm = mode === 'edit'
+  }
 
   return props
 }
