@@ -337,17 +337,6 @@ export type ResultExtensionConfig = {
   compute?: string
 }
 
-/**
- * Runtime context passed to `getUIProps` in field builders.
- * Provides the dynamic information a field may need to produce its UI props.
- */
-export type UIPropsContext = {
-  mode?: 'read' | 'edit'
-  relationshipItems?: Array<{ id: string; label: string }>
-  relationshipLoading?: boolean
-  basePath?: string
-}
-
 export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   type: string
   access?: FieldAccess<
@@ -496,13 +485,6 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     type: string
     optional: boolean
   }
-  /**
-   * Get UI props to pass to the rendered field component.
-   * Replaces inline `fieldConfig.type === '...'` branching in FieldRenderer.
-   * Fields that need no extra props return `{}`.
-   * The method is optional so third-party fields that don't implement it still work via the default fallback in FieldRenderer.
-   */
-  getUIProps?: (context: UIPropsContext) => Record<string, unknown>
   /**
    * Get TypeScript imports needed for this field's type
    * @returns Array of import statements needed for the generated types file

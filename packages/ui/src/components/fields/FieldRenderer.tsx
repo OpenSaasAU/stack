@@ -4,7 +4,6 @@ import * as React from 'react'
 import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
-import type { UIPropsContext } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 
 export interface FieldRendererProps {
@@ -58,10 +57,13 @@ function FieldRendererInner({
     mode,
   }
 
-  const context: UIPropsContext = { mode, relationshipItems, relationshipLoading, basePath }
-
   // Derive field-type-specific props from data-presence checks — no branching on fieldConfig.type.
-  const specificProps: Record<string, unknown> = buildFallbackUIProps(fieldConfig, context)
+  const specificProps: Record<string, unknown> = buildFallbackUIProps(
+    fieldConfig,
+    relationshipItems,
+    relationshipLoading,
+    basePath,
+  )
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
@@ -79,7 +81,9 @@ function FieldRendererInner({
  */
 function buildFallbackUIProps(
   fieldConfig: SerializableFieldConfig,
-  { mode, relationshipItems, relationshipLoading, basePath }: UIPropsContext,
+  relationshipItems: Array<{ id: string; label: string }> | undefined,
+  relationshipLoading: boolean | undefined,
+  basePath: string | undefined,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {}
 
@@ -96,11 +100,6 @@ function buildFallbackUIProps(
     props.items = relationshipItems
     props.isLoading = relationshipLoading
     props.basePath = basePath
-  }
-
-  // Password confirm — only set for non-select, non-relationship fields
-  if (!fieldConfig.options && !fieldConfig.ref) {
-    props.showConfirm = mode === 'edit'
   }
 
   return props

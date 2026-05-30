@@ -50,8 +50,6 @@ export type {
   FieldBeforeOperationHookArgs,
   FieldAfterOperationHookArgs,
   FieldResolveOutputHookArgs,
-  // UI
-  UIPropsContext,
 } from './config/index.js'
 
 // Access control
