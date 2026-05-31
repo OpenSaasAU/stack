@@ -17,6 +17,24 @@ import type {
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 
+// Field-config types live here, alongside the builders that produce them.
+// (The umbrella `FieldConfig` and authoring `BaseFieldConfig` stay on the root
+// and `/extend` entry points respectively.)
+export type {
+  TextField,
+  IntegerField,
+  DecimalField,
+  CheckboxField,
+  TimestampField,
+  CalendarDayField,
+  PasswordField,
+  SelectField,
+  RelationshipField,
+  JsonField,
+  VirtualField,
+  PrismaRelationResult,
+} from '../config/types.js'
+
 /**
  * Format field name for display in error messages
  */

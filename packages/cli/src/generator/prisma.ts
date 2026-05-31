@@ -1,9 +1,5 @@
-import type {
-  OpenSaasConfig,
-  FieldConfig,
-  RelationshipField,
-  PrismaRelationResult,
-} from '@opensaas/stack-core'
+import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
+import type { RelationshipField, PrismaRelationResult } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
 import * as path from 'path'
 

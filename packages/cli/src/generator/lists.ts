@@ -6,16 +6,18 @@ import * as path from 'path'
  * Map a field type string to the TypeScript field-config type and the
  * `@opensaas/stack-core` entry point it is exported from.
  *
- * Built-in field types live on the root entry point. Unknown field types
- * (e.g. those contributed by plugins) fall back to the generic
- * `BaseFieldConfig`, which is exported from the `/extend` authoring surface.
+ * Built-in field types and their config types live on the `/fields` entry
+ * point. Unknown field types (e.g. those contributed by plugins) fall back to
+ * the generic `BaseFieldConfig`, exported from the `/extend` authoring surface.
  */
 function getFieldTypeImport(fieldType: string): { module: string; typeName: string } {
   const typeMap: Record<string, string> = {
     text: 'TextField',
     integer: 'IntegerField',
+    decimal: 'DecimalField',
     checkbox: 'CheckboxField',
     timestamp: 'TimestampField',
+    calendarDay: 'CalendarDayField',
     password: 'PasswordField',
     select: 'SelectField',
     relationship: 'RelationshipField',
@@ -25,7 +27,7 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
 
   const typeName = typeMap[fieldType]
   if (typeName) {
-    return { module: '@opensaas/stack-core', typeName }
+    return { module: '@opensaas/stack-core/fields', typeName }
   }
 
   return { module: '@opensaas/stack-core/extend', typeName: 'BaseFieldConfig' }

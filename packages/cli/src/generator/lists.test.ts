@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { generateListsNamespace } from './lists.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { text, integer, relationship, checkbox } from '@opensaas/stack-core/fields'
+import {
+  text,
+  integer,
+  relationship,
+  checkbox,
+  decimal,
+  calendarDay,
+  select,
+  json,
+} from '@opensaas/stack-core/fields'
 
 describe('Lists Namespace Generator', () => {
   describe('generateListsNamespace', () => {
@@ -329,6 +338,65 @@ describe('Lists Namespace Generator', () => {
       // Verify the List type uses ListConfig with TypeInfo
       expect(lists).toContain(
         "export type Post = import('@opensaas/stack-core').ListConfig<Lists.Post.TypeInfo>",
+      )
+    })
+
+    it('emits built-in field-config types from the /fields entry point', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Thing: {
+            fields: {
+              name: text(),
+              count: integer(),
+              price: decimal(),
+              active: checkbox(),
+              date: calendarDay(),
+              status: select({ options: [{ label: 'A', value: 'a' }] }),
+              meta: json(),
+              owner: relationship({ ref: 'User' }),
+            },
+          },
+        },
+      }
+
+      const lists = generateListsNamespace(config)
+
+      // Each built-in field type resolves from /fields (not the root barrel),
+      // including decimal/calendarDay which were previously missing from the map.
+      expect(lists).toContain(
+        "name: import('@opensaas/stack-core/fields').TextField<Lists.Thing.TypeInfo>",
+      )
+      expect(lists).toContain(
+        "price: import('@opensaas/stack-core/fields').DecimalField<Lists.Thing.TypeInfo>",
+      )
+      expect(lists).toContain(
+        "date: import('@opensaas/stack-core/fields').CalendarDayField<Lists.Thing.TypeInfo>",
+      )
+      expect(lists).toContain(
+        "owner: import('@opensaas/stack-core/fields').RelationshipField<Lists.Thing.TypeInfo>",
+      )
+      // No built-in field should fall back to the generic BaseFieldConfig.
+      expect(lists).not.toContain('BaseFieldConfig')
+    })
+
+    it('falls back to BaseFieldConfig from /extend for unknown (plugin) field types', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Doc: {
+            fields: {
+              // A field type the generator does not map (e.g. a plugin field).
+              embedding: { type: 'embedding' } as OpenSaasConfig['lists'][string]['fields'][string],
+            },
+          },
+        },
+      }
+
+      const lists = generateListsNamespace(config)
+
+      expect(lists).toContain(
+        "embedding: import('@opensaas/stack-core/extend').BaseFieldConfig<Lists.Doc.TypeInfo>",
       )
     })
   })
