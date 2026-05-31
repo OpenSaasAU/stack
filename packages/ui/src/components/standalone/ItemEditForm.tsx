@@ -1,12 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
+import { useItemForm, transformInitialData } from '../../lib/useItemForm.js'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
@@ -52,99 +53,31 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
 
   // Apply valueForClientSerialization transformations to initial data
-  const transformedInitialData = useMemo(() => {
-    const transformed = { ...initialData }
-    for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-      const fieldConfigAny = fieldConfig as { ui?: Record<string, unknown> }
-      if (
-        fieldConfigAny.ui?.valueForClientSerialization &&
-        typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
-      ) {
-        const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
-          value: unknown
-        }) => unknown
-        transformed[fieldName as keyof TData] = transformer({
-          value: transformed[fieldName as keyof TData],
-        }) as TData[keyof TData]
-      }
-    }
-    return transformed
-  }, [initialData, fields])
-
-  const [isPending, setIsPending] = useState(false)
-  const [formData, setFormData] = useState<TData>(transformedInitialData)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [generalError, setGeneralError] = useState<string | null>(null)
-
-  const handleFieldChange = (fieldName: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value }) as TData)
-    // Clear error for this field when user starts typing
-    if (errors[fieldName]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev }
-        delete newErrors[fieldName]
-        return newErrors
-      })
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrors({})
-    setGeneralError(null)
-    setIsPending(true)
-
-    try {
-      // Transform relationship fields to Prisma format
-      // Filter out password fields with isSet objects (unchanged passwords)
-      const transformedData: Record<string, unknown> = {}
-      for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
-        const fieldConfig = serializedFields[fieldName]
-
-        // Skip password fields that have { isSet: boolean } value (not being changed)
-        if (typeof value === 'object' && value !== null && 'isSet' in value) {
-          continue
-        }
-
-        // Transform relationship fields
-        if (fieldConfig?.type === 'relationship') {
-          if (fieldConfig.many) {
-            // Many relationship: use connect format
-            if (Array.isArray(value) && value.length > 0) {
-              transformedData[fieldName] = {
-                connect: value.map((id: string) => ({ id })),
-              }
-            }
-          } else {
-            // Single relationship: use connect format
-            if (value) {
-              transformedData[fieldName] = {
-                connect: { id: value },
-              }
-            }
-          }
-        } else {
-          // Non-relationship field: pass through
-          transformedData[fieldName] = value
-        }
-      }
-
-      const result = await onSubmit(transformedData as TData)
-
-      if (!result.success) {
-        setGeneralError(result.error || 'Failed to update item')
-      }
-    } catch (error: unknown) {
-      setGeneralError((error as Error).message || 'Failed to update item')
-    } finally {
-      setIsPending(false)
-    }
-  }
-
-  // Filter out system fields
-  const editableFields = Object.entries(serializedFields).filter(
-    ([key]) => !['id', 'createdAt', 'updatedAt'].includes(key),
+  const transformedInitialData = useMemo(
+    () => transformInitialData(fields, initialData as Record<string, unknown>),
+    [initialData, fields],
   )
+
+  const {
+    formData,
+    errors,
+    generalError,
+    isPending,
+    editableFields,
+    handleFieldChange,
+    handleSubmit,
+  } = useItemForm({
+    fields: serializedFields,
+    initialData: transformedInitialData,
+    mode: 'update',
+    errorFallback: 'Failed to update item',
+    onSubmit: async (data) => {
+      const result = await onSubmit(data as TData)
+      return result.success
+        ? { success: true }
+        : { success: false, error: result.error || 'Failed to update item' }
+    },
+  })
 
   return (
     <form onSubmit={handleSubmit} className={className}>

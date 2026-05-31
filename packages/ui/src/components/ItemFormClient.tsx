@@ -9,6 +9,7 @@ import { LoadingSpinner } from './LoadingSpinner.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 
 export interface ItemFormClientProps {
   listKey: string
@@ -23,8 +24,29 @@ export interface ItemFormClientProps {
 }
 
 /**
- * Client component for interactive form
- * Handles form state, validation, and submission
+ * Normalise a server action's response into the form engine's result shape.
+ * Supports both the `{ success, error, fieldErrors }` envelope and the legacy
+ * "truthy data = success, null = access denied" convention.
+ */
+function toSubmitResult(result: unknown, deniedMessage: string): ItemFormSubmitResult {
+  if (result && typeof result === 'object' && 'success' in result) {
+    const r = result as
+      | { success: true; data: unknown }
+      | { success: false; error: string; fieldErrors?: Record<string, string> }
+    return r.success
+      ? { success: true }
+      : { success: false, error: r.error, fieldErrors: r.fieldErrors }
+  }
+  if (result) return { success: true }
+  return { success: false, error: deniedMessage }
+}
+
+/**
+ * Client component for the AdminUI item form.
+ *
+ * Shares the form state/transform/error/pending logic with the standalone
+ * forms via `useItemForm`; this component only adapts submission to the
+ * AdminUI server action + router navigation, and adds the delete flow.
  */
 export function ItemFormClient({
   listKey,
@@ -38,149 +60,57 @@ export function ItemFormClient({
   relationshipData = {},
 }: ItemFormClientProps) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-  const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [generalError, setGeneralError] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  // Separate transition for delete (not a form submit, so outside the engine).
+  const [isDeleting, startDeleteTransition] = useTransition()
 
-  const handleFieldChange = (fieldName: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value }))
-    // Clear error for this field when user starts typing
-    if (errors[fieldName]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev }
-        delete newErrors[fieldName]
-        return newErrors
-      })
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrors({})
-    setGeneralError(null)
-
-    startTransition(async () => {
-      // Transform relationship fields to Prisma format
-      // Filter out password fields with isSet objects (unchanged passwords)
-      // File/Image fields: pass File objects through (Next.js will serialize them)
-      const transformedData: Record<string, unknown> = {}
-      for (const [fieldName, value] of Object.entries(formData)) {
-        const fieldConfig = fields[fieldName]
-
-        // Skip password fields that have { isSet: boolean } value (not being changed)
-        if (typeof value === 'object' && value !== null && 'isSet' in value) {
-          continue
-        }
-
-        // Transform relationship fields - check discriminated union type
-        const fieldAny = fieldConfig as { type: string; many?: boolean }
-        if (fieldAny?.type === 'relationship') {
-          if (fieldAny.many) {
-            // Many relationship: use connect format
-            if (Array.isArray(value) && value.length > 0) {
-              transformedData[fieldName] = {
-                connect: value.map((id: string) => ({ id })),
-              }
-            }
-          } else {
-            // Single relationship: use connect format
-            if (value) {
-              transformedData[fieldName] = {
-                connect: { id: value },
-              }
-            }
-          }
-        } else {
-          // Non-relationship field: pass through (including File objects for file/image fields)
-          // File objects will be serialized by Next.js server action
-          transformedData[fieldName] = value
-        }
-      }
-
+  const {
+    formData,
+    errors,
+    generalError,
+    isPending,
+    editableFields,
+    handleFieldChange,
+    handleSubmit,
+    setGeneralError,
+  } = useItemForm({
+    fields,
+    initialData,
+    mode: mode === 'create' ? 'create' : 'update',
+    errorFallback: 'Access denied or operation failed',
+    onSubmit: async (data, action) => {
       const result =
-        mode === 'create'
-          ? await serverAction({
-              listKey,
-              action: 'create',
-              data: transformedData,
-            })
-          : await serverAction({
-              listKey,
-              action: 'update',
-              id: itemId!,
-              data: transformedData,
-            })
+        action === 'create'
+          ? await serverAction({ listKey, action: 'create', data })
+          : await serverAction({ listKey, action: 'update', id: itemId!, data })
 
-      // Check if result has the new format with success/error fields
-      if (result && typeof result === 'object' && 'success' in result) {
-        const actionResult = result as
-          | { success: true; data: unknown }
-          | { success: false; error: string; fieldErrors?: Record<string, string> }
-
-        if (actionResult.success) {
-          // Navigate back to list view
-          router.push(`${basePath}/${urlKey}`)
-          router.refresh()
-        } else {
-          // Handle error response
-          if (actionResult.fieldErrors) {
-            setErrors(actionResult.fieldErrors)
-          }
-          setGeneralError(actionResult.error)
-        }
-      } else if (result) {
-        // Legacy format: result is the data itself
+      const normalized = toSubmitResult(result, 'Access denied or operation failed')
+      if (normalized.success) {
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
-      } else {
-        // null result means access denied
-        setGeneralError('Access denied or operation failed')
       }
-    })
-  }
+      return normalized
+    },
+  })
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!itemId) return
-
     setGeneralError(null)
     setShowDeleteConfirm(false)
 
-    startTransition(async () => {
-      const result = await serverAction({
-        listKey,
-        action: 'delete',
-        id: itemId,
-      })
-
-      // Check if result has the new format with success/error fields
-      if (result && typeof result === 'object' && 'success' in result) {
-        const actionResult = result as
-          | { success: true; data: unknown }
-          | { success: false; error: string; fieldErrors?: Record<string, string> }
-
-        if (actionResult.success) {
-          router.push(`${basePath}/${urlKey}`)
-          router.refresh()
-        } else {
-          setGeneralError(actionResult.error)
-        }
-      } else if (result) {
-        // Legacy format: result is the data itself
+    startDeleteTransition(async () => {
+      const result = await serverAction({ listKey, action: 'delete', id: itemId })
+      const normalized = toSubmitResult(result, 'Access denied or failed to delete item')
+      if (normalized.success) {
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       } else {
-        // null result means access denied
-        setGeneralError('Access denied or failed to delete item')
+        setGeneralError(normalized.error)
       }
     })
   }
 
-  // Filter out system fields
-  const editableFields = Object.entries(fields).filter(
-    ([key]) => !['id', 'createdAt', 'updatedAt'].includes(key),
-  )
+  const busy = isPending || isDeleting
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -201,7 +131,7 @@ export function ItemFormClient({
             value={formData[fieldName]}
             onChange={(value) => handleFieldChange(fieldName, value)}
             error={errors[fieldName]}
-            disabled={isPending}
+            disabled={busy}
             mode="edit"
             relationshipItems={relationshipData[fieldName] || []}
             relationshipLoading={false}
@@ -213,7 +143,7 @@ export function ItemFormClient({
       {/* Form Actions */}
       <div className="flex items-center justify-between pt-6 border-t border-border">
         <div className="flex gap-3">
-          <Button type="submit" disabled={isPending} className="gap-2">
+          <Button type="submit" disabled={busy} className="gap-2">
             {isPending && (
               <LoadingSpinner
                 size="sm"
@@ -226,7 +156,7 @@ export function ItemFormClient({
             type="button"
             variant="secondary"
             onClick={() => router.push(`${basePath}/${urlKey}`)}
-            disabled={isPending}
+            disabled={busy}
           >
             Cancel
           </Button>
@@ -238,7 +168,7 @@ export function ItemFormClient({
             type="button"
             variant="destructive"
             onClick={() => setShowDeleteConfirm(true)}
-            disabled={isPending}
+            disabled={busy}
           >
             Delete
           </Button>
