@@ -11,8 +11,7 @@ This document summarizes the complete better-auth integration for the OpenSaas S
 **Exports:**
 
 - **Main** (`@opensaas/stack-auth`):
-  - `withAuth()` - Config wrapper that adds auth lists
-  - `authConfig()` - Auth configuration builder
+  - `authPlugin()` - Plugin added to `config({ plugins: [...] })` that adds auth lists and configures Better-auth
   - `getAuthLists()` - Get all auth list definitions
 
 - **Server** (`@opensaas/stack-auth/server`):
@@ -112,20 +111,21 @@ A complete working example showing:
 
 ```typescript
 // opensaas.config.ts
-import { withAuth, authConfig } from '@opensaas/stack-auth'
+import { config } from '@opensaas/stack-core'
+import { authPlugin } from '@opensaas/stack-auth'
 
-export default withAuth(
-  config({
-    db: { provider: 'sqlite', url: 'file:./dev.db' },
-    lists: {
-      /* your custom lists */
-    },
-  }),
-  authConfig({
-    emailAndPassword: { enabled: true },
-    sessionFields: ['userId', 'email', 'name'],
-  }),
-)
+export default config({
+  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  lists: {
+    /* your custom lists */
+  },
+  plugins: [
+    authPlugin({
+      emailAndPassword: { enabled: true },
+      sessionFields: ['userId', 'email', 'name'],
+    }),
+  ],
+})
 ```
 
 ### Step 2: Generate
@@ -194,7 +194,7 @@ No manual User model, no manual session handling, no manual auth routes. Everyth
 ### 2. Type-Safe Sessions
 
 ```typescript
-authConfig({
+authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'],
 })
 
@@ -205,7 +205,7 @@ authConfig({
 ### 3. Extensible User Model
 
 ```typescript
-authConfig({
+authPlugin({
   extendUserList: {
     fields: {
       role: select({ options: [...] }),
@@ -236,7 +236,7 @@ All forms accept custom props and callbacks:
 Configure what you need:
 
 ```typescript
-authConfig({
+authPlugin({
   emailAndPassword: { enabled: true },
   emailVerification: { enabled: true },
   passwordReset: { enabled: true },
@@ -325,7 +325,8 @@ Potential additions:
 packages/auth/
 ├── src/
 │   ├── config/
-│   │   ├── index.ts        # withAuth(), authConfig()
+│   │   ├── index.ts        # normalizeAuthConfig()
+│   │   ├── plugin.ts       # authPlugin()
 │   │   └── types.ts        # Auth config types
 │   ├── lists/
 │   │   └── index.ts        # User, Session, Account, Verification
@@ -366,7 +367,7 @@ Better-auth supports cookie caching to reduce database queries:
 
 ```typescript
 // Future enhancement
-authConfig({
+authPlugin({
   session: {
     cookieCaching: true, // Validate at cookie level
   },

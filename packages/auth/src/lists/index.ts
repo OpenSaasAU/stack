@@ -240,7 +240,7 @@ export function createVerificationList(): ListConfig<any> {
 
 /**
  * Get all auth lists required by better-auth
- * This is the main export used by withAuth()
+ * This is the main export used by authPlugin()
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function getAuthLists(userConfig?: ExtendUserListConfig): Record<string, ListConfig<any>> {

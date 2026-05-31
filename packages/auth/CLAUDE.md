@@ -13,10 +13,9 @@ Adds complete authentication to OpenSaas Stack apps with minimal configuration. 
 
 ## Key Files & Exports
 
-### Config (`src/config/index.ts`)
+### Config (`src/config/plugin.ts`)
 
-- `withAuth(config, authConfig)` - Wraps OpenSaas config, merges auth lists
-- `authConfig({ ... })` - Configures Better-auth plugins and session
+- `authPlugin({ ... })` - Plugin added to a config's `plugins` array; merges auth lists, configures Better-auth plugins and session. This is the only configuration entry point.
 
 ### Lists (`src/lists/index.ts`)
 
@@ -53,13 +52,13 @@ Pre-built forms (client components):
 
 ### Config Merging
 
-`withAuth()` merges auth lists into your config:
+`authPlugin()` merges auth lists into your config:
 
 ```typescript
-withAuth(
-  config({ lists: { Post: list({...}) } }),
-  authConfig({ emailAndPassword: { enabled: true } })
-)
+config({
+  lists: { Post: list({...}) },
+  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+})
 // Result: { lists: { User, Session, Account, Verification, Post } }
 ```
 
@@ -78,7 +77,7 @@ const context = createContext(config, prisma, session)
 Control which User fields appear in session:
 
 ```typescript
-authConfig({ sessionFields: ['userId', 'email', 'name', 'role'] })
+authPlugin({ sessionFields: ['userId', 'email', 'name', 'role'] })
 // Access in access control:
 access: {
   operation: {
@@ -110,7 +109,7 @@ declare module '@opensaas/stack-core' {
 **Step 2: Ensure fields match your sessionFields configuration**
 
 ```typescript
-authConfig({
+authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'],
   extendUserList: {
     fields: {
@@ -153,7 +152,7 @@ if (context.session?.email) {
 Add custom fields to User:
 
 ```typescript
-authConfig({
+authPlugin({
   extendUserList: {
     fields: {
       role: select({ options: [{ label: 'User', value: 'user' }] }),
@@ -196,10 +195,11 @@ export const auth = createAuth(config, rawOpensaasContext)
 
 ```typescript
 // 1. Config
-export default withAuth(
-  config({ db: {...}, lists: {...} }),
-  authConfig({ emailAndPassword: { enabled: true } })
-)
+export default config({
+  db: {...},
+  lists: {...},
+  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+})
 
 // 2. Server (lib/auth.ts)
 export const auth = createAuth(config)
@@ -235,7 +235,7 @@ Post: list({
 ### OAuth Providers
 
 ```typescript
-authConfig({
+authPlugin({
   socialProviders: {
     github: {
       clientId: process.env.GITHUB_CLIENT_ID!,
@@ -253,7 +253,7 @@ authConfig({
 Session type is inferred from `sessionFields`:
 
 ```typescript
-authConfig({ sessionFields: ['userId', 'email', 'role'] })
+authPlugin({ sessionFields: ['userId', 'email', 'role'] })
 // session: { userId: string, email: string, role: string } | null
 ```
 

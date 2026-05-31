@@ -532,7 +532,7 @@ The stack provides optional Better-auth integration through `@opensaas/stack-aut
 
 **Key files:**
 
-- `packages/auth/src/config/index.ts` - Config wrapper `withAuth()` and `authConfig()`
+- `packages/auth/src/config/plugin.ts` - `authPlugin()`, the auth configuration entry point
 - `packages/auth/src/lists/index.ts` - Auto-generated auth lists (User, Session, Account, Verification)
 - `packages/auth/src/server/index.ts` - Better-auth server setup
 - `packages/auth/src/client/index.ts` - Client-side auth hooks
@@ -540,12 +540,11 @@ The stack provides optional Better-auth integration through `@opensaas/stack-aut
 
 **How it works:**
 
-1. `withAuth()` wraps your config and merges in auth lists (User, Session, Account, Verification)
-2. `authConfig()` configures Better-auth plugins and session fields
-3. Generator creates Prisma schema with auth tables
-4. Better-auth handles OAuth flow and session management
-5. Context automatically includes session in all access control functions
-6. Session fields are configurable (e.g., `['userId', 'email', 'name', 'role']`)
+1. `authPlugin()` is added to the config's `plugins` array and merges in auth lists (User, Session, Account, Verification) and configures Better-auth plugins and session fields
+2. Generator creates Prisma schema with auth tables
+3. Better-auth handles OAuth flow and session management
+4. Context automatically includes session in all access control functions
+5. Session fields are configurable (e.g., `['userId', 'email', 'name', 'role']`)
 
 **See:** `packages/auth/CLAUDE.md` for detailed patterns and `examples/auth-demo` for usage.
 

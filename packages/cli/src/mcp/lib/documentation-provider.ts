@@ -295,48 +295,46 @@ For ${query}, you can also check:
         description: 'A blog application with user authentication and post management',
         code: `import { config, list } from '@opensaas/stack-core'
 import { text, relationship, timestamp, select } from '@opensaas/stack-core/fields'
-import { withAuth, authConfig } from '@opensaas/stack-auth'
+import { authPlugin } from '@opensaas/stack-auth'
 
 const isAuthor = ({ session, item }) =>
   session?.userId === item?.authorId
 
-export default withAuth(
-  config({
-    db: {
-      provider: 'sqlite',
-      url: 'file:./dev.db',
-      prismaClientConstructor: (PrismaClient) => {
-        // ... adapter setup
+export default config({
+  db: {
+    provider: 'sqlite',
+    url: 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      // ... adapter setup
+    },
+  },
+  lists: {
+    Post: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        content: text({ ui: { displayMode: 'textarea' } }),
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+          ],
+          defaultValue: 'draft',
+        }),
+        author: relationship({ ref: 'User.posts' }),
+        publishedAt: timestamp(),
       },
-    },
-    lists: {
-      Post: list({
-        fields: {
-          title: text({ validation: { isRequired: true } }),
-          content: text({ ui: { displayMode: 'textarea' } }),
-          status: select({
-            options: [
-              { label: 'Draft', value: 'draft' },
-              { label: 'Published', value: 'published' },
-            ],
-            defaultValue: 'draft',
-          }),
-          author: relationship({ ref: 'User.posts' }),
-          publishedAt: timestamp(),
+      access: {
+        operation: {
+          query: () => true,
+          create: ({ session }) => !!session,
+          update: isAuthor,
+          delete: isAuthor,
         },
-        access: {
-          operation: {
-            query: () => true,
-            create: ({ session }) => !!session,
-            update: isAuthor,
-            delete: isAuthor,
-          },
-        },
-      }),
-    },
-  }),
-  authConfig({ emailAndPassword: { enabled: true } })
-)`,
+      },
+    }),
+  },
+  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+})`,
         notes:
           'This example uses the auth plugin for user management. The `isAuthor` helper restricts updates to the post creator.',
         sourcePath: 'examples/auth-demo/opensaas.config.ts',

@@ -23,30 +23,30 @@ pnpm add @opensaas/stack-auth better-auth
 
 ### 1. Update Your Config
 
-Wrap your OpenSaas config with `withAuth()`:
+Add `authPlugin()` to your config's `plugins` array:
 
 ```typescript
 // opensaas.config.ts
 import { config } from '@opensaas/stack-core'
-import { withAuth, authConfig } from '@opensaas/stack-auth'
+import { authPlugin } from '@opensaas/stack-auth'
 
-export default withAuth(
-  config({
-    db: {
-      provider: 'sqlite',
-      url: process.env.DATABASE_URL || 'file:./dev.db',
-    },
-    lists: {
-      // Your custom lists here
-    },
-  }),
-  authConfig({
-    emailAndPassword: { enabled: true },
-    emailVerification: { enabled: true },
-    passwordReset: { enabled: true },
-    sessionFields: ['userId', 'email', 'name'],
-  }),
-)
+export default config({
+  db: {
+    provider: 'sqlite',
+    url: process.env.DATABASE_URL || 'file:./dev.db',
+  },
+  lists: {
+    // Your custom lists here
+  },
+  plugins: [
+    authPlugin({
+      emailAndPassword: { enabled: true },
+      emailVerification: { enabled: true },
+      passwordReset: { enabled: true },
+      sessionFields: ['userId', 'email', 'name'],
+    }),
+  ],
+})
 ```
 
 ### 2. Generate Schema and Push to Database
@@ -112,32 +112,33 @@ Sessions are now automatically available in your access control functions:
 
 ```typescript
 // opensaas.config.ts
-import { withAuth, authConfig } from '@opensaas/stack-auth'
+import { config } from '@opensaas/stack-core'
+import { authPlugin } from '@opensaas/stack-auth'
 
-export default withAuth(
-  config({
-    lists: {
-      Post: list({
-        fields: { title: text(), content: text() },
-        access: {
-          operation: {
-            // Session is automatically populated from better-auth
-            create: ({ session }) => !!session,
-            update: ({ session, item }) => {
-              if (!session) return false
-              return { authorId: { equals: session.userId } }
-            },
+export default config({
+  lists: {
+    Post: list({
+      fields: { title: text(), content: text() },
+      access: {
+        operation: {
+          // Session is automatically populated from better-auth
+          create: ({ session }) => !!session,
+          update: ({ session, item }) => {
+            if (!session) return false
+            return { authorId: { equals: session.userId } }
           },
         },
-      }),
-    },
-  }),
-  authConfig({
-    emailAndPassword: { enabled: true },
-    // Session will contain: { userId, email, name }
-    sessionFields: ['userId', 'email', 'name'],
-  }),
-)
+      },
+    }),
+  },
+  plugins: [
+    authPlugin({
+      emailAndPassword: { enabled: true },
+      // Session will contain: { userId, email, name }
+      sessionFields: ['userId', 'email', 'name'],
+    }),
+  ],
+})
 ```
 
 ## Configuration
@@ -145,7 +146,7 @@ export default withAuth(
 ### Auth Config Options
 
 ```typescript
-authConfig({
+authPlugin({
   // Email/password authentication
   emailAndPassword: {
     enabled: true,
@@ -248,7 +249,7 @@ import { authClient } from '@/lib/auth-client'
 
 ## Auto-Generated Lists
 
-The following lists are automatically created when you use `withAuth()`:
+The following lists are automatically created when you use `authPlugin()`:
 
 ### User
 
@@ -322,7 +323,7 @@ The following lists are automatically created when you use `withAuth()`:
 Add custom fields to the User model:
 
 ```typescript
-authConfig({
+authPlugin({
   extendUserList: {
     fields: {
       role: select({
@@ -353,7 +354,7 @@ authConfig({
 Control which user fields are included in the session object:
 
 ```typescript
-authConfig({
+authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'],
 })
 
@@ -434,7 +435,7 @@ See `examples/auth-demo` for a complete working example.
 
 ## How It Works
 
-1. **withAuth()** merges auth lists (User, Session, Account, Verification) with your config
+1. **authPlugin()** merges auth lists (User, Session, Account, Verification) with your config
 2. **Generator** creates Prisma schema with all auth tables
 3. **Session Provider** uses better-auth to get current session
 4. **Context** includes session automatically in all access control functions
