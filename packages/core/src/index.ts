@@ -1,10 +1,22 @@
-// Config system
+// ───────────────────────────────────────────────────────────────
+// @opensaas/stack-core — consumer entry point
+//
+// The everyday surface for defining a config and using a context.
+//   • Field builders            → '@opensaas/stack-core/fields'
+//   • Plugin / field authoring  → '@opensaas/stack-core/extend'
+//   • MCP runtime               → '@opensaas/stack-core/mcp'
+// Internal plumbing lives on '@opensaas/stack-core/internal' (unstable).
+// ───────────────────────────────────────────────────────────────
+
+// Config builders
 export { config, list } from './config/index.js'
+
+// Config + field types a consumer annotates with
 export type {
   OpenSaasConfig,
   ListConfig,
   FieldConfig,
-  BaseFieldConfig,
+  // Field config types (relocating to /fields in a later change)
   TextField,
   IntegerField,
   CheckboxField,
@@ -12,95 +24,26 @@ export type {
   PasswordField,
   SelectField,
   RelationshipField,
-  PrismaRelationResult,
   JsonField,
   VirtualField,
-  TypeDescriptor,
-  TypeInfo,
+  PrismaRelationResult,
   OperationAccess,
-  Hooks,
-  FieldHooks,
-  FieldsWithTypeInfo,
-  DatabaseConfig,
-  SessionConfig,
-  UIConfig,
-  ThemeConfig,
-  ThemePreset,
-  ThemeColors,
-  McpConfig,
-  McpToolsConfig,
-  McpAuthConfig,
-  ListMcpConfig,
-  McpCustomTool,
-  FileMetadata,
-  ImageMetadata,
-  ImageTransformationResult,
-  // Plugin system types
-  Plugin,
-  PluginContext,
-  GeneratedFiles,
-  // List-level hook argument types
-  ResolveInputHookArgs,
-  ValidateHookArgs,
-  BeforeOperationHookArgs,
-  AfterOperationHookArgs,
-  // Field-level hook argument types
-  FieldResolveInputHookArgs,
-  FieldValidateHookArgs,
-  FieldBeforeOperationHookArgs,
-  FieldAfterOperationHookArgs,
-  FieldResolveOutputHookArgs,
 } from './config/index.js'
 
-// Access control
+// Access control — the types a consumer writes against
 export type {
   AccessControl,
   FieldAccess,
   Session,
   AccessContext,
   PrismaFilter,
-  AccessControlledDB,
-  StorageUtils,
-  AugmentedFindMany,
-  AugmentedFindUnique,
-  FindManyQueryArgs,
 } from './access/index.js'
 
-// Context
+// Context factory
 export { getContext } from './context/index.js'
-export type { PrismaClientLike } from './access/types.js'
-export type { ServerActionProps } from './context/index.js'
 
-// Utilities
-export {
-  getDbKey,
-  getUrlKey,
-  getListKeyFromUrl,
-  pascalToCamel,
-  pascalToKebab,
-  kebabToPascal,
-  kebabToCamel,
-} from './lib/case-utils.js'
+// Naming utilities (documented public helpers; used for URLs and db keys)
+export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'
 
-// Hooks and validation
+// Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
-export { validateWithZod, generateZodSchema } from './validation/schema.js'
-
-// Password utilities
-export {
-  hashPassword,
-  comparePassword,
-  isHashedPassword,
-  HashedPassword,
-} from './utils/password.js'
-
-// Query utilities — fragment-based, type-safe query helpers
-export { defineFragment, runQuery, runQueryOne } from './query/index.js'
-export type {
-  Fragment,
-  FieldSelection,
-  ResultOf,
-  RelationSelector,
-  QueryArgs,
-  QueryRunnerContext,
-} from './query/index.js'

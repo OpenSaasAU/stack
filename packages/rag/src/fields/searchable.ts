@@ -1,4 +1,4 @@
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 import type { SearchableOptions, SearchableMetadata } from '../config/types.js'
 
 /**

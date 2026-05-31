@@ -1930,7 +1930,7 @@ getTypeScriptImports: () => {
 Custom field types must implement the `BaseFieldConfig` interface:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
 export type EmailField = BaseFieldConfig & {

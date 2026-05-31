@@ -1,4 +1,4 @@
-import type { Plugin } from '@opensaas/stack-core'
+import type { Plugin } from '@opensaas/stack-core/extend'
 import type { RAGConfig, NormalizedRAGConfig, SearchableMetadata } from './types.js'
 import { normalizeRAGConfig } from './index.js'
 import { createEmbeddingProvider } from '../providers/index.js'

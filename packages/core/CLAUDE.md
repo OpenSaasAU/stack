@@ -6,6 +6,18 @@ Core stack providing config system, access control engine, hooks, field types, a
 
 The foundation of OpenSaas Stack. Defines the config DSL, executes access control, runs hooks, and generates Prisma schema and TypeScript types from config.
 
+## Entry Points
+
+The package exposes a curated surface across several import paths. Use the narrowest one that fits:
+
+- **`@opensaas/stack-core`** (root) — the everyday consumer surface: `config`, `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`, `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate with (`OpenSaasConfig`, `ListConfig`, `FieldConfig`, `AccessControl`, `FieldAccess`, `Session`, `AccessContext`, `PrismaFilter`, `OperationAccess`, plus the field-config types).
+- **`@opensaas/stack-core/fields`** — field builder functions (`text()`, `integer()`, …).
+- **`@opensaas/stack-core/extend`** — authoring contracts: implement these to build a plugin (`Plugin`, `PluginContext`, `GeneratedFiles`) or a third-party field package (`BaseFieldConfig`, `TypeInfo`, `TypeDescriptor`).
+- **`@opensaas/stack-core/mcp`** — MCP runtime handlers.
+- **`@opensaas/stack-core/internal`** — `@internal` plumbing shared between the `@opensaas/*` packages and generated `.opensaas/` code. **No semver guarantees**; application code should never import from here.
+
+`Session` deliberately stays on the root entry point because it is the module-augmentation target (`declare module '@opensaas/stack-core'`).
+
 ## Key Files & Exports
 
 ### Config (`src/config/`)
@@ -115,11 +127,15 @@ Hook types:
 
 Run via CLI: `pnpm generate`
 
-### Utilities (`src/utils.ts`)
+### Utilities (`src/lib/case-utils.ts`)
+
+Public naming helpers (exported from the root entry point):
 
 - `getDbKey(listKey)` - PascalCase → camelCase (e.g., `BlogPost` → `blogPost`)
 - `getUrlKey(listKey)` - PascalCase → kebab-case (e.g., `BlogPost` → `blog-post`)
 - `getListKeyFromUrl(urlKey)` - kebab-case → PascalCase (e.g., `blog-post` → `BlogPost`)
+
+The lower-level converters (`pascalToCamel`, `pascalToKebab`, `kebabToPascal`, `kebabToCamel`) are internal plumbing on `@opensaas/stack-core/internal`.
 
 ## Architecture Patterns
 
@@ -206,7 +222,7 @@ const context = createContext<typeof prisma>(config, prisma, session)
 
 ### With Third-Party Field Packages
 
-- Packages export field builders implementing `BaseFieldConfig`
+- Packages export field builders implementing `BaseFieldConfig` (imported from `@opensaas/stack-core/extend`)
 - No changes needed to core - fields are self-contained
 - Example: `@opensaas/stack-tiptap` provides `richText()` field
 

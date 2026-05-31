@@ -21,10 +21,14 @@ pnpm add @opensaas/stack-core
 
 ## Exports
 
-### Config
+### Config & context (root)
+
+The everyday surface lives on the root entry point — config builders, the context
+factory, naming helpers, and the config/access types you annotate with:
 
 ```typescript
-import { config, list } from '@opensaas/stack-core/config'
+import { config, list, getContext, getUrlKey } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AccessControl, Session } from '@opensaas/stack-core'
 ```
 
 ### Fields
@@ -41,10 +45,12 @@ import {
 } from '@opensaas/stack-core/fields'
 ```
 
-### Context
+### Extend (plugin & field authoring)
+
+Implement these contracts to build a plugin or a third-party field package:
 
 ```typescript
-import { getContext } from '@opensaas/stack-core/context'
+import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 ```
 
 ### MCP (Model Context Protocol)
@@ -52,6 +58,12 @@ import { getContext } from '@opensaas/stack-core/context'
 ```typescript
 import { createMcpHandlers } from '@opensaas/stack-core/mcp'
 ```
+
+### Internal
+
+`@opensaas/stack-core/internal` holds plumbing shared between the `@opensaas/*`
+packages and generated `.opensaas/` code. It carries **no semver guarantees** —
+application code should never import from it.
 
 ## Sudo Mode
 

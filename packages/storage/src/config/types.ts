@@ -108,7 +108,11 @@ export type StorageConfig = Record<string, BaseStorageConfig | LocalStorageConfi
  * Re-export metadata types from core package
  * These types are now defined in @opensaas/stack-core to avoid circular dependencies
  */
-export type { FileMetadata, ImageMetadata, ImageTransformationResult } from '@opensaas/stack-core'
+export type {
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationResult,
+} from '@opensaas/stack-core/internal'
 
 /**
  * Configuration for image transformations

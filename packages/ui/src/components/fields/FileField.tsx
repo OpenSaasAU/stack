@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useState } from 'react'
-import type { FileMetadata } from '@opensaas/stack-core'
+import type { FileMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Label } from '../../primitives/label.js'

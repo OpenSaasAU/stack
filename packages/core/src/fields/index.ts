@@ -645,7 +645,7 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
     type: 'password',
     ...options,
     resultExtension: {
-      outputType: "import('@opensaas/stack-core').HashedPassword",
+      outputType: "import('@opensaas/stack-core/internal').HashedPassword",
       // No compute - delegates to resolveOutput hook
     },
     ui: {

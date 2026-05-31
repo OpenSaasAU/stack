@@ -580,7 +580,7 @@ describe('Field Types', () => {
 
         expect(field.resultExtension).toBeDefined()
         expect(field.resultExtension?.outputType).toBe(
-          "import('@opensaas/stack-core').HashedPassword",
+          "import('@opensaas/stack-core/internal').HashedPassword",
         )
       })
     })

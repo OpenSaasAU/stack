@@ -1,4 +1,4 @@
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core'
+import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
 import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'

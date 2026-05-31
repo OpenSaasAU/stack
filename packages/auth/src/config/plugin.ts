@@ -1,4 +1,4 @@
-import type { Plugin } from '@opensaas/stack-core'
+import type { Plugin } from '@opensaas/stack-core/extend'
 import type { AuthConfig, NormalizedAuthConfig } from './types.js'
 import { normalizeAuthConfig } from './index.js'
 import { getAuthLists } from '../lists/index.js'

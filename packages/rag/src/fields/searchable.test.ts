@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { searchable } from './searchable.js'
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 import type { SearchableOptions } from '../config/types.js'
 
 // Mock text field for testing
