@@ -319,7 +319,7 @@ const results = await storage.search('Article', 'contentEmbedding', queryVector,
 ### Local Development with Ollama
 
 ```typescript
-ragConfig({
+ragPlugin({
   provider: ollamaEmbeddings({
     baseURL: 'http://localhost:11434',
     model: 'nomic-embed-text',
@@ -416,7 +416,7 @@ No setup needed. Embeddings stored as JSON, similarity computed in JavaScript. G
 ### For Existing Apps
 
 1. Install package: `pnpm add @opensaas/stack-rag openai`
-2. Wrap config with `withRAG()`
+2. Add `ragPlugin()` to your config's `plugins` array
 3. Add `embedding()` fields
 4. Run `pnpm generate && pnpm db:push`
 5. Embeddings auto-generated on create/update

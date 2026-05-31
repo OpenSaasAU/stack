@@ -20,7 +20,7 @@ Adds vector embeddings and semantic search to OpenSaas Stack apps with minimal c
 ```
 packages/rag/
 ├── src/
-│   ├── config/         # withRAG(), ragConfig()
+│   ├── config/         # ragPlugin(), provider & storage helpers
 │   ├── fields/         # embedding() field type
 │   ├── providers/      # OpenAI, Ollama embedding providers
 │   ├── storage/        # pgvector, sqlite-vss, JSON backends
@@ -32,8 +32,7 @@ packages/rag/
 
 ### Main exports (`@opensaas/stack-rag`)
 
-- `withRAG(config, ragConfig)` - Wrap OpenSaas config with RAG integration
-- `ragConfig({ ... })` - RAG configuration builder
+- `ragPlugin({ ... })` - Plugin added to `config({ plugins: [...] })` that wires RAG into your config
 - `openaiEmbeddings({ ... })` - OpenAI provider config helper
 - `ollamaEmbeddings({ ... })` - Ollama provider config helper
 - `pgvectorStorage({ ... })` - pgvector backend config helper
@@ -78,76 +77,79 @@ packages/rag/
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { withRAG, ragConfig, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
-export default withRAG(
-  config({
-    db: {
-      provider: 'postgresql',
-      url: process.env.DATABASE_URL!,
-    },
-    lists: {
-      Article: list({
-        fields: {
-          title: text({ validation: { isRequired: true } }),
-          content: text({ validation: { isRequired: true } }),
-          contentEmbedding: embedding({
-            sourceField: 'content',
-            provider: 'openai',
-            dimensions: 1536,
-            autoGenerate: true,
-          }),
-        },
-      }),
-    },
-  }),
-  ragConfig({
-    provider: openaiEmbeddings({
-      apiKey: process.env.OPENAI_API_KEY!,
-      model: 'text-embedding-3-small',
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL!,
+  },
+  lists: {
+    Article: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        content: text({ validation: { isRequired: true } }),
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          provider: 'openai',
+          dimensions: 1536,
+          autoGenerate: true,
+        }),
+      },
     }),
-    storage: pgvectorStorage({ distanceFunction: 'cosine' }),
-  }),
-)
+  },
+  plugins: [
+    ragPlugin({
+      provider: openaiEmbeddings({
+        apiKey: process.env.OPENAI_API_KEY!,
+        model: 'text-embedding-3-small',
+      }),
+      storage: pgvectorStorage({ distanceFunction: 'cosine' }),
+    }),
+  ],
+})
 ```
 
 ### Local Development with Ollama
 
 ```typescript
 // opensaas.config.ts
-import { withRAG, ragConfig, ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { ragPlugin, ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
+import { embedding } from '@opensaas/stack-rag/fields'
 
-export default withRAG(
-  config({
-    db: { provider: 'sqlite', url: 'file:./dev.db' },
-    lists: {
-      Document: list({
-        fields: {
-          text: text(),
-          embedding: embedding({
-            sourceField: 'text',
-            provider: 'ollama',
-            autoGenerate: true,
-          }),
-        },
-      }),
-    },
-  }),
-  ragConfig({
-    provider: ollamaEmbeddings({
-      baseURL: 'http://localhost:11434',
-      model: 'nomic-embed-text',
+export default config({
+  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  lists: {
+    Document: list({
+      fields: {
+        text: text(),
+        embedding: embedding({
+          sourceField: 'text',
+          provider: 'ollama',
+          autoGenerate: true,
+        }),
+      },
     }),
-    storage: jsonStorage(), // Good for development, no DB extensions needed
-  }),
-)
+  },
+  plugins: [
+    ragPlugin({
+      provider: ollamaEmbeddings({
+        baseURL: 'http://localhost:11434',
+        model: 'nomic-embed-text',
+      }),
+      storage: jsonStorage(), // Good for development, no DB extensions needed
+    }),
+  ],
+})
 ```
 
 ### Multiple Providers
 
 ```typescript
-ragConfig({
+ragPlugin({
   providers: {
     openai: openaiEmbeddings({
       apiKey: process.env.OPENAI_API_KEY!,
@@ -245,33 +247,34 @@ When RAG is enabled with MCP, semantic search tools are automatically generated:
 
 ```typescript
 // opensaas.config.ts
-import { withAuth, authConfig } from '@opensaas/stack-auth'
-import { withRAG, ragConfig } from '@opensaas/stack-rag'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { authPlugin } from '@opensaas/stack-auth'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
+import { embedding } from '@opensaas/stack-rag/fields'
 
-export default withRAG(
-  withAuth(
-    config({
-      db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
-      mcp: {
-        enabled: true,
-        auth: { type: 'better-auth', loginPage: '/sign-in' },
-      },
-      lists: {
-        Article: list({
-          fields: {
-            content: text(),
-            contentEmbedding: embedding({ sourceField: 'content' }),
-          },
-        }),
+export default config({
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
+  mcp: {
+    enabled: true,
+    auth: { type: 'better-auth', loginPage: '/sign-in' },
+  },
+  lists: {
+    Article: list({
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content' }),
       },
     }),
-    authConfig({ emailAndPassword: { enabled: true } }),
-  ),
-  ragConfig({
-    provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
-    enableMcpTools: true, // Auto-generates semantic_search_article tool
-  }),
-)
+  },
+  plugins: [
+    authPlugin({ emailAndPassword: { enabled: true } }),
+    ragPlugin({
+      provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }),
+      enableMcpTools: true, // Auto-generates semantic_search_article tool
+    }),
+  ],
+})
 ```
 
 AI assistants can then use:
@@ -290,7 +293,7 @@ AI assistants can then use:
 
 ### Automatic Embedding Generation
 
-The `withRAG()` wrapper injects hooks into fields with `sourceField` set:
+The `ragPlugin()` injects hooks into fields with `sourceField` set:
 
 ```typescript
 // User config
@@ -299,7 +302,7 @@ contentEmbedding: embedding({
   autoGenerate: true
 })
 
-// withRAG() automatically adds:
+// ragPlugin() automatically adds:
 contentEmbedding: embedding({
   hooks: {
     afterOperation: async ({ operation, value, item, context }) => {
@@ -525,7 +528,7 @@ describe('OpenAIEmbeddingProvider', () => {
 
 1. Install package: `pnpm add @opensaas/stack-rag`
 2. Install provider: `pnpm add openai` (for OpenAI)
-3. Wrap config with `withRAG()`
+3. Add `ragPlugin()` to your config's `plugins` array
 4. Add `embedding()` fields to lists
 5. Run `pnpm generate` and `pnpm db:push`
 6. Embeddings will be generated automatically on create/update

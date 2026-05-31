@@ -283,7 +283,7 @@ export function convertTableToList(
 
 /**
  * Convert all Better Auth tables to OpenSaaS list configs
- * This is called by withAuth() to generate lists from Better Auth + plugins
+ * This is called by authPlugin() to generate lists from Better Auth + plugins
  */
 export function convertBetterAuthSchema(
   tables: Record<string, BetterAuthTableSchema>,
