@@ -14,6 +14,14 @@
       "types": "./dist/fields/index.d.ts",
       "default": "./dist/fields/index.js"
     },
+    "./extend": {
+      "types": "./dist/extend.d.ts",
+      "default": "./dist/extend.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "default": "./dist/internal.js"
+    },
     "./mcp": {
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"

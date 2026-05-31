@@ -815,7 +815,7 @@ text({
 You can create custom field types by implementing the `BaseFieldConfig` interface:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
 export type SlugField = BaseFieldConfig & {

@@ -28,7 +28,7 @@ Consider creating a plugin when you need to:
 ### Basic Plugin Interface
 
 ```typescript
-import type { Plugin } from '@opensaas/stack-core'
+import type { Plugin } from '@opensaas/stack-core/extend'
 
 export function myPlugin(options: MyPluginOptions): Plugin {
   return {
@@ -164,7 +164,7 @@ Let's create a complete audit logging plugin:
 ```typescript
 // audit-plugin.ts
 import { list, text, timestamp } from '@opensaas/stack-core/fields'
-import type { Plugin } from '@opensaas/stack-core'
+import type { Plugin } from '@opensaas/stack-core/extend'
 
 export interface AuditPluginConfig {
   excludeLists?: string[]

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core'
+import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 import type { EmbeddingProviderName, ChunkingConfig } from '../config/types.js'
 
 /**

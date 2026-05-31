@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import type { Plugin, PluginContext } from '@opensaas/stack-core'
+import type { Plugin, PluginContext } from '@opensaas/stack-core/extend'
 
 describe('RAG Plugin', () => {
   describe('plugin creation', () => {

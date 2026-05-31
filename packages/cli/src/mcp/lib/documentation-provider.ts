@@ -473,7 +473,7 @@ access: {
       'custom-fields': {
         description: 'Creating custom field types',
         code: `// In your field definition file
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
 export type SlugField = BaseFieldConfig & {

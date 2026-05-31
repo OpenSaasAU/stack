@@ -1090,7 +1090,7 @@ If you have custom Prisma types, create custom fields:
 
 ```typescript
 // lib/fields/slug.ts
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 
 export type SlugField = BaseFieldConfig & {
   type: 'slug'

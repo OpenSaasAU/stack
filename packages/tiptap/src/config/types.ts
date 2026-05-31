@@ -1,4 +1,4 @@
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core'
+import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 
 /**
  * Rich text field configuration using Tiptap editor

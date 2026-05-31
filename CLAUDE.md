@@ -272,6 +272,8 @@ export default config({
 **Plugin Pattern:**
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export function myPlugin(config: MyConfig): Plugin {
   return {
     name: 'my-plugin',
@@ -1126,7 +1128,7 @@ packages/my-field/
 1. **Field Builder** - Must implement `BaseFieldConfig`:
 
    ```typescript
-   import type { BaseFieldConfig } from '@opensaas/stack-core'
+   import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
 
    export type MyField = BaseFieldConfig & {
      type: 'myField'

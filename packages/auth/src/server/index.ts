@@ -1,7 +1,8 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import type { BetterAuthOptions } from 'better-auth'
-import type { OpenSaasConfig, DatabaseConfig, AccessContext } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
+import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig } from '../config/types.js'
 
 /**
