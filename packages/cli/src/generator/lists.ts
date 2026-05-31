@@ -3,9 +3,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 /**
- * Map field type string to TypeScript field type name
+ * Map a field type string to the TypeScript field-config type and the
+ * `@opensaas/stack-core` entry point it is exported from.
+ *
+ * Built-in field types live on the root entry point. Unknown field types
+ * (e.g. those contributed by plugins) fall back to the generic
+ * `BaseFieldConfig`, which is exported from the `/extend` authoring surface.
  */
-function getFieldTypeName(fieldType: string): string {
+function getFieldTypeImport(fieldType: string): { module: string; typeName: string } {
   const typeMap: Record<string, string> = {
     text: 'TextField',
     integer: 'IntegerField',
@@ -18,7 +23,12 @@ function getFieldTypeName(fieldType: string): string {
     virtual: 'VirtualField',
   }
 
-  return typeMap[fieldType] || 'BaseFieldConfig'
+  const typeName = typeMap[fieldType]
+  if (typeName) {
+    return { module: '@opensaas/stack-core', typeName }
+  }
+
+  return { module: '@opensaas/stack-core/extend', typeName: 'BaseFieldConfig' }
 }
 
 /**
@@ -96,10 +106,8 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push(`     */`)
     lines.push(`    export type Fields = {`)
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-      const fieldTypeName = getFieldTypeName(fieldConfig.type)
-      lines.push(
-        `      ${fieldName}: import('@opensaas/stack-core').${fieldTypeName}<Lists.${listName}.TypeInfo>`,
-      )
+      const { module, typeName } = getFieldTypeImport(fieldConfig.type)
+      lines.push(`      ${fieldName}: import('${module}').${typeName}<Lists.${listName}.TypeInfo>`)
     }
     lines.push(`    }`)
     lines.push('')
