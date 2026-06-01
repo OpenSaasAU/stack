@@ -355,6 +355,139 @@ async function processNestedConnectOrCreate(
 }
 
 /**
+ * Arguments passed to every nested-operation handler.
+ *
+ * A handler receives the raw value supplied for a single nested-op kind
+ * (e.g. the contents of `value.create`) alongside everything it needs to apply
+ * hooks, access control, and recursion.
+ */
+interface NestedOpHandlerArgs {
+  /** Raw payload supplied for this nested-op kind (e.g. the value of `value.create`). */
+  value: unknown
+  /** The list name of the related model (e.g. `'User'`). */
+  relatedListName: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>
+  context: AccessContext
+  config: OpenSaasConfig
+  /** Prisma client used for dynamic model access during access checks. */
+  prisma: unknown
+}
+
+/**
+ * A nested-operation handler describes how a single nested-op kind
+ * (`create`, `connect`, …) is processed before it reaches Prisma.
+ *
+ * Adding support for a new nested-op kind means registering a new entry in
+ * {@link nestedOpRegistry}, not editing the dispatch loop.
+ */
+interface NestedOpHandler {
+  /** Produce the processed payload for this nested-op kind. */
+  execute(args: NestedOpHandlerArgs): Promise<unknown>
+}
+
+/**
+ * Registry of nested-operation handlers keyed by nested-op kind.
+ *
+ * The dispatch loop in {@link processNestedOperations} looks handlers up here
+ * instead of branching on each kind. Kinds that require hooks/access control
+ * (`create`, `connect`, `connectOrCreate`, `update`) provide an `execute` that
+ * applies them; pass-through kinds (`disconnect`, `delete`, `deleteMany`,
+ * `set`, `updateMany`) return their value unchanged so Prisma's own
+ * constraints apply.
+ */
+const nestedOpRegistry: Record<string, NestedOpHandler> = {
+  create: {
+    execute: ({ value, relatedListConfig, context, config }) =>
+      processNestedCreate(
+        value as Record<string, unknown> | Array<Record<string, unknown>>,
+        relatedListConfig,
+        context,
+        config,
+      ),
+  },
+  connect: {
+    execute: ({ value, relatedListName, relatedListConfig, context, prisma }) =>
+      processNestedConnect(
+        value as Record<string, unknown> | Array<Record<string, unknown>>,
+        relatedListName,
+        relatedListConfig,
+        context,
+        prisma,
+      ),
+  },
+  connectOrCreate: {
+    execute: ({ value, relatedListName, relatedListConfig, context, config, prisma }) =>
+      processNestedConnectOrCreate(
+        value as Record<string, unknown> | Array<Record<string, unknown>>,
+        relatedListName,
+        relatedListConfig,
+        context,
+        config,
+        prisma,
+      ),
+  },
+  update: {
+    execute: ({ value, relatedListName, relatedListConfig, context, config, prisma }) =>
+      processNestedUpdate(
+        value as Record<string, unknown> | Array<Record<string, unknown>>,
+        relatedListName,
+        relatedListConfig,
+        context,
+        config,
+        prisma,
+      ),
+  },
+  // Pass-through kinds: no hooks/access control, left to Prisma's own constraints.
+  disconnect: { execute: ({ value }) => Promise.resolve(value) },
+  delete: { execute: ({ value }) => Promise.resolve(value) },
+  deleteMany: { execute: ({ value }) => Promise.resolve(value) },
+  set: { execute: ({ value }) => Promise.resolve(value) },
+  updateMany: { execute: ({ value }) => Promise.resolve(value) },
+}
+
+/**
+ * Order in which nested-op kinds are processed for a single relationship field.
+ *
+ * Mirrors the historical in-place dispatch order so behaviour is preserved.
+ */
+const nestedOpOrder = [
+  'create',
+  'connect',
+  'connectOrCreate',
+  'update',
+  'disconnect',
+  'delete',
+  'deleteMany',
+  'set',
+  'updateMany',
+] as const
+
+/**
+ * Process the nested relationship operations supplied for a single
+ * relationship field's value, dispatching each present nested-op kind through
+ * the {@link nestedOpRegistry}.
+ */
+async function processFieldNestedOps(
+  valueRecord: Record<string, unknown>,
+  args: Omit<NestedOpHandlerArgs, 'value'>,
+): Promise<Record<string, unknown>> {
+  const nestedOp: Record<string, unknown> = {}
+
+  for (const kind of nestedOpOrder) {
+    const value = valueRecord[kind]
+    if (value === undefined) {
+      continue
+    }
+
+    const handler = nestedOpRegistry[kind]
+    nestedOp[kind] = await handler.execute({ ...args, value })
+  }
+
+  return nestedOp
+}
+
+/**
  * Process all nested operations in a data payload
  * Recursively handles relationship fields with nested writes
  */
@@ -393,74 +526,14 @@ export async function processNestedOperations(
 
     const { listName: relatedListName, listConfig: relatedListConfig } = relatedConfig
 
-    // Process different nested operation types
-    const nestedOp: Record<string, unknown> = {}
-    const valueRecord = value as Record<string, unknown>
-
-    if (valueRecord.create !== undefined) {
-      nestedOp.create = await processNestedCreate(
-        valueRecord.create as Record<string, unknown> | Array<Record<string, unknown>>,
-        relatedListConfig,
-        context,
-        config,
-      )
-    }
-
-    if (valueRecord.connect !== undefined) {
-      nestedOp.connect = await processNestedConnect(
-        valueRecord.connect as Record<string, unknown> | Array<Record<string, unknown>>,
-        relatedListName,
-        relatedListConfig,
-        context,
-        context.prisma,
-      )
-    }
-
-    if (valueRecord.connectOrCreate !== undefined) {
-      nestedOp.connectOrCreate = await processNestedConnectOrCreate(
-        valueRecord.connectOrCreate as Record<string, unknown> | Array<Record<string, unknown>>,
-        relatedListName,
-        relatedListConfig,
-        context,
-        config,
-        context.prisma,
-      )
-    }
-
-    if (valueRecord.update !== undefined) {
-      nestedOp.update = await processNestedUpdate(
-        valueRecord.update as Record<string, unknown> | Array<Record<string, unknown>>,
-        relatedListName,
-        relatedListConfig,
-        context,
-        config,
-        context.prisma,
-      )
-    }
-
-    // For other operations, pass through (disconnect, delete, set, etc.)
-    // These will be subject to Prisma's own constraints
-    if (valueRecord.disconnect !== undefined) {
-      nestedOp.disconnect = valueRecord.disconnect
-    }
-
-    if (valueRecord.delete !== undefined) {
-      nestedOp.delete = valueRecord.delete
-    }
-
-    if (valueRecord.deleteMany !== undefined) {
-      nestedOp.deleteMany = valueRecord.deleteMany
-    }
-
-    if (valueRecord.set !== undefined) {
-      nestedOp.set = valueRecord.set
-    }
-
-    if (valueRecord.updateMany !== undefined) {
-      nestedOp.updateMany = valueRecord.updateMany
-    }
-
-    processed[fieldName] = nestedOp
+    // Dispatch each present nested-op kind through the handler registry.
+    processed[fieldName] = await processFieldNestedOps(value as Record<string, unknown>, {
+      relatedListName,
+      relatedListConfig,
+      context,
+      config,
+      prisma: context.prisma,
+    })
   }
 
   return processed
