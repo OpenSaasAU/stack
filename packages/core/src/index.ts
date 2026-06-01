@@ -11,24 +11,10 @@
 // Config builders
 export { config, list } from './config/index.js'
 
-// Config + field types a consumer annotates with
-export type {
-  OpenSaasConfig,
-  ListConfig,
-  FieldConfig,
-  // Field config types (relocating to /fields in a later change)
-  TextField,
-  IntegerField,
-  CheckboxField,
-  TimestampField,
-  PasswordField,
-  SelectField,
-  RelationshipField,
-  JsonField,
-  VirtualField,
-  PrismaRelationResult,
-  OperationAccess,
-} from './config/index.js'
+// Config types a consumer annotates with.
+// Concrete field-config types (TextField, …) live on '@opensaas/stack-core/fields'
+// alongside their builders.
+export type { OpenSaasConfig, ListConfig, FieldConfig, OperationAccess } from './config/index.js'
 
 // Access control — the types a consumer writes against
 export type {
