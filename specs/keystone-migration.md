@@ -67,10 +67,10 @@ export default config({
     url: process.env.DATABASE_URL ?? 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
       // Prisma 7 requires a driver adapter
-      const { PrismaBetterSQLite3 } = require('@prisma/adapter-better-sqlite3')
-      const Database = require('better-sqlite3')
-      const db = new Database(process.env.DATABASE_URL ?? './dev.db')
-      return new PrismaClient({ adapter: new PrismaBetterSQLite3(db) })
+      const { PrismaBetterSqlite3 } = require('@prisma/adapter-better-sqlite3')
+      return new PrismaClient({
+        adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' }),
+      })
     },
   },
   lists: {

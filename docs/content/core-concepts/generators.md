@@ -13,7 +13,7 @@ The generator system reads your declarative config and creates:
 ## Running the Generator
 
 ```bash
-pnpm opensaas generate
+pnpm generate
 ```
 
 Or in a specific example:

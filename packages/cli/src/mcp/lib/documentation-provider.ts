@@ -611,8 +611,7 @@ db: {
   provider: 'sqlite',
   url: 'file:./dev.db',
   prismaClientConstructor: (PrismaClient) => {
-    const db = new Database('./dev.db')
-    const adapter = new PrismaBetterSQLite3(db)
+    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
     return new PrismaClient({ adapter })
   },
 }

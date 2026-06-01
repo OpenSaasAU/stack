@@ -23,14 +23,12 @@ export function generateContext(config: OpenSaasConfig): string {
       throw new Error(
         'Prisma 7 requires a database adapter. Please add prismaClientConstructor to your opensaas.config.ts db configuration.\\n\\n' +
         'Example for SQLite:\\n' +
-        'import { PrismaBetterSQLite3 } from \\'@prisma/adapter-better-sqlite3\\'\\n' +
-        'import Database from \\'better-sqlite3\\'\\n\\n' +
+        'import { PrismaBetterSqlite3 } from \\'@prisma/adapter-better-sqlite3\\'\\n\\n' +
         'db: {\\n' +
         '  provider: \\'sqlite\\',\\n' +
         '  url: process.env.DATABASE_URL || \\'file:./dev.db\\',\\n' +
         '  prismaClientConstructor: (PrismaClient) => {\\n' +
-        '    const db = new Database(process.env.DATABASE_URL || \\'./dev.db\\')\\n' +
-        '    const adapter = new PrismaBetterSQLite3(db)\\n' +
+        '    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || \\'file:./dev.db\\' })\\n' +
         '    return new PrismaClient({ adapter })\\n' +
         '  }\\n' +
         '}\\n\\n' +
