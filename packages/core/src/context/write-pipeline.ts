@@ -7,17 +7,15 @@ import {
   filterWritableFields,
 } from '../access/index.js'
 import {
-  executeResolveInput,
   executeValidate,
   executeBeforeOperation,
   executeAfterOperation,
-  executeFieldResolveInputHooks,
   executeFieldValidateHooks,
   executeFieldBeforeOperationHooks,
   executeFieldAfterOperationHooks,
-  validateFieldRules,
   ValidationError,
 } from '../hooks/index.js'
+import { hookPipeline } from './hook-pipeline.js'
 import { processNestedOperations } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
 
@@ -194,78 +192,18 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   // input phases). Default to {} only as a defensive measure.
   const input = inputData ?? {}
 
-  // ── Phase 2: list-level resolveInput ──────────────────────────────────────
-  let resolvedData = await executeResolveInput(
-    listConfig.hooks,
-    operation === 'create'
-      ? {
-          listKey: listName,
-          operation: 'create',
-          inputData: input,
-          resolvedData: input,
-          item: undefined,
-          context,
-        }
-      : {
-          listKey: listName,
-          operation: 'update',
-          inputData: input,
-          resolvedData: input,
-          item: originalItem,
-          context,
-        },
-  )
-
-  // ── Phase 2.5: field-level resolveInput (e.g. hash passwords) ──────────────
-  resolvedData = await executeFieldResolveInputHooks(
-    input,
-    resolvedData,
-    listConfig.fields,
-    writeOp,
-    context,
+  // ── Phases 2–4: transform + validate span (Hook Pipeline) ──────────────────
+  // The Hook Pipeline owns the list/field `resolveInput` → list/field `validate`
+  // → built-in field rules span and the `resolvedData` threading through it. It
+  // THROWS `ValidationError` on any validation failure (never silent).
+  const { resolvedData } = await hookPipeline.run({
+    operation: writeOp,
     listName,
-    originalItem,
-  )
-
-  // ── Phase 3: list-level validate ───────────────────────────────────────────
-  await executeValidate(
-    listConfig.hooks,
-    operation === 'create'
-      ? {
-          listKey: listName,
-          operation: 'create',
-          inputData: input,
-          resolvedData,
-          item: undefined,
-          context,
-        }
-      : {
-          listKey: listName,
-          operation: 'update',
-          inputData: input,
-          resolvedData,
-          item: originalItem,
-          context,
-        },
-  )
-
-  // ── Phase 3.5: field-level validate ─────────────────────────────────────────
-  await executeFieldValidateHooks(
-    input,
-    resolvedData,
-    listConfig.fields,
-    writeOp,
+    listConfig,
+    inputData: input,
+    item: originalItem,
     context,
-    listName,
-    originalItem,
-  )
-
-  // ── Phase 4: built-in field rules (isRequired, length, etc.) ────────────────
-  // Validation failures THROW (validation is not silent).
-  const validation = validateFieldRules(resolvedData, listConfig.fields, writeOp)
-  if (validation.errors.length > 0) {
-    throw new ValidationError(validation.errors, validation.fieldErrors)
-  }
+  })
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
   const filteredData = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
