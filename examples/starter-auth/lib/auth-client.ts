@@ -17,5 +17,5 @@ import { createClient } from '@opensaas/stack-auth/client'
  * ```
  */
 export const authClient = createClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3003',
+  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
 })

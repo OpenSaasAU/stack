@@ -4,14 +4,14 @@ import Link from 'next/link'
 
 export default function SignUpPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold">Create Account</h1>
-          <p className="text-gray-600 mt-2">Get started with OpenSaas Auth Demo</p>
+          <h1 className="text-3xl font-bold text-foreground">Create Account</h1>
+          <p className="text-muted-foreground mt-2">Get started with OpenSaas Auth Demo</p>
         </div>
 
-        <div className="bg-gray-600 rounded-lg shadow-md p-8">
+        <div className="bg-card text-card-foreground border border-border rounded-lg shadow-md p-8">
           <SignUpForm
             authClient={authClient}
             redirectTo="/admin"
@@ -19,9 +19,9 @@ export default function SignUpPage() {
             requirePasswordConfirmation={true}
           />
 
-          <div className="mt-6 text-center text-sm text-gray-600">
+          <div className="mt-6 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link href="/sign-in" className="text-blue-600 hover:underline font-medium">
+            <Link href="/sign-in" className="text-primary hover:underline font-medium">
               Sign in
             </Link>
           </div>
