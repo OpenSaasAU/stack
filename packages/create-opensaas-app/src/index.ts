@@ -10,6 +10,7 @@ import { validateProjectName } from './lib/project-name.js'
 import { generateEnvFiles, type DbProvider } from './lib/env.js'
 import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
+import { removeAiTooling } from './lib/ai-tooling.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -148,6 +149,10 @@ async function createProject(options: TemplateOptions) {
     // Write a runnable .env so `pnpm generate` / `pnpm db:push` work with no
     // manual setup. Both starter templates use SQLite by default.
     await writeEnvFile(targetDir, projectName, 'sqlite', withAuth)
+
+    // Templates ship a Claude Code AI bundle (project CLAUDE.md + .claude/).
+    // Remove it when the user opted out of AI tooling.
+    await removeAiTooling(targetDir, enableMCP)
 
     spinner.succeed(chalk.green('Project created!'))
 
