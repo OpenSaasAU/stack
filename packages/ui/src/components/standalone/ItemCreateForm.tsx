@@ -1,12 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
+import { useItemForm } from '../../lib/useItemForm.js'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
@@ -46,74 +47,25 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   // Serialize field configs to remove non-serializable properties
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
 
-  const [isPending, setIsPending] = useState(false)
-  const [formData, setFormData] = useState<Partial<TData>>({} as Partial<TData>)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [generalError, setGeneralError] = useState<string | null>(null)
-
-  const handleFieldChange = (fieldName: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value }) as Partial<TData>)
-    // Clear error for this field when user starts typing
-    if (errors[fieldName]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev }
-        delete newErrors[fieldName]
-        return newErrors
-      })
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrors({})
-    setGeneralError(null)
-    setIsPending(true)
-
-    try {
-      // Transform relationship fields to Prisma format
-      const transformedData: Record<string, unknown> = {}
-      for (const [fieldName, value] of Object.entries(formData as Record<string, unknown>)) {
-        const fieldConfig = serializedFields[fieldName]
-
-        // Transform relationship fields
-        if (fieldConfig?.type === 'relationship') {
-          if (fieldConfig.many) {
-            // Many relationship: use connect format
-            if (Array.isArray(value) && value.length > 0) {
-              transformedData[fieldName] = {
-                connect: value.map((id: string) => ({ id })),
-              }
-            }
-          } else {
-            // Single relationship: use connect format
-            if (value) {
-              transformedData[fieldName] = {
-                connect: { id: value },
-              }
-            }
-          }
-        } else {
-          // Non-relationship field: pass through
-          transformedData[fieldName] = value
-        }
-      }
-
-      const result = await onSubmit(transformedData as TData)
-
-      if (!result.success) {
-        setGeneralError(result.error || 'Failed to create item')
-      }
-    } catch (error: unknown) {
-      setGeneralError((error as Error).message || 'Failed to create item')
-    } finally {
-      setIsPending(false)
-    }
-  }
-
-  // Filter out system fields
-  const editableFields = Object.entries(serializedFields).filter(
-    ([key]) => !['id', 'createdAt', 'updatedAt'].includes(key),
-  )
+  const {
+    formData,
+    errors,
+    generalError,
+    isPending,
+    editableFields,
+    handleFieldChange,
+    handleSubmit,
+  } = useItemForm({
+    fields: serializedFields,
+    mode: 'create',
+    errorFallback: 'Failed to create item',
+    onSubmit: async (data) => {
+      const result = await onSubmit(data as TData)
+      return result.success
+        ? { success: true }
+        : { success: false, error: result.error || 'Failed to create item' }
+    },
+  })
 
   return (
     <form onSubmit={handleSubmit} className={className}>
