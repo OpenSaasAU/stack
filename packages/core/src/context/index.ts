@@ -4,26 +4,18 @@ import {
   checkAccess,
   mergeFilters,
   filterReadableFields,
-  filterWritableFields,
   buildIncludeWithAccessControl,
 } from '../access/index.js'
-import {
-  executeResolveInput,
-  executeValidate,
-  executeBeforeOperation,
-  executeAfterOperation,
-  executeFieldResolveInputHooks,
-  executeFieldValidateHooks,
-  executeFieldBeforeOperationHooks,
-  executeFieldAfterOperationHooks,
-  validateFieldRules,
-  ValidationError,
-  DatabaseError,
-} from '../hooks/index.js'
-import { processNestedOperations } from './nested-operations.js'
+import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
 import { buildInclude, pickFields, isFragment } from '../query/index.js'
+import {
+  runWritePipeline,
+  createWriteStrategy,
+  updateWriteStrategy,
+  deleteWriteStrategy,
+} from './write-pipeline.js'
 
 export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
@@ -222,7 +214,7 @@ export function getContext<
       findMany: findManyOp,
       create: createOp,
       update: updateOp,
-      delete: createDelete(listName, listConfig, prisma, context),
+      delete: createDelete(listName, listConfig, prisma, context, config),
       count: createCount(listName, listConfig, prisma, context),
       createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
       updateMany: createUpdateMany(
@@ -577,163 +569,18 @@ function createCreate<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
+  // Thin adapter over the Write Pipeline: pick the create strategy, run the
+  // canonical secured write sequence, return its result.
   return async (args: { data: Record<string, unknown> }) => {
-    // 0. Check singleton constraint (enforce even in sudo mode)
-    if (isSingletonList(listConfig)) {
-      // Access Prisma model dynamically - required because model names are generated at runtime
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = (prisma as any)[getDbKey(listName)]
-      const existingCount = await model.count()
-
-      if (existingCount > 0) {
-        throw new ValidationError(
-          [`Cannot create: ${listName} is a singleton list with an existing record`],
-          {},
-        )
-      }
-    }
-
-    // 1. Check create access (skip if sudo mode)
-    if (!context._isSudo) {
-      const createAccess = listConfig.access?.operation?.create
-      const accessResult = await checkAccess(createAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return null
-      }
-    }
-
-    // 2. Execute list-level resolveInput hook
-    let resolvedData = await executeResolveInput(listConfig.hooks, {
-      listKey: listName,
-      operation: 'create',
-      inputData: args.data,
-      resolvedData: args.data,
-      item: undefined,
-      context,
-    })
-
-    // 2.5. Execute field-level resolveInput hooks (e.g., hash passwords)
-    resolvedData = await executeFieldResolveInputHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'create',
-      context,
+    return runWritePipeline({
       listName,
-    )
-
-    // 3. Execute list-level validate hook
-    await executeValidate(listConfig.hooks, {
-      listKey: listName,
-      operation: 'create',
-      inputData: args.data,
-      resolvedData,
-      item: undefined,
+      listConfig,
+      prisma,
       context,
-    })
-
-    // 3.5. Execute field-level validate hooks
-    await executeFieldValidateHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'create',
-      context,
-      listName,
-    )
-
-    // 4. Field validation (isRequired, length, etc.)
-    const validation = validateFieldRules(resolvedData, listConfig.fields, 'create')
-    if (validation.errors.length > 0) {
-      throw new ValidationError(validation.errors, validation.fieldErrors)
-    }
-
-    // 5. Filter writable fields (field-level access control, skip if sudo mode)
-    const filteredData = await filterWritableFields(resolvedData, listConfig.fields, 'create', {
-      session: context.session,
-      context: { ...context, _isSudo: context._isSudo },
-      inputData: args.data,
-    })
-
-    // 5.5. Process nested relationship operations
-    const data = await processNestedOperations(
-      filteredData,
-      listConfig.fields,
       config,
-      { ...context, prisma },
-      'create',
-    )
-
-    // 6. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'create',
-      context,
-      listName,
-    )
-
-    // 7. Execute list-level beforeOperation hook
-    await executeBeforeOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'create',
       inputData: args.data,
-      resolvedData,
-      context,
+      strategy: createWriteStrategy(listName, listConfig, context),
     })
-
-    // 8. Execute database create
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    // Singleton lists use Int @id with value always 1 (matching Keystone 6 behaviour)
-    const createData = isSingletonList(listConfig) ? { id: 1, ...data } : data
-    const item = await model.create({
-      data: createData,
-    })
-
-    // 9. Execute list-level afterOperation hook
-    await executeAfterOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'create',
-      inputData: args.data,
-      item,
-      resolvedData,
-      context,
-    })
-
-    // 10. Execute field-level afterOperation hooks (side effects only)
-    await executeFieldAfterOperationHooks(
-      item,
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'create',
-      context,
-      listName,
-      undefined, // originalItem is undefined for create operations
-    )
-
-    // 11. Filter readable fields and apply resolveOutput hooks (including nested relationships)
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await filterReadableFields(
-      item,
-      listConfig.fields,
-      {
-        session: context.session,
-        context: { ...context, _isSudo: context._isSudo },
-      },
-      config,
-      0,
-      listName,
-    )
-
-    return filtered
   }
 }
 
@@ -774,174 +621,18 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
   config: OpenSaasConfig,
 ) {
+  // Thin adapter over the Write Pipeline: pick the update strategy, run the
+  // canonical secured write sequence, return its result.
   return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
-    // 1. Fetch the item to pass to access control and hooks
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    const item = await model.findUnique({
-      where: args.where,
-    })
-
-    if (!item) {
-      return null
-    }
-
-    // 2. Check update access (skip if sudo mode)
-    if (!context._isSudo) {
-      const updateAccess = listConfig.access?.operation?.update
-      const accessResult = await checkAccess(updateAccess, {
-        session: context.session,
-        item,
-        context,
-      })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      // If access returns a filter, check if item matches
-      if (typeof accessResult === 'object') {
-        const matchesFilter = await model.findFirst({
-          where: mergeFilters(args.where, accessResult),
-        })
-
-        if (!matchesFilter) {
-          return null
-        }
-      }
-    }
-
-    // 3. Execute list-level resolveInput hook
-    let resolvedData = await executeResolveInput(listConfig.hooks, {
-      listKey: listName,
-      operation: 'update',
-      inputData: args.data,
-      resolvedData: args.data,
-      item,
-      context,
-    })
-
-    // 3.5. Execute field-level resolveInput hooks (e.g., hash passwords)
-    resolvedData = await executeFieldResolveInputHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'update',
-      context,
+    return runWritePipeline({
       listName,
-      item,
-    )
-
-    // 4. Execute list-level validate hook
-    await executeValidate(listConfig.hooks, {
-      listKey: listName,
-      operation: 'update',
-      inputData: args.data,
-      resolvedData,
-      item,
+      listConfig,
+      prisma,
       context,
-    })
-
-    // 4.5. Execute field-level validate hooks
-    await executeFieldValidateHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'update',
-      context,
-      listName,
-      item,
-    )
-
-    // 5. Field validation (isRequired, length, etc.)
-    const validation = validateFieldRules(resolvedData, listConfig.fields, 'update')
-    if (validation.errors.length > 0) {
-      throw new ValidationError(validation.errors, validation.fieldErrors)
-    }
-
-    // 6. Filter writable fields (field-level access control, skip if sudo mode)
-    const filteredData = await filterWritableFields(resolvedData, listConfig.fields, 'update', {
-      session: context.session,
-      item,
-      context: { ...context, _isSudo: context._isSudo },
-      inputData: args.data,
-    })
-
-    // 6.5. Process nested relationship operations
-    const data = await processNestedOperations(
-      filteredData,
-      listConfig.fields,
       config,
-      { ...context, prisma },
-      'update',
-    )
-
-    // 7. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'update',
-      context,
-      listName,
-      item,
-    )
-
-    // 8. Execute list-level beforeOperation hook
-    await executeBeforeOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'update',
       inputData: args.data,
-      item,
-      resolvedData,
-      context,
+      strategy: updateWriteStrategy(listConfig, context, args.where),
     })
-
-    // 9. Execute database update
-    const updated = await model.update({
-      where: args.where,
-      data,
-    })
-
-    // 10. Execute list-level afterOperation hook
-    await executeAfterOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'update',
-      inputData: args.data,
-      originalItem: item, // item is the original item before the update
-      item: updated,
-      resolvedData,
-      context,
-    })
-
-    // 11. Execute field-level afterOperation hooks (side effects only)
-    await executeFieldAfterOperationHooks(
-      updated,
-      args.data,
-      resolvedData,
-      listConfig.fields,
-      'update',
-      context,
-      listName,
-      item, // item is the original item before the update
-    )
-
-    // 12. Filter readable fields and apply resolveOutput hooks (including nested relationships)
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await filterReadableFields(
-      updated,
-      listConfig.fields,
-      {
-        session: context.session,
-        context: { ...context, _isSudo: context._isSudo },
-      },
-      config,
-      0,
-      listName,
-    )
-
-    return filtered
   }
 }
 
@@ -985,114 +676,20 @@ function createDelete<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
+  config: OpenSaasConfig,
 ) {
+  // Thin adapter over the Write Pipeline: pick the delete strategy, run the
+  // canonical secured write sequence, return its result.
   return async (args: { where: { id: string } }) => {
-    // 0. Check singleton constraint (enforce even in sudo mode)
-    if (isSingletonList(listConfig)) {
-      throw new ValidationError([`Cannot delete: ${listName} is a singleton list`], {})
-    }
-
-    // 1. Fetch the item to pass to access control and hooks
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    const item = await model.findUnique({
-      where: args.where,
-    })
-
-    if (!item) {
-      return null
-    }
-
-    // 2. Check delete access (skip if sudo mode)
-    if (!context._isSudo) {
-      const deleteAccess = listConfig.access?.operation?.delete
-      const accessResult = await checkAccess(deleteAccess, {
-        session: context.session,
-        item,
-        context,
-      })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      // If access returns a filter, check if item matches
-      if (typeof accessResult === 'object') {
-        const matchesFilter = await model.findFirst({
-          where: mergeFilters(args.where, accessResult),
-        })
-
-        if (!matchesFilter) {
-          return null
-        }
-      }
-    }
-
-    // 3. Execute list-level validate hook
-    await executeValidate(listConfig.hooks, {
-      listKey: listName,
-      operation: 'delete',
-      item,
-      context,
-    })
-
-    // 3.5. Execute field-level validate hooks
-    await executeFieldValidateHooks(
-      undefined,
-      undefined,
-      listConfig.fields,
-      'delete',
-      context,
+    return runWritePipeline({
       listName,
-      item,
-    )
-
-    // 4. Execute field-level beforeOperation hooks (side effects only)
-    await executeFieldBeforeOperationHooks(
-      {},
-      {},
-      listConfig.fields,
-      'delete',
+      listConfig,
+      prisma,
       context,
-      listName,
-      item,
-    )
-
-    // 5. Execute list-level beforeOperation hook
-    await executeBeforeOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'delete',
-      item,
-      context,
+      config,
+      inputData: undefined,
+      strategy: deleteWriteStrategy(listName, listConfig, context, args.where),
     })
-
-    // 6. Execute database delete
-    const deleted = await model.delete({
-      where: args.where,
-    })
-
-    // 7. Execute list-level afterOperation hook
-    await executeAfterOperation(listConfig.hooks, {
-      listKey: listName,
-      operation: 'delete',
-      originalItem: item, // item is the original item before deletion
-      context,
-    })
-
-    // 8. Execute field-level afterOperation hooks (side effects only)
-    await executeFieldAfterOperationHooks(
-      deleted,
-      undefined,
-      undefined,
-      listConfig.fields,
-      'delete',
-      context,
-      listName,
-      item, // item is the original item before deletion
-    )
-
-    return deleted
   }
 }
 
