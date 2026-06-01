@@ -29,3 +29,7 @@ _Avoid_: access error, permission error
 **Write Pipeline**:
 The single module that runs the canonical, secured write sequence (hooks → validation → operation-level access → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
 _Avoid_: operation handler, mutation service
+
+**Hook Pipeline**:
+The module that runs the transform+validate span of a write — list `resolveInput` → field `resolveInput` → list `validate` → field `validate` → built-in field rules — owning that order and the `resolvedData` threading through it. It throws a validation error (never silent) when a validate hook reports via `addValidationError` or a built-in field rule fails, and returns the transformed `resolvedData` on success. The Write Pipeline delegates this span to it; side-effect hooks (`beforeOperation`/`afterOperation`), access, writable-field filtering, persistence and Field Visibility stay in the Write Pipeline.
+_Avoid_: validation service, input resolver
