@@ -62,16 +62,14 @@ export default config({
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
-import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
-import Database from 'better-sqlite3'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
-      const db = new Database(process.env.DATABASE_URL?.replace('file:', '') || './dev.db')
-      const adapter = new PrismaBetterSQLite3(db)
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
       return new PrismaClient({ adapter })
     },
   },
@@ -114,15 +112,13 @@ The only required addition is `prismaClientConstructor` (Prisma 7 uses driver ad
 **SQLite:**
 
 ```typescript
-import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
-import Database from 'better-sqlite3'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 db: {
   provider: 'sqlite',
   url: process.env.DATABASE_URL || 'file:./dev.db',
   prismaClientConstructor: (PrismaClient) => {
-    const db = new Database(process.env.DATABASE_URL?.replace('file:', '') || './dev.db')
-    const adapter = new PrismaBetterSQLite3(db)
+    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
     return new PrismaClient({ adapter })
   },
 },

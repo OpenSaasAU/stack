@@ -630,16 +630,14 @@ Prisma 7 requires database adapters. You must provide a `prismaClientConstructor
 
 ```typescript
 // opensaas.config.ts - SQLite example
-import { PrismaBetterSQLite3 } from '@prisma/adapter-better-sqlite3'
-import Database from 'better-sqlite3'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   db: {
     provider: 'sqlite',
     url: process.env.DATABASE_URL || 'file:./dev.db',
     prismaClientConstructor: (PrismaClient) => {
-      const db = new Database(process.env.DATABASE_URL || './dev.db')
-      const adapter = new PrismaBetterSQLite3(db)
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
       return new PrismaClient({ adapter })
     },
   },

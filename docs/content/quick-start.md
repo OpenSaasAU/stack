@@ -115,7 +115,7 @@ export default config({
 ### 4. Generate Prisma Schema
 
 ```bash
-pnpm opensaas generate
+pnpm generate
 ```
 
 This creates:
@@ -227,7 +227,7 @@ OpenSaaS Stack includes a Claude Code plugin for feature-driven development. Ins
 
 ### "Cannot find module '@/.opensaas/context'"
 
-Make sure you've run `pnpm opensaas generate` to create the generated files.
+Make sure you've run `pnpm generate` to create the generated files.
 
 ### "PrismaClient is not configured"
 
