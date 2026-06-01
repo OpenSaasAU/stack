@@ -13,7 +13,30 @@ import {
   writePluginTypes,
   writePrismaExtensions,
 } from '../generator/index.js'
-import { OpenSaasConfig } from '@opensaas/stack-core'
+import { OpenSaasConfig, validateConfigFields } from '@opensaas/stack-core'
+import type { FieldConfigValidationError } from '@opensaas/stack-core'
+
+/**
+ * Format field self-containment errors into a friendly, multi-line message.
+ * Each violation names the list, field, and the contract method it omits, so
+ * a misimplemented (often third-party) field is actionable at a glance rather
+ * than surfacing as a deep generator stack trace.
+ */
+export function formatFieldValidationErrors(errors: FieldConfigValidationError[]): string {
+  const lines = errors.map((error) => {
+    const location = error.listKey ? `${error.listKey}.${error.fieldKey}` : error.fieldKey
+    return `  • ${location} (type "${error.fieldType}") is missing ${error.missingMethod}()`
+  })
+
+  return [
+    `${errors.length} field(s) do not satisfy the self-containment contract:`,
+    ...lines,
+    '',
+    'Each field builder must implement getPrismaType, getTypeScriptType, and',
+    'getZodSchema (or getPrismaRelation for relationships) so the generator can',
+    'produce schema and types without inspecting field internals.',
+  ].join('\n')
+}
 
 export async function generateCommand() {
   console.log(chalk.bold('\n🚀 OpenSaas Generator\n'))
@@ -67,6 +90,18 @@ export async function generateCommand() {
         throw err
       }
     }
+
+    // Validate field self-containment up front, before any generation runs.
+    // A misimplemented field surfaces a clear, per-field message here rather
+    // than throwing deep inside schema/type generation.
+    const validationSpinner = ora('Validating field configuration...').start()
+    const fieldErrors = validateConfigFields(config)
+    if (fieldErrors.length > 0) {
+      validationSpinner.fail(chalk.red('Field configuration invalid'))
+      console.error(chalk.red('\n❌ Error:'), formatFieldValidationErrors(fieldErrors))
+      process.exit(1)
+    }
+    validationSpinner.succeed(chalk.green('Field configuration valid'))
 
     // Generate Prisma schema, types, and context
     const generatorSpinner = ora('Generating schema and types...').start()

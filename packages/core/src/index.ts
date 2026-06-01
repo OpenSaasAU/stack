@@ -33,3 +33,10 @@ export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'
 
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
+
+// Field self-containment validation — checks each field implements the
+// generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
+// getPrismaRelation for relationships) so a misimplemented field fails early
+// with a clear per-field message instead of deep inside generation.
+export { validateFieldConfig, validateConfigFields } from './validation/field-config.js'
+export type { FieldConfigValidationError } from './validation/field-config.js'
