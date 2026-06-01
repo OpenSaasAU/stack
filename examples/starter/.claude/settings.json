@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "opensaas-stack": {
+      "command": "npx",
+      "args": ["-y", "@opensaas/stack-cli@latest", "mcp", "start"]
+    }
+  }
+}
