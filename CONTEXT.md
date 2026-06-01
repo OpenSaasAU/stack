@@ -25,3 +25,7 @@ _Avoid_: result filter, output filter, field stripper
 **Silent failure**:
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
 _Avoid_: access error, permission error
+
+**Write Pipeline**:
+The single module that runs the canonical, secured write sequence (hooks → validation → operation-level access → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
+_Avoid_: operation handler, mutation service
