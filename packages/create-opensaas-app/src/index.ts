@@ -6,6 +6,9 @@ import { spawn } from 'child_process'
 import prompts from 'prompts'
 import chalk from 'chalk'
 import ora from 'ora'
+import { validateProjectName } from './lib/project-name.js'
+import { generateEnvFiles, type DbProvider } from './lib/env.js'
+import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -23,7 +26,6 @@ async function main() {
   let projectName = args.find((arg) => !arg.startsWith('--'))
   const hasAuthFlag = args.includes('--with-auth')
   const hasAiFlag = args.includes('--with-ai')
-  const hasTemplateFlag = args.some((arg) => arg.startsWith('--template'))
 
   // Prompt for project name if not provided
   if (!projectName) {
@@ -33,11 +35,8 @@ async function main() {
       message: 'Project name:',
       initial: 'my-app',
       validate: (value) => {
-        if (!value) return 'Project name is required'
-        if (!/^[a-z0-9-]+$/.test(value)) {
-          return 'Project name must only contain lowercase letters, numbers, and hyphens'
-        }
-        return true
+        const result = validateProjectName(value)
+        return result.ok ? true : result.message
       },
     })
 
@@ -50,16 +49,19 @@ async function main() {
   }
 
   // Validate project name
-  if (!projectName || !/^[a-z0-9-]+$/.test(projectName)) {
-    console.error(
-      chalk.red('\n❌ Project name must only contain lowercase letters, numbers, and hyphens'),
-    )
+  const validation = validateProjectName(projectName)
+  if (!validation.ok) {
+    console.error(chalk.red(`\n❌ ${validation.message}`))
+    process.exit(1)
+  }
+  if (!projectName) {
+    // Unreachable: validateProjectName rejects empty names. Narrows the type.
     process.exit(1)
   }
 
-  // Prompt for auth if not specified via flags
+  // Prompt for auth if not specified via flag
   let withAuth = hasAuthFlag
-  if (!hasAuthFlag && !hasTemplateFlag) {
+  if (!hasAuthFlag) {
     const response = await prompts({
       type: 'confirm',
       name: 'withAuth',
@@ -130,17 +132,18 @@ async function createProject(options: TemplateOptions) {
     // Customize package.json
     const pkgPath = path.join(targetDir, 'package.json')
     const pkg = await fs.readJSON(pkgPath)
-    pkg.name = projectName
-    await fs.writeJSON(pkgPath, pkg, { spaces: 2 })
+    await fs.writeJSON(pkgPath, applyProjectName(pkg, projectName), { spaces: 2 })
 
     // Customize README
     const readmePath = path.join(targetDir, 'README.md')
     if (await fs.pathExists(readmePath)) {
-      let readme = await fs.readFile(readmePath, 'utf-8')
-      // Replace first h1 with project name
-      readme = readme.replace(/^# .+$/m, `# ${projectName}`)
-      await fs.writeFile(readmePath, readme)
+      const readme = await fs.readFile(readmePath, 'utf-8')
+      await fs.writeFile(readmePath, rewriteReadmeHeading(readme, projectName))
     }
+
+    // Write a runnable .env so `pnpm generate` / `pnpm db:push` work with no
+    // manual setup. Both starter templates use SQLite by default.
+    await writeEnvFile(targetDir, projectName, 'sqlite', withAuth)
 
     spinner.succeed(chalk.green('Project created!'))
 
@@ -174,6 +177,33 @@ async function createProject(options: TemplateOptions) {
     console.error(error)
     process.exit(1)
   }
+}
+
+/**
+ * Write a runnable `.env` into the scaffolded project.
+ *
+ * The basic template gets canonical, provider-aware env files. The auth
+ * template ships a complete `.env.example` (database + Better-auth variables),
+ * so we seed its `.env` from that example to preserve those extra variables
+ * while still guaranteeing a working `DATABASE_URL`.
+ */
+async function writeEnvFile(
+  targetDir: string,
+  projectName: string,
+  provider: DbProvider,
+  withAuth: boolean,
+): Promise<void> {
+  const envPath = path.join(targetDir, '.env')
+  const envExamplePath = path.join(targetDir, '.env.example')
+
+  if (withAuth && (await fs.pathExists(envExamplePath))) {
+    await fs.copy(envExamplePath, envPath, { overwrite: true })
+    return
+  }
+
+  const { env, envExample } = generateEnvFiles({ provider, projectName })
+  await fs.writeFile(envPath, env)
+  await fs.writeFile(envExamplePath, envExample)
 }
 
 async function installMCPServer(): Promise<boolean> {
