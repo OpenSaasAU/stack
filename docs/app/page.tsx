@@ -14,19 +14,21 @@ export default config({
       fields: {
         title: text({ validation: { isRequired: true } }),
         status: select({
-          options: ['draft', 'published'],
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Published', value: 'published' },
+          ],
           defaultValue: 'draft',
         }),
         author: relationship({ ref: 'User.posts' }),
       },
       access: {
-        // Anyone can read; only signed-in authors can edit their own posts.
         operation: {
-          query: () => true,
-          update: ({ session }) => Boolean(session?.userId),
-        },
-        filter: {
-          update: ({ session }) => ({ authorId: { equals: session?.userId } }),
+          // Anonymous visitors only see published posts; an access rule can
+          // return a boolean or a Prisma filter that scopes the rows.
+          query: ({ session }) => (session ? true : { status: { equals: 'published' } }),
+          // Only the author can edit their own post.
+          update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
         },
       },
     }),
