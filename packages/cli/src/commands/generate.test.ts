@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
+import { validateConfigFields } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { writePrismaSchema, writeTypes, writeContext } from '../generator/index.js'
+import { formatFieldValidationErrors } from './generate.js'
 
 // Mock ora module
 vi.mock('ora', () => ({
@@ -277,6 +279,92 @@ describe('Generate Command Integration', () => {
       expect(fs.readdirSync(prismaDir)).toContain('schema.prisma')
       expect(fs.readdirSync(opensaasDir)).toContain('types.ts')
       expect(fs.readdirSync(opensaasDir)).toContain('context.ts')
+    })
+  })
+
+  describe('Field self-containment validation', () => {
+    it('passes a compliant config with no errors', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text({ validation: { isRequired: true } }),
+            },
+          },
+        },
+      }
+
+      expect(validateConfigFields(config)).toEqual([])
+    })
+
+    it('reports a non-compliant field with a friendly message instead of a stack trace', () => {
+      // Simulate a misimplemented (e.g. third-party) field missing getPrismaType.
+      const brokenField = text()
+      delete brokenField.getPrismaType
+
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: brokenField as FieldConfig,
+            },
+          },
+        },
+      }
+
+      const errors = validateConfigFields(config)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatchObject({
+        listKey: 'Post',
+        fieldKey: 'title',
+        missingMethod: 'getPrismaType',
+      })
+
+      const message = formatFieldValidationErrors(errors)
+      // Friendly, actionable message naming the list, field, and method...
+      expect(message).toContain('Post.title')
+      expect(message).toContain('getPrismaType')
+      expect(message).toContain('self-containment contract')
+      // ...and explicitly not a raw stack trace.
+      expect(message).not.toContain('at Object.')
+      expect(message).not.toContain('.js:')
+    })
+
+    it('aggregates multiple non-compliant fields across lists into one message', () => {
+      const noPrisma = text()
+      delete noPrisma.getPrismaType
+      const noZod = text()
+      delete noZod.getZodSchema
+
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          Post: { fields: { title: noPrisma as FieldConfig } },
+          User: { fields: { name: noZod as FieldConfig } },
+        },
+      }
+
+      const errors = validateConfigFields(config)
+      expect(errors).toHaveLength(2)
+
+      const message = formatFieldValidationErrors(errors)
+      expect(message).toContain('2 field(s)')
+      expect(message).toContain('Post.title')
+      expect(message).toContain('User.name')
     })
   })
 })
