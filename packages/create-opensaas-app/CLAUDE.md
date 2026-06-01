@@ -136,9 +136,20 @@ npm create opensaas-app@latest
 ### With Flags
 
 ```bash
-npm create opensaas-app@latest my-app           # Basic template
-npm create opensaas-app@latest my-app --with-auth   # Auth template
+npm create opensaas-app@latest my-app                # Basic template
+npm create opensaas-app@latest my-app --with-auth    # Auth template
+npm create opensaas-app@latest my-app --with-ai      # Install AI dev tools (MCP)
+npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate/db:push
 ```
+
+### Auto-run setup (three-step flow)
+
+After scaffolding, the CLI runs `install` → `generate` → `db:push` for the user
+(see `runSetup` / `planSetupSteps`), so the documented flow collapses to three
+steps: **scaffold → `pnpm dev` → build with Claude Code**. If a step fails the
+CLI stops and prints a recoverable message naming the failed step and its retry
+command (`formatStepFailure`). Pass `--no-install` to skip the auto-run and get
+the full manual command list instead (`nextStepCommands`).
 
 ## Template Customization
 

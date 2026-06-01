@@ -9,6 +9,7 @@ import ora from 'ora'
 import { validateProjectName } from './lib/project-name.js'
 import { generateEnvFiles, type DbProvider } from './lib/env.js'
 import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
+import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -16,6 +17,8 @@ interface TemplateOptions {
   projectName: string
   withAuth: boolean
   enableMCP: boolean
+  /** Skip the automatic install → generate → db:push after scaffolding. */
+  skipInstall: boolean
 }
 
 async function main() {
@@ -26,6 +29,7 @@ async function main() {
   let projectName = args.find((arg) => !arg.startsWith('--'))
   const hasAuthFlag = args.includes('--with-auth')
   const hasAiFlag = args.includes('--with-ai')
+  const skipInstall = args.includes('--no-install') || args.includes('--skip-install')
 
   // Prompt for project name if not provided
   if (!projectName) {
@@ -96,11 +100,11 @@ async function main() {
   }
 
   // Create project
-  await createProject({ projectName, withAuth, enableMCP })
+  await createProject({ projectName, withAuth, enableMCP, skipInstall })
 }
 
 async function createProject(options: TemplateOptions) {
-  const { projectName, withAuth, enableMCP } = options
+  const { projectName, withAuth, enableMCP, skipInstall } = options
 
   const spinner = ora('Creating project...').start()
 
@@ -152,24 +156,32 @@ async function createProject(options: TemplateOptions) {
       await installMCPServer()
     }
 
+    // Auto-run install → generate → db:push so the project is ready for
+    // `pnpm dev` immediately. Opt out with --no-install.
+    const autoRan = skipInstall ? false : await runSetup(targetDir, projectName)
+
     // Show next steps
-    console.log(chalk.green('\n✅ Project created successfully!\n'))
+    console.log(chalk.green('\n✅ Your project is ready!\n'))
     console.log(chalk.bold('Next steps:\n'))
-    console.log(chalk.cyan(`  cd ${projectName}`))
-    console.log(chalk.cyan(`  pnpm install`))
-    console.log(chalk.cyan(`  pnpm generate`))
-    console.log(chalk.cyan(`  pnpm db:push`))
-    console.log(chalk.cyan(`  pnpm dev`))
+    for (const command of nextStepCommands({ projectName, autoRan })) {
+      console.log(chalk.cyan(`  ${command}`))
+    }
+
+    console.log(chalk.bold('\n🤖 Then build with Claude Code:'))
+    console.log(
+      chalk.dim('   Open this project in Claude Code and describe what you want to build,'),
+    )
+    console.log(chalk.dim('   e.g. "add a comments feature to posts" — it builds it for you.\n'))
 
     if (withAuth) {
-      console.log(chalk.dim("\n💡 Don't forget to set up your .env file with BETTER_AUTH_SECRET"))
+      console.log(chalk.dim('💡 Set BETTER_AUTH_SECRET in .env before signing in.'))
       console.log(chalk.dim('   Generate a secret with: openssl rand -base64 32\n'))
     } else {
-      console.log(chalk.dim('\nVisit http://localhost:3000/admin to see your admin UI\n'))
+      console.log(chalk.dim('Once running, visit http://localhost:3000/admin for your admin UI.\n'))
     }
 
     if (!enableMCP) {
-      console.log(chalk.dim('\n💡 Enable AI development tools later with:'))
+      console.log(chalk.dim('💡 Enable AI development tools later with:'))
       console.log(chalk.dim('   npx @opensaas/stack-cli mcp install\n'))
     }
   } catch (error) {
@@ -204,6 +216,35 @@ async function writeEnvFile(
   const { env, envExample } = generateEnvFiles({ provider, projectName })
   await fs.writeFile(envPath, env)
   await fs.writeFile(envExamplePath, envExample)
+}
+
+/**
+ * Run install → generate → db:push in the new project so `pnpm dev` works
+ * immediately. Stops at the first failure and prints a recoverable message
+ * naming the failed step. Returns whether every step succeeded.
+ */
+async function runSetup(targetDir: string, projectName: string): Promise<boolean> {
+  for (const step of planSetupSteps()) {
+    console.log(chalk.cyan(`\n▶ ${step.title}...`))
+    const ok = await runStep(step, targetDir)
+    if (!ok) {
+      console.log(chalk.yellow(`\n⚠️  ${formatStepFailure(step, projectName)}\n`))
+      return false
+    }
+  }
+  return true
+}
+
+function runStep(step: SetupStep, cwd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn('pnpm', step.args, {
+      cwd,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    })
+    child.on('close', (code) => resolve(code === 0))
+    child.on('error', () => resolve(false))
+  })
 }
 
 async function installMCPServer(): Promise<boolean> {
