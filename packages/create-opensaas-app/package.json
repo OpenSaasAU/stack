@@ -13,6 +13,8 @@
   "scripts": {
     "build": "tsc && pnpm copy-templates",
     "copy-templates": "node dist/copy-templates.js",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist templates"
   },
   "dependencies": {
@@ -25,7 +27,9 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.9.1",
     "@types/prompts": "^2.4.9",
-    "typescript": "^5.9.3"
+    "@vitest/coverage-v8": "^4.0.18",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "repository": {
     "type": "git",

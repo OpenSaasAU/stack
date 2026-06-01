@@ -144,13 +144,21 @@ npm create opensaas-app@latest my-app --with-auth   # Auth template
 
 After copying the template, the CLI customizes:
 
-1. **package.json**: Updates `name` field to project name
-2. **README.md**: Replaces first h1 with project name
+1. **package.json**: Updates `name` field to project name (`applyProjectName`)
+2. **README.md**: Replaces first h1 with project name (`rewriteReadmeHeading`)
+3. **`.env`**: Writes a **runnable** environment file so `pnpm generate` /
+   `pnpm db:push` work with no manual setup. The basic (SQLite) template gets a
+   canonical `.env` + `.env.example` from `generateEnvFiles` (default
+   `DATABASE_URL="file:./dev.db"`); the with-auth template seeds `.env` from its
+   own `.env.example` so the Better-auth variables are preserved.
+
+These transforms live in `src/lib/` (`project-name.ts`, `env.ts`,
+`package-json.ts`) as pure, unit-tested functions; `src/index.ts` is a thin
+orchestrator over them.
 
 **Files NOT customized** (kept as-is from template):
 
 - `opensaas.config.ts` - User will customize themselves
-- `.env` / `.env.example` - Template values are appropriate
 - All other files
 
 ## Excluded Files

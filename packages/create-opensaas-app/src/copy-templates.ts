@@ -2,6 +2,7 @@
 import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { replaceWorkspaceVersions } from './lib/package-json.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const packageDir = path.join(__dirname, '..')
@@ -31,26 +32,8 @@ async function updatePackageJsonVersions(
   stackVersion: string,
 ): Promise<void> {
   const packageJson = await fs.readJSON(packageJsonPath)
-
-  // Update all @opensaas/* dependencies from "workspace" to actual version
-  if (packageJson.dependencies) {
-    for (const [name, version] of Object.entries(packageJson.dependencies)) {
-      if (name.startsWith('@opensaas/') && version === 'workspace:*') {
-        packageJson.dependencies[name] = `^${stackVersion}`
-      }
-    }
-  }
-
-  // Update devDependencies too
-  if (packageJson.devDependencies) {
-    for (const [name, version] of Object.entries(packageJson.devDependencies)) {
-      if (name.startsWith('@opensaas/') && version === 'workspace:*') {
-        packageJson.devDependencies[name] = `^${stackVersion}`
-      }
-    }
-  }
-
-  await fs.writeJSON(packageJsonPath, packageJson, { spaces: 2 })
+  const updated = replaceWorkspaceVersions(packageJson, stackVersion)
+  await fs.writeJSON(packageJsonPath, updated, { spaces: 2 })
 }
 
 async function copyTemplate(
