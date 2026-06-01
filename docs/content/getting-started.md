@@ -1,273 +1,111 @@
 # Getting Started
 
-This guide will walk you through building and testing the OpenSaaS Stack from the monorepo.
+This guide walks you through building your first app with OpenSaaS Stack — from an empty folder to a running admin UI you can extend with Claude Code. It takes about five minutes.
 
 ## Prerequisites
 
 - Node.js 18+
-- pnpm (install with `npm install -g pnpm`)
-- Basic knowledge of Next.js, TypeScript, and Prisma
+- pnpm (`npm install -g pnpm`)
+- Basic familiarity with Next.js and TypeScript
 
-## Step-by-Step Setup
-
-### 1. Install Dependencies
-
-From the repository root:
+## 1. Scaffold your project
 
 ```bash
-pnpm install
+npm create opensaas-app@latest my-app
 ```
 
-This will install dependencies for all packages in the monorepo.
-
-### 2. Build the Core Package
-
-The `@opensaas/stack-core` package needs to be compiled before it can be used:
-
-```bash
-cd packages/core
-pnpm build
-```
-
-You should see TypeScript compile the source files to the `dist/` directory.
-
-### 3. Set Up the Blog Example
-
-Navigate to the blog example:
-
-```bash
-cd ../../examples/blog
-```
-
-The `.env` file is already created with SQLite configuration.
+The scaffolder does the setup for you: it installs dependencies, runs the
+generator, and creates a local SQLite database. When it finishes you have a
+complete, runnable Next.js project.
 
 {% callout type="info" %}
-Prisma 7 requires database adapters. The examples are pre-configured with the `@prisma/adapter-better-sqlite3` adapter. See the [Config System](/docs/core-concepts/config) for adapter examples.
+Want authentication out of the box? Add `--with-auth`. To skip the automatic
+install/generate/db:push and run those steps yourself, add `--no-install`.
 {% /callout %}
 
-### 4. Generate Prisma Schema and Types
-
-This is the key step - it reads your `opensaas.config.ts` and generates both the Prisma schema and TypeScript types:
+## 2. Run the app
 
 ```bash
-pnpm generate
+cd my-app
+pnpm dev
 ```
 
-You should see:
+Visit:
 
-- `prisma/schema.prisma` created
-- `.opensaas/types.ts` created
-- `.opensaas/context.ts` created
+- **App**: [http://localhost:3000](http://localhost:3000)
+- **Admin UI**: [http://localhost:3000/admin](http://localhost:3000/admin) — auto-generated CRUD for every list
 
-Take a look at these generated files to see what OpenSaaS created from your config!
+## 3. Build features with Claude Code
 
-### 5. Create the Database
+Your project ships ready for [Claude Code](/docs/guides/claude-code): a project
+`CLAUDE.md` describing the framework's patterns, plus MCP tooling. Open the
+project in Claude Code and describe what you want to build:
 
-Push the schema to create the SQLite database:
+- _"Add a comments feature to posts."_
+- _"Add a `publishedAt` timestamp and only show published posts to anonymous users."_
+- _"Add authentication."_
 
-```bash
-pnpm db:push
-```
+Claude makes the change in `opensaas.config.ts`, regenerates, and wires up the
+UI — staying within the access-control guardrails.
 
-This creates `dev.db` with your tables.
+## What just got generated
 
-### 6. Generate Prisma Client
+Your schema lives in `opensaas.config.ts`. Running the generator (which the
+scaffolder did for you, and which you re-run with `pnpm generate`) produces:
 
-```bash
-npx prisma generate
-```
+- **`prisma/schema.prisma`** — the Prisma schema
+- **`.opensaas/types.ts`** — TypeScript types for your lists
+- **`.opensaas/context.ts`** — the access-controlled context factory
 
-This creates the Prisma Client you'll use to interact with the database.
-
-### 7. Run the Test Script
-
-Now for the moment of truth - let's test the access control:
-
-```bash
-npx tsx test-access-control.ts
-```
-
-You should see a comprehensive test output showing:
-
-- ✅ Users being created
-- ✅ Posts being created with internal notes
-- ✅ Anonymous users unable to see draft posts
-- ✅ Published posts visible to everyone
-- ✅ Internal notes hidden from non-authors
-- ✅ Users unable to update others' posts
-- ✅ Silent failures on access denial
-
-## Understanding What Just Happened
-
-### The Config File (`opensaas.config.ts`)
-
-You defined your schema declaratively:
-
-```typescript
-Post: list({
-  fields: {
-    title: text(),
-    internalNotes: text({
-      access: {
-        read: isAuthor, // Field-level access control
-      },
-    }),
-    // ... more fields
-  },
-  access: {
-    operation: {
-      query: ({ session }) => {
-        // Filter posts based on who's asking
-        if (!session) return { status: { equals: 'published' } }
-        return true
-      },
-      update: isAuthor, // Only author can update
-    },
-  },
-})
-```
-
-### The Generator
-
-`pnpm generate` read this config and created:
-
-1. **Prisma Schema** with proper relationships and field types
-2. **TypeScript Types** for type-safe database operations
-3. **Context Factory** for access-controlled database operations
-
-### The Context
-
-Your application code uses the context to interact with the database:
+You interact with the database through the generated context, which enforces
+access control automatically:
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
-const context = await getContext()
+const context = await getContext() // pass a session for authenticated access
 const posts = await context.db.post.findMany()
 ```
 
-The context automatically:
-
-- Checks access control rules
-- Filters results based on session
-- Hides fields the user can't access
-- Returns `null` or `[]` on access denial (silent failure)
-
-## Next Steps
-
-### Experiment with the Config
-
-Try modifying `opensaas.config.ts`:
-
-1. Add a new field to Post
-2. Run `pnpm generate` again
-3. See the changes in `prisma/schema.prisma` and `.opensaas/types.ts`
-4. Update the test script to use the new field
-
-### Try Different Access Control Patterns
-
-Modify the access control rules:
+Access-denied operations return `null` or `[]` instead of throwing, so always
+null-check writes:
 
 ```typescript
-// Make all posts public
-query: true
-
-// Require admin role
-update: ({ session }) => session?.role === 'admin'
-
-// Complex filter
-query: ({ session }) => ({
-  OR: [{ status: { equals: 'published' } }, { authorId: { equals: session?.userId } }],
-})
+const post = await context.db.post.update({ where: { id }, data })
+if (!post) {
+  // Either it doesn't exist, or the current session can't access it.
+  return { error: 'Not found or access denied' }
+}
 ```
 
-### Add More Models
+## The development loop
 
-Add a new list to the config:
-
-```typescript
-Comment: list({
-  fields: {
-    text: text({ validation: { isRequired: true } }),
-    post: relationship({ ref: 'Post.comments' }),
-    author: relationship({ ref: 'User.comments' }),
-  },
-  access: {
-    operation: {
-      query: true,
-      create: isSignedIn,
-      update: isAuthor,
-      delete: isAuthor,
-    },
-  },
-})
-```
-
-Then regenerate and test!
-
-## Viewing Your Data
-
-You can use Prisma Studio to view and edit data:
+When you change `opensaas.config.ts` by hand:
 
 ```bash
-pnpm db:studio
+pnpm generate   # regenerate schema, types, and context
+pnpm db:push    # apply schema changes to the database
 ```
 
-This opens a browser-based GUI for your database.
+Use `pnpm db:studio` to browse and edit data in Prisma Studio.
 
-## Troubleshooting
+## Switching to PostgreSQL
 
-### "Module not found" errors
+The starter uses SQLite for zero-setup local development. To move to Postgres,
+set `DATABASE_URL` in `.env`, change `provider` to `'postgresql'` in
+`opensaas.config.ts`, swap the adapter to `@prisma/adapter-pg`, then re-run
+`pnpm generate && pnpm db:push`. See the [Config System](/docs/core-concepts/config)
+for adapter examples.
 
-Make sure you've built the core package:
+## Next steps
 
-```bash
-cd packages/core && pnpm build
-```
+- **[Quick Start](/docs/quick-start)** — the condensed version, plus manual setup for an existing Next.js app
+- **[Building with Claude Code](/docs/guides/claude-code)** — the AI-assisted workflow in depth
+- **[Access Control](/docs/core-concepts/access-control)** — how the engine secures every operation
+- **[Field Types](/docs/core-concepts/field-types)** — all available fields
+- **[Hooks](/docs/core-concepts/hooks)** — data transformation and side effects
 
-### "Cannot find opensaas.config.ts"
-
-Make sure you're in the `examples/blog` directory when running `pnpm generate`.
-
-### TypeScript errors in generated types
-
-This usually means the Prisma client hasn't been generated. Run:
-
-```bash
-npx prisma generate
-```
-
-### Database errors
-
-Reset your database:
-
-```bash
-rm dev.db
-pnpm db:push
-npx prisma generate
-```
-
-## Architecture Overview
-
-```
-Your opensaas.config.ts
-         ↓
-    [Generator]
-         ↓
-    ├─→ prisma/schema.prisma → [Prisma] → @prisma/client
-    ├─→ .opensaas/types.ts → TypeScript types
-    └─→ .opensaas/context.ts → Context factory
-                                    ↓
-                              [getContext]
-                                    ↓
-                           Context with access control
-                                    ↓
-                              Your application
-```
-
-## Learn More
-
-- **[Quick Start](/docs/quick-start)** - 5-minute tutorial
-- **[Access Control](/docs/core-concepts/access-control)** - Deep dive into access control
-- **[Field Types](/docs/core-concepts/field-types)** - All available field types
-- **[Hooks](/docs/core-concepts/hooks)** - Data transformation and side effects
+{% callout type="info" %}
+Contributing to OpenSaaS Stack itself? The monorepo setup (building packages,
+running tests, changesets) lives in `CONTRIBUTING.md` in the repository.
+{% /callout %}
