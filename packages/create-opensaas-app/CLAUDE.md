@@ -138,9 +138,15 @@ npm create opensaas-app@latest
 ```bash
 npm create opensaas-app@latest my-app                # Basic template
 npm create opensaas-app@latest my-app --with-auth    # Auth template
+npm create opensaas-app@latest my-app --no-auth      # Basic template, skip the auth prompt
 npm create opensaas-app@latest my-app --with-ai      # Install AI dev tools (MCP)
+npm create opensaas-app@latest my-app --no-ai        # Skip the AI-tooling prompt (and its MCP install)
 npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate/db:push
 ```
+
+Passing `--no-auth`/`--with-auth` and `--no-ai`/`--with-ai` (plus `--no-install`)
+makes the CLI fully non-interactive — useful in CI and for the isolated
+first-run guard (`tests/scaffold-first-run-guard.test.ts`).
 
 ### Auto-run setup (three-step flow)
 
