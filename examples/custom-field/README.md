@@ -63,6 +63,9 @@ fields: {
 # Install dependencies
 pnpm install
 
+# Set up environment (SQLite by default)
+cp .env.example .env
+
 # Generate Prisma schema and types
 pnpm generate
 

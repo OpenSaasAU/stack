@@ -64,19 +64,25 @@ cd examples/composable-dashboard
 pnpm install
 ```
 
-### 2. Generate Schema and Types
+### 2. Set Up Environment
+
+```bash
+cp .env.example .env
+```
+
+### 3. Generate Schema and Types
 
 ```bash
 pnpm generate
 ```
 
-### 3. Setup Database
+### 4. Setup Database
 
 ```bash
 pnpm db:push
 ```
 
-### 4. Seed Some Data (Optional)
+### 5. Seed Some Data (Optional)
 
 ```bash
 npx tsx seed.ts
@@ -90,7 +96,7 @@ pnpm db:studio
 
 Create a few users and posts to see the dashboard in action.
 
-### 5. Run Development Server
+### 6. Run Development Server
 
 ```bash
 pnpm dev

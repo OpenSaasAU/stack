@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createJsonFileStorage } from '@opensaas/stack-rag/storage'
 import { createProviderFromEnv } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { resolve } from 'node:path'
 
 // Configuration
 const EMBEDDINGS_PATH = resolve(process.cwd(), '.embeddings/docs.json')
 
-// Create provider once (reused across requests)
-const provider = createProviderFromEnv()
+// Search uses OpenAI embeddings by default. Without OPENAI_API_KEY the route
+// degrades gracefully (empty/disabled search) so the docs site builds and runs
+// without a key — instead of throwing during page-data collection at build time.
+const isSearchEnabled = (): boolean =>
+  process.env.EMBEDDING_PROVIDER === 'ollama' || Boolean(process.env.OPENAI_API_KEY)
+
+// Provider is created lazily (per the first request that needs it) rather than at
+// module load, so importing this route during `next build` never throws.
+let cachedProvider: EmbeddingProvider | undefined
+const getProvider = (): EmbeddingProvider => {
+  if (!cachedProvider) {
+    cachedProvider = createProviderFromEnv()
+  }
+  return cachedProvider
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +31,20 @@ export async function POST(request: NextRequest) {
     if (!query || typeof query !== 'string') {
       return NextResponse.json({ error: 'Invalid query parameter' }, { status: 400 })
     }
+
+    // No embedding key configured: return an empty result set so the UI shows
+    // "no results" rather than an error, and builds never require the secret.
+    if (!isSearchEnabled()) {
+      return NextResponse.json({
+        results: [],
+        query,
+        count: 0,
+        totalChunks: 0,
+        searchDisabled: true,
+      })
+    }
+
+    const provider = getProvider()
 
     // Generate embedding for the query using stack utilities
     const queryEmbedding = await provider.embed(query)
@@ -132,6 +160,15 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
+  if (!isSearchEnabled()) {
+    return NextResponse.json({
+      message:
+        'Search is disabled. Set OPENAI_API_KEY (or EMBEDDING_PROVIDER=ollama) to enable it.',
+      searchDisabled: true,
+    })
+  }
+
+  const provider = getProvider()
   return NextResponse.json({
     message: 'POST to this endpoint with { query: string } to search documentation',
     provider: provider.type,

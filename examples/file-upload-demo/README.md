@@ -51,25 +51,31 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 pnpm install
 ```
 
-2. Generate Prisma schema and types:
+2. Set up environment (SQLite by default):
+
+```bash
+cp .env.example .env
+```
+
+3. Generate Prisma schema and types:
 
 ```bash
 pnpm generate
 ```
 
-3. Create the database:
+4. Create the database:
 
 ```bash
 pnpm db:push
 ```
 
-4. Start the development server:
+5. Start the development server:
 
 ```bash
 pnpm dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000)
+6. Open [http://localhost:3000](http://localhost:3000)
 
 ## Pages
 

@@ -57,6 +57,12 @@ Demonstrates JSON fields for different use cases:
 pnpm install
 ```
 
+### Set Up Environment
+
+```bash
+cp .env.example .env
+```
+
 ### Generate Schema and Types
 
 ```bash

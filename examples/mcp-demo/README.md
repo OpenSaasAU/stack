@@ -19,7 +19,13 @@ This example demonstrates how to integrate the Model Context Protocol (MCP) with
 pnpm install
 ```
 
-### 2. Generate Schema
+### 2. Set Up Environment
+
+```bash
+cp .env.example .env
+```
+
+### 3. Generate Schema
 
 ```bash
 pnpm generate
@@ -33,13 +39,13 @@ This generates:
 - `.opensaas/mcp/tools.json` - MCP tool reference (metadata only)
 - `.opensaas/mcp/README.md` - Usage instructions
 
-### 3. Push Schema to Database
+### 4. Push Schema to Database
 
 ```bash
 pnpm db:push
 ```
 
-### 4. Start Development Server
+### 5. Start Development Server
 
 ```bash
 pnpm dev

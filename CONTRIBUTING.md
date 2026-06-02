@@ -11,8 +11,21 @@ Thanks for working on OpenSaas Stack itself. This guide covers the **monorepo** 
 
 ```bash
 pnpm install      # install all workspace dependencies
-pnpm build        # build all packages (turbo)
+pnpm build        # build publishable packages + the docs site (turbo)
 pnpm dev          # watch-build packages
+```
+
+`pnpm build` is scoped to the publishable `packages/*` and the docs site so it
+stays **deterministic on a clean checkout** — it does not build `examples/*`.
+Each example needs a developer-created `.env` (gitignored) before it can
+`generate`, so building examples from a fresh clone would otherwise fail. The
+template flows are covered instead by the `e2e` job and the scaffold guard. To
+build an example, set up its `.env` first (see [Trying an example](#trying-an-example)),
+then run its build directly:
+
+```bash
+pnpm --filter opensaas-blog-example build   # builds one example (after its .env exists)
+pnpm build:examples                         # builds all examples (each needs its .env)
 ```
 
 ## Repository layout
@@ -36,6 +49,17 @@ pnpm dev
 The `starter` and `starter-auth` examples are the **source of truth** for the
 `create-opensaas-app` templates — they are copied into the published package at
 build time, so changes to them flow to scaffolded projects.
+
+## Building the docs site
+
+```bash
+pnpm --filter opensaas-stack-docs build
+```
+
+The docs site builds **without any secret**. Its `/api/search` route uses
+`OPENAI_API_KEY` for semantic search; when the key is unset the route degrades
+gracefully (search returns empty results) instead of crashing page-data
+collection. Set `OPENAI_API_KEY` to enable live search.
 
 ## Testing
 
