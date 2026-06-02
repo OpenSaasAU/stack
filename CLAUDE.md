@@ -1266,7 +1266,7 @@ The `FieldRenderer` extracts `component` and `fieldType` from `ui` options, then
 
 Current generators are basic:
 
-- No migration support (use `prisma db push`)
+- Migrations: the generated `prisma.config.ts` supports `prisma migrate dev` / `prisma migrate deploy`. Local SQLite dev still uses `prisma db push` for a zero-setup loop; production uses `prisma migrate` (see ADR-0003).
 - No introspection support
 - Limited Prisma features (no raw queries, transactions, etc.)
 

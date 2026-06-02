@@ -9,6 +9,8 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:push": "prisma db push",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio"
   },
   "dependencies": {
