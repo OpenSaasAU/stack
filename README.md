@@ -155,6 +155,7 @@ See [`examples/composable-dashboard`](./examples/composable-dashboard) and the [
 - **[Building with Claude Code](https://stack.opensaas.au/docs/guides/claude-code)** — the AI-assisted workflow
 - **[Access Control](https://stack.opensaas.au/docs/core-concepts/access-control)** · **[Field Types](https://stack.opensaas.au/docs/core-concepts/field-types)** · **[Hooks](https://stack.opensaas.au/docs/core-concepts/hooks)**
 - **[Authentication](https://stack.opensaas.au/docs/guides/authentication)** · **[Storage](https://stack.opensaas.au/docs/guides/storage-setup)** · **[RAG](https://stack.opensaas.au/docs/packages/rag)**
+- **[Deployment](https://stack.opensaas.au/docs/guides/deployment)** — ship to production on Vercel + Postgres with `prisma migrate`
 
 ## Contributing & monorepo development
 
