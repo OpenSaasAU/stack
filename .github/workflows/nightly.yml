@@ -67,9 +67,9 @@ jobs:
   # (b) The FULL `examples/*` build. Examples are off the default build gate
   # (ADR-0002 / PR #447) because each needs a developer-created `.env` to
   # `generate`. This job makes that deterministic: it creates every example's
-  # `.env` from its `.env.example` first, forcing SQLite for the two examples
-  # whose config is `provider: 'sqlite'` but whose `.env.example` defaults to a
-  # PostgreSQL URL (`blog`, `composable-dashboard`), then runs `pnpm build:examples`.
+  # `.env` from its committed `.env.example` first, then runs `pnpm build:examples`.
+  # Each `.env.example` now defaults to a DATABASE_URL that matches its config's
+  # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
     runs-on: ubuntu-latest
@@ -86,26 +86,18 @@ jobs:
       - name: Build packages
         run: pnpm build
 
-      # Create a runnable `.env` for every example. Examples whose config uses
-      # `provider: 'sqlite'` but whose `.env.example` defaults to a PostgreSQL URL
-      # (blog, composable-dashboard) get DATABASE_URL forced to SQLite so the
-      # Prisma datasource provider matches. All other DB/secret placeholders come
-      # from the .env.example values plus the job-level env below.
+      # Create a runnable `.env` for every example by copying its committed
+      # `.env.example`. Each `.env.example` defaults DATABASE_URL to a value that
+      # matches its config's Prisma provider (#462), so no per-example overrides
+      # are needed. Other DB/secret placeholders come from the .env.example values
+      # plus the job-level env below.
       - name: Create .env for every example
         run: |
           set -euo pipefail
-          # sqlite-provider examples that ship a postgres .env.example default
-          force_sqlite="blog composable-dashboard"
           for dir in examples/*/; do
             name="$(basename "$dir")"
             if [ -f "$dir/.env.example" ]; then
               cp "$dir/.env.example" "$dir/.env"
-              case " $force_sqlite " in
-                *" $name "*)
-                  # Replace the DATABASE_URL line with a SQLite value.
-                  sed -i 's|^DATABASE_URL=.*|DATABASE_URL="file:./dev.db"|' "$dir/.env"
-                  ;;
-              esac
               echo "prepared .env for $name"
             fi
           done
