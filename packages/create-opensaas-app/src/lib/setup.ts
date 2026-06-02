@@ -8,10 +8,12 @@
  * actual process spawning lives in the CLI orchestrator.
  */
 
+import type { DbProvider } from './env.js'
+
 const PACKAGE_MANAGER = 'pnpm'
 
-/** Databases the scaffolder can target. Mirrors `DbProvider` in `env.ts`. */
-export type DbProvider = 'sqlite' | 'postgresql'
+/** Databases the scaffolder can target. Re-exported from `env.ts` (single source of truth). */
+export type { DbProvider }
 
 export interface SetupStep {
   /** Label shown while the step runs. */

@@ -34,15 +34,19 @@ interface TemplateOptions {
  */
 function parseDbFlag(args: string[]): DbProvider | undefined {
   const index = args.indexOf('--db')
-  const value =
-    index !== -1
-      ? args[index + 1]
-      : args.find((arg) => arg.startsWith('--db='))?.slice('--db='.length)
-  if (value === undefined) return undefined
+  // The flag is absent only when neither `--db` nor `--db=...` appears. A bare
+  // `--db` with no following value (`args[index + 1]` is `undefined`) is a usage
+  // error, not an absent flag, so it errors like an unknown value rather than
+  // silently defaulting.
+  const hasSpaceFlag = index !== -1
+  const value = hasSpaceFlag
+    ? args[index + 1]
+    : args.find((arg) => arg.startsWith('--db='))?.slice('--db='.length)
+  if (value === undefined && !hasSpaceFlag) return undefined
   if (value === 'sqlite') return 'sqlite'
   // Accept the friendly `postgres` alias as well as the canonical provider name.
   if (value === 'postgres' || value === 'postgresql') return 'postgresql'
-  console.error(chalk.red(`\n❌ Unknown --db value "${value}". Use "sqlite" or "postgres".`))
+  console.error(chalk.red(`\n❌ Unknown --db value "${value ?? ''}". Use "sqlite" or "postgres".`))
   process.exit(1)
 }
 

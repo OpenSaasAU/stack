@@ -51,7 +51,7 @@ export function generateEnvFiles(options: { provider: DbProvider; projectName: s
   const url = postgresUrl(projectName)
   const env =
     `# PostgreSQL — pooled connection used by the app's driver adapter.\n` +
-    `# Replace with your provider's pooled connection string before \`pnpm db:push\`.\n` +
+    `# Replace with your provider's pooled connection string before \`pnpm migrate\`.\n` +
     `DATABASE_URL="${url}"\n` +
     `\n` +
     `# Direct (non-pooled) connection used by the Prisma CLI for migrations.\n` +
