@@ -5,7 +5,8 @@
   "packageManager": "pnpm@10.29.1",
   "description": "A modern stack for building admin-heavy applications with Next.js App Router",
   "scripts": {
-    "build": " pnpm turbo build",
+    "build": "pnpm turbo build --filter=./packages/* --filter=opensaas-stack-docs",
+    "build:examples": "pnpm turbo build --filter=./examples/*",
     "dev": "pnpm -r --parallel dev",
     "clean": "pnpm -r clean",
     "lint": "eslint .",
