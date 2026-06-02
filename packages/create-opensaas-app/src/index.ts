@@ -29,7 +29,12 @@ async function main() {
   const args = process.argv.slice(2)
   let projectName = args.find((arg) => !arg.startsWith('--'))
   const hasAuthFlag = args.includes('--with-auth')
+  const hasNoAuthFlag = args.includes('--no-auth')
   const hasAiFlag = args.includes('--with-ai')
+  // Explicit opt-outs so the CLI can run fully non-interactively (e.g. in CI or
+  // an automated first-run guard): `--no-auth` skips the auth prompt and
+  // `--no-ai` skips the AI-tooling prompt and its networked MCP install.
+  const hasNoAiFlag = args.includes('--no-ai')
   const skipInstall = args.includes('--no-install') || args.includes('--skip-install')
 
   // Prompt for project name if not provided
@@ -64,9 +69,9 @@ async function main() {
     process.exit(1)
   }
 
-  // Prompt for auth if not specified via flag
+  // Prompt for auth unless a flag fixed the choice.
   let withAuth = hasAuthFlag
-  if (!hasAuthFlag) {
+  if (!hasAuthFlag && !hasNoAuthFlag) {
     const response = await prompts({
       type: 'confirm',
       name: 'withAuth',
@@ -82,9 +87,9 @@ async function main() {
     withAuth = response.withAuth
   }
 
-  // Prompt for MCP/AI development tools if not specified via flag
+  // Prompt for MCP/AI development tools unless a flag fixed the choice.
   let enableMCP = hasAiFlag
-  if (!hasAiFlag) {
+  if (!hasAiFlag && !hasNoAiFlag) {
     const mcpResponse = await prompts({
       type: 'confirm',
       name: 'enableMCP',
