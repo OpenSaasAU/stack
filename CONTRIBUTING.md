@@ -48,6 +48,23 @@ cd packages/cli && pnpm test
 
 End-to-end tests use Playwright (`pnpm test:e2e` from the repo root).
 
+### Coverage gating
+
+Coverage is reported for every package but **gated only on the
+security-critical core paths** — `src/access/**`, `src/context/**` (the
+read/write path, including the Write Pipeline, Hook Pipeline, and
+nested-operation registry), and `src/validation/**` in `@opensaas/stack-core`.
+These use Vitest per-glob, per-file thresholds set at/just below current levels,
+so `pnpm --filter @opensaas/stack-core test:coverage` exits non-zero (and the PR
+fails) if coverage on those paths regresses. All other packages (`storage`,
+`rag`, `auth`, `ui`, …) stay **report-only** — no thresholds, no forced coverage
+work. The rationale (a ratchet on what matters, not blanket coverage) is recorded
+in [ADR-0002](./docs/adr/0002-testing-and-ci-strategy.md).
+
+Vitest test discovery excludes `**/dist/**`, so a build running before tests
+(via the `test → build` turbo dependency) never inflates the test/file count
+with compiled `dist/**/*.test.js` duplicates.
+
 ## Before you commit
 
 Always run:
