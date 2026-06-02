@@ -31,6 +31,20 @@ describe('generateEnvFiles', () => {
       expect(env).toContain('localhost:5432/my_app?schema=public')
     })
 
+    it('emits both the pooled DATABASE_URL and the direct DIRECT_DATABASE_URL', () => {
+      // The pooled-app / direct-CLI split: the app's adapter uses DATABASE_URL,
+      // the Prisma CLI uses DIRECT_DATABASE_URL (see the deployment guide).
+      expect(env).toContain('DATABASE_URL="postgresql://')
+      expect(env).toContain('DIRECT_DATABASE_URL="postgresql://')
+      expect(envExample).toContain('DATABASE_URL="postgresql://')
+      expect(envExample).toContain('DIRECT_DATABASE_URL="postgresql://')
+    })
+
+    it('never hands a Postgres project a SQLite file URL as the active DATABASE_URL', () => {
+      const activeLines = env.split('\n').filter((line) => !line.trimStart().startsWith('#'))
+      expect(activeLines.join('\n')).not.toContain('file:./dev.db')
+    })
+
     it('offers SQLite as a commented alternative in the example', () => {
       expect(envExample).toContain('# DATABASE_URL="file:./dev.db"')
     })

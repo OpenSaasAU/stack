@@ -41,10 +41,28 @@ export function generateEnvFiles(options: { provider: DbProvider; projectName: s
     return { env, envExample }
   }
 
+  // PostgreSQL: emit the pooled-app / direct-CLI split (see the deployment
+  // guide). `DATABASE_URL` is the pooled connection the app's driver adapter
+  // uses at runtime; `DIRECT_DATABASE_URL` is the direct (non-pooled)
+  // connection the Prisma CLI uses for migrations. The generated
+  // `prisma.config.ts` resolves `DIRECT_DATABASE_URL ?? DATABASE_URL`, so both
+  // are placeholders the user replaces with their provider's connection
+  // strings.
   const url = postgresUrl(projectName)
-  const env = `DATABASE_URL="${url}"\n`
-  const envExample =
+  const env =
+    `# PostgreSQL — pooled connection used by the app's driver adapter.\n` +
+    `# Replace with your provider's pooled connection string before \`pnpm migrate\`.\n` +
     `DATABASE_URL="${url}"\n` +
+    `\n` +
+    `# Direct (non-pooled) connection used by the Prisma CLI for migrations.\n` +
+    `# Replace with your provider's direct connection string.\n` +
+    `DIRECT_DATABASE_URL="${url}"\n`
+  const envExample =
+    `# PostgreSQL — pooled connection used by the app's driver adapter.\n` +
+    `DATABASE_URL="${url}"\n` +
+    `\n` +
+    `# Direct (non-pooled) connection used by the Prisma CLI for migrations.\n` +
+    `DIRECT_DATABASE_URL="${url}"\n` +
     `\n` +
     `# For SQLite (zero setup, great for local development):\n` +
     `# DATABASE_URL="${SQLITE_URL}"\n`

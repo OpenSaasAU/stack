@@ -4,7 +4,7 @@ import { planSetupSteps, formatStepFailure, nextStepCommands } from '../src/lib/
 describe('planSetupSteps', () => {
   const steps = planSetupSteps()
 
-  it('runs install, then generate, then db:push in order', () => {
+  it('runs install, then generate, then db:push in order (SQLite default)', () => {
     expect(steps.map((s) => s.args)).toEqual([['install'], ['run', 'generate'], ['run', 'db:push']])
   })
 
@@ -13,6 +13,12 @@ describe('planSetupSteps', () => {
       expect(step.title).toBeTruthy()
       expect(step.retry).toMatch(/^pnpm /)
     }
+  })
+
+  it('omits db:push for PostgreSQL (no live DB during scaffolding)', () => {
+    const pgSteps = planSetupSteps('postgresql')
+    expect(pgSteps.map((s) => s.args)).toEqual([['install'], ['run', 'generate']])
+    expect(pgSteps.some((s) => s.args.includes('db:push'))).toBe(false)
   })
 })
 
@@ -42,5 +48,21 @@ describe('nextStepCommands', () => {
       'pnpm db:push',
       'pnpm dev',
     ])
+  })
+
+  it('uses migrate instead of db:push for a skipped PostgreSQL setup', () => {
+    const commands = nextStepCommands({
+      projectName: 'my-app',
+      autoRan: false,
+      provider: 'postgresql',
+    })
+    expect(commands).toEqual([
+      'cd my-app',
+      'pnpm install',
+      'pnpm generate',
+      'pnpm migrate',
+      'pnpm dev',
+    ])
+    expect(commands.join('\n')).not.toContain('db:push')
   })
 })

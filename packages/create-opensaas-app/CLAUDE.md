@@ -131,6 +131,7 @@ npm create opensaas-app@latest
 # Prompts for:
 # - Project name
 # - Include authentication? (y/n)
+# - Which database? (SQLite / PostgreSQL)
 ```
 
 ### With Flags
@@ -139,20 +140,25 @@ npm create opensaas-app@latest
 npm create opensaas-app@latest my-app                # Basic template
 npm create opensaas-app@latest my-app --with-auth    # Auth template
 npm create opensaas-app@latest my-app --no-auth      # Basic template, skip the auth prompt
+npm create opensaas-app@latest my-app --db postgres  # PostgreSQL-ready (pg adapter + Postgres .env)
+npm create opensaas-app@latest my-app --db sqlite    # Force SQLite, skip the database prompt
 npm create opensaas-app@latest my-app --with-ai      # Install AI dev tools (MCP)
 npm create opensaas-app@latest my-app --no-ai        # Skip the AI-tooling prompt (and its MCP install)
 npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate/db:push
 ```
 
-Passing `--no-auth`/`--with-auth` and `--no-ai`/`--with-ai` (plus `--no-install`)
-makes the CLI fully non-interactive — useful in CI and for the isolated
-first-run guard (`tests/scaffold-first-run-guard.test.ts`).
+Passing `--no-auth`/`--with-auth`, `--no-ai`/`--with-ai`, and `--db <provider>`
+(plus `--no-install`) makes the CLI fully non-interactive — useful in CI and for
+the isolated first-run guard (`tests/scaffold-first-run-guard.test.ts`). `--db`
+accepts `sqlite`, `postgres`, or `postgresql`.
 
 ### Auto-run setup (three-step flow)
 
 After scaffolding, the CLI runs `install` → `generate` → `db:push` for the user
 (see `runSetup` / `planSetupSteps`), so the documented flow collapses to three
-steps: **scaffold → `pnpm dev` → build with Claude Code**. If a step fails the
+steps: **scaffold → `pnpm dev` → build with Claude Code**. For PostgreSQL the
+auto-run omits `db:push` (it needs a live database the user configures first):
+the project lists `pnpm migrate` as the next step instead. If a step fails the
 CLI stops and prints a recoverable message naming the failed step and its retry
 command (`formatStepFailure`). Pass `--no-install` to skip the auto-run and get
 the full manual command list instead (`nextStepCommands`).
@@ -168,14 +174,23 @@ After copying the template, the CLI customizes:
    canonical `.env` + `.env.example` from `generateEnvFiles` (default
    `DATABASE_URL="file:./dev.db"`); the with-auth template seeds `.env` from its
    own `.env.example` so the Better-auth variables are preserved.
+4. **PostgreSQL transform** (`--db postgres` only): the templates are
+   SQLite-based, so a Postgres project is the SQLite template rewritten
+   deterministically. `toPostgresConfig` swaps the `opensaas.config.ts` `db`
+   block to the `PrismaPg` driver adapter; `toPostgresPackageJson` removes
+   `better-sqlite3` + `@prisma/adapter-better-sqlite3` and adds
+   `@prisma/adapter-pg` + `pg` (+ `@types/pg` dev); and `generateEnvFiles`
+   emits a Postgres `.env` with `DATABASE_URL` (pooled) + `DIRECT_DATABASE_URL`
+   (direct) placeholders. The `migrate` / `migrate:deploy` scripts already ship
+   in the template and are preserved.
 
 These transforms live in `src/lib/` (`project-name.ts`, `env.ts`,
-`package-json.ts`) as pure, unit-tested functions; `src/index.ts` is a thin
-orchestrator over them.
+`package-json.ts`, `postgres.ts`) as pure, unit-tested functions; `src/index.ts`
+is a thin orchestrator over them.
 
-**Files NOT customized** (kept as-is from template):
+**Files NOT customized for SQLite** (kept as-is from template):
 
-- `opensaas.config.ts` - User will customize themselves
+- `opensaas.config.ts` - User will customize themselves (rewritten only for `--db postgres`)
 - All other files
 
 ## Excluded Files
