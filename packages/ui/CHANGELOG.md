@@ -1,5 +1,62 @@
 # @opensaas/stack-ui
 
+## 0.21.0
+
+### Minor Changes
+
+- [#417](https://github.com/OpenSaasAU/stack/pull/417) [`ed1c9f5`](https://github.com/OpenSaasAU/stack/commit/ed1c9f532b77ef59d7a845731e6a6116904a859e) Thanks [@borisno2](https://github.com/borisno2)! - Unify the item-form logic behind a shared `useItemForm` engine
+
+  The AdminUI form (`ItemFormClient`) and the standalone `ItemCreateForm`/
+  `ItemEditForm` each carried their own near-identical copy of the form state,
+  the relationship-to-`connect` submit transform, the clear-error-on-change
+  behaviour, and the error/pending handling. That logic now lives once in a
+  `useItemForm` hook (with pure, exported `transformItemFormData`,
+  `transformInitialData`, and `getEditableFields` helpers); each form supplies
+  only an `onSubmit` adapter and renders the returned state.
+
+  Behaviour is unified to the superset: every form now applies the relationship
+  transform, the password `{ isSet }` skip for unchanged passwords, and
+  system-field filtering. The transform logic is covered by unit tests for the
+  first time.
+
+  No public API change — `ItemCreateForm`, `ItemEditForm`, and the AdminUI form
+  keep their existing props.
+
+- [#415](https://github.com/OpenSaasAU/stack/pull/415) [`8980ff3`](https://github.com/OpenSaasAU/stack/commit/8980ff36ffb0879d8f4409740493dd940572cc9d) Thanks [@borisno2](https://github.com/borisno2)! - Curate the `@opensaas/stack-core` public surface into clearly-scoped entry points
+
+  The root entry point now exposes only the everyday consumer surface — `config`,
+  `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`,
+  `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate
+  with. Plugin and field authoring contracts move to a new `/extend` path, and the
+  plumbing shared with sibling packages and generated code moves to `/internal`.
+
+  ```typescript
+  // Everyday usage (unchanged)
+  import { config, list, getContext } from '@opensaas/stack-core'
+
+  // Authoring a plugin or a third-party field package
+  import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  ```
+
+  `@opensaas/stack-core/internal` carries no semver guarantees; application code
+  should never import from it. `Session` stays on the root entry point because it is
+  the module-augmentation target.
+
+  Removed from the public surface (zero callers): the nine `*HookArgs` types and the
+  callerless typed-query runtime types. The other `@opensaas/*` packages and the CLI
+  generator are updated to import from the new paths.
+
+### Patch Changes
+
+- [#412](https://github.com/OpenSaasAU/stack/pull/412) [`9696f98`](https://github.com/OpenSaasAU/stack/commit/9696f9800284f94e21e14c31a716de4b48d736e5) Thanks [@borisno2](https://github.com/borisno2)! - Refactor `FieldRenderer` to use data-presence checks instead of `fieldConfig.type` comparisons
+
+  `FieldRenderer` no longer checks `fieldConfig.type` to decide which props to pass to field
+  components. Field-specific UI props (select options, relationship items/key/many) are now derived
+  from the serialised field config using data-presence checks (`fieldConfig.options`, `fieldConfig.ref`)
+  — the same self-contained pattern used for Prisma and TypeScript generation.
+
+  **For users:** no changes required. Field rendering behaviour is unchanged.
+
 ## 0.20.1
 
 ## 0.20.0

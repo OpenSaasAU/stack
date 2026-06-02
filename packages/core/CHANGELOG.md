@@ -1,5 +1,77 @@
 # @opensaas/stack-core
 
+## 0.21.0
+
+### Minor Changes
+
+- [#415](https://github.com/OpenSaasAU/stack/pull/415) [`8980ff3`](https://github.com/OpenSaasAU/stack/commit/8980ff36ffb0879d8f4409740493dd940572cc9d) Thanks [@borisno2](https://github.com/borisno2)! - Curate the `@opensaas/stack-core` public surface into clearly-scoped entry points
+
+  The root entry point now exposes only the everyday consumer surface — `config`,
+  `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`,
+  `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate
+  with. Plugin and field authoring contracts move to a new `/extend` path, and the
+  plumbing shared with sibling packages and generated code moves to `/internal`.
+
+  ```typescript
+  // Everyday usage (unchanged)
+  import { config, list, getContext } from '@opensaas/stack-core'
+
+  // Authoring a plugin or a third-party field package
+  import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  ```
+
+  `@opensaas/stack-core/internal` carries no semver guarantees; application code
+  should never import from it. `Session` stays on the root entry point because it is
+  the module-augmentation target.
+
+  Removed from the public surface (zero callers): the nine `*HookArgs` types and the
+  callerless typed-query runtime types. The other `@opensaas/*` packages and the CLI
+  generator are updated to import from the new paths.
+
+- [#416](https://github.com/OpenSaasAU/stack/pull/416) [`841a836`](https://github.com/OpenSaasAU/stack/commit/841a836494e2647f390ae19a8c4121d38ebd2fa4) Thanks [@borisno2](https://github.com/borisno2)! - Move field-config types to `@opensaas/stack-core/fields`, beside their builders
+
+  The concrete field-config types (`TextField`, `IntegerField`, `CheckboxField`,
+  `TimestampField`, `PasswordField`, `SelectField`, `RelationshipField`,
+  `JsonField`, `VirtualField`, plus `DecimalField`, `CalendarDayField`, and
+  `PrismaRelationResult`) now live on the `/fields` entry point alongside the
+  builders that produce them, instead of the root barrel. One concept, one import
+  path:
+
+  ```typescript
+  import { text, decimal } from '@opensaas/stack-core/fields'
+  import type { TextField, DecimalField } from '@opensaas/stack-core/fields'
+  ```
+
+  `DecimalField` and `CalendarDayField` were previously defined but exported from
+  nowhere — they are now public, and the CLI's lists generator maps `decimal`/
+  `calendarDay` fields to their precise types instead of the generic
+  `BaseFieldConfig` fallback. The umbrella `FieldConfig` stays on the root entry
+  point and `BaseFieldConfig` stays on `/extend`.
+
+### Patch Changes
+
+- [#441](https://github.com/OpenSaasAU/stack/pull/441) [`bc20bf4`](https://github.com/OpenSaasAU/stack/commit/bc20bf447cf724bd0ee153ea9a69d54cc26a6bb2) Thanks [@borisno2](https://github.com/borisno2)! - Validate field self-containment at config load instead of failing deep in generation
+
+  Core now exports `validateFieldConfig(field, fieldKey, listKey?)` and `validateConfigFields(config)` (plus the `FieldConfigValidationError` type). They check each field implements its generation contract — `getPrismaType`, `getTypeScriptType`, and `getZodSchema` (or `getPrismaRelation` for relationships; virtual fields skip `getPrismaType`) — and return structured per-field errors. `opensaas generate` runs this first and fails fast with a clear message naming the list, field, and missing method, rather than throwing an opaque stack trace mid-generation.
+
+- [#428](https://github.com/OpenSaasAU/stack/pull/428) [`50371ea`](https://github.com/OpenSaasAU/stack/commit/50371ea3dd134f6b3718f347fed2c0d3b7dc63ce) Thanks [@borisno2](https://github.com/borisno2)! - Fix outdated SQLite adapter guidance to match the installed `@prisma/adapter-better-sqlite3` API (`PrismaBetterSqlite3` constructed with `{ url }`), so copied examples actually run. Updates the CLI "missing adapter" error message and the migration config it generates, plus the `prismaClientConstructor` JSDoc example.
+
+- [#440](https://github.com/OpenSaasAU/stack/pull/440) [`70b4f53`](https://github.com/OpenSaasAU/stack/commit/70b4f538d380bbf546af50a985d29b48a71d3b4d) Thanks [@borisno2](https://github.com/borisno2)! - Refactor nested-operation dispatch into a handler registry (internal, no behaviour change)
+
+- [#397](https://github.com/OpenSaasAU/stack/pull/397) [`8e394ab`](https://github.com/OpenSaasAU/stack/commit/8e394abe9df2da53ba23b93836853516bb4e25d5) Thanks [@borisno2](https://github.com/borisno2)! - Move relationship Prisma schema generation into the relationship field builder
+
+  The relationship field now exposes a `getPrismaRelation()` method that returns its complete Prisma schema contribution (FK line, relation line, synthetic back-relation). The Prisma generator delegates to this method instead of special-casing relationships, keeping it a neutral coordinator. Generated schemas are unchanged.
+
+- [#455](https://github.com/OpenSaasAU/stack/pull/455) [`d3fdf2a`](https://github.com/OpenSaasAU/stack/commit/d3fdf2a2e5374302bc7fe1fe814cb0f567a349df) Thanks [@borisno2](https://github.com/borisno2)! - Exclude `**/dist/**` from Vitest test discovery and gate coverage on `src/access`, `src/context`, and `src/validation` via per-file thresholds.
+
+- [#403](https://github.com/OpenSaasAU/stack/pull/403) [`0f9c644`](https://github.com/OpenSaasAU/stack/commit/0f9c644a115ad747e338e6138b4762b4a48a9144) Thanks [@borisno2](https://github.com/borisno2)! - Split the access engine into named two-phase-read modules: Access Filter (pre-query), Field Visibility (post-query), and a shared field-access evaluator. No behaviour or public API change.
+
+- [#411](https://github.com/OpenSaasAU/stack/pull/411) [`96258b0`](https://github.com/OpenSaasAU/stack/commit/96258b00bb762d9e38cfb83eacae65ce670b161f) Thanks [@borisno2](https://github.com/borisno2)! - Deduplicate field-level hook execution helpers by promoting them to `hooks/index.ts`, and remove a stray `console.log` that ran on every create/update.
+
+- [#439](https://github.com/OpenSaasAU/stack/pull/439) [`898e477`](https://github.com/OpenSaasAU/stack/commit/898e47747abc02e457a54e2a78939450d16da5fb) Thanks [@borisno2](https://github.com/borisno2)! - Internal refactor: extract the write transform+validate span into a single Hook Pipeline that the Write Pipeline delegates to. No behaviour change.
+
+- [#438](https://github.com/OpenSaasAU/stack/pull/438) [`29966b2`](https://github.com/OpenSaasAU/stack/commit/29966b23597199bcf4233298b1d0de6401b91acd) Thanks [@borisno2](https://github.com/borisno2)! - Refactor the write path into a single Write Pipeline. The canonical secured write sequence (hooks, validation, access, writable-field filtering, nested operations, persistence, after-hooks, Field Visibility) now lives in one module; create/update/delete are thin adapters over it parameterised by a per-operation strategy. Internal refactor only — no public API or behaviour change.
+
 ## 0.20.1
 
 ## 0.20.0
