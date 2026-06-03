@@ -34,6 +34,10 @@ export { authPlugin } from './config/plugin.js'
 export type { AuthConfig, NormalizedAuthConfig } from './config/index.js'
 export type * from './config/types.js'
 
+// Pure better-auth config -> Auth lists derivation (advanced use cases)
+export { deriveAuthLists } from './config/derive-auth-lists.js'
+export type { DerivedAuthLists } from './config/derive-auth-lists.js'
+
 // Runtime type exports
 export type { AuthRuntimeServices } from './runtime/types.js'
 

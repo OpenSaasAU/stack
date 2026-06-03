@@ -189,6 +189,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
       }
     }
 
+    // Map the model to a custom table name when configured (e.g. adopting
+    // existing tables whose physical name differs from the list key).
+    if (listConfig.db?.map) {
+      lines.push(`  @@map("${listConfig.db.map}")`)
+    }
+
     lines.push('}')
     lines.push('')
   }

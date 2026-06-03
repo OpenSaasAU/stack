@@ -817,6 +817,46 @@ describe('Prisma Schema Generator', () => {
       expect(schema).not.toContain('@@unique([authorId])')
     })
 
+    it('should generate @@map for a list-level db.map', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { map: 'AuthUser' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('model AuthUser {')
+      expect(schema).toContain('@@map("AuthUser")')
+    })
+
+    it('should not generate @@map when no list-level db.map is set', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('@@map')
+    })
+
     it('should generate indexes for multiple foreign keys', () => {
       const config: OpenSaasConfig = {
         db: {

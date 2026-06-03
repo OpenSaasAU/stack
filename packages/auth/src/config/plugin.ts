@@ -1,4 +1,5 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
+import { getDbKey } from '@opensaas/stack-core'
 import type { AuthConfig, NormalizedAuthConfig } from './types.js'
 import { normalizeAuthConfig } from './index.js'
 import { getAuthLists } from '../lists/index.js'
@@ -38,8 +39,12 @@ export function authPlugin(config: AuthConfig): Plugin {
     },
 
     init: async (context) => {
-      // Get auth lists from base Better Auth schema
-      const authLists = getAuthLists(normalized.extendUserList)
+      // Derive the auth lists from the better-auth model config (modelName +
+      // field column maps). With no overrides this yields the historical
+      // User/Session/Account/Verification keys; with overrides (e.g.
+      // user.modelName: 'AuthUser') the lists are keyed and column-mapped to
+      // match the developer's live better-auth tables.
+      const authLists = getAuthLists(normalized.extendUserList, normalized.models)
 
       // Extract additional lists from Better Auth plugins
       for (const plugin of normalized.betterAuthPlugins) {
@@ -66,10 +71,18 @@ export function authPlugin(config: AuthConfig): Plugin {
         }
       }
 
-      // Add all auth lists
+      // Add all auth lists.
+      //
+      // The plugin only ever touches its OWN derived keys. When a developer
+      // renames the auth user model (e.g. user.modelName: 'AuthUser'), the
+      // derived key is 'AuthUser' and an app's separate 'User' list is left
+      // untouched — the plugin never extends/overwrites a list it didn't
+      // derive. Extending only kicks in when an existing list shares the
+      // derived key (e.g. the default 'User'), which is the intended
+      // "merge auth fields into my User" behaviour.
       for (const [listName, listConfig] of Object.entries(authLists)) {
         if (context.config.lists[listName]) {
-          // If user defined a User list, extend it with auth fields
+          // A list already exists under this derived key — merge auth fields in.
           context.extendList(listName, {
             fields: listConfig.fields,
             hooks: listConfig.hooks,
@@ -88,6 +101,10 @@ export function authPlugin(config: AuthConfig): Plugin {
     },
 
     runtime: (context) => {
+      // Resolve the user list's context.db key from the configured user model.
+      // context.db is keyed camelCase, so 'User' -> 'user', 'AuthUser' -> 'authUser'.
+      const userDbKey = getDbKey(normalized.models.user.modelName)
+
       // Provide auth-related utilities at runtime
       return {
         /**
@@ -95,9 +112,7 @@ export function authPlugin(config: AuthConfig): Plugin {
          * Uses the access-controlled context to fetch user data
          */
         getUser: async (userId: string) => {
-          // Use 'authUser' if custom User list name was provided, otherwise 'user'
-          const userListKey = 'user' // TODO: Make this configurable based on list name
-          return await context.db[userListKey].findUnique({
+          return await context.db[userDbKey].findUnique({
             where: { id: userId },
           })
         },
@@ -110,8 +125,7 @@ export function authPlugin(config: AuthConfig): Plugin {
           if (!context.session?.userId) {
             return null
           }
-          const userListKey = 'user'
-          return await context.db[userListKey].findUnique({
+          return await context.db[userDbKey].findUnique({
             where: { id: context.session.userId },
           })
         },
