@@ -1908,6 +1908,136 @@ describe('Prisma Schema Generator', () => {
       }).not.toThrow()
     })
 
+    it('should rename the enum block and the column reference with db.enumName', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          AccountNote: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Open', value: 'open' },
+                  { label: 'Closed', value: 'closed' },
+                ],
+                db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The enum block uses the custom name
+      expect(schema).toContain('enum AccountNoteStatusType {')
+      expect(schema).toContain('  open')
+      expect(schema).toContain('  closed')
+      // The column references the custom enum name
+      expect(schema).toMatch(/status\s+AccountNoteStatusType/)
+      // The derived name is not emitted anywhere
+      expect(schema).not.toContain('enum AccountNoteStatus {')
+      expect(schema).not.toMatch(/status\s+AccountNoteStatus\b/)
+    })
+
+    it('should emit String? @default("X") for optional string select with default + db.isNullable', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { isNullable: true },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/status\s+String\? @default\("draft"\)/)
+    })
+
+    it('should emit <Enum>? @default(X) for optional enum select with default + db.isNullable', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { type: 'enum', isNullable: true },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('enum PostStatus {')
+      expect(schema).toMatch(/status\s+PostStatus\? @default\(draft\)/)
+    })
+
+    it('should keep optional-select-with-default NOT NULL without db.isNullable (string)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Unchanged behaviour: a default makes the column NOT NULL
+      expect(schema).toMatch(/status\s+String @default\("draft"\)/)
+      expect(schema).not.toMatch(/status\s+String\?/)
+    })
+
+    it('should keep optional-select-with-default NOT NULL without db.isNullable (enum)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/status\s+PostStatus @default\(draft\)/)
+      expect(schema).not.toMatch(/status\s+PostStatus\?/)
+    })
+
     it('should generate enum field with @map modifier', () => {
       const config: OpenSaasConfig = {
         db: { provider: 'sqlite' },

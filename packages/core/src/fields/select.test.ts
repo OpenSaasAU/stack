@@ -52,6 +52,48 @@ describe('select field builder', () => {
       expect(result.modifiers).toBe(' @default("draft")')
     })
 
+    it('should emit NOT NULL (no ?) for optional string select with a default', () => {
+      const field = select({
+        options: [
+          { label: 'Draft', value: 'draft' },
+          { label: 'Published', value: 'published' },
+        ],
+        defaultValue: 'draft',
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      // Default behaviour: a present default makes the column NOT NULL
+      expect(result.modifiers).toBe(' @default("draft")')
+      expect(result.modifiers).not.toContain('?')
+    })
+
+    it('should force ? with db.isNullable even when a default is present (string)', () => {
+      const field = select({
+        options: [
+          { label: 'Draft', value: 'draft' },
+          { label: 'Published', value: 'published' },
+        ],
+        defaultValue: 'draft',
+        db: { isNullable: true },
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      expect(result.type).toBe('String')
+      expect(result.modifiers).toBe('? @default("draft")')
+    })
+
+    it('should keep ? from db.isNullable for a required string select with default', () => {
+      const field = select({
+        options: [{ label: 'Draft', value: 'draft' }],
+        defaultValue: 'draft',
+        validation: { isRequired: true },
+        db: { isNullable: true },
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      expect(result.modifiers).toBe('? @default("draft")')
+    })
+
     it('should generate union TypeScript type from options', () => {
       const field = select({
         options: [
@@ -203,6 +245,63 @@ describe('select field builder', () => {
       expect(result.modifiers).toBe(' @default(draft)')
       // Explicitly check there are no quotes
       expect(result.modifiers).not.toContain('"')
+    })
+
+    it('should emit NOT NULL (no ?) for optional enum select with a default', () => {
+      const field = select({
+        options: [
+          { label: 'Draft', value: 'draft' },
+          { label: 'Published', value: 'published' },
+        ],
+        db: { type: 'enum' },
+        defaultValue: 'draft',
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      expect(result.modifiers).toBe(' @default(draft)')
+      expect(result.modifiers).not.toContain('?')
+    })
+
+    it('should force ? with db.isNullable even when a default is present (enum)', () => {
+      const field = select({
+        options: [
+          { label: 'Draft', value: 'draft' },
+          { label: 'Published', value: 'published' },
+        ],
+        db: { type: 'enum', isNullable: true },
+        defaultValue: 'draft',
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      expect(result.type).toBe('PostStatus')
+      expect(result.modifiers).toBe('? @default(draft)')
+    })
+
+    it('should override the derived enum name with db.enumName', () => {
+      const field = select({
+        options: [
+          { label: 'Open', value: 'open' },
+          { label: 'Closed', value: 'closed' },
+        ],
+        db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'AccountNote')
+      // result.type drives both the enum block name and the column reference
+      expect(result.type).toBe('AccountNoteStatusType')
+      expect(result.enumValues).toEqual(['open', 'closed'])
+    })
+
+    it('should ignore db.enumName for string (non-enum) selects', () => {
+      const field = select({
+        options: [{ label: 'Open', value: 'open' }],
+        // enumName only applies to native-enum selects; string selects stay String
+        db: { enumName: 'ShouldBeIgnored' },
+      })
+
+      const result = field.getPrismaType!('status', 'sqlite', 'AccountNote')
+      expect(result.type).toBe('String')
+      expect(result.enumValues).toBeUndefined()
     })
 
     it('should include @map modifier for enum field with map option', () => {

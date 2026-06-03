@@ -591,6 +591,46 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
      */
     type?: 'string' | 'enum'
     map?: string
+    /**
+     * Force the generated column to be nullable (`?`) even when a `defaultValue`
+     * is present. By default a select with a `defaultValue` generates NOT NULL;
+     * set this to `true` for an explicit opt-in to a nullable column with a
+     * default (e.g. `String? @default("X")` or `<Enum>? @default(X)`), so that
+     * a live column containing NULLs migrates without a NOT NULL failure.
+     *
+     * @default undefined (NOT NULL when a default is present — unchanged behaviour)
+     *
+     * @example
+     * ```typescript
+     * // Optional select with a default, but keep the column nullable
+     * status: select({
+     *   options: [{ label: 'Draft', value: 'draft' }],
+     *   defaultValue: 'draft',
+     *   db: { isNullable: true },
+     * })
+     * // Generates: String? @default("draft")
+     * ```
+     */
+    isNullable?: boolean
+    /**
+     * Override the generated Prisma enum type name for native-enum selects
+     * (only applies when `type: 'enum'`). By default the enum is named
+     * `<List><Field>` (e.g. `AccountNoteStatus`); set this to match a live DB
+     * enum type whose name differs (e.g. Keystone's `…Type` suffix).
+     *
+     * The custom name is applied to both the generated `enum` block and every
+     * reference to it in the owning model.
+     *
+     * @example
+     * ```typescript
+     * status: select({
+     *   options: [{ label: 'Open', value: 'open' }],
+     *   db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+     * })
+     * // Generates: enum AccountNoteStatusType { ... } and the column references it
+     * ```
+     */
+    enumName?: string
   }
   validation?: {
     isRequired?: boolean
