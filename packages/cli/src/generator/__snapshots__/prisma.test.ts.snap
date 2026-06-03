@@ -197,7 +197,7 @@ datasource db {
 "
 `;
 
-exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with Int @id @default(1) 1`] = `
+exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with bare Int @id (no @default) 1`] = `
 "generator client {
   provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
@@ -208,7 +208,7 @@ datasource db {
 }
 
 model Settings {
-  id        Int      @id @default(1)
+  id        Int      @id
   siteName     String
   maintenanceMode Boolean @default(false)
 }

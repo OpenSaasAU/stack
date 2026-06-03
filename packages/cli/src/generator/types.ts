@@ -136,7 +136,8 @@ function generateModelOutputType(
   const lines: string[] = []
 
   lines.push(`export type ${listName}Output = {`)
-  // Singleton lists use Int @id (always 1) matching Keystone 6 behaviour
+  // Singleton lists use an Int id (bare `id Int @id`, see ADR-0004) matching
+  // Keystone 6, so the TypeScript id type is `number` rather than `string`.
   lines.push(isSingleton ? '  id: number' : '  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {

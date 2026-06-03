@@ -2087,7 +2087,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toMatchSnapshot()
     })
 
-    it('should generate singleton model with Int @id @default(1)', () => {
+    it('should generate singleton model with bare Int @id (no @default)', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -2105,7 +2105,10 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      expect(schema).toContain('id        Int      @id @default(1)')
+      // Singleton ids are bare `id Int @id` to match Keystone 6 (see ADR-0004),
+      // which emits no column default for singleton ids.
+      expect(schema).toContain('id        Int      @id\n')
+      expect(schema).not.toContain('@default(1)')
       expect(schema).not.toContain('id        String   @id @default(cuid())')
       expect(schema).toMatchSnapshot()
     })
@@ -2126,8 +2129,9 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
+      // Non-singleton ids are unaffected by the singleton bare-id change.
       expect(schema).toContain('id        String   @id @default(cuid())')
-      expect(schema).not.toContain('id        Int      @id @default(1)')
+      expect(schema).not.toContain('id        Int      @id')
     })
   })
 
