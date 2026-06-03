@@ -1,4 +1,5 @@
 import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
+import type { TypeInfo } from '@opensaas/stack-core/extend'
 import type { RelationshipField, PrismaRelationResult } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -19,9 +20,8 @@ import * as path from 'path'
  */
 export function resolveListTimestamps(
   // ListConfig is generic over per-list TypeInfo; the generator only reads `db`/`fields`,
-  // which are invariant across that generic, so the permissive default arg is intentional.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  listConfig: ListConfig<any>,
+  // which are invariant across that generic, so the default `TypeInfo` is sufficient.
+  listConfig: ListConfig<TypeInfo>,
   dbConfig: DatabaseConfig,
 ): { createdAt: boolean; updatedAt: boolean } {
   // Per-list override wins over the global setting; otherwise fall back to the global
@@ -51,10 +51,11 @@ function mapFieldTypeToPrisma(
   field: FieldConfig,
   provider?: string,
   listName?: string,
+  keystoneCompat?: boolean,
 ): string | null {
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider, listName)
+    const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.type
   }
 
@@ -70,10 +71,11 @@ function getFieldModifiers(
   field: FieldConfig,
   provider?: string,
   listName?: string,
+  keystoneCompat?: boolean,
 ): string {
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider, listName)
+    const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.modifiers || ''
   }
 
@@ -88,6 +90,10 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   const lines: string[] = []
 
   const opensaasPath = config.opensaasPath || '.opensaas'
+  // Keystone-compat mode: when on, non-null text without an explicit default
+  // gets Keystone's implicit empty-string default. Threaded to fields via
+  // getPrismaType, the same way provider/listName already reach them.
+  const keystoneCompat = config.db.keystoneCompat ?? false
 
   // Generator and datasource
   lines.push('generator client {')
@@ -106,7 +112,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       if (fieldConfig.type === 'relationship' || fieldConfig.virtual) continue
       if (fieldConfig.getPrismaType) {
-        const result = fieldConfig.getPrismaType(fieldName, config.db.provider, listName)
+        const result = fieldConfig.getPrismaType(
+          fieldName,
+          config.db.provider,
+          listName,
+          keystoneCompat,
+        )
         if (result.enumValues && result.enumValues.length > 0) {
           enumDefinitions.set(result.type, result.enumValues)
         }
@@ -185,10 +196,22 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
         continue
       }
 
-      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig, config.db.provider, listName)
+      const prismaType = mapFieldTypeToPrisma(
+        fieldName,
+        fieldConfig,
+        config.db.provider,
+        listName,
+        keystoneCompat,
+      )
       if (!prismaType) continue // Skip if no type returned
 
-      const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider, listName)
+      const modifiers = getFieldModifiers(
+        fieldName,
+        fieldConfig,
+        config.db.provider,
+        listName,
+        keystoneCompat,
+      )
 
       // Format with proper spacing: '?' attaches to type directly, other modifiers get a space
       const paddedName = fieldName.padEnd(12)
@@ -234,6 +257,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
       } else if (index.indexType === true) {
         lines.push(`  @@index([${index.foreignKeyField}])`)
       }
+    }
+
+    // Map the model to a custom table name when configured (e.g. adopting
+    // existing tables whose physical name differs from the list key).
+    if (listConfig.db?.map) {
+      lines.push(`  @@map("${listConfig.db.map}")`)
     }
 
     lines.push('}')

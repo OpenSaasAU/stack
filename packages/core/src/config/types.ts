@@ -462,12 +462,16 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param fieldName - The name of the field (for generating modifiers)
    * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
    * @param listName - Optional list name (used for generating enum type names)
+   * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
+   *   When true, non-null text columns without an explicit defaultValue emit
+   *   `@default("")` to match Keystone 6's implicit empty-string text default.
    * @returns Prisma type string, optional modifiers, and optional enum values
    */
   getPrismaType?: (
     fieldName: string,
     provider?: string,
     listName?: string,
+    keystoneCompat?: boolean,
   ) => {
     type: string
     modifiers?: string
@@ -1200,6 +1204,47 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   }
   hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
+   * Database configuration for this list (model level)
+   */
+  db?: {
+    /**
+     * Custom database table name.
+     * Adds a `@@map` attribute to the generated Prisma model.
+     *
+     * Useful when the Prisma model name (the list key) must differ from the
+     * physical table name — e.g. adopting an existing better-auth installation
+     * whose tables were created under a different name.
+     *
+     * @example
+     * ```typescript
+     * AuthUser: list({ fields: { ... }, db: { map: 'user' } })
+     * // Generates: model AuthUser { ... @@map("user") }
+     * ```
+     */
+    map?: string
+    /**
+     * Per-list override for auto-injected `createdAt`/`updatedAt` timestamp columns.
+     *
+     * Takes precedence over the global `db.timestamps` setting:
+     * - `true` forces auto-timestamps on for this list, even when the global default is off.
+     * - `false` forces them off for this list, even when enabled globally.
+     * - `undefined` (the default) falls back to the global `db.timestamps` setting.
+     *
+     * When timestamps resolve to on but the list already declares its own `createdAt`/
+     * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
+     * never sees a duplicate (`P1012`).
+     *
+     * @example Opt a single list out of timestamps even when enabled globally
+     * ```typescript
+     * Production: list({
+     *   fields: { name: text() },
+     *   db: { timestamps: false },
+     * })
+     * ```
+     */
+    timestamps?: boolean
+  }
+  /**
    * MCP server configuration for this list
    */
   mcp?: ListMcpConfig
@@ -1233,32 +1278,6 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
          */
         autoCreate?: boolean
       }
-  /**
-   * Database-level configuration for this list.
-   */
-  db?: {
-    /**
-     * Per-list override for auto-injected `createdAt`/`updatedAt` timestamp columns.
-     *
-     * Takes precedence over the global `db.timestamps` setting:
-     * - `true` forces auto-timestamps on for this list, even when the global default is off.
-     * - `false` forces them off for this list, even when enabled globally.
-     * - `undefined` (the default) falls back to the global `db.timestamps` setting.
-     *
-     * When timestamps resolve to on but the list already declares its own `createdAt`/
-     * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
-     * never sees a duplicate (`P1012`).
-     *
-     * @example Opt a single list out of timestamps even when enabled globally
-     * ```typescript
-     * Production: list({
-     *   fields: { name: text() },
-     *   db: { timestamps: false },
-     * })
-     * ```
-     */
-    timestamps?: boolean
-  }
 }
 
 /**
@@ -1388,6 +1407,34 @@ export type DatabaseConfig = {
    * ```
    */
   timestamps?: boolean
+  /**
+   * Opt into Keystone-compat mode for generated schema defaults.
+   *
+   * Keystone 6 gives every non-null text column an implicit empty-string
+   * default. With `keystoneCompat: true`, the generator mirrors that: any
+   * non-null `text()` column that has no explicit `defaultValue` emits
+   * `@default("")`, so a migrating project reaches Schema parity without
+   * hand-setting `defaultValue: ''` on dozens of columns.
+   *
+   * Stays opt-in (default `false`) because a greenfield project would not want
+   * implicit empty-string text defaults cluttering its schema. The flag never
+   * affects nullable text, fields with an explicit `defaultValue`, or any
+   * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
+   *
+   * @default false
+   *
+   * @example Reach Schema parity when migrating from Keystone
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   // ... rest of config
+   * }
+   * ```
+   *
+   * @see ADR-0004 (Keystone-compatible generator defaults)
+   */
+  keystoneCompat?: boolean
   /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema

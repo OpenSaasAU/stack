@@ -1,5 +1,27 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Prisma Schema Generator > Keystone-compat mode (db.keystoneCompat) > emits @default("") for non-null text without an explicit default (snapshot) 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  name         String @default("")
+  status       String @default("PLEASE_UPDATE")
+  nickname     String?
+  note         String?
+  loginCount   Int
+  isActive     Boolean @default(true)
+}
+"
+`;
+
 exports[`Prisma Schema Generator > field defaultValue → @default(...) > generates a representative multi-field model with mixed defaults 1`] = `
 "generator client {
   provider = "prisma-client"

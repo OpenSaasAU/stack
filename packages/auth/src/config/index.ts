@@ -1,10 +1,51 @@
 import type {
   AuthConfig,
+  AuthModelConfig,
   NormalizedAuthConfig,
+  NormalizedAuthModelConfig,
+  NormalizedAuthModels,
   EmailPasswordConfig,
   EmailVerificationConfig,
   PasswordResetConfig,
 } from './types.js'
+
+/**
+ * Default better-auth model names. Used when the developer does not override
+ * `modelName`, preserving the historical `User`/`Session`/`Account`/`Verification`
+ * keys exactly.
+ */
+const DEFAULT_MODEL_NAMES = {
+  user: 'User',
+  session: 'Session',
+  account: 'Account',
+  verification: 'Verification',
+} as const
+
+/**
+ * Resolve a single better-auth model config block into its normalized form,
+ * falling back to the better-auth default model name and an empty column map.
+ */
+function normalizeModelConfig(
+  config: AuthModelConfig | undefined,
+  defaultModelName: string,
+): NormalizedAuthModelConfig {
+  return {
+    modelName: config?.modelName || defaultModelName,
+    fields: config?.fields || {},
+  }
+}
+
+/**
+ * Resolve the better-auth model config for all four auth models.
+ */
+function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
+  return {
+    user: normalizeModelConfig(config.user, DEFAULT_MODEL_NAMES.user),
+    session: normalizeModelConfig(config.session, DEFAULT_MODEL_NAMES.session),
+    account: normalizeModelConfig(config.account, DEFAULT_MODEL_NAMES.account),
+    verification: normalizeModelConfig(config.verification, DEFAULT_MODEL_NAMES.verification),
+  }
+}
 
 /**
  * Normalize auth configuration with defaults
@@ -47,12 +88,17 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
   // Session fields defaults
   const sessionFields = config.sessionFields || ['userId', 'email', 'name']
 
+  // Resolve better-auth per-model config (modelName + field column maps).
+  // Defaults preserve the historical User/Session/Account/Verification keys.
+  const models = normalizeAuthModels(config)
+
   return {
     emailAndPassword,
     emailVerification,
     passwordReset,
     socialProviders: config.socialProviders || {},
     session,
+    models,
     sessionFields,
     extendUserList: config.extendUserList || {},
     sendEmail:

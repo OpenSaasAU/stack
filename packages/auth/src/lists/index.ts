@@ -1,6 +1,6 @@
-import { list } from '@opensaas/stack-core'
-import { text, timestamp, checkbox, relationship } from '@opensaas/stack-core/fields'
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
+import type { NormalizedAuthModels } from '../config/types.js'
+import { deriveAuthLists } from '../config/derive-auth-lists.js'
 
 /**
  * Configuration for extending the auto-generated User list
@@ -25,229 +25,69 @@ export type ExtendUserListConfig = {
 }
 
 /**
- * Create the base User list with better-auth required fields
- * This matches the better-auth user schema
+ * The default better-auth model config (no `modelName`/`fields` overrides).
+ * Produces the historical `User`/`Session`/`Account`/`Verification` keys with
+ * their original field shapes. Used by the backwards-compatible
+ * `createUserList`/`getAuthLists` helpers.
  */
-export function createUserList(
-  config?: ExtendUserListConfig, // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-): ListConfig<any> {
-  return list({
-    fields: {
-      // Better-auth required fields
-      name: text({
-        validation: { isRequired: true },
-      }),
-      email: text({
-        validation: { isRequired: true },
-        isIndexed: 'unique',
-      }),
-      emailVerified: checkbox({
-        defaultValue: false,
-      }),
-      image: text(),
-
-      // Relationships to other auth tables
-      sessions: relationship({
-        ref: 'Session.user',
-        many: true,
-      }),
-      accounts: relationship({
-        ref: 'Account.user',
-        many: true,
-      }),
-
-      // Custom fields from user config
-      ...(config?.fields || {}),
-    },
-    access: config?.access || {
-      operation: {
-        // Anyone can query users (for displaying names, etc.)
-        query: () => true,
-        // Anyone can create a user (sign up)
-        create: () => true,
-        // Only update your own user record
-        update: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-        // Only delete your own user record
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-      },
-    },
-    hooks: config?.hooks,
-  })
+const DEFAULT_MODELS: NormalizedAuthModels = {
+  user: { modelName: 'User', fields: {} },
+  session: { modelName: 'Session', fields: {} },
+  account: { modelName: 'Account', fields: {} },
+  verification: { modelName: 'Verification', fields: {} },
 }
 
 /**
- * Create the Session list for better-auth
- * Stores active user sessions
+ * Create the base User list with better-auth required fields.
+ *
+ * Backwards-compatible helper: derives the default `User` list (keyed `User`,
+ * default field shapes) via {@link deriveAuthLists}.
+ */
+export function createUserList(
+  config?: ExtendUserListConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): ListConfig<any> {
+  return deriveAuthLists(DEFAULT_MODELS, config).lists.User
+}
+
+/**
+ * Create the Session list for better-auth (default `Session` key).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function createSessionList(): ListConfig<any> {
-  return list({
-    fields: {
-      // Session token (stored in cookie, used as primary key)
-      token: text({
-        validation: { isRequired: true },
-        isIndexed: 'unique',
-      }),
-      // Expiration timestamp
-      expiresAt: timestamp(),
-      // Optional: IP address for security
-      ipAddress: text(),
-      // Optional: User agent for security
-      userAgent: text(),
-      // Relationship to user (userId will be auto-generated)
-      user: relationship({
-        ref: 'User.sessions',
-      }),
-    },
-    access: {
-      operation: {
-        // Only the session owner can query their sessions
-        query: ({ session }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          // Return Prisma filter for nested relationship
-          return {
-            user: {
-              id: { equals: userId },
-            },
-          } as Record<string, unknown>
-        },
-        // Better-auth handles session creation
-        create: () => true,
-        // No manual updates
-        update: () => false,
-        // Better-auth handles session deletion (logout)
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    },
-  })
+  return deriveAuthLists(DEFAULT_MODELS).lists.Session
 }
 
 /**
- * Create the Account list for better-auth
- * Stores OAuth provider accounts and credentials
+ * Create the Account list for better-auth (default `Account` key).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function createAccountList(): ListConfig<any> {
-  return list({
-    fields: {
-      // Account identifier from provider
-      accountId: text({
-        validation: { isRequired: true },
-      }),
-      // Provider identifier (e.g., 'github', 'google', 'credentials')
-      providerId: text({
-        validation: { isRequired: true },
-      }),
-      // Relationship to user (userId will be auto-generated)
-      user: relationship({
-        ref: 'User.accounts',
-      }),
-      // OAuth tokens
-      accessToken: text(),
-      refreshToken: text(),
-      accessTokenExpiresAt: timestamp(),
-      refreshTokenExpiresAt: timestamp(),
-      scope: text(),
-      idToken: text(),
-      // Password hash for credential provider (better-auth stores in account table)
-      password: text(),
-    },
-    access: {
-      operation: {
-        // Only the account owner can query their accounts
-        query: ({ session }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          // Return Prisma filter for nested relationship
-          return {
-            user: {
-              id: { equals: userId },
-            },
-          } as Record<string, unknown>
-        },
-        // Better-auth handles account creation
-        create: () => true,
-        // Better-auth handles account updates (token refresh)
-        update: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-        // Account owner can delete their accounts
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    },
-  })
+  return deriveAuthLists(DEFAULT_MODELS).lists.Account
 }
 
 /**
- * Create the Verification list for better-auth
- * Stores email verification tokens, password reset tokens, etc.
+ * Create the Verification list for better-auth (default `Verification` key).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function createVerificationList(): ListConfig<any> {
-  return list({
-    fields: {
-      // Identifier (e.g., email address)
-      identifier: text({
-        validation: { isRequired: true },
-      }),
-      // Token value
-      value: text({
-        validation: { isRequired: true },
-      }),
-      // Expiration timestamp
-      expiresAt: timestamp(),
-    },
-    access: {
-      operation: {
-        // No public querying (better-auth handles verification internally)
-        query: () => false,
-        // Better-auth creates verification tokens
-        create: () => true,
-        // No updates
-        update: () => false,
-        // Better-auth deletes used/expired tokens
-        delete: () => true,
-      },
-    },
-  })
+  return deriveAuthLists(DEFAULT_MODELS).lists.Verification
 }
 
 /**
- * Get all auth lists required by better-auth
- * This is the main export used by authPlugin()
+ * Get all auth lists required by better-auth.
+ *
+ * Derives the Auth lists from the resolved better-auth model config. When no
+ * `models` are supplied (or none carry overrides), the result is the historical
+ * default set keyed `User`/`Session`/`Account`/`Verification`.
+ *
+ * @param userConfig - Extra User-list fields/access/hooks (from `extendUserList`)
+ * @param models - Resolved better-auth model config; defaults to the better-auth defaults
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-export function getAuthLists(userConfig?: ExtendUserListConfig): Record<string, ListConfig<any>> {
-  return {
-    User: createUserList(userConfig),
-    Session: createSessionList(),
-    Account: createAccountList(),
-    Verification: createVerificationList(),
-  }
+export function getAuthLists(
+  userConfig?: ExtendUserListConfig,
+  models: NormalizedAuthModels = DEFAULT_MODELS,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): Record<string, ListConfig<any>> {
+  return deriveAuthLists(models, userConfig || {}).lists
 }
