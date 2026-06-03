@@ -30,11 +30,14 @@ describe('authPlugin - schema placement (greenfield default)', () => {
       lists: {},
     })
 
-    // Default keys, no @@schema, no @@map
-    expect(result.lists.User.db).toBeUndefined()
-    expect(result.lists.Session.db).toBeUndefined()
-    expect(result.lists.Account.db).toBeUndefined()
-    expect(result.lists.Verification.db).toBeUndefined()
+    // Default keys, no @@schema, no @@map. Auth lists still opt into
+    // auto-timestamps (ADR-0004), so db carries only `timestamps: true`.
+    expect(result.lists.User.db).toEqual({ timestamps: true })
+    expect(result.lists.User.db?.schema).toBeUndefined()
+    expect(result.lists.User.db?.map).toBeUndefined()
+    expect(result.lists.Session.db?.schema).toBeUndefined()
+    expect(result.lists.Account.db?.schema).toBeUndefined()
+    expect(result.lists.Verification.db?.schema).toBeUndefined()
 
     // Datasource is NOT switched to multi-schema
     expect(result.db.schemas).toBeUndefined()
@@ -62,11 +65,21 @@ describe('authPlugin - schema placement (adopt existing auth-schema install)', (
       },
     })
 
-    // Auth lists land in the `auth` schema, pinned to their live table names
-    expect(result.lists.AuthUser.db).toEqual({ map: 'AuthUser', schema: 'auth' })
-    expect(result.lists.AuthSession.db).toEqual({ map: 'AuthSession', schema: 'auth' })
-    expect(result.lists.AuthAccount.db).toEqual({ map: 'AuthAccount', schema: 'auth' })
+    // Auth lists land in the `auth` schema, pinned to their live table names.
+    // Auto-timestamps stay enabled (ADR-0004) alongside the @@map + @@schema.
+    expect(result.lists.AuthUser.db).toEqual({ timestamps: true, map: 'AuthUser', schema: 'auth' })
+    expect(result.lists.AuthSession.db).toEqual({
+      timestamps: true,
+      map: 'AuthSession',
+      schema: 'auth',
+    })
+    expect(result.lists.AuthAccount.db).toEqual({
+      timestamps: true,
+      map: 'AuthAccount',
+      schema: 'auth',
+    })
     expect(result.lists.AuthVerification.db).toEqual({
+      timestamps: true,
       map: 'AuthVerification',
       schema: 'auth',
     })

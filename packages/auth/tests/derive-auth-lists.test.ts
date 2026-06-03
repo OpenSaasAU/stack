@@ -184,7 +184,9 @@ describe('deriveAuthLists - schema placement', () => {
 
     const { lists } = deriveAuthLists(models)
 
-    expect(lists.AuthUser.db).toEqual({ map: 'AuthUser', schema: 'auth' })
+    // Auth lists always opt into auto-timestamps (ADR-0004) alongside the
+    // table @@map and @@schema placement.
+    expect(lists.AuthUser.db).toEqual({ timestamps: true, map: 'AuthUser', schema: 'auth' })
   })
 
   it('honours a per-model schema override alongside a different default schema', () => {
@@ -205,10 +207,13 @@ describe('deriveAuthLists - schema placement', () => {
   it('emits no @@schema for the default (no-schema) configuration', () => {
     const { lists } = deriveAuthLists(defaultModels)
 
-    expect(lists.User.db).toBeUndefined()
-    expect(lists.Session.db).toBeUndefined()
-    expect(lists.Account.db).toBeUndefined()
-    expect(lists.Verification.db).toBeUndefined()
+    // Auth lists still opt into auto-timestamps (ADR-0004); the greenfield
+    // default just carries no schema/map placement.
+    expect(lists.User.db).toEqual({ timestamps: true })
+    expect(lists.User.db?.schema).toBeUndefined()
+    expect(lists.Session.db?.schema).toBeUndefined()
+    expect(lists.Account.db?.schema).toBeUndefined()
+    expect(lists.Verification.db?.schema).toBeUndefined()
   })
 })
 
