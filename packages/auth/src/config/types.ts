@@ -117,6 +117,18 @@ export type AuthModelConfig = {
    * ```
    */
   fields?: Record<string, string>
+  /**
+   * Database schema (Postgres) for this auth model.
+   * Generates a `@@schema("...")` on the derived list, overriding the
+   * plugin-level {@link AuthConfig.schema} for this one model.
+   *
+   * @example
+   * ```typescript
+   * // Place the verification table in a different schema from the rest
+   * verification: { schema: 'auth_internal' }
+   * ```
+   */
+  schema?: string
 }
 
 /**
@@ -169,6 +181,35 @@ export type AuthConfig = {
    * better-auth `verification` model configuration (modelName + field column maps).
    */
   verification?: AuthModelConfig
+
+  /**
+   * Database schema (Postgres) for the generated Auth lists.
+   *
+   * When set, all four Auth lists (user/session/account/verification) are placed
+   * in this schema via `@@schema(...)`, and the stack's multi-schema support is
+   * wired automatically: the datasource `schemas` array gains this schema (plus
+   * `public`) and the `multiSchema` preview feature is enabled. A per-model
+   * {@link AuthModelConfig.schema} overrides this for an individual list.
+   *
+   * Useful for adopting an existing separate-schema better-auth installation
+   * (e.g. an `auth` Postgres schema) so the generated lists diff clean against
+   * the live tables. When unset, the Auth lists stay in the default `public`
+   * schema and no `@@schema` is emitted (greenfield default unchanged).
+   *
+   * Only applies to the `postgresql` provider.
+   *
+   * @example Adopt an `auth`-schema better-auth install
+   * ```typescript
+   * authPlugin({
+   *   schema: 'auth',
+   *   user: { modelName: 'AuthUser' },
+   *   session: { modelName: 'AuthSession' },
+   *   account: { modelName: 'AuthAccount' },
+   *   verification: { modelName: 'AuthVerification' },
+   * })
+   * ```
+   */
+  schema?: string
 
   /**
    * Which fields to include in the session object
@@ -264,11 +305,14 @@ export type AuthConfig = {
 /**
  * Resolved per-model auth configuration after normalization.
  * Always carries a concrete `modelName` (the developer's override or the
- * better-auth default) and a (possibly empty) `fields` column map.
+ * better-auth default) and a (possibly empty) `fields` column map. `schema`
+ * carries the resolved Postgres schema for the model (per-model override, else
+ * the plugin-level schema, else `undefined` for the default `public` schema).
  */
 export type NormalizedAuthModelConfig = {
   modelName: string
   fields: Record<string, string>
+  schema?: string
 }
 
 /**
@@ -298,6 +342,7 @@ export type NormalizedAuthConfig = Required<
     | 'user'
     | 'account'
     | 'verification'
+    | 'schema'
   >
 > & {
   emailAndPassword: Required<EmailPasswordConfig>
@@ -305,8 +350,14 @@ export type NormalizedAuthConfig = Required<
   passwordReset: Required<PasswordResetConfig>
   /** Resolved session expiry settings (model config lives under `models.session`). */
   session: Required<SessionConfig>
-  /** Resolved better-auth model config (modelName + field column maps) for all auth models. */
+  /** Resolved better-auth model config (modelName + field column maps + schema) for all auth models. */
   models: NormalizedAuthModels
+  /**
+   * Plugin-level Postgres schema for the Auth lists, if any. Resolved per-model
+   * schemas live on `models.<model>.schema`; this is the unresolved plugin-level
+   * default (used to wire the datasource `schemas` array during generation).
+   */
+  schema?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
   betterAuthPlugins: any[]
   rateLimit?: {

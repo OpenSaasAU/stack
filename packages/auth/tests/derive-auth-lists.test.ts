@@ -135,6 +135,61 @@ describe('deriveAuthLists - custom field column maps', () => {
   })
 })
 
+describe('deriveAuthLists - schema placement', () => {
+  it('places all lists in the configured schema via db.schema', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db?.schema).toBe('auth')
+    expect(lists.AuthSession.db?.schema).toBe('auth')
+    expect(lists.AuthAccount.db?.schema).toBe('auth')
+    expect(lists.AuthVerification.db?.schema).toBe('auth')
+  })
+
+  it('carries both @@map and @@schema for renamed + relocated lists', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db).toEqual({ map: 'AuthUser', schema: 'auth' })
+  })
+
+  it('honours a per-model schema override alongside a different default schema', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      // One list targets a different schema than the rest
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth_internal' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db?.schema).toBe('auth')
+    expect(lists.AuthVerification.db?.schema).toBe('auth_internal')
+  })
+
+  it('emits no @@schema for the default (no-schema) configuration', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.User.db).toBeUndefined()
+    expect(lists.Session.db).toBeUndefined()
+    expect(lists.Account.db).toBeUndefined()
+    expect(lists.Verification.db).toBeUndefined()
+  })
+})
+
 describe('deriveAuthLists - extendUserList', () => {
   it('adds custom fields to the derived user list', () => {
     const { lists } = deriveAuthLists(

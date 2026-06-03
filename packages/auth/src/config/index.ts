@@ -24,26 +24,37 @@ const DEFAULT_MODEL_NAMES = {
 /**
  * Resolve a single better-auth model config block into its normalized form,
  * falling back to the better-auth default model name and an empty column map.
+ * The model's Postgres schema is the per-model `schema` override when present,
+ * otherwise the plugin-level `schema` default (or `undefined` for `public`).
  */
 function normalizeModelConfig(
   config: AuthModelConfig | undefined,
   defaultModelName: string,
+  defaultSchema: string | undefined,
 ): NormalizedAuthModelConfig {
   return {
     modelName: config?.modelName || defaultModelName,
     fields: config?.fields || {},
+    schema: config?.schema ?? defaultSchema,
   }
 }
 
 /**
  * Resolve the better-auth model config for all four auth models.
+ * `defaultSchema` is the plugin-level `schema` applied to every model unless a
+ * per-model `schema` override is given.
  */
 function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
+  const defaultSchema = config.schema
   return {
-    user: normalizeModelConfig(config.user, DEFAULT_MODEL_NAMES.user),
-    session: normalizeModelConfig(config.session, DEFAULT_MODEL_NAMES.session),
-    account: normalizeModelConfig(config.account, DEFAULT_MODEL_NAMES.account),
-    verification: normalizeModelConfig(config.verification, DEFAULT_MODEL_NAMES.verification),
+    user: normalizeModelConfig(config.user, DEFAULT_MODEL_NAMES.user, defaultSchema),
+    session: normalizeModelConfig(config.session, DEFAULT_MODEL_NAMES.session, defaultSchema),
+    account: normalizeModelConfig(config.account, DEFAULT_MODEL_NAMES.account, defaultSchema),
+    verification: normalizeModelConfig(
+      config.verification,
+      DEFAULT_MODEL_NAMES.verification,
+      defaultSchema,
+    ),
   }
 }
 
@@ -99,6 +110,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     socialProviders: config.socialProviders || {},
     session,
     models,
+    schema: config.schema,
     sessionFields,
     extendUserList: config.extendUserList || {},
     sendEmail:

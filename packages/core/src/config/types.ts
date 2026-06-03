@@ -1218,6 +1218,24 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     map?: string
+    /**
+     * Database schema for this model (Postgres multi-schema).
+     * Adds a `@@schema` attribute to the generated Prisma model.
+     *
+     * Requires the schema to be listed in the datasource `schemas` array (see
+     * {@link DatabaseConfig.schemas}) and the `multiSchema` preview feature,
+     * both of which the generator emits automatically when `db.schemas` is set.
+     *
+     * Useful when adopting an existing installation whose tables live in a
+     * non-`public` schema — e.g. a separate-schema better-auth layout.
+     *
+     * @example
+     * ```typescript
+     * AuthUser: list({ fields: { ... }, db: { schema: 'auth' } })
+     * // Generates: model AuthUser { ... @@schema("auth") }
+     * ```
+     */
+    schema?: string
   }
   /**
    * MCP server configuration for this list
@@ -1351,6 +1369,27 @@ export type DatabaseConfig = {
    * ```
    */
   joinTableNaming?: 'prisma' | 'keystone'
+  /**
+   * Postgres multi-schema support.
+   *
+   * When set, the generator enables Prisma's `multiSchema` preview feature and
+   * emits the `schemas = [...]` array on the datasource block. Combine with a
+   * per-list `db.schema` (see {@link ListConfig}) to place models in a specific
+   * schema via `@@schema(...)`.
+   *
+   * Only applies to the `postgresql` provider. When unset, the generated schema
+   * is unchanged (single `public` schema, no `@@schema` attributes).
+   *
+   * @example Separate `auth` schema alongside the default `public`
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   schemas: ['public', 'auth'],
+   *   // ...
+   * }
+   * ```
+   */
+  schemas?: string[]
   /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema

@@ -57,19 +57,28 @@ export type DerivedAuthLists = {
 }
 
 /**
- * Build the `db.map` for a derived list.
+ * Build the list-level `db` config (`@@map` + `@@schema`) for a derived list.
  *
  * When the developer renames the model (e.g. `modelName: 'AuthUser'`), we pin
  * the physical table name to that model name via `@@map("AuthUser")` so the
- * generated list adopts the developer's live table exactly. When no override is
- * given we emit no `@@map`, leaving the default `User`/`Session`/... output
- * byte-for-byte unchanged.
+ * generated list adopts the developer's live table exactly. When a `schema` is
+ * configured (plugin-level or per-model), the list is placed in that Postgres
+ * schema via `@@schema(...)`.
+ *
+ * With no overrides (default model name, no schema) we return `undefined`,
+ * leaving the default `User`/`Session`/... output byte-for-byte unchanged.
  */
 function listDb(
   model: NormalizedAuthModelConfig,
   defaultModelName: string,
-): { map: string } | undefined {
-  return model.modelName !== defaultModelName ? { map: model.modelName } : undefined
+): { map?: string; schema?: string } | undefined {
+  const map = model.modelName !== defaultModelName ? model.modelName : undefined
+  const schema = model.schema
+  if (map === undefined && schema === undefined) return undefined
+  return {
+    ...(map !== undefined ? { map } : {}),
+    ...(schema !== undefined ? { schema } : {}),
+  }
 }
 
 /**
