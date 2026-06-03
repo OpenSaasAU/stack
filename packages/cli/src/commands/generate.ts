@@ -12,6 +12,7 @@ import {
   writeContext,
   writePluginTypes,
   writePrismaExtensions,
+  resolveOutputPaths,
 } from '../generator/index.js'
 import { OpenSaasConfig, validateConfigFields } from '@opensaas/stack-core'
 import type { FieldConfigValidationError } from '@opensaas/stack-core'
@@ -106,21 +107,27 @@ export async function generateCommand() {
     // Generate Prisma schema, types, and context
     const generatorSpinner = ora('Generating schema and types...').start()
     try {
-      const prismaSchemaPath = path.join(cwd, 'prisma', 'schema.prisma')
-      const prismaConfigPath = path.join(cwd, 'prisma.config.ts')
-      const typesPath = path.join(cwd, '.opensaas', 'types.ts')
-      const listsPath = path.join(cwd, '.opensaas', 'lists.ts')
-      const contextPath = path.join(cwd, '.opensaas', 'context.ts')
-      const pluginTypesPath = path.join(cwd, '.opensaas', 'plugin-types.ts')
-      const prismaExtensionsPath = path.join(cwd, '.opensaas', 'prisma-extensions.ts')
+      // Resolve write paths and the relative cross-references between generated
+      // files from the (optional) `output` config block. With no `output`
+      // block this yields the historical defaults (`prisma/schema.prisma`,
+      // `.opensaas/`) byte-for-byte.
+      const { paths, crossReferences } = resolveOutputPaths(cwd, config.output)
 
-      writePrismaSchema(config, prismaSchemaPath)
-      writePrismaConfig(config, prismaConfigPath)
+      const prismaSchemaPath = paths.prismaSchema
+      const prismaConfigPath = paths.prismaConfig
+      const typesPath = paths.types
+      const listsPath = paths.lists
+      const contextPath = paths.context
+      const pluginTypesPath = paths.pluginTypes
+      const prismaExtensionsPath = paths.prismaExtensions
+
+      writePrismaSchema(config, prismaSchemaPath, crossReferences.prismaClientOutput)
+      writePrismaConfig(config, prismaConfigPath, crossReferences.prismaConfigSchema)
       writeTypes(config, typesPath)
       writeLists(config, listsPath)
-      writeContext(config, contextPath)
+      writeContext(config, contextPath, crossReferences.configImport)
       writePluginTypes(config, pluginTypesPath)
-      writePrismaExtensions(config, prismaExtensionsPath)
+      writePrismaExtensions(config, prismaExtensionsPath, crossReferences.configImport)
 
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
@@ -162,7 +169,7 @@ export async function generateCommand() {
           // Write any additional files plugins generated
           for (const [filename, content] of Object.entries(modifiedFiles)) {
             if (!['prismaSchema', 'types', 'context'].includes(filename)) {
-              const filePath = path.join(cwd, '.opensaas', filename)
+              const filePath = path.join(paths.opensaasDir, filename)
               fs.writeFileSync(filePath, content)
               console.log(chalk.green(`✅ Plugin generated: ${filename}`))
             }

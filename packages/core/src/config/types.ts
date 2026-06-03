@@ -1821,6 +1821,34 @@ export type Plugin = {
  * Main configuration type
  * Using interface instead of type to allow module augmentation
  */
+/**
+ * Configurable generator output locations.
+ *
+ * Lets a project relocate the generated Prisma schema and the `.opensaas`
+ * bundle directory. Paths are interpreted relative to the project root.
+ *
+ * @example
+ * ```typescript
+ * output: {
+ *   prismaSchema: 'prisma-opensaas/schema.prisma',
+ *   opensaasDir: '.opensaas',
+ * }
+ * ```
+ */
+export interface OutputConfig {
+  /**
+   * Path to the generated Prisma schema file.
+   * @default "prisma/schema.prisma"
+   */
+  prismaSchema?: string
+  /**
+   * Directory for the generated `.opensaas` bundle (types, lists, context,
+   * plugin-types, prisma-extensions, and the patched Prisma client).
+   * @default ".opensaas"
+   */
+  opensaasDir?: string
+}
+
 export interface OpenSaasConfig {
   db: DatabaseConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
@@ -1841,6 +1869,20 @@ export interface OpenSaasConfig {
    * @default ".opensaas"
    */
   opensaasPath?: string
+  /**
+   * Relocate the generator's output so `opensaas generate` can coexist with an
+   * existing `prisma/` directory (e.g. during a Keystone → stack migration).
+   *
+   * Both fields are resolved relative to the project root (the directory the
+   * CLI runs in). When omitted, defaults are unchanged: the schema is written to
+   * `prisma/schema.prisma` and the `.opensaas` bundle to `.opensaas/`.
+   *
+   * The generated files' cross-references follow these locations — `context.ts`
+   * imports the generated types/lists from the resolved `.opensaas` dir, and the
+   * top-level `prisma.config.ts` points at the configured schema path so the
+   * `prisma` CLI keeps working.
+   */
+  output?: OutputConfig
   /**
    * Plugins to extend the stack
    * Executed in array order (or dependency order if dependencies specified)

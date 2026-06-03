@@ -5,7 +5,16 @@ import * as os from 'os'
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
 import { validateConfigFields } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { writePrismaSchema, writeTypes, writeContext } from '../generator/index.js'
+import {
+  writePrismaSchema,
+  writePrismaConfig,
+  writeTypes,
+  writeLists,
+  writeContext,
+  writePluginTypes,
+  writePrismaExtensions,
+  resolveOutputPaths,
+} from '../generator/index.js'
 import { formatFieldValidationErrors } from './generate.js'
 
 // Mock ora module
@@ -279,6 +288,146 @@ describe('Generate Command Integration', () => {
       expect(fs.readdirSync(prismaDir)).toContain('schema.prisma')
       expect(fs.readdirSync(opensaasDir)).toContain('types.ts')
       expect(fs.readdirSync(opensaasDir)).toContain('context.ts')
+    })
+  })
+
+  describe('Configurable output paths', () => {
+    const config: OpenSaasConfig = {
+      db: {
+        provider: 'sqlite',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prismaClientConstructor: (() => null) as any,
+      },
+      output: {
+        prismaSchema: 'prisma-opensaas/schema.prisma',
+        opensaasDir: 'generated/opensaas',
+      },
+      lists: {
+        User: {
+          fields: {
+            name: text({ validation: { isRequired: true } }),
+          },
+        },
+      },
+    }
+
+    /**
+     * Drive the generator exactly as the CLI does: resolve paths from the
+     * `output` block and forward the cross-references into each writer.
+     */
+    function generateWithResolvedPaths(cfg: OpenSaasConfig) {
+      const { paths, crossReferences } = resolveOutputPaths(tempDir, cfg.output)
+      writePrismaSchema(cfg, paths.prismaSchema, crossReferences.prismaClientOutput)
+      writePrismaConfig(cfg, paths.prismaConfig, crossReferences.prismaConfigSchema)
+      writeTypes(cfg, paths.types)
+      writeLists(cfg, paths.lists)
+      writeContext(cfg, paths.context, crossReferences.configImport)
+      writePluginTypes(cfg, paths.pluginTypes)
+      writePrismaExtensions(cfg, paths.prismaExtensions, crossReferences.configImport)
+      return { paths, crossReferences }
+    }
+
+    it('writes the schema and bundle files to the configured locations', () => {
+      generateWithResolvedPaths(config)
+
+      expect(fs.existsSync(path.join(tempDir, 'prisma-opensaas', 'schema.prisma'))).toBe(true)
+      // The default prisma/ dir must be untouched so an existing Keystone setup
+      // can coexist.
+      expect(fs.existsSync(path.join(tempDir, 'prisma', 'schema.prisma'))).toBe(false)
+
+      const bundleDir = path.join(tempDir, 'generated', 'opensaas')
+      for (const file of [
+        'types.ts',
+        'lists.ts',
+        'context.ts',
+        'plugin-types.ts',
+        'prisma-extensions.ts',
+      ]) {
+        expect(fs.existsSync(path.join(bundleDir, file))).toBe(true)
+      }
+      // The default .opensaas/ dir is never created.
+      expect(fs.existsSync(path.join(tempDir, '.opensaas'))).toBe(false)
+    })
+
+    it('generates prisma.config.ts at the root pointing at the configured schema dir', () => {
+      generateWithResolvedPaths(config)
+
+      const prismaConfigPath = path.join(tempDir, 'prisma.config.ts')
+      expect(fs.existsSync(prismaConfigPath)).toBe(true)
+
+      const prismaConfig = fs.readFileSync(prismaConfigPath, 'utf-8')
+      expect(prismaConfig).toContain("schema: 'prisma-opensaas'")
+
+      // The schema directory the config points at exists and holds the schema.
+      const schemaDir = path.resolve(tempDir, 'prisma-opensaas')
+      expect(fs.existsSync(path.join(schemaDir, 'schema.prisma'))).toBe(true)
+    })
+
+    it('context.ts and prisma-extensions.ts import opensaas.config via a path that resolves', () => {
+      const { paths, crossReferences } = generateWithResolvedPaths(config)
+
+      // Place a stand-in opensaas.config at the project root so the relative
+      // import target genuinely exists on disk.
+      const configFile = path.join(tempDir, 'opensaas.config.ts')
+      fs.writeFileSync(configFile, 'export default {}\n')
+
+      const context = fs.readFileSync(paths.context, 'utf-8')
+      const extensions = fs.readFileSync(paths.prismaExtensions, 'utf-8')
+
+      // Both files use the resolved relative specifier.
+      expect(context).toContain(`from '${crossReferences.configImport}'`)
+      expect(extensions).toContain(`from '${crossReferences.configImport}'`)
+
+      // The specifier, resolved from the bundle dir, lands on the real config.
+      const resolvedFromContext = path.resolve(
+        path.dirname(paths.context),
+        `${crossReferences.configImport}.ts`,
+      )
+      expect(resolvedFromContext).toBe(configFile)
+      expect(fs.existsSync(resolvedFromContext)).toBe(true)
+    })
+
+    it('points the prisma client generator output at the relocated bundle', () => {
+      const { paths, crossReferences } = generateWithResolvedPaths(config)
+
+      const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
+      expect(schema).toContain(`output   = "${crossReferences.prismaClientOutput}"`)
+
+      // Resolved from the schema file's directory, the output lands inside the
+      // configured bundle directory.
+      const resolvedClientDir = path.resolve(
+        path.dirname(paths.prismaSchema),
+        crossReferences.prismaClientOutput,
+      )
+      expect(resolvedClientDir).toBe(path.join(paths.opensaasDir, 'prisma-client'))
+    })
+
+    it('leaves defaults unchanged when no output block is set', () => {
+      const defaultConfig: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: { User: { fields: { name: text() } } },
+      }
+
+      const { paths } = resolveOutputPaths(tempDir, defaultConfig.output)
+      writePrismaSchema(defaultConfig, paths.prismaSchema)
+      writePrismaConfig(defaultConfig, paths.prismaConfig)
+      writeContext(defaultConfig, paths.context)
+
+      expect(fs.existsSync(path.join(tempDir, 'prisma', 'schema.prisma'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, '.opensaas', 'context.ts'))).toBe(true)
+
+      const schema = fs.readFileSync(path.join(tempDir, 'prisma', 'schema.prisma'), 'utf-8')
+      expect(schema).toContain('output   = "../.opensaas/prisma-client"')
+
+      const context = fs.readFileSync(path.join(tempDir, '.opensaas', 'context.ts'), 'utf-8')
+      expect(context).toContain("from '../opensaas.config'")
+
+      const prismaConfig = fs.readFileSync(path.join(tempDir, 'prisma.config.ts'), 'utf-8')
+      expect(prismaConfig).toContain("schema: 'prisma'")
     })
   })
 
