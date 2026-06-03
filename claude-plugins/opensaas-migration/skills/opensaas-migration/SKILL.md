@@ -551,6 +551,6 @@ The agent will create a detailed GitHub issue with reproduction steps and propos
 ## Resources
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
-- [Migration Guide](https://stack.opensaas.au/guides/migration)
+- [Migration Guide](https://stack.opensaas.au/docs/guides/migrating-from-keystone)
 - [Access Control Guide](https://stack.opensaas.au/core-concepts/access-control)
 - [Field Types](https://stack.opensaas.au/core-concepts/field-types)

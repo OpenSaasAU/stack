@@ -10,6 +10,7 @@ import type {
   MigrationQuestion,
 } from '../../../migration/types.js'
 import { MigrationGenerator } from '../../../migration/generators/migration-generator.js'
+import { MIGRATION_GUIDE_URL } from '../../../commands/migrate.js'
 
 interface MigrationSessionStorage {
   [sessionId: string]: MigrationSession & { questions?: MigrationQuestion[] }
@@ -472,7 +473,7 @@ Documentation: https://stack.opensaas.au/`,
 
 Please try again or create the config manually.
 
-📚 See: https://stack.opensaas.au/guides/migration`,
+📚 See: ${MIGRATION_GUIDE_URL}`,
           },
         ],
       }
