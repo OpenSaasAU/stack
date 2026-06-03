@@ -1787,4 +1787,70 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toMatchSnapshot()
     })
   })
+
+  describe('Keystone-compat mode (db.keystoneCompat)', () => {
+    // A representative model exercising every branch of the empty-string rule:
+    // required text (compat default applies), required text with an explicit
+    // default (explicit wins), optional/nullable text (untouched), and non-text
+    // fields (untouched). The same lists are generated with the flag off below
+    // so the on/off contrast is part of the proof.
+    const representativeLists: OpenSaasConfig['lists'] = {
+      Account: {
+        fields: {
+          // Required, no default → @default("") under keystoneCompat
+          name: text({ validation: { isRequired: true } }),
+          // Required, explicit default → explicit value wins
+          status: text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' }),
+          // Optional → nullable → never gets the compat default
+          nickname: text(),
+          // Explicitly nullable despite isRequired → never gets the compat default
+          note: text({ validation: { isRequired: true }, db: { isNullable: true } }),
+          // Non-text fields are unaffected by the flag
+          loginCount: integer({ validation: { isRequired: true } }),
+          isActive: checkbox({ defaultValue: true }),
+        },
+      },
+    }
+
+    it('emits @default("") for non-null text without an explicit default (snapshot)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql', keystoneCompat: true },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The migrating-developer guarantee: required text reaches Schema parity
+      // with Keystone's implicit empty-string default.
+      expect(schema).toMatch(/name\s+String\s+@default\(""\)/)
+      // Explicit default still wins over the compat empty-string default.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // Nullable text is untouched (no default at all).
+      expect(schema).toMatch(/nickname\s+String\?\s*$/m)
+      expect(schema).toMatch(/note\s+String\?\s*$/m)
+      // Non-text fields keep their own behaviour.
+      expect(schema).toMatch(/loginCount\s+Int\s*$/m)
+      expect(schema).toMatch(/isActive\s+Boolean\s+@default\(true\)/)
+
+      expect(schema).toMatchSnapshot()
+    })
+
+    it('emits no implicit text default when keystoneCompat is off (default)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Greenfield default: required text stays clean — String with no default.
+      expect(schema).toMatch(/name\s+String\s*$/m)
+      expect(schema).not.toMatch(/name\s+String\s+@default/)
+      // Explicit defaults are still honoured regardless of the flag.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // The only empty-string default present is the explicit none — i.e. there
+      // is no @default("") anywhere when the flag is off.
+      expect(schema).not.toContain('@default("")')
+    })
+  })
 })

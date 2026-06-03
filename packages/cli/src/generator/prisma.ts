@@ -11,10 +11,11 @@ function mapFieldTypeToPrisma(
   field: FieldConfig,
   provider?: string,
   listName?: string,
+  keystoneCompat?: boolean,
 ): string | null {
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider, listName)
+    const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.type
   }
 
@@ -30,10 +31,11 @@ function getFieldModifiers(
   field: FieldConfig,
   provider?: string,
   listName?: string,
+  keystoneCompat?: boolean,
 ): string {
   // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
-    const result = field.getPrismaType(fieldName, provider, listName)
+    const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.modifiers || ''
   }
 
@@ -48,6 +50,10 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   const lines: string[] = []
 
   const opensaasPath = config.opensaasPath || '.opensaas'
+  // Keystone-compat mode: when on, non-null text without an explicit default
+  // gets Keystone's implicit empty-string default. Threaded to fields via
+  // getPrismaType, the same way provider/listName already reach them.
+  const keystoneCompat = config.db.keystoneCompat ?? false
 
   // Generator and datasource
   lines.push('generator client {')
@@ -66,7 +72,12 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       if (fieldConfig.type === 'relationship' || fieldConfig.virtual) continue
       if (fieldConfig.getPrismaType) {
-        const result = fieldConfig.getPrismaType(fieldName, config.db.provider, listName)
+        const result = fieldConfig.getPrismaType(
+          fieldName,
+          config.db.provider,
+          listName,
+          keystoneCompat,
+        )
         if (result.enumValues && result.enumValues.length > 0) {
           enumDefinitions.set(result.type, result.enumValues)
         }
@@ -145,10 +156,22 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
         continue
       }
 
-      const prismaType = mapFieldTypeToPrisma(fieldName, fieldConfig, config.db.provider, listName)
+      const prismaType = mapFieldTypeToPrisma(
+        fieldName,
+        fieldConfig,
+        config.db.provider,
+        listName,
+        keystoneCompat,
+      )
       if (!prismaType) continue // Skip if no type returned
 
-      const modifiers = getFieldModifiers(fieldName, fieldConfig, config.db.provider, listName)
+      const modifiers = getFieldModifiers(
+        fieldName,
+        fieldConfig,
+        config.db.provider,
+        listName,
+        keystoneCompat,
+      )
 
       // Format with proper spacing: '?' attaches to type directly, other modifiers get a space
       const paddedName = fieldName.padEnd(12)
