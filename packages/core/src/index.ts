@@ -14,7 +14,13 @@ export { config, list } from './config/index.js'
 // Config types a consumer annotates with.
 // Concrete field-config types (TextField, …) live on '@opensaas/stack-core/fields'
 // alongside their builders.
-export type { OpenSaasConfig, ListConfig, FieldConfig, OperationAccess } from './config/index.js'
+export type {
+  OpenSaasConfig,
+  OutputConfig,
+  ListConfig,
+  FieldConfig,
+  OperationAccess,
+} from './config/index.js'
 
 // Access control — the types a consumer writes against
 export type {

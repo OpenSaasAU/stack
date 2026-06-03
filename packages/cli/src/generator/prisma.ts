@@ -45,11 +45,18 @@ function getFieldModifiers(
 
 /**
  * Generate Prisma schema from OpenSaas config
+ *
+ * @param prismaClientOutput - Module specifier for the patched Prisma client's
+ *   `generator { output }`, relative to the schema file's directory. Defaults to
+ *   the legacy `../<opensaasPath>/prisma-client` so existing projects are
+ *   unaffected; the output-path resolver supplies a recomputed value when the
+ *   schema or `.opensaas` dir is relocated via the `output` config block.
  */
-export function generatePrismaSchema(config: OpenSaasConfig): string {
+export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?: string): string {
   const lines: string[] = []
 
   const opensaasPath = config.opensaasPath || '.opensaas'
+  const clientOutput = prismaClientOutput ?? `../${opensaasPath}/prisma-client`
   // Keystone-compat mode: when on, non-null text without an explicit default
   // gets Keystone's implicit empty-string default. Threaded to fields via
   // getPrismaType, the same way provider/listName already reach them.
@@ -58,7 +65,7 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
   // Generator and datasource
   lines.push('generator client {')
   lines.push('  provider = "prisma-client"')
-  lines.push(`  output   = "../${opensaasPath}/prisma-client"`)
+  lines.push(`  output   = "${clientOutput}"`)
   lines.push('}')
   lines.push('')
   lines.push('datasource db {')
@@ -238,9 +245,16 @@ export function generatePrismaSchema(config: OpenSaasConfig): string {
 
 /**
  * Write Prisma schema to file
+ *
+ * @param prismaClientOutput - Optional override for the patched Prisma client
+ *   output path, forwarded to {@link generatePrismaSchema}.
  */
-export function writePrismaSchema(config: OpenSaasConfig, outputPath: string): void {
-  const schema = generatePrismaSchema(config)
+export function writePrismaSchema(
+  config: OpenSaasConfig,
+  outputPath: string,
+  prismaClientOutput?: string,
+): void {
+  const schema = generatePrismaSchema(config, prismaClientOutput)
 
   // Ensure directory exists
   const dir = path.dirname(outputPath)
