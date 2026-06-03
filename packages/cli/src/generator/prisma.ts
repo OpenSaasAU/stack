@@ -102,14 +102,26 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   // getPrismaType, the same way provider/listName already reach them.
   const keystoneCompat = config.db.keystoneCompat ?? false
 
+  // Postgres multi-schema: when the datasource declares more than one schema,
+  // Prisma requires the `multiSchema` preview feature and a `schemas = [...]`
+  // array on the datasource. Each model then carries a `@@schema(...)`.
+  const schemas = config.db.schemas
+  const multiSchema = Array.isArray(schemas) && schemas.length > 0
+
   // Generator and datasource
   lines.push('generator client {')
   lines.push('  provider = "prisma-client"')
   lines.push(`  output   = "${clientOutput}"`)
+  if (multiSchema) {
+    lines.push('  previewFeatures = ["multiSchema"]')
+  }
   lines.push('}')
   lines.push('')
   lines.push('datasource db {')
   lines.push(`  provider = "${config.db.provider}"`)
+  if (multiSchema) {
+    lines.push(`  schemas  = [${schemas.map((s) => `"${s}"`).join(', ')}]`)
+  }
   lines.push('}')
   lines.push('')
 
@@ -270,6 +282,13 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     // existing tables whose physical name differs from the list key).
     if (listConfig.db?.map) {
       lines.push(`  @@map("${listConfig.db.map}")`)
+    }
+
+    // Place the model in a specific database schema (Postgres multi-schema).
+    // Only emitted when a schema is configured for the list, which in turn
+    // requires the datasource `schemas` array (see above).
+    if (listConfig.db?.schema) {
+      lines.push(`  @@schema("${listConfig.db.schema}")`)
     }
 
     lines.push('}')

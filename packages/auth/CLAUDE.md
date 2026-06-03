@@ -93,6 +93,39 @@ or overwritten when the user model is renamed. The runtime `getUser`/
 `getCurrentUser` helpers resolve the user list's `context.db` key from the
 configured user `modelName`.
 
+### Schema placement (relocatable Auth lists)
+
+A plugin-level `schema` option places all generated Auth lists in a non-`public`
+Postgres schema via `@@schema(...)`, so they can adopt a separate-schema
+better-auth layout (e.g. an `auth` schema) and reach **Schema parity** with the
+live tables. Combined with the derived keys/`@@map`/field `@map`s above, the
+generated lists diff CLEAN against an existing `auth`-schema install — they are
+modelled for runtime/types without producing a migration.
+
+```typescript
+authPlugin({
+  schema: 'auth', // all Auth lists get @@schema("auth")
+  user: { modelName: 'AuthUser' },
+  session: { modelName: 'AuthSession' },
+  account: { modelName: 'AuthAccount' },
+  verification: { modelName: 'AuthVerification' },
+  // per-model override: relocate one list to a different schema
+  // verification: { modelName: 'AuthVerification', schema: 'auth_internal' },
+})
+```
+
+How it wires up (Postgres multi-schema):
+
+- Each Auth list gets a list-level `db.schema` → `@@schema(...)` (per-model
+  `schema` override, else the plugin-level `schema`).
+- The plugin's `beforeGenerate` hook adds the auth schema(s) (always plus
+  `public`) to the datasource `db.schemas` array and defaults any list without
+  an explicit `db.schema` to `public`, so the generated multi-schema Prisma
+  schema is valid (the generator emits `previewFeatures = ["multiSchema"]` and
+  `schemas = [...]`).
+- With no `schema` option the Auth lists stay in `public` and no `@@schema` /
+  `schemas` / preview feature is emitted (greenfield default unchanged).
+
 ### Session Provider
 
 Better-auth provides session to context via custom `prismaClientConstructor`:

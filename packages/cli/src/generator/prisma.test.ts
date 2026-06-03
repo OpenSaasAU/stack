@@ -1037,6 +1037,158 @@ describe('Prisma Schema Generator', () => {
       expect(schema).not.toContain('@@map')
     })
 
+    it('should generate @@schema for a list-level db.schema', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@schema("auth")')
+    })
+
+    it('should enable multiSchema preview feature and datasource schemas array', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'public' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+    })
+
+    it('should emit @@map and @@schema together for an adopted auth table', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { map: 'AuthUser', schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@map("AuthUser")')
+      expect(schema).toContain('@@schema("auth")')
+    })
+
+    it('should not enable multiSchema or emit @@schema when no schemas are configured (greenfield default unchanged)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('previewFeatures')
+      expect(schema).not.toContain('multiSchema')
+      expect(schema).not.toContain('schemas')
+      expect(schema).not.toContain('@@schema')
+    })
+
+    it('models an existing auth-schema better-auth install so it diffs clean (adoption)', () => {
+      // Mirrors what authPlugin({ schema: 'auth', user: { modelName: 'AuthUser' }, ... })
+      // produces after init + beforeGenerate: custom list keys pinned to their
+      // live table names (@@map), placed in the `auth` schema (@@schema), with the
+      // app's own `public.User` left alone. Generating this models the existing
+      // tables for runtime/types without introducing any new/renamed tables — a
+      // clean diff against the live database.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          // App's own domain User stays in public
+          User: {
+            fields: {
+              subjectId: text({ validation: { isRequired: true } }),
+            },
+            db: { schema: 'public' },
+          },
+          AuthUser: {
+            fields: {
+              name: text({ validation: { isRequired: true } }),
+              email: text({ validation: { isRequired: true }, isIndexed: 'unique' }),
+              sessions: relationship({ ref: 'AuthSession.user', many: true }),
+            },
+            db: { map: 'AuthUser', schema: 'auth' },
+          },
+          AuthSession: {
+            fields: {
+              token: text({ validation: { isRequired: true }, isIndexed: 'unique' }),
+              user: relationship({
+                ref: 'AuthUser.sessions',
+                db: { foreignKey: { map: 'user_id' } },
+              }),
+            },
+            db: { map: 'AuthSession', schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Multi-schema datasource is valid: preview feature + schemas array
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+
+      // Auth models pinned to their live table names, in the auth schema
+      expect(schema).toContain('model AuthUser {')
+      expect(schema).toContain('@@map("AuthUser")')
+      expect(schema).toContain('model AuthSession {')
+      expect(schema).toContain('@@map("AuthSession")')
+
+      // App User stays in public, untouched
+      expect(schema).toContain('model User {')
+
+      // Every model carries an @@schema (Prisma multi-schema requirement) and the
+      // auth models are placed in `auth`, the app User in `public`.
+      const authUserBlock = schema.slice(schema.indexOf('model AuthUser {'))
+      expect(authUserBlock).toContain('@@schema("auth")')
+
+      // The session FK column matches the live column name (adoption)
+      expect(schema).toContain('@map("user_id")')
+    })
+
     it('should generate indexes for multiple foreign keys', () => {
       const config: OpenSaasConfig = {
         db: {
