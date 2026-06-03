@@ -47,3 +47,6 @@ pnpm-debug.log*
 # Turbo
 .turbo/
 .playwright-mcp
+
+# Background agent worktrees (transient, auto-cleaned)
+.claude/worktrees/
