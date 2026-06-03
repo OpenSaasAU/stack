@@ -100,6 +100,49 @@ export function authPlugin(config: AuthConfig): Plugin {
       context.setPluginData<NormalizedAuthConfig>('auth', normalized)
     },
 
+    beforeGenerate: (generationConfig) => {
+      // Collect every schema the Auth lists are placed in (per-model schema,
+      // else the plugin-level schema). When none is configured the Auth lists
+      // stay in the default `public` schema and we leave the config untouched —
+      // the greenfield default Prisma schema is unchanged (no `schemas`, no
+      // `previewFeatures`, no `@@schema`).
+      const authSchemas = Array.from(
+        new Set(
+          Object.values(normalized.models)
+            .map((model) => model.schema)
+            .filter((schema): schema is string => Boolean(schema)),
+        ),
+      )
+
+      if (authSchemas.length === 0) {
+        return generationConfig
+      }
+
+      // Multi-schema Prisma requires the datasource to list every schema in use
+      // AND every model to carry an `@@schema`. Merge the auth schema(s) into the
+      // datasource `schemas` array (always including `public` for the app's own
+      // lists), and default any list without an explicit `db.schema` to `public`
+      // so the generated multi-schema schema is coherent and valid.
+      const schemas = Array.from(
+        new Set(['public', ...(generationConfig.db.schemas ?? []), ...authSchemas]),
+      )
+
+      const lists = Object.fromEntries(
+        Object.entries(generationConfig.lists).map(([listKey, listConfig]) => {
+          if (listConfig.db?.schema) {
+            return [listKey, listConfig]
+          }
+          return [listKey, { ...listConfig, db: { ...listConfig.db, schema: 'public' } }]
+        }),
+      )
+
+      return {
+        ...generationConfig,
+        db: { ...generationConfig.db, schemas },
+        lists,
+      }
+    },
+
     runtime: (context) => {
       // Resolve the user list's context.db key from the configured user model.
       // context.db is keyed camelCase, so 'User' -> 'user', 'AuthUser' -> 'authUser'.

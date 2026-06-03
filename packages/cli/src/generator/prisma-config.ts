@@ -25,8 +25,14 @@ import * as path from 'path'
  * the `??` fallback. The local helper returns `undefined` for missing variables
  * so the fallback can take effect.
  */
-export function generatePrismaConfig(_config: OpenSaasConfig): string {
+export function generatePrismaConfig(_config: OpenSaasConfig, schemaPath?: string): string {
   const lines: string[] = []
+
+  // The schema path Prisma's CLI resolves (a directory or a `.prisma` file).
+  // Defaults to the historical `prisma` directory so existing projects are
+  // unaffected; the output-path resolver supplies the configured location when
+  // the schema is relocated via the `output` config block.
+  const schema = schemaPath ?? 'prisma'
 
   // Import dotenv for environment variable loading
   lines.push("import 'dotenv/config'")
@@ -39,7 +45,7 @@ export function generatePrismaConfig(_config: OpenSaasConfig): string {
   lines.push('const env = (name: string): string | undefined => process.env[name]')
   lines.push('')
   lines.push('export default defineConfig({')
-  lines.push("  schema: 'prisma',")
+  lines.push(`  schema: '${schema}',`)
   lines.push('  datasource: {')
   lines.push("    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),")
   lines.push('  },')
@@ -51,9 +57,16 @@ export function generatePrismaConfig(_config: OpenSaasConfig): string {
 
 /**
  * Write Prisma config to file
+ *
+ * @param schemaPath - Optional override for the `schema` field, forwarded to
+ *   {@link generatePrismaConfig}.
  */
-export function writePrismaConfig(config: OpenSaasConfig, outputPath: string): void {
-  const prismaConfig = generatePrismaConfig(config)
+export function writePrismaConfig(
+  config: OpenSaasConfig,
+  outputPath: string,
+  schemaPath?: string,
+): void {
+  const prismaConfig = generatePrismaConfig(config, schemaPath)
 
   // Ensure directory exists
   const dir = path.dirname(outputPath)

@@ -18,8 +18,6 @@ model Account {
   note         String?
   loginCount   Int
   isActive     Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -40,8 +38,6 @@ model Config {
   retries      Int? @default(3)
   limits       Json? @default("[1,2,3,4,5]")
   empty        Json? @default("[]")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -72,8 +68,6 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   from_Post_author Post[]  @relation("Post_author")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
@@ -81,8 +75,6 @@ model Post {
   title        String?
   authorId     String? @map("author")
   author       User?  @relation("Post_author", fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
   @@index([authorId])
 }
 "
@@ -103,8 +95,6 @@ model User {
   name         String
   email        String
   age          Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -123,8 +113,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   isPublished  Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -143,8 +131,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   publishedAt  DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -162,22 +148,16 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Comment {
   id        String   @id @default(cuid())
   content      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -196,15 +176,11 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   posts        Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -235,8 +211,6 @@ model Settings {
   id        Int      @id @default(1)
   siteName     String
   maintenanceMode Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -261,8 +235,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String
   status       PostStatus @default(draft)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;

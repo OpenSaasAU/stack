@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "link-check": "tsx scripts/link-check.ts",
+    "prebuild": "tsx scripts/link-check.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

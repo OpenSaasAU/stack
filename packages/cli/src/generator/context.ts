@@ -8,7 +8,13 @@ import * as path from 'path'
  * Creates a simple API with getContext() and getContextWithSession(session)
  * that internally handles Prisma singleton and config imports.
  */
-export function generateContext(config: OpenSaasConfig): string {
+export function generateContext(config: OpenSaasConfig, configImport?: string): string {
+  // Module specifier for importing the project's opensaas.config from inside
+  // the `.opensaas` bundle. Defaults to the legacy `../opensaas.config` (bundle
+  // one level below the project root); the output-path resolver supplies a
+  // recomputed value when the bundle is relocated via the `output` config block.
+  const configImportPath = configImport ?? '../opensaas.config'
+
   // Check if custom Prisma client constructor is provided
   const hasCustomConstructor = !!config.db.prismaClientConstructor
 
@@ -122,7 +128,7 @@ import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack
 import { PrismaClient } from './prisma-client/client'
 import type { Context } from './types'
 import { prismaExtensions } from './prisma-extensions'
-import configOrPromise from '../opensaas.config'
+import configOrPromise from '${configImportPath}'
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)
@@ -211,9 +217,16 @@ export const config = getConfig()
 
 /**
  * Write context factory to file
+ *
+ * @param configImport - Optional override for the `opensaas.config` import
+ *   specifier, forwarded to {@link generateContext}.
  */
-export function writeContext(config: OpenSaasConfig, outputPath: string): void {
-  const content = generateContext(config)
+export function writeContext(
+  config: OpenSaasConfig,
+  outputPath: string,
+  configImport?: string,
+): void {
+  const content = generateContext(config, configImport)
 
   // Ensure directory exists
   const dir = path.dirname(outputPath)

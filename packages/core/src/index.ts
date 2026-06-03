@@ -14,7 +14,14 @@ export { config, list } from './config/index.js'
 // Config types a consumer annotates with.
 // Concrete field-config types (TextField, …) live on '@opensaas/stack-core/fields'
 // alongside their builders.
-export type { OpenSaasConfig, ListConfig, FieldConfig, OperationAccess } from './config/index.js'
+export type {
+  OpenSaasConfig,
+  OutputConfig,
+  ListConfig,
+  DatabaseConfig,
+  FieldConfig,
+  OperationAccess,
+} from './config/index.js'
 
 // Access control — the types a consumer writes against
 export type {
@@ -40,3 +47,12 @@ export { ValidationError } from './hooks/index.js'
 // with a clear per-field message instead of deep inside generation.
 export { validateFieldConfig, validateConfigFields } from './validation/field-config.js'
 export type { FieldConfigValidationError } from './validation/field-config.js'
+
+// Fragment-based query API — composable, type-safe reads that mirror
+// Keystone's GraphQL fragments without a GraphQL runtime. The migration
+// guide, CHANGELOG, and migrate-context-calls skill all advertise importing
+// these from the root entry point. The internal runtime helpers (isFragment,
+// buildInclude, pickFields) and the Fragment/FieldSelection types stay off the
+// root surface — those live on '@opensaas/stack-core/internal'.
+export { defineFragment, runQuery, runQueryOne } from './query/index.js'
+export type { ResultOf, RelationSelector, QueryArgs } from './query/index.js'

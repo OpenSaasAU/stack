@@ -120,5 +120,5 @@ plugin/
 ## Links
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
-- [Migration Guide](https://stack.opensaas.au/guides/migration)
+- [Migration Guide](https://stack.opensaas.au/docs/guides/migrating-from-keystone)
 - [GitHub Repository](https://github.com/OpenSaasAU/stack)

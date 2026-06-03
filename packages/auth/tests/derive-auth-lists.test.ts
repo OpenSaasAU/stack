@@ -57,6 +57,19 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     // FK column not overridden -> no foreignKey map on the relationship
     expect(lists.Session.fields.user.db).toBeUndefined()
   })
+
+  it('opts every auth list into auto-timestamps', () => {
+    // Auto-timestamps are OFF by default (ADR-0004), but better-auth's adapter
+    // writes createdAt/updatedAt on every auth row and the schema converter
+    // returns null for those columns assuming the generator injects them. Each
+    // derived auth list must therefore re-enable them via db.timestamps.
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.User.db?.timestamps).toBe(true)
+    expect(lists.Session.db?.timestamps).toBe(true)
+    expect(lists.Account.db?.timestamps).toBe(true)
+    expect(lists.Verification.db?.timestamps).toBe(true)
+  })
 })
 
 describe('deriveAuthLists - custom modelName overrides', () => {
@@ -102,6 +115,15 @@ describe('deriveAuthLists - custom modelName overrides', () => {
     expect(lists.AuthAccount.db?.map).toBe('AuthAccount')
     expect(lists.AuthVerification.db?.map).toBe('AuthVerification')
   })
+
+  it('keeps auto-timestamps enabled alongside the table @@map', () => {
+    const { lists } = deriveAuthLists(customModels)
+
+    expect(lists.AuthUser.db?.timestamps).toBe(true)
+    expect(lists.AuthSession.db?.timestamps).toBe(true)
+    expect(lists.AuthAccount.db?.timestamps).toBe(true)
+    expect(lists.AuthVerification.db?.timestamps).toBe(true)
+  })
 })
 
 describe('deriveAuthLists - custom field column maps', () => {
@@ -132,6 +154,66 @@ describe('deriveAuthLists - custom field column maps', () => {
     // name is mapped, email is not
     expect(lists.AuthUser.fields.name.db?.map).toBe('full_name')
     expect(lists.AuthUser.fields.email.db?.map).toBeUndefined()
+  })
+})
+
+describe('deriveAuthLists - schema placement', () => {
+  it('places all lists in the configured schema via db.schema', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db?.schema).toBe('auth')
+    expect(lists.AuthSession.db?.schema).toBe('auth')
+    expect(lists.AuthAccount.db?.schema).toBe('auth')
+    expect(lists.AuthVerification.db?.schema).toBe('auth')
+  })
+
+  it('carries both @@map and @@schema for renamed + relocated lists', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    // Auth lists always opt into auto-timestamps (ADR-0004) alongside the
+    // table @@map and @@schema placement.
+    expect(lists.AuthUser.db).toEqual({ timestamps: true, map: 'AuthUser', schema: 'auth' })
+  })
+
+  it('honours a per-model schema override alongside a different default schema', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
+      account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
+      // One list targets a different schema than the rest
+      verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth_internal' },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db?.schema).toBe('auth')
+    expect(lists.AuthVerification.db?.schema).toBe('auth_internal')
+  })
+
+  it('emits no @@schema for the default (no-schema) configuration', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    // Auth lists still opt into auto-timestamps (ADR-0004); the greenfield
+    // default just carries no schema/map placement.
+    expect(lists.User.db).toEqual({ timestamps: true })
+    expect(lists.User.db?.schema).toBeUndefined()
+    expect(lists.Session.db?.schema).toBeUndefined()
+    expect(lists.Account.db?.schema).toBeUndefined()
+    expect(lists.Verification.db?.schema).toBeUndefined()
   })
 })
 
