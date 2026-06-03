@@ -510,6 +510,72 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      */
     typeOnly?: boolean
   }>
+  /**
+   * Multi-column Prisma emission.
+   *
+   * Most scalar fields back a single Prisma column via {@link getPrismaType}.
+   * A field that maps onto SEVERAL physical columns (e.g. the storage
+   * `image()`/`file()` fields in multi-column / Keystone-parity mode — see
+   * ADR-0006) implements this instead: it returns one descriptor per column,
+   * each becoming its own line in the generated model. When present, the
+   * generator emits these lines and skips the single-column `getPrismaType`
+   * path. The field itself owns the column layout — the generator stays a
+   * neutral coordinator (no field-type switches), mirroring how relationship
+   * fields emit FK + relation lines through `getPrismaRelation`.
+   *
+   * @param fieldName - The field's config key (used to derive default column names)
+   * @returns One descriptor per physical column, or `undefined` to fall back to
+   *   the single-column `getPrismaType` path.
+   */
+  getPrismaColumns?: (fieldName: string) => MultiColumnPrismaResult[] | undefined
+  /**
+   * The physical Prisma column names this field owns when it spans multiple
+   * columns (see {@link getPrismaColumns}). The read path uses this to strip the
+   * raw per-part columns from query results so only the assembled logical value
+   * (produced by {@link assembleColumns}) is exposed.
+   *
+   * @param fieldName - The field's config key
+   */
+  getColumnNames?: (fieldName: string) => string[]
+  /**
+   * Assemble the field's logical value from a database row's per-part columns
+   * (the read direction of a multi-column field). Pure transform — called by the
+   * read pipeline before field visibility. Receives the full row so it can read
+   * its sibling columns by name.
+   *
+   * @param fieldName - The field's config key
+   * @param row - The raw database row (contains the per-part columns)
+   */
+  assembleColumns?: (fieldName: string, row: Record<string, unknown>) => unknown
+  /**
+   * Split the field's logical value into per-part columns for writing (the write
+   * direction of a multi-column field). Pure transform — called by the write
+   * pipeline after `resolveInput`; the returned record is merged into the write
+   * payload in place of the single field key.
+   *
+   * @param fieldName - The field's config key
+   * @param value - The resolved logical value (metadata, or `null` to clear)
+   */
+  splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
+}
+
+/**
+ * A single physical column contributed by a multi-column field
+ * (see {@link BaseFieldConfig.getPrismaColumns}).
+ */
+export type MultiColumnPrismaResult = {
+  /** The Prisma model field name (the property the column is declared as). */
+  name: string
+  /** The Prisma scalar type, e.g. `'String'` or `'Int'`. */
+  type: string
+  /**
+   * Field modifiers, e.g. `'?'` for nullable. A leading `'?'` attaches to the
+   * type; anything after it is treated as trailing attributes (matching the
+   * single-column `getPrismaType` modifier convention).
+   */
+  modifiers?: string
+  /** Physical column name for the `@map` attribute, when it differs from `name`. */
+  map?: string
 }
 
 export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {

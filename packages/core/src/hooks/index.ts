@@ -235,24 +235,42 @@ export async function executeFieldResolveInputHooks(
     // Skip if field not in data
     if (!(fieldKey in result)) continue
 
-    // Skip if no hooks defined
-    if (!fieldConfig.hooks?.resolveInput) continue
+    // A field's resolveInput produces its resolved value; for most fields that
+    // value is stored back under the same key. Multi-column fields additionally
+    // split that value across their physical columns below.
+    let resolvedValue: unknown = result[fieldKey]
 
-    // Execute field hook
-    // Type assertion is safe here because hooks are typed correctly in field definitions
-    // and we're working with runtime values that match those types
-    const transformedValue = await fieldConfig.hooks.resolveInput({
-      listKey,
-      fieldKey,
-      operation,
-      inputData,
-      item,
-      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
-      context,
-    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+    if (fieldConfig.hooks?.resolveInput) {
+      // Execute field hook
+      // Type assertion is safe here because hooks are typed correctly in field definitions
+      // and we're working with runtime values that match those types
+      resolvedValue = await fieldConfig.hooks.resolveInput({
+        listKey,
+        fieldKey,
+        operation,
+        inputData,
+        item,
+        resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
+        context,
+      } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+    } else if (!fieldConfig.splitColumns) {
+      // No resolveInput and not a multi-column field — nothing to do.
+      continue
+    }
 
-    // Create new object with updated field to avoid mutating the passed reference
-    result = { ...result, [fieldKey]: transformedValue }
+    if (fieldConfig.splitColumns) {
+      // Multi-column field (e.g. storage image()/file() in Keystone-parity
+      // mode): replace the single logical key with its per-part columns so the
+      // write payload targets the live columns instead of a single one.
+      const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
+      // Drop the logical key (it is not a real column) and merge the columns.
+      const next = { ...result, ...columns }
+      delete next[fieldKey]
+      result = next
+    } else {
+      // Create new object with updated field to avoid mutating the passed reference
+      result = { ...result, [fieldKey]: resolvedValue }
+    }
   }
 
   return result

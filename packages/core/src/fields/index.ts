@@ -34,6 +34,7 @@ export type {
   JsonField,
   VirtualField,
   PrismaRelationResult,
+  MultiColumnPrismaResult,
 } from '../config/types.js'
 
 /**
