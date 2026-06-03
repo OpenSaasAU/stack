@@ -31,6 +31,9 @@ const isOwner: AccessControl = ({ session, item }) => {
 export default config({
   db: {
     provider: 'sqlite',
+    // Auto-timestamps are OFF by default (ADR-0004). This dashboard sorts and
+    // displays `createdAt`/`updatedAt`, so opt back in globally.
+    timestamps: true,
     prismaClientConstructor: (PrismaClient) => {
       const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
       return new PrismaClient({ adapter })

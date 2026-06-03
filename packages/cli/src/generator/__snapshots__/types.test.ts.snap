@@ -38,8 +38,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -273,8 +271,6 @@ export type PostOutput = {
   id: string
   title: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -510,8 +506,6 @@ export type UserOutput = {
   id: string
   name: string | null
   posts?: PostOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -759,8 +753,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -1081,8 +1073,6 @@ export type UserOutput = {
   id: string
   firstName: string
   lastName: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -1351,8 +1341,6 @@ export type PostOutput = {
   id: string
   title: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -1587,8 +1575,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -1822,8 +1808,6 @@ export type UserOutput = {
   id: string
   name: string
   email: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -2058,8 +2042,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -2218,8 +2200,6 @@ export type PostTransformedFields = {
 export type PostOutput = {
   id: string
   title: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -2378,8 +2358,6 @@ export type CommentTransformedFields = {
 export type CommentOutput = {
   id: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & CommentVirtualFields
 
 export type Comment = CommentOutput
@@ -2662,8 +2640,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -2885,8 +2861,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3145,8 +3119,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -3368,8 +3340,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3627,8 +3597,6 @@ export type UserOutput = {
   id: string
   name: string | null
   posts?: PostOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3852,8 +3820,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -4174,8 +4140,6 @@ export type AccountOutput = {
   id: string
   name: string | null
   bills?: BillOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & AccountVirtualFields
 
 export type Account = AccountOutput
@@ -4399,8 +4363,6 @@ export type BillOutput = {
   name: string | null
   accountId: string | null
   account?: AccountOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & BillVirtualFields
 
 export type Bill = BillOutput

@@ -57,19 +57,28 @@ export type DerivedAuthLists = {
 }
 
 /**
- * Build the `db.map` for a derived list.
+ * Build the `db` config for a derived list.
  *
- * When the developer renames the model (e.g. `modelName: 'AuthUser'`), we pin
- * the physical table name to that model name via `@@map("AuthUser")` so the
+ * Always opts the list into auto-timestamps (`timestamps: true`). better-auth's
+ * adapter writes `createdAt`/`updatedAt` on every auth row and the schema
+ * converter returns `null` for those columns (it assumes the generator injects
+ * them). Now that auto-timestamps are OFF by default (ADR-0004), each derived
+ * Auth list must opt back in so the generated models keep those columns and
+ * better-auth keeps working.
+ *
+ * When the developer renames the model (e.g. `modelName: 'AuthUser'`), we also
+ * pin the physical table name to that model name via `@@map("AuthUser")` so the
  * generated list adopts the developer's live table exactly. When no override is
- * given we emit no `@@map`, leaving the default `User`/`Session`/... output
- * byte-for-byte unchanged.
+ * given we emit no `@@map`, leaving the default `User`/`Session`/... table
+ * output unchanged.
  */
 function listDb(
   model: NormalizedAuthModelConfig,
   defaultModelName: string,
-): { map: string } | undefined {
-  return model.modelName !== defaultModelName ? { map: model.modelName } : undefined
+): { timestamps: true; map?: string } {
+  return model.modelName !== defaultModelName
+    ? { timestamps: true, map: model.modelName }
+    : { timestamps: true }
 }
 
 /**

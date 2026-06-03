@@ -1222,6 +1222,27 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     map?: string
+    /**
+     * Per-list override for auto-injected `createdAt`/`updatedAt` timestamp columns.
+     *
+     * Takes precedence over the global `db.timestamps` setting:
+     * - `true` forces auto-timestamps on for this list, even when the global default is off.
+     * - `false` forces them off for this list, even when enabled globally.
+     * - `undefined` (the default) falls back to the global `db.timestamps` setting.
+     *
+     * When timestamps resolve to on but the list already declares its own `createdAt`/
+     * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
+     * never sees a duplicate (`P1012`).
+     *
+     * @example Opt a single list out of timestamps even when enabled globally
+     * ```typescript
+     * Production: list({
+     *   fields: { name: text() },
+     *   db: { timestamps: false },
+     * })
+     * ```
+     */
+    timestamps?: boolean
   }
   /**
    * MCP server configuration for this list
@@ -1355,6 +1376,37 @@ export type DatabaseConfig = {
    * ```
    */
   joinTableNaming?: 'prisma' | 'keystone'
+  /**
+   * Auto-inject `createdAt`/`updatedAt` timestamp columns into every generated model.
+   *
+   * Default: `false`. The generator does NOT add timestamps automatically — a list
+   * opts in either by declaring the fields itself or by enabling this flag. This matches
+   * Keystone 6, which never adds timestamps automatically, and keeps Keystone → stack
+   * migrations non-destructive (Schema parity). See ADR-0004.
+   *
+   * When `true`, every list receives:
+   * ```prisma
+   * createdAt DateTime @default(now())
+   * updatedAt DateTime @default(now()) @updatedAt
+   * ```
+   *
+   * A per-list `db.timestamps` override takes precedence over this global setting. When
+   * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
+   * field, the auto column is skipped for the declared field(s) so Prisma never sees a
+   * duplicate (`P1012`).
+   *
+   * @default false
+   *
+   * @example Re-enable auto-timestamps globally
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   timestamps: true,
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  timestamps?: boolean
   /**
    * Opt into Keystone-compat mode for generated schema defaults.
    *

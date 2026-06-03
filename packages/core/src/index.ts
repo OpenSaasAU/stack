@@ -18,6 +18,7 @@ export type {
   OpenSaasConfig,
   OutputConfig,
   ListConfig,
+  DatabaseConfig,
   FieldConfig,
   OperationAccess,
 } from './config/index.js'
