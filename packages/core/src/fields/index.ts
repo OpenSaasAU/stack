@@ -853,21 +853,35 @@ export function select<
     },
     getPrismaType: (fieldName: string, _provider?: string, listName?: string) => {
       const isRequired = options.validation?.isRequired
+      const hasDefault = options.defaultValue !== undefined
+      // Nullability rules (Keystone parity):
+      //  - `db.isNullable` is an explicit override and always wins. Setting it
+      //    `true` forces the `?` even when a `defaultValue` is present.
+      //  - Otherwise a select is nullable only when it is neither required nor
+      //    carrying a default: a `defaultValue` makes the column NOT NULL (the
+      //    long-standing default behaviour). This mirrors the previous logic
+      //    where a present default overwrote the `?`.
+      // Nullability and the default are assembled independently with `+=`
+      // (mirroring text/integer) so the default never overwrites the `?`.
+      const isNullable = options.db?.isNullable ?? (!isRequired && !hasDefault)
       let modifiers = ''
 
-      if (isNativeEnum) {
-        // Derive enum name from list name + field name in PascalCase
-        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
-        const enumName = listName ? `${listName}${capitalizedField}` : capitalizedField
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
 
-        // Required fields don't get the ? modifier
-        if (!isRequired) {
-          modifiers = '?'
-        }
+      if (isNativeEnum) {
+        // Enum type name: explicit `db.enumName` wins, otherwise derive from
+        // list name + field name in PascalCase. The same name is used for the
+        // generated enum block (via `result.type`) and the column reference.
+        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+        const derivedEnumName = listName ? `${listName}${capitalizedField}` : capitalizedField
+        const enumName = options.db?.enumName ?? derivedEnumName
 
         // Add default value if provided (no quotes for enum values)
-        if (options.defaultValue !== undefined) {
-          modifiers = ` @default(${options.defaultValue})`
+        if (hasDefault) {
+          modifiers += ` @default(${options.defaultValue})`
         }
 
         // Map modifier
@@ -884,14 +898,9 @@ export function select<
 
       // String type (default)
 
-      // Required fields don't get the ? modifier
-      if (!isRequired) {
-        modifiers = '?'
-      }
-
       // Add default value if provided
-      if (options.defaultValue !== undefined) {
-        modifiers = ` @default("${options.defaultValue}")`
+      if (hasDefault) {
+        modifiers += ` @default("${options.defaultValue}")`
       }
 
       // Map modifier
