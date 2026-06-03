@@ -16,6 +16,7 @@ export { config, list } from './config/index.js'
 // alongside their builders.
 export type {
   OpenSaasConfig,
+  OutputConfig,
   ListConfig,
   DatabaseConfig,
   FieldConfig,

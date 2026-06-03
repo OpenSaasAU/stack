@@ -79,6 +79,7 @@ export default config({
   mcp?: McpConfig,
   storage?: StorageConfig,
   opensaasPath?: string,
+  output?: OutputConfig,
   plugins?: Plugin[],
 })
 ```
@@ -133,16 +134,69 @@ File/image upload storage provider configuration.
 
 ##### `opensaasPath`
 
-Directory where generated files are placed (context, types, patched Prisma client).
+Directory where the generated `.opensaas` bundle is placed (context, types, lists, plugin types, prisma extensions, and the patched Prisma client).
 
 **Type:** `string`
 **Default:** `".opensaas"`
+
+> **Precedence:** This option still works exactly as before. When [`output.opensaasDir`](#outputconfig) is set, it takes precedence over `opensaasPath`. The effective bundle directory is `output.opensaasDir` (if set), else `opensaasPath` (if set), else the default `.opensaas`.
+
+##### `output`
+
+Relocate the generator's output so `opensaas generate` can coexist with an existing `prisma/` directory (for example during a KeystoneJS → stack migration) without clobbering it.
+
+**Type:** [`OutputConfig`](#outputconfig)
 
 ##### `plugins`
 
 Array of plugins to extend stack functionality.
 
 **Type:** [`Plugin[]`](#plugin)
+
+---
+
+### `OutputConfig`
+
+Configures where `opensaas generate` writes its output. All paths are resolved relative to the project root (the directory the CLI runs in). When omitted, defaults are unchanged: the schema is written to `prisma/schema.prisma` and the bundle to `.opensaas/`.
+
+The generated files' cross-references follow these locations automatically — `context.ts` and `prisma-extensions.ts` import the project's `opensaas.config` from the resolved bundle directory, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema directory.
+
+```typescript
+output: {
+  prismaSchema?: string,
+  opensaasDir?: string,
+}
+```
+
+#### Properties
+
+##### `prismaSchema`
+
+Path to the generated Prisma schema file.
+
+**Type:** `string`
+**Default:** `"prisma/schema.prisma"`
+
+##### `opensaasDir`
+
+Directory for the generated `.opensaas` bundle (types, lists, context, plugin types, prisma extensions, and the patched Prisma client).
+
+**Type:** `string`
+**Default:** `".opensaas"`
+
+> **Precedence with `opensaasPath`:** The effective bundle directory is resolved as `output.opensaasDir` > [`opensaasPath`](#opensaaspath) > the default `.opensaas`. `output.opensaasDir` overrides the pre-existing top-level `opensaasPath` when both are set; setting `opensaasPath` alone continues to relocate the bundle exactly as before.
+
+**Example:**
+
+```typescript
+export default config({
+  output: {
+    prismaSchema: 'prisma-opensaas/schema.prisma',
+    opensaasDir: 'generated/opensaas',
+  },
+  // ...
+})
+```
 
 ---
 
