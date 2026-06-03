@@ -8,6 +8,7 @@ import {
   checkbox,
   timestamp,
   select,
+  json,
 } from '@opensaas/stack-core/fields'
 
 describe('Prisma Schema Generator', () => {
@@ -1626,6 +1627,164 @@ describe('Prisma Schema Generator', () => {
 
       expect(schema).toContain('id        String   @id @default(cuid())')
       expect(schema).not.toContain('id        Int      @id @default(1)')
+    })
+  })
+
+  describe('field defaultValue → @default(...)', () => {
+    it('emits a bare numeric @default for integer fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Widget: {
+            fields: {
+              quota: integer({ defaultValue: 3550 }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/quota\s+Int\?\s+@default\(3550\)/)
+      expect(schema).not.toContain('@default("3550")')
+    })
+
+    it('keeps the nullable ? independent of the integer default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Widget: {
+            fields: {
+              // Required → non-nullable, but still carries a default
+              required: integer({ validation: { isRequired: true }, defaultValue: 1 }),
+              // Optional → nullable, also carries a default
+              optional: integer({ defaultValue: 2 }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Required keeps no `?` but still gets @default
+      expect(schema).toMatch(/required\s+Int\s+@default\(1\)/)
+      // Optional keeps its `?` and gets @default
+      expect(schema).toMatch(/optional\s+Int\?\s+@default\(2\)/)
+    })
+
+    it('emits a quoted string @default for text fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Account: {
+            fields: {
+              status: text({ defaultValue: 'PLEASE_UPDATE' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("PLEASE_UPDATE")')
+    })
+
+    it('emits Keystone JSON-literal @default for json array fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              numbers: json({ defaultValue: [1, 2, 3, 4, 5] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/numbers\s+Json\?\s+@default\("\[1,2,3,4,5\]"\)/)
+    })
+
+    it('emits @default("[]") for an empty json array default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              tags: json({ defaultValue: [] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("[]")')
+    })
+
+    it('emits @default("{}") for an empty json object default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              meta: json({ defaultValue: {} }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("{}")')
+    })
+
+    it('emits no @default for fields without a defaultValue', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Plain: {
+            fields: {
+              name: text(),
+              count: integer(),
+              data: json(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // None of these scalar fields should carry a @default(...)
+      expect(schema).toMatch(/name\s+String\?\s*$/m)
+      expect(schema).toMatch(/count\s+Int\?\s*$/m)
+      expect(schema).toMatch(/data\s+Json\?\s*$/m)
+      expect(schema).not.toContain('@default("')
+      // Only the system-field defaults (id/createdAt/updatedAt) remain
+      expect(schema).not.toMatch(/name\s+String\?\s+@default/)
+      expect(schema).not.toMatch(/count\s+Int\?\s+@default/)
+      expect(schema).not.toMatch(/data\s+Json\?\s+@default/)
+    })
+
+    it('generates a representative multi-field model with mixed defaults', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Config: {
+            fields: {
+              label: text({ defaultValue: 'PLEASE_UPDATE' }),
+              retries: integer({ defaultValue: 3 }),
+              limits: json({ defaultValue: [1, 2, 3, 4, 5] }),
+              empty: json({ defaultValue: [] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatchSnapshot()
     })
   })
 })

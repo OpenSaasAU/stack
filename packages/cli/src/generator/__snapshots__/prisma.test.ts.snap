@@ -1,5 +1,27 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Prisma Schema Generator > field defaultValue → @default(...) > generates a representative multi-field model with mixed defaults 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Config {
+  id        String   @id @default(cuid())
+  label        String? @default("PLEASE_UPDATE")
+  retries      Int? @default(3)
+  limits       Json? @default("[1,2,3,4,5]")
+  empty        Json? @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+"
+`;
+
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate basic schema with datasource and generator 1`] = `
 "generator client {
   provider = "prisma-client"

@@ -16,6 +16,7 @@ import type {
   PrismaRelationResult,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
+import { formatPrismaDefault } from './format-prisma-default.js'
 
 // Field-config types live here, alongside the builders that produce them.
 // (The umbrella `FieldConfig` and authoring `BaseFieldConfig` stay on the root
@@ -104,6 +105,13 @@ export function text<
         modifiers += ` @db.${db.nativeType}`
       }
 
+      // Default value if provided (quoted string literal). Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'text')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
+      }
+
       // Unique/index modifiers
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
@@ -180,6 +188,13 @@ export function integer<
       // Native type modifier (e.g., @db.SmallInt, @db.BigInt)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided (bare numeric literal). Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'integer')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier
@@ -1298,6 +1313,14 @@ export function json<
       // Native type modifier
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided. Uses Keystone's JSON-literal form: canonical
+      // (space-free) JSON wrapped in escaped double quotes. Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'json')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier
