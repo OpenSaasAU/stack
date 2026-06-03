@@ -462,12 +462,16 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param fieldName - The name of the field (for generating modifiers)
    * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
    * @param listName - Optional list name (used for generating enum type names)
+   * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
+   *   When true, non-null text columns without an explicit defaultValue emit
+   *   `@default("")` to match Keystone 6's implicit empty-string text default.
    * @returns Prisma type string, optional modifiers, and optional enum values
    */
   getPrismaType?: (
     fieldName: string,
     provider?: string,
     listName?: string,
+    keystoneCompat?: boolean,
   ) => {
     type: string
     modifiers?: string
@@ -1236,6 +1240,27 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     schema?: string
+    /**
+     * Per-list override for auto-injected `createdAt`/`updatedAt` timestamp columns.
+     *
+     * Takes precedence over the global `db.timestamps` setting:
+     * - `true` forces auto-timestamps on for this list, even when the global default is off.
+     * - `false` forces them off for this list, even when enabled globally.
+     * - `undefined` (the default) falls back to the global `db.timestamps` setting.
+     *
+     * When timestamps resolve to on but the list already declares its own `createdAt`/
+     * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
+     * never sees a duplicate (`P1012`).
+     *
+     * @example Opt a single list out of timestamps even when enabled globally
+     * ```typescript
+     * Production: list({
+     *   fields: { name: text() },
+     *   db: { timestamps: false },
+     * })
+     * ```
+     */
+    timestamps?: boolean
   }
   /**
    * MCP server configuration for this list
@@ -1390,6 +1415,65 @@ export type DatabaseConfig = {
    * ```
    */
   schemas?: string[]
+  /**
+   * Auto-inject `createdAt`/`updatedAt` timestamp columns into every generated model.
+   *
+   * Default: `false`. The generator does NOT add timestamps automatically — a list
+   * opts in either by declaring the fields itself or by enabling this flag. This matches
+   * Keystone 6, which never adds timestamps automatically, and keeps Keystone → stack
+   * migrations non-destructive (Schema parity). See ADR-0004.
+   *
+   * When `true`, every list receives:
+   * ```prisma
+   * createdAt DateTime @default(now())
+   * updatedAt DateTime @default(now()) @updatedAt
+   * ```
+   *
+   * A per-list `db.timestamps` override takes precedence over this global setting. When
+   * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
+   * field, the auto column is skipped for the declared field(s) so Prisma never sees a
+   * duplicate (`P1012`).
+   *
+   * @default false
+   *
+   * @example Re-enable auto-timestamps globally
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   timestamps: true,
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  timestamps?: boolean
+  /**
+   * Opt into Keystone-compat mode for generated schema defaults.
+   *
+   * Keystone 6 gives every non-null text column an implicit empty-string
+   * default. With `keystoneCompat: true`, the generator mirrors that: any
+   * non-null `text()` column that has no explicit `defaultValue` emits
+   * `@default("")`, so a migrating project reaches Schema parity without
+   * hand-setting `defaultValue: ''` on dozens of columns.
+   *
+   * Stays opt-in (default `false`) because a greenfield project would not want
+   * implicit empty-string text defaults cluttering its schema. The flag never
+   * affects nullable text, fields with an explicit `defaultValue`, or any
+   * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
+   *
+   * @default false
+   *
+   * @example Reach Schema parity when migrating from Keystone
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   // ... rest of config
+   * }
+   * ```
+   *
+   * @see ADR-0004 (Keystone-compatible generator defaults)
+   */
+  keystoneCompat?: boolean
   /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema
@@ -1880,6 +1964,34 @@ export type Plugin = {
  * Main configuration type
  * Using interface instead of type to allow module augmentation
  */
+/**
+ * Configurable generator output locations.
+ *
+ * Lets a project relocate the generated Prisma schema and the `.opensaas`
+ * bundle directory. Paths are interpreted relative to the project root.
+ *
+ * @example
+ * ```typescript
+ * output: {
+ *   prismaSchema: 'prisma-opensaas/schema.prisma',
+ *   opensaasDir: '.opensaas',
+ * }
+ * ```
+ */
+export interface OutputConfig {
+  /**
+   * Path to the generated Prisma schema file.
+   * @default "prisma/schema.prisma"
+   */
+  prismaSchema?: string
+  /**
+   * Directory for the generated `.opensaas` bundle (types, lists, context,
+   * plugin-types, prisma-extensions, and the patched Prisma client).
+   * @default ".opensaas"
+   */
+  opensaasDir?: string
+}
+
 export interface OpenSaasConfig {
   db: DatabaseConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
@@ -1900,6 +2012,20 @@ export interface OpenSaasConfig {
    * @default ".opensaas"
    */
   opensaasPath?: string
+  /**
+   * Relocate the generator's output so `opensaas generate` can coexist with an
+   * existing `prisma/` directory (e.g. during a Keystone → stack migration).
+   *
+   * Both fields are resolved relative to the project root (the directory the
+   * CLI runs in). When omitted, defaults are unchanged: the schema is written to
+   * `prisma/schema.prisma` and the `.opensaas` bundle to `.opensaas/`.
+   *
+   * The generated files' cross-references follow these locations — `context.ts`
+   * imports the generated types/lists from the resolved `.opensaas` dir, and the
+   * top-level `prisma.config.ts` points at the configured schema path so the
+   * `prisma` CLI keeps working.
+   */
+  output?: OutputConfig
   /**
    * Plugins to extend the stack
    * Executed in array order (or dependency order if dependencies specified)

@@ -8,25 +8,21 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String
-  avatar    Json?
-  posts     Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id     String @id @default(cuid())
+  name   String
+  email  String
+  avatar Json?
+  posts  Post[]
 }
 
 model Post {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   title      String
   content    String?
   coverImage Json?
   attachment Json?
-  authorId   String?  @map("author")
-  author     User?    @relation(fields: [authorId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
+  authorId   String? @map("author")
+  author     User?   @relation(fields: [authorId], references: [id])
 
   @@index([authorId])
 }

@@ -88,7 +88,12 @@ export function text<
 
       return !isRequired ? withMax.optional().nullable() : withMax
     },
-    getPrismaType: (_fieldName: string) => {
+    getPrismaType: (
+      _fieldName: string,
+      _provider?: string,
+      _listName?: string,
+      keystoneCompat?: boolean,
+    ) => {
       const validation = options?.validation
       const db = options?.db
       const isRequired = validation?.isRequired
@@ -105,9 +110,19 @@ export function text<
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Default value if provided (quoted string literal). Independent of the
-      // nullable `?` modifier above — the default never overwrites nullability.
-      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'text')
+      // Default value. An explicit `defaultValue` always wins. When none is set
+      // and Keystone-compat mode is on, a non-null text column gets Keystone's
+      // implicit empty-string default. Both go through formatPrismaDefault, so
+      // the empty-string literal (`""`) is produced the same way as any other
+      // text default. Independent of the nullable `?` modifier above — the
+      // default never overwrites nullability.
+      const defaultSource =
+        options?.defaultValue !== undefined
+          ? options.defaultValue
+          : keystoneCompat && !isNullable
+            ? ''
+            : undefined
+      const defaultLiteral = formatPrismaDefault(defaultSource, 'text')
       if (defaultLiteral !== undefined) {
         modifiers += ` @default(${defaultLiteral})`
       }

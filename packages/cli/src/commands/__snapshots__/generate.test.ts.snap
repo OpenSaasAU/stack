@@ -134,8 +134,6 @@ model User {
   id        String   @id @default(cuid())
   name         String
   email        String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -179,8 +177,6 @@ export type UserOutput = {
   id: string
   name: string
   email: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -390,8 +386,6 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -507,8 +501,6 @@ datasource db {
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -526,8 +518,6 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;

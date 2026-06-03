@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { generatePrismaSchema } from './prisma.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { generatePrismaSchema, resolveListTimestamps } from './prisma.js'
+import type { OpenSaasConfig, ListConfig, DatabaseConfig } from '@opensaas/stack-core'
+import type { TypeInfo } from '@opensaas/stack-core/extend'
 import {
   text,
   integer,
@@ -180,7 +181,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toMatchSnapshot()
     })
 
-    it('should always include system fields', () => {
+    it('should always include the id system field', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -197,8 +198,186 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       expect(schema).toContain('id        String   @id @default(cuid())')
-      expect(schema).toContain('createdAt DateTime @default(now())')
+    })
+
+    it('should NOT add timestamps by default (timestamps off — ADR-0004)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('createdAt')
+      expect(schema).not.toContain('updatedAt')
+    })
+
+    it('should add timestamps to all lists when db.timestamps is true', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Both lists receive the auto pair
+      const createdAtCount = schema.match(/createdAt DateTime @default\(now\(\)\)/g)?.length
+      const updatedAtCount = schema.match(
+        /updatedAt DateTime @default\(now\(\)\) @updatedAt/g,
+      )?.length
+      expect(createdAtCount).toBe(2)
+      expect(updatedAtCount).toBe(2)
+    })
+
+    it('should let a per-list db.timestamps override force timestamps off', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          // Production opts out of timestamps even though they are enabled globally
+          Production: {
+            fields: {
+              name: text(),
+            },
+            db: { timestamps: false },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Global on → User has them
+      const userBlock = schema.slice(
+        schema.indexOf('model User {'),
+        schema.indexOf('model Production {'),
+      )
+      expect(userBlock).toContain('createdAt DateTime @default(now())')
+      expect(userBlock).toContain('updatedAt DateTime @default(now()) @updatedAt')
+
+      // Per-list off → Production does not
+      const productionBlock = schema.slice(schema.indexOf('model Production {'))
+      expect(productionBlock).not.toContain('createdAt')
+      expect(productionBlock).not.toContain('updatedAt')
+    })
+
+    it('should let a per-list db.timestamps override force timestamps on', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // Global default is off
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          // Audited opts in to timestamps even though they are off globally
+          Audited: {
+            fields: {
+              name: text(),
+            },
+            db: { timestamps: true },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      const userBlock = schema.slice(
+        schema.indexOf('model User {'),
+        schema.indexOf('model Audited {'),
+      )
+      expect(userBlock).not.toContain('createdAt')
+      expect(userBlock).not.toContain('updatedAt')
+
+      const auditedBlock = schema.slice(schema.indexOf('model Audited {'))
+      expect(auditedBlock).toContain('createdAt DateTime @default(now())')
+      expect(auditedBlock).toContain('updatedAt DateTime @default(now()) @updatedAt')
+    })
+
+    it('should not duplicate a declared createdAt when timestamps are enabled (no P1012)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              // List declares its own createdAt — auto column must be skipped
+              createdAt: timestamp(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Exactly one createdAt column (the declared one), no duplicate
+      const createdAtCount = schema.match(/^\s*createdAt\s/gm)?.length
+      expect(createdAtCount).toBe(1)
+      // The declared field maps to a plain DateTime?, not the auto @default(now())
+      expect(schema).toContain('createdAt    DateTime?')
+      expect(schema).not.toContain('createdAt DateTime @default(now())')
+      // updatedAt is not declared, so the auto column is still emitted
       expect(schema).toContain('updatedAt DateTime @default(now()) @updatedAt')
+    })
+
+    it('should not duplicate declared createdAt and updatedAt when timestamps are enabled', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              createdAt: timestamp(),
+              updatedAt: timestamp(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema.match(/^\s*createdAt\s/gm)?.length).toBe(1)
+      expect(schema.match(/^\s*updatedAt\s/gm)?.length).toBe(1)
+      // Neither auto column is emitted (both declared)
+      expect(schema).not.toContain('createdAt DateTime @default(now())')
+      expect(schema).not.toContain('updatedAt DateTime @default(now()) @updatedAt')
     })
 
     it('should handle empty lists config', () => {
@@ -1977,6 +2156,148 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       expect(schema).toMatchSnapshot()
+    })
+  })
+
+  describe('Keystone-compat mode (db.keystoneCompat)', () => {
+    // A representative model exercising every branch of the empty-string rule:
+    // required text (compat default applies), required text with an explicit
+    // default (explicit wins), optional/nullable text (untouched), and non-text
+    // fields (untouched). The same lists are generated with the flag off below
+    // so the on/off contrast is part of the proof.
+    const representativeLists: OpenSaasConfig['lists'] = {
+      Account: {
+        fields: {
+          // Required, no default → @default("") under keystoneCompat
+          name: text({ validation: { isRequired: true } }),
+          // Required, explicit default → explicit value wins
+          status: text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' }),
+          // Optional → nullable → never gets the compat default
+          nickname: text(),
+          // Explicitly nullable despite isRequired → never gets the compat default
+          note: text({ validation: { isRequired: true }, db: { isNullable: true } }),
+          // Non-text fields are unaffected by the flag
+          loginCount: integer({ validation: { isRequired: true } }),
+          isActive: checkbox({ defaultValue: true }),
+        },
+      },
+    }
+
+    it('emits @default("") for non-null text without an explicit default (snapshot)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql', keystoneCompat: true },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The migrating-developer guarantee: required text reaches Schema parity
+      // with Keystone's implicit empty-string default.
+      expect(schema).toMatch(/name\s+String\s+@default\(""\)/)
+      // Explicit default still wins over the compat empty-string default.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // Nullable text is untouched (no default at all).
+      expect(schema).toMatch(/nickname\s+String\?\s*$/m)
+      expect(schema).toMatch(/note\s+String\?\s*$/m)
+      // Non-text fields keep their own behaviour.
+      expect(schema).toMatch(/loginCount\s+Int\s*$/m)
+      expect(schema).toMatch(/isActive\s+Boolean\s+@default\(true\)/)
+
+      expect(schema).toMatchSnapshot()
+    })
+
+    it('emits no implicit text default when keystoneCompat is off (default)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Greenfield default: required text stays clean — String with no default.
+      expect(schema).toMatch(/name\s+String\s*$/m)
+      expect(schema).not.toMatch(/name\s+String\s+@default/)
+      // Explicit defaults are still honoured regardless of the flag.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // The only empty-string default present is the explicit none — i.e. there
+      // is no @default("") anywhere when the flag is off.
+      expect(schema).not.toContain('@default("")')
+    })
+  })
+})
+
+describe('resolveListTimestamps', () => {
+  // Minimal builders. The predicate only reads `db` and the keys of `fields`, so a
+  // structurally-minimal list/db is sufficient and keeps these tests focused.
+  const dbWith = (timestamps?: boolean): DatabaseConfig => ({
+    provider: 'sqlite',
+    timestamps,
+    prismaClientConstructor: (PrismaClientClass) => new PrismaClientClass(),
+  })
+
+  const listWith = (
+    fields: ListConfig<TypeInfo>['fields'],
+    timestamps?: boolean,
+  ): ListConfig<TypeInfo> => ({
+    fields,
+    db: timestamps === undefined ? undefined : { timestamps },
+  })
+
+  it('is off by default (no global, no per-list)', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }), dbWith())).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('is on for every list when the global flag is true', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }), dbWith(true))).toEqual({
+      createdAt: true,
+      updatedAt: true,
+    })
+  })
+
+  it('per-list false overrides global true', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }, false), dbWith(true))).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('per-list true overrides global off', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }, true), dbWith())).toEqual({
+      createdAt: true,
+      updatedAt: true,
+    })
+  })
+
+  it('skips a declared createdAt when enabled (no duplicate)', () => {
+    expect(resolveListTimestamps(listWith({ createdAt: timestamp() }, true), dbWith())).toEqual({
+      createdAt: false,
+      updatedAt: true,
+    })
+  })
+
+  it('skips both declared timestamps when enabled', () => {
+    expect(
+      resolveListTimestamps(
+        listWith({ createdAt: timestamp(), updatedAt: timestamp() }, true),
+        dbWith(),
+      ),
+    ).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('does not skip declared timestamps when timestamps are off', () => {
+    // When off, declared fields are emitted by the regular field loop, so the
+    // predicate reports "no auto column" regardless of what the list declares.
+    expect(
+      resolveListTimestamps(listWith({ createdAt: timestamp() }, false), dbWith(true)),
+    ).toEqual({
+      createdAt: false,
+      updatedAt: false,
     })
   })
 })

@@ -122,6 +122,7 @@ export function list<TTypeInfo extends import('./types.js').TypeInfo>(
 // Re-export all types
 export type {
   OpenSaasConfig,
+  OutputConfig,
   ListConfig,
   ListConfigInput,
   ListAccessControl,

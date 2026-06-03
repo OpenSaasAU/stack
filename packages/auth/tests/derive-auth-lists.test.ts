@@ -57,6 +57,19 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     // FK column not overridden -> no foreignKey map on the relationship
     expect(lists.Session.fields.user.db).toBeUndefined()
   })
+
+  it('opts every auth list into auto-timestamps', () => {
+    // Auto-timestamps are OFF by default (ADR-0004), but better-auth's adapter
+    // writes createdAt/updatedAt on every auth row and the schema converter
+    // returns null for those columns assuming the generator injects them. Each
+    // derived auth list must therefore re-enable them via db.timestamps.
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.User.db?.timestamps).toBe(true)
+    expect(lists.Session.db?.timestamps).toBe(true)
+    expect(lists.Account.db?.timestamps).toBe(true)
+    expect(lists.Verification.db?.timestamps).toBe(true)
+  })
 })
 
 describe('deriveAuthLists - custom modelName overrides', () => {
@@ -101,6 +114,15 @@ describe('deriveAuthLists - custom modelName overrides', () => {
     expect(lists.AuthSession.db?.map).toBe('AuthSession')
     expect(lists.AuthAccount.db?.map).toBe('AuthAccount')
     expect(lists.AuthVerification.db?.map).toBe('AuthVerification')
+  })
+
+  it('keeps auto-timestamps enabled alongside the table @@map', () => {
+    const { lists } = deriveAuthLists(customModels)
+
+    expect(lists.AuthUser.db?.timestamps).toBe(true)
+    expect(lists.AuthSession.db?.timestamps).toBe(true)
+    expect(lists.AuthAccount.db?.timestamps).toBe(true)
+    expect(lists.AuthVerification.db?.timestamps).toBe(true)
   })
 })
 
