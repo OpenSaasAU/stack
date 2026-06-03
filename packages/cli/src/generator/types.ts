@@ -1,7 +1,8 @@
-import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
 import * as path from 'path'
+import { resolveListTimestamps } from './prisma.js'
 
 /**
  * Map OpenSaas field types to TypeScript types
@@ -124,9 +125,14 @@ function generateTransformedFieldsType(
  */
 function generateModelOutputType(
   listName: string,
-  fields: Record<string, FieldConfig>,
+  // ListConfig is generic over per-list TypeInfo; we only read `db`/`fields`, which are
+  // invariant across that generic, so the permissive default arg is intentional.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listConfig: ListConfig<any>,
+  dbConfig: DatabaseConfig,
   isSingleton: boolean,
 ): string {
+  const fields = listConfig.fields
   const lines: string[] = []
 
   lines.push(`export type ${listName}Output = {`)
@@ -157,8 +163,15 @@ function generateModelOutputType(
     }
   }
 
-  lines.push('  createdAt: Date')
-  lines.push('  updatedAt: Date')
+  // Auto-timestamp columns mirror the Prisma schema: only emitted when timestamps are
+  // enabled (off by default — ADR-0004) and not already declared as a field above.
+  const timestamps = resolveListTimestamps(listConfig, dbConfig)
+  if (timestamps.createdAt) {
+    lines.push('  createdAt: Date')
+  }
+  if (timestamps.updatedAt) {
+    lines.push('  updatedAt: Date')
+  }
   lines.push('} & ' + listName + 'VirtualFields') // Include virtual fields
 
   return lines.join('\n')
@@ -1025,7 +1038,7 @@ export function generateTypes(config: OpenSaasConfig): string {
     // Generate TransformedFields type (needed by CustomDB)
     lines.push(generateTransformedFieldsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateModelOutputType(listName, listConfig.fields, !!listConfig.isSingleton))
+    lines.push(generateModelOutputType(listName, listConfig, config.db, !!listConfig.isSingleton))
     lines.push('')
     lines.push(generateModelTypeAlias(listName))
     lines.push('')
