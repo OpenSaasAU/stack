@@ -16,6 +16,7 @@ import type {
   PrismaRelationResult,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
+import { formatPrismaDefault } from './format-prisma-default.js'
 
 // Field-config types live here, alongside the builders that produce them.
 // (The umbrella `FieldConfig` and authoring `BaseFieldConfig` stay on the root
@@ -87,7 +88,12 @@ export function text<
 
       return !isRequired ? withMax.optional().nullable() : withMax
     },
-    getPrismaType: (_fieldName: string) => {
+    getPrismaType: (
+      _fieldName: string,
+      _provider?: string,
+      _listName?: string,
+      keystoneCompat?: boolean,
+    ) => {
       const validation = options?.validation
       const db = options?.db
       const isRequired = validation?.isRequired
@@ -102,6 +108,23 @@ export function text<
       // Native type modifier (e.g., @db.Text)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value. An explicit `defaultValue` always wins. When none is set
+      // and Keystone-compat mode is on, a non-null text column gets Keystone's
+      // implicit empty-string default. Both go through formatPrismaDefault, so
+      // the empty-string literal (`""`) is produced the same way as any other
+      // text default. Independent of the nullable `?` modifier above — the
+      // default never overwrites nullability.
+      const defaultSource =
+        options?.defaultValue !== undefined
+          ? options.defaultValue
+          : keystoneCompat && !isNullable
+            ? ''
+            : undefined
+      const defaultLiteral = formatPrismaDefault(defaultSource, 'text')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Unique/index modifiers
@@ -180,6 +203,13 @@ export function integer<
       // Native type modifier (e.g., @db.SmallInt, @db.BigInt)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided (bare numeric literal). Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'integer')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier
@@ -1298,6 +1328,14 @@ export function json<
       // Native type modifier
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided. Uses Keystone's JSON-literal form: canonical
+      // (space-free) JSON wrapped in escaped double quotes. Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'json')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier
