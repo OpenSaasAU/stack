@@ -2,6 +2,10 @@
 
 This guide covers how to migrate your existing Prisma, Next.js, or KeystoneJS projects to OpenSaaS Stack using AI-powered tools.
 
+{% callout type="info" %}
+Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & Fragments](/docs/core-concepts/queries).
+{% /callout %}
+
 ## Introduction
 
 OpenSaaS Stack provides an intelligent migration system that helps you transition existing projects with minimal manual work. The migration assistant:
@@ -999,7 +1003,7 @@ const posts = await context.db.post.findMany({
 })
 ```
 
-All operations go through `context.db` under the hood, so access control is enforced automatically. See the full [Keystone migration spec](../../../specs/keystone-migration.md) for more patterns.
+All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery`/`runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/core-concepts/queries). The full [Keystone migration spec](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-migration.md) has additional patterns.
 
 ## Best Practices
 
