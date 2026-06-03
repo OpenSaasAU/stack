@@ -104,6 +104,13 @@ function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean
  * where every generated file is written and the relative cross-references that
  * tie them together. Performs no I/O.
  *
+ * `.opensaas` bundle directory precedence (highest first):
+ * 1. `output.opensaasDir` (the new `output` block)
+ * 2. `opensaasPathFallback` — the pre-existing top-level `config.opensaasPath`
+ *    option, preserved so setting it alone still relocates the bundle through
+ *    the CLI exactly as before
+ * 3. the default `.opensaas`
+ *
  * Cross-reference computation:
  * - `prismaConfigSchema` — the schema *directory* relative to the project root,
  *   so the top-level `prisma.config.ts` points the Prisma CLI at the relocated
@@ -114,10 +121,17 @@ function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean
  * - `configImport` — `opensaas.config` relative to the `.opensaas` directory,
  *   since `context.ts`/`prisma-extensions.ts` live inside the bundle and import
  *   the project's config by relative path.
+ *
+ * @param opensaasPathFallback - The pre-existing `config.opensaasPath` value,
+ *   used as the bundle directory when no `output.opensaasDir` is set.
  */
-export function resolveOutputPaths(cwd: string, output?: OutputConfig): ResolvedOutputPaths {
+export function resolveOutputPaths(
+  cwd: string,
+  output?: OutputConfig,
+  opensaasPathFallback?: string,
+): ResolvedOutputPaths {
   const prismaSchemaRel = output?.prismaSchema ?? DEFAULT_PRISMA_SCHEMA
-  const opensaasDirRel = output?.opensaasDir ?? DEFAULT_OPENSAAS_DIR
+  const opensaasDirRel = output?.opensaasDir ?? opensaasPathFallback ?? DEFAULT_OPENSAAS_DIR
 
   const prismaSchemaAbs = path.resolve(cwd, prismaSchemaRel)
   const opensaasDirAbs = path.resolve(cwd, opensaasDirRel)

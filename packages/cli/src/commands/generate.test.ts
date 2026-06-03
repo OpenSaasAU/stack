@@ -431,6 +431,67 @@ describe('Generate Command Integration', () => {
     })
   })
 
+  describe('opensaasPath / output.opensaasDir precedence', () => {
+    /**
+     * Drive the generator exactly as the CLI does, forwarding the pre-existing
+     * top-level `opensaasPath` as the bundle-directory fallback.
+     */
+    function generateWithResolvedPaths(cfg: OpenSaasConfig) {
+      const { paths, crossReferences } = resolveOutputPaths(tempDir, cfg.output, cfg.opensaasPath)
+      writePrismaSchema(cfg, paths.prismaSchema, crossReferences.prismaClientOutput)
+      writeContext(cfg, paths.context, crossReferences.configImport)
+      return { paths, crossReferences }
+    }
+
+    it('relocates the bundle via opensaasPath alone (the pre-existing option) through the CLI', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        opensaasPath: '.custom',
+        lists: { User: { fields: { name: text() } } },
+      }
+
+      const { paths } = generateWithResolvedPaths(config)
+
+      // The bundle lands under .custom/, not the default .opensaas/.
+      expect(paths.opensaasDir).toBe(path.join(tempDir, '.custom'))
+      expect(fs.existsSync(path.join(tempDir, '.custom', 'context.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, '.opensaas'))).toBe(false)
+
+      // The prisma client output cross-reference follows opensaasPath, so the
+      // emitted schema points at the relocated bundle (no longer a no-op).
+      const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
+      expect(schema).toContain('output   = "../.custom/prisma-client"')
+    })
+
+    it('lets output.opensaasDir override opensaasPath when both are set', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        opensaasPath: '.custom',
+        output: { opensaasDir: 'generated/opensaas' },
+        lists: { User: { fields: { name: text() } } },
+      }
+
+      const { paths } = generateWithResolvedPaths(config)
+
+      // output.opensaasDir wins; opensaasPath is ignored.
+      expect(paths.opensaasDir).toBe(path.join(tempDir, 'generated', 'opensaas'))
+      expect(fs.existsSync(path.join(tempDir, 'generated', 'opensaas', 'context.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, '.custom'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, '.opensaas'))).toBe(false)
+
+      const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
+      expect(schema).toContain('output   = "../generated/opensaas/prisma-client"')
+    })
+  })
+
   describe('Field self-containment validation', () => {
     it('passes a compliant config with no errors', () => {
       const config: OpenSaasConfig = {

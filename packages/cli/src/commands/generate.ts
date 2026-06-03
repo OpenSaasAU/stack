@@ -108,10 +108,13 @@ export async function generateCommand() {
     const generatorSpinner = ora('Generating schema and types...').start()
     try {
       // Resolve write paths and the relative cross-references between generated
-      // files from the (optional) `output` config block. With no `output`
-      // block this yields the historical defaults (`prisma/schema.prisma`,
-      // `.opensaas/`) byte-for-byte.
-      const { paths, crossReferences } = resolveOutputPaths(cwd, config.output)
+      // files from the (optional) `output` config block. The pre-existing
+      // top-level `opensaasPath` option is forwarded as the bundle-directory
+      // fallback so it keeps working through the CLI when `output.opensaasDir`
+      // is not set (precedence: `output.opensaasDir` > `opensaasPath` >
+      // default). With neither set this yields the historical defaults
+      // (`prisma/schema.prisma`, `.opensaas/`) byte-for-byte.
+      const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
 
       const prismaSchemaPath = paths.prismaSchema
       const prismaConfigPath = paths.prismaConfig

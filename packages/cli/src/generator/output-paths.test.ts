@@ -109,6 +109,34 @@ describe('resolveOutputPaths', () => {
     })
   })
 
+  describe('opensaasPath fallback precedence', () => {
+    it('uses opensaasPath for the bundle dir when no output.opensaasDir is set', () => {
+      const { paths, crossReferences } = resolveOutputPaths(CWD, undefined, '.custom')
+
+      expect(paths.opensaasDir).toBe(path.join(CWD, '.custom'))
+      expect(paths.context).toBe(path.join(CWD, '.custom', 'context.ts'))
+      // The client output cross-reference follows opensaasPath.
+      expect(crossReferences.prismaClientOutput).toBe('../.custom/prisma-client')
+    })
+
+    it('prefers output.opensaasDir over opensaasPath when both are set', () => {
+      const { paths, crossReferences } = resolveOutputPaths(
+        CWD,
+        { opensaasDir: 'generated/opensaas' },
+        '.custom',
+      )
+
+      expect(paths.opensaasDir).toBe(path.join(CWD, 'generated', 'opensaas'))
+      expect(crossReferences.prismaClientOutput).toBe('../generated/opensaas/prisma-client')
+      expect(crossReferences.configImport).toBe('../../opensaas.config')
+    })
+
+    it('falls back to the default .opensaas when neither is set', () => {
+      const { paths } = resolveOutputPaths(CWD, undefined, undefined)
+      expect(paths.opensaasDir).toBe(path.join(CWD, '.opensaas'))
+    })
+  })
+
   describe('schema at the project root', () => {
     it('emits a relative config-schema reference for a root-level schema dir', () => {
       const { crossReferences } = resolveOutputPaths(CWD, {
