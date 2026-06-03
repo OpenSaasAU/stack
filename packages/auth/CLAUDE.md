@@ -126,6 +126,40 @@ How it wires up (Postgres multi-schema):
 - With no `schema` option the Auth lists stay in `public` and no `@@schema` /
   `schemas` / preview feature is emitted (greenfield default unchanged).
 
+### Adopting an existing better-auth install (`adoptBetterAuthTables`)
+
+`adoptBetterAuthTables()` (`src/config/adopt-better-auth-tables.ts`) is a thin
+recipe that returns the `AuthConfig` adoption knobs — the plugin-level `schema`
+plus a per-model `modelName` (and optional column `fields` maps) — preset to the
+conventions of a standard separate-schema better-auth install. It ties together
+the keys/field derivation and schema placement so a migrator doesn't rebuild the
+config by hand. Spread it into `authPlugin`:
+
+```typescript
+import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
+
+authPlugin({
+  ...adoptBetterAuthTables(), // schema: 'auth', AuthUser/AuthSession/AuthAccount/AuthVerification
+  emailAndPassword: { enabled: true },
+})
+// Options: adoptBetterAuthTables({ schema, modelNamePrefix, fields })
+```
+
+It is pure config (no side effects): everything it sets can also be written
+directly on `authPlugin`, and spreading it before your own keys lets you
+override per model. Because the derived user key is `AuthUser` (not `User`), an
+app's own domain `User` is left untouched — the plugin only ever adds/extends
+its derived keys. Combined with the derivation + schema placement above, the
+generated Auth lists reach **Schema parity** (clean `schema:diff`) against a live
+`auth`-schema install — they are modelled for runtime/types, not migrated.
+
+**App User ≠ Auth identity.** The plugin models the **Auth identity** (the
+better-auth user); it does not assume that list is the app's domain `User`.
+Linking an app's `User` to the Auth identity (e.g. a `relationship({ ref:
+'AuthUser' })` the app declares) is the application's concern. See the
+[Authentication guide](../../docs/content/guides/authentication.md) (“Adopting an
+existing better-auth installation”) for the end-to-end migrator walkthrough.
+
 ### Session Provider
 
 Better-auth provides session to context via custom `prismaClientConstructor`:
