@@ -38,6 +38,15 @@ export type * from './config/types.js'
 export { deriveAuthLists } from './config/derive-auth-lists.js'
 export type { DerivedAuthLists } from './config/derive-auth-lists.js'
 
+// "Adopt existing better-auth tables" recipe — sets the model/schema knobs that
+// match a pre-existing separate-schema better-auth install so a migrating
+// project reaches Schema parity without rebuilding the config by hand.
+export { adoptBetterAuthTables } from './config/adopt-better-auth-tables.js'
+export type {
+  AdoptBetterAuthTablesOptions,
+  AdoptBetterAuthTablesConfig,
+} from './config/adopt-better-auth-tables.js'
+
 // Runtime type exports
 export type { AuthRuntimeServices } from './runtime/types.js'
 

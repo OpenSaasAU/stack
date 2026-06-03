@@ -34,7 +34,7 @@ This page is the canonical entry point for Keystone migrations. The full step-by
 
 4. **Preserve your data.** Keystone and Prisma use different many-to-many join-table naming conventions. Use `joinTableNaming: 'keystone'` or per-field `db.relationName` to keep your existing tables. See the [KeystoneJS Projects](/docs/guides/migration#keystonejs-projects) notes.
 
-5. **Adopt auth (optional).** If your Keystone project used `@keystone-6/auth`, swap it for the [auth plugin](/docs/guides/authentication).
+5. **Adopt auth (optional).** If your Keystone project used `@keystone-6/auth`, swap it for the [auth plugin](/docs/guides/authentication). If you already run **better-auth** (separate `auth`-schema tables, an app `User` distinct from the auth user), adopt the live tables with the `adoptBetterAuthTables()` recipe — it models them for runtime/types with no destructive auth migration, and keeps your domain `User` separate from the auth identity. See [Adopting an Existing better-auth Installation](/docs/guides/authentication#adopting-an-existing-better-auth-installation).
 
 ## Where to go next
 

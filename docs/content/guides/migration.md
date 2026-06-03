@@ -116,6 +116,16 @@ Add authentication if needed:
 pnpm add @opensaas/stack-auth better-auth
 ```
 
+{% callout type="info" %}
+**Already running better-auth?** If your project has live better-auth tables
+(typically `AuthUser`/`AuthSession`/`AuthAccount`/`AuthVerification` in a separate
+`auth` schema, with an app `User` that is a distinct model), don't recreate them.
+Adopt the existing tables with the `adoptBetterAuthTables()` recipe so the
+generated Auth lists diff clean against your live database — no destructive auth
+migration — and keep your domain `User` separate from the auth identity. See
+[Adopting an Existing better-auth Installation](/docs/guides/authentication#adopting-an-existing-better-auth-installation).
+{% /callout %}
+
 ### 3. Create Configuration
 
 Create `opensaas.config.ts` in your project root. Use your existing Prisma schema as reference.

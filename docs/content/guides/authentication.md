@@ -917,6 +917,137 @@ Verification link: http://localhost:3000/api/auth/verify-email?token=abc123def45
 4. Better-auth verifies token and updates password
 5. User can sign in with new password
 
+## Adopting an Existing better-auth Installation
+
+If you are migrating a project that **already runs better-auth** — its tables
+exist, hold live data, and you don't want a destructive auth migration — the
+plugin can adopt those tables instead of recreating them. This is the common
+case when migrating an established app to OpenSaaS Stack.
+
+### App `User` vs the Auth identity
+
+A migrating app almost always has **two** distinct concepts, and conflating them
+is the main pitfall:
+
+- **The application's domain `User`** — your own model (`public.User`), keyed
+  however your app likes (e.g. a `subjectId`), carrying your domain fields
+  (profile, billing, roles, relationships to your other lists).
+- **The Auth identity** — the better-auth-owned user record (`AuthUser`), the
+  thing a session belongs to. It owns sessions, OAuth accounts, and credentials.
+
+The auth plugin models the **Auth identity** (the `User`/`Session`/`Account`/
+`Verification` lists better-auth needs). It does **not** assume its user list is
+your app's `User`. As long as the plugin's user model key differs from your app
+list's key (e.g. the plugin uses `AuthUser` while your app keeps `User`), your
+domain `User` is left completely untouched — never extended, never overwritten.
+
+{% callout type="info" %}
+Keep these separate. The plugin owns the Auth identity; your app owns its domain
+`User`. **Linking the two is your application's concern** — see [Linking your
+app User to the Auth identity](#linking-your-app-user-to-the-auth-identity)
+below.
+{% /callout %}
+
+### The `adoptBetterAuthTables()` recipe
+
+Rather than hand-write the four `modelName`s and a `schema` on every model, use
+the `adoptBetterAuthTables()` recipe. It returns an auth-config fragment with the
+adoption knobs already set to the conventions of a standard separate-schema
+better-auth install, and you spread it into `authPlugin` alongside the rest of
+your config:
+
+```typescript
+import { config } from '@opensaas/stack-core'
+import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
+
+export default config({
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL },
+  plugins: [
+    authPlugin({
+      // Adoption defaults: AuthUser/AuthSession/AuthAccount/AuthVerification
+      // in the `auth` Postgres schema — matching a live better-auth install.
+      ...adoptBetterAuthTables(),
+
+      // The rest of your auth config composes as normal:
+      emailAndPassword: { enabled: true },
+      sessionFields: ['userId', 'email', 'name'],
+    }),
+  ],
+  lists: {
+    // Your own domain User stays in `public` and is NOT touched by the plugin.
+    User: list({
+      fields: {
+        subjectId: text({ validation: { isRequired: true } }),
+        // ...your domain fields
+      },
+    }),
+  },
+})
+```
+
+With these defaults the plugin derives `AuthUser`/`AuthSession`/`AuthAccount`/
+`AuthVerification`, pins each to its live table name (`@@map`) and the `auth`
+schema (`@@schema`), and wires Postgres multi-schema automatically. The generated
+Auth lists therefore reach **Schema parity** — they diff clean against your live
+tables, so adding the plugin produces **no destructive auth migration**. The
+lists are modelled for runtime and types, not migrated.
+
+Verify with a schema diff after generating:
+
+```bash
+pnpm generate
+# Diff the generated schema against your live database — the auth tables should
+# report no changes (Schema parity). See your project's prisma migrate diff setup.
+```
+
+### Customising the recipe
+
+The recipe takes options when your live tables diverge from the defaults:
+
+```typescript
+adoptBetterAuthTables({
+  // Postgres schema the live tables live in (default: 'auth')
+  schema: 'identity',
+
+  // Prefix applied to each model name (default: 'Auth' → AuthUser/AuthSession/…)
+  modelNamePrefix: 'BA', // → BAUser/BASession/BAAccount/BAVerification
+
+  // Column renames, only where your live columns differ from better-auth defaults
+  fields: {
+    user: { name: 'full_name', emailVerified: 'is_verified' },
+    session: { userId: 'user_id' },
+  },
+})
+```
+
+The recipe is just a convenience over the plugin's own `schema` / per-model
+`modelName` / `fields` options — anything it sets you can also set directly on
+`authPlugin`, or override after spreading it in.
+
+### Linking your app User to the Auth identity
+
+Because the Auth identity (`AuthUser`) and your domain `User` are separate
+models, **your application declares the link** — the plugin never imposes a
+single-User-model assumption. Add a relationship from your domain `User` to the
+Auth identity:
+
+```typescript
+lists: {
+  User: list({
+    fields: {
+      subjectId: text({ validation: { isRequired: true } }),
+      // The app owns the link to the Auth identity:
+      authIdentity: relationship({ ref: 'AuthUser' }),
+    },
+  }),
+}
+```
+
+Then resolve from a session's `userId` (the Auth identity's id) to your domain
+`User` in your own code — e.g. look up the domain `User` whose `authIdentity`
+points at `session.userId`. How you key and resolve that link is entirely up to
+your app.
+
 ## Auto-Generated Lists
 
 The auth plugin automatically creates these lists in your database:
