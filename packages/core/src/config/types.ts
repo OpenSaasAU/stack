@@ -1200,6 +1200,26 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   }
   hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
+   * Database configuration for this list (model level)
+   */
+  db?: {
+    /**
+     * Custom database table name.
+     * Adds a `@@map` attribute to the generated Prisma model.
+     *
+     * Useful when the Prisma model name (the list key) must differ from the
+     * physical table name — e.g. adopting an existing better-auth installation
+     * whose tables were created under a different name.
+     *
+     * @example
+     * ```typescript
+     * AuthUser: list({ fields: { ... }, db: { map: 'user' } })
+     * // Generates: model AuthUser { ... @@map("user") }
+     * ```
+     */
+    map?: string
+  }
+  /**
    * MCP server configuration for this list
    */
   mcp?: ListMcpConfig

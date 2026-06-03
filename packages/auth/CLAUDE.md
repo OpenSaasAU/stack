@@ -62,6 +62,37 @@ config({
 // Result: { lists: { User, Session, Account, Verification, Post } }
 ```
 
+### Deriving Auth lists from better-auth config
+
+The four Auth lists are **derived** from the better-auth model config the
+developer writes — not hardcoded. The pure derivation lives in
+`src/config/derive-auth-lists.ts` (`deriveAuthLists`), which `getAuthLists`
+and the plugin's add-vs-extend logic consume:
+
+- per-model `modelName` → list key + table `@@map`
+- per-model `fields` (better-auth field → column) → field-level `@map`
+- the `userId` column override → the `user` relationship foreign-key `@map`
+- relationship refs between the Auth lists follow the derived keys
+  (e.g. `Session.user → AuthUser.sessions`)
+
+With no `modelName`/`fields` overrides the output is unchanged
+(`User`/`Session`/`Account`/`Verification`, original field shapes, no `@@map`).
+
+```typescript
+// Adopt an existing better-auth installation (Auth lists ≠ app User)
+authPlugin({
+  user: { modelName: 'AuthUser', fields: { name: 'full_name' } },
+  session: { modelName: 'AuthSession', fields: { userId: 'user_id' } },
+})
+// Adds AuthUser/AuthSession/... and leaves an app's own `User` untouched.
+```
+
+Because the plugin only ever adds/extends its **derived** keys, an app's own
+domain `User` (a different model from the better-auth user) is never extended
+or overwritten when the user model is renamed. The runtime `getUser`/
+`getCurrentUser` helpers resolve the user list's `context.db` key from the
+configured user `modelName`.
+
 ### Session Provider
 
 Better-auth provides session to context via custom `prismaClientConstructor`:
