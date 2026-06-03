@@ -125,8 +125,13 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   lines.push('}')
   lines.push('')
 
-  // Collect enum definitions from all fields (first pass)
-  const enumDefinitions: Map<string, string[]> = new Map()
+  // Collect enum definitions from all fields (first pass). In multi-schema mode
+  // we also record the schema each enum belongs to: Prisma requires every enum
+  // (like every model) to declare an `@@schema(...)`, or it errors with P1012.
+  // An enum inherits the schema of its owning list (the model carrying the
+  // field), falling back to `public`.
+  type EnumDefinition = { values: string[]; schema: string }
+  const enumDefinitions: Map<string, EnumDefinition> = new Map()
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       if (fieldConfig.type === 'relationship' || fieldConfig.virtual) continue
@@ -138,17 +143,28 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
           keystoneCompat,
         )
         if (result.enumValues && result.enumValues.length > 0) {
-          enumDefinitions.set(result.type, result.enumValues)
+          // The enum lives in the owning model's schema (so an enum used by an
+          // `auth`-schema model lands in `auth`, not `public`). Default to
+          // `public` when the list declares no schema.
+          enumDefinitions.set(result.type, {
+            values: result.enumValues,
+            schema: listConfig.db?.schema ?? 'public',
+          })
         }
       }
     }
   }
 
   // Generate enum blocks
-  for (const [enumName, values] of enumDefinitions) {
+  for (const [enumName, { values, schema: enumSchema }] of enumDefinitions) {
     lines.push(`enum ${enumName} {`)
     for (const value of values) {
       lines.push(`  ${value}`)
+    }
+    // In multi-schema mode every enum must declare an `@@schema(...)` or Prisma
+    // rejects the schema (P1012). Greenfield (single schema) output is unchanged.
+    if (multiSchema) {
+      lines.push(`  @@schema("${enumSchema}")`)
     }
     lines.push('}')
     lines.push('')

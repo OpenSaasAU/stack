@@ -2062,6 +2062,107 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('enum PostStatus {')
     })
 
+    it('should declare @@schema on generated enum blocks in multi-schema mode (P1012 fix)', () => {
+      // Multi-schema mode (db.schemas) requires every model AND every enum to
+      // declare an @@schema, or Prisma rejects the schema with P1012. Before this
+      // fix only models carried @@schema, so a db.schemas + enum-select config
+      // produced an invalid schema.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Datasource is multi-schema
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+
+      // The enum block exists and carries @@schema (default public — the list
+      // declares no schema of its own). This is the fix: previously the enum had
+      // no @@schema, which Prisma rejects with P1012 in multi-schema mode.
+      const enumBlock = schema.slice(
+        schema.indexOf('enum PostStatus {'),
+        schema.indexOf('}', schema.indexOf('enum PostStatus {')) + 1,
+      )
+      expect(enumBlock).toContain('@@schema("public")')
+    })
+
+    it('should place an enum in its owning model schema (enum inherits list db.schema)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+              role: select({
+                options: [
+                  { label: 'Admin', value: 'admin' },
+                  { label: 'Member', value: 'member' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+            db: { schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The enum follows its owning model into the `auth` schema, not `public`.
+      const enumBlock = schema.slice(
+        schema.indexOf('enum AuthUserRole {'),
+        schema.indexOf('}', schema.indexOf('enum AuthUserRole {')) + 1,
+      )
+      expect(enumBlock).toContain('@@schema("auth")')
+    })
+
+    it('should NOT add @@schema to enum blocks in greenfield mode (no db.schemas)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Enum block is generated...
+      expect(schema).toContain('enum PostStatus {')
+      // ...but greenfield output is unchanged — no @@schema anywhere.
+      expect(schema).not.toContain('@@schema')
+    })
+
     it('should match snapshot for enum select field', () => {
       const config: OpenSaasConfig = {
         db: { provider: 'sqlite' },
