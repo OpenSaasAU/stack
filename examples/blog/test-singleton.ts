@@ -41,8 +41,12 @@ async function main() {
     // Test 3: Try to create a second record - should fail
     console.log('✅ Test 3: Try to create a second record - should fail')
     try {
+      // Singleton ids are now a bare `id Int @id` with no column default (see
+      // ADR-0004), so Prisma's CreateInput requires `id`. The stack still injects
+      // `id: 1` at runtime; this create is rejected by the singleton constraint
+      // before reaching the database, so the supplied id is never used.
       await context.db.settings.create({
-        data: { siteName: 'Second Blog' },
+        data: { id: 2, siteName: 'Second Blog' },
       })
       throw new Error('Should have thrown an error when creating second record')
     } catch (error) {

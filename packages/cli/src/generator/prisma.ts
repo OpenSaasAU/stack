@@ -193,9 +193,11 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     lines.push(`model ${listName} {`)
 
-    // Add id field - singleton lists use Int @id (always 1) to match Keystone 6 behaviour
+    // Add id field - singleton lists emit a bare `id Int @id` (no `@default(1)`) to
+    // match Keystone 6, which emits no column default for singleton ids (see ADR-0004).
+    // Non-singleton lists are unchanged: `id String @id @default(cuid())`.
     if (listConfig.isSingleton) {
-      lines.push('  id        Int      @id @default(1)')
+      lines.push('  id        Int      @id')
     } else {
       lines.push('  id        String   @id @default(cuid())')
     }
