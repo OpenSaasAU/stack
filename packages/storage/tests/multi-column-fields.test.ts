@@ -162,6 +162,44 @@ describe('image() / file() multi-column mode', () => {
     })
   })
 
+  describe('field-level write access is preserved alongside the column split', () => {
+    // The core write pipeline gates the multi-column split on the field's own
+    // write access (so a denied multi-column field writes NONE of its per-part
+    // columns — see packages/core/.../multi-column-read-write.test.ts). For that
+    // gate to fire, the field builder must surface the user-provided `access` on
+    // the config (the same object key the single-column path reads). These tests
+    // lock that wiring for the real image()/file() fields. See ADR-0006 / #477.
+    it('image() in multi-column mode carries user access AND splitColumns together', () => {
+      const denyUpdate = () => false
+      const field = image({
+        storage: 'images',
+        db: { columns: 'keystone' },
+        access: { update: denyUpdate },
+      })
+      expect(field.access?.update).toBe(denyUpdate)
+      // The gate has both inputs it needs: the access object and the splitter.
+      expect(typeof field.splitColumns).toBe('function')
+    })
+
+    it('file() in multi-column mode carries user access AND splitColumns together', () => {
+      const denyCreate = () => false
+      const field = file({
+        storage: 'documents',
+        db: { columns: 'keystone' },
+        access: { create: denyCreate },
+      })
+      expect(field.access?.create).toBe(denyCreate)
+      expect(typeof field.splitColumns).toBe('function')
+    })
+
+    it('single-column image() still carries access and has no splitColumns', () => {
+      const denyUpdate = () => false
+      const field = image({ storage: 'images', access: { update: denyUpdate } })
+      expect(field.access?.update).toBe(denyUpdate)
+      expect(field.splitColumns).toBeUndefined()
+    })
+  })
+
   describe('no-re-upload guarantee', () => {
     it('image() does NOT upload when given an existing ImageMetadata (single-Json mode)', async () => {
       const field = image({ storage: 'images' })

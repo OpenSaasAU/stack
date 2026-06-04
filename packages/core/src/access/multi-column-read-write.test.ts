@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
 import { executeFieldResolveInputHooks } from '../hooks/index.js'
 import type { FieldConfig } from '../config/types.js'
-import type { AccessContext } from './types.js'
+import type { AccessContext, FieldAccess } from './types.js'
 
 /**
  * Generic core wiring for multi-column fields (the contract storage
@@ -13,11 +13,13 @@ import type { AccessContext } from './types.js'
  */
 
 // A minimal multi-column field: two physical columns `m_url` and `m_size`
-// assembled into `{ url, size }` and split back.
-function multiColumnField(): FieldConfig {
+// assembled into `{ url, size }` and split back. Optionally carries field-level
+// access so we can lock the write-access gate around the split.
+function multiColumnField(access?: FieldAccess): FieldConfig {
   const COLUMNS = ['m_url', 'm_size']
   return {
     type: 'multiColumn',
+    access,
     getColumnNames: () => COLUMNS,
     assembleColumns: (_fieldName: string, row: Record<string, unknown>) => {
       const url = row.m_url
@@ -39,10 +41,10 @@ function multiColumnField(): FieldConfig {
   } as unknown as FieldConfig
 }
 
-function makeContext(): AccessContext {
+function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
   return {
     session: null,
-    _isSudo: false,
+    _isSudo: overrides.isSudo ?? false,
     _resolveOutputCounter: { depth: 0 },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any
@@ -154,5 +156,100 @@ describe('multi-column write split (executeFieldResolveInputHooks)', () => {
     )
     expect(result).toEqual({ title: 'no media in payload' })
     expect('m_url' in result).toBe(false)
+  })
+})
+
+describe('multi-column write split respects field-level write access', () => {
+  it('does NOT write any per-part columns when update access is denied', async () => {
+    const fields = { media: multiColumnField({ update: () => false }) }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'update',
+      makeContext(),
+      'Post',
+    )
+    // The logical key is dropped (it is not a real column) AND none of its
+    // per-part columns are written — identical to how filterWritableFields
+    // drops a denied single-column field.
+    expect(result).toEqual({})
+    expect('media' in result).toBe(false)
+    expect('m_url' in result).toBe(false)
+    expect('m_size' in result).toBe(false)
+  })
+
+  it('does NOT write any per-part columns when create access is denied', async () => {
+    const fields = { media: multiColumnField({ create: () => false }) }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'create',
+      makeContext(),
+      'Post',
+    )
+    expect(result).toEqual({})
+    expect('m_url' in result).toBe(false)
+  })
+
+  it('still splits/writes the columns when write access is granted', async () => {
+    const fields = { media: multiColumnField({ update: () => true, create: () => true }) }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'update',
+      makeContext(),
+      'Post',
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
+    expect('media' in result).toBe(false)
+  })
+
+  it('denying the OTHER operation does not block the write (update field, create op)', async () => {
+    // A field that denies `update` must still be writable on `create`.
+    const fields = { media: multiColumnField({ update: () => false }) }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'create',
+      makeContext(),
+      'Post',
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
+  })
+
+  it('sudo bypasses the field-access gate and still splits', async () => {
+    const fields = { media: multiColumnField({ update: () => false }) }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'update',
+      makeContext({ isSudo: true }),
+      'Post',
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
+  })
+
+  it('a multi-column field WITHOUT field-level access splits exactly as before', async () => {
+    const fields = { media: multiColumnField() }
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await executeFieldResolveInputHooks(
+      inputData,
+      { ...inputData },
+      fields,
+      'update',
+      makeContext(),
+      'Post',
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })
 })

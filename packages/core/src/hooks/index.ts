@@ -2,6 +2,7 @@ import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
+import { checkFieldAccess } from '../access/field-access.js'
 
 /**
  * Validation error collection
@@ -262,6 +263,30 @@ export async function executeFieldResolveInputHooks(
       // Multi-column field (e.g. storage image()/file() in Keystone-parity
       // mode): replace the single logical key with its per-part columns so the
       // write payload targets the live columns instead of a single one.
+      //
+      // The split removes the logical key from the payload BEFORE the
+      // canonical writable-field filter (`filterWritableFields`) runs, and the
+      // raw per-part column keys are not in `fieldConfigs` — so that later
+      // filter cannot enforce this field's own write access. Enforce it HERE,
+      // using the canonical field-access evaluator with the SAME arguments the
+      // write pipeline uses. A single-column field denied by `update`/`create`
+      // is simply omitted from the write; a denied multi-column field must
+      // likewise contribute NONE of its per-part columns. (sudo bypasses via
+      // `checkFieldAccess`.)
+      const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
+        session: context.session,
+        item,
+        context,
+        inputData,
+      })
+      if (!canWrite) {
+        // Denied: drop the logical key and write none of its columns — exactly
+        // as filterWritableFields drops a denied single-column field.
+        const next = { ...result }
+        delete next[fieldKey]
+        result = next
+        continue
+      }
       const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
       // Drop the logical key (it is not a real column) and merge the columns.
       const next = { ...result, ...columns }
