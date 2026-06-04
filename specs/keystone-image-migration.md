@@ -1,55 +1,71 @@
-# Keystone Image Field Migration Guide
+# Keystone Image & File Field Migration Guide
 
 ## Overview
 
-This guide addresses the data migration challenge when migrating from KeystoneJS to OpenSaaS Stack, specifically for image fields. Keystone stores image metadata across multiple database columns, while OpenSaaS uses a single JSON column for more efficient storage and flexibility.
+This guide covers migrating KeystoneJS `image()` and `file()` fields to OpenSaaS Stack.
 
-## The Problem
+Keystone stores image and file metadata across **several physical columns** per field. OpenSaaS Stack's `image()` / `file()` fields default to a single `Json?` column for greenfield projects, but they also ship a **non-destructive multi-column mode** that maps directly onto the existing Keystone columns in place.
 
-### KeystoneJS Image Storage (Multi-Column)
+**The recommended migration path is the non-destructive multi-column mode.** It reaches a clean schema diff and a fully functional field with **no data migration, no dropped columns, and no re-upload of existing assets** — honouring the **Schema parity** guardrail (see [ADR-0006](../docs/adr/0006-image-file-migration-prefers-multi-column-parity.md)). Consolidating the columns into a single JSON column is still possible, but it is a **destructive** operation that drops the original columns and requires a verified backup, so it is documented here only as an explicitly-flagged opt-in.
 
-Keystone creates 7 separate columns for each image field:
+## The Two Storage Layouts
 
-```prisma
-model Teacher {
-  id                       String   @id @default(cuid())
-  name                     String
-  image_url                String?
-  image_width              Int?
-  image_height             Int?
-  image_filesize           Int?
-  image_contentType        String?
-  image_contentDisposition String?
-  image_pathname           String?
-}
-```
+### KeystoneJS (multi-column)
 
-### OpenSaaS Stack Image Storage (JSON Column)
-
-OpenSaaS uses a single JSON column with a well-defined structure:
+Keystone creates **7 columns** for each image field and **3 columns** for each file field:
 
 ```prisma
 model Teacher {
-  id    String  @id @default(cuid())
-  name  String
-  image Json?
+  id   String @id @default(cuid())
+  name String
+
+  // image field "avatar"
+  avatar_url                String?
+  avatar_width              Int?
+  avatar_height             Int?
+  avatar_filesize           Int?
+  avatar_contentType        String?
+  avatar_contentDisposition String?
+  avatar_pathname           String?
+
+  // file field "resume"
+  resume_filename String?
+  resume_filesize Int?
+  resume_url      String?
 }
 ```
 
-**JSON Structure:**
+### OpenSaaS Stack (single JSON column — greenfield default)
+
+For new projects, OpenSaaS Stack uses a single JSON column per field:
+
+```prisma
+model Teacher {
+  id     String @id @default(cuid())
+  name   String
+  avatar Json?  // ImageMetadata
+  resume Json?  // FileMetadata
+}
+```
+
+In **both** modes the field returns the same metadata shapes to your application and the admin UI:
 
 ```typescript
-interface ImageMetadata {
-  filename: string // Generated filename in storage
+// from @opensaas/stack-storage
+interface FileMetadata {
+  filename: string // Storage key / generated filename
   originalFilename: string // Original filename from upload
-  url: string // Public URL to access the image
+  url: string // Public URL to access the file
   mimeType: string // MIME type (e.g., 'image/jpeg')
   size: number // File size in bytes
-  width: number // Image width in pixels
-  height: number // Image height in pixels
   uploadedAt: string // ISO 8601 timestamp
   storageProvider: string // Storage provider name (e.g., 'images')
   metadata?: Record<string, unknown> // Optional provider-specific metadata
+}
+
+interface ImageMetadata extends FileMetadata {
+  width: number // Image width in pixels
+  height: number // Image height in pixels
   transformations?: Record<
     string,
     {
@@ -62,17 +78,175 @@ interface ImageMetadata {
 }
 ```
 
-## Migration Impact
+---
 
-When running `prisma db push` or `prisma migrate`, Prisma will attempt to:
+## Recommended path: non-destructive multi-column mode
 
-1. Drop all Keystone image columns (`image_url`, `image_width`, etc.)
-2. Add a new `image` JSON column
-3. **RESULT:** All existing image data is lost unless manually preserved
+The `image()` / `file()` fields can map onto the existing Keystone per-part columns by setting `db.columns: 'keystone'`. The field assembles those columns into an `ImageMetadata` / `FileMetadata` on read and splits a metadata value back into them on write. **Nothing is dropped, no data is rewritten, and existing assets are never re-uploaded.**
 
-## Solution: Pre-Migration Data Transformation
+### Step 1: Update the OpenSaaS config
 
-### Step 1: Backup Your Database
+```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { image, file } from '@opensaas/stack-storage/fields'
+import { localStorage } from '@opensaas/stack-storage'
+
+export default config({
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL },
+  storage: {
+    images: localStorage({ uploadDir: './uploads/images', serveUrl: '/api/files' }),
+    files: localStorage({ uploadDir: './uploads/files', serveUrl: '/api/files' }),
+  },
+  lists: {
+    Teacher: list({
+      fields: {
+        name: text({ validation: { isRequired: true } }),
+        // Maps onto avatar_url, avatar_width, ... in place
+        avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+        // Maps onto resume_filename, resume_filesize, resume_url in place
+        resume: file({ storage: 'files', db: { columns: 'keystone' } }),
+      },
+    }),
+  },
+})
+```
+
+`db.columns: 'keystone'` uses Keystone's default `<field>_<part>` column naming. The parts are:
+
+- **Image:** `url`, `width`, `height`, `filesize`, `contentType`, `contentDisposition`, `pathname`
+- **File:** `filename`, `filesize`, `url`
+
+### Step 2: Override column names if they differ (optional)
+
+If your live database uses non-default column names, override the affected parts. You only need to specify the parts that differ; omitted parts fall back to the Keystone default:
+
+```typescript
+avatar: image({
+  storage: 'images',
+  db: {
+    columns: {
+      mode: 'keystone',
+      map: {
+        url: 'avatar_image_url', // physical column for the URL part
+        pathname: 'avatar_image_key',
+      },
+    },
+  },
+})
+```
+
+### Step 3: Generate and verify a clean diff
+
+```bash
+# Generate the Prisma schema from the OpenSaaS config
+pnpm opensaas generate
+
+# Generate the Prisma Client
+npx prisma generate
+
+# Verify there are NO destructive changes against the live database.
+# The multi-column field maps onto the existing columns, so the diff
+# should be empty (or additive only):
+npx prisma migrate diff \
+  --from-url "$DATABASE_URL" \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script
+
+# For a SQLite dev loop you can simply push:
+npx prisma db push
+```
+
+The generated schema emits the per-part columns with `@map` onto the live Keystone columns:
+
+```prisma
+model Teacher {
+  id   String @id @default(cuid())
+  name String
+
+  avatar_url                String? @map("avatar_url")
+  avatar_width              Int?    @map("avatar_width")
+  avatar_height             Int?    @map("avatar_height")
+  avatar_filesize           Int?    @map("avatar_filesize")
+  avatar_contentType        String? @map("avatar_contentType")
+  avatar_contentDisposition String? @map("avatar_contentDisposition")
+  avatar_pathname           String? @map("avatar_pathname")
+
+  resume_filename String? @map("resume_filename")
+  resume_filesize Int?    @map("resume_filesize")
+  resume_url      String? @map("resume_url")
+}
+```
+
+### What you get
+
+- **Reads:** Existing rows assemble into `ImageMetadata` / `FileMetadata`. Partially-populated legacy rows (e.g. only `avatar_url` set) still produce a valid object — missing scalar parts default to `0`, and an absent `contentType` defaults to `application/octet-stream`. Keystone's `contentDisposition` is preserved under `metadata.contentDisposition` so a round-trip back to columns does not lose it.
+- **Writes:** New uploads split the metadata back into the same per-part columns.
+- **No re-upload guarantee:** An existing metadata value (or populated columns) is authoritative and is **never** re-uploaded. Only a `File`-like input triggers a storage upload. This behaviour is locked by a test (see ADR-0006), so it cannot silently regress.
+
+### Verification checklist (multi-column path)
+
+- [ ] `prisma migrate diff` against the live DB shows no destructive changes
+- [ ] Existing images/files display in the app without re-upload
+- [ ] Partially-populated legacy rows render without errors
+- [ ] A new upload writes back into the per-part columns
+- [ ] No SQL migration was run and no data was rewritten
+
+---
+
+## Storage providers
+
+The `storage` key on each field references a named provider in `config.storage`. Pick whichever the project already uses for its assets — **OpenSaaS Stack is not S3-only.** In multi-column mode the provider does not need to host existing assets to read them (URLs are read straight from the columns); the provider is only used for new uploads.
+
+### Local filesystem
+
+```typescript
+import { localStorage } from '@opensaas/stack-storage'
+
+storage: {
+  images: localStorage({ uploadDir: './public/uploads', serveUrl: '/uploads' }),
+}
+```
+
+### S3 / S3-compatible
+
+```typescript
+import { s3Storage } from '@opensaas/stack-storage-s3'
+
+storage: {
+  images: s3Storage({ bucket: 'my-bucket', region: 'us-east-1' }),
+}
+```
+
+### Vercel Blob (first-class)
+
+`@opensaas/stack-storage-vercel` ships a fully supported Vercel Blob provider — a great fit for projects deployed on Vercel.
+
+```bash
+pnpm add @opensaas/stack-storage @opensaas/stack-storage-vercel
+```
+
+```typescript
+import { vercelBlobStorage } from '@opensaas/stack-storage-vercel'
+
+storage: {
+  images: vercelBlobStorage({
+    // Token defaults to the BLOB_READ_WRITE_TOKEN env var.
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    pathPrefix: 'images',
+  }),
+}
+```
+
+---
+
+## Destructive alternative (opt-in): consolidate to a single JSON column
+
+> **DESTRUCTIVE — requires a verified backup. Only choose this if you specifically want the single-`Json?` greenfield layout and have confirmed a backup.**
+>
+> This path **drops the Keystone per-part columns** and replaces them with a single `Json?` column. If the SQL is not run correctly before `prisma db push`, **all existing image/file data is lost.** The non-destructive multi-column path above achieves the same functional field with none of this risk and is the recommended default.
+
+### Step A: Back up your database
 
 **PostgreSQL:**
 
@@ -92,46 +266,72 @@ mysqldump -u username -p dbname > backup_$(date +%Y%m%d_%H%M%S).sql
 cp dev.db dev.db.backup_$(date +%Y%m%d_%H%M%S)
 ```
 
-### Step 2: Run Pre-Migration SQL Script
+### Step B: Use the single-`Json?` default in the config
+
+Omit the `db.columns` option so the field emits a single `Json?` column:
+
+```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { image, file } from '@opensaas/stack-storage/fields'
+import { localStorage } from '@opensaas/stack-storage'
+
+export default config({
+  storage: {
+    images: localStorage({ uploadDir: './uploads/images', serveUrl: '/api/files' }),
+    files: localStorage({ uploadDir: './uploads/files', serveUrl: '/api/files' }),
+  },
+  lists: {
+    Teacher: list({
+      fields: {
+        name: text({ validation: { isRequired: true } }),
+        avatar: image({ storage: 'images' }), // single Json? column
+        resume: file({ storage: 'files' }), // single Json? column
+      },
+    }),
+  },
+})
+```
+
+### Step C: Run the consolidation SQL BEFORE `prisma db push`
+
+**CRITICAL:** Running `prisma db push` first will drop the Keystone columns and lose the data. Run this SQL first, substituting your real model and field names.
 
 #### PostgreSQL
 
 ```sql
--- Pre-migration script for PostgreSQL
--- Run this BEFORE changing your Prisma schema
-
 BEGIN;
 
 -- Add the new JSON column
-ALTER TABLE "Teacher" ADD COLUMN IF NOT EXISTS "image_new" JSONB;
+ALTER TABLE "Teacher" ADD COLUMN IF NOT EXISTS "avatar_new" JSONB;
 
--- Transform existing data to JSON format
+-- Transform existing per-part columns into JSON
 UPDATE "Teacher"
-SET "image_new" = jsonb_build_object(
-  'filename', COALESCE(image_pathname, image_url),
-  'originalFilename', COALESCE(image_pathname, image_url),
-  'url', image_url,
-  'mimeType', COALESCE(image_contentType, 'image/jpeg'),
-  'size', COALESCE(image_filesize, 0),
-  'width', COALESCE(image_width, 0),
-  'height', COALESCE(image_height, 0),
-  'uploadedAt', NOW()::text,
-  'storageProvider', 'images'
+SET "avatar_new" = jsonb_build_object(
+  'filename',          COALESCE(avatar_pathname, avatar_url),
+  'originalFilename',  COALESCE(avatar_pathname, avatar_url),
+  'url',               avatar_url,
+  'mimeType',          COALESCE(avatar_contentType, 'application/octet-stream'),
+  'size',              COALESCE(avatar_filesize, 0),
+  'width',             COALESCE(avatar_width, 0),
+  'height',            COALESCE(avatar_height, 0),
+  'uploadedAt',        NOW()::text,
+  'storageProvider',   'images'
 )
-WHERE image_url IS NOT NULL;
+WHERE avatar_url IS NOT NULL;
 
 -- Drop old columns
 ALTER TABLE "Teacher"
-  DROP COLUMN IF EXISTS image_url,
-  DROP COLUMN IF EXISTS image_width,
-  DROP COLUMN IF EXISTS image_height,
-  DROP COLUMN IF EXISTS image_filesize,
-  DROP COLUMN IF EXISTS image_contentType,
-  DROP COLUMN IF EXISTS image_contentDisposition,
-  DROP COLUMN IF EXISTS image_pathname;
+  DROP COLUMN IF EXISTS avatar_url,
+  DROP COLUMN IF EXISTS avatar_width,
+  DROP COLUMN IF EXISTS avatar_height,
+  DROP COLUMN IF EXISTS avatar_filesize,
+  DROP COLUMN IF EXISTS avatar_contentType,
+  DROP COLUMN IF EXISTS avatar_contentDisposition,
+  DROP COLUMN IF EXISTS avatar_pathname;
 
--- Rename the new column to final name
-ALTER TABLE "Teacher" RENAME COLUMN "image_new" TO "image";
+-- Rename the new column to the final name
+ALTER TABLE "Teacher" RENAME COLUMN "avatar_new" TO "avatar";
 
 COMMIT;
 ```
@@ -139,41 +339,34 @@ COMMIT;
 #### MySQL
 
 ```sql
--- Pre-migration script for MySQL
--- Run this BEFORE changing your Prisma schema
-
 START TRANSACTION;
 
--- Add the new JSON column
-ALTER TABLE `Teacher` ADD COLUMN `image_new` JSON;
+ALTER TABLE `Teacher` ADD COLUMN `avatar_new` JSON;
 
--- Transform existing data to JSON format
 UPDATE `Teacher`
-SET `image_new` = JSON_OBJECT(
-  'filename', COALESCE(image_pathname, image_url),
-  'originalFilename', COALESCE(image_pathname, image_url),
-  'url', image_url,
-  'mimeType', COALESCE(image_contentType, 'image/jpeg'),
-  'size', COALESCE(image_filesize, 0),
-  'width', COALESCE(image_width, 0),
-  'height', COALESCE(image_height, 0),
-  'uploadedAt', NOW(),
-  'storageProvider', 'images'
+SET `avatar_new` = JSON_OBJECT(
+  'filename',         COALESCE(avatar_pathname, avatar_url),
+  'originalFilename', COALESCE(avatar_pathname, avatar_url),
+  'url',              avatar_url,
+  'mimeType',         COALESCE(avatar_contentType, 'application/octet-stream'),
+  'size',             COALESCE(avatar_filesize, 0),
+  'width',            COALESCE(avatar_width, 0),
+  'height',           COALESCE(avatar_height, 0),
+  'uploadedAt',       NOW(),
+  'storageProvider',  'images'
 )
-WHERE image_url IS NOT NULL;
+WHERE avatar_url IS NOT NULL;
 
--- Drop old columns
 ALTER TABLE `Teacher`
-  DROP COLUMN image_url,
-  DROP COLUMN image_width,
-  DROP COLUMN image_height,
-  DROP COLUMN image_filesize,
-  DROP COLUMN image_contentType,
-  DROP COLUMN image_contentDisposition,
-  DROP COLUMN image_pathname;
+  DROP COLUMN avatar_url,
+  DROP COLUMN avatar_width,
+  DROP COLUMN avatar_height,
+  DROP COLUMN avatar_filesize,
+  DROP COLUMN avatar_contentType,
+  DROP COLUMN avatar_contentDisposition,
+  DROP COLUMN avatar_pathname;
 
--- Rename the new column to final name
-ALTER TABLE `Teacher` CHANGE COLUMN `image_new` `image` JSON;
+ALTER TABLE `Teacher` CHANGE COLUMN `avatar_new` `avatar` JSON;
 
 COMMIT;
 ```
@@ -181,39 +374,33 @@ COMMIT;
 #### SQLite
 
 ```sql
--- Pre-migration script for SQLite
--- Run this BEFORE changing your Prisma schema
-
 BEGIN TRANSACTION;
 
--- SQLite doesn't support ALTER COLUMN, so we use a temporary table approach
-
--- Create new table with desired structure
+-- SQLite doesn't support DROP COLUMN cleanly, so rebuild the table.
 CREATE TABLE "Teacher_new" (
-  "id" TEXT PRIMARY KEY,
-  "name" TEXT NOT NULL,
-  "image" TEXT,  -- SQLite uses TEXT for JSON
+  "id"        TEXT PRIMARY KEY,
+  "name"      TEXT NOT NULL,
+  "avatar"    TEXT,  -- SQLite stores JSON as TEXT
   "createdAt" DATETIME DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Copy and transform data
-INSERT INTO "Teacher_new" ("id", "name", "image", "createdAt", "updatedAt")
+INSERT INTO "Teacher_new" ("id", "name", "avatar", "createdAt", "updatedAt")
 SELECT
   "id",
   "name",
   CASE
-    WHEN image_url IS NOT NULL THEN
+    WHEN avatar_url IS NOT NULL THEN
       json_object(
-        'filename', COALESCE(image_pathname, image_url),
-        'originalFilename', COALESCE(image_pathname, image_url),
-        'url', image_url,
-        'mimeType', COALESCE(image_contentType, 'image/jpeg'),
-        'size', COALESCE(image_filesize, 0),
-        'width', COALESCE(image_width, 0),
-        'height', COALESCE(image_height, 0),
-        'uploadedAt', datetime('now'),
-        'storageProvider', 'images'
+        'filename',         COALESCE(avatar_pathname, avatar_url),
+        'originalFilename', COALESCE(avatar_pathname, avatar_url),
+        'url',              avatar_url,
+        'mimeType',         COALESCE(avatar_contentType, 'application/octet-stream'),
+        'size',             COALESCE(avatar_filesize, 0),
+        'width',            COALESCE(avatar_width, 0),
+        'height',           COALESCE(avatar_height, 0),
+        'uploadedAt',       datetime('now'),
+        'storageProvider',  'images'
       )
     ELSE NULL
   END,
@@ -221,157 +408,41 @@ SELECT
   "updatedAt"
 FROM "Teacher";
 
--- Drop old table
 DROP TABLE "Teacher";
-
--- Rename new table
 ALTER TABLE "Teacher_new" RENAME TO "Teacher";
 
 COMMIT;
 ```
 
-### Step 3: Update OpenSaaS Config
+File fields consolidate the same way over the 3 file columns (`<field>_filename`, `<field>_filesize`, `<field>_url`):
 
-After running the migration script, update your `opensaas.config.ts`:
-
-```typescript
-import { config, list } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
-import { image } from '@opensaas/stack-storage/fields'
-import { localStorage } from '@opensaas/stack-storage'
-
-export default config({
-  storage: {
-    images: localStorage({
-      uploadDir: './uploads/images',
-      serveUrl: '/api/files',
-    }),
-  },
-  lists: {
-    Teacher: list({
-      fields: {
-        name: text({ validation: { isRequired: true } }),
-        image: image({
-          storage: 'images',
-          validation: {
-            maxFileSize: 5 * 1024 * 1024, // 5MB
-            acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-          },
-        }),
-      },
-    }),
-  },
-})
+```sql
+-- PostgreSQL example for a file field "resume"
+ALTER TABLE "Teacher" ADD COLUMN IF NOT EXISTS "resume_new" JSONB;
+UPDATE "Teacher"
+SET "resume_new" = jsonb_build_object(
+  'filename',         resume_filename,
+  'originalFilename', resume_filename,
+  'url',              resume_url,
+  'mimeType',         'application/octet-stream',
+  'size',             COALESCE(resume_filesize, 0),
+  'uploadedAt',       NOW()::text,
+  'storageProvider',  'files'
+)
+WHERE resume_filename IS NOT NULL OR resume_url IS NOT NULL;
+-- ...then DROP the old columns and RENAME resume_new -> resume.
 ```
 
-### Step 4: Generate and Verify
+### Step D: Generate and verify
 
 ```bash
-# Generate new Prisma schema from OpenSaaS config
 pnpm opensaas generate
-
-# Generate Prisma Client
 npx prisma generate
-
-# Verify the schema (should show no changes since we pre-migrated)
-npx prisma db push --preview-only
-
-# If preview looks good, apply
-npx prisma db push
-
-# Open Prisma Studio to verify data
-npx prisma studio
+npx prisma db push   # columns were already consolidated by the SQL above
+npx prisma studio    # verify data
 ```
 
-## Automated Migration Script
-
-For convenience, here's a Node.js script to automate the migration:
-
-```typescript
-// scripts/migrate-keystone-images.ts
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
-
-interface KeystoneImageData {
-  id: string
-  image_url: string | null
-  image_width: number | null
-  image_height: number | null
-  image_filesize: number | null
-  image_contentType: string | null
-  image_pathname: string | null
-}
-
-async function migrateImages() {
-  console.log('Starting Keystone image migration...')
-
-  try {
-    // Get all records with image data
-    const teachers = await prisma.$queryRaw<KeystoneImageData[]>`
-      SELECT id, image_url, image_width, image_height,
-             image_filesize, image_contentType, image_pathname
-      FROM "Teacher"
-      WHERE image_url IS NOT NULL
-    `
-
-    console.log(`Found ${teachers.length} teachers with images`)
-
-    // Transform each record
-    for (const teacher of teachers) {
-      const imageMetadata = {
-        filename: teacher.image_pathname || teacher.image_url || '',
-        originalFilename: teacher.image_pathname || teacher.image_url || '',
-        url: teacher.image_url || '',
-        mimeType: teacher.image_contentType || 'image/jpeg',
-        size: teacher.image_filesize || 0,
-        width: teacher.image_width || 0,
-        height: teacher.image_height || 0,
-        uploadedAt: new Date().toISOString(),
-        storageProvider: 'images',
-      }
-
-      // This assumes you've already added the image_new column
-      await prisma.$executeRaw`
-        UPDATE "Teacher"
-        SET image_new = ${JSON.stringify(imageMetadata)}::jsonb
-        WHERE id = ${teacher.id}
-      `
-
-      console.log(`Migrated image for teacher ${teacher.id}`)
-    }
-
-    console.log('Migration complete!')
-  } catch (error) {
-    console.error('Migration failed:', error)
-    throw error
-  } finally {
-    await prisma.$disconnect()
-  }
-}
-
-migrateImages()
-```
-
-Run it with:
-
-```bash
-npx tsx scripts/migrate-keystone-images.ts
-```
-
-## Verification Checklist
-
-After migration, verify:
-
-- [ ] All image URLs are preserved
-- [ ] Image dimensions are correct
-- [ ] File sizes are accurate
-- [ ] MIME types are set
-- [ ] No data loss (compare row counts)
-- [ ] Images display correctly in the application
-- [ ] New uploads work with the JSON format
-
-## Rollback Plan
+### Rollback Plan (destructive path)
 
 If something goes wrong:
 
@@ -380,61 +451,27 @@ If something goes wrong:
    ```bash
    # PostgreSQL
    pg_restore -U username -d dbname backup.dump
-
    # MySQL
    mysql -u username -p dbname < backup.sql
-
    # SQLite
    cp dev.db.backup dev.db
    ```
 
-2. **Revert Prisma schema changes**
+2. Revert the Prisma schema changes.
+3. Revert the `opensaas.config.ts` changes (back to `db.columns: 'keystone'` for the non-destructive path).
 
-3. **Revert `opensaas.config.ts` changes**
+### Best Practices (destructive path)
 
-## Best Practices
+1. **Always back up before migration** — this cannot be stressed enough.
+2. **Test on staging first** — never run a destructive migration directly on production.
+3. **Verify data integrity** — check a sample of records manually.
+4. **Prefer the non-destructive multi-column path** unless you have a concrete reason to consolidate.
 
-1. **Always backup before migration** - This cannot be stressed enough
-2. **Test on staging first** - Never run migrations directly on production
-3. **Verify data integrity** - Check a sample of records manually
-4. **Document the migration** - Keep notes on what was done
-5. **Plan for downtime** - Coordinate with your team
-6. **Monitor after migration** - Watch for errors in production logs
-
-## Troubleshooting
-
-### Issue: JSON column not accepting data
-
-**Solution:** Ensure you're using `JSONB` for PostgreSQL (not `JSON`). JSONB is binary format and more efficient.
-
-### Issue: Image URLs are broken after migration
-
-**Solution:** Check that the `url` field in the JSON matches your storage configuration. You may need to transform URLs if your storage location changed.
-
-### Issue: Missing metadata fields
-
-**Solution:** Use `COALESCE` to provide default values for nullable columns during transformation.
-
-## Alternative Approach: Dual-Column Migration
-
-If you need zero-downtime migration:
-
-1. Add new JSON column alongside old columns
-2. Update application to write to both
-3. Run background job to migrate existing data
-4. Switch application to read from JSON column
-5. Remove old columns once verified
-
-This approach is more complex but allows for gradual migration without downtime.
+---
 
 ## Summary
 
-Migrating from Keystone's multi-column image storage to OpenSaaS's JSON format requires careful planning and execution. The key steps are:
-
-1. Backup your database
-2. Run pre-migration SQL to transform data
-3. Update your OpenSaaS config
-4. Generate and verify the new schema
-5. Test thoroughly before going live
-
-With proper preparation, this migration can be completed safely and efficiently.
+- **Default and recommended:** set `db: { columns: 'keystone' }` on `image()` / `file()` to map onto the existing Keystone columns in place. Clean diff, no data migration, no re-upload. Honours **Schema parity** (ADR-0006).
+- **Greenfield default:** new projects use a single `Json?` column with no `db.columns` option.
+- **Destructive opt-in:** consolidating the columns into JSON is still possible but drops the originals and requires a verified backup — use it only when you explicitly want the single-column layout.
+- **Storage:** local, S3, and Vercel Blob are all first-class providers; the field reads existing URLs without re-uploading.
