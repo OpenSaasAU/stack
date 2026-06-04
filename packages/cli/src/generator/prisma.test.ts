@@ -1124,6 +1124,75 @@ describe('Prisma Schema Generator', () => {
       expect(schema).not.toContain('@@schema')
     })
 
+    it('defaults un-schemad models to @@schema("public") in multi-schema mode (mix of schemad and un-schemad lists)', () => {
+      // In multi-schema mode (db.schemas set) Prisma requires every model to
+      // declare an @@schema or it errors with P1012. A list WITH db.schema uses
+      // its own schema; a list WITHOUT db.schema must default to "public"
+      // (mirroring the enum default from #504). See issue #513.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          // Explicit schema → used as-is
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'auth' },
+          },
+          // No db.schema → must default to public (P1012 footgun)
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The schema'd list keeps its own schema
+      const authUserBlock = schema.slice(
+        schema.indexOf('model AuthUser {'),
+        schema.indexOf('model Post {'),
+      )
+      expect(authUserBlock).toContain('@@schema("auth")')
+
+      // The un-schema'd list defaults to public
+      const postBlock = schema.slice(schema.indexOf('model Post {'))
+      expect(postBlock).toContain('@@schema("public")')
+
+      // Every model carries an @@schema — no model is left without one (no P1012)
+      const modelCount = schema.match(/^model \w+ \{/gm)?.length ?? 0
+      const modelSchemaCount = schema.match(/^\s*@@schema\(/gm)?.length ?? 0
+      expect(modelCount).toBe(2)
+      expect(modelSchemaCount).toBe(modelCount)
+    })
+
+    it('emits no @@schema on models in greenfield mode (no db.schemas)', () => {
+      // Greenfield output must be unchanged: a plain list with no db.schemas
+      // configured emits no @@schema on its model.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('model Post {')
+      expect(schema).not.toContain('@@schema')
+    })
+
     it('models an existing auth-schema better-auth install so it diffs clean (adoption)', () => {
       // Mirrors what authPlugin({ schema: 'auth', user: { modelName: 'AuthUser' }, ... })
       // produces after init + beforeGenerate: custom list keys pinned to their
