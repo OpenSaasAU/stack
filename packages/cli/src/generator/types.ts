@@ -478,6 +478,14 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     .filter(([_, config]) => config.resultExtension)
     .map(([name, _]) => name)
 
+  // Multi-column fields (e.g. storage image()/file() in Keystone-parity mode)
+  // back several raw Prisma columns that must be stripped from the public
+  // payload: only the assembled logical field (added back via TransformedFields)
+  // is exposed. Collect those raw column names for omission. See ADR-0006.
+  const multiColumnRawNames = Object.entries(fields).flatMap(([name, config]) =>
+    config.getColumnNames ? config.getColumnNames(name) : [],
+  )
+
   // Get relationship fields to override with custom GetPayload types
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
@@ -520,7 +528,11 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
   // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
   // When virtual fields exist, strip them from T before passing to Prisma so Prisma never
   // tries to resolve a virtual field name (which would produce `never` in its payload type).
-  const fieldsToOmit = [...transformedFieldNames, ...relationshipFields.map((r) => r.name)]
+  const fieldsToOmit = [
+    ...transformedFieldNames,
+    ...relationshipFields.map((r) => r.name),
+    ...multiColumnRawNames,
+  ]
   const prismaT =
     virtualFields.length > 0 ? `StripVirtualFromArgs<T, keyof ${listName}VirtualFields>` : 'T'
   if (fieldsToOmit.length > 0) {

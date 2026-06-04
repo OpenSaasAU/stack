@@ -136,6 +136,7 @@ export type {
   SelectField,
   RelationshipField,
   PrismaRelationResult,
+  MultiColumnPrismaResult,
   JsonField,
   VirtualField,
   TypeDescriptor,

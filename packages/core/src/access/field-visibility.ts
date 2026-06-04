@@ -118,8 +118,30 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   const filtered: Record<string, unknown> = {}
   const MAX_DEPTH = 5 // Prevent infinite recursion
 
+  // Multi-column fields (e.g. storage image()/file() in Keystone-parity mode)
+  // back several physical columns rather than one. Before the per-field pass,
+  // assemble each such field's logical value from its raw columns and remove the
+  // raw columns from the working row, so only the assembled value is exposed
+  // (the raw per-part columns never leak). The assembled value then flows
+  // through the normal read-access + resolveOutput path under the field's own
+  // key. See ADR-0006.
+  const workingItem: Record<string, unknown> = { ...item }
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (!fieldConfig.assembleColumns || !fieldConfig.getColumnNames) continue
+    const columnNames = fieldConfig.getColumnNames(fieldName)
+    // Only assemble when the raw columns are present in the row (i.e. they were
+    // selected); otherwise leave the field absent from the result.
+    const hasAnyColumn = columnNames.some((name) => name in workingItem)
+    if (!hasAnyColumn) continue
+    const assembled = fieldConfig.assembleColumns(fieldName, workingItem)
+    for (const name of columnNames) {
+      delete workingItem[name]
+    }
+    workingItem[fieldName] = assembled
+  }
+
   // Process existing fields from the database result
-  for (const [fieldName, value] of Object.entries(item)) {
+  for (const [fieldName, value] of Object.entries(workingItem)) {
     const fieldConfig = fieldConfigs[fieldName]
 
     // Always include id, createdAt, updatedAt
@@ -143,7 +165,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // Gate the relationship on read access before recursing.
       const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
         ...args,
-        item,
+        item: workingItem,
       })
 
       if (!canRead) {
@@ -194,8 +216,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value,
-      accessItem: item,
-      hookItem: item,
+      accessItem: workingItem,
+      hookItem: workingItem,
       listKey,
       args,
     })
@@ -222,7 +244,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // without one there is nothing to add to the result.
     if (!(fieldConfig.hooks?.resolveOutput && listKey)) {
       // Still evaluate read access to preserve any access-fn side effects.
-      await checkFieldAccess(fieldConfig.access, 'read', { ...args, item })
+      await checkFieldAccess(fieldConfig.access, 'read', { ...args, item: workingItem })
       continue
     }
 
@@ -232,7 +254,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value: undefined, // Virtual fields don't have a database value
-      accessItem: item,
+      accessItem: workingItem,
       hookItem: filtered,
       listKey,
       args,

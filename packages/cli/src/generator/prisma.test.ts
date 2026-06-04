@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generatePrismaSchema, resolveListTimestamps } from './prisma.js'
-import type { OpenSaasConfig, ListConfig, DatabaseConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
 import type { TypeInfo } from '@opensaas/stack-core/extend'
 import {
   text,
@@ -2534,5 +2534,122 @@ describe('resolveListTimestamps', () => {
       createdAt: false,
       updatedAt: false,
     })
+  })
+})
+
+describe('Multi-column field emission', () => {
+  // A field that emits several physical columns through getPrismaColumns (the
+  // contract storage image()/file() use in Keystone-parity mode — see
+  // ADR-0006). Built inline so the generator test stays self-contained.
+  function multiColumnField(
+    columns: Array<{ name: string; type: string; modifiers?: string; map?: string }>,
+  ): FieldConfig {
+    return {
+      type: 'multiColumn',
+      getPrismaColumns: () => columns,
+      // A multi-column field still reports a logical TS type; the generator does
+      // not call getPrismaType when getPrismaColumns returns columns.
+      getTypeScriptType: () => ({ type: 'unknown', optional: true }),
+    } as unknown as FieldConfig
+  }
+
+  it('emits one Prisma line per column with @map names', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Teacher: {
+          fields: {
+            name: text(),
+            image: multiColumnField([
+              { name: 'image_url', type: 'String', modifiers: '?', map: 'image_url' },
+              { name: 'image_width', type: 'Int', modifiers: '?', map: 'image_width' },
+              { name: 'image_height', type: 'Int', modifiers: '?', map: 'image_height' },
+              { name: 'image_filesize', type: 'Int', modifiers: '?', map: 'image_filesize' },
+              {
+                name: 'image_contentType',
+                type: 'String',
+                modifiers: '?',
+                map: 'image_contentType',
+              },
+              {
+                name: 'image_contentDisposition',
+                type: 'String',
+                modifiers: '?',
+                map: 'image_contentDisposition',
+              },
+              { name: 'image_pathname', type: 'String', modifiers: '?', map: 'image_pathname' },
+            ]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+
+    // The single logical field never appears as its own column.
+    expect(schema).not.toMatch(/^\s*image\s+Json/m)
+    // Seven per-part columns are emitted, each nullable and @map-ped onto its
+    // physical Keystone column.
+    expect(schema).toContain('image_url    String? @map("image_url")')
+    expect(schema).toContain('image_width  Int? @map("image_width")')
+    expect(schema).toContain('image_height Int? @map("image_height")')
+    expect(schema).toContain('image_filesize Int? @map("image_filesize")')
+    expect(schema).toContain('image_contentType String? @map("image_contentType")')
+    expect(schema).toContain('image_contentDisposition String? @map("image_contentDisposition")')
+    expect(schema).toContain('image_pathname String? @map("image_pathname")')
+  })
+
+  it('honours a custom physical column name via the descriptor map', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Teacher: {
+          fields: {
+            avatar: multiColumnField([
+              { name: 'avatarUrl', type: 'String', modifiers: '?', map: 'avatar_url' },
+            ]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('avatarUrl    String? @map("avatar_url")')
+  })
+
+  it('emits a plain column line when no map is supplied', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Doc: {
+          fields: {
+            fileUrl: multiColumnField([{ name: 'fileUrl', type: 'String', modifiers: '?' }]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('fileUrl      String?')
+    expect(schema).not.toContain('@map')
+  })
+
+  it('falls back to single-column getPrismaType when getPrismaColumns returns nothing', () => {
+    // A field exposing getPrismaColumns that returns undefined must behave
+    // exactly like a normal single-column field.
+    const field = {
+      type: 'maybeMulti',
+      getPrismaColumns: () => undefined,
+      getPrismaType: () => ({ type: 'String', modifiers: '?' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    } as unknown as FieldConfig
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: { Thing: { fields: { value: field } } },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('value        String?')
   })
 })

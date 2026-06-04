@@ -233,6 +233,32 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
         continue
       }
 
+      // Multi-column fields (e.g. storage image()/file() in Keystone-parity
+      // mode) emit several physical columns instead of one. The generator stays
+      // neutral: it places whatever lines the field returns, the same way it
+      // delegates to relationship fields via getPrismaRelation. See ADR-0006.
+      if (fieldConfig.getPrismaColumns) {
+        const columns = fieldConfig.getPrismaColumns(fieldName)
+        if (columns && columns.length > 0) {
+          for (const column of columns) {
+            const colMods = (column.modifiers ?? '').trimStart()
+            const colNull = colMods.startsWith('?') ? '?' : ''
+            let colAttrs = colMods.startsWith('?') ? colMods.slice(1).trimStart() : colMods
+            // Append @map to bind the column to its physical name (the live
+            // Keystone column). Emitted whenever a `map` is supplied so the
+            // mapping is explicit and configurable.
+            if (column.map) {
+              colAttrs = `${colAttrs ? colAttrs + ' ' : ''}@map("${column.map}")`
+            }
+            const paddedColName = column.name.padEnd(12)
+            lines.push(
+              `  ${paddedColName} ${column.type}${colNull}${colAttrs ? ' ' + colAttrs : ''}`,
+            )
+          }
+          continue
+        }
+      }
+
       const prismaType = mapFieldTypeToPrisma(
         fieldName,
         fieldConfig,

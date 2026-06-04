@@ -1,8 +1,99 @@
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  TypeInfo,
+  MultiColumnPrismaResult,
+} from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
 import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
 import type { FileValidationOptions } from '../utils/upload.js'
+import {
+  assembleFileMetadata,
+  assembleImageMetadata,
+  fileColumnDescriptors,
+  fileColumnNames,
+  imageColumnDescriptors,
+  imageColumnNames,
+  resolveFileColumnMap,
+  resolveImageColumnMap,
+  splitFileMetadata,
+  splitImageMetadata,
+  type FileColumnMap,
+  type ImageColumnMap,
+} from '../utils/multi-column.js'
+
+/**
+ * Multi-column (Keystone-parity) database mode for image()/file() fields.
+ *
+ * The default backing for image()/file() is a single `Json?` column. A
+ * migrating project that already has a Keystone database can instead set
+ * `columns: 'keystone'` to map the field onto the existing per-part columns in
+ * place — no destructive migration, no re-upload of existing assets. The
+ * per-part column names (used in `@map`) follow Keystone's `<field>_<part>`
+ * convention and can be overridden individually. See ADR-0006.
+ */
+export interface ImageDbConfig {
+  /** Custom database column name for single-Json? mode (unused in multi-column mode). */
+  map?: string
+  /** Override DB-level nullability for single-Json? mode. */
+  isNullable?: boolean
+  /** Override the native database type for single-Json? mode. */
+  nativeType?: string
+  /**
+   * Enable multi-column mode by setting `'keystone'`. Per-part column-name
+   * overrides may be supplied; any omitted part falls back to the Keystone
+   * default `<field>_<part>`.
+   */
+  columns?: 'keystone' | { mode: 'keystone'; map?: Partial<ImageColumnMap> }
+}
+
+/**
+ * Multi-column (Keystone-parity) database mode for file() fields.
+ */
+export interface FileDbConfig {
+  /** Custom database column name for single-Json? mode (unused in multi-column mode). */
+  map?: string
+  /** Override DB-level nullability for single-Json? mode. */
+  isNullable?: boolean
+  /** Override the native database type for single-Json? mode. */
+  nativeType?: string
+  /**
+   * Enable multi-column mode by setting `'keystone'`. Per-part column-name
+   * overrides may be supplied; any omitted part falls back to the Keystone
+   * default `<field>_<part>`.
+   */
+  columns?: 'keystone' | { mode: 'keystone'; map?: Partial<FileColumnMap> }
+}
+
+/** Whether a field-level `db.columns` option requests multi-column mode. */
+function isMultiColumn(columns: ImageDbConfig['columns'] | FileDbConfig['columns']): boolean {
+  return columns === 'keystone' || (typeof columns === 'object' && columns?.mode === 'keystone')
+}
+
+/** Extract any per-part `@map` overrides from a `db.columns` option. */
+function imageColumnOverrides(
+  columns: ImageDbConfig['columns'],
+): Partial<ImageColumnMap> | undefined {
+  return typeof columns === 'object' ? columns.map : undefined
+}
+
+function fileColumnOverrides(columns: FileDbConfig['columns']): Partial<FileColumnMap> | undefined {
+  return typeof columns === 'object' ? columns.map : undefined
+}
+
+/**
+ * Detect a File-like input (something we should upload). An already-shaped
+ * metadata value or populated multi-column row is authoritative and must never
+ * trigger an upload (the no-re-upload guarantee — see ADR-0006).
+ */
+function isFileLike(value: unknown): value is File {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'arrayBuffer' in value &&
+    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
+  )
+}
 
 /**
  * File field configuration
@@ -19,6 +110,12 @@ export interface FileFieldConfig<
   cleanupOnDelete?: boolean
   /** Automatically delete old file from storage when replaced with new file */
   cleanupOnReplace?: boolean
+  /**
+   * Database configuration. By default a file is backed by a single `Json?`
+   * column; set `db.columns: 'keystone'` to map onto existing Keystone per-part
+   * columns in place (non-destructive migration). See ADR-0006.
+   */
+  db?: FileDbConfig
   /** UI options */
   ui?: {
     /** Custom component to use for rendering this field */
@@ -53,6 +150,12 @@ export interface ImageFieldConfig<
   cleanupOnDelete?: boolean
   /** Automatically delete old file from storage when replaced with new file */
   cleanupOnReplace?: boolean
+  /**
+   * Database configuration. By default an image is backed by a single `Json?`
+   * column; set `db.columns: 'keystone'` to map onto existing Keystone per-part
+   * columns in place (non-destructive migration). See ADR-0006.
+   */
+  db?: ImageDbConfig
   /** UI options */
   ui?: {
     /** Custom component to use for rendering this field */
@@ -97,37 +200,47 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
 ): FileFieldConfig<TTypeInfo> {
   const { hooks: userHooks, ...restOptions } = options
 
+  // Multi-column (Keystone-parity) mode maps onto existing per-part columns
+  // instead of a single Json? column. The column map is resolved lazily per
+  // field name so default `<field>_<part>` names line up with the live columns.
+  const multiColumn = isMultiColumn(options.db?.columns)
+  const columnMapFor = (fieldName: string): FileColumnMap =>
+    resolveFileColumnMap(fieldName, fileColumnOverrides(options.db?.columns))
+
   const fieldConfig: FileFieldConfig<TTypeInfo> = {
     type: 'file',
     ...restOptions,
 
-    // Override Prisma's Json type with FileMetadata | null in context.db types
+    // Override Prisma's Json type with FileMetadata | null in context.db types.
+    // Multi-column mode adds the same logical field back via TransformedFields
+    // while the raw per-part columns are stripped from the payload.
     resultExtension: {
       outputType: "import('@opensaas/stack-storage').FileMetadata | null",
     },
 
     hooks: {
+      // Keystone-compliant field resolveInput args: the field value lives at
+      // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ inputValue, context, item, fieldName }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+        const inputValue = resolvedData?.[fieldKey]
+
         // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
         }
 
-        // If already FileMetadata, keep existing (edit mode - no new file uploaded)
+        // If already FileMetadata, keep existing (edit mode - no new file
+        // uploaded). An existing metadata value is AUTHORITATIVE and must never
+        // re-upload. See ADR-0006.
         if (typeof inputValue === 'object' && 'filename' in inputValue && 'url' in inputValue) {
           return inputValue as FileMetadata
         }
 
-        // If File object, upload it
-        // Check if it's a File-like object (has arrayBuffer method)
-        if (
-          typeof inputValue === 'object' &&
-          'arrayBuffer' in inputValue &&
-          typeof (inputValue as { arrayBuffer?: unknown }).arrayBuffer === 'function'
-        ) {
+        // Only a File-like input triggers an upload.
+        if (isFileLike(inputValue)) {
           // Convert File to buffer
-          const fileObj = inputValue as File
+          const fileObj = inputValue
           const arrayBuffer = await fileObj.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
 
@@ -137,8 +250,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
           })) as FileMetadata
 
           // If cleanupOnReplace is enabled and there was an old file, delete it
-          if (fieldConfig.cleanupOnReplace && item && fieldName) {
-            const oldMetadata = item[fieldName] as FileMetadata | null
+          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
+            const oldMetadata = item[fieldKey] as FileMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
@@ -157,12 +270,12 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, item, fieldName, context }: any) => {
-        // Only cleanup on delete if enabled
+      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
+        // Only cleanup on delete if enabled. The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const fileMetadata = item[fieldName] as FileMetadata | null
+          const fileMetadata = originalItem?.[fieldKey] as FileMetadata | null
 
-          if (fileMetadata && fileMetadata.filename) {
+          if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
             try {
               await context.storage.deleteFile(fileMetadata.storageProvider, fileMetadata.filename)
             } catch (error) {
@@ -194,7 +307,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     },
 
     getPrismaType: (_fieldName: string) => {
-      // Store as JSON in database
+      // Store as JSON in database (single-column default mode).
       return { type: 'Json', modifiers: '?' }
     },
 
@@ -215,6 +328,26 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
         },
       ]
     },
+  }
+
+  // Multi-column emission + assemble/split. Only attached in multi-column mode
+  // so the single-Json? default is completely unaffected.
+  if (multiColumn) {
+    fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
+      const map = columnMapFor(fieldName)
+      return fileColumnDescriptors(map).map((col) => ({
+        name: col.name,
+        type: col.type,
+        modifiers: '?',
+        map: col.map,
+      }))
+    }
+    fieldConfig.getColumnNames = (fieldName: string): string[] =>
+      fileColumnNames(columnMapFor(fieldName))
+    fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
+      assembleFileMetadata(row, columnMapFor(fieldName), fieldConfig.storage)
+    fieldConfig.splitColumns = (fieldName: string, value: unknown): Record<string, unknown> =>
+      splitFileMetadata((value ?? null) as FileMetadata | null, columnMapFor(fieldName))
   }
 
   return fieldConfig
@@ -247,24 +380,38 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
 ): ImageFieldConfig<TTypeInfo> {
   const { hooks: userHooks, ...restOptions } = options
 
+  // Multi-column (Keystone-parity) mode maps onto existing per-part columns
+  // instead of a single Json? column. See ADR-0006.
+  const multiColumn = isMultiColumn(options.db?.columns)
+  const columnMapFor = (fieldName: string): ImageColumnMap =>
+    resolveImageColumnMap(fieldName, imageColumnOverrides(options.db?.columns))
+
   const fieldConfig: ImageFieldConfig<TTypeInfo> = {
     type: 'image',
     ...restOptions,
 
-    // Override Prisma's Json type with ImageMetadata | null in context.db types
+    // Override Prisma's Json type with ImageMetadata | null in context.db types.
+    // Multi-column mode adds the same logical field back via TransformedFields
+    // while the raw per-part columns are stripped from the payload.
     resultExtension: {
       outputType: "import('@opensaas/stack-storage').ImageMetadata | null",
     },
 
     hooks: {
+      // Keystone-compliant field resolveInput args: the field value lives at
+      // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ inputValue, context, item, fieldName }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+        const inputValue = resolvedData?.[fieldKey]
+
         // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
         }
 
-        // If already ImageMetadata, keep existing (edit mode - no new file uploaded)
+        // If already ImageMetadata, keep existing (edit mode - no new file
+        // uploaded). An existing metadata value is AUTHORITATIVE and must never
+        // re-upload. See ADR-0006.
         if (
           typeof inputValue === 'object' &&
           'filename' in inputValue &&
@@ -275,15 +422,10 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           return inputValue as ImageMetadata
         }
 
-        // If File object, upload it
-        // Check if it's a File-like object (has arrayBuffer method)
-        if (
-          typeof inputValue === 'object' &&
-          'arrayBuffer' in inputValue &&
-          typeof (inputValue as { arrayBuffer?: unknown }).arrayBuffer === 'function'
-        ) {
+        // Only a File-like input triggers an upload.
+        if (isFileLike(inputValue)) {
           // Convert File to buffer
-          const fileObj = inputValue as File
+          const fileObj = inputValue
           const arrayBuffer = await fileObj.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
 
@@ -299,8 +441,8 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           )) as ImageMetadata
 
           // If cleanupOnReplace is enabled and there was an old file, delete it
-          if (fieldConfig.cleanupOnReplace && item && fieldName) {
-            const oldMetadata = item[fieldName] as ImageMetadata | null
+          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
+            const oldMetadata = item[fieldKey] as ImageMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteImage(oldMetadata)
@@ -319,12 +461,12 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, item, fieldName, context }: any) => {
-        // Only cleanup on delete if enabled
+      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
+        // Only cleanup on delete if enabled. The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const imageMetadata = item[fieldName] as ImageMetadata | null
+          const imageMetadata = originalItem?.[fieldKey] as ImageMetadata | null
 
-          if (imageMetadata && imageMetadata.filename) {
+          if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
             try {
               await context.storage.deleteImage(imageMetadata)
             } catch (error) {
@@ -390,6 +532,26 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
         },
       ]
     },
+  }
+
+  // Multi-column emission + assemble/split. Only attached in multi-column mode
+  // so the single-Json? default is completely unaffected.
+  if (multiColumn) {
+    fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
+      const map = columnMapFor(fieldName)
+      return imageColumnDescriptors(map).map((col) => ({
+        name: col.name,
+        type: col.type,
+        modifiers: '?',
+        map: col.map,
+      }))
+    }
+    fieldConfig.getColumnNames = (fieldName: string): string[] =>
+      imageColumnNames(columnMapFor(fieldName))
+    fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
+      assembleImageMetadata(row, columnMapFor(fieldName), fieldConfig.storage)
+    fieldConfig.splitColumns = (fieldName: string, value: unknown): Record<string, unknown> =>
+      splitImageMetadata((value ?? null) as ImageMetadata | null, columnMapFor(fieldName))
   }
 
   return fieldConfig
