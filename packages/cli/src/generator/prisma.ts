@@ -329,10 +329,12 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     }
 
     // Place the model in a specific database schema (Postgres multi-schema).
-    // Only emitted when a schema is configured for the list, which in turn
-    // requires the datasource `schemas` array (see above).
-    if (listConfig.db?.schema) {
-      lines.push(`  @@schema("${listConfig.db.schema}")`)
+    // In multi-schema mode every model must declare an `@@schema(...)` or Prisma
+    // rejects the schema (P1012). A list inherits its own `db.schema` when set,
+    // otherwise it defaults to `public` (mirroring the enum default added in
+    // #504). Greenfield (single schema) output is unchanged — no `@@schema`.
+    if (multiSchema) {
+      lines.push(`  @@schema("${listConfig.db?.schema ?? 'public'}")`)
     }
 
     lines.push('}')
