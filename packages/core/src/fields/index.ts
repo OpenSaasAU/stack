@@ -708,7 +708,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
       resolveInput: async ({ inputData, fieldKey }: { inputData: any; fieldKey: string }) => {
         // Skip if undefined or null (allows partial updates)
         const inputValue = inputData[fieldKey]
-        console.log('Password resolveInput called with value:', inputValue)
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
