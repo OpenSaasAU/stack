@@ -9,17 +9,17 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 ## Overview of differences
 
 | Concern                 | KeystoneJS 6                       | OpenSaaS Stack                                                       |
-| ----------------------- | ---------------------------------- | ------------------------------------------------------------------- |
-| Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                    |
-| Database                | Prisma (managed by Keystone)       | Prisma 7 with driver adapters                                       |
-| Access control          | Functions on the `access` key      | Same shape — operation + filter functions                          |
-| Hooks                   | `resolveInput`, `validateInput`, … | Same names + `resolveOutput`                                        |
+| ----------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                     |
+| Database                | Prisma (managed by Keystone)       | Prisma 7 with driver adapters                                        |
+| Access control          | Functions on the `access` key      | Same shape — operation + filter functions                            |
+| Hooks                   | `resolveInput`, `validateInput`, … | Same names + `resolveOutput`                                         |
 | GraphQL API             | Built-in, always on                | **Not provided** (ADR-0005) — migrate via fragments + `context.db.*` |
-| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.*` with `defineFragment` / `runQuery` / `ResultOf`     |
-| Type generation         | GraphQL codegen                    | Built-in TypeScript inference via `ResultOf` (no codegen step)     |
-| Auth                    | `@keystone-6/auth`                 | `@opensaas/stack-auth` (Better Auth)                               |
-| Image / file fields     | Multi-column metadata              | Multi-column parity mode or single `Json?` column                 |
-| Admin UI                | Auto-generated from schema         | Auto-generated from config                                         |
+| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.*` with `defineFragment` / `runQuery` / `ResultOf`       |
+| Type generation         | GraphQL codegen                    | Built-in TypeScript inference via `ResultOf` (no codegen step)       |
+| Auth                    | `@keystone-6/auth`                 | `@opensaas/stack-auth` (Better Auth)                                 |
+| Image / file fields     | Multi-column metadata              | Multi-column parity mode or single `Json?` column                    |
+| Admin UI                | Auto-generated from schema         | Auto-generated from config                                           |
 
 ## The migration in five moves
 
@@ -125,24 +125,24 @@ export default config({
 
 Most Keystone field builders have a same-named OpenSaaS equivalent. The validation and UI options carry across with the same names.
 
-| Keystone field   | OpenSaaS Stack field                              | Notes                                                                    |
-| ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across. |
-| `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                 |
-| `float()`        | `decimal()`                                       | Use `decimal()` for numeric precision; `precision` / `scale` options.    |
-| `decimal()`      | `decimal()`                                       | `defaultValue`, `min` / `max` are strings (precision-safe).              |
-| `bigInt()`       | `integer({ db: { nativeType: 'BigInt' } })`       | No dedicated builder; map onto `integer` with a native type.             |
-| `checkbox()`     | `checkbox()`                                      | `defaultValue: true / false`.                                            |
-| `timestamp()`    | `timestamp()`                                     | `defaultValue: { kind: 'now' }` or a `Date`.                             |
-| `calendarDay()`  | `calendarDay()`                                   | Date-only string field.                                                  |
-| `password()`     | `password()`                                      | Excluded from reads; hash via field `resolveInput`.                      |
-| `select()`       | `select()`                                        | `options`, `db.type: 'enum'`, `db.enumName`, `db.isNullable` — see §3.   |
-| `relationship()` | `relationship()`                                  | `ref` format differs slightly — see §6.                                  |
-| `json()`         | `json()`                                          | Honours `defaultValue`.                                                  |
-| `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                |
-| `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                       |
-| `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                       |
-| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/packages/tiptap).                   |
+| Keystone field   | OpenSaaS Stack field                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across.                                                                                                                                                                                                                                                                                                                                                                                                |
+| `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `float()`        | `decimal()`                                       | **No `float()` builder.** `decimal()` is a _type change_, not 1:1 parity: the column goes from `Float` (double) to `Decimal(p, s)` and the runtime value from `number` to a `decimal.js` `Decimal`. Choose `precision` / `scale` (defaults `18, 4`) wide enough for your existing values and review for rounding/precision differences.                                                                                                                                 |
+| `decimal()`      | `decimal()`                                       | `defaultValue`, `min` / `max` are strings (precision-safe).                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `bigInt()`       | `text()`                                          | **No native BigInt field.** The migration introspector maps Prisma `BigInt` to `text()` ("No native support") and warns the field is mapped to `text()`; values are stored/returned as strings (exact preservation for IDs, but no numeric operators — parse before arithmetic). Don't use `integer({ db: { nativeType: 'BigInt' } })`: it emits `Int @db.BigInt`, which Prisma rejects (`@db.BigInt` is not valid on the `Int` scalar) and the TS type stays `number`. |
+| `checkbox()`     | `checkbox()`                                      | `defaultValue: true / false`.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `timestamp()`    | `timestamp()`                                     | `defaultValue: { kind: 'now' }` or a `Date`.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `calendarDay()`  | `calendarDay()`                                   | Date-only string field.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `password()`     | `password()`                                      | Excluded from reads; hash via field `resolveInput`.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `select()`       | `select()`                                        | `options`, `db.type: 'enum'`, `db.enumName`, `db.isNullable` — see §3.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `relationship()` | `relationship()`                                  | `ref` format differs slightly — see §6.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `json()`         | `json()`                                          | Honours `defaultValue`.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/packages/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 {% callout type="info" %}
 For the complete option reference on every built-in field, see [Field Types](/docs/core-concepts/field-types). To build a field type that has no built-in equivalent, see [Custom Fields](/docs/guides/custom-fields).
@@ -262,10 +262,10 @@ Access control functions share the same shape between Keystone and OpenSaaS Stac
 
 | Keystone access                                                | OpenSaaS Stack                                                  |
 | -------------------------------------------------------------- | --------------------------------------------------------------- |
-| `access.operation.{query,create,update,delete}`               | Same — `access: { operation: { … } }`                          |
-| `access.filter.{query,update,delete}` returning a `where`      | Operation function returning a Prisma `where` filter           |
+| `access.operation.{query,create,update,delete}`                | Same — `access: { operation: { … } }`                           |
+| `access.filter.{query,update,delete}` returning a `where`      | Operation function returning a Prisma `where` filter            |
 | `access.item.*`                                                | Operation function with `item` arg (`({ session, item }) => …`) |
-| Field access `access.read` / `access.create` / `access.update` | Field-level `access` with the same keys                        |
+| Field access `access.read` / `access.create` / `access.update` | Field-level `access` with the same keys                         |
 
 ```typescript
 // Keystone
@@ -302,12 +302,12 @@ This is the largest API change. OpenSaaS Stack has **no GraphQL layer** ([ADR-00
 | Keystone                                             | OpenSaaS Stack                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
-| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                            |
-| `VariablesOf<typeof query>`                          | Plain function params / `where` args (or a fragment factory)      |
-| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, … })`        |
-| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`  |
-| `context.query.PostList.findMany(...)`               | `context.db.post.findMany(...)`                                   |
-| `context.sudo().graphql.run(...)`                    | `context.sudo().db.post.findMany(...)`                            |
+| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
+| `VariablesOf<typeof query>`                          | Plain function params / `where` args (or a fragment factory)       |
+| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, … })`         |
+| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
+| `context.query.PostList.findMany(...)`               | `context.db.post.findMany(...)`                                    |
+| `context.sudo().graphql.run(...)`                    | `context.sudo().db.post.findMany(...)`                             |
 | Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
 
 ### Quick before/after
@@ -477,7 +477,11 @@ Replace `@keystone-6/auth` with the [auth plugin](/docs/guides/authentication) (
 ```typescript
 // Keystone
 import { createAuth } from '@keystone-6/auth'
-const { withAuth } = createAuth({ listKey: 'User', identityField: 'email', secretField: 'password' })
+const { withAuth } = createAuth({
+  listKey: 'User',
+  identityField: 'email',
+  secretField: 'password',
+})
 
 // OpenSaaS Stack
 import { authPlugin } from '@opensaas/stack-auth'
@@ -513,8 +517,17 @@ export default config({
     },
   },
   lists: {
-    AuthUser: list({ fields: { /* ... */ }, db: { schema: 'auth', map: 'user' } }),
-    Post: list({ fields: { /* ... */ } }), // defaults to public
+    AuthUser: list({
+      fields: {
+        /* ... */
+      },
+      db: { schema: 'auth', map: 'user' },
+    }),
+    Post: list({
+      fields: {
+        /* ... */
+      },
+    }), // defaults to public
   },
 })
 ```
