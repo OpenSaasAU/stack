@@ -85,10 +85,31 @@ describe('image() / file() multi-column mode', () => {
       expect(field.getColumnNames?.('image')).toHaveLength(7)
     })
 
-    it('file() in keystone mode emits three @map-ped columns', () => {
+    it('file() in keystone mode emits three @map-ped nullable columns', () => {
       const field = file({ storage: 'documents', db: { columns: 'keystone' } })
       const columns = field.getPrismaColumns?.('doc')
+      expect(columns).toHaveLength(3)
+      expect(columns?.every((c) => c.modifiers === '?')).toBe(true)
       expect(columns?.map((c) => c.map)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
+      // filesize is Int; filename/url are String.
+      const byMap = Object.fromEntries((columns ?? []).map((c) => [c.map, c.type]))
+      expect(byMap.doc_filesize).toBe('Int')
+      expect(byMap.doc_filename).toBe('String')
+      expect(byMap.doc_url).toBe('String')
+      expect(field.getColumnNames?.('doc')).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
+    })
+
+    it('file() per-part @map names are configurable', () => {
+      const field = file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', map: { url: 'doc_href' } } },
+      })
+      const maps = field.getPrismaColumns?.('doc')?.map((c) => c.map)
+      expect(maps).toContain('doc_href')
+      // Un-overridden parts keep Keystone defaults.
+      expect(maps).toContain('doc_filename')
+      expect(maps).not.toContain('doc_url')
+      expect(field.getColumnNames?.('doc')).toContain('doc_href')
     })
 
     it('per-part @map names are configurable', () => {
@@ -150,6 +171,67 @@ describe('image() / file() multi-column mode', () => {
         image_contentType: 'image/jpeg',
         image_pathname: 'a.jpg',
       })
+    })
+
+    it('file() assembles a fully-populated row into FileMetadata', () => {
+      const field = file({ storage: 'documents', db: { columns: 'keystone' } })
+      const meta = field.assembleColumns?.('doc', {
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+      }) as FileMetadata
+      expect(meta.url).toBe('https://cdn/report.pdf')
+      expect(meta.filename).toBe('report.pdf')
+      expect(meta.size).toBe(4096)
+      expect(meta.storageProvider).toBe('documents')
+    })
+
+    it('file() assembles a partial row (only doc_url) into a valid value', () => {
+      const field = file({ storage: 'documents', db: { columns: 'keystone' } })
+      const meta = field.assembleColumns?.('doc', {
+        doc_url: 'https://cdn/only.pdf',
+      }) as FileMetadata
+      expect(meta.url).toBe('https://cdn/only.pdf')
+      // Missing filename falls back to the URL; missing filesize defaults to 0.
+      expect(meta.filename).toBe('https://cdn/only.pdf')
+      expect(meta.size).toBe(0)
+    })
+
+    it('file() assembles an empty (all-NULL) row to null', () => {
+      const field = file({ storage: 'documents', db: { columns: 'keystone' } })
+      expect(
+        field.assembleColumns?.('doc', { doc_url: null, doc_filename: null, doc_filesize: null }),
+      ).toBeNull()
+    })
+
+    it('file() split writes back into the per-part columns', () => {
+      const field = file({ storage: 'documents', db: { columns: 'keystone' } })
+      const meta: FileMetadata = {
+        filename: 'report.pdf',
+        originalFilename: 'report.pdf',
+        url: 'https://cdn/report.pdf',
+        mimeType: 'application/pdf',
+        size: 4096,
+        uploadedAt: '',
+        storageProvider: 'documents',
+      }
+      expect(field.splitColumns?.('doc', meta)).toEqual({
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+      })
+    })
+
+    it('file() round-trips a row through assemble → split with custom @map names', () => {
+      const field = file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', map: { url: 'doc_href' } } },
+      })
+      const row = { doc_filename: 'a.bin', doc_filesize: 12, doc_href: 'https://cdn/a.bin' }
+      const meta = field.assembleColumns?.('doc', row)
+      expect((meta as FileMetadata).url).toBe('https://cdn/a.bin')
+      // Split back lands on the overridden physical column, not doc_url.
+      expect(field.splitColumns?.('doc', meta)).toEqual(row)
     })
 
     it('file() split of null clears all columns', () => {
