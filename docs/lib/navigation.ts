@@ -80,16 +80,16 @@ export const navigation: NavItem[] = [
     title: 'Guides',
     items: [
       {
-        title: 'Claude Code Plugin',
-        href: '/docs/guides/claude-code',
-      },
-      {
         title: 'Migrating from Keystone',
         href: '/docs/guides/migrating-from-keystone',
       },
       {
-        title: 'Migration Guide',
+        title: 'Migration Guide (all sources)',
         href: '/docs/guides/migration',
+      },
+      {
+        title: 'Claude Code Plugin',
+        href: '/docs/guides/claude-code',
       },
       {
         title: 'Custom Fields',
