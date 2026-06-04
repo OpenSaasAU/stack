@@ -549,8 +549,8 @@ importers:
   examples/rag-openai-chatbot:
     dependencies:
       '@ai-sdk/openai':
-        specifier: ^2.0.98
-        version: 2.0.98(zod@4.3.6)
+        specifier: ^3.0.67
+        version: 3.0.67(zod@4.3.6)
       '@ai-sdk/react':
         specifier: ^2.0.152
         version: 2.0.152(react@19.2.4)(zod@4.3.6)
@@ -1251,8 +1251,8 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai@2.0.98':
-    resolution: {integrity: sha512-6BI2lpY0WBuLzwz1bVTVkB4gpupisiN5/bFrud0+gHNhgspYOvh5uLf+7sz/NKvAtRB47WEzlBxwDQwGdIpbQw==}
+  '@ai-sdk/openai@3.0.67':
+    resolution: {integrity: sha512-oAiGC9eWG7IgtdsdS74bOCnAAHarAfTJhWN9x5INwnWPekL802AvF+0I5DvLzIF1MIRmNw4N8mPSL/GUVbX9Mw==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -7126,10 +7126,10 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.3.6
 
-  '@ai-sdk/openai@2.0.98(zod@4.3.6)':
+  '@ai-sdk/openai@3.0.67(zod@4.3.6)':
     dependencies:
-      '@ai-sdk/provider': 2.0.1
-      '@ai-sdk/provider-utils': 3.0.22(zod@4.3.6)
+      '@ai-sdk/provider': 3.0.10
+      '@ai-sdk/provider-utils': 4.0.27(zod@4.3.6)
       zod: 4.3.6
 
   '@ai-sdk/provider-utils@3.0.22(zod@4.3.6)':
