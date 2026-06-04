@@ -419,15 +419,7 @@ The migration system automatically maps field types:
 
 ### KeystoneJS → OpenSaaS
 
-| Keystone Field   | OpenSaaS Field   | Notes              |
-| ---------------- | ---------------- | ------------------ |
-| `text()`         | `text()`         | Direct mapping     |
-| `integer()`      | `integer()`      | Direct mapping     |
-| `checkbox()`     | `checkbox()`     | Direct mapping     |
-| `timestamp()`    | `timestamp()`    | Direct mapping     |
-| `select()`       | `select()`       | Options preserved  |
-| `relationship()` | `relationship()` | Ref format differs |
-| `password()`     | `password()`     | Direct mapping     |
+Keystone field builders map onto same-named OpenSaaS builders (`text()` → `text()`, `select()` → `select()`, and so on). For the **complete** mapping — including `float()` / `decimal()`, `image()` / `file()`, `document()`, and the `relationship()` `ref`-format differences — see the field-type table in the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone#2-field-type-mapping) guide.
 
 ## Claude Code Integration
 
@@ -876,7 +868,11 @@ export async function getPosts() {
 
 ## Migrating context.graphql.run
 
-If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. OpenSaaS Stack has no GraphQL layer — instead it provides **fragment-based query utilities** that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
+If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. OpenSaaS Stack has no GraphQL layer — instead it provides **fragment-based query utilities** (`defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`) that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
+
+{% callout type="info" %}
+The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, gql.tada typed documents, and fragment → `include` / `select` with null-on-access-denied) — lives in the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & Fragments](/docs/core-concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
+{% /callout %}
 
 ### Quick reference
 
@@ -1013,7 +1009,7 @@ const posts = await context.db.post.findMany({
 })
 ```
 
-All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery`/`runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/core-concepts/queries). The full [Keystone migration spec](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-migration.md) has additional patterns.
+All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/core-concepts/queries). For the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) guide.
 
 ## Best Practices
 
