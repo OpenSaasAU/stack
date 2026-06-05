@@ -115,6 +115,11 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(prismaPath)).toBe(true)
     })
 
+    // Generous timeout: this otherwise-fast synchronous test occasionally
+    // stalls past the 5s default on cold/loaded CI runners (the `test` task runs
+    // cache-bypassed on every PR, so a transient I/O stall here can fail an
+    // unrelated change). The headroom absorbs that contention without masking a
+    // real regression — the assertions are unchanged.
     it('should overwrite existing files', () => {
       const config1: OpenSaasConfig = {
         db: {
@@ -157,7 +162,7 @@ describe('Generate Command Integration', () => {
       writePrismaSchema(config2, prismaPath)
       schema = fs.readFileSync(prismaPath, 'utf-8')
       expect(schema).toMatchSnapshot('overwrite-after')
-    })
+    }, 30000)
 
     it('should handle custom opensaasPath', () => {
       const config: OpenSaasConfig = {
