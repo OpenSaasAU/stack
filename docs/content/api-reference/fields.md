@@ -1434,11 +1434,8 @@ User: list({
 })
 
 // Usage
-const user = await context.db.user.findUnique({
-  where: { id },
-  select: { firstName: true, lastName: true, fullName: true },
-})
-console.log(user.fullName) // "John Doe"
+const user = await context.db.user.findUnique({ where: { id } })
+console.log(user.fullName) // "John Doe" — computed via resolveOutput on every read
 ```
 
 ##### Complex Computed Value
@@ -1487,21 +1484,12 @@ Post: list({
 #### Important Notes
 
 {% callout type="warning" %}
-Virtual fields must be explicitly selected in queries. They are not included by default.
+`context.db` reads do not honour Prisma's `select` argument — passing `select` logs a runtime warning and is otherwise a no-op. Narrow a read with `include` (relationships) or a fragment `query`. Virtual fields are always computed via `resolveOutput` on every read.
 {% /callout %}
 
 ```typescript
-// ❌ Virtual field NOT computed
-const user = await context.db.user.findUnique({
-  where: { id },
-})
-// user.fullName is undefined
-
-// ✅ Virtual field IS computed
-const user = await context.db.user.findUnique({
-  where: { id },
-  select: { firstName: true, lastName: true, fullName: true },
-})
+// Virtual field is computed on every read — no select needed
+const user = await context.db.user.findUnique({ where: { id } })
 // user.fullName is "John Doe"
 ```
 
