@@ -32,8 +32,8 @@ import { ItemCreateForm, ListTable, SearchBar } from '@opensaas/stack-ui/standal
 // Full components (page-level)
 import { Dashboard, ListView, ItemForm, AdminUI } from '@opensaas/stack-ui'
 
-// Server utilities
-import { getAdminContext } from '@opensaas/stack-ui/server'
+// Server utility types
+import type { ServerActionInput, ActionResult } from '@opensaas/stack-ui/server'
 
 // Utility functions
 import { cn, formatListName, formatFieldName } from '@opensaas/stack-ui/lib/utils'
@@ -175,18 +175,49 @@ import { DeleteButton } from '@opensaas/stack-ui/standalone'
 
 ### Level 4: Full Admin UI (`@opensaas/stack-ui`)
 
-Complete admin interface with routing and navigation.
+Complete admin interface with routing and navigation. The host app builds the
+access-scoped `context` (and `config`) from the generated `.opensaas/context`
+and passes them in, along with a `'use server'` wrapper that forwards form
+submissions to `context.serverAction`:
 
 ```tsx
+// app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-;<AdminUI
-  context={context}
-  params={params?.admin}
-  searchParams={searchParams}
-  basePath="/admin"
-  serverAction={handleServerAction}
-/>
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+
+// User-defined wrapper that runs the server action with an access-scoped context
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  return (
+    <AdminUI
+      context={await getContext()}
+      config={await config}
+      params={resolvedParams.admin}
+      searchParams={resolvedSearchParams}
+      basePath="/admin"
+      serverAction={serverAction}
+    />
+  )
+}
 ```
+
+> With `@opensaas/stack-auth`, resolve the session first and pass it to
+> `getContext(session)` (in both the page and the `serverAction` wrapper) so
+> access control runs as the signed-in user. See `examples/starter-auth` and
+> `examples/auth-demo`.
 
 ## Component Registry
 

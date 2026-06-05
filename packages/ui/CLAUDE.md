@@ -50,7 +50,14 @@ Composable CRUD components:
 
 ### Server (`/server`)
 
-- `getAdminContext(headers)` - Get context with session from request headers
+Type-only re-exports for wiring the admin's server action (no runtime exports):
+
+- `ServerActionInput` - Props passed to the generic server action (re-exported from stack-core)
+- `ActionResult<T>` - Result shape returned by a server action
+
+The host app builds the access-scoped `context` itself (from the generated
+`.opensaas/context`) and passes it to `AdminUI`. There is no `getAdminContext`
+helper in this package.
 
 ## Architecture Patterns
 
@@ -154,7 +161,7 @@ export function RichTextField({ placeholder, minHeight, customOption, ...basePro
 
 ### Server/Client Boundaries
 
-- `AdminUI` is server component (uses `getAdminContext`)
+- `AdminUI` is a server component (the host builds and passes `context`)
 - Forms and interactive components are client components
 - Data serialization via props (no functions, only JSON-serializable data)
 
@@ -168,7 +175,7 @@ export function RichTextField({ placeholder, minHeight, customOption, ...basePro
 
 ### With @opensaas/stack-auth
 
-- `getAdminContext` uses Better-auth to get session
+- The host resolves the Better-auth session and passes it to `getContext(session)`
 - Session flows through context to access control
 - Auth UI components imported separately from `@opensaas/stack-auth/ui`
 
@@ -191,17 +198,47 @@ import '../../../lib/register-fields' // Side-effect import
 
 ### Basic Admin Setup
 
+The host builds the access-scoped `context` (and `config`) from the generated
+`.opensaas/context` and wires a `'use server'` action that forwards to
+`context.serverAction`:
+
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
 
-export default async function AdminPage() {
-  const context = await getAdminContext()
-  return <AdminUI context={context} config={config} />
+// User-defined wrapper that runs the server action with an access-scoped context
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  return (
+    <AdminUI
+      context={await getContext()}
+      config={await config}
+      params={resolvedParams.admin}
+      searchParams={resolvedSearchParams}
+      basePath="/admin"
+      serverAction={serverAction}
+    />
+  )
 }
 ```
+
+With auth, resolve the session and pass it to `getContext(session)` (in both the
+page and the wrapper). See `examples/starter`, `examples/starter-auth`, and
+`examples/auth-demo`.
 
 ### Custom Field Component (Global Registration)
 
@@ -305,7 +342,7 @@ Avoid `any` types - all props are strongly typed for type safety.
 
 ## Performance
 
-- Server components by default (AdminUI, getAdminContext)
+- Server components by default (AdminUI renders on the server)
 - Client components marked with `'use client'`
 - Minimal client-side JS for interactive features only
 - Data fetching on server reduces client bundle size
