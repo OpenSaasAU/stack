@@ -196,7 +196,7 @@ export class PrismaIntrospector {
     const mappings: Record<string, { type: string; import: string }> = {
       String: { type: 'text', import: 'text' },
       Int: { type: 'integer', import: 'integer' },
-      Float: { type: 'float', import: 'float' },
+      Float: { type: 'decimal', import: 'decimal' }, // No native float - mapped to decimal()
       Boolean: { type: 'checkbox', import: 'checkbox' },
       DateTime: { type: 'timestamp', import: 'timestamp' },
       Json: { type: 'json', import: 'json' },
@@ -220,6 +220,11 @@ export class PrismaIntrospector {
         if (['BigInt', 'Decimal', 'Bytes'].includes(field.type)) {
           warnings.push(
             `Field "${model.name}.${field.name}" uses unsupported type "${field.type}" - will be mapped to text()`,
+          )
+        }
+        if (field.type === 'Float') {
+          warnings.push(
+            `Field "${model.name}.${field.name}" uses type "Float" - will be mapped to decimal() (a decimal.js Decimal, not a JS number). Review precision/rounding.`,
           )
         }
       }

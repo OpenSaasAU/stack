@@ -185,6 +185,35 @@ model User {
     expect(introspector.mapPrismaTypeToOpenSaas('Json')).toEqual({ type: 'json', import: 'json' })
   })
 
+  it('should map Float to decimal() (not the non-existent float())', () => {
+    expect(introspector.mapPrismaTypeToOpenSaas('Float')).toEqual({
+      type: 'decimal',
+      import: 'decimal',
+    })
+  })
+
+  it('should warn when a Float column is mapped to decimal()', async () => {
+    const schema = `
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id    String @id
+  price Float
+}
+`
+    await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
+
+    const result = await introspector.introspect(tempDir)
+    const warnings = introspector.getWarnings(result)
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Float')
+    expect(warnings[0]).toContain('decimal()')
+  })
+
   it('should generate warnings for unsupported types', async () => {
     const schema = `
 datasource db {
