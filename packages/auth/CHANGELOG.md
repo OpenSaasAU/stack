@@ -1,5 +1,95 @@
 # @opensaas/stack-auth
 
+## 0.22.0
+
+### Minor Changes
+
+- [#509](https://github.com/OpenSaasAU/stack/pull/509) [`fdc48f8`](https://github.com/OpenSaasAU/stack/commit/fdc48f86a5a7f161bef0b512963e1511a8c8e00e) Thanks [@list({](https://github.com/list({)! - Add `adoptBetterAuthTables()` recipe for adopting an existing better-auth installation
+
+  A migrating project that already runs better-auth (its `AuthUser`/`AuthSession`/`AuthAccount`/`AuthVerification` tables live in a separate `auth` Postgres schema, and its app `User` is a different model) can now adopt those live tables without rebuilding the auth config by hand. The recipe presets the plugin-level `schema` plus each model's `modelName` (and optional column `fields` maps) to the conventions of a standard separate-schema better-auth install, so the derived Auth lists diff clean (Schema parity) against the live database — no destructive auth migration. The app's own domain `User` is left untouched; linking it to the Auth identity is the application's concern.
+
+  ```typescript
+  import { config } from '@opensaas/stack-core'
+  import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
+
+  export default config({
+    db: { provider: 'postgresql', url: process.env.DATABASE_URL },
+    plugins: [
+      authPlugin({
+        // Defaults: AuthUser/AuthSession/AuthAccount/AuthVerification in the
+        // `auth` schema, pinned to your live table names (@@map) + schema (@@schema).
+        ...adoptBetterAuthTables(),
+        emailAndPassword: { enabled: true },
+      }),
+    ],
+    lists: {
+      // Your own domain User stays in `public` and is NOT touched by the plugin.
+   fields: { subjectId: text({ validation: { isRequired: true } }) } }),
+    },
+  })
+
+  // Customise when your live tables diverge from the defaults:
+  adoptBetterAuthTables({
+    schema: 'identity', // default: 'auth'
+    modelNamePrefix: 'BA', // default: 'Auth'
+    fields: { user: { name: 'full_name' }, session: { userId: 'user_id' } },
+  })
+  ```
+
+- [#497](https://github.com/OpenSaasAU/stack/pull/497) [`be4181a`](https://github.com/OpenSaasAU/stack/commit/be4181ada3f2d6386052df4d4869ad150d360f89) Thanks [@{](https://github.com/{)! - Derive the auth plugin's Auth lists from the better-auth config
+
+  `authPlugin` now mirrors the better-auth config a developer writes instead of hardcoding the keys `User`/`Session`/`Account`/`Verification`. Per-model `modelName` becomes the OpenSaaS list key (and a table `@@map`), and the `fields` column map becomes per-field `@map`s. The plugin only ever adds/extends its own derived keys, so an app's separate domain `User` is never overwritten. The runtime `getUser`/`getCurrentUser` helpers now resolve the user list key from the configured user model instead of a hardcoded `'user'`.
+
+  Default behaviour (no overrides) is unchanged: the lists are still keyed `User`/`Session`/`Account`/`Verification` with the original field shapes and no `@@map`.
+
+  ```typescript
+  // Adopt existing better-auth tables without a destructive migration
+  authPlugin({
+   modelName: 'AuthUser', fields: { name: 'full_name' } },
+    session: { modelName: 'AuthSession', fields: { userId: 'user_id' } },
+    account: { modelName: 'AuthAccount' },
+    verification: { modelName: 'AuthVerification' },
+  })
+  // -> lists keyed AuthUser/AuthSession/AuthAccount/AuthVerification
+  //    with @@map + column @map matching the live tables
+  ```
+
+  Lists also gain a model-level `db.map` option, which emits a `@@map("...")` on the generated Prisma model so a list key can differ from its physical table name.
+
+- [#502](https://github.com/OpenSaasAU/stack/pull/502) [`593390c`](https://github.com/OpenSaasAU/stack/commit/593390c57d9844ca7ada8f45b340c849f1d8d647) Thanks [@{](https://github.com/{)! - Add `authPlugin` schema placement so Auth lists can adopt an existing non-`public` better-auth layout (clean-diff adoption)
+
+  The auth lists can now be placed in a non-`public` Postgres schema (e.g. `auth`) so they diff CLEAN against a separate-schema better-auth installation. A plugin-level `schema` option applies `@@schema(...)` to all generated Auth lists, with a per-list override.
+
+  ```typescript
+  authPlugin({
+    schema: 'auth', // all Auth lists get @@schema("auth")
+   modelName: 'AuthUser' },
+    session: { modelName: 'AuthSession' },
+    account: { modelName: 'AuthAccount' },
+    // per-model override: relocate one list to a different schema
+    verification: { modelName: 'AuthVerification', schema: 'auth_internal' },
+  })
+  ```
+
+  The plugin's `beforeGenerate` hook wires the datasource `schemas` array (always including `public`) and defaults any list without an explicit `db.schema` to `public`, producing a valid multi-schema Prisma schema. With no `schema` option the output is unchanged (greenfield default stays in `public`, no `@@schema`).
+
+  Core support added for this (mirroring the `db.map` → `@@map` work):
+  - List-level `db.schema` → the Prisma generator emits `@@schema("...")` on the model.
+  - Database-level `db.schemas` → the generator emits the datasource `schemas = [...]` array and enables the `multiSchema` preview feature.
+
+  ```typescript
+  // Core/generator building blocks
+  db: { provider: 'postgresql', schemas: ['public', 'auth'] }
+  AuthUser: list({ fields: { ... }, db: { map: 'AuthUser', schema: 'auth' } })
+  // Generates: model AuthUser { ... @@map("AuthUser") @@schema("auth") }
+  ```
+
+### Patch Changes
+
+- [#501](https://github.com/OpenSaasAU/stack/pull/501) [`e30f6a1`](https://github.com/OpenSaasAU/stack/commit/e30f6a1ef69dc65ae68b37539fa74c3f97823cfd) Thanks [@borisno2](https://github.com/borisno2)! - Keep `createdAt`/`updatedAt` on the auth lists now that auto-timestamps are off by default
+
+  The derived auth lists (User/Session/Account/Verification) now opt into `db: { timestamps: true }`. better-auth's adapter writes those columns and the schema converter returns `null` for them assuming the generator injects them, so the opt-in keeps the generated auth models intact.
+
 ## 0.21.0
 
 ### Minor Changes
