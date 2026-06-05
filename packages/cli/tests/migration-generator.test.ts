@@ -2,7 +2,10 @@
  * Migration Generator Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fs from 'fs-extra'
+import path from 'path'
+import os from 'os'
 import { MigrationGenerator } from '../src/migration/generators/migration-generator.js'
 import type { MigrationSession } from '../src/migration/types.js'
 
@@ -587,6 +590,63 @@ describe('MigrationGenerator', () => {
       const output = await generator.generate(session)
 
       expect(output.configContent).not.toContain('AccessControl')
+    })
+  })
+
+  describe('Float Field Mapping', () => {
+    let tempDir: string
+
+    beforeEach(async () => {
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'migration-float-'))
+      await fs.ensureDir(path.join(tempDir, 'prisma'))
+    })
+
+    afterEach(async () => {
+      await fs.remove(tempDir)
+    })
+
+    it('should generate decimal() (not float()) for a Float column and warn', async () => {
+      const schema = `
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id    String @id @default(cuid())
+  price Float
+}
+`
+      await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
+
+      const session: MigrationSession = {
+        id: 'test',
+        projectType: 'prisma',
+        analysis: {
+          projectTypes: ['prisma'],
+          cwd: tempDir,
+          provider: 'postgresql',
+        },
+        currentQuestionIndex: 0,
+        answers: {
+          db_provider: 'postgresql',
+          enable_auth: false,
+          default_access: 'public-read-auth-write',
+        },
+        isComplete: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const output = await generator.generate(session)
+
+      // References the real decimal() builder, not the non-existent float()
+      expect(output.configContent).toContain('price: decimal(')
+      expect(output.configContent).not.toContain('float(')
+      // decimal is imported from the fields entry point
+      expect(output.configContent).toContain('decimal')
+      // Warns about the Float -> Decimal type change
+      expect(output.warnings.some((w) => w.includes('Float') && w.includes('decimal()'))).toBe(true)
     })
   })
 })

@@ -93,6 +93,13 @@ export default {
     })
   })
 
+  it('should map float to decimal() (not the non-existent float())', () => {
+    expect(introspector.mapKeystoneTypeToOpenSaas('float')).toEqual({
+      type: 'decimal',
+      import: 'decimal',
+    })
+  })
+
   it('should handle file and image fields', () => {
     expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({
       type: 'image',
@@ -141,6 +148,31 @@ export default {
     expect(warnings.some((w) => w.includes('storage'))).toBe(true)
     // Should remind about manual migration for virtual field hooks
     expect(warnings.some((w) => w.includes('virtual') && w.includes('manually migrate'))).toBe(true)
+  })
+
+  it('should warn when a float field is mapped to decimal()', async () => {
+    const config = `
+export default {
+  db: {
+    provider: 'postgresql',
+  },
+  lists: {
+    Product: {
+      fields: {
+        price: {
+          type: 'float',
+        },
+      },
+    },
+  },
+}
+`
+    await fs.writeFile(path.join(tempDir, 'keystone.config.js'), config)
+
+    const result = await introspector.introspect(tempDir, 'keystone.config.js')
+    const warnings = introspector.getWarnings(result)
+
+    expect(warnings.some((w) => w.includes('float') && w.includes('decimal()'))).toBe(true)
   })
 
   it('should throw for missing config', async () => {

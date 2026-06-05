@@ -245,7 +245,7 @@ export class KeystoneIntrospector {
     const mappings: Record<string, { type: string; import: string }> = {
       text: { type: 'text', import: 'text' },
       integer: { type: 'integer', import: 'integer' },
-      float: { type: 'float', import: 'float' },
+      float: { type: 'decimal', import: 'decimal' }, // No native float - mapped to decimal()
       checkbox: { type: 'checkbox', import: 'checkbox' },
       timestamp: { type: 'timestamp', import: 'timestamp' },
       select: { type: 'select', import: 'select' },
@@ -276,6 +276,9 @@ export class KeystoneIntrospector {
     const hasVirtualFields = schema.models.some((model) =>
       model.fields.some((field) => field.type.toLowerCase() === 'virtual'),
     )
+    const hasFloatFields = schema.models.some((model) =>
+      model.fields.some((field) => field.type.toLowerCase() === 'float'),
+    )
 
     // Add storage configuration reminder if file/image fields are present
     if (hasFileOrImageFields) {
@@ -288,6 +291,13 @@ export class KeystoneIntrospector {
     if (hasVirtualFields) {
       warnings.push(
         "Your schema uses virtual() fields — you'll need to manually migrate these. OpenSaaS Stack has no GraphQL: replace graphql.field({ resolve }) with hooks: { resolveOutput } and declare the field type. See the migration guide or invoke the migrate-virtual-fields skill.",
+      )
+    }
+
+    // Add float field migration reminder
+    if (hasFloatFields) {
+      warnings.push(
+        'Your schema uses float() fields - these will be mapped to decimal() (a decimal.js Decimal, not a JS number). Review precision/rounding.',
       )
     }
 
