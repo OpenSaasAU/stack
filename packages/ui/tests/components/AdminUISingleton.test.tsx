@@ -142,6 +142,129 @@ describe('AdminUI singleton routing', () => {
     expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
   })
 
+  it('renders a create-on-save form for an autoCreate:false singleton with no row', async () => {
+    // autoCreate:false + no row → get() returns null. query+create are allowed,
+    // so the editor must offer a create-on-first-save form (mode="create").
+    const autoCreateFalseConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Settings: list({
+          isSingleton: { autoCreate: false },
+          access: {
+            operation: {
+              query: () => true,
+              create: () => true,
+              update: () => true,
+              delete: () => true,
+            },
+          },
+          fields: { siteName: text() },
+        }),
+      },
+    }
+
+    const singletonGet = vi.fn(async () => null)
+    const context = makeContext({ settings: { get: singletonGet } })
+
+    const element = await SingletonView({
+      context,
+      config: autoCreateFalseConfig,
+      listKey: 'Settings',
+      basePath: '/admin',
+      serverAction: noopServerAction,
+    })
+    render(element)
+
+    expect(singletonGet).toHaveBeenCalledTimes(1)
+
+    // Create header + the create affordance ("Create" submit button), not an edit form.
+    expect(screen.getByText('Create Settings')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    // An empty field input is rendered (no display value yet).
+    expect(screen.getByText('Site Name')).toBeInTheDocument()
+  })
+
+  it('renders a friendly message (not an editable form) for a read-denied singleton', async () => {
+    // query denied → get() returns null. A null is indistinguishable from an
+    // empty autoCreate:false singleton, so the editor disambiguates via access
+    // and must NOT show an editable/create form.
+    const readDeniedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Settings: list({
+          isSingleton: true,
+          access: {
+            operation: {
+              query: () => false,
+              create: () => true,
+              update: () => true,
+              delete: () => false,
+            },
+          },
+          fields: { siteName: text() },
+        }),
+      },
+    }
+
+    const singletonGet = vi.fn(async () => null)
+    const context = makeContext({ settings: { get: singletonGet } })
+
+    const element = await SingletonView({
+      context,
+      config: readDeniedConfig,
+      listKey: 'Settings',
+      basePath: '/admin',
+      serverAction: noopServerAction,
+    })
+    render(element)
+
+    // Friendly no-access message, no form affordances at all.
+    expect(screen.getByText("You don't have access to Settings.")).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Edit Settings')).not.toBeInTheDocument()
+  })
+
+  it('renders a "no record yet" message when create is denied (no editable form)', async () => {
+    // autoCreate:false + no row, query allowed but create denied → cannot offer
+    // a create form; show a friendly "no record yet" message instead.
+    const createDeniedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Settings: list({
+          isSingleton: { autoCreate: false },
+          access: {
+            operation: {
+              query: () => true,
+              create: () => false,
+              update: () => true,
+              delete: () => false,
+            },
+          },
+          fields: { siteName: text() },
+        }),
+      },
+    }
+
+    const singletonGet = vi.fn(async () => null)
+    const context = makeContext({ settings: { get: singletonGet } })
+
+    const element = await SingletonView({
+      context,
+      config: createDeniedConfig,
+      listKey: 'Settings',
+      basePath: '/admin',
+      serverAction: noopServerAction,
+    })
+    render(element)
+
+    expect(screen.getByText('There is no Settings record yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+  })
+
   it('renders the list table for a non-singleton list (ListView)', async () => {
     const findMany = vi.fn(async () => [
       { id: '1', title: 'First Post' },
