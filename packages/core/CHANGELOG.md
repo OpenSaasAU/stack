@@ -1,5 +1,11 @@
 # @opensaas/stack-core
 
+## 0.23.0
+
+### Patch Changes
+
+- [#535](https://github.com/OpenSaasAU/stack/pull/535) [`da4ba52`](https://github.com/OpenSaasAU/stack/commit/da4ba529161e2c8702e4c62ae1594e300f32cbb1) Thanks [@borisno2](https://github.com/borisno2)! - context.db findUnique/findMany now warn (once per list+op) when passed an ignored `select` — narrow reads via `include` or a fragment `query`.
+
 ## 0.22.0
 
 ### Minor Changes
