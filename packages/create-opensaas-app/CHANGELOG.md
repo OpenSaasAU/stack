@@ -1,5 +1,11 @@
 # create-opensaas-app
 
+## 0.3.1
+
+### Patch Changes
+
+- [#508](https://github.com/OpenSaasAU/stack/pull/508) [`559cb28`](https://github.com/OpenSaasAU/stack/commit/559cb282e304619f24d8549c8f81df03b49c019c) Thanks [@borisno2](https://github.com/borisno2)! - Include `templates/**` in the turbo `build` outputs so a cached build restores the generated templates instead of only `dist/`, fixing the e2e scaffold guard's "Template basic not found" failure on a cache hit.
+
 ## 0.3.0
 
 ### Minor Changes

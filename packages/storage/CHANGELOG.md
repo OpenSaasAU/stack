@@ -1,5 +1,38 @@
 # @opensaas/stack-storage
 
+## 0.22.0
+
+### Minor Changes
+
+- [#511](https://github.com/OpenSaasAU/stack/pull/511) [`696f5c0`](https://github.com/OpenSaasAU/stack/commit/696f5c08c37d4a18107e48cb6b360c9492c7425c) Thanks [@borisno2](https://github.com/borisno2)! - Add non-destructive multi-column mode to `image()` / `file()` for adopting an existing Keystone database without dropping columns (ADR-0006).
+
+  Keystone stores an image across seven per-part columns (`_url`, `_width`, `_height`, `_filesize`, `_contentType`, `_contentDisposition`, `_pathname`) and a file across three (`_filename`, `_filesize`, `_url`). By default `image()`/`file()` still back a single `Json?` column (greenfield unchanged). Set `db.columns: 'keystone'` to map the field onto the existing per-part columns in place — assembled into an `ImageMetadata`/`FileMetadata` on read and split back on write — so a migrating project reaches a clean schema diff with no data migration and no re-upload of existing assets.
+
+  ```typescript
+  import { image, file } from '@opensaas/stack-storage/fields'
+
+  fields: {
+    // Maps onto image_url, image_width, … image_pathname in place.
+    avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+
+    // Per-part @map names are configurable for non-default column names.
+    cover: image({
+      storage: 'images',
+      db: { columns: { mode: 'keystone', map: { url: 'cover_link' } } },
+    }),
+
+    resume: file({ storage: 'documents', db: { columns: 'keystone' } }),
+  }
+  ```
+
+  No-re-upload guarantee (both modes): an already-shaped metadata value — or, in multi-column mode, populated columns — is authoritative and never triggers a storage upload; only a `File`-like input uploads.
+
+  Adds a multi-column field-emission contract (`getPrismaColumns`) plus `getColumnNames`/`assembleColumns`/`splitColumns` to the field-authoring surface so any field can map onto several physical columns. The generator emits one `@map`-ped Prisma line per column; reads assemble the logical value from the raw columns and strip them from the result; writes split the logical value back across the columns.
+
+### Patch Changes
+
+- [#520](https://github.com/OpenSaasAU/stack/pull/520) [`6610687`](https://github.com/OpenSaasAU/stack/commit/66106876643f0e9903eb6a677b7713890d0630e4) Thanks [@borisno2](https://github.com/borisno2)! - Add `file()` field-builder-level tests for multi-column (Keystone-parity) mode (issue [#478](https://github.com/OpenSaasAU/stack/issues/478)): assemble/split of `FileMetadata` across the three Keystone columns through the `file()` builder, including only-`file_url` partial rows, empty-row → null, custom `@map` round-trip, and nullable/`Int`-typed column emission. Test-only; no behaviour change.
+
 ## 0.21.0
 
 ### Minor Changes
