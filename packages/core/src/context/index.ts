@@ -23,6 +23,41 @@ export type ServerActionProps =
   | { listKey: string; action: 'delete'; id: string }
 
 /**
+ * Tracks which (listName, operation) pairs have already warned about an ignored
+ * `select` argument, so a misused read op warns once rather than on every call.
+ */
+const selectWarnings = new Set<string>()
+
+/**
+ * Warn (once per list+operation) when a caller passes a `select` argument to a
+ * read op that does not honour it.
+ *
+ * `context.db` reads never apply Prisma `select` semantics — narrowing is done
+ * via `include` or a fragment `query`. The op still runs and returns the full,
+ * access-filtered result, so this is a visible no-op rather than an error.
+ *
+ * Centralised here so every affected read op shares one implementation.
+ */
+function warnIfSelectIgnored(
+  args: { select?: unknown } | undefined,
+  listName: string,
+  operation: string,
+): void {
+  if (!args || args.select === undefined) return
+
+  const key = `${listName}.${operation}`
+  if (selectWarnings.has(key)) return
+  selectWarnings.add(key)
+
+  console.warn(
+    `[@opensaas/stack-core] \`select\` is ignored by context.db.${getDbKey(listName)}.${operation}() ` +
+      `and the full (access-filtered) record is returned. ` +
+      `Narrow a read with \`include\` or a fragment \`query\` instead. ` +
+      `See https://stack.opensaas.au/docs/core-concepts/queries`,
+  )
+}
+
+/**
  * Check if a list is configured as a singleton
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -373,7 +408,12 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     include?: Record<string, unknown>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query?: any
+    // `select` is not honoured — accepted only so the no-op can be made visible.
+    select?: Record<string, unknown>
   }) => {
+    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
+    warnIfSelectIgnored(args, listName, 'findUnique')
+
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = args.where
     if (!context._isSudo) {
@@ -471,7 +511,12 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     include?: Record<string, unknown>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query?: any
+    // `select` is not honoured — accepted only so the no-op can be made visible.
+    select?: Record<string, unknown>
   }) => {
+    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
+    warnIfSelectIgnored(args, listName, 'findMany')
+
     // Check singleton constraint (throw error instead of silently returning empty)
     if (isSingletonList(listConfig)) {
       throw new ValidationError(

@@ -93,6 +93,10 @@ if (!post) return notFound()
 // post: PostData
 ```
 
+{% callout type="warning" %}
+`context.db` reads do **not** honour Prisma's `select` argument. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` to `findUnique`/`findMany` is a no-op: it logs a runtime warning and the full, access-filtered record is still returned (field-level visibility is always enforced by [access control](/docs/core-concepts/access-control), regardless of `select`).
+{% /callout %}
+
 ### Via `runQuery` / `runQueryOne` (standalone helpers)
 
 When you don't have direct access to `context.db` (for example inside a hook or a shared utility), use the standalone helpers. They take the `context`, the PascalCase list key, the fragment, and query args:

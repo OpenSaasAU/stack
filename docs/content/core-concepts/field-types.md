@@ -580,7 +580,7 @@ The TypeScript type generator automatically collects and generates the necessary
 **Key Features:**
 
 - Does not create a database column
-- Only computed when explicitly selected/included in queries
+- Computed via `resolveOutput` on every read
 - Can combine data from multiple fields
 - Useful for derived values, computed properties, and external sync
 - Supports custom scalar types for financial precision
@@ -589,20 +589,13 @@ The TypeScript type generator automatically collects and generates the necessary
 
 ```typescript
 // Query with virtual field
-const user = await context.db.user.findUnique({
-  where: { id },
-  select: {
-    firstName: true,
-    lastName: true,
-    fullName: true, // Virtual field is computed on demand
-  },
-})
+const user = await context.db.user.findUnique({ where: { id } })
 
 console.log(user.fullName) // "John Doe"
 ```
 
-{% callout type="info" %}
-Virtual fields are only computed when explicitly included in `select` or `include` clauses. They are not computed by default to optimize performance.
+{% callout type="warning" %}
+`context.db` reads do not honour Prisma's `select` argument — passing `select` logs a runtime warning and is otherwise a no-op. Narrow a read with `include` (relationships) or a fragment `query`. Virtual fields are computed via `resolveOutput` on every read regardless.
 {% /callout %}
 
 ### JSON Field

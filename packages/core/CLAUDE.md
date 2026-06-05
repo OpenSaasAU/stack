@@ -191,6 +191,10 @@ Reads run no `afterOperation` (list or field):
 2. Field-level access control (filter readable fields)
 3. Field `resolveOutput`
 
+### Narrowing Reads (`select` is not honoured)
+
+`context.db` reads (`findUnique`, `findMany`) do **not** apply Prisma's `select` semantics. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` is a visible no-op: the op logs a one-time `console.warn` and still returns the full, access-filtered record. Field-level visibility is always enforced by access control regardless of `select`, so there is no leak — only a correctness/perf footgun the warning surfaces.
+
 ### Context Type Safety
 
 Context uses generic typing to preserve Prisma types:
@@ -341,17 +345,14 @@ User: list({
 })
 
 // Usage
-const user = await context.db.user.findUnique({
-  where: { id },
-  select: { firstName: true, lastName: true, fullName: true }, // fullName computed on demand
-})
-console.log(user.fullName) // "John Doe"
+const user = await context.db.user.findUnique({ where: { id } })
+console.log(user.fullName) // "John Doe" — computed via resolveOutput on every read
 ```
 
 **Key characteristics:**
 
 - Not stored in database (no Prisma column created)
-- Only computed when explicitly selected/included in queries
+- Computed via `resolveOutput` on every read (`select` is not honoured — narrow with `include`/fragment `query`)
 - Must provide `type` (TypeScript type string) and `resolveOutput` hook
 - Can optionally provide `resolveInput` for write side effects
 - Useful for derived values, computed properties, and external API sync
