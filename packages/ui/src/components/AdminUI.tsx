@@ -3,6 +3,7 @@ import { Navigation } from './Navigation.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
+import { SingletonView } from './SingletonView.js'
 import type { ServerActionInput } from '../server/types.js'
 import { type AccessContext, getListKeyFromUrl, OpenSaasConfig } from '@opensaas/stack-core'
 import { generateThemeCSS } from '../lib/theme.js'
@@ -24,7 +25,7 @@ export interface AdminUIProps {
  *
  * Handles routing based on params array:
  * - [] → Dashboard
- * - [list] → ListView
+ * - [list] → ListView (or SingletonView when the list is `isSingleton`)
  * - [list, 'create'] → ItemForm (create)
  * - [list, id] → ItemForm (edit)
  */
@@ -73,6 +74,18 @@ export function AdminUI({
         listKey={listKey}
         mode="edit"
         itemId={action}
+        basePath={basePath}
+        serverAction={serverAction}
+      />
+    )
+  } else if (config.lists[listKey]?.isSingleton) {
+    // Singleton editor: a singleton has a single record, so its bare [list]
+    // route renders a single-record editor instead of a list table.
+    content = (
+      <SingletonView
+        context={context}
+        config={config}
+        listKey={listKey}
         basePath={basePath}
         serverAction={serverAction}
       />
