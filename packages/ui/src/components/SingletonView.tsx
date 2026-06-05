@@ -169,6 +169,7 @@ export async function SingletonView({
             basePath={basePath}
             serverAction={serverAction}
             relationshipData={createRelationshipData}
+            canDelete={false}
           />
         </div>
       </div>
@@ -219,6 +220,7 @@ export async function SingletonView({
           basePath={basePath}
           serverAction={serverAction}
           relationshipData={relationshipData}
+          canDelete={false}
         />
       </div>
     </div>

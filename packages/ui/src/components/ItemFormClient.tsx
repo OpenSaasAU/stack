@@ -21,6 +21,13 @@ export interface ItemFormClientProps {
   basePath: string
   serverAction: (input: ServerActionInput) => Promise<unknown>
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
+  /**
+   * Whether to render the delete affordance in edit mode. Defaults to `true`.
+   * Singletons set this to `false` — a singleton has exactly one record that
+   * can't be deleted (core blocks `delete` even in sudo), so the control is
+   * suppressed for UX hygiene.
+   */
+  canDelete?: boolean
 }
 
 /**
@@ -58,6 +65,7 @@ export function ItemFormClient({
   basePath,
   serverAction,
   relationshipData = {},
+  canDelete = true,
 }: ItemFormClientProps) {
   const router = useRouter()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -162,8 +170,8 @@ export function ItemFormClient({
           </Button>
         </div>
 
-        {/* Delete Button (Edit Mode Only) */}
-        {mode === 'edit' && itemId && (
+        {/* Delete Button (Edit Mode Only; suppressed for singletons) */}
+        {mode === 'edit' && itemId && canDelete && (
           <Button
             type="button"
             variant="destructive"
