@@ -1,11 +1,17 @@
 import * as React from 'react'
+import { redirect } from 'next/navigation.js'
 import { Navigation } from './Navigation.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
 import { SingletonView } from './SingletonView.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getListKeyFromUrl, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AccessContext,
+  getListKeyFromUrl,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { generateThemeCSS } from '../lib/theme.js'
 
 export interface AdminUIProps {
@@ -53,6 +59,13 @@ export function AdminUI({
   if (!listKey) {
     // Dashboard
     content = <Dashboard context={context} config={config} basePath={basePath} />
+  } else if (config.lists[listKey]?.isSingleton && action) {
+    // A singleton has a single record edited at its bare [list] route, so the
+    // create/id sub-routes (`[list, 'create']` / `[list, id]`) don't apply.
+    // Redirect them to the bare editor so old links keep working. This runs
+    // before the create/edit ItemForm branches; non-singleton routing below is
+    // unchanged.
+    redirect(`${basePath}/${getUrlKey(listKey)}`)
   } else if (action === 'create') {
     // Create form
     content = (

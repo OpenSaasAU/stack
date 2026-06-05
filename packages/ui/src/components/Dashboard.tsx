@@ -197,7 +197,10 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
         </div>
       )}
 
-      {lists.length > 0 && (
+      {/* Quick Actions only contains "Create {list}" links for standard lists,
+          so hide the whole card when there are no standard lists (e.g. a
+          singleton-only admin). */}
+      {standardLists.length > 0 && (
         <Card className="mt-12 bg-gradient-to-br from-accent/10 to-primary/10 border-accent/20">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -207,7 +210,9 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {lists.map((listKey) => {
+              {/* Singletons have a single record (no create), so they're
+                  excluded here — only standard lists get a "Create" quick-action. */}
+              {standardLists.map((listKey) => {
                 const urlKey = getUrlKey(listKey)
                 return (
                   <Link
