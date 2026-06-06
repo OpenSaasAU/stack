@@ -59,3 +59,13 @@ _Avoid_: auth tables, auth models, auth schema
 **Auth identity**:
 The better-auth-owned record of who a session belongs to (the better-auth user). Separate from, and not assumed to be, the application's own domain User; an app links the two itself when it needs to.
 _Avoid_: auth user, principal, account
+
+### Storage
+
+**Storage provider**:
+A backing store for `image()`/`file()` assets — local disk, S3, Vercel Blob, or a custom one — implementing the common provider interface. Each provider ships as its own package so its SDK stays an optional dependency, pulled in only by apps that use it.
+_Avoid_: storage backend, storage adapter, uploader
+
+**Provider registry**:
+The lookup from a configured provider `type` to the constructor that builds it, which the storage runtime consults instead of a closed `switch`. A host registers the (optional) provider packages it uses, so non-`local` and custom providers are constructable without the runtime depending on every provider's SDK.
+_Avoid_: provider switch, provider map, plugin registry
