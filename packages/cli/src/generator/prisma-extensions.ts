@@ -1,6 +1,7 @@
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withTsExtension } from './extension.js'
 
 /**
  * Generate Prisma result extensions configuration
@@ -13,7 +14,10 @@ export function generatePrismaExtensions(config: OpenSaasConfig, configImport?: 
   // the `.opensaas` bundle. Defaults to the legacy `../opensaas.config`; the
   // output-path resolver supplies a recomputed value when the bundle is
   // relocated via the `output` config block.
-  const configImportPath = configImport ?? '../opensaas.config'
+  //
+  // The explicit `.ts` extension (see ./extension.ts) keeps the bundle loadable
+  // by the host bundler / plain Node without an `extensionAlias`.
+  const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
 
   // Add header comment
   lines.push('/**')
@@ -23,7 +27,7 @@ export function generatePrismaExtensions(config: OpenSaasConfig, configImport?: 
   lines.push('')
 
   // Add imports
-  lines.push("import { Prisma } from './prisma-client/client'")
+  lines.push("import { Prisma } from './prisma-client/client.ts'")
   lines.push(`import configOrPromise from '${configImportPath}'`)
   lines.push('')
 

@@ -44,13 +44,13 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
  *   export type Post = import('@opensaas/stack-core').ListConfig<Lists.Post.TypeInfo>
  *
  *   namespace Post {
- *     export type Item = import('./types').Post
+ *     export type Item = import('./types.ts').Post
  *     export type TypeInfo = {
  *       key: 'Post'
  *       item: Item
  *       inputs: {
- *         create: import('./prisma-client/client').Prisma.PostCreateInput
- *         update: import('./prisma-client/client').Prisma.PostUpdateInput
+ *         create: import('./prisma-client/client.ts').Prisma.PostCreateInput
+ *         update: import('./prisma-client/client.ts').Prisma.PostUpdateInput
  *       }
  *     }
  *   }
@@ -98,7 +98,7 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     )
     lines.push('')
     lines.push(`  namespace ${listName} {`)
-    lines.push(`    export type Item = import('./types').${listName}`)
+    lines.push(`    export type Item = import('./types.ts').${listName}`)
     lines.push('')
 
     // Generate Fields type
@@ -120,8 +120,8 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push(`      fields: Fields`)
     lines.push(`      item: Item`)
     lines.push(`      inputs: {`)
-    lines.push(`        create: import('./prisma-client/client').Prisma.${listName}CreateInput`)
-    lines.push(`        update: import('./prisma-client/client').Prisma.${listName}UpdateInput`)
+    lines.push(`        create: import('./prisma-client/client.ts').Prisma.${listName}CreateInput`)
+    lines.push(`        update: import('./prisma-client/client.ts').Prisma.${listName}UpdateInput`)
     lines.push(`      }`)
     lines.push(`    }`)
     lines.push(`  }`)

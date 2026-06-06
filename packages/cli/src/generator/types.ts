@@ -1017,8 +1017,11 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push(
     "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
   )
-  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client'")
-  lines.push("import type { PluginServices } from './plugin-types'")
+  // Relative imports carry an explicit `.ts` extension (see ./extension.ts) so
+  // the bundle resolves under a host bundler / plain Node without an
+  // `extensionAlias`. See ADR-0008.
+  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client.ts'")
+  lines.push("import type { PluginServices } from './plugin-types.ts'")
 
   // Add field-specific imports
   const fieldImports = collectFieldImports(config)

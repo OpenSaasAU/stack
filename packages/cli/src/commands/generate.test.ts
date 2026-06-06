@@ -379,15 +379,17 @@ describe('Generate Command Integration', () => {
       const context = fs.readFileSync(paths.context, 'utf-8')
       const extensions = fs.readFileSync(paths.prismaExtensions, 'utf-8')
 
-      // Both files use the resolved relative specifier.
-      expect(context).toContain(`from '${crossReferences.configImport}'`)
-      expect(extensions).toContain(`from '${crossReferences.configImport}'`)
+      // Both files import the config via the resolved relative specifier, now
+      // carrying an explicit `.ts` extension so a host bundler / plain Node can
+      // resolve it without an `extensionAlias` (ADR-0008 / SF-14).
+      const emittedSpecifier = `${crossReferences.configImport}.ts`
+      expect(context).toContain(`from '${emittedSpecifier}'`)
+      expect(extensions).toContain(`from '${emittedSpecifier}'`)
 
-      // The specifier, resolved from the bundle dir, lands on the real config.
-      const resolvedFromContext = path.resolve(
-        path.dirname(paths.context),
-        `${crossReferences.configImport}.ts`,
-      )
+      // The emitted specifier (extension included), resolved from the bundle
+      // dir, lands on the real config file — no `.ts` is re-appended because it
+      // is already part of the specifier.
+      const resolvedFromContext = path.resolve(path.dirname(paths.context), emittedSpecifier)
       expect(resolvedFromContext).toBe(configFile)
       expect(fs.existsSync(resolvedFromContext)).toBe(true)
     })
@@ -429,7 +431,8 @@ describe('Generate Command Integration', () => {
       expect(schema).toContain('output   = "../.opensaas/prisma-client"')
 
       const context = fs.readFileSync(path.join(tempDir, '.opensaas', 'context.ts'), 'utf-8')
-      expect(context).toContain("from '../opensaas.config'")
+      // The default config import carries an explicit `.ts` extension (ADR-0008).
+      expect(context).toContain("from '../opensaas.config.ts'")
 
       const prismaConfig = fs.readFileSync(path.join(tempDir, 'prisma.config.ts'), 'utf-8')
       expect(prismaConfig).toContain("schema: 'prisma'")

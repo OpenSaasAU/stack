@@ -446,6 +446,41 @@ pnpm migrate:deploy
 
 ## Production Considerations
 
+### Bundling the Generated `.opensaas` bundle
+
+`opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `prisma-extensions.ts`, `lists.ts`, and the `prisma-client/**` tree — that your app imports through `getContext`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
+
+**1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions (e.g. `import { PrismaClient } from './prisma-client/client.ts'`), so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
+
+**2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles it and traces its `prisma-client/**` subtree into the function bundle:
+
+```typescript
+// Supported: a static import the host build can compile + file-trace
+import { getContext } from '@/.opensaas/context'
+```
+
+Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the `prisma-client/**` files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module './prisma-client/...'" on Vercel even though local dev works):
+
+```typescript
+// Avoid: the tracer can't follow this, so prisma-client/** is dropped from the build
+const { getContext } = await import(/* webpackIgnore: true */ './.opensaas/context')
+```
+
+**Tracing note (Next.js / Vercel).** Static imports are traced automatically. If your serverless functions reach the bundle indirectly (for example through a generated route or a helper the tracer can't statically see), pin the subtree explicitly in `next.config.js` so the `prisma-client/**` files ship with every function:
+
+```javascript
+// next.config.js
+/** @type {import('next').NextConfig} */
+module.exports = {
+  outputFileTracingIncludes: {
+    // Apply to every route ('/**'), or scope to the routes that use the context
+    '/**': ['./.opensaas/prisma-client/**/*'],
+  },
+}
+```
+
+> **Scope.** The stack only owns "emit a bundler-loadable context entry." What your own `opensaas.config.ts` pulls in is your app's architecture — if it lazily `import()`s workflow modules that reach heavy deps (e.g. `xero-node`, `twilio`), trace or externalize those yourself the same way.
+
 ### Database Connection Pooling
 
 Serverless functions (like Vercel) create many database connections. Use connection pooling to avoid exhausting your database limits.
