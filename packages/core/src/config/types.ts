@@ -1402,6 +1402,68 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
          */
         autoCreate?: boolean
       }
+  /**
+   * UI configuration for this list (admin interface).
+   *
+   * Mirrors Keystone's list-level `ui` block. Currently only `listView`
+   * defaults (columns + sort) are supported.
+   */
+  ui?: ListUIConfig
+}
+
+/**
+ * List-level UI configuration for the admin interface.
+ *
+ * Mirrors Keystone's `ui` block on a list. Only the list-view defaults
+ * (column selection/order and default sort) are supported today; other
+ * Keystone concerns (`label`, `labelField`, `description`) are intentionally
+ * deferred as they cover different concerns (navigation text and
+ * relationship-picker labels rather than list-view defaults).
+ */
+export type ListUIConfig = {
+  /**
+   * Default list-view (table) configuration for this list, mirroring
+   * Keystone's `ui.listView`.
+   */
+  listView?: ListViewUIConfig
+}
+
+/**
+ * Default list-view (table) configuration for a list, mirroring Keystone's
+ * `ui.listView`.
+ *
+ * When omitted, the admin UI falls back to its existing defaults: every
+ * non-system field is shown as a column and no default sort is applied.
+ */
+export type ListViewUIConfig = {
+  /**
+   * The fields to show as columns in the list table, in order.
+   *
+   * Drives both the column **selection** and their **order**. When omitted,
+   * all non-system fields are shown (current default behaviour).
+   *
+   * @example
+   * ```typescript
+   * ui: { listView: { initialColumns: ['title', 'status', 'author'] } }
+   * ```
+   */
+  initialColumns?: string[]
+  /**
+   * The default sort applied to the list table.
+   *
+   * When omitted, no default sort is applied (current default behaviour).
+   *
+   * @example
+   * ```typescript
+   * ui: { listView: { initialSort: { field: 'createdAt', direction: 'desc' } } }
+   * ```
+   */
+  initialSort?: {
+    /** The field to sort by. Must be a field defined on the list. */
+    field: string
+    /** The sort direction. */
+    direction: 'asc' | 'desc'
+  }
 }
 
 /**

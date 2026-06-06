@@ -108,6 +108,12 @@ export function AdminUI({
     const search = typeof searchParams.search === 'string' ? searchParams.search : undefined
     const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1
 
+    // Read list-view defaults (column selection/order + default sort) from the
+    // list-level `ui.listView` config (mirrors Keystone). When absent, the
+    // ListView falls back to its existing defaults (all non-system fields,
+    // no default sort).
+    const listView = config.lists[listKey]?.ui?.listView
+
     content = (
       <ListView
         context={context}
@@ -116,6 +122,8 @@ export function AdminUI({
         basePath={basePath}
         search={search}
         page={page}
+        columns={listView?.initialColumns}
+        initialSort={listView?.initialSort}
       />
     )
   }
