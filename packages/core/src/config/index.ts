@@ -148,6 +148,8 @@ export type {
   DatabaseConfig,
   SessionConfig,
   UIConfig,
+  ListUIConfig,
+  ListViewUIConfig,
   ThemeConfig,
   ThemePreset,
   ThemeColors,

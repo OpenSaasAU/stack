@@ -23,6 +23,12 @@ export interface ListViewClientProps {
   fieldTypes: Record<string, string>
   relationshipRefs: Record<string, string>
   columns?: string[]
+  /**
+   * Default sort for the table (from the list's `ui.listView.initialSort`).
+   * Seeds the initial sort column/direction. When omitted, the table starts
+   * unsorted (current default behaviour).
+   */
+  initialSort?: { field: string; direction: 'asc' | 'desc' }
   listKey: string
   urlKey: string
   basePath: string
@@ -41,6 +47,7 @@ export function ListViewClient({
   fieldTypes,
   relationshipRefs,
   columns,
+  initialSort,
   urlKey,
   basePath,
   page,
@@ -49,8 +56,8 @@ export function ListViewClient({
   search: initialSearch,
 }: ListViewClientProps) {
   const router = useRouter()
-  const [sortBy, setSortBy] = useState<string | null>(null)
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [sortBy, setSortBy] = useState<string | null>(initialSort?.field ?? null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialSort?.direction ?? 'asc')
   const [searchInput, setSearchInput] = useState(initialSearch || '')
 
   // Determine which columns to show

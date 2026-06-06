@@ -1,17 +1,26 @@
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type {
   StorageProvider,
-  LocalStorageConfig,
   FileMetadata,
   ImageMetadata,
   ImageTransformationConfig,
 } from '../config/types.js'
-import { LocalStorageProvider } from '../providers/local.js'
 import { validateFile, getMimeType, type FileValidationOptions } from '../utils/upload.js'
 import { getImageDimensions, processImageTransformations } from '../utils/image.js'
+import { getStorageProviderFactory } from './registry.js'
 
 /**
- * Creates a storage provider instance from config
+ * Creates a storage provider instance from config.
+ *
+ * The provider `type` is resolved through the provider registry (see
+ * {@link registerStorageProvider}) rather than a closed `switch`. `'local'` is
+ * registered as a built-in default, so it works with no registration step.
+ * Optional providers (`@opensaas/stack-storage-s3`,
+ * `@opensaas/stack-storage-vercel`) and custom providers must be registered by
+ * the host before they can be constructed.
+ *
+ * @throws If the named provider is not present in `config.storage`.
+ * @throws If no provider factory has been registered for the config's `type`.
  */
 export function createStorageProvider(
   config: OpenSaasConfig,
@@ -23,12 +32,16 @@ export function createStorageProvider(
 
   const providerConfig = config.storage[providerName]
 
-  switch (providerConfig.type) {
-    case 'local':
-      return new LocalStorageProvider(providerConfig as unknown as LocalStorageConfig)
-    default:
-      throw new Error(`Unknown storage provider type: ${providerConfig.type}`)
+  const factory = getStorageProviderFactory(providerConfig.type)
+  if (!factory) {
+    throw new Error(
+      `Unknown storage provider type: ${providerConfig.type}. ` +
+        `Register it with registerStorageProvider('${providerConfig.type}', ...) from ` +
+        `'@opensaas/stack-storage/runtime' before use.`,
+    )
   }
+
+  return factory(providerConfig)
 }
 
 /**
@@ -241,3 +254,13 @@ export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadat
 }
 
 export { parseFileFromFormData } from '../utils/upload.js'
+
+// Provider registration API: hosts register optional/custom providers so
+// createStorageProvider can construct them (see registry.ts).
+export {
+  registerStorageProvider,
+  getStorageProviderFactory,
+  hasStorageProvider,
+  resetStorageProviderRegistry,
+  type StorageProviderFactory,
+} from './registry.js'

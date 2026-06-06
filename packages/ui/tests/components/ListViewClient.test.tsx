@@ -73,6 +73,66 @@ describe('ListViewClient', () => {
       expect(screen.getByText('Status')).toBeInTheDocument()
       expect(screen.queryByText('Views')).not.toBeInTheDocument()
     })
+
+    it('should render columns in the provided order (initialColumns)', () => {
+      // initialColumns flows through AdminUI as the `columns` prop and drives
+      // both selection AND order.
+      render(<ListViewClient {...defaultProps} columns={['views', 'title']} />)
+
+      const headers = screen.getAllByRole('columnheader')
+      // First two headers should follow the provided order, then Actions.
+      expect(headers[0]).toHaveTextContent('Views')
+      expect(headers[1]).toHaveTextContent('Title')
+      expect(headers[2]).toHaveTextContent('Actions')
+      // Unlisted column is excluded.
+      expect(screen.queryByText('Status')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('initialSort', () => {
+    it('should apply default sort from initialSort without any click', () => {
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'asc' }} />,
+      )
+
+      const rows = screen.getAllByRole('row')
+      // Sorted ascending by title: First, Second, Third
+      expect(rows[1]).toHaveTextContent('First Post')
+      expect(rows[2]).toHaveTextContent('Second Post')
+      expect(rows[3]).toHaveTextContent('Third Post')
+    })
+
+    it('should respect descending direction from initialSort', () => {
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'desc' }} />,
+      )
+
+      const rows = screen.getAllByRole('row')
+      // Sorted descending by title: Third, Second, First
+      expect(rows[1]).toHaveTextContent('Third Post')
+      expect(rows[2]).toHaveTextContent('Second Post')
+      expect(rows[3]).toHaveTextContent('First Post')
+    })
+
+    it('should show sort indicator on the initialSort column', () => {
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'desc' }} />,
+      )
+
+      expect(screen.getByText('↓')).toBeInTheDocument()
+    })
+
+    it('should not apply any default sort when initialSort is absent', () => {
+      render(<ListViewClient {...defaultProps} />)
+
+      const rows = screen.getAllByRole('row')
+      // Unchanged: items render in their original (input) order, no indicator.
+      expect(rows[1]).toHaveTextContent('First Post')
+      expect(rows[2]).toHaveTextContent('Second Post')
+      expect(rows[3]).toHaveTextContent('Third Post')
+      expect(screen.queryByText('↑')).not.toBeInTheDocument()
+      expect(screen.queryByText('↓')).not.toBeInTheDocument()
+    })
   })
 
   describe('sorting', () => {

@@ -3,6 +3,15 @@ import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
 import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 
+/**
+ * Default sort for the list table, mirroring Keystone's `ui.listView.initialSort`.
+ * Plain serializable data so it can cross the server/client boundary.
+ */
+export interface ListViewSort {
+  field: string
+  direction: 'asc' | 'desc'
+}
+
 export interface ListViewProps {
   context: AccessContext<unknown>
   config: OpenSaasConfig
@@ -12,6 +21,11 @@ export interface ListViewProps {
   page?: number
   pageSize?: number
   search?: string
+  /**
+   * Default sort applied to the table (from the list's `ui.listView.initialSort`).
+   * When omitted, no default sort is applied.
+   */
+  initialSort?: ListViewSort
 }
 
 /**
@@ -27,6 +41,7 @@ export async function ListView({
   page = 1,
   pageSize = 50,
   search,
+  initialSort,
 }: ListViewProps) {
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
@@ -142,6 +157,7 @@ export async function ListView({
         )}
         relationshipRefs={relationshipRefs}
         columns={columns}
+        initialSort={initialSort}
         listKey={listKey}
         urlKey={urlKey}
         basePath={basePath}
