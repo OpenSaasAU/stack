@@ -1,5 +1,38 @@
 # @opensaas/stack-core
 
+## 0.24.0
+
+### Minor Changes
+
+- [#552](https://github.com/OpenSaasAU/stack/pull/552) [`66496b4`](https://github.com/OpenSaasAU/stack/commit/66496b487bae61f3cdea26fcfcaf605caaaa5520) Thanks [@borisno2](https://github.com/borisno2)! - Add list-level `ui.listView` config (mirroring Keystone) for default columns and sort
+
+  Lists now support a `ui.listView` block in `opensaas.config.ts` that sets the
+  admin list table's default column selection/order and default sort. Naming
+  mirrors Keystone's `ui.listView` so migrators can map defaults directly.
+
+  ```typescript
+  lists: {
+    Post: list({
+      fields: {
+        title: text(),
+        status: text(),
+        createdAt: timestamp(),
+      },
+      ui: {
+        listView: {
+          // Column selection AND order
+          initialColumns: ['title', 'status'],
+          // Default sort
+          initialSort: { field: 'createdAt', direction: 'desc' },
+        },
+      },
+    }),
+  }
+  ```
+
+  When `ui.listView` is absent, behaviour is unchanged: the table shows all
+  non-system fields and applies no default sort.
+
 ## 0.23.0
 
 ### Patch Changes
