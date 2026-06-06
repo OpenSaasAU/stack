@@ -1,6 +1,7 @@
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withTsExtension } from './extension.js'
 
 /**
  * Generate context factory that abstracts Prisma client from developers
@@ -13,7 +14,11 @@ export function generateContext(config: OpenSaasConfig, configImport?: string): 
   // the `.opensaas` bundle. Defaults to the legacy `../opensaas.config` (bundle
   // one level below the project root); the output-path resolver supplies a
   // recomputed value when the bundle is relocated via the `output` config block.
-  const configImportPath = configImport ?? '../opensaas.config'
+  //
+  // The explicit `.ts` extension (see ./extension.ts) makes the bundle loadable
+  // by the host bundler / plain Node without an `extensionAlias`. The user's
+  // `opensaas.config.ts` is a real `.ts` file, so `.ts` names it directly.
+  const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
 
   // Check if custom Prisma client constructor is provided
   const hasCustomConstructor = !!config.db.prismaClientConstructor
@@ -125,9 +130,9 @@ const storage = {
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client'
-import type { Context } from './types'
-import { prismaExtensions } from './prisma-extensions'
+import { PrismaClient } from './prisma-client/client.ts'
+import type { Context } from './types.ts'
+import { prismaExtensions } from './prisma-extensions.ts'
 import configOrPromise from '${configImportPath}'
 
 // Resolve config if it's a Promise (when plugins are present)

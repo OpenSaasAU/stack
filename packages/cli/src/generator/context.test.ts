@@ -135,5 +135,46 @@ describe('Context Generator', () => {
       expect(context).toContain('session?: TSession')
       expect(context).toContain('<TSession extends OpensaasSession = OpensaasSession>')
     })
+
+    // SF-14 / ADR-0008: the Generated bundle must be loadable by the host
+    // bundler (and plain Node) without an `extensionAlias`, so every relative
+    // import the bundle emits carries an explicit `.ts` extension. A bare,
+    // extensionless relative specifier would force a TS-aware loader and break
+    // `next build` file-tracing of the `prisma-client/**` subtree.
+    it('should emit relative imports with explicit .ts extensions', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const context = generateContext(config)
+
+      // Every relative import in the bundle entry carries an explicit extension.
+      expect(context).toContain("from './prisma-client/client.ts'")
+      expect(context).toContain("from './types.ts'")
+      expect(context).toContain("from './prisma-extensions.ts'")
+      expect(context).toContain("from '../opensaas.config.ts'")
+
+      // No extensionless relative import specifiers remain (a host bundler /
+      // plain Node would otherwise fail to resolve them without an alias).
+      const relativeImportSpecifiers = Array.from(
+        context.matchAll(/from\s+'(\.[^']*)'/g),
+        (match) => match[1],
+      )
+      expect(relativeImportSpecifiers.length).toBeGreaterThan(0)
+      for (const specifier of relativeImportSpecifiers) {
+        expect(specifier).toMatch(/\.(ts|tsx|js|jsx|mjs|cjs|json)$/)
+      }
+    })
   })
 })
