@@ -1,5 +1,40 @@
 # @opensaas/stack-cli
 
+## 0.24.0
+
+### Minor Changes
+
+- [#553](https://github.com/OpenSaasAU/stack/pull/553) [`7f9b577`](https://github.com/OpenSaasAU/stack/commit/7f9b577678636d3f4d81e614ed022a03c61fe5c6) Thanks [@borisno2](https://github.com/borisno2)! - Emit explicit `.ts` import extensions in the generated `.opensaas` bundle so it's loadable by the host bundler
+
+  The generator now appends an explicit `.ts` extension to every relative import it emits across the Generated bundle — `context.ts`, `types.ts`, `prisma-extensions.ts`, `lists.ts`, the `opensaas.config` import, and the `prisma-client/**` tree references. Previously these specifiers were extensionless (e.g. `import { PrismaClient } from './prisma-client/client'`), which only a TS-aware loader could resolve. A plain Node process or an un-aliased bundler (webpack/Next) failed to resolve the sub-imports, and pushing the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()` meant `next build` never file-traced the `prisma-client/**` subtree into the serverless output.
+
+  With explicit extensions the bundle resolves identically under `tsx`, `vitest`, plain Node type-stripping, esbuild, and webpack/Next without any consumer-side `extensionAlias`, and statically importing it compiles + file-traces under `next build`. This is the default output (no flag). See ADR-0008.
+
+  **Consumer requirement:** the project that type-checks the bundle must set `allowImportingTsExtensions: true` in its tsconfig `compilerOptions`, otherwise the `.ts` specifiers fail the TypeScript step with TS5097. The flag is compatible with Next's `noEmit`, so it slots into the existing `next build` type-check. Projects scaffolded with `create-opensaas-app` get this flag by default.
+
+  Generated output (before → after):
+
+  ```typescript
+  // before
+  import { PrismaClient } from './prisma-client/client'
+  import type { Context } from './types'
+  import { prismaExtensions } from './prisma-extensions'
+  import configOrPromise from '../opensaas.config'
+
+  // after
+  import { PrismaClient } from './prisma-client/client.ts'
+  import type { Context } from './types.ts'
+  import { prismaExtensions } from './prisma-extensions.ts'
+  import configOrPromise from '../opensaas.config.ts'
+  ```
+
+  Regenerate with `pnpm generate` to pick up the new extensions. The supported production path is to statically import the bundle (e.g. `import { getContext } from '@/.opensaas/context'`) so the host build traces it — see the deployment guide for the `outputFileTracingIncludes` recipe.
+
+### Patch Changes
+
+- Updated dependencies [[`66496b4`](https://github.com/OpenSaasAU/stack/commit/66496b487bae61f3cdea26fcfcaf605caaaa5520)]:
+  - @opensaas/stack-core@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes
