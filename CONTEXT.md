@@ -44,6 +44,12 @@ _Avoid_: schema match, clean diff, byte-compatibility
 An opt-in generator setting that makes schema output follow Keystone 6 conventions a migrating project depends on but a greenfield project would not want by default (e.g. non-null text columns defaulting to `""`). Conventions that every project wants are the plain default, not part of this mode.
 _Avoid_: legacy mode, compatibility flag, migration mode
 
+### Code generation
+
+**Generated bundle**:
+The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
+_Avoid_: generated context, output dir, .opensaas folder
+
 ### Authentication
 
 **Auth lists**:
