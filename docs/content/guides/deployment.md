@@ -450,7 +450,22 @@ pnpm migrate:deploy
 
 `opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `prisma-extensions.ts`, `lists.ts`, and the `prisma-client/**` tree — that your app imports through `getContext`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
 
-**1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions (e.g. `import { PrismaClient } from './prisma-client/client.ts'`), so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
+**1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions (e.g. `import { PrismaClient } from './prisma-client/client.ts'`), so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no generator flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
+
+The one consumer requirement is a single tsconfig line: because the bundle's relative imports carry `.ts` extensions, the project that type-checks it must set **`allowImportingTsExtensions: true`** in its `compilerOptions`. This is compatible with Next's `noEmit` (TypeScript only allows the flag when it isn't emitting, which Next apps already satisfy), so `next build`'s type-check step accepts the `.ts` specifiers instead of failing with [TS5097](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md) (`An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled`):
+
+```jsonc
+// tsconfig.json
+{
+  "compilerOptions": {
+    "noEmit": true, // already set in Next apps
+    "moduleResolution": "bundler", // (or node16 / nodenext)
+    "allowImportingTsExtensions": true, // <-- required to type-check the .opensaas bundle
+  },
+}
+```
+
+Projects scaffolded with `create-opensaas-app` already have this flag set, so newly-created apps build without any extra step.
 
 **2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles it and traces its `prisma-client/**` subtree into the function bundle:
 

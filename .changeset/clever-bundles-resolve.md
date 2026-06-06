@@ -8,6 +8,8 @@ The generator now appends an explicit `.ts` extension to every relative import i
 
 With explicit extensions the bundle resolves identically under `tsx`, `vitest`, plain Node type-stripping, esbuild, and webpack/Next without any consumer-side `extensionAlias`, and statically importing it compiles + file-traces under `next build`. This is the default output (no flag). See ADR-0008.
 
+**Consumer requirement:** the project that type-checks the bundle must set `allowImportingTsExtensions: true` in its tsconfig `compilerOptions`, otherwise the `.ts` specifiers fail the TypeScript step with TS5097. The flag is compatible with Next's `noEmit`, so it slots into the existing `next build` type-check. Projects scaffolded with `create-opensaas-app` get this flag by default.
+
 Generated output (before → after):
 
 ```typescript
