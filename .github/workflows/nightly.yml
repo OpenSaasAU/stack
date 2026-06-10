@@ -31,7 +31,7 @@ jobs:
           node-version: '24'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       # Scaffold the published basic (SQLite, no-auth) template fully
       # non-interactively into an OS temp dir — never the runner's workspace —
