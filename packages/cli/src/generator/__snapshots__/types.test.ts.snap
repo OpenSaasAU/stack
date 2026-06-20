@@ -8,8 +8,8 @@ exports[`Types Generator > generateTypes > should generate Context type with all
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -38,8 +38,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -242,8 +240,8 @@ exports[`Types Generator > generateTypes > should generate CreateInput type 1`] 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -273,8 +271,6 @@ export type PostOutput = {
   id: string
   title: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -479,8 +475,8 @@ exports[`Types Generator > generateTypes > should generate Include type with vir
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -510,8 +506,6 @@ export type UserOutput = {
   id: string
   name: string | null
   posts?: PostOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -759,8 +753,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -1050,8 +1042,8 @@ exports[`Types Generator > generateTypes > should generate Select and GetPayload
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1081,8 +1073,6 @@ export type UserOutput = {
   id: string
   firstName: string
   lastName: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -1320,8 +1310,8 @@ exports[`Types Generator > generateTypes > should generate UpdateInput type 1`] 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1351,8 +1341,6 @@ export type PostOutput = {
   id: string
   title: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -1557,8 +1545,8 @@ exports[`Types Generator > generateTypes > should generate WhereInput type 1`] =
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1587,8 +1575,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -1791,8 +1777,8 @@ exports[`Types Generator > generateTypes > should generate type definitions for 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1822,8 +1808,6 @@ export type UserOutput = {
   id: string
   name: string
   email: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -2028,8 +2012,8 @@ exports[`Types Generator > generateTypes > should generate types for multiple li
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -2058,8 +2042,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -2218,8 +2200,6 @@ export type PostTransformedFields = {
 export type PostOutput = {
   id: string
   title: string | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -2378,8 +2358,6 @@ export type CommentTransformedFields = {
 export type CommentOutput = {
   id: string
   content: string | null
-  createdAt: Date
-  updatedAt: Date
 } & CommentVirtualFields
 
 export type Comment = CommentOutput
@@ -2630,8 +2608,8 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -2662,8 +2640,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -2885,8 +2861,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3113,8 +3087,8 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -3145,8 +3119,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -3368,8 +3340,6 @@ export type UserTransformedFields = {
 export type UserOutput = {
   id: string
   name: string | null
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3596,8 +3566,8 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -3627,8 +3597,6 @@ export type UserOutput = {
   id: string
   name: string | null
   posts?: PostOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -3852,8 +3820,6 @@ export type PostOutput = {
   title: string | null
   authorId: string | null
   author?: UserOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & PostVirtualFields
 
 export type Post = PostOutput
@@ -4143,8 +4109,8 @@ exports[`Types Generator > generateTypes > should use StripVirtualFromArgs in Ge
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -4174,8 +4140,6 @@ export type AccountOutput = {
   id: string
   name: string | null
   bills?: BillOutput[]
-  createdAt: Date
-  updatedAt: Date
 } & AccountVirtualFields
 
 export type Account = AccountOutput
@@ -4399,8 +4363,6 @@ export type BillOutput = {
   name: string | null
   accountId: string | null
   account?: AccountOutput | null
-  createdAt: Date
-  updatedAt: Date
 } & BillVirtualFields
 
 export type Bill = BillOutput

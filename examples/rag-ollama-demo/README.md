@@ -61,7 +61,13 @@ You should see `nomic-embed-text` in the list. Ollama runs as a background servi
 pnpm install
 ```
 
-### 2. Generate Schema and Types
+### 2. Set Up Environment
+
+```bash
+cp .env.example .env
+```
+
+### 3. Generate Schema and Types
 
 ```bash
 pnpm generate
@@ -73,7 +79,7 @@ This creates:
 - `.opensaas/types.ts` - TypeScript types for your lists
 - `.opensaas/context.ts` - Context factory with access control
 
-### 3. Create Database
+### 4. Create Database
 
 ```bash
 pnpm db:push
@@ -81,7 +87,7 @@ pnpm db:push
 
 This creates the SQLite database (`dev.db`) with your schema.
 
-### 4. Run the Test Script
+### 5. Run the Test Script
 
 ```bash
 pnpm test
@@ -124,7 +130,7 @@ Top 3 Results:
   3. Natural Language Processing (similarity: 0.7456)
 ```
 
-### 5. Start the Admin UI
+### 6. Start the Admin UI
 
 ```bash
 pnpm dev

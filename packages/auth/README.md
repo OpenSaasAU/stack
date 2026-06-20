@@ -203,6 +203,39 @@ authPlugin({
 })
 ```
 
+## Adopting an Existing better-auth Installation
+
+Migrating a project that **already runs better-auth**? The plugin can adopt your
+live tables rather than recreating them, so there's no destructive auth
+migration. Use the `adoptBetterAuthTables()` recipe to preset the model/schema
+knobs that match a standard separate-schema better-auth install:
+
+```typescript
+import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
+
+authPlugin({
+  // Defaults: AuthUser/AuthSession/AuthAccount/AuthVerification in the `auth`
+  // Postgres schema — pinned to your live table names + schema (@@map/@@schema).
+  ...adoptBetterAuthTables(),
+  emailAndPassword: { enabled: true },
+})
+
+// Customise when your live tables diverge from the defaults:
+adoptBetterAuthTables({
+  schema: 'identity', // default: 'auth'
+  modelNamePrefix: 'BA', // default: 'Auth' (→ AuthUser/AuthSession/…)
+  fields: { user: { name: 'full_name' }, session: { userId: 'user_id' } },
+})
+```
+
+**App `User` vs the Auth identity.** The plugin models the **Auth identity** (the
+better-auth user, e.g. `AuthUser`). It does not assume that list is your app's
+own domain `User` — when the keys differ, your `User` is never extended or
+overwritten. **Linking your domain `User` to the Auth identity is your app's
+concern** (declare a `relationship({ ref: 'AuthUser' })` on your `User`). See the
+[Authentication guide](https://stack.opensaas.au/docs/guides/authentication) for
+the full migrator walkthrough and a Schema-parity (clean-diff) check.
+
 ## UI Components
 
 ### SignInForm

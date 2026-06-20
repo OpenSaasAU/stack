@@ -410,8 +410,6 @@ async function handleToolsCall(
   const toolName = params?.name
   const toolArgs = params?.arguments || {}
 
-  console.log('Handling tool call:', toolName, toolArgs)
-
   if (!toolName) {
     return new Response(
       JSON.stringify({

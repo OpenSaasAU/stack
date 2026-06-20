@@ -39,6 +39,9 @@ const isOwner: AccessControl = ({ session: _session, item: _item }) => {
 export default config({
   db: {
     provider: 'sqlite',
+    // Auto-timestamps are OFF by default (ADR-0004). This example sorts and
+    // reads `createdAt`/`updatedAt`, so opt back in globally.
+    timestamps: true,
     prismaClientConstructor: (PrismaClient) => {
       const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
       return new PrismaClient({ adapter })

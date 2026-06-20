@@ -4,7 +4,7 @@ import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import type { ServerActionInput } from '../server/types.js'
 import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
-import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
+import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
 
 export interface ItemFormProps {
   context: AccessContext<unknown>
@@ -48,16 +48,8 @@ export async function ItemForm({
   let itemData: Record<string, unknown> = {}
   if (mode === 'edit' && itemId) {
     try {
-      // Build include object for relationships
-      const includeRelationships: Record<string, boolean> = {}
-      for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-        const fieldConfigAny = fieldConfig as { type: string }
-        if (fieldConfigAny.type === 'relationship') {
-          includeRelationships[fieldName] = true
-        }
-      }
-
       // Fetch item with relationships included
+      const includeRelationships = buildRelationshipInclude(listConfig)
       const delegate = context.db[getDbKey(listKey)]
       if (delegate?.findUnique) {
         itemData = await delegate.findUnique({
@@ -90,72 +82,14 @@ export async function ItemForm({
     }
   }
 
-  // Fetch relationship options for all relationship fields
-  const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    // Check if field is a relationship type by checking the discriminated union
-    const fieldConfigAny = fieldConfig as { type: string; ref?: string }
-    if (fieldConfigAny.type === 'relationship') {
-      const ref = fieldConfigAny.ref
-      if (ref) {
-        // Parse ref format: "ListName.fieldName"
-        const relatedListName = ref.split('.')[0]
-        const relatedListConfig = config.lists[relatedListName]
-
-        if (relatedListConfig) {
-          try {
-            const dbContext = context.db
-            const delegate = dbContext[getDbKey(relatedListName)]
-            const relatedItems = delegate?.findMany ? await delegate.findMany({}) : []
-
-            // Use 'name' field as label if it exists, otherwise use 'id'
-            relationshipData[fieldName] = relatedItems.map((item: Record<string, unknown>) => ({
-              id: item.id as string,
-              label: ((item.name || item.title || item.id) as string) || '',
-            }))
-          } catch (error) {
-            console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
-            relationshipData[fieldName] = []
-          }
-        }
-      }
-    }
-  }
-
-  // Serialize field configs to remove non-serializable properties
-  const serializableFields = serializeFieldConfigs(listConfig.fields)
-
-  // Transform relationship data in itemData from objects to IDs for form
-  // Also apply valueForClientSerialization transformation
-  const formData = { ...itemData }
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    const fieldConfigAny = fieldConfig as {
-      type: string
-      many?: boolean
-      ui?: Record<string, unknown>
-    }
-    if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
-      const value = formData[fieldName]
-      if (fieldConfigAny.many && Array.isArray(value)) {
-        // Many relationship: extract IDs from array of objects
-        formData[fieldName] = value.map((item: Record<string, unknown>) => item.id as string)
-      } else if (value && typeof value === 'object' && 'id' in value) {
-        // Single relationship: extract ID from object
-        formData[fieldName] = (value as Record<string, unknown>).id as string
-      }
-    }
-
-    // Apply valueForClientSerialization if defined
-    if (
-      fieldConfigAny.ui?.valueForClientSerialization &&
-      typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
-    ) {
-      const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
-        value: unknown
-      }) => unknown
-      formData[fieldName] = transformer({ value: formData[fieldName] })
-    }
-  }
+  // Fetch relationship options, serialize field configs, and transform the
+  // record into client-ready form data (shared with the singleton editor).
+  const { serializableFields, initialData, relationshipData } = await prepareItemForm(
+    context,
+    config,
+    listConfig,
+    itemData,
+  )
 
   return (
     <div className="p-8 max-w-4xl">
@@ -187,7 +121,7 @@ export async function ItemForm({
           urlKey={urlKey}
           mode={mode}
           fields={serializableFields}
-          initialData={JSON.parse(JSON.stringify(formData))}
+          initialData={initialData}
           itemId={itemId}
           basePath={basePath}
           serverAction={serverAction}

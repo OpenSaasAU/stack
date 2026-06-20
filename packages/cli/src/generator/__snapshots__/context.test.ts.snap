@@ -12,10 +12,10 @@ exports[`Context Generator > generateContext > should export rawOpensaasContext 
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client'
-import type { Context } from './types'
-import { prismaExtensions } from './prisma-extensions'
-import configOrPromise from '../opensaas.config'
+import { PrismaClient } from './prisma-client/client.ts'
+import type { Context } from './types.ts'
+import { prismaExtensions } from './prisma-extensions.ts'
+import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)
@@ -132,10 +132,10 @@ exports[`Context Generator > generateContext > should generate context factory w
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client'
-import type { Context } from './types'
-import { prismaExtensions } from './prisma-extensions'
-import configOrPromise from '../opensaas.config'
+import { PrismaClient } from './prisma-client/client.ts'
+import type { Context } from './types.ts'
+import { prismaExtensions } from './prisma-extensions.ts'
+import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)
@@ -252,10 +252,10 @@ exports[`Context Generator > generateContext > should generate context factory w
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client'
-import type { Context } from './types'
-import { prismaExtensions } from './prisma-extensions'
-import configOrPromise from '../opensaas.config'
+import { PrismaClient } from './prisma-client/client.ts'
+import type { Context } from './types.ts'
+import { prismaExtensions } from './prisma-extensions.ts'
+import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)

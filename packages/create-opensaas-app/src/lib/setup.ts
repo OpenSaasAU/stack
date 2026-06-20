@@ -8,7 +8,12 @@
  * actual process spawning lives in the CLI orchestrator.
  */
 
+import type { DbProvider } from './env.js'
+
 const PACKAGE_MANAGER = 'pnpm'
+
+/** Databases the scaffolder can target. Re-exported from `env.ts` (single source of truth). */
+export type { DbProvider }
 
 export interface SetupStep {
   /** Label shown while the step runs. */
@@ -23,11 +28,20 @@ export interface NextStepsOptions {
   projectName: string
   /** Whether install/generate/db:push already ran during scaffolding. */
   autoRan: boolean
+  /** The database the project targets (defaults to SQLite). */
+  provider?: DbProvider
 }
 
-/** install → generate → db:push, in order. */
-export function planSetupSteps(): SetupStep[] {
-  return [
+/**
+ * install → generate → db:push, in order.
+ *
+ * For PostgreSQL we omit `db:push`: it needs a live database the user hasn't
+ * configured yet (the scaffolded `.env` holds placeholder connection strings),
+ * so attempting it would always fail. SQLite's `db:push` creates a local file
+ * with no setup, so it stays in the auto-run.
+ */
+export function planSetupSteps(provider: DbProvider = 'sqlite'): SetupStep[] {
+  const steps: SetupStep[] = [
     {
       title: 'Installing dependencies',
       args: ['install'],
@@ -38,12 +52,17 @@ export function planSetupSteps(): SetupStep[] {
       args: ['run', 'generate'],
       retry: `${PACKAGE_MANAGER} generate`,
     },
-    {
+  ]
+
+  if (provider === 'sqlite') {
+    steps.push({
       title: 'Creating the database',
       args: ['run', 'db:push'],
       retry: `${PACKAGE_MANAGER} db:push`,
-    },
-  ]
+    })
+  }
+
+  return steps
 }
 
 /** Actionable, recoverable message for a setup step that failed. */
@@ -58,18 +77,21 @@ export function formatStepFailure(step: SetupStep, projectName: string): string 
 /**
  * The commands to print under "Next steps". When setup ran automatically the
  * user only needs to start the dev server; otherwise they get the full manual
- * sequence.
+ * sequence. A PostgreSQL project lists `migrate` (it needs a real database the
+ * user must configure first) rather than the SQLite `db:push`.
  */
 export function nextStepCommands(options: NextStepsOptions): string[] {
-  const { projectName, autoRan } = options
+  const { projectName, autoRan, provider = 'sqlite' } = options
   if (autoRan) {
     return [`cd ${projectName}`, `${PACKAGE_MANAGER} dev`]
   }
+  const applySchema =
+    provider === 'postgresql' ? `${PACKAGE_MANAGER} migrate` : `${PACKAGE_MANAGER} db:push`
   return [
     `cd ${projectName}`,
     `${PACKAGE_MANAGER} install`,
     `${PACKAGE_MANAGER} generate`,
-    `${PACKAGE_MANAGER} db:push`,
+    applySchema,
     `${PACKAGE_MANAGER} dev`,
   ]
 }

@@ -1,5 +1,47 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Prisma Schema Generator > Keystone-compat mode (db.keystoneCompat) > emits @default("") for non-null text without an explicit default (snapshot) 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  name         String @default("")
+  status       String @default("PLEASE_UPDATE")
+  nickname     String?
+  note         String?
+  loginCount   Int
+  isActive     Boolean @default(true)
+}
+"
+`;
+
+exports[`Prisma Schema Generator > field defaultValue → @default(...) > generates a representative multi-field model with mixed defaults 1`] = `
+"generator client {
+  provider = "prisma-client"
+  output   = "../.opensaas/prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Config {
+  id        String   @id @default(cuid())
+  label        String? @default("PLEASE_UPDATE")
+  retries      Int? @default(3)
+  limits       Json? @default("[1,2,3,4,5]")
+  empty        Json? @default("[]")
+}
+"
+`;
+
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate basic schema with datasource and generator 1`] = `
 "generator client {
   provider = "prisma-client"
@@ -26,8 +68,6 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   from_Post_author Post[]  @relation("Post_author")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
@@ -35,8 +75,6 @@ model Post {
   title        String?
   authorId     String? @map("author")
   author       User?  @relation("Post_author", fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
   @@index([authorId])
 }
 "
@@ -57,8 +95,6 @@ model User {
   name         String
   email        String
   age          Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -77,8 +113,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   isPublished  Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -97,8 +131,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String?
   publishedAt  DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -116,22 +148,16 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Comment {
   id        String   @id @default(cuid())
   content      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -150,15 +176,11 @@ model User {
   id        String   @id @default(cuid())
   name         String?
   posts        Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -175,7 +197,7 @@ datasource db {
 "
 `;
 
-exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with Int @id @default(1) 1`] = `
+exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with bare Int @id (no @default) 1`] = `
 "generator client {
   provider = "prisma-client"
   output   = "../.opensaas/prisma-client"
@@ -186,11 +208,9 @@ datasource db {
 }
 
 model Settings {
-  id        Int      @id @default(1)
+  id        Int      @id
   siteName     String
   maintenanceMode Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -215,8 +235,6 @@ model Post {
   id        String   @id @default(cuid())
   title        String
   status       PostStatus @default(draft)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;

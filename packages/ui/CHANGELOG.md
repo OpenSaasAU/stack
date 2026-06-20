@@ -1,5 +1,159 @@
 # @opensaas/stack-ui
 
+## 0.24.0
+
+### Minor Changes
+
+- [#552](https://github.com/OpenSaasAU/stack/pull/552) [`66496b4`](https://github.com/OpenSaasAU/stack/commit/66496b487bae61f3cdea26fcfcaf605caaaa5520) Thanks [@borisno2](https://github.com/borisno2)! - Add list-level `ui.listView` config (mirroring Keystone) for default columns and sort
+
+  Lists now support a `ui.listView` block in `opensaas.config.ts` that sets the
+  admin list table's default column selection/order and default sort. Naming
+  mirrors Keystone's `ui.listView` so migrators can map defaults directly.
+
+  ```typescript
+  lists: {
+    Post: list({
+      fields: {
+        title: text(),
+        status: text(),
+        createdAt: timestamp(),
+      },
+      ui: {
+        listView: {
+          // Column selection AND order
+          initialColumns: ['title', 'status'],
+          // Default sort
+          initialSort: { field: 'createdAt', direction: 'desc' },
+        },
+      },
+    }),
+  }
+  ```
+
+  When `ui.listView` is absent, behaviour is unchanged: the table shows all
+  non-system fields and applies no default sort.
+
+## 0.23.0
+
+### Minor Changes
+
+- [#543](https://github.com/OpenSaasAU/stack/pull/543) [`4de6a3b`](https://github.com/OpenSaasAU/stack/commit/4de6a3b35ff2337fbd32f285e6c0cc63a0b2d2cf) Thanks [@borisno2](https://github.com/borisno2)! - Handle `autoCreate: false` singletons and access-denied reads in the AdminUI singleton editor.
+
+  When a singleton's `get()` returns no record, `SingletonView` now disambiguates the two reasons a singleton can be empty and renders the safe affordance:
+  - **`autoCreate: false` with no row yet** (query + create allowed): renders a create-on-first-save form (reuses `ItemFormClient` in `mode="create"`). Core assigns the singleton `id` and enforces the single-record constraint on save, so the form sends only the user-entered field data.
+  - **`query` access denied**: renders a friendly "no access" message — never an editable or create form.
+  - **create denied (autoCreate: false, no row)**: renders a friendly "no record yet" message instead of an unusable form.
+
+  An update-denied singleton still renders the edit form, but the save fails gracefully via the server action's denied envelope. The happy path (a record exists → edit form) and non-singleton lists are unchanged.
+
+- [#542](https://github.com/OpenSaasAU/stack/pull/542) [`ef6ce9a`](https://github.com/OpenSaasAU/stack/commit/ef6ce9a3d9c8c129626d98640004c2c0bf84b656) Thanks [@borisno2](https://github.com/borisno2)! - Render a single-record editor for `isSingleton` lists in `AdminUI`
+
+  A list configured with `isSingleton: true` now renders a single-record editor at
+  its bare `[list]` route instead of a list table. The new `SingletonView`
+  component resolves the record via the singleton `get()` operation (which
+  auto-creates the row with field defaults when absent) and reuses the existing
+  `ItemFormClient` in edit mode, so field rendering, validation, and the existing
+  `serverAction` save path all apply unchanged. Non-singleton lists are
+  unaffected and still render the table.
+
+  ```typescript
+  // opensaas.config.ts
+  lists: {
+    SiteSettings: list({
+      isSingleton: true,
+      fields: {
+        siteName: text(),
+        supportEmail: text(),
+      },
+    }),
+  }
+  ```
+
+  Visiting `/admin/site-settings` now shows an "Edit Site Settings" form for the
+  single record rather than a one-row list.
+
+- [#544](https://github.com/OpenSaasAU/stack/pull/544) [`581ef89`](https://github.com/OpenSaasAU/stack/commit/581ef89975e41a359b0a92c4808fbcdee7fe1607) Thanks [@borisno2](https://github.com/borisno2)! - Add first-class singleton presentation to the admin Navigation and Dashboard
+
+  Singleton lists (`isSingleton`) are now visually distinguished from ordinary lists:
+  - **Navigation:** singletons render under a dedicated "Settings" group with a gear
+    icon, separate from the standard "Lists" group. Each still links to its
+    single-record editor (`/<basePath>/<url>`). The "Settings" group is omitted when
+    there are no singletons (and the "Lists" group is omitted when there are only
+    singletons).
+  - **Dashboard:** singletons appear in their own "Settings" section with a
+    "Configure" affordance instead of the misleading "N items" count (a singleton's
+    count is always 0 or 1). The Dashboard no longer calls `count()` for singletons.
+
+  Non-singleton lists are unchanged.
+
+- [#545](https://github.com/OpenSaasAU/stack/pull/545) [`f2cc754`](https://github.com/OpenSaasAU/stack/commit/f2cc754e34b07a427168ddb11cfc33d74457af82) Thanks [@borisno2](https://github.com/borisno2)! - Suppress create/delete affordances and redirect sub-routes for singleton lists in the admin UI.
+
+  Singleton lists (`isSingleton: true`) have a single record edited at their bare `[list]` route, so the create and delete affordances no longer apply:
+  - The Dashboard "Quick Actions" no longer renders a "Create {list}" link for singletons (only standard lists). The Quick Actions card is hidden entirely in a singleton-only admin.
+  - The singleton editor (`SingletonView`) no longer renders a Delete control. A new optional `canDelete` prop (default `true`) on `ItemFormClient` controls this; non-singleton edit forms keep their Delete button.
+  - The singleton sub-routes `/admin/<list>/create` and `/admin/<list>/<id>` now server-side `redirect()` to the bare editor `/admin/<list>`, so old links keep working.
+
+  Non-singleton create/delete affordances and routing are unchanged.
+
+## 0.22.0
+
+## 0.21.0
+
+### Minor Changes
+
+- [#417](https://github.com/OpenSaasAU/stack/pull/417) [`ed1c9f5`](https://github.com/OpenSaasAU/stack/commit/ed1c9f532b77ef59d7a845731e6a6116904a859e) Thanks [@borisno2](https://github.com/borisno2)! - Unify the item-form logic behind a shared `useItemForm` engine
+
+  The AdminUI form (`ItemFormClient`) and the standalone `ItemCreateForm`/
+  `ItemEditForm` each carried their own near-identical copy of the form state,
+  the relationship-to-`connect` submit transform, the clear-error-on-change
+  behaviour, and the error/pending handling. That logic now lives once in a
+  `useItemForm` hook (with pure, exported `transformItemFormData`,
+  `transformInitialData`, and `getEditableFields` helpers); each form supplies
+  only an `onSubmit` adapter and renders the returned state.
+
+  Behaviour is unified to the superset: every form now applies the relationship
+  transform, the password `{ isSet }` skip for unchanged passwords, and
+  system-field filtering. The transform logic is covered by unit tests for the
+  first time.
+
+  No public API change — `ItemCreateForm`, `ItemEditForm`, and the AdminUI form
+  keep their existing props.
+
+- [#415](https://github.com/OpenSaasAU/stack/pull/415) [`8980ff3`](https://github.com/OpenSaasAU/stack/commit/8980ff36ffb0879d8f4409740493dd940572cc9d) Thanks [@borisno2](https://github.com/borisno2)! - Curate the `@opensaas/stack-core` public surface into clearly-scoped entry points
+
+  The root entry point now exposes only the everyday consumer surface — `config`,
+  `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`,
+  `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate
+  with. Plugin and field authoring contracts move to a new `/extend` path, and the
+  plumbing shared with sibling packages and generated code moves to `/internal`.
+
+  ```typescript
+  // Everyday usage (unchanged)
+  import { config, list, getContext } from '@opensaas/stack-core'
+
+  // Authoring a plugin or a third-party field package
+  import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  ```
+
+  `@opensaas/stack-core/internal` carries no semver guarantees; application code
+  should never import from it. `Session` stays on the root entry point because it is
+  the module-augmentation target.
+
+  Removed from the public surface (zero callers): the nine `*HookArgs` types and the
+  callerless typed-query runtime types. The other `@opensaas/*` packages and the CLI
+  generator are updated to import from the new paths.
+
+### Patch Changes
+
+- [#412](https://github.com/OpenSaasAU/stack/pull/412) [`9696f98`](https://github.com/OpenSaasAU/stack/commit/9696f9800284f94e21e14c31a716de4b48d736e5) Thanks [@borisno2](https://github.com/borisno2)! - Refactor `FieldRenderer` to use data-presence checks instead of `fieldConfig.type` comparisons
+
+  `FieldRenderer` no longer checks `fieldConfig.type` to decide which props to pass to field
+  components. Field-specific UI props (select options, relationship items/key/many) are now derived
+  from the serialised field config using data-presence checks (`fieldConfig.options`, `fieldConfig.ref`)
+  — the same self-contained pattern used for Prisma and TypeScript generation.
+
+  **For users:** no changes required. Field rendering behaviour is unchanged.
+
 ## 0.20.1
 
 ## 0.20.0

@@ -34,13 +34,13 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('export declare namespace Lists {')
       expect(lists).toContain('export type Post')
       expect(lists).toContain('namespace Post {')
-      expect(lists).toContain("export type Item = import('./types').Post")
+      expect(lists).toContain("export type Item = import('./types.ts').Post")
       expect(lists).toContain('export type TypeInfo')
       expect(lists).toContain("key: 'Post'")
       expect(lists).toContain('item: Item')
       expect(lists).toContain('inputs: {')
-      expect(lists).toContain("create: import('./prisma-client/client').Prisma.PostCreateInput")
-      expect(lists).toContain("update: import('./prisma-client/client').Prisma.PostUpdateInput")
+      expect(lists).toContain("create: import('./prisma-client/client.ts').Prisma.PostCreateInput")
+      expect(lists).toContain("update: import('./prisma-client/client.ts').Prisma.PostUpdateInput")
     })
 
     it('should generate Lists namespace for multiple lists', () => {
@@ -130,12 +130,12 @@ describe('Lists Namespace Generator', () => {
       // Check ListConfig import
       expect(lists).toContain("import('@opensaas/stack-core').ListConfig")
 
-      // Check Item import
-      expect(lists).toContain("import('./types').User")
+      // Check Item import (explicit `.ts` extension — ADR-0008)
+      expect(lists).toContain("import('./types.ts').User")
 
-      // Check Prisma imports
-      expect(lists).toContain("import('./prisma-client/client').Prisma.UserCreateInput")
-      expect(lists).toContain("import('./prisma-client/client').Prisma.UserUpdateInput")
+      // Check Prisma imports (explicit `.ts` extension — ADR-0008)
+      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserCreateInput")
+      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserUpdateInput")
     })
 
     it('should generate TypeInfo structure correctly', () => {

@@ -3,7 +3,7 @@ import { prismaAdapter } from 'better-auth/adapters/prisma'
 import type { BetterAuthOptions } from 'better-auth'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
-import type { NormalizedAuthConfig } from '../config/types.js'
+import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
 /**
  * Get better-auth database configuration from OpenSaas config
@@ -15,6 +15,22 @@ function getDatabaseConfig(
   return prismaAdapter(context.prisma, {
     provider: dbConfig.provider,
   })
+}
+
+/**
+ * Translate a normalized OpenSaaS auth model config into the better-auth
+ * per-model options (`modelName` + `fields` column map). Returns `undefined`
+ * when there is nothing to override so the running auth instance keeps
+ * better-auth's own defaults untouched.
+ */
+function toBetterAuthModelOptions(
+  model: NormalizedAuthModelConfig,
+): { modelName?: string; fields?: Record<string, string> } | undefined {
+  const hasFields = Object.keys(model.fields).length > 0
+  const options: { modelName?: string; fields?: Record<string, string> } = {}
+  if (model.modelName) options.modelName = model.modelName
+  if (hasFields) options.fields = model.fields
+  return Object.keys(options).length > 0 ? options : undefined
 }
 
 /**
@@ -64,6 +80,20 @@ export function createAuth(
         const betterAuthConfig: BetterAuthOptions = {
           database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
 
+          // Mirror the per-model config (modelName + field column maps) back to
+          // better-auth so the running auth instance reads/writes the same
+          // tables/columns the OpenSaaS Auth lists were derived from.
+          user: toBetterAuthModelOptions(authConfig.models.user),
+          session: {
+            ...toBetterAuthModelOptions(authConfig.models.session),
+            expiresIn: authConfig.session.expiresIn || 604800,
+            updateAge: authConfig.session.updateAge
+              ? (authConfig.session.expiresIn || 604800) / 10
+              : 0,
+          },
+          account: toBetterAuthModelOptions(authConfig.models.account),
+          verification: toBetterAuthModelOptions(authConfig.models.verification),
+
           // Enable email and password if configured
           emailAndPassword: authConfig.emailAndPassword.enabled
             ? {
@@ -71,14 +101,6 @@ export function createAuth(
                 requireEmailVerification: authConfig.emailVerification.enabled,
               }
             : undefined,
-
-          // Configure session
-          session: {
-            expiresIn: authConfig.session.expiresIn || 604800,
-            updateAge: authConfig.session.updateAge
-              ? (authConfig.session.expiresIn || 604800) / 10
-              : 0,
-          },
 
           // Trust host (required for production)
           trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],

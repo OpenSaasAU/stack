@@ -122,6 +122,7 @@ export function list<TTypeInfo extends import('./types.js').TypeInfo>(
 // Re-export all types
 export type {
   OpenSaasConfig,
+  OutputConfig,
   ListConfig,
   ListConfigInput,
   ListAccessControl,
@@ -135,6 +136,7 @@ export type {
   SelectField,
   RelationshipField,
   PrismaRelationResult,
+  MultiColumnPrismaResult,
   JsonField,
   VirtualField,
   TypeDescriptor,
@@ -146,6 +148,8 @@ export type {
   DatabaseConfig,
   SessionConfig,
   UIConfig,
+  ListUIConfig,
+  ListViewUIConfig,
   ThemeConfig,
   ThemePreset,
   ThemeColors,

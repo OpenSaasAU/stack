@@ -15,6 +15,49 @@ interface MigrateOptions {
 }
 
 /**
+ * Canonical published Keystone → OpenSaaS Stack migration guide URL.
+ *
+ * The CLI points migrators at this page rather than embedding the guide text,
+ * so the binary stays small and the docs stay the single source of truth.
+ */
+export const MIGRATION_GUIDE_URL = 'https://stack.opensaas.au/docs/guides/migrating-from-keystone'
+
+/**
+ * Claude Code marketplace + plugin identifiers used to install the
+ * `opensaas-migration` plugin (its skills, commands, and agent).
+ */
+export const MIGRATION_PLUGIN_ID = 'opensaas-migration@opensaas-stack-marketplace'
+export const MIGRATION_MARKETPLACE = 'OpenSaasAU/stack'
+
+/**
+ * Manual install steps for the `opensaas-migration` Claude Code plugin.
+ * These are slash commands run inside Claude Code; `opensaas migrate --with-ai`
+ * wires them up automatically instead.
+ */
+export const MIGRATION_PLUGIN_INSTALL_STEPS: readonly string[] = [
+  `/plugin marketplace add ${MIGRATION_MARKETPLACE}`,
+  `/plugin install ${MIGRATION_PLUGIN_ID}`,
+]
+
+/**
+ * Print the published migration guide URL and how to install the
+ * `opensaas-migration` plugin. Kept lightweight on purpose — it points at the
+ * canonical guide instead of duplicating its contents.
+ */
+export function printMigrationResources(): void {
+  console.log(chalk.bold('\n📚 Migration guide:\n'))
+  console.log(chalk.cyan(`   ${MIGRATION_GUIDE_URL}`))
+
+  console.log(chalk.bold('\n🔌 Install the opensaas-migration plugin (skills + commands):\n'))
+  console.log(chalk.dim('   Automatic (sets up Claude Code for you):'))
+  console.log(chalk.cyan('     npx @opensaas/stack-cli migrate --with-ai'))
+  console.log(chalk.dim('   Manual (run inside Claude Code):'))
+  for (const step of MIGRATION_PLUGIN_INSTALL_STEPS) {
+    console.log(chalk.cyan(`     ${step}`))
+  }
+}
+
+/**
  * Detect what type of project this is
  */
 async function detectProjectType(cwd: string): Promise<ProjectType[]> {
@@ -234,7 +277,7 @@ When you open this project in Claude Code, the MCP server will be automatically 
 ## Resources
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
-- [Migration Guide](https://stack.opensaas.au/docs/guides/migration)
+- [Migrating from Keystone (canonical guide)](${MIGRATION_GUIDE_URL})
 - [GitHub Repository](https://github.com/OpenSaasAU/stack)
 
 ---
@@ -337,10 +380,11 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     console.log(chalk.bold('📝 Next Steps:\n'))
     console.log(chalk.cyan('   1. Run with --with-ai for AI-guided migration'))
     console.log(chalk.cyan('   2. Or manually create opensaas.config.ts'))
-    console.log(chalk.dim('\n   See: https://stack.opensaas.au/docs/guides/migration'))
   }
 
-  console.log(chalk.dim(`\n📚 Documentation: https://stack.opensaas.au/docs/guides/migration\n`))
+  // Always surface the canonical guide + plugin install pointers.
+  printMigrationResources()
+  console.log()
 }
 
 /**
@@ -349,6 +393,22 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
 export function createMigrateCommand(): Command {
   const migrate = new Command('migrate')
   migrate.description('Migrate an existing project to OpenSaaS Stack')
+
+  // Surface the canonical guide + plugin install pointers in `--help`, so the
+  // resources are discoverable without running a full migration.
+  migrate.addHelpText(
+    'after',
+    [
+      '',
+      'Migration guide:',
+      `  ${MIGRATION_GUIDE_URL}`,
+      '',
+      'Install the opensaas-migration plugin (skills + commands):',
+      '  Automatic: npx @opensaas/stack-cli migrate --with-ai',
+      '  Manual (inside Claude Code):',
+      ...MIGRATION_PLUGIN_INSTALL_STEPS.map((step) => `    ${step}`),
+    ].join('\n'),
+  )
 
   migrate
     .option('--with-ai', 'Enable AI-guided migration with Claude Code')

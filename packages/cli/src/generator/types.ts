@@ -1,7 +1,8 @@
-import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
 import * as path from 'path'
+import { resolveListTimestamps } from './prisma.js'
 
 /**
  * Map OpenSaas field types to TypeScript types
@@ -124,13 +125,19 @@ function generateTransformedFieldsType(
  */
 function generateModelOutputType(
   listName: string,
-  fields: Record<string, FieldConfig>,
+  // ListConfig is generic over per-list TypeInfo; we only read `db`/`fields`, which are
+  // invariant across that generic, so the permissive default arg is intentional.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listConfig: ListConfig<any>,
+  dbConfig: DatabaseConfig,
   isSingleton: boolean,
 ): string {
+  const fields = listConfig.fields
   const lines: string[] = []
 
   lines.push(`export type ${listName}Output = {`)
-  // Singleton lists use Int @id (always 1) matching Keystone 6 behaviour
+  // Singleton lists use an Int id (bare `id Int @id`, see ADR-0004) matching
+  // Keystone 6, so the TypeScript id type is `number` rather than `string`.
   lines.push(isSingleton ? '  id: number' : '  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
@@ -157,8 +164,15 @@ function generateModelOutputType(
     }
   }
 
-  lines.push('  createdAt: Date')
-  lines.push('  updatedAt: Date')
+  // Auto-timestamp columns mirror the Prisma schema: only emitted when timestamps are
+  // enabled (off by default — ADR-0004) and not already declared as a field above.
+  const timestamps = resolveListTimestamps(listConfig, dbConfig)
+  if (timestamps.createdAt) {
+    lines.push('  createdAt: Date')
+  }
+  if (timestamps.updatedAt) {
+    lines.push('  updatedAt: Date')
+  }
   lines.push('} & ' + listName + 'VirtualFields') // Include virtual fields
 
   return lines.join('\n')
@@ -464,6 +478,14 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     .filter(([_, config]) => config.resultExtension)
     .map(([name, _]) => name)
 
+  // Multi-column fields (e.g. storage image()/file() in Keystone-parity mode)
+  // back several raw Prisma columns that must be stripped from the public
+  // payload: only the assembled logical field (added back via TransformedFields)
+  // is exposed. Collect those raw column names for omission. See ADR-0006.
+  const multiColumnRawNames = Object.entries(fields).flatMap(([name, config]) =>
+    config.getColumnNames ? config.getColumnNames(name) : [],
+  )
+
   // Get relationship fields to override with custom GetPayload types
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
@@ -506,7 +528,11 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
   // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
   // When virtual fields exist, strip them from T before passing to Prisma so Prisma never
   // tries to resolve a virtual field name (which would produce `never` in its payload type).
-  const fieldsToOmit = [...transformedFieldNames, ...relationshipFields.map((r) => r.name)]
+  const fieldsToOmit = [
+    ...transformedFieldNames,
+    ...relationshipFields.map((r) => r.name),
+    ...multiColumnRawNames,
+  ]
   const prismaT =
     virtualFields.length > 0 ? `StripVirtualFromArgs<T, keyof ${listName}VirtualFields>` : 'T'
   if (fieldsToOmit.length > 0) {
@@ -991,8 +1017,11 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push(
     "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
   )
-  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client'")
-  lines.push("import type { PluginServices } from './plugin-types'")
+  // Relative imports carry an explicit `.ts` extension (see ./extension.ts) so
+  // the bundle resolves under a host bundler / plain Node without an
+  // `extensionAlias`. See ADR-0008.
+  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client.ts'")
+  lines.push("import type { PluginServices } from './plugin-types.ts'")
 
   // Add field-specific imports
   const fieldImports = collectFieldImports(config)
@@ -1025,7 +1054,7 @@ export function generateTypes(config: OpenSaasConfig): string {
     // Generate TransformedFields type (needed by CustomDB)
     lines.push(generateTransformedFieldsType(listName, listConfig.fields))
     lines.push('')
-    lines.push(generateModelOutputType(listName, listConfig.fields, !!listConfig.isSingleton))
+    lines.push(generateModelOutputType(listName, listConfig, config.db, !!listConfig.isSingleton))
     lines.push('')
     lines.push(generateModelTypeAlias(listName))
     lines.push('')

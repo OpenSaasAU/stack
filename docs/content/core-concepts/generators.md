@@ -194,7 +194,7 @@ Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSc
 
 Current generators are basic:
 
-- ❌ No migration support (use `prisma db push`)
+- ✅ Migration support: the generated `prisma.config.ts` supports `prisma migrate dev` / `prisma migrate deploy`. Local SQLite dev still uses `prisma db push` for a zero-setup loop; production uses `prisma migrate` (see ADR-0003).
 - ❌ No introspection support
 - ❌ Limited Prisma features (no raw queries, advanced transactions)
 

@@ -16,6 +16,7 @@ import type {
   PrismaRelationResult,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
+import { formatPrismaDefault } from './format-prisma-default.js'
 
 // Field-config types live here, alongside the builders that produce them.
 // (The umbrella `FieldConfig` and authoring `BaseFieldConfig` stay on the root
@@ -33,6 +34,7 @@ export type {
   JsonField,
   VirtualField,
   PrismaRelationResult,
+  MultiColumnPrismaResult,
 } from '../config/types.js'
 
 /**
@@ -87,7 +89,12 @@ export function text<
 
       return !isRequired ? withMax.optional().nullable() : withMax
     },
-    getPrismaType: (_fieldName: string) => {
+    getPrismaType: (
+      _fieldName: string,
+      _provider?: string,
+      _listName?: string,
+      keystoneCompat?: boolean,
+    ) => {
       const validation = options?.validation
       const db = options?.db
       const isRequired = validation?.isRequired
@@ -102,6 +109,23 @@ export function text<
       // Native type modifier (e.g., @db.Text)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value. An explicit `defaultValue` always wins. When none is set
+      // and Keystone-compat mode is on, a non-null text column gets Keystone's
+      // implicit empty-string default. Both go through formatPrismaDefault, so
+      // the empty-string literal (`""`) is produced the same way as any other
+      // text default. Independent of the nullable `?` modifier above — the
+      // default never overwrites nullability.
+      const defaultSource =
+        options?.defaultValue !== undefined
+          ? options.defaultValue
+          : keystoneCompat && !isNullable
+            ? ''
+            : undefined
+      const defaultLiteral = formatPrismaDefault(defaultSource, 'text')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Unique/index modifiers
@@ -180,6 +204,13 @@ export function integer<
       // Native type modifier (e.g., @db.SmallInt, @db.BigInt)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided (bare numeric literal). Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'integer')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier
@@ -677,7 +708,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
       resolveInput: async ({ inputData, fieldKey }: { inputData: any; fieldKey: string }) => {
         // Skip if undefined or null (allows partial updates)
         const inputValue = inputData[fieldKey]
-        console.log('Password resolveInput called with value:', inputValue)
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
@@ -823,21 +853,35 @@ export function select<
     },
     getPrismaType: (fieldName: string, _provider?: string, listName?: string) => {
       const isRequired = options.validation?.isRequired
+      const hasDefault = options.defaultValue !== undefined
+      // Nullability rules (Keystone parity):
+      //  - `db.isNullable` is an explicit override and always wins. Setting it
+      //    `true` forces the `?` even when a `defaultValue` is present.
+      //  - Otherwise a select is nullable only when it is neither required nor
+      //    carrying a default: a `defaultValue` makes the column NOT NULL (the
+      //    long-standing default behaviour). This mirrors the previous logic
+      //    where a present default overwrote the `?`.
+      // Nullability and the default are assembled independently with `+=`
+      // (mirroring text/integer) so the default never overwrites the `?`.
+      const isNullable = options.db?.isNullable ?? (!isRequired && !hasDefault)
       let modifiers = ''
 
-      if (isNativeEnum) {
-        // Derive enum name from list name + field name in PascalCase
-        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
-        const enumName = listName ? `${listName}${capitalizedField}` : capitalizedField
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
 
-        // Required fields don't get the ? modifier
-        if (!isRequired) {
-          modifiers = '?'
-        }
+      if (isNativeEnum) {
+        // Enum type name: explicit `db.enumName` wins, otherwise derive from
+        // list name + field name in PascalCase. The same name is used for the
+        // generated enum block (via `result.type`) and the column reference.
+        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+        const derivedEnumName = listName ? `${listName}${capitalizedField}` : capitalizedField
+        const enumName = options.db?.enumName ?? derivedEnumName
 
         // Add default value if provided (no quotes for enum values)
-        if (options.defaultValue !== undefined) {
-          modifiers = ` @default(${options.defaultValue})`
+        if (hasDefault) {
+          modifiers += ` @default(${options.defaultValue})`
         }
 
         // Map modifier
@@ -854,14 +898,9 @@ export function select<
 
       // String type (default)
 
-      // Required fields don't get the ? modifier
-      if (!isRequired) {
-        modifiers = '?'
-      }
-
       // Add default value if provided
-      if (options.defaultValue !== undefined) {
-        modifiers = ` @default("${options.defaultValue}")`
+      if (hasDefault) {
+        modifiers += ` @default("${options.defaultValue}")`
       }
 
       // Map modifier
@@ -1298,6 +1337,14 @@ export function json<
       // Native type modifier
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided. Uses Keystone's JSON-literal form: canonical
+      // (space-free) JSON wrapped in escaped double quotes. Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'json')
+      if (defaultLiteral !== undefined) {
+        modifiers += ` @default(${defaultLiteral})`
       }
 
       // Map modifier

@@ -1,0 +1,115 @@
+name: Nightly
+
+# Heavier / networked checks deliberately kept OFF the PR gate (see ADR-0002).
+# These run on a schedule and on manual dispatch only — never on pull_request or
+# push — so PR feedback stays fast and isn't gated on registry/network state.
+on:
+  schedule:
+    # 03:17 UTC daily. Off-the-hour to avoid the top-of-hour scheduler backlog.
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+# Only one nightly run at a time; let a manual dispatch supersede a scheduled one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  # (a) The PUBLISHED `npm create opensaas-app` end-to-end: a real networked
+  # install of the package from npm, then the documented first-run flow
+  # (generate → db:push → build) in a clean temp dir. This is the true e2e the
+  # PR-gate scaffold guard only proxies (the guard borrows the workspace
+  # toolchain offline; this exercises the actual published artifact). See ADR-0002.
+  published-create-e2e:
+    name: Published npm create e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      # Scaffold the published basic (SQLite, no-auth) template fully
+      # non-interactively into an OS temp dir — never the runner's workspace —
+      # so a mid-run failure can't dirty anything. `--no-ai` skips the networked
+      # MCP install; we let the CLI run its own install → generate → db:push.
+      - name: Scaffold published create-opensaas-app into a temp dir
+        run: |
+          set -euo pipefail
+          WORKDIR="$(mktemp -d)"
+          echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
+          cd "$WORKDIR"
+          # Real, networked install of the published package + its template deps.
+          npx --yes create-opensaas-app@latest myapp --no-auth --no-ai
+        env:
+          DATABASE_URL: 'file:./dev.db'
+
+      # The CLI auto-runs install → generate → db:push; re-run them explicitly so
+      # the job fails loudly (and points at the failed step) if any regress, then
+      # exercise a full production build of the scaffolded app.
+      - name: Generate, db:push and build the scaffolded app
+        run: |
+          set -euo pipefail
+          cd "$WORKDIR/myapp"
+          pnpm install
+          pnpm generate
+          pnpm db:push
+          pnpm build
+          test -f .opensaas/context.ts
+          test -f dev.db
+        env:
+          DATABASE_URL: 'file:./dev.db'
+
+  # (b) The FULL `examples/*` build. Examples are off the default build gate
+  # (ADR-0002 / PR #447) because each needs a developer-created `.env` to
+  # `generate`. This job makes that deterministic: it creates every example's
+  # `.env` from its committed `.env.example` first, then runs `pnpm build:examples`.
+  # Each `.env.example` now defaults to a DATABASE_URL that matches its config's
+  # provider (#462), so no per-example overrides are needed here.
+  examples-build:
+    name: Full examples build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      # Build the publishable packages first so each example's `opensaas generate`
+      # and `next build` resolve against fresh workspace `dist` output.
+      - name: Build packages
+        run: pnpm build
+
+      # Create a runnable `.env` for every example by copying its committed
+      # `.env.example`. Each `.env.example` defaults DATABASE_URL to a value that
+      # matches its config's Prisma provider (#462), so no per-example overrides
+      # are needed. Other DB/secret placeholders come from the .env.example values
+      # plus the job-level env below.
+      - name: Create .env for every example
+        run: |
+          set -euo pipefail
+          for dir in examples/*/; do
+            name="$(basename "$dir")"
+            if [ -f "$dir/.env.example" ]; then
+              cp "$dir/.env.example" "$dir/.env"
+              echo "prepared .env for $name"
+            fi
+          done
+
+      - name: Build all examples
+        run: pnpm build:examples
+        env:
+          # SQLite by default; the postgres-provider example (rag-openai-chatbot)
+          # keeps its own placeholder URL and never connects during generate/build.
+          DATABASE_URL: 'file:./dev.db'
+          # Placeholder secrets so generate/build don't fail on missing vars.
+          OPENAI_API_KEY: 'sk-testing-key'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'

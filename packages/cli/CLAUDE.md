@@ -107,23 +107,29 @@ model Post {
 
 ```typescript
 import 'dotenv/config'
-import { defineConfig, env } from 'prisma/config'
+import { defineConfig } from 'prisma/config'
+
+// Read an environment variable, returning undefined when unset so the
+// `??` fallback below can take effect. (The `env` helper from
+// 'prisma/config' throws on missing variables, which would break the
+// fallback.)
+const env = (name: string): string | undefined => process.env[name]
 
 export default defineConfig({
-  schema: 'prisma/schema.prisma',
+  schema: 'prisma',
   datasource: {
-    url: env('DATABASE_URL'),
+    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),
   },
 })
 ```
 
-**Purpose:** Prisma 7 requires this file at the project root for CLI commands like `prisma db push` and `prisma migrate dev` to work. This is separate from the runtime configuration.
+**Purpose:** Prisma 7 requires this file at the project root for CLI commands like `prisma db push`, `prisma migrate dev`, and `prisma migrate deploy` to work. This is separate from the runtime configuration.
 
 **Key points:**
 
 - Generated automatically by `opensaas generate`
 - Requires `dotenv` package to load `.env` files
-- Reads `DATABASE_URL` from environment variables
+- Datasource URL prefers `DIRECT_DATABASE_URL`, falling back to `DATABASE_URL`. On serverless Postgres the app connects through a pooled `DATABASE_URL` while migrations use a direct connection via `DIRECT_DATABASE_URL`; local SQLite is untouched because the fallback resolves to `DATABASE_URL` (see ADR-0003).
 - Only used by Prisma CLI commands, not by application runtime
 
 ### Types (`.opensaas/types.ts`)

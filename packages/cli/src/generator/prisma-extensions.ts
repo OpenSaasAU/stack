@@ -1,13 +1,23 @@
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withTsExtension } from './extension.js'
 
 /**
  * Generate Prisma result extensions configuration
  * This creates a Prisma client extension that calls field resolveOutput hooks
  */
-export function generatePrismaExtensions(config: OpenSaasConfig): string {
+export function generatePrismaExtensions(config: OpenSaasConfig, configImport?: string): string {
   const lines: string[] = []
+
+  // Module specifier for importing the project's opensaas.config from inside
+  // the `.opensaas` bundle. Defaults to the legacy `../opensaas.config`; the
+  // output-path resolver supplies a recomputed value when the bundle is
+  // relocated via the `output` config block.
+  //
+  // The explicit `.ts` extension (see ./extension.ts) keeps the bundle loadable
+  // by the host bundler / plain Node without an `extensionAlias`.
+  const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
 
   // Add header comment
   lines.push('/**')
@@ -17,8 +27,8 @@ export function generatePrismaExtensions(config: OpenSaasConfig): string {
   lines.push('')
 
   // Add imports
-  lines.push("import { Prisma } from './prisma-client/client'")
-  lines.push("import configOrPromise from '../opensaas.config'")
+  lines.push("import { Prisma } from './prisma-client/client.ts'")
+  lines.push(`import configOrPromise from '${configImportPath}'`)
   lines.push('')
 
   // Resolve config synchronously if possible (will be resolved by context.ts anyway)
@@ -145,9 +155,16 @@ export function generatePrismaExtensions(config: OpenSaasConfig): string {
 
 /**
  * Write Prisma extensions configuration to file
+ *
+ * @param configImport - Optional override for the `opensaas.config` import
+ *   specifier, forwarded to {@link generatePrismaExtensions}.
  */
-export function writePrismaExtensions(config: OpenSaasConfig, outputPath: string): void {
-  const extensions = generatePrismaExtensions(config)
+export function writePrismaExtensions(
+  config: OpenSaasConfig,
+  outputPath: string,
+  configImport?: string,
+): void {
+  const extensions = generatePrismaExtensions(config, configImport)
 
   // Ensure directory exists
   const dir = path.dirname(outputPath)

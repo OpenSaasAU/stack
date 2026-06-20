@@ -600,6 +600,27 @@ export async function POST(request: NextRequest) {
 }
 ```
 
+### Migrating from Keystone (non-destructive multi-column mode)
+
+If you are adopting `image()` / `file()` over an existing KeystoneJS database, you do **not** have to consolidate Keystone's per-part columns into a single JSON column. Set `db: { columns: 'keystone' }` and the field maps onto the existing columns in place — no data migration, no dropped columns, and no re-upload of existing assets:
+
+```typescript
+import { image, file } from '@opensaas/stack-storage/fields'
+
+lists: {
+  Teacher: list({
+    fields: {
+      // Maps onto avatar_url, avatar_width, ... in place
+      avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+      // Maps onto resume_filename, resume_filesize, resume_url in place
+      resume: file({ storage: 'files', db: { columns: 'keystone' } }),
+    },
+  }),
+}
+```
+
+Any storage provider works with this mode — local, S3, or **Vercel Blob** (`@opensaas/stack-storage-vercel`) — because existing URLs are read straight from the columns and the provider is only used for new uploads. See the [Keystone image & file migration guide](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-image-migration.md) for the full walkthrough, per-part `@map` overrides, and the explicitly-flagged destructive JSON-consolidation opt-in.
+
 ## Deployment Considerations
 
 ### Environment Variables

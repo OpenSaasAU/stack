@@ -208,5 +208,35 @@ describe('config helpers', () => {
       expect(testList.hooks).toBeDefined()
       expect(testList.hooks?.resolveInput).toBeDefined()
     })
+
+    it('should accept ui.listView config (initialColumns + initialSort)', () => {
+      const testList = list({
+        fields: {
+          title: { type: 'text' },
+          status: { type: 'text' },
+          createdAt: { type: 'timestamp' },
+        },
+        ui: {
+          listView: {
+            initialColumns: ['title', 'status'],
+            initialSort: { field: 'createdAt', direction: 'desc' },
+          },
+        },
+      })
+
+      expect(testList.ui?.listView?.initialColumns).toEqual(['title', 'status'])
+      expect(testList.ui?.listView?.initialSort).toEqual({
+        field: 'createdAt',
+        direction: 'desc',
+      })
+    })
+
+    it('should leave ui undefined when not configured', () => {
+      const testList = list({
+        fields: { title: { type: 'text' } },
+      })
+
+      expect(testList.ui).toBeUndefined()
+    })
   })
 })

@@ -2,6 +2,7 @@ import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
+import { checkFieldAccess } from '../access/field-access.js'
 
 /**
  * Validation error collection
@@ -235,24 +236,66 @@ export async function executeFieldResolveInputHooks(
     // Skip if field not in data
     if (!(fieldKey in result)) continue
 
-    // Skip if no hooks defined
-    if (!fieldConfig.hooks?.resolveInput) continue
+    // A field's resolveInput produces its resolved value; for most fields that
+    // value is stored back under the same key. Multi-column fields additionally
+    // split that value across their physical columns below.
+    let resolvedValue: unknown = result[fieldKey]
 
-    // Execute field hook
-    // Type assertion is safe here because hooks are typed correctly in field definitions
-    // and we're working with runtime values that match those types
-    const transformedValue = await fieldConfig.hooks.resolveInput({
-      listKey,
-      fieldKey,
-      operation,
-      inputData,
-      item,
-      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
-      context,
-    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+    if (fieldConfig.hooks?.resolveInput) {
+      // Execute field hook
+      // Type assertion is safe here because hooks are typed correctly in field definitions
+      // and we're working with runtime values that match those types
+      resolvedValue = await fieldConfig.hooks.resolveInput({
+        listKey,
+        fieldKey,
+        operation,
+        inputData,
+        item,
+        resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
+        context,
+      } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+    } else if (!fieldConfig.splitColumns) {
+      // No resolveInput and not a multi-column field — nothing to do.
+      continue
+    }
 
-    // Create new object with updated field to avoid mutating the passed reference
-    result = { ...result, [fieldKey]: transformedValue }
+    if (fieldConfig.splitColumns) {
+      // Multi-column field (e.g. storage image()/file() in Keystone-parity
+      // mode): replace the single logical key with its per-part columns so the
+      // write payload targets the live columns instead of a single one.
+      //
+      // The split removes the logical key from the payload BEFORE the
+      // canonical writable-field filter (`filterWritableFields`) runs, and the
+      // raw per-part column keys are not in `fieldConfigs` — so that later
+      // filter cannot enforce this field's own write access. Enforce it HERE,
+      // using the canonical field-access evaluator with the SAME arguments the
+      // write pipeline uses. A single-column field denied by `update`/`create`
+      // is simply omitted from the write; a denied multi-column field must
+      // likewise contribute NONE of its per-part columns. (sudo bypasses via
+      // `checkFieldAccess`.)
+      const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
+        session: context.session,
+        item,
+        context,
+        inputData,
+      })
+      if (!canWrite) {
+        // Denied: drop the logical key and write none of its columns — exactly
+        // as filterWritableFields drops a denied single-column field.
+        const next = { ...result }
+        delete next[fieldKey]
+        result = next
+        continue
+      }
+      const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
+      // Drop the logical key (it is not a real column) and merge the columns.
+      const next = { ...result, ...columns }
+      delete next[fieldKey]
+      result = next
+    } else {
+      // Create new object with updated field to avoid mutating the passed reference
+      result = { ...result, [fieldKey]: resolvedValue }
+    }
   }
 
   return result

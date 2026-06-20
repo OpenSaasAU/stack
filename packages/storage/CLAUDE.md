@@ -50,7 +50,10 @@ packages/storage-vercel/  # Separate Vercel Blob provider package
 - `uploadImage(config, provider, data, options)` - Upload image with transformations
 - `deleteFile(config, provider, filename)` - Delete file
 - `deleteImage(config, metadata)` - Delete image and all transformations
-- `createStorageProvider(config, providerName)` - Create provider instance
+- `createStorageProvider(config, providerName)` - Create provider instance (resolves the provider `type` through the registry)
+- `registerStorageProvider(type, factory)` - Register a provider `type` → constructor (host opts in to optional/custom providers)
+- `getStorageProviderFactory(type)` / `hasStorageProvider(type)` - Inspect the registry
+- `resetStorageProviderRegistry()` - Reset to built-in defaults (mainly for tests)
 
 ### Utils (`src/utils/`)
 
@@ -352,39 +355,138 @@ avatar: image({
 })
 ```
 
-### Custom Storage Provider
+### Storage Provider Registry
+
+`createStorageProvider` resolves a provider `type` through a **registry** rather
+than a hardcoded `switch`. `'local'` is registered as a built-in default, so it
+works with no setup. Every other provider — the optional packages
+(`@opensaas/stack-storage-s3`, `@opensaas/stack-storage-vercel`) and your own
+custom providers — must be **registered by the host** before
+`createStorageProvider` can build them.
+
+`@opensaas/stack-storage` deliberately does **not** depend on `-s3`/`-vercel`:
+wiring them into the factory directly would force the AWS/Vercel SDKs onto every
+storage user. The host opts in by registering only the provider(s) it uses.
+
+#### Registering an optional provider package
+
+Register once at app startup (e.g. in a server-only module imported by your app
+entry, the upload route, or `instrumentation.ts`):
+
+```typescript
+// lib/register-storage.ts (server-only)
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import { S3StorageProvider, type S3StorageConfig } from '@opensaas/stack-storage-s3'
+
+registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
+```
+
+Then reference the provider by `type` in config (via the package's config
+builder, which sets `type: 's3'`):
+
+```typescript
+import { s3Storage } from '@opensaas/stack-storage-s3'
+
+export default config({
+  storage: {
+    avatars: s3Storage({ bucket: 'user-avatars', region: 'us-east-1' }),
+  },
+  // ...
+})
+```
+
+The Vercel Blob provider follows the same shape:
+
+```typescript
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import {
+  VercelBlobStorageProvider,
+  type VercelBlobStorageConfig,
+} from '@opensaas/stack-storage-vercel'
+
+registerStorageProvider<VercelBlobStorageConfig>(
+  'vercel-blob',
+  (config) => new VercelBlobStorageProvider(config),
+)
+```
+
+#### Registering a custom provider
+
+Implement `StorageProvider`, give it a `type` discriminator, then register it:
 
 ```typescript
 // lib/cloudflare-r2-storage.ts
-import type { StorageProvider } from '@opensaas/stack-storage'
+import type {
+  StorageProvider,
+  UploadOptions,
+  UploadResult,
+  BaseStorageConfig,
+} from '@opensaas/stack-storage'
 
-export class CloudflareR2StorageProvider implements StorageProvider {
-  async upload(file: Buffer, filename: string, options?) {
-    // Upload to Cloudflare R2
-    // ...
-    return { filename, url, size, contentType }
-  }
-
-  async download(filename: string) {
-    // Download from R2
-    // ...
-  }
-
-  async delete(filename: string) {
-    // Delete from R2
-    // ...
-  }
-
-  getUrl(filename: string) {
-    return `https://r2.example.com/${filename}`
-  }
+export interface CloudflareR2Config extends BaseStorageConfig {
+  type: 'cloudflare-r2'
+  bucket: string
+  accountId: string
 }
 
-// Register in runtime
-import { createStorageProvider } from '@opensaas/stack-storage/runtime'
+export class CloudflareR2StorageProvider implements StorageProvider {
+  constructor(private config: CloudflareR2Config) {}
 
-// Extend createStorageProvider to support 'cloudflare-r2' type
+  async upload(
+    file: Buffer | Uint8Array,
+    filename: string,
+    options?: UploadOptions,
+  ): Promise<UploadResult> {
+    // Upload to Cloudflare R2 ...
+    return {
+      filename,
+      url: this.getUrl(filename),
+      size: file.length,
+      contentType: options?.contentType ?? 'application/octet-stream',
+    }
+  }
+
+  async download(filename: string): Promise<Buffer> {
+    // Download from R2 ...
+    return Buffer.from('')
+  }
+
+  async delete(filename: string): Promise<void> {
+    // Delete from R2 ...
+  }
+
+  getUrl(filename: string): string {
+    return `https://r2.example.com/${this.config.bucket}/${filename}`
+  }
+}
 ```
+
+```typescript
+// lib/register-storage.ts (server-only)
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import { CloudflareR2StorageProvider, type CloudflareR2Config } from './cloudflare-r2-storage'
+
+registerStorageProvider<CloudflareR2Config>(
+  'cloudflare-r2',
+  (config) => new CloudflareR2StorageProvider(config),
+)
+```
+
+```typescript
+// opensaas.config.ts
+export default config({
+  storage: {
+    media: { type: 'cloudflare-r2', bucket: 'media', accountId: process.env.CF_ACCOUNT_ID! },
+  },
+  // ...
+})
+```
+
+If a field references a provider whose `type` has not been registered,
+`createStorageProvider` throws a clear error
+(`Unknown storage provider type: <type>. Register it with registerStorageProvider(...)`).
+Reads are unaffected — assembling existing asset metadata only stamps the
+provider **name** and never constructs a provider.
 
 ## Type Safety
 

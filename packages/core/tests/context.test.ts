@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
@@ -423,6 +423,85 @@ describe('getContext', () => {
 
       // Hook should be called twice (once for each item)
       expect(configWithHook.lists.User.hooks?.resolveInput).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  // `select` is not honoured by context.db reads — it is a visible no-op: the
+  // op warns (once per list+operation) and still returns the full, access-
+  // filtered result. Each test re-imports getContext via vi.resetModules() so
+  // the module-level warn-once cache starts empty.
+  describe('select no-op warning', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>
+    let freshGetContext: typeof getContext
+
+    beforeEach(async () => {
+      vi.resetModules()
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const mod = await import('../src/context/index.js')
+      freshGetContext = mod.getContext
+    })
+
+    afterEach(() => {
+      warnSpy.mockRestore()
+    })
+
+    it('warns AND still returns the row when findUnique is passed a select', async () => {
+      const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+
+      const context = await freshGetContext(config, mockPrisma, null)
+      const result = await context.db.user.findUnique({
+        where: { id: '1' },
+        select: { name: true },
+      })
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0][0]).toContain('`select` is ignored')
+      expect(warnSpy.mock.calls[0][0]).toContain('findUnique')
+      // Behaviour unchanged: the op still runs and returns the full row.
+      expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+      expect(result).toEqual(mockUser)
+    })
+
+    it('warns AND still returns the rows when findMany is passed a select', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John' },
+        { id: '2', name: 'Jane' },
+      ]
+      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+
+      const context = await freshGetContext(config, mockPrisma, null)
+      const result = await context.db.user.findMany({ select: { name: true } })
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0][0]).toContain('`select` is ignored')
+      expect(warnSpy.mock.calls[0][0]).toContain('findMany')
+      expect(mockPrisma.user.findMany).toHaveBeenCalled()
+      expect(result).toEqual(mockUsers)
+    })
+
+    it('warns only once per list+operation across repeated calls', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([])
+
+      const context = await freshGetContext(config, mockPrisma, null)
+      await context.db.user.findMany({ select: { name: true } })
+      await context.db.user.findMany({ select: { name: true } })
+      await context.db.user.findMany({ select: { email: true } })
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('does NOT warn for findUnique/findMany using only include or query', async () => {
+      const mockUser = { id: '1', name: 'John' }
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+      mockPrisma.user.findMany.mockResolvedValue([mockUser])
+
+      const context = await freshGetContext(config, mockPrisma, null)
+      await context.db.user.findUnique({ where: { id: '1' }, include: { posts: true } })
+      await context.db.user.findMany({ include: { posts: true } })
+      await context.db.user.findMany()
+
+      expect(warnSpy).not.toHaveBeenCalled()
     })
   })
 })

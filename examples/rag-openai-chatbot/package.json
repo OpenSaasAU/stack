@@ -13,7 +13,7 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.98",
+    "@ai-sdk/openai": "^3.0.68",
     "@ai-sdk/react": "^2.0.152",
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
@@ -36,10 +36,10 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.27",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.2",
     "postcss": "^8.5.8",
     "prettier": "^3.8.1",
-    "prisma": "^7.5.0",
+    "prisma": "^7.8.0",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

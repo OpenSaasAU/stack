@@ -352,11 +352,11 @@ Change `session.data.id` → `session.userId` in access control functions.
 
 ### Step 6: Migrate image/file fields (if present) — delegate to subagent
 
-**Do not do this yourself.** If the config has `image()` or `file()` fields, invoke `migrate-image-fields`. Pass the config path, model names, field names, and database provider. The subagent updates the config and writes a SQL migration script.
+**Do not do this yourself.** If the config has `image()` or `file()` fields, invoke `migrate-image-fields`. Pass the config path, model names, field names, and database provider. By default the subagent uses the **non-destructive multi-column mode** (`db.columns: 'keystone'`), which maps onto the existing Keystone columns in place — no SQL migration, no data loss, and no re-upload of existing assets.
 
 > Invoke `migrate-image-fields` with: "Config: /path/opensaas.config.ts. Database: postgresql. Models with image fields: Teacher (field: avatar), Post (field: coverImage)"
 
-**Important**: Remind the user to run the generated SQL BEFORE `prisma db push`.
+**Important**: The non-destructive path needs no SQL — just `opensaas generate` and a `prisma migrate diff` to confirm a clean diff. Only if the user explicitly asks to consolidate the columns into a single JSON column will the subagent take the destructive opt-in path (which requires a backup and running SQL BEFORE `prisma db push`).
 
 ### Step 7: Migrate document fields (if present) — delegate to subagent
 
@@ -419,7 +419,7 @@ Your job is to plan and coordinate the migration, not to do all the editing your
 - Import path updates across all project files → `migrate-imports` skill
 - Virtual field migration → `migrate-virtual-fields` skill
 - context.graphql/context.query migration → `migrate-context-calls` skill
-- Image/file field migration (config + SQL) → `migrate-image-fields` skill
+- Image/file field migration (non-destructive multi-column mapping by default) → `migrate-image-fields` skill
 - Document field migration (→ tiptap) → `migrate-document-fields` skill
 - Admin UI setup (ask first, then delegate) → `setup-admin-ui` skill
 
@@ -471,7 +471,7 @@ If no → skip and go to Phase 6.
 **Phase 6 — Validate:**
 
 - Run `pnpm opensaas generate` and report any errors
-- If image/file fields were found, remind the user to run the SQL migration script BEFORE `prisma db push`
+- If image/file fields were migrated with the default non-destructive multi-column mode, run `prisma migrate diff` against the live database to confirm a clean (non-destructive) diff — no SQL or re-upload needed. Only if the user chose the destructive JSON-consolidation opt-in should you remind them to back up and run the consolidation SQL BEFORE `prisma db push`
 
 ### What to say first:
 

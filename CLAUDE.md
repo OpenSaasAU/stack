@@ -147,13 +147,14 @@ The hooks system provides data transformation and side effects during database o
 1. List-level `resolveInput` - Transform input data at list level
 2. Field-level `resolveInput` - Transform individual field values (e.g., hash passwords)
 3. List-level `validate` - Custom validation logic
-4. Field validation - Built-in rules (isRequired, length, min/max)
-5. Field-level access control - Filter writable fields
-6. Field-level `beforeOperation` - Side effects for individual fields
-7. List-level `beforeOperation` - Side effects at list level
-8. **Database operation**
-9. List-level `afterOperation` - Side effects at list level
-10. Field-level `afterOperation` - Side effects for individual fields
+4. Field-level `validate` - Custom validation logic for individual fields
+5. Field validation - Built-in rules (isRequired, length, min/max)
+6. Field-level access control - Filter writable fields
+7. Field-level `beforeOperation` - Side effects for individual fields
+8. List-level `beforeOperation` - Side effects at list level
+9. **Database operation**
+10. List-level `afterOperation` - Side effects at list level
+11. Field-level `afterOperation` - Side effects for individual fields
 
 **Hook execution order (read operations - query):**
 
@@ -1266,7 +1267,7 @@ The `FieldRenderer` extracts `component` and `fieldType` from `ui` options, then
 
 Current generators are basic:
 
-- No migration support (use `prisma db push`)
+- Migrations: the generated `prisma.config.ts` supports `prisma migrate dev` / `prisma migrate deploy`. Local SQLite dev still uses `prisma db push` for a zero-setup loop; production uses `prisma migrate` (see ADR-0003).
 - No introspection support
 - Limited Prisma features (no raw queries, transactions, etc.)
 

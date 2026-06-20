@@ -173,21 +173,27 @@ const prismaType = field.getPrismaType(fieldName)
 
 1. List `resolveInput`
 2. Field `resolveInput` (e.g., hash password)
-3. List `validateInput`
-4. Field validation (isRequired, length, min/max)
-5. Field-level access control (filter writable fields)
-6. Field `beforeOperation`
-7. List `beforeOperation`
-8. **Database operation**
-9. List `afterOperation`
-10. Field `afterOperation`
+3. List `validate`
+4. Field `validate`
+5. Field validation (isRequired, length, min/max)
+6. Field-level access control (filter writable fields)
+7. Field `beforeOperation`
+8. List `beforeOperation`
+9. **Database operation**
+10. List `afterOperation`
+11. Field `afterOperation`
 
 ### Hook Execution Order (Read)
+
+Reads run no `afterOperation` (list or field):
 
 1. **Database operation**
 2. Field-level access control (filter readable fields)
 3. Field `resolveOutput`
-4. Field `afterOperation`
+
+### Narrowing Reads (`select` is not honoured)
+
+`context.db` reads (`findUnique`, `findMany`) do **not** apply Prisma's `select` semantics. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` is a visible no-op: the op logs a one-time `console.warn` and still returns the full, access-filtered record. Field-level visibility is always enforced by access control regardless of `select`, so there is no leak — only a correctness/perf footgun the warning surfaces.
 
 ### Context Type Safety
 
@@ -339,17 +345,14 @@ User: list({
 })
 
 // Usage
-const user = await context.db.user.findUnique({
-  where: { id },
-  select: { firstName: true, lastName: true, fullName: true }, // fullName computed on demand
-})
-console.log(user.fullName) // "John Doe"
+const user = await context.db.user.findUnique({ where: { id } })
+console.log(user.fullName) // "John Doe" — computed via resolveOutput on every read
 ```
 
 **Key characteristics:**
 
 - Not stored in database (no Prisma column created)
-- Only computed when explicitly selected/included in queries
+- Computed via `resolveOutput` on every read (`select` is not honoured — narrow with `include`/fragment `query`)
 - Must provide `type` (TypeScript type string) and `resolveOutput` hook
 - Can optionally provide `resolveInput` for write side effects
 - Useful for derived values, computed properties, and external API sync

@@ -1,5 +1,98 @@
 # @opensaas/stack-storage
 
+## 0.24.0
+
+### Minor Changes
+
+- [#551](https://github.com/OpenSaasAU/stack/pull/551) [`fb979b8`](https://github.com/OpenSaasAU/stack/commit/fb979b8978f9bdefd2b4f81e87c1c198582200ae) Thanks [@borisno2](https://github.com/borisno2)! - Add a storage provider registration API so non-`local` and custom providers are constructable.
+
+  `createStorageProvider` now resolves a provider `type` through a registry instead of a hardcoded `switch`, which previously only built `'local'` and threw for everything else. `'local'` is registered as a built-in default, so existing behaviour is unchanged. The host opts into the optional provider packages (`@opensaas/stack-storage-s3`, `@opensaas/stack-storage-vercel`) or a custom provider by registering it — `@opensaas/stack-storage` does not depend on the provider packages, keeping the AWS/Vercel SDKs off every storage user. Reads are unaffected: assembling existing asset metadata only stamps the provider name and never constructs a provider.
+
+  ```typescript
+  // lib/register-storage.ts (server-only, imported at app startup)
+  import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+  import { S3StorageProvider, type S3StorageConfig } from '@opensaas/stack-storage-s3'
+
+  registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
+  ```
+
+  ```typescript
+  // opensaas.config.ts — reference the registered provider by type
+  import { s3Storage } from '@opensaas/stack-storage-s3'
+
+  export default config({
+    storage: {
+      avatars: s3Storage({ bucket: 'user-avatars', region: 'us-east-1' }),
+    },
+    // ...
+  })
+  ```
+
+  Custom providers register the same way: implement `StorageProvider`, give it a `type`, then call `registerStorageProvider(type, (config) => new MyProvider(config))`. An unregistered type throws a clear error pointing at `registerStorageProvider`.
+
+## 0.23.0
+
+## 0.22.0
+
+### Minor Changes
+
+- [#511](https://github.com/OpenSaasAU/stack/pull/511) [`696f5c0`](https://github.com/OpenSaasAU/stack/commit/696f5c08c37d4a18107e48cb6b360c9492c7425c) Thanks [@borisno2](https://github.com/borisno2)! - Add non-destructive multi-column mode to `image()` / `file()` for adopting an existing Keystone database without dropping columns (ADR-0006).
+
+  Keystone stores an image across seven per-part columns (`_url`, `_width`, `_height`, `_filesize`, `_contentType`, `_contentDisposition`, `_pathname`) and a file across three (`_filename`, `_filesize`, `_url`). By default `image()`/`file()` still back a single `Json?` column (greenfield unchanged). Set `db.columns: 'keystone'` to map the field onto the existing per-part columns in place — assembled into an `ImageMetadata`/`FileMetadata` on read and split back on write — so a migrating project reaches a clean schema diff with no data migration and no re-upload of existing assets.
+
+  ```typescript
+  import { image, file } from '@opensaas/stack-storage/fields'
+
+  fields: {
+    // Maps onto image_url, image_width, … image_pathname in place.
+    avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+
+    // Per-part @map names are configurable for non-default column names.
+    cover: image({
+      storage: 'images',
+      db: { columns: { mode: 'keystone', map: { url: 'cover_link' } } },
+    }),
+
+    resume: file({ storage: 'documents', db: { columns: 'keystone' } }),
+  }
+  ```
+
+  No-re-upload guarantee (both modes): an already-shaped metadata value — or, in multi-column mode, populated columns — is authoritative and never triggers a storage upload; only a `File`-like input uploads.
+
+  Adds a multi-column field-emission contract (`getPrismaColumns`) plus `getColumnNames`/`assembleColumns`/`splitColumns` to the field-authoring surface so any field can map onto several physical columns. The generator emits one `@map`-ped Prisma line per column; reads assemble the logical value from the raw columns and strip them from the result; writes split the logical value back across the columns.
+
+### Patch Changes
+
+- [#520](https://github.com/OpenSaasAU/stack/pull/520) [`6610687`](https://github.com/OpenSaasAU/stack/commit/66106876643f0e9903eb6a677b7713890d0630e4) Thanks [@borisno2](https://github.com/borisno2)! - Add `file()` field-builder-level tests for multi-column (Keystone-parity) mode (issue [#478](https://github.com/OpenSaasAU/stack/issues/478)): assemble/split of `FileMetadata` across the three Keystone columns through the `file()` builder, including only-`file_url` partial rows, empty-row → null, custom `@map` round-trip, and nullable/`Int`-typed column emission. Test-only; no behaviour change.
+
+## 0.21.0
+
+### Minor Changes
+
+- [#415](https://github.com/OpenSaasAU/stack/pull/415) [`8980ff3`](https://github.com/OpenSaasAU/stack/commit/8980ff36ffb0879d8f4409740493dd940572cc9d) Thanks [@borisno2](https://github.com/borisno2)! - Curate the `@opensaas/stack-core` public surface into clearly-scoped entry points
+
+  The root entry point now exposes only the everyday consumer surface — `config`,
+  `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`,
+  `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate
+  with. Plugin and field authoring contracts move to a new `/extend` path, and the
+  plumbing shared with sibling packages and generated code moves to `/internal`.
+
+  ```typescript
+  // Everyday usage (unchanged)
+  import { config, list, getContext } from '@opensaas/stack-core'
+
+  // Authoring a plugin or a third-party field package
+  import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  ```
+
+  `@opensaas/stack-core/internal` carries no semver guarantees; application code
+  should never import from it. `Session` stays on the root entry point because it is
+  the module-augmentation target.
+
+  Removed from the public surface (zero callers): the nine `*HookArgs` types and the
+  callerless typed-query runtime types. The other `@opensaas/*` packages and the CLI
+  generator are updated to import from the new paths.
+
 ## 0.20.1
 
 ## 0.20.0

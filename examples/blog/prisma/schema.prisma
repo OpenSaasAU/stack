@@ -8,10 +8,10 @@ datasource db {
 }
 
 model Settings {
-  id              Int      @id @default(1)
-  siteName        String
+  id              Int      @id
+  siteName        String   @default("My Blog")
   maintenanceMode Boolean  @default(false)
-  maxUploadSize   Int?
+  maxUploadSize   Int?     @default(10)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
 }

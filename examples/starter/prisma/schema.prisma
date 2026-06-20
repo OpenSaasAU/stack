@@ -8,13 +8,11 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  posts     Post[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id       String @id @default(cuid())
+  name     String
+  email    String @unique
+  password String
+  posts    Post[]
 }
 
 model Post {
@@ -27,8 +25,6 @@ model Post {
   publishedAt   DateTime?
   authorId      String?   @map("author")
   author        User?     @relation(fields: [authorId], references: [id])
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
 
   @@index([authorId])
 }

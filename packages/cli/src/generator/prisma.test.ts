@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { generatePrismaSchema } from './prisma.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { generatePrismaSchema, resolveListTimestamps } from './prisma.js'
+import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
+import type { TypeInfo } from '@opensaas/stack-core/extend'
 import {
   text,
   integer,
@@ -8,6 +9,7 @@ import {
   checkbox,
   timestamp,
   select,
+  json,
 } from '@opensaas/stack-core/fields'
 
 describe('Prisma Schema Generator', () => {
@@ -179,7 +181,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toMatchSnapshot()
     })
 
-    it('should always include system fields', () => {
+    it('should always include the id system field', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -196,8 +198,186 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       expect(schema).toContain('id        String   @id @default(cuid())')
-      expect(schema).toContain('createdAt DateTime @default(now())')
+    })
+
+    it('should NOT add timestamps by default (timestamps off — ADR-0004)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('createdAt')
+      expect(schema).not.toContain('updatedAt')
+    })
+
+    it('should add timestamps to all lists when db.timestamps is true', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Both lists receive the auto pair
+      const createdAtCount = schema.match(/createdAt DateTime @default\(now\(\)\)/g)?.length
+      const updatedAtCount = schema.match(
+        /updatedAt DateTime @default\(now\(\)\) @updatedAt/g,
+      )?.length
+      expect(createdAtCount).toBe(2)
+      expect(updatedAtCount).toBe(2)
+    })
+
+    it('should let a per-list db.timestamps override force timestamps off', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          // Production opts out of timestamps even though they are enabled globally
+          Production: {
+            fields: {
+              name: text(),
+            },
+            db: { timestamps: false },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Global on → User has them
+      const userBlock = schema.slice(
+        schema.indexOf('model User {'),
+        schema.indexOf('model Production {'),
+      )
+      expect(userBlock).toContain('createdAt DateTime @default(now())')
+      expect(userBlock).toContain('updatedAt DateTime @default(now()) @updatedAt')
+
+      // Per-list off → Production does not
+      const productionBlock = schema.slice(schema.indexOf('model Production {'))
+      expect(productionBlock).not.toContain('createdAt')
+      expect(productionBlock).not.toContain('updatedAt')
+    })
+
+    it('should let a per-list db.timestamps override force timestamps on', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // Global default is off
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+          // Audited opts in to timestamps even though they are off globally
+          Audited: {
+            fields: {
+              name: text(),
+            },
+            db: { timestamps: true },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      const userBlock = schema.slice(
+        schema.indexOf('model User {'),
+        schema.indexOf('model Audited {'),
+      )
+      expect(userBlock).not.toContain('createdAt')
+      expect(userBlock).not.toContain('updatedAt')
+
+      const auditedBlock = schema.slice(schema.indexOf('model Audited {'))
+      expect(auditedBlock).toContain('createdAt DateTime @default(now())')
+      expect(auditedBlock).toContain('updatedAt DateTime @default(now()) @updatedAt')
+    })
+
+    it('should not duplicate a declared createdAt when timestamps are enabled (no P1012)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              // List declares its own createdAt — auto column must be skipped
+              createdAt: timestamp(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Exactly one createdAt column (the declared one), no duplicate
+      const createdAtCount = schema.match(/^\s*createdAt\s/gm)?.length
+      expect(createdAtCount).toBe(1)
+      // The declared field maps to a plain DateTime?, not the auto @default(now())
+      expect(schema).toContain('createdAt    DateTime?')
+      expect(schema).not.toContain('createdAt DateTime @default(now())')
+      // updatedAt is not declared, so the auto column is still emitted
       expect(schema).toContain('updatedAt DateTime @default(now()) @updatedAt')
+    })
+
+    it('should not duplicate declared createdAt and updatedAt when timestamps are enabled', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          timestamps: true,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              createdAt: timestamp(),
+              updatedAt: timestamp(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema.match(/^\s*createdAt\s/gm)?.length).toBe(1)
+      expect(schema.match(/^\s*updatedAt\s/gm)?.length).toBe(1)
+      // Neither auto column is emitted (both declared)
+      expect(schema).not.toContain('createdAt DateTime @default(now())')
+      expect(schema).not.toContain('updatedAt DateTime @default(now()) @updatedAt')
     })
 
     it('should handle empty lists config', () => {
@@ -815,6 +995,267 @@ describe('Prisma Schema Generator', () => {
       // Should not have index
       expect(schema).not.toContain('@@index([authorId])')
       expect(schema).not.toContain('@@unique([authorId])')
+    })
+
+    it('should generate @@map for a list-level db.map', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { map: 'AuthUser' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('model AuthUser {')
+      expect(schema).toContain('@@map("AuthUser")')
+    })
+
+    it('should not generate @@map when no list-level db.map is set', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('@@map')
+    })
+
+    it('should generate @@schema for a list-level db.schema', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@schema("auth")')
+    })
+
+    it('should enable multiSchema preview feature and datasource schemas array', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'public' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+    })
+
+    it('should emit @@map and @@schema together for an adopted auth table', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { map: 'AuthUser', schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@map("AuthUser")')
+      expect(schema).toContain('@@schema("auth")')
+    })
+
+    it('should not enable multiSchema or emit @@schema when no schemas are configured (greenfield default unchanged)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('previewFeatures')
+      expect(schema).not.toContain('multiSchema')
+      expect(schema).not.toContain('schemas')
+      expect(schema).not.toContain('@@schema')
+    })
+
+    it('defaults un-schemad models to @@schema("public") in multi-schema mode (mix of schemad and un-schemad lists)', () => {
+      // In multi-schema mode (db.schemas set) Prisma requires every model to
+      // declare an @@schema or it errors with P1012. A list WITH db.schema uses
+      // its own schema; a list WITHOUT db.schema must default to "public"
+      // (mirroring the enum default from #504). See issue #513.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          // Explicit schema → used as-is
+          AuthUser: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'auth' },
+          },
+          // No db.schema → must default to public (P1012 footgun)
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The schema'd list keeps its own schema
+      const authUserBlock = schema.slice(
+        schema.indexOf('model AuthUser {'),
+        schema.indexOf('model Post {'),
+      )
+      expect(authUserBlock).toContain('@@schema("auth")')
+
+      // The un-schema'd list defaults to public
+      const postBlock = schema.slice(schema.indexOf('model Post {'))
+      expect(postBlock).toContain('@@schema("public")')
+
+      // Every model carries an @@schema — no model is left without one (no P1012)
+      const modelCount = schema.match(/^model \w+ \{/gm)?.length ?? 0
+      const modelSchemaCount = schema.match(/^\s*@@schema\(/gm)?.length ?? 0
+      expect(modelCount).toBe(2)
+      expect(modelSchemaCount).toBe(modelCount)
+    })
+
+    it('emits no @@schema on models in greenfield mode (no db.schemas)', () => {
+      // Greenfield output must be unchanged: a plain list with no db.schemas
+      // configured emits no @@schema on its model.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('model Post {')
+      expect(schema).not.toContain('@@schema')
+    })
+
+    it('models an existing auth-schema better-auth install so it diffs clean (adoption)', () => {
+      // Mirrors what authPlugin({ schema: 'auth', user: { modelName: 'AuthUser' }, ... })
+      // produces after init + beforeGenerate: custom list keys pinned to their
+      // live table names (@@map), placed in the `auth` schema (@@schema), with the
+      // app's own `public.User` left alone. Generating this models the existing
+      // tables for runtime/types without introducing any new/renamed tables — a
+      // clean diff against the live database.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          // App's own domain User stays in public
+          User: {
+            fields: {
+              subjectId: text({ validation: { isRequired: true } }),
+            },
+            db: { schema: 'public' },
+          },
+          AuthUser: {
+            fields: {
+              name: text({ validation: { isRequired: true } }),
+              email: text({ validation: { isRequired: true }, isIndexed: 'unique' }),
+              sessions: relationship({ ref: 'AuthSession.user', many: true }),
+            },
+            db: { map: 'AuthUser', schema: 'auth' },
+          },
+          AuthSession: {
+            fields: {
+              token: text({ validation: { isRequired: true }, isIndexed: 'unique' }),
+              user: relationship({
+                ref: 'AuthUser.sessions',
+                db: { foreignKey: { map: 'user_id' } },
+              }),
+            },
+            db: { map: 'AuthSession', schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Multi-schema datasource is valid: preview feature + schemas array
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+
+      // Auth models pinned to their live table names, in the auth schema
+      expect(schema).toContain('model AuthUser {')
+      expect(schema).toContain('@@map("AuthUser")')
+      expect(schema).toContain('model AuthSession {')
+      expect(schema).toContain('@@map("AuthSession")')
+
+      // App User stays in public, untouched
+      expect(schema).toContain('model User {')
+
+      // Every model carries an @@schema (Prisma multi-schema requirement) and the
+      // auth models are placed in `auth`, the app User in `public`.
+      const authUserBlock = schema.slice(schema.indexOf('model AuthUser {'))
+      expect(authUserBlock).toContain('@@schema("auth")')
+
+      // The session FK column matches the live column name (adoption)
+      expect(schema).toContain('@map("user_id")')
     })
 
     it('should generate indexes for multiple foreign keys', () => {
@@ -1536,6 +1977,136 @@ describe('Prisma Schema Generator', () => {
       }).not.toThrow()
     })
 
+    it('should rename the enum block and the column reference with db.enumName', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          AccountNote: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Open', value: 'open' },
+                  { label: 'Closed', value: 'closed' },
+                ],
+                db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The enum block uses the custom name
+      expect(schema).toContain('enum AccountNoteStatusType {')
+      expect(schema).toContain('  open')
+      expect(schema).toContain('  closed')
+      // The column references the custom enum name
+      expect(schema).toMatch(/status\s+AccountNoteStatusType/)
+      // The derived name is not emitted anywhere
+      expect(schema).not.toContain('enum AccountNoteStatus {')
+      expect(schema).not.toMatch(/status\s+AccountNoteStatus\b/)
+    })
+
+    it('should emit String? @default("X") for optional string select with default + db.isNullable', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { isNullable: true },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/status\s+String\? @default\("draft"\)/)
+    })
+
+    it('should emit <Enum>? @default(X) for optional enum select with default + db.isNullable', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { type: 'enum', isNullable: true },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('enum PostStatus {')
+      expect(schema).toMatch(/status\s+PostStatus\? @default\(draft\)/)
+    })
+
+    it('should keep optional-select-with-default NOT NULL without db.isNullable (string)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Unchanged behaviour: a default makes the column NOT NULL
+      expect(schema).toMatch(/status\s+String @default\("draft"\)/)
+      expect(schema).not.toMatch(/status\s+String\?/)
+    })
+
+    it('should keep optional-select-with-default NOT NULL without db.isNullable (enum)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                defaultValue: 'draft',
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/status\s+PostStatus @default\(draft\)/)
+      expect(schema).not.toMatch(/status\s+PostStatus\?/)
+    })
+
     it('should generate enum field with @map modifier', () => {
       const config: OpenSaasConfig = {
         db: { provider: 'sqlite' },
@@ -1558,6 +2129,107 @@ describe('Prisma Schema Generator', () => {
 
       expect(schema).toContain('@map("post_status")')
       expect(schema).toContain('enum PostStatus {')
+    })
+
+    it('should declare @@schema on generated enum blocks in multi-schema mode (P1012 fix)', () => {
+      // Multi-schema mode (db.schemas) requires every model AND every enum to
+      // declare an @@schema, or Prisma rejects the schema with P1012. Before this
+      // fix only models carried @@schema, so a db.schemas + enum-select config
+      // produced an invalid schema.
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Datasource is multi-schema
+      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+
+      // The enum block exists and carries @@schema (default public — the list
+      // declares no schema of its own). This is the fix: previously the enum had
+      // no @@schema, which Prisma rejects with P1012 in multi-schema mode.
+      const enumBlock = schema.slice(
+        schema.indexOf('enum PostStatus {'),
+        schema.indexOf('}', schema.indexOf('enum PostStatus {')) + 1,
+      )
+      expect(enumBlock).toContain('@@schema("public")')
+    })
+
+    it('should place an enum in its owning model schema (enum inherits list db.schema)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          AuthUser: {
+            fields: {
+              name: text(),
+              role: select({
+                options: [
+                  { label: 'Admin', value: 'admin' },
+                  { label: 'Member', value: 'member' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+            db: { schema: 'auth' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The enum follows its owning model into the `auth` schema, not `public`.
+      const enumBlock = schema.slice(
+        schema.indexOf('enum AuthUserRole {'),
+        schema.indexOf('}', schema.indexOf('enum AuthUserRole {')) + 1,
+      )
+      expect(enumBlock).toContain('@@schema("auth")')
+    })
+
+    it('should NOT add @@schema to enum blocks in greenfield mode (no db.schemas)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [
+                  { label: 'Draft', value: 'draft' },
+                  { label: 'Published', value: 'published' },
+                ],
+                db: { type: 'enum' },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Enum block is generated...
+      expect(schema).toContain('enum PostStatus {')
+      // ...but greenfield output is unchanged — no @@schema anywhere.
+      expect(schema).not.toContain('@@schema')
     })
 
     it('should match snapshot for enum select field', () => {
@@ -1585,7 +2257,7 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toMatchSnapshot()
     })
 
-    it('should generate singleton model with Int @id @default(1)', () => {
+    it('should generate singleton model with bare Int @id (no @default)', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -1603,7 +2275,10 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      expect(schema).toContain('id        Int      @id @default(1)')
+      // Singleton ids are bare `id Int @id` to match Keystone 6 (see ADR-0004),
+      // which emits no column default for singleton ids.
+      expect(schema).toContain('id        Int      @id\n')
+      expect(schema).not.toContain('@default(1)')
       expect(schema).not.toContain('id        String   @id @default(cuid())')
       expect(schema).toMatchSnapshot()
     })
@@ -1624,8 +2299,426 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
+      // Non-singleton ids are unaffected by the singleton bare-id change.
       expect(schema).toContain('id        String   @id @default(cuid())')
-      expect(schema).not.toContain('id        Int      @id @default(1)')
+      expect(schema).not.toContain('id        Int      @id')
     })
+  })
+
+  describe('field defaultValue → @default(...)', () => {
+    it('emits a bare numeric @default for integer fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Widget: {
+            fields: {
+              quota: integer({ defaultValue: 3550 }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/quota\s+Int\?\s+@default\(3550\)/)
+      expect(schema).not.toContain('@default("3550")')
+    })
+
+    it('keeps the nullable ? independent of the integer default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Widget: {
+            fields: {
+              // Required → non-nullable, but still carries a default
+              required: integer({ validation: { isRequired: true }, defaultValue: 1 }),
+              // Optional → nullable, also carries a default
+              optional: integer({ defaultValue: 2 }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Required keeps no `?` but still gets @default
+      expect(schema).toMatch(/required\s+Int\s+@default\(1\)/)
+      // Optional keeps its `?` and gets @default
+      expect(schema).toMatch(/optional\s+Int\?\s+@default\(2\)/)
+    })
+
+    it('emits a quoted string @default for text fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Account: {
+            fields: {
+              status: text({ defaultValue: 'PLEASE_UPDATE' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("PLEASE_UPDATE")')
+    })
+
+    it('emits Keystone JSON-literal @default for json array fields', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              numbers: json({ defaultValue: [1, 2, 3, 4, 5] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatch(/numbers\s+Json\?\s+@default\("\[1,2,3,4,5\]"\)/)
+    })
+
+    it('emits @default("[]") for an empty json array default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              tags: json({ defaultValue: [] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("[]")')
+    })
+
+    it('emits @default("{}") for an empty json object default', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Setting: {
+            fields: {
+              meta: json({ defaultValue: {} }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@default("{}")')
+    })
+
+    it('emits no @default for fields without a defaultValue', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Plain: {
+            fields: {
+              name: text(),
+              count: integer(),
+              data: json(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // None of these scalar fields should carry a @default(...)
+      expect(schema).toMatch(/name\s+String\?\s*$/m)
+      expect(schema).toMatch(/count\s+Int\?\s*$/m)
+      expect(schema).toMatch(/data\s+Json\?\s*$/m)
+      expect(schema).not.toContain('@default("')
+      // Only the system-field defaults (id/createdAt/updatedAt) remain
+      expect(schema).not.toMatch(/name\s+String\?\s+@default/)
+      expect(schema).not.toMatch(/count\s+Int\?\s+@default/)
+      expect(schema).not.toMatch(/data\s+Json\?\s+@default/)
+    })
+
+    it('generates a representative multi-field model with mixed defaults', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Config: {
+            fields: {
+              label: text({ defaultValue: 'PLEASE_UPDATE' }),
+              retries: integer({ defaultValue: 3 }),
+              limits: json({ defaultValue: [1, 2, 3, 4, 5] }),
+              empty: json({ defaultValue: [] }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toMatchSnapshot()
+    })
+  })
+
+  describe('Keystone-compat mode (db.keystoneCompat)', () => {
+    // A representative model exercising every branch of the empty-string rule:
+    // required text (compat default applies), required text with an explicit
+    // default (explicit wins), optional/nullable text (untouched), and non-text
+    // fields (untouched). The same lists are generated with the flag off below
+    // so the on/off contrast is part of the proof.
+    const representativeLists: OpenSaasConfig['lists'] = {
+      Account: {
+        fields: {
+          // Required, no default → @default("") under keystoneCompat
+          name: text({ validation: { isRequired: true } }),
+          // Required, explicit default → explicit value wins
+          status: text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' }),
+          // Optional → nullable → never gets the compat default
+          nickname: text(),
+          // Explicitly nullable despite isRequired → never gets the compat default
+          note: text({ validation: { isRequired: true }, db: { isNullable: true } }),
+          // Non-text fields are unaffected by the flag
+          loginCount: integer({ validation: { isRequired: true } }),
+          isActive: checkbox({ defaultValue: true }),
+        },
+      },
+    }
+
+    it('emits @default("") for non-null text without an explicit default (snapshot)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql', keystoneCompat: true },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The migrating-developer guarantee: required text reaches Schema parity
+      // with Keystone's implicit empty-string default.
+      expect(schema).toMatch(/name\s+String\s+@default\(""\)/)
+      // Explicit default still wins over the compat empty-string default.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // Nullable text is untouched (no default at all).
+      expect(schema).toMatch(/nickname\s+String\?\s*$/m)
+      expect(schema).toMatch(/note\s+String\?\s*$/m)
+      // Non-text fields keep their own behaviour.
+      expect(schema).toMatch(/loginCount\s+Int\s*$/m)
+      expect(schema).toMatch(/isActive\s+Boolean\s+@default\(true\)/)
+
+      expect(schema).toMatchSnapshot()
+    })
+
+    it('emits no implicit text default when keystoneCompat is off (default)', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: representativeLists,
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Greenfield default: required text stays clean — String with no default.
+      expect(schema).toMatch(/name\s+String\s*$/m)
+      expect(schema).not.toMatch(/name\s+String\s+@default/)
+      // Explicit defaults are still honoured regardless of the flag.
+      expect(schema).toMatch(/status\s+String\s+@default\("PLEASE_UPDATE"\)/)
+      // The only empty-string default present is the explicit none — i.e. there
+      // is no @default("") anywhere when the flag is off.
+      expect(schema).not.toContain('@default("")')
+    })
+  })
+})
+
+describe('resolveListTimestamps', () => {
+  // Minimal builders. The predicate only reads `db` and the keys of `fields`, so a
+  // structurally-minimal list/db is sufficient and keeps these tests focused.
+  const dbWith = (timestamps?: boolean): DatabaseConfig => ({
+    provider: 'sqlite',
+    timestamps,
+    prismaClientConstructor: (PrismaClientClass) => new PrismaClientClass(),
+  })
+
+  const listWith = (
+    fields: ListConfig<TypeInfo>['fields'],
+    timestamps?: boolean,
+  ): ListConfig<TypeInfo> => ({
+    fields,
+    db: timestamps === undefined ? undefined : { timestamps },
+  })
+
+  it('is off by default (no global, no per-list)', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }), dbWith())).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('is on for every list when the global flag is true', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }), dbWith(true))).toEqual({
+      createdAt: true,
+      updatedAt: true,
+    })
+  })
+
+  it('per-list false overrides global true', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }, false), dbWith(true))).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('per-list true overrides global off', () => {
+    expect(resolveListTimestamps(listWith({ name: text() }, true), dbWith())).toEqual({
+      createdAt: true,
+      updatedAt: true,
+    })
+  })
+
+  it('skips a declared createdAt when enabled (no duplicate)', () => {
+    expect(resolveListTimestamps(listWith({ createdAt: timestamp() }, true), dbWith())).toEqual({
+      createdAt: false,
+      updatedAt: true,
+    })
+  })
+
+  it('skips both declared timestamps when enabled', () => {
+    expect(
+      resolveListTimestamps(
+        listWith({ createdAt: timestamp(), updatedAt: timestamp() }, true),
+        dbWith(),
+      ),
+    ).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+
+  it('does not skip declared timestamps when timestamps are off', () => {
+    // When off, declared fields are emitted by the regular field loop, so the
+    // predicate reports "no auto column" regardless of what the list declares.
+    expect(
+      resolveListTimestamps(listWith({ createdAt: timestamp() }, false), dbWith(true)),
+    ).toEqual({
+      createdAt: false,
+      updatedAt: false,
+    })
+  })
+})
+
+describe('Multi-column field emission', () => {
+  // A field that emits several physical columns through getPrismaColumns (the
+  // contract storage image()/file() use in Keystone-parity mode — see
+  // ADR-0006). Built inline so the generator test stays self-contained.
+  function multiColumnField(
+    columns: Array<{ name: string; type: string; modifiers?: string; map?: string }>,
+  ): FieldConfig {
+    return {
+      type: 'multiColumn',
+      getPrismaColumns: () => columns,
+      // A multi-column field still reports a logical TS type; the generator does
+      // not call getPrismaType when getPrismaColumns returns columns.
+      getTypeScriptType: () => ({ type: 'unknown', optional: true }),
+    } as unknown as FieldConfig
+  }
+
+  it('emits one Prisma line per column with @map names', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Teacher: {
+          fields: {
+            name: text(),
+            image: multiColumnField([
+              { name: 'image_url', type: 'String', modifiers: '?', map: 'image_url' },
+              { name: 'image_width', type: 'Int', modifiers: '?', map: 'image_width' },
+              { name: 'image_height', type: 'Int', modifiers: '?', map: 'image_height' },
+              { name: 'image_filesize', type: 'Int', modifiers: '?', map: 'image_filesize' },
+              {
+                name: 'image_contentType',
+                type: 'String',
+                modifiers: '?',
+                map: 'image_contentType',
+              },
+              {
+                name: 'image_contentDisposition',
+                type: 'String',
+                modifiers: '?',
+                map: 'image_contentDisposition',
+              },
+              { name: 'image_pathname', type: 'String', modifiers: '?', map: 'image_pathname' },
+            ]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+
+    // The single logical field never appears as its own column.
+    expect(schema).not.toMatch(/^\s*image\s+Json/m)
+    // Seven per-part columns are emitted, each nullable and @map-ped onto its
+    // physical Keystone column.
+    expect(schema).toContain('image_url    String? @map("image_url")')
+    expect(schema).toContain('image_width  Int? @map("image_width")')
+    expect(schema).toContain('image_height Int? @map("image_height")')
+    expect(schema).toContain('image_filesize Int? @map("image_filesize")')
+    expect(schema).toContain('image_contentType String? @map("image_contentType")')
+    expect(schema).toContain('image_contentDisposition String? @map("image_contentDisposition")')
+    expect(schema).toContain('image_pathname String? @map("image_pathname")')
+  })
+
+  it('honours a custom physical column name via the descriptor map', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Teacher: {
+          fields: {
+            avatar: multiColumnField([
+              { name: 'avatarUrl', type: 'String', modifiers: '?', map: 'avatar_url' },
+            ]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('avatarUrl    String? @map("avatar_url")')
+  })
+
+  it('emits a plain column line when no map is supplied', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Doc: {
+          fields: {
+            fileUrl: multiColumnField([{ name: 'fileUrl', type: 'String', modifiers: '?' }]),
+          },
+        },
+      },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('fileUrl      String?')
+    expect(schema).not.toContain('@map')
+  })
+
+  it('falls back to single-column getPrismaType when getPrismaColumns returns nothing', () => {
+    // A field exposing getPrismaColumns that returns undefined must behave
+    // exactly like a normal single-column field.
+    const field = {
+      type: 'maybeMulti',
+      getPrismaColumns: () => undefined,
+      getPrismaType: () => ({ type: 'String', modifiers: '?' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    } as unknown as FieldConfig
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: { Thing: { fields: { value: field } } },
+    }
+
+    const schema = generatePrismaSchema(config)
+    expect(schema).toContain('value        String?')
   })
 })

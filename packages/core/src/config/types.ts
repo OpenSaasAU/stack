@@ -462,12 +462,16 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param fieldName - The name of the field (for generating modifiers)
    * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
    * @param listName - Optional list name (used for generating enum type names)
+   * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
+   *   When true, non-null text columns without an explicit defaultValue emit
+   *   `@default("")` to match Keystone 6's implicit empty-string text default.
    * @returns Prisma type string, optional modifiers, and optional enum values
    */
   getPrismaType?: (
     fieldName: string,
     provider?: string,
     listName?: string,
+    keystoneCompat?: boolean,
   ) => {
     type: string
     modifiers?: string
@@ -506,6 +510,72 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      */
     typeOnly?: boolean
   }>
+  /**
+   * Multi-column Prisma emission.
+   *
+   * Most scalar fields back a single Prisma column via {@link getPrismaType}.
+   * A field that maps onto SEVERAL physical columns (e.g. the storage
+   * `image()`/`file()` fields in multi-column / Keystone-parity mode — see
+   * ADR-0006) implements this instead: it returns one descriptor per column,
+   * each becoming its own line in the generated model. When present, the
+   * generator emits these lines and skips the single-column `getPrismaType`
+   * path. The field itself owns the column layout — the generator stays a
+   * neutral coordinator (no field-type switches), mirroring how relationship
+   * fields emit FK + relation lines through `getPrismaRelation`.
+   *
+   * @param fieldName - The field's config key (used to derive default column names)
+   * @returns One descriptor per physical column, or `undefined` to fall back to
+   *   the single-column `getPrismaType` path.
+   */
+  getPrismaColumns?: (fieldName: string) => MultiColumnPrismaResult[] | undefined
+  /**
+   * The physical Prisma column names this field owns when it spans multiple
+   * columns (see {@link getPrismaColumns}). The read path uses this to strip the
+   * raw per-part columns from query results so only the assembled logical value
+   * (produced by {@link assembleColumns}) is exposed.
+   *
+   * @param fieldName - The field's config key
+   */
+  getColumnNames?: (fieldName: string) => string[]
+  /**
+   * Assemble the field's logical value from a database row's per-part columns
+   * (the read direction of a multi-column field). Pure transform — called by the
+   * read pipeline before field visibility. Receives the full row so it can read
+   * its sibling columns by name.
+   *
+   * @param fieldName - The field's config key
+   * @param row - The raw database row (contains the per-part columns)
+   */
+  assembleColumns?: (fieldName: string, row: Record<string, unknown>) => unknown
+  /**
+   * Split the field's logical value into per-part columns for writing (the write
+   * direction of a multi-column field). Pure transform — called by the write
+   * pipeline after `resolveInput`; the returned record is merged into the write
+   * payload in place of the single field key.
+   *
+   * @param fieldName - The field's config key
+   * @param value - The resolved logical value (metadata, or `null` to clear)
+   */
+  splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
+}
+
+/**
+ * A single physical column contributed by a multi-column field
+ * (see {@link BaseFieldConfig.getPrismaColumns}).
+ */
+export type MultiColumnPrismaResult = {
+  /** The Prisma model field name (the property the column is declared as). */
+  name: string
+  /** The Prisma scalar type, e.g. `'String'` or `'Int'`. */
+  type: string
+  /**
+   * Field modifiers, e.g. `'?'` for nullable. A leading `'?'` attaches to the
+   * type; anything after it is treated as trailing attributes (matching the
+   * single-column `getPrismaType` modifier convention).
+   */
+  modifiers?: string
+  /** Physical column name for the `@map` attribute, when it differs from `name`. */
+  map?: string
 }
 
 export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
@@ -587,6 +657,46 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
      */
     type?: 'string' | 'enum'
     map?: string
+    /**
+     * Force the generated column to be nullable (`?`) even when a `defaultValue`
+     * is present. By default a select with a `defaultValue` generates NOT NULL;
+     * set this to `true` for an explicit opt-in to a nullable column with a
+     * default (e.g. `String? @default("X")` or `<Enum>? @default(X)`), so that
+     * a live column containing NULLs migrates without a NOT NULL failure.
+     *
+     * @default undefined (NOT NULL when a default is present — unchanged behaviour)
+     *
+     * @example
+     * ```typescript
+     * // Optional select with a default, but keep the column nullable
+     * status: select({
+     *   options: [{ label: 'Draft', value: 'draft' }],
+     *   defaultValue: 'draft',
+     *   db: { isNullable: true },
+     * })
+     * // Generates: String? @default("draft")
+     * ```
+     */
+    isNullable?: boolean
+    /**
+     * Override the generated Prisma enum type name for native-enum selects
+     * (only applies when `type: 'enum'`). By default the enum is named
+     * `<List><Field>` (e.g. `AccountNoteStatus`); set this to match a live DB
+     * enum type whose name differs (e.g. Keystone's `…Type` suffix).
+     *
+     * The custom name is applied to both the generated `enum` block and every
+     * reference to it in the owning model.
+     *
+     * @example
+     * ```typescript
+     * status: select({
+     *   options: [{ label: 'Open', value: 'open' }],
+     *   db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+     * })
+     * // Generates: enum AccountNoteStatusType { ... } and the column references it
+     * ```
+     */
+    enumName?: string
   }
   validation?: {
     isRequired?: boolean
@@ -1200,6 +1310,65 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   }
   hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
+   * Database configuration for this list (model level)
+   */
+  db?: {
+    /**
+     * Custom database table name.
+     * Adds a `@@map` attribute to the generated Prisma model.
+     *
+     * Useful when the Prisma model name (the list key) must differ from the
+     * physical table name — e.g. adopting an existing better-auth installation
+     * whose tables were created under a different name.
+     *
+     * @example
+     * ```typescript
+     * AuthUser: list({ fields: { ... }, db: { map: 'user' } })
+     * // Generates: model AuthUser { ... @@map("user") }
+     * ```
+     */
+    map?: string
+    /**
+     * Database schema for this model (Postgres multi-schema).
+     * Adds a `@@schema` attribute to the generated Prisma model.
+     *
+     * Requires the schema to be listed in the datasource `schemas` array (see
+     * {@link DatabaseConfig.schemas}) and the `multiSchema` preview feature,
+     * both of which the generator emits automatically when `db.schemas` is set.
+     *
+     * Useful when adopting an existing installation whose tables live in a
+     * non-`public` schema — e.g. a separate-schema better-auth layout.
+     *
+     * @example
+     * ```typescript
+     * AuthUser: list({ fields: { ... }, db: { schema: 'auth' } })
+     * // Generates: model AuthUser { ... @@schema("auth") }
+     * ```
+     */
+    schema?: string
+    /**
+     * Per-list override for auto-injected `createdAt`/`updatedAt` timestamp columns.
+     *
+     * Takes precedence over the global `db.timestamps` setting:
+     * - `true` forces auto-timestamps on for this list, even when the global default is off.
+     * - `false` forces them off for this list, even when enabled globally.
+     * - `undefined` (the default) falls back to the global `db.timestamps` setting.
+     *
+     * When timestamps resolve to on but the list already declares its own `createdAt`/
+     * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
+     * never sees a duplicate (`P1012`).
+     *
+     * @example Opt a single list out of timestamps even when enabled globally
+     * ```typescript
+     * Production: list({
+     *   fields: { name: text() },
+     *   db: { timestamps: false },
+     * })
+     * ```
+     */
+    timestamps?: boolean
+  }
+  /**
    * MCP server configuration for this list
    */
   mcp?: ListMcpConfig
@@ -1233,6 +1402,68 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
          */
         autoCreate?: boolean
       }
+  /**
+   * UI configuration for this list (admin interface).
+   *
+   * Mirrors Keystone's list-level `ui` block. Currently only `listView`
+   * defaults (columns + sort) are supported.
+   */
+  ui?: ListUIConfig
+}
+
+/**
+ * List-level UI configuration for the admin interface.
+ *
+ * Mirrors Keystone's `ui` block on a list. Only the list-view defaults
+ * (column selection/order and default sort) are supported today; other
+ * Keystone concerns (`label`, `labelField`, `description`) are intentionally
+ * deferred as they cover different concerns (navigation text and
+ * relationship-picker labels rather than list-view defaults).
+ */
+export type ListUIConfig = {
+  /**
+   * Default list-view (table) configuration for this list, mirroring
+   * Keystone's `ui.listView`.
+   */
+  listView?: ListViewUIConfig
+}
+
+/**
+ * Default list-view (table) configuration for a list, mirroring Keystone's
+ * `ui.listView`.
+ *
+ * When omitted, the admin UI falls back to its existing defaults: every
+ * non-system field is shown as a column and no default sort is applied.
+ */
+export type ListViewUIConfig = {
+  /**
+   * The fields to show as columns in the list table, in order.
+   *
+   * Drives both the column **selection** and their **order**. When omitted,
+   * all non-system fields are shown (current default behaviour).
+   *
+   * @example
+   * ```typescript
+   * ui: { listView: { initialColumns: ['title', 'status', 'author'] } }
+   * ```
+   */
+  initialColumns?: string[]
+  /**
+   * The default sort applied to the list table.
+   *
+   * When omitted, no default sort is applied (current default behaviour).
+   *
+   * @example
+   * ```typescript
+   * ui: { listView: { initialSort: { field: 'createdAt', direction: 'desc' } } }
+   * ```
+   */
+  initialSort?: {
+    /** The field to sort by. Must be a field defined on the list. */
+    field: string
+    /** The sort direction. */
+    direction: 'asc' | 'desc'
+  }
 }
 
 /**
@@ -1331,6 +1562,86 @@ export type DatabaseConfig = {
    * ```
    */
   joinTableNaming?: 'prisma' | 'keystone'
+  /**
+   * Postgres multi-schema support.
+   *
+   * When set, the generator enables Prisma's `multiSchema` preview feature and
+   * emits the `schemas = [...]` array on the datasource block. Combine with a
+   * per-list `db.schema` (see {@link ListConfig}) to place models in a specific
+   * schema via `@@schema(...)`.
+   *
+   * Only applies to the `postgresql` provider. When unset, the generated schema
+   * is unchanged (single `public` schema, no `@@schema` attributes).
+   *
+   * @example Separate `auth` schema alongside the default `public`
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   schemas: ['public', 'auth'],
+   *   // ...
+   * }
+   * ```
+   */
+  schemas?: string[]
+  /**
+   * Auto-inject `createdAt`/`updatedAt` timestamp columns into every generated model.
+   *
+   * Default: `false`. The generator does NOT add timestamps automatically — a list
+   * opts in either by declaring the fields itself or by enabling this flag. This matches
+   * Keystone 6, which never adds timestamps automatically, and keeps Keystone → stack
+   * migrations non-destructive (Schema parity). See ADR-0004.
+   *
+   * When `true`, every list receives:
+   * ```prisma
+   * createdAt DateTime @default(now())
+   * updatedAt DateTime @default(now()) @updatedAt
+   * ```
+   *
+   * A per-list `db.timestamps` override takes precedence over this global setting. When
+   * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
+   * field, the auto column is skipped for the declared field(s) so Prisma never sees a
+   * duplicate (`P1012`).
+   *
+   * @default false
+   *
+   * @example Re-enable auto-timestamps globally
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   timestamps: true,
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  timestamps?: boolean
+  /**
+   * Opt into Keystone-compat mode for generated schema defaults.
+   *
+   * Keystone 6 gives every non-null text column an implicit empty-string
+   * default. With `keystoneCompat: true`, the generator mirrors that: any
+   * non-null `text()` column that has no explicit `defaultValue` emits
+   * `@default("")`, so a migrating project reaches Schema parity without
+   * hand-setting `defaultValue: ''` on dozens of columns.
+   *
+   * Stays opt-in (default `false`) because a greenfield project would not want
+   * implicit empty-string text defaults cluttering its schema. The flag never
+   * affects nullable text, fields with an explicit `defaultValue`, or any
+   * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
+   *
+   * @default false
+   *
+   * @example Reach Schema parity when migrating from Keystone
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   // ... rest of config
+   * }
+   * ```
+   *
+   * @see ADR-0004 (Keystone-compatible generator defaults)
+   */
+  keystoneCompat?: boolean
   /**
    * Optional function to extend or modify the generated Prisma schema
    * Receives the generated schema as a string and should return the modified schema
@@ -1821,6 +2132,34 @@ export type Plugin = {
  * Main configuration type
  * Using interface instead of type to allow module augmentation
  */
+/**
+ * Configurable generator output locations.
+ *
+ * Lets a project relocate the generated Prisma schema and the `.opensaas`
+ * bundle directory. Paths are interpreted relative to the project root.
+ *
+ * @example
+ * ```typescript
+ * output: {
+ *   prismaSchema: 'prisma-opensaas/schema.prisma',
+ *   opensaasDir: '.opensaas',
+ * }
+ * ```
+ */
+export interface OutputConfig {
+  /**
+   * Path to the generated Prisma schema file.
+   * @default "prisma/schema.prisma"
+   */
+  prismaSchema?: string
+  /**
+   * Directory for the generated `.opensaas` bundle (types, lists, context,
+   * plugin-types, prisma-extensions, and the patched Prisma client).
+   * @default ".opensaas"
+   */
+  opensaasDir?: string
+}
+
 export interface OpenSaasConfig {
   db: DatabaseConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
@@ -1841,6 +2180,20 @@ export interface OpenSaasConfig {
    * @default ".opensaas"
    */
   opensaasPath?: string
+  /**
+   * Relocate the generator's output so `opensaas generate` can coexist with an
+   * existing `prisma/` directory (e.g. during a Keystone → stack migration).
+   *
+   * Both fields are resolved relative to the project root (the directory the
+   * CLI runs in). When omitted, defaults are unchanged: the schema is written to
+   * `prisma/schema.prisma` and the `.opensaas` bundle to `.opensaas/`.
+   *
+   * The generated files' cross-references follow these locations — `context.ts`
+   * imports the generated types/lists from the resolved `.opensaas` dir, and the
+   * top-level `prisma.config.ts` points at the configured schema path so the
+   * `prisma` CLI keeps working.
+   */
+  output?: OutputConfig
   /**
    * Plugins to extend the stack
    * Executed in array order (or dependency order if dependencies specified)

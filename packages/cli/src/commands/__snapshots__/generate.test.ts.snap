@@ -12,10 +12,10 @@ exports[`Generate Command Integration > Generator Integration > should generate 
 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client'
-import type { Context } from './types'
-import { prismaExtensions } from './prisma-extensions'
-import configOrPromise from '../opensaas.config'
+import { PrismaClient } from './prisma-client/client.ts'
+import type { Context } from './types.ts'
+import { prismaExtensions } from './prisma-extensions.ts'
+import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)
@@ -134,8 +134,6 @@ model User {
   id        String   @id @default(cuid())
   name         String
   email        String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -148,8 +146,8 @@ exports[`Generate Command Integration > Generator Integration > should generate 
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -179,8 +177,6 @@ export type UserOutput = {
   id: string
   name: string
   email: string
-  createdAt: Date
-  updatedAt: Date
 } & UserVirtualFields
 
 export type User = UserOutput
@@ -390,8 +386,6 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -452,8 +446,8 @@ exports[`Generate Command Integration > Generator Integration > should handle em
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
 import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client'
-import type { PluginServices } from './plugin-types'
+import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { PluginServices } from './plugin-types.ts'
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -507,8 +501,6 @@ datasource db {
 model Post {
   id        String   @id @default(cuid())
   title        String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;
@@ -526,8 +518,6 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
 }
 "
 `;

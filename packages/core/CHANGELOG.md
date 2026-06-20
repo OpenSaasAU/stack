@@ -1,5 +1,378 @@
 # @opensaas/stack-core
 
+## 0.24.0
+
+### Minor Changes
+
+- [#552](https://github.com/OpenSaasAU/stack/pull/552) [`66496b4`](https://github.com/OpenSaasAU/stack/commit/66496b487bae61f3cdea26fcfcaf605caaaa5520) Thanks [@borisno2](https://github.com/borisno2)! - Add list-level `ui.listView` config (mirroring Keystone) for default columns and sort
+
+  Lists now support a `ui.listView` block in `opensaas.config.ts` that sets the
+  admin list table's default column selection/order and default sort. Naming
+  mirrors Keystone's `ui.listView` so migrators can map defaults directly.
+
+  ```typescript
+  lists: {
+    Post: list({
+      fields: {
+        title: text(),
+        status: text(),
+        createdAt: timestamp(),
+      },
+      ui: {
+        listView: {
+          // Column selection AND order
+          initialColumns: ['title', 'status'],
+          // Default sort
+          initialSort: { field: 'createdAt', direction: 'desc' },
+        },
+      },
+    }),
+  }
+  ```
+
+  When `ui.listView` is absent, behaviour is unchanged: the table shows all
+  non-system fields and applies no default sort.
+
+## 0.23.0
+
+### Patch Changes
+
+- [#535](https://github.com/OpenSaasAU/stack/pull/535) [`da4ba52`](https://github.com/OpenSaasAU/stack/commit/da4ba529161e2c8702e4c62ae1594e300f32cbb1) Thanks [@borisno2](https://github.com/borisno2)! - context.db findUnique/findMany now warn (once per list+op) when passed an ignored `select` — narrow reads via `include` or a fragment `query`.
+
+## 0.22.0
+
+### Minor Changes
+
+- [#497](https://github.com/OpenSaasAU/stack/pull/497) [`be4181a`](https://github.com/OpenSaasAU/stack/commit/be4181ada3f2d6386052df4d4869ad150d360f89) Thanks [@{](https://github.com/{)! - Derive the auth plugin's Auth lists from the better-auth config
+
+  `authPlugin` now mirrors the better-auth config a developer writes instead of hardcoding the keys `User`/`Session`/`Account`/`Verification`. Per-model `modelName` becomes the OpenSaaS list key (and a table `@@map`), and the `fields` column map becomes per-field `@map`s. The plugin only ever adds/extends its own derived keys, so an app's separate domain `User` is never overwritten. The runtime `getUser`/`getCurrentUser` helpers now resolve the user list key from the configured user model instead of a hardcoded `'user'`.
+
+  Default behaviour (no overrides) is unchanged: the lists are still keyed `User`/`Session`/`Account`/`Verification` with the original field shapes and no `@@map`.
+
+  ```typescript
+  // Adopt existing better-auth tables without a destructive migration
+  authPlugin({
+   modelName: 'AuthUser', fields: { name: 'full_name' } },
+    session: { modelName: 'AuthSession', fields: { userId: 'user_id' } },
+    account: { modelName: 'AuthAccount' },
+    verification: { modelName: 'AuthVerification' },
+  })
+  // -> lists keyed AuthUser/AuthSession/AuthAccount/AuthVerification
+  //    with @@map + column @map matching the live tables
+  ```
+
+  Lists also gain a model-level `db.map` option, which emits a `@@map("...")` on the generated Prisma model so a list key can differ from its physical table name.
+
+- [#498](https://github.com/OpenSaasAU/stack/pull/498) [`dc51f23`](https://github.com/OpenSaasAU/stack/commit/dc51f237323ee53a705c4b9831dd8db85efd9bc1) Thanks [@borisno2](https://github.com/borisno2)! - Add an `output` config block so `opensaas generate` can relocate the generated Prisma schema and `.opensaas` bundle (e.g. to coexist with an existing Keystone `prisma/` during migration)
+
+  Set `output.prismaSchema` and/or `output.opensaasDir` in `opensaas.config.ts` to move where the generator writes. Defaults are unchanged (`prisma/schema.prisma`, `.opensaas/`) when the block is omitted. The generated files' cross-references follow the configured locations: `context.ts`/`prisma-extensions.ts` import `opensaas.config` from the resolved bundle, the Prisma client `generator { output }` points back at the relocated bundle, and the top-level `prisma.config.ts` references the configured schema directory so `prisma` CLI commands keep working.
+
+  The pre-existing top-level `opensaasPath` option is preserved: the effective `.opensaas` bundle directory resolves as `output.opensaasDir` > `opensaasPath` > the default `.opensaas`. Setting `opensaasPath` alone still relocates the bundle through the CLI exactly as before; `output.opensaasDir` overrides it when both are set.
+
+  ```typescript
+  export default config({
+    output: {
+      prismaSchema: 'prisma-opensaas/schema.prisma',
+      opensaasDir: 'generated/opensaas',
+    },
+    db: {
+      /* ... */
+    },
+    lists: {
+      /* ... */
+    },
+  })
+  ```
+
+- [#511](https://github.com/OpenSaasAU/stack/pull/511) [`696f5c0`](https://github.com/OpenSaasAU/stack/commit/696f5c08c37d4a18107e48cb6b360c9492c7425c) Thanks [@borisno2](https://github.com/borisno2)! - Add non-destructive multi-column mode to `image()` / `file()` for adopting an existing Keystone database without dropping columns (ADR-0006).
+
+  Keystone stores an image across seven per-part columns (`_url`, `_width`, `_height`, `_filesize`, `_contentType`, `_contentDisposition`, `_pathname`) and a file across three (`_filename`, `_filesize`, `_url`). By default `image()`/`file()` still back a single `Json?` column (greenfield unchanged). Set `db.columns: 'keystone'` to map the field onto the existing per-part columns in place — assembled into an `ImageMetadata`/`FileMetadata` on read and split back on write — so a migrating project reaches a clean schema diff with no data migration and no re-upload of existing assets.
+
+  ```typescript
+  import { image, file } from '@opensaas/stack-storage/fields'
+
+  fields: {
+    // Maps onto image_url, image_width, … image_pathname in place.
+    avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+
+    // Per-part @map names are configurable for non-default column names.
+    cover: image({
+      storage: 'images',
+      db: { columns: { mode: 'keystone', map: { url: 'cover_link' } } },
+    }),
+
+    resume: file({ storage: 'documents', db: { columns: 'keystone' } }),
+  }
+  ```
+
+  No-re-upload guarantee (both modes): an already-shaped metadata value — or, in multi-column mode, populated columns — is authoritative and never triggers a storage upload; only a `File`-like input uploads.
+
+  Adds a multi-column field-emission contract (`getPrismaColumns`) plus `getColumnNames`/`assembleColumns`/`splitColumns` to the field-authoring surface so any field can map onto several physical columns. The generator emits one `@map`-ped Prisma line per column; reads assemble the logical value from the raw columns and strip them from the result; writes split the logical value back across the columns.
+
+- [#499](https://github.com/OpenSaasAU/stack/pull/499) [`f9e0505`](https://github.com/OpenSaasAU/stack/commit/f9e05053c75c76781751d5d9e5d1ed5cd9be635f) Thanks [@borisno2](https://github.com/borisno2)! - Add opt-in `db.keystoneCompat` mode for Keystone-compatible empty-string text defaults
+
+  When migrating from Keystone 6, every non-null text column carries an implicit empty-string default. Set `db: { keystoneCompat: true }` to mirror that: any non-null `text()` column without an explicit `defaultValue` now generates `String @default("")`, so a migrating schema reaches parity without hand-setting `defaultValue: ''` on dozens of columns.
+
+  The mode is off by default (greenfield schemas stay clean) and never affects nullable text, fields with an explicit `defaultValue`, or any non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      keystoneCompat: true, // non-null text without a default → @default("")
+      prismaClientConstructor: (PrismaClient) => {
+        // ... adapter setup
+      },
+    },
+    lists: {
+      Account: list({
+        fields: {
+          // required text → String @default("")
+          name: text({ validation: { isRequired: true } }),
+          // explicit default still wins → String @default("PLEASE_UPDATE")
+          status: text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' }),
+          // nullable text is untouched → String?
+          bio: text(),
+        },
+      }),
+    },
+  })
+  ```
+
+  See ADR-0004 for the full Keystone-compatible generator defaults.
+
+- [#501](https://github.com/OpenSaasAU/stack/pull/501) [`e30f6a1`](https://github.com/OpenSaasAU/stack/commit/e30f6a1ef69dc65ae68b37539fa74c3f97823cfd) Thanks [@borisno2](https://github.com/borisno2)! - Auto-timestamps are now OFF by default; opt in with `db.timestamps`
+
+  The generator no longer appends `createdAt`/`updatedAt` to every model. This matches
+  Keystone 6 (which never adds them automatically) and keeps Keystone → stack migrations
+  non-destructive. A list opts in either by declaring the fields itself or by enabling the
+  new `db.timestamps` flag. See ADR-0004.
+
+  Note: this changes a long-standing default. Existing apps that relied on auto-injected
+  timestamps should set `db: { timestamps: true }` to keep them.
+
+  Enable globally:
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      timestamps: true, // re-enable auto createdAt/updatedAt for all lists
+      // ...
+    },
+    lists: {
+      /* ... */
+    },
+  })
+  ```
+
+  Override per list (takes precedence over the global setting):
+
+  ```typescript
+  lists: {
+    // Opt this one list out even though timestamps are on globally
+    Production: list({
+      fields: { name: text() },
+      db: { timestamps: false },
+    }),
+    // Opt this one list in even though the global default is off
+    Audited: list({
+      fields: { name: text() },
+      db: { timestamps: true },
+    }),
+  }
+  ```
+
+  When timestamps are enabled and a list already declares its own `createdAt`/`updatedAt`
+  field, the auto column is skipped for the declared field(s) so Prisma never sees a
+  duplicate (`P1012`):
+
+  ```typescript
+  lists: {
+    Post: list({
+      fields: {
+        title: text(),
+        createdAt: timestamp(), // kept as declared; no duplicate auto column
+      },
+    }),
+  }
+  ```
+
+  The decision is exposed as a pure, testable predicate `resolveListTimestamps(listConfig, dbConfig)`
+  from `@opensaas/stack-cli`, and `DatabaseConfig` is now re-exported from `@opensaas/stack-core`.
+
+- [#503](https://github.com/OpenSaasAU/stack/pull/503) [`f471e3c`](https://github.com/OpenSaasAU/stack/commit/f471e3c95eee2254ac9fde04adc8c5693240e293) Thanks [@borisno2](https://github.com/borisno2)! - Add `select()` db options for Keystone schema parity: `db.isNullable` and `db.enumName`.
+
+  `db.isNullable: true` forces the nullable `?` on the generated column even when a
+  `defaultValue` is present. The default behaviour is unchanged — a select with a
+  `defaultValue` still generates NOT NULL unless you opt in explicitly:
+
+  ```typescript
+  // Optional select with a default, kept nullable for data containing NULLs
+  status: select({
+    options: [
+      { label: 'Draft', value: 'draft' },
+      { label: 'Published', value: 'published' },
+    ],
+    defaultValue: 'draft',
+    db: { isNullable: true },
+  })
+  // Generates: status String? @default("draft")
+
+  // Enum-backed equivalent
+  status: select({
+    options: [{ label: 'Open', value: 'open' }],
+    defaultValue: 'open',
+    db: { type: 'enum', isNullable: true },
+  })
+  // Generates: status <Enum>? @default(open)
+  ```
+
+  `db.enumName` overrides the derived `<List><Field>` name of the generated Prisma
+  enum for native-enum selects, renaming both the `enum` block and every reference
+  to it in the owning model — useful for matching a live DB enum (e.g. Keystone's
+  `…Type` suffix):
+
+  ```typescript
+  status: select({
+    options: [
+      { label: 'Open', value: 'open' },
+      { label: 'Closed', value: 'closed' },
+    ],
+    db: { type: 'enum', enumName: 'AccountNoteStatusType' },
+  })
+  // Generates: enum AccountNoteStatusType { ... } and the column references it
+  ```
+
+- [#493](https://github.com/OpenSaasAU/stack/pull/493) [`acb6100`](https://github.com/OpenSaasAU/stack/commit/acb6100a078aca29e94a82ebe607d2d4f8683af2) Thanks [@borisno2](https://github.com/borisno2)! - Honour `defaultValue` for `text()`, `integer()`, and `json()` fields in the generated Prisma schema
+
+  These three field builders previously dropped `defaultValue` and emitted no `@default(...)`. They now serialise the configured default into a Prisma `@default(...)` literal via a new shared, pure `formatPrismaDefault` module, matching Keystone 6 conventions. The nullable `?` modifier is preserved independently of the default, and fields without a `defaultValue` still emit no `@default(...)`.
+
+  ```typescript
+  fields: {
+    // Int @default(3550)
+    quota: integer({ defaultValue: 3550 }),
+    // String @default("PLEASE_UPDATE")
+    status: text({ defaultValue: 'PLEASE_UPDATE' }),
+    // Json? @default("[1,2,3,4,5]") — Keystone's space-free JSON literal
+    limits: json({ defaultValue: [1, 2, 3, 4, 5] }),
+    // Json? @default("[]")
+    tags: json({ defaultValue: [] }),
+  }
+  ```
+
+  See ADR-0004 for the Keystone-compatibility rationale.
+
+- [#502](https://github.com/OpenSaasAU/stack/pull/502) [`593390c`](https://github.com/OpenSaasAU/stack/commit/593390c57d9844ca7ada8f45b340c849f1d8d647) Thanks [@{](https://github.com/{)! - Add `authPlugin` schema placement so Auth lists can adopt an existing non-`public` better-auth layout (clean-diff adoption)
+
+  The auth lists can now be placed in a non-`public` Postgres schema (e.g. `auth`) so they diff CLEAN against a separate-schema better-auth installation. A plugin-level `schema` option applies `@@schema(...)` to all generated Auth lists, with a per-list override.
+
+  ```typescript
+  authPlugin({
+    schema: 'auth', // all Auth lists get @@schema("auth")
+   modelName: 'AuthUser' },
+    session: { modelName: 'AuthSession' },
+    account: { modelName: 'AuthAccount' },
+    // per-model override: relocate one list to a different schema
+    verification: { modelName: 'AuthVerification', schema: 'auth_internal' },
+  })
+  ```
+
+  The plugin's `beforeGenerate` hook wires the datasource `schemas` array (always including `public`) and defaults any list without an explicit `db.schema` to `public`, producing a valid multi-schema Prisma schema. With no `schema` option the output is unchanged (greenfield default stays in `public`, no `@@schema`).
+
+  Core support added for this (mirroring the `db.map` → `@@map` work):
+  - List-level `db.schema` → the Prisma generator emits `@@schema("...")` on the model.
+  - Database-level `db.schemas` → the generator emits the datasource `schemas = [...]` array and enables the `multiSchema` preview feature.
+
+  ```typescript
+  // Core/generator building blocks
+  db: { provider: 'postgresql', schemas: ['public', 'auth'] }
+  AuthUser: list({ fields: { ... }, db: { map: 'AuthUser', schema: 'auth' } })
+  // Generates: model AuthUser { ... @@map("AuthUser") @@schema("auth") }
+  ```
+
+### Patch Changes
+
+- [#500](https://github.com/OpenSaasAU/stack/pull/500) [`309c666`](https://github.com/OpenSaasAU/stack/commit/309c666388b71e2bfbe16b7da3ee0f923b3bf716) Thanks [@borisno2](https://github.com/borisno2)! - Re-export the fragment query API (`defineFragment`, `runQuery`, `runQueryOne`, and the `ResultOf`, `RelationSelector`, `QueryArgs` types) from the package root so the documented `import { defineFragment, runQuery, runQueryOne, type ResultOf } from '@opensaas/stack-core'` resolves.
+
+- [#511](https://github.com/OpenSaasAU/stack/pull/511) [`696f5c0`](https://github.com/OpenSaasAU/stack/commit/696f5c08c37d4a18107e48cb6b360c9492c7425c) Thanks [@borisno2](https://github.com/borisno2)! - Fix field-level write-access bypass for multi-column `image()`/`file()` fields. The per-part column split now respects the field's own `create`/`update` access (denied fields write none of their columns), matching single-column behaviour.
+
+  Note the known lossy multi-column round-trip when assembling legacy Keystone columns: `originalFilename` collapses to `filename`, `uploadedAt` is `''`, and a NULL `contentType` reads back as `application/octet-stream`.
+
+- [#518](https://github.com/OpenSaasAU/stack/pull/518) [`d152203`](https://github.com/OpenSaasAU/stack/commit/d1522035e21b6ad7ad1b89b05264c54c13dadcf1) Thanks [@borisno2](https://github.com/borisno2)! - Remove leftover debug console.log statements from runtime code (password field resolveInput and MCP tool call handler)
+
+## 0.21.0
+
+### Minor Changes
+
+- [#415](https://github.com/OpenSaasAU/stack/pull/415) [`8980ff3`](https://github.com/OpenSaasAU/stack/commit/8980ff36ffb0879d8f4409740493dd940572cc9d) Thanks [@borisno2](https://github.com/borisno2)! - Curate the `@opensaas/stack-core` public surface into clearly-scoped entry points
+
+  The root entry point now exposes only the everyday consumer surface — `config`,
+  `list`, `getContext`, the naming helpers (`getDbKey`, `getUrlKey`,
+  `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate
+  with. Plugin and field authoring contracts move to a new `/extend` path, and the
+  plumbing shared with sibling packages and generated code moves to `/internal`.
+
+  ```typescript
+  // Everyday usage (unchanged)
+  import { config, list, getContext } from '@opensaas/stack-core'
+
+  // Authoring a plugin or a third-party field package
+  import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  ```
+
+  `@opensaas/stack-core/internal` carries no semver guarantees; application code
+  should never import from it. `Session` stays on the root entry point because it is
+  the module-augmentation target.
+
+  Removed from the public surface (zero callers): the nine `*HookArgs` types and the
+  callerless typed-query runtime types. The other `@opensaas/*` packages and the CLI
+  generator are updated to import from the new paths.
+
+- [#416](https://github.com/OpenSaasAU/stack/pull/416) [`841a836`](https://github.com/OpenSaasAU/stack/commit/841a836494e2647f390ae19a8c4121d38ebd2fa4) Thanks [@borisno2](https://github.com/borisno2)! - Move field-config types to `@opensaas/stack-core/fields`, beside their builders
+
+  The concrete field-config types (`TextField`, `IntegerField`, `CheckboxField`,
+  `TimestampField`, `PasswordField`, `SelectField`, `RelationshipField`,
+  `JsonField`, `VirtualField`, plus `DecimalField`, `CalendarDayField`, and
+  `PrismaRelationResult`) now live on the `/fields` entry point alongside the
+  builders that produce them, instead of the root barrel. One concept, one import
+  path:
+
+  ```typescript
+  import { text, decimal } from '@opensaas/stack-core/fields'
+  import type { TextField, DecimalField } from '@opensaas/stack-core/fields'
+  ```
+
+  `DecimalField` and `CalendarDayField` were previously defined but exported from
+  nowhere — they are now public, and the CLI's lists generator maps `decimal`/
+  `calendarDay` fields to their precise types instead of the generic
+  `BaseFieldConfig` fallback. The umbrella `FieldConfig` stays on the root entry
+  point and `BaseFieldConfig` stays on `/extend`.
+
+### Patch Changes
+
+- [#441](https://github.com/OpenSaasAU/stack/pull/441) [`bc20bf4`](https://github.com/OpenSaasAU/stack/commit/bc20bf447cf724bd0ee153ea9a69d54cc26a6bb2) Thanks [@borisno2](https://github.com/borisno2)! - Validate field self-containment at config load instead of failing deep in generation
+
+  Core now exports `validateFieldConfig(field, fieldKey, listKey?)` and `validateConfigFields(config)` (plus the `FieldConfigValidationError` type). They check each field implements its generation contract — `getPrismaType`, `getTypeScriptType`, and `getZodSchema` (or `getPrismaRelation` for relationships; virtual fields skip `getPrismaType`) — and return structured per-field errors. `opensaas generate` runs this first and fails fast with a clear message naming the list, field, and missing method, rather than throwing an opaque stack trace mid-generation.
+
+- [#428](https://github.com/OpenSaasAU/stack/pull/428) [`50371ea`](https://github.com/OpenSaasAU/stack/commit/50371ea3dd134f6b3718f347fed2c0d3b7dc63ce) Thanks [@borisno2](https://github.com/borisno2)! - Fix outdated SQLite adapter guidance to match the installed `@prisma/adapter-better-sqlite3` API (`PrismaBetterSqlite3` constructed with `{ url }`), so copied examples actually run. Updates the CLI "missing adapter" error message and the migration config it generates, plus the `prismaClientConstructor` JSDoc example.
+
+- [#440](https://github.com/OpenSaasAU/stack/pull/440) [`70b4f53`](https://github.com/OpenSaasAU/stack/commit/70b4f538d380bbf546af50a985d29b48a71d3b4d) Thanks [@borisno2](https://github.com/borisno2)! - Refactor nested-operation dispatch into a handler registry (internal, no behaviour change)
+
+- [#397](https://github.com/OpenSaasAU/stack/pull/397) [`8e394ab`](https://github.com/OpenSaasAU/stack/commit/8e394abe9df2da53ba23b93836853516bb4e25d5) Thanks [@borisno2](https://github.com/borisno2)! - Move relationship Prisma schema generation into the relationship field builder
+
+  The relationship field now exposes a `getPrismaRelation()` method that returns its complete Prisma schema contribution (FK line, relation line, synthetic back-relation). The Prisma generator delegates to this method instead of special-casing relationships, keeping it a neutral coordinator. Generated schemas are unchanged.
+
+- [#455](https://github.com/OpenSaasAU/stack/pull/455) [`d3fdf2a`](https://github.com/OpenSaasAU/stack/commit/d3fdf2a2e5374302bc7fe1fe814cb0f567a349df) Thanks [@borisno2](https://github.com/borisno2)! - Exclude `**/dist/**` from Vitest test discovery and gate coverage on `src/access`, `src/context`, and `src/validation` via per-file thresholds.
+
+- [#403](https://github.com/OpenSaasAU/stack/pull/403) [`0f9c644`](https://github.com/OpenSaasAU/stack/commit/0f9c644a115ad747e338e6138b4762b4a48a9144) Thanks [@borisno2](https://github.com/borisno2)! - Split the access engine into named two-phase-read modules: Access Filter (pre-query), Field Visibility (post-query), and a shared field-access evaluator. No behaviour or public API change.
+
+- [#411](https://github.com/OpenSaasAU/stack/pull/411) [`96258b0`](https://github.com/OpenSaasAU/stack/commit/96258b00bb762d9e38cfb83eacae65ce670b161f) Thanks [@borisno2](https://github.com/borisno2)! - Deduplicate field-level hook execution helpers by promoting them to `hooks/index.ts`, and remove a stray `console.log` that ran on every create/update.
+
+- [#439](https://github.com/OpenSaasAU/stack/pull/439) [`898e477`](https://github.com/OpenSaasAU/stack/commit/898e47747abc02e457a54e2a78939450d16da5fb) Thanks [@borisno2](https://github.com/borisno2)! - Internal refactor: extract the write transform+validate span into a single Hook Pipeline that the Write Pipeline delegates to. No behaviour change.
+
+- [#438](https://github.com/OpenSaasAU/stack/pull/438) [`29966b2`](https://github.com/OpenSaasAU/stack/commit/29966b23597199bcf4233298b1d0de6401b91acd) Thanks [@borisno2](https://github.com/borisno2)! - Refactor the write path into a single Write Pipeline. The canonical secured write sequence (hooks, validation, access, writable-field filtering, nested operations, persistence, after-hooks, Field Visibility) now lives in one module; create/update/delete are thin adapters over it parameterised by a per-operation strategy. Internal refactor only — no public API or behaviour change.
+
 ## 0.20.1
 
 ## 0.20.0

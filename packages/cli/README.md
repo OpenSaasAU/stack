@@ -217,7 +217,7 @@ opensaas migrate --type prisma --with-ai
 
 Without `--with-ai`, the command provides project analysis and you create the config manually.
 
-**See also:** [Migration Guide](https://stack.opensaas.au/docs/guides/migration)
+**See also:** [Migration Guide](https://stack.opensaas.au/docs/guides/migrating-from-keystone)
 
 ## Usage in Projects
 

@@ -19,25 +19,31 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
    pnpm install
    ```
 
-2. Generate Prisma schema and types:
+2. Set up environment (SQLite by default):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Generate Prisma schema and types:
 
    ```bash
    pnpm generate
    ```
 
-3. Push schema to database:
+4. Push schema to database:
 
    ```bash
    pnpm db:push
    ```
 
-4. Start development server:
+5. Start development server:
 
    ```bash
    pnpm dev
    ```
 
-5. Visit http://localhost:3002/admin
+6. Visit http://localhost:3002/admin
 
 ## Key Files
 

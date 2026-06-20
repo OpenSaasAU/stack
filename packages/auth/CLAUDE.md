@@ -62,6 +62,104 @@ config({
 // Result: { lists: { User, Session, Account, Verification, Post } }
 ```
 
+### Deriving Auth lists from better-auth config
+
+The four Auth lists are **derived** from the better-auth model config the
+developer writes — not hardcoded. The pure derivation lives in
+`src/config/derive-auth-lists.ts` (`deriveAuthLists`), which `getAuthLists`
+and the plugin's add-vs-extend logic consume:
+
+- per-model `modelName` → list key + table `@@map`
+- per-model `fields` (better-auth field → column) → field-level `@map`
+- the `userId` column override → the `user` relationship foreign-key `@map`
+- relationship refs between the Auth lists follow the derived keys
+  (e.g. `Session.user → AuthUser.sessions`)
+
+With no `modelName`/`fields` overrides the output is unchanged
+(`User`/`Session`/`Account`/`Verification`, original field shapes, no `@@map`).
+
+```typescript
+// Adopt an existing better-auth installation (Auth lists ≠ app User)
+authPlugin({
+  user: { modelName: 'AuthUser', fields: { name: 'full_name' } },
+  session: { modelName: 'AuthSession', fields: { userId: 'user_id' } },
+})
+// Adds AuthUser/AuthSession/... and leaves an app's own `User` untouched.
+```
+
+Because the plugin only ever adds/extends its **derived** keys, an app's own
+domain `User` (a different model from the better-auth user) is never extended
+or overwritten when the user model is renamed. The runtime `getUser`/
+`getCurrentUser` helpers resolve the user list's `context.db` key from the
+configured user `modelName`.
+
+### Schema placement (relocatable Auth lists)
+
+A plugin-level `schema` option places all generated Auth lists in a non-`public`
+Postgres schema via `@@schema(...)`, so they can adopt a separate-schema
+better-auth layout (e.g. an `auth` schema) and reach **Schema parity** with the
+live tables. Combined with the derived keys/`@@map`/field `@map`s above, the
+generated lists diff CLEAN against an existing `auth`-schema install — they are
+modelled for runtime/types without producing a migration.
+
+```typescript
+authPlugin({
+  schema: 'auth', // all Auth lists get @@schema("auth")
+  user: { modelName: 'AuthUser' },
+  session: { modelName: 'AuthSession' },
+  account: { modelName: 'AuthAccount' },
+  verification: { modelName: 'AuthVerification' },
+  // per-model override: relocate one list to a different schema
+  // verification: { modelName: 'AuthVerification', schema: 'auth_internal' },
+})
+```
+
+How it wires up (Postgres multi-schema):
+
+- Each Auth list gets a list-level `db.schema` → `@@schema(...)` (per-model
+  `schema` override, else the plugin-level `schema`).
+- The plugin's `beforeGenerate` hook adds the auth schema(s) (always plus
+  `public`) to the datasource `db.schemas` array and defaults any list without
+  an explicit `db.schema` to `public`, so the generated multi-schema Prisma
+  schema is valid (the generator emits `previewFeatures = ["multiSchema"]` and
+  `schemas = [...]`).
+- With no `schema` option the Auth lists stay in `public` and no `@@schema` /
+  `schemas` / preview feature is emitted (greenfield default unchanged).
+
+### Adopting an existing better-auth install (`adoptBetterAuthTables`)
+
+`adoptBetterAuthTables()` (`src/config/adopt-better-auth-tables.ts`) is a thin
+recipe that returns the `AuthConfig` adoption knobs — the plugin-level `schema`
+plus a per-model `modelName` (and optional column `fields` maps) — preset to the
+conventions of a standard separate-schema better-auth install. It ties together
+the keys/field derivation and schema placement so a migrator doesn't rebuild the
+config by hand. Spread it into `authPlugin`:
+
+```typescript
+import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
+
+authPlugin({
+  ...adoptBetterAuthTables(), // schema: 'auth', AuthUser/AuthSession/AuthAccount/AuthVerification
+  emailAndPassword: { enabled: true },
+})
+// Options: adoptBetterAuthTables({ schema, modelNamePrefix, fields })
+```
+
+It is pure config (no side effects): everything it sets can also be written
+directly on `authPlugin`, and spreading it before your own keys lets you
+override per model. Because the derived user key is `AuthUser` (not `User`), an
+app's own domain `User` is left untouched — the plugin only ever adds/extends
+its derived keys. Combined with the derivation + schema placement above, the
+generated Auth lists reach **Schema parity** (clean `schema:diff`) against a live
+`auth`-schema install — they are modelled for runtime/types, not migrated.
+
+**App User ≠ Auth identity.** The plugin models the **Auth identity** (the
+better-auth user); it does not assume that list is the app's domain `User`.
+Linking an app's `User` to the Auth identity (e.g. a `relationship({ ref:
+'AuthUser' })` the app declares) is the application's concern. See the
+[Authentication guide](../../docs/content/guides/authentication.md) (“Adopting an
+existing better-auth installation”) for the end-to-end migrator walkthrough.
+
 ### Session Provider
 
 Better-auth provides session to context via custom `prismaClientConstructor`:

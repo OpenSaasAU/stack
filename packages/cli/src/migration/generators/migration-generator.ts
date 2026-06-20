@@ -530,6 +530,13 @@ The auth plugin automatically provides User, Session, Account, and Verification 
       )
     }
 
+    // Float maps to decimal() - flag the type change (double -> decimal.js Decimal)
+    if (field.type === 'Float') {
+      warnings.push(
+        `Field "${field.name}" uses type "Float" - mapped to decimal() (a decimal.js Decimal, not a JS number). Review precision/rounding.`,
+      )
+    }
+
     const optionsStr = options.length > 0 ? `{ ${options.join(', ')} }` : ''
     return `${mapping.type}(${optionsStr})`
   }

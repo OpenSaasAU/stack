@@ -30,6 +30,10 @@ export const navigation: NavItem[] = [
         href: '/docs/core-concepts/field-types',
       },
       {
+        title: 'Queries & Fragments',
+        href: '/docs/core-concepts/queries',
+      },
+      {
         title: 'Hooks System',
         href: '/docs/core-concepts/hooks',
       },
@@ -76,12 +80,16 @@ export const navigation: NavItem[] = [
     title: 'Guides',
     items: [
       {
-        title: 'Claude Code Plugin',
-        href: '/docs/guides/claude-code',
+        title: 'Migrating from Keystone',
+        href: '/docs/guides/migrating-from-keystone',
       },
       {
-        title: 'Migration Guide',
+        title: 'Migration Guide (all sources)',
         href: '/docs/guides/migration',
+      },
+      {
+        title: 'Claude Code Plugin',
+        href: '/docs/guides/claude-code',
       },
       {
         title: 'Custom Fields',
