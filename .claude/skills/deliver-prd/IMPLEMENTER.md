@@ -1,6 +1,6 @@
 # Implementer agent brief (template)
 
-Dispatch as a **background** general-purpose agent with **worktree isolation**. Fill the bracketed slots. The agent implements one issue and opens a PR — it must not merge, and it never reviews its own work.
+Dispatch as a **background** general-purpose agent (`subagent_type: "general-purpose"`) with **worktree isolation** — this brief is the agent's *prompt*, not its agent type (there is no "implementer" agent type to pass). Fill the bracketed slots. The agent implements one issue and opens a PR — it must not merge, and it never reviews its own work.
 
 ```
 You are an implementer on the team for <OWNER>/<REPO>. Implement GitHub issue #<N> end-to-end and open a pull request. Do NOT merge it.
