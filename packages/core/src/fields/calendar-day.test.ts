@@ -20,12 +20,13 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       expect(field.getTypeScriptType?.()).toEqual({ type: 'string', optional: false })
     })
 
-    it('type-level: the declared type is the literal "string", so a Date is rejected', () => {
+    it('type-level: the declared type is the literal "string"', () => {
       const field = calendarDay()
       const tsType = field.getTypeScriptType?.()
-      // The generated entity/CreateInput/UpdateInput types are emitted from this
-      // literal. Asserting it is exactly 'string' is the type-level guarantee
-      // that a Date input is a compile error (the input field type is `string`).
+      // The entity/read type and the standalone generated CreateInput/UpdateInput
+      // types are emitted from this literal, so asserting it is exactly 'string'
+      // pins those types to `string`. (At the context.db write path a Date is
+      // rejected at runtime by validation, not at compile time — tracked in #599.)
       expectTypeOf(tsType).toEqualTypeOf<{ type: string; optional: boolean } | undefined>()
       if (tsType) {
         expectTypeOf(tsType.type).toEqualTypeOf<string>()

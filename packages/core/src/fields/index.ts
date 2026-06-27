@@ -523,9 +523,9 @@ export function timestamp<
  * - Stores date values only (no time component)
  * - PostgreSQL/MySQL: Uses native DATE type via @db.Date
  * - SQLite: Uses String representation
- * - **Writes:** accept only a `YYYY-MM-DD` string; a malformed string is
- *   rejected with a clear message, and a `Date` fails to compile against the
- *   generated input types.
+ * - **Writes:** accept only a `YYYY-MM-DD` string; a malformed string or a
+ *   `Date` is rejected at runtime by validation (a `ValidationError`). Genuine
+ *   compile-time rejection at the `context.db` call site is tracked in #599.
  * - **Reads:** always return a `YYYY-MM-DD` string. Even though the underlying
  *   `@db.Date` column hands Prisma a `Date`, a `resolveOutput` transform
  *   normalises it back to a `YYYY-MM-DD` string so the runtime value matches
@@ -658,8 +658,11 @@ export function calendarDay<
       const isNullable = db?.isNullable ?? !isRequired
 
       // calendarDay is a YYYY-MM-DD string end-to-end (Keystone's CalendarDay
-      // scalar). Returning 'string' here flips the entity type AND the generated
-      // CreateInput/UpdateInput types, so passing a Date is a compile error.
+      // scalar). Returning 'string' here makes the entity/read type and the
+      // standalone generated CreateInput/UpdateInput types `string`. At the
+      // context.db write path a Date is still rejected at runtime by validation
+      // (the generated db method `data` type derives from Prisma's `Date | string`
+      // input — making it a compile-time error is tracked in #599).
       return {
         type: 'string',
         optional: isNullable,

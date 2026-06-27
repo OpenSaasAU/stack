@@ -9,10 +9,10 @@ both directions, so its type, validation, and runtime value finally agree.
 Previously the field validated a `YYYY-MM-DD` string but its TypeScript type was
 `Date`, so a typed caller passing `new Date(...)` hit a runtime `ValidationError`.
 
-- The field type (entity, `CreateInput`, `UpdateInput`) is now `string`, so
-  passing a `Date` is a compile error.
-- Writes still accept only a `YYYY-MM-DD` string (malformed strings are rejected
-  with a clear message).
+- The field/read type and the generated `CreateInput`/`UpdateInput` input types
+  are now `string`.
+- Writes accept only a `YYYY-MM-DD` string; a malformed string or a `Date` is
+  rejected at runtime by validation (a `ValidationError`).
 - Storage is unchanged: `DateTime @db.Date` on Postgres/MySQL, the SQLite TEXT
   fallback as before.
 
