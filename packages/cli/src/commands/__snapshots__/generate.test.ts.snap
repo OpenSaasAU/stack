@@ -292,16 +292,26 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
 
 /**
  * Custom CreateArgs for User with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
+export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
   select?: UserSelect | null
+  data: Omit<Prisma.UserCreateArgs['data'], 'name' | 'email'> & {
+    name: string
+    email: string
+  }
 }
 
 /**
  * Custom UpdateArgs for User with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select'> & {
+export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
   select?: UserSelect | null
+  data: Omit<Prisma.UserUpdateArgs['data'], 'name' | 'email'> & {
+    name?: string
+    email?: string
+  }
 }
 
 /**
@@ -313,18 +323,26 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
 
 /**
  * Custom CreateManyArgs for User with virtual field support
+ * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Prisma.UserCreateInput[]
+  data: Array<Omit<Prisma.UserCreateInput, 'name' | 'email'> & {
+    name: string
+    email: string
+  }>
   select?: UserSelect | null
 }
 
 /**
  * Custom UpdateManyArgs for User with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Prisma.UserUpdateInput
+  data: Omit<Prisma.UserUpdateInput, 'name' | 'email'> & {
+    name?: string
+    email?: string
+  }
   select?: UserSelect | null
 }
 

@@ -212,7 +212,12 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
       const tsType = mapFieldTypeToTypeScript(fieldConfig)
       if (!tsType) continue // Skip if no type returned
 
-      const required = !isFieldOptional(fieldConfig) && !fieldConfig.defaultValue
+      // A field is optional on create when it is nullable OR has a default value.
+      // Use an explicit `!== undefined` check rather than a truthiness test:
+      // `!field.defaultValue` is truthy for a falsy-but-present default such as
+      // `checkbox({ defaultValue: false })`, which would wrongly mark the field
+      // required. See #599.
+      const required = !isFieldOptional(fieldConfig) && fieldConfig.defaultValue === undefined
       const optional = required ? '' : '?'
       lines.push(`  ${fieldName}${optional}: ${tsType}`)
     }
@@ -221,6 +226,157 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
   lines.push('}')
 
   return lines.join('\n')
+}
+
+/**
+ * Decide whether a scalar field should have its write-path `data` type narrowed
+ * to the OpenSaaS `getTypeScriptType()` type, or left as Prisma's input type.
+ *
+ * Most scalar fields are narrowed so that field-level narrowing (e.g.
+ * `calendarDay` -> `string`) is a genuine compile error to violate at the
+ * `context.db.<list>.create()/update()` call site (#599). Two field shapes are
+ * deliberately left on Prisma's input type to avoid regressing valid writes:
+ *
+ * - `decimal`: OpenSaaS narrows to `Decimal`, but Prisma accepts
+ *   `Decimal | number | string`. A strict override would wrongly reject valid
+ *   `number`/`string` decimal writes.
+ * - `json`: OpenSaaS narrows to `unknown`, but Prisma's input type carries the
+ *   `JsonNull`/`DbNull` sentinels. Overriding to `unknown` would drop them.
+ *
+ * Multi-column / `resultExtension` storage fields (`getColumnNames`) are also
+ * left to Prisma: they back several raw columns rather than a single scalar
+ * column, so there is no single OpenSaaS scalar to narrow to. Their raw backing
+ * columns are still stripped from the override (see `getScalarOverrideOmitKeys`)
+ * so no dangling Prisma keys are left behind — mirroring `generateGetPayload`.
+ */
+function shouldNarrowScalarWrite(fieldConfig: FieldConfig): boolean {
+  if (fieldConfig.type === 'relationship') return false
+  if (fieldConfig.virtual) return false
+  if (!fieldConfig.getTypeScriptType) return false
+  // Keep Prisma's input type for decimal/json (see doc comment above).
+  if (fieldConfig.type === 'decimal' || fieldConfig.type === 'json') return false
+  // Multi-column / storage fields back raw columns, not a single scalar.
+  if (typeof fieldConfig.getColumnNames === 'function') return false
+  return true
+}
+
+/**
+ * The Prisma `data` keys to omit before re-adding narrowed scalar members.
+ * Includes each narrowed scalar field name plus any raw backing columns of
+ * multi-column fields (so no dangling Prisma keys remain after the Omit).
+ */
+function getScalarOverrideOmitKeys(fields: Record<string, FieldConfig>): string[] {
+  const keys: string[] = []
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    if (shouldNarrowScalarWrite(fieldConfig)) {
+      keys.push(fieldName)
+    }
+    // Strip raw backing columns of multi-column fields regardless of narrowing:
+    // they are assembled from a logical field and must not leak Prisma keys.
+    if (typeof fieldConfig.getColumnNames === 'function') {
+      keys.push(...fieldConfig.getColumnNames(fieldName))
+    }
+  }
+  return keys
+}
+
+/**
+ * Build the narrowed scalar member lines for a write `data` override.
+ * Each narrowed scalar field uses its OpenSaaS `getTypeScriptType()` type with
+ * correct optionality/nullability.
+ *
+ * @param forCreate - create uses required/optional + default semantics; update
+ *   makes every field optional (partial update).
+ */
+function buildScalarOverrideMembers(
+  fields: Record<string, FieldConfig>,
+  forCreate: boolean,
+): string[] {
+  const members: string[] = []
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    if (!shouldNarrowScalarWrite(fieldConfig)) continue
+
+    const tsType = mapFieldTypeToTypeScript(fieldConfig)
+    if (!tsType) continue
+
+    const nullable = isFieldOptional(fieldConfig)
+    const nullability = nullable ? ' | null' : ''
+
+    if (forCreate) {
+      // Optional on create when nullable OR has a default (see #599 bug fix in
+      // generateCreateInputType for the `defaultValue === undefined` rationale).
+      const required = !nullable && fieldConfig.defaultValue === undefined
+      const optional = required ? '' : '?'
+      members.push(`    ${fieldName}${optional}: ${tsType}${nullability}`)
+    } else {
+      // Partial update: every scalar is optional.
+      members.push(`    ${fieldName}?: ${tsType}${nullability}`)
+    }
+  }
+  return members
+}
+
+/**
+ * Build the write `data` type for a single-record create/update Args type.
+ * Scalars are narrowed to OpenSaaS types while relationship nested writes,
+ * unchecked FK fields, and decimal/json keep Prisma's input shape.
+ *
+ * Shape: `Omit<Prisma.{List}{Create|Update}Args['data'], <omitKeys>> & { <narrowed scalars> }`
+ *
+ * When there are no narrowable scalars and no backing columns to strip, the
+ * Prisma `data` type is used unchanged.
+ */
+function buildWriteDataType(
+  listName: string,
+  fields: Record<string, FieldConfig>,
+  forCreate: boolean,
+): string {
+  const argsType = forCreate ? `${listName}CreateArgs` : `${listName}UpdateArgs`
+  const prismaData = `Prisma.${argsType}['data']`
+
+  const omitKeys = getScalarOverrideOmitKeys(fields)
+  const members = buildScalarOverrideMembers(fields, forCreate)
+
+  if (omitKeys.length === 0 && members.length === 0) {
+    return prismaData
+  }
+
+  const omitUnion = omitKeys.map((k) => `'${k}'`).join(' | ')
+  const base = omitKeys.length > 0 ? `Omit<${prismaData}, ${omitUnion}>` : prismaData
+
+  if (members.length === 0) {
+    return base
+  }
+
+  return `${base} & {\n${members.join('\n')}\n  }`
+}
+
+/**
+ * Build a narrowed write input type over an arbitrary Prisma base input type
+ * expression (e.g. `Prisma.{List}CreateInput`). Used by the createMany /
+ * updateMany variants whose `data` is built from the scalar `*Input` types
+ * rather than the single-record `*Args['data']`.
+ */
+function buildWriteInputOverride(
+  prismaBase: string,
+  fields: Record<string, FieldConfig>,
+  forCreate: boolean,
+): string {
+  const omitKeys = getScalarOverrideOmitKeys(fields)
+  const members = buildScalarOverrideMembers(fields, forCreate)
+
+  if (omitKeys.length === 0 && members.length === 0) {
+    return prismaBase
+  }
+
+  const omitUnion = omitKeys.map((k) => `'${k}'`).join(' | ')
+  const base = omitKeys.length > 0 ? `Omit<${prismaBase}, ${omitUnion}>` : prismaBase
+
+  if (members.length === 0) {
+    return base
+  }
+
+  return `${base} & {\n${members.join('\n')}\n  }`
 }
 
 /**
@@ -731,21 +887,29 @@ export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'se
  */
 function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+  // Narrow scalar `data` members to OpenSaaS types so field-level narrowing
+  // (e.g. calendarDay -> string) is a compile error at the call site (#599),
+  // while relationship nested writes / decimal / json keep Prisma's shape.
+  const dataType = buildWriteDataType(listName, fields, true)
 
   if (hasRelationships) {
     return `/**
  * Custom CreateArgs for ${listName} with virtual field support in nested relationships
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'include'> & {
+export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'include' | 'data'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
+  data: ${dataType}
 }`
   } else {
     return `/**
  * Custom CreateArgs for ${listName} with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select'> & {
+export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'data'> & {
   select?: ${listName}Select | null
+  data: ${dataType}
 }`
   }
 }
@@ -755,21 +919,27 @@ export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select'>
  */
 function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+  // See generateCreateArgsType: narrow scalar `data` members (#599).
+  const dataType = buildWriteDataType(listName, fields, false)
 
   if (hasRelationships) {
     return `/**
  * Custom UpdateArgs for ${listName} with virtual field support in nested relationships
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'include'> & {
+export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'include' | 'data'> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
+  data: ${dataType}
 }`
   } else {
     return `/**
  * Custom UpdateArgs for ${listName} with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select'> & {
+export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'data'> & {
   select?: ${listName}Select | null
+  data: ${dataType}
 }`
   }
 }
@@ -803,22 +973,26 @@ export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'>
  */
 function generateCreateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+  // createMany `data` is an array of scalar inputs; narrow each element (#599).
+  const dataElement = buildWriteInputOverride(`Prisma.${listName}CreateInput`, fields, true)
 
   if (hasRelationships) {
     return `/**
  * Custom CreateManyArgs for ${listName} with virtual field support in nested relationships
+ * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type ${listName}CreateManyArgs = {
-  data: Prisma.${listName}CreateInput[]
+  data: Array<${dataElement}>
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
   } else {
     return `/**
  * Custom CreateManyArgs for ${listName} with virtual field support
+ * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type ${listName}CreateManyArgs = {
-  data: Prisma.${listName}CreateInput[]
+  data: Array<${dataElement}>
   select?: ${listName}Select | null
 }`
   }
@@ -829,24 +1003,28 @@ export type ${listName}CreateManyArgs = {
  */
 function generateUpdateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+  // updateMany `data` is a single partial scalar input; narrow it (#599).
+  const dataType = buildWriteInputOverride(`Prisma.${listName}UpdateInput`, fields, false)
 
   if (hasRelationships) {
     return `/**
  * Custom UpdateManyArgs for ${listName} with virtual field support in nested relationships
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
 export type ${listName}UpdateManyArgs = {
   where?: ${listName}WhereInput
-  data: Prisma.${listName}UpdateInput
+  data: ${dataType}
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
   } else {
     return `/**
  * Custom UpdateManyArgs for ${listName} with virtual field support
+ * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
 export type ${listName}UpdateManyArgs = {
   where?: ${listName}WhereInput
-  data: Prisma.${listName}UpdateInput
+  data: ${dataType}
   select?: ${listName}Select | null
 }`
   }
