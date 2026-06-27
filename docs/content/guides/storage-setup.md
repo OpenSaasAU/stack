@@ -28,6 +28,33 @@ pnpm add @opensaas/stack-storage-vercel
 # For local development (no additional package needed)
 ```
 
+## Provider Registration
+
+The storage runtime uses a **registry** to look up provider implementations. `'local'` is registered automatically — no extra step required. Every other provider (`'s3'`, `'vercel-blob'`, or custom) must be registered by the host with `registerStorageProvider` before the first upload, otherwise you'll see:
+
+```
+Unknown storage provider type: s3. Register it with registerStorageProvider('s3', ...)
+```
+
+Reads are unaffected — existing metadata only stores the provider name and never constructs a provider.
+
+### Where to register
+
+Register once in a **server-only module** that runs before any upload. For Next.js projects the recommended location is `instrumentation.ts`, which Next.js evaluates on server startup:
+
+```typescript
+// instrumentation.ts  (project root — evaluated once on server startup)
+export async function register() {
+  // Register your storage providers here
+}
+```
+
+Import this file's side effects in your upload route if you prefer a local import, or rely on `instrumentation.ts` to ensure it always runs first. The examples below use `instrumentation.ts`.
+
+> **Local storage:** `'local'` is built in and needs no registration step. Skip ahead to the [Local Storage Setup](#local-storage-setup) section.
+
+---
+
 ## Local Storage Setup
 
 Best for development and small deployments.
@@ -232,11 +259,27 @@ export default config({
 })
 ```
 
-### 6. Add Upload Route
+### 6. Register the S3 Provider
+
+The S3 provider must be registered before it can be used. Add this to your `instrumentation.ts`:
+
+```typescript
+// instrumentation.ts
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import { S3StorageProvider, type S3StorageConfig } from '@opensaas/stack-storage-s3'
+
+export async function register() {
+  registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
+}
+```
+
+If you don't have an `instrumentation.ts` yet, create it at your project root and ensure `experimental.instrumentationHook` is enabled in `next.config.ts` (Next.js 13/14) or simply rely on Next.js 15+'s built-in support.
+
+### 7. Add Upload Route
 
 Use the same upload route from the Local Storage setup (step 4 above).
 
-### 7. CloudFront CDN (Optional)
+### 8. CloudFront CDN (Optional)
 
 For better performance, set up CloudFront:
 
@@ -323,11 +366,31 @@ export default config({
 })
 ```
 
-### 5. Add Upload Route
+### 5. Register the Vercel Blob Provider
+
+The Vercel Blob provider must be registered before it can be used. Add this to your `instrumentation.ts`:
+
+```typescript
+// instrumentation.ts
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import {
+  VercelBlobStorageProvider,
+  type VercelBlobStorageConfig,
+} from '@opensaas/stack-storage-vercel'
+
+export async function register() {
+  registerStorageProvider<VercelBlobStorageConfig>(
+    'vercel-blob',
+    (config) => new VercelBlobStorageProvider(config),
+  )
+}
+```
+
+### 6. Add Upload Route
 
 Use the same upload route from the Local Storage setup.
 
-### 6. Deploy to Vercel
+### 7. Deploy to Vercel
 
 ```bash
 vercel --prod
@@ -338,6 +401,8 @@ Files are automatically distributed via Vercel's global CDN.
 ## S3-Compatible Services
 
 The S3 provider works with S3-compatible services like Backblaze B2, MinIO, and DigitalOcean Spaces.
+
+> **Registration required:** S3-compatible services still use the `'s3'` provider type. Register it exactly as shown in the [AWS S3 Setup — step 6](#6-register-the-s3-provider) above before using any S3-compatible configuration.
 
 ### Backblaze B2
 
@@ -389,7 +454,26 @@ storage: {
 
 ### Multiple Storage Providers
 
-Use different providers for different file types:
+Use different providers for different file types. Register each non-local provider in `instrumentation.ts`:
+
+```typescript
+// instrumentation.ts
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+import { S3StorageProvider, type S3StorageConfig } from '@opensaas/stack-storage-s3'
+import {
+  VercelBlobStorageProvider,
+  type VercelBlobStorageConfig,
+} from '@opensaas/stack-storage-vercel'
+
+export async function register() {
+  registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
+  registerStorageProvider<VercelBlobStorageConfig>(
+    'vercel-blob',
+    (config) => new VercelBlobStorageProvider(config),
+  )
+  // 'local' is built in — no registration needed
+}
+```
 
 ```typescript
 export default config({
@@ -432,7 +516,20 @@ export default config({
 
 ### Environment-Specific Storage
 
-Use local storage in development, cloud storage in production:
+Use local storage in development, cloud storage in production. Register only the providers you actually use in each environment:
+
+```typescript
+// instrumentation.ts
+import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+
+export async function register() {
+  if (process.env.NODE_ENV === 'production') {
+    const { S3StorageProvider } = await import('@opensaas/stack-storage-s3')
+    registerStorageProvider('s3', (config) => new S3StorageProvider(config))
+  }
+  // 'local' is built in — no registration needed for development
+}
+```
 
 ```typescript
 // opensaas.config.ts
@@ -668,6 +765,18 @@ Be aware of storage limits:
 - **Virus scanning**: Consider integrating virus scanning for user uploads
 
 ## Troubleshooting
+
+### "Unknown storage provider type" Error
+
+You'll see this error on the first upload when the provider hasn't been registered:
+
+```
+Unknown storage provider type: s3. Register it with registerStorageProvider('s3', ...)
+```
+
+**Note:** Reads work fine (metadata only stamps the provider name); only writes trigger this error, so the problem may not be visible until your first upload.
+
+**Fix:** Add a `registerStorageProvider` call in `instrumentation.ts` (or any server-only module that runs before the first upload). See the [Provider Registration](#provider-registration) section and the setup steps for your provider. `'local'` is built in and never needs registration.
 
 ### "No file provided" Error
 
