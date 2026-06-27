@@ -96,7 +96,12 @@ export function ListViewClient({
 
   const handleClearSearch = () => {
     setSearchInput('')
-    router.push(`${basePath}/${urlKey}`)
+    const params = new URLSearchParams()
+    if (sortBy) {
+      params.set('sort', `${sortBy}:${sortOrder}`)
+    }
+    const qs = params.toString()
+    router.push(`${basePath}/${urlKey}${qs ? `?${qs}` : ''}`)
   }
 
   const buildPaginationUrl = (newPage: number) => {

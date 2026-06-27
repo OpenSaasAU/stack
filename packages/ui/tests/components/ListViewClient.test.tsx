@@ -230,6 +230,22 @@ describe('ListViewClient', () => {
       expect(mockPush).toHaveBeenCalledWith('/admin/post')
     })
 
+    it('should preserve active sort when search is cleared', async () => {
+      const user = userEvent.setup()
+      render(
+        <ListViewClient
+          {...defaultProps}
+          search="existing"
+          initialSort={{ field: 'title', direction: 'desc' }}
+        />,
+      )
+
+      const clearButton = screen.getByText('✕')
+      await user.click(clearButton)
+
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc')
+    })
+
     it('should reset to page 1 when new search submitted', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} page={3} />)
