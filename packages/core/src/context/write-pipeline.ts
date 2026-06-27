@@ -18,6 +18,7 @@ import {
 import { hookPipeline } from './hook-pipeline.js'
 import { processNestedOperations, runAfterTasks } from './nested-operations.js'
 import type { AfterTask } from './nested-operations.js'
+import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { getDbKey } from '../lib/case-utils.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
@@ -187,6 +188,16 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
   inputData: Record<string, unknown> | undefined
   /** The per-operation strategy supplying the three variation axes. */
   strategy: WriteStrategy
+  /**
+   * The target resolution computed ONCE before the transaction opened (#590).
+   *
+   * The transaction-boundary bracket resolves the top-level target + access
+   * before opening the transaction (both to gate silent-failures without firing
+   * boundary hooks, and to supply `originalItem` to `beforeTransaction`). To
+   * avoid a second resolution inside the transaction, the in-transaction body
+   * reuses this result instead of calling `strategy.resolveTarget` again.
+   */
+  preResolvedTarget?: TargetResolution
 }
 
 /**
@@ -218,26 +229,62 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
 export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
 ): Promise<Record<string, unknown> | null> {
-  const { prisma } = args
-  // ADR-0010: every write runs inside ONE interactive transaction. The parent
-  // and ALL nested writes share this transaction's client `tx` as their
-  // persistence target, so they are atomic and a throwing
-  // `beforeOperation`/`afterOperation` (or validation) rolls the whole write
-  // back. `runWriteInTransaction` resolves the target row, runs the full hook
-  // pipeline, persists, and runs nested + own `afterOperation` — all against
-  // `tx`.
-  return runInTransaction(prisma, (tx) =>
-    runWriteInTransaction({
-      ...args,
-      prisma: tx,
-      // ADR-0010 atomicity: hooks that write via `context.db` must hit the SAME
-      // transaction, or those writes would commit independently and survive a
-      // rollback. Rebind the context's `db` (and `prisma`) to the transaction
-      // client `tx` so before/afterOperation `context.db` writes participate in
-      // — and roll back with — this write's transaction.
-      context: bindContextToTransaction(args, tx),
-    }),
-  )
+  const { prisma, listName, listConfig, context, config, inputData, strategy } = args
+
+  // ── Pre-transaction access gate (#590) ──────────────────────────────────────
+  // Resolve the TOP-LEVEL target + operation-level access OUTSIDE the
+  // transaction first. A denied/missing/filter-non-match target short-circuits
+  // to `null` (silent failure) WITHOUT firing any transaction-boundary hooks —
+  // a denied write opens no transaction and takes no external action, so it must
+  // not run beforeTransaction/afterTransaction. This resolution also yields the
+  // top-level `originalItem` the boundary hooks receive for update/delete. The
+  // authoritative in-transaction resolveTarget still runs again inside the
+  // transaction (#569 semantics unchanged).
+  const gate = await strategy.resolveTarget(getModel(prisma, listName))
+  if (gate.status === 'denied') {
+    return null
+  }
+
+  // ── Enumerate involved lists from the input tree (no DB reads) ──────────────
+  const involvedLists = enumerateInvolvedLists({
+    listName,
+    listConfig,
+    operation: strategy.operation,
+    inputData,
+    topLevelOriginalItem: gate.originalItem,
+    config,
+  })
+
+  // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
+  // beforeTransaction runs before the transaction opens; afterTransaction runs
+  // after it settles (commit or rollback), per the symmetric-bracket rule.
+  return runWithTransactionBoundary({
+    involvedLists,
+    context,
+    runTransaction: () =>
+      // ADR-0010: every write runs inside ONE interactive transaction. The
+      // parent and ALL nested writes share this transaction's client `tx` as
+      // their persistence target, so they are atomic and a throwing
+      // `beforeOperation`/`afterOperation` (or validation) rolls the whole write
+      // back. `runWriteInTransaction` resolves the target row, runs the full
+      // hook pipeline, persists, and runs nested + own `afterOperation` — all
+      // against `tx`.
+      runInTransaction(prisma, (tx) =>
+        runWriteInTransaction({
+          ...args,
+          prisma: tx,
+          // Reuse the pre-transaction target resolution (computed above) so the
+          // target is read exactly once (#569 call-count semantics preserved).
+          preResolvedTarget: gate,
+          // ADR-0010 atomicity: hooks that write via `context.db` must hit the
+          // SAME transaction, or those writes would commit independently and
+          // survive a rollback. Rebind the context's `db` (and `prisma`) to the
+          // transaction client `tx` so before/afterOperation `context.db` writes
+          // participate in — and roll back with — this write's transaction.
+          context: bindContextToTransaction(args, tx),
+        }),
+      ),
+  })
 }
 
 /**
@@ -289,7 +336,11 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
   // ── Phase 1: resolve target + operation-level access ──────────────────────
   // Short-circuits to `null` (silent failure) for missing target, denied
   // access, or filter non-match — before any hook side effects or the DB call.
-  const resolution = await strategy.resolveTarget(model)
+  // The transaction-boundary bracket (#590) already resolved this once before
+  // opening the transaction; reuse that result rather than reading the target
+  // twice. (When invoked without the bracket — e.g. a direct unit test — fall
+  // back to resolving here against the tx model.)
+  const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(model))
   if (resolution.status === 'denied') {
     return null
   }
