@@ -1,6 +1,7 @@
 import { getContext } from '@/.opensaas/context'
+import type { KnowledgeBaseCreateInput } from '@/.opensaas/types'
 
-const sampleArticles = [
+const sampleArticles: KnowledgeBaseCreateInput[] = [
   {
     title: 'What is OpenSaas Stack?',
     content: `OpenSaas Stack is a Next.js-based framework for building admin-heavy applications with built-in access control. It uses a config-first approach similar to KeystoneJS but modernized for Next.js App Router and designed to be AI-agent-friendly with automatic security guardrails. The stack includes core packages for configuration, authentication, UI components, and specialized integrations like RAG (Retrieval-Augmented Generation). It's built as a pnpm monorepo with packages for core functionality, CLI tools, admin UI, authentication, and various integrations. OpenSaas Stack emphasizes type safety, automatic code generation, and developer experience.`,

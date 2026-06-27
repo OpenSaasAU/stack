@@ -19,7 +19,7 @@ export async function createPost(data: PostCreateInput) {
     const post = await context.db.post.create({
       data: {
         ...postData,
-        status: postData.status || 'DRAFT',
+        status: postData.status || 'draft',
         publishedAt: postData.publishedAt ? new Date(postData.publishedAt) : undefined,
       },
     })
@@ -47,7 +47,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
       title: data.title,
       slug: data.slug,
       content: data.content,
-      status: data.status || 'DRAFT',
+      status: data.status || 'draft',
       internalNotes: data.internalNotes,
       publishedAt: data.publishedAt ? new Date(data.publishedAt) : undefined,
     },
