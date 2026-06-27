@@ -1,6 +1,6 @@
 # Reviewer agent brief (template)
 
-Dispatch as a **background** general-purpose agent (`subagent_type: "general-purpose"`) — the `review` skill named below is the agent's *prompt*, not its agent type (never pass `subagent_type: "review"`). The reviewer gets the PR and **nothing else** — no PRD, no implementer notes, no design context from this conversation. That independence is the whole point: a reviewer primed with the author's intent rubber-stamps it.
+Dispatch as a **background** general-purpose agent (`subagent_type: "general-purpose"`) — the `review` skill named below is the agent's _prompt_, not its agent type (never pass `subagent_type: "review"`). The reviewer gets the PR and **nothing else** — no PRD, no implementer notes, no design context from this conversation. That independence is the whole point: a reviewer primed with the author's intent rubber-stamps it.
 
 ```
 Review pull request #<PR> in <OWNER>/<REPO>.
