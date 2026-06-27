@@ -61,6 +61,102 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
 }
 
 describe('AdminUI ui.listView wiring', () => {
+  it('passes orderBy to findMany based on initialSort', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Post: list({
+          fields: { title: text(), sentAt: timestamp() },
+          ui: {
+            listView: {
+              initialSort: { field: 'sentAt', direction: 'desc' },
+            },
+          },
+        }),
+      },
+    }
+
+    const context = makeContext({ post: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'Post',
+      basePath: '/admin',
+      initialSort: { field: 'sentAt', direction: 'desc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { sentAt: 'desc' } }))
+  })
+
+  it('URL sort param takes precedence over initialSort in orderBy', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Post: list({
+          fields: { title: text(), sentAt: timestamp() },
+          ui: {
+            listView: {
+              initialSort: { field: 'sentAt', direction: 'desc' },
+            },
+          },
+        }),
+      },
+    }
+
+    const context = makeContext({ post: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'Post',
+      basePath: '/admin',
+      initialSort: { field: 'sentAt', direction: 'desc' },
+      sort: { field: 'title', direction: 'asc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { title: 'asc' } }))
+  })
+
+  it('discards URL sort param when field does not exist on the list, falling back to initialSort', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Post: list({
+          fields: { title: text(), sentAt: timestamp() },
+          ui: {
+            listView: {
+              initialSort: { field: 'sentAt', direction: 'desc' },
+            },
+          },
+        }),
+      },
+    }
+
+    const context = makeContext({ post: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'Post',
+      basePath: '/admin',
+      initialSort: { field: 'sentAt', direction: 'desc' },
+      sort: { field: 'nonExistentField', direction: 'asc' },
+    })
+
+    // Unknown field is rejected; falls back to initialSort.
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { sentAt: 'desc' } }))
+  })
+
   it('passes initialColumns + initialSort from ui.listView to ListView', async () => {
     const config: OpenSaasConfig = {
       db: { provider: 'sqlite', url: 'file:./test.db' },

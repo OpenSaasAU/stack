@@ -114,6 +114,20 @@ export function AdminUI({
     // no default sort).
     const listView = config.lists[listKey]?.ui?.listView
 
+    // Parse `?sort=field:direction` URL param for user-triggered column sorts.
+    const sortParam = typeof searchParams.sort === 'string' ? searchParams.sort : undefined
+    let urlSort: { field: string; direction: 'asc' | 'desc' } | undefined
+    if (sortParam) {
+      const colonIdx = sortParam.lastIndexOf(':')
+      if (colonIdx > 0) {
+        const field = sortParam.slice(0, colonIdx)
+        const dir = sortParam.slice(colonIdx + 1)
+        if (dir === 'asc' || dir === 'desc') {
+          urlSort = { field, direction: dir }
+        }
+      }
+    }
+
     content = (
       <ListView
         context={context}
@@ -124,6 +138,7 @@ export function AdminUI({
         page={page}
         columns={listView?.initialColumns}
         initialSort={listView?.initialSort}
+        sort={urlSort}
       />
     )
   }

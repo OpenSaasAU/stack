@@ -90,31 +90,15 @@ describe('ListViewClient', () => {
   })
 
   describe('initialSort', () => {
-    it('should apply default sort from initialSort without any click', () => {
+    it('should show sort indicator on the initialSort column (asc)', () => {
       render(
         <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'asc' }} />,
       )
 
-      const rows = screen.getAllByRole('row')
-      // Sorted ascending by title: First, Second, Third
-      expect(rows[1]).toHaveTextContent('First Post')
-      expect(rows[2]).toHaveTextContent('Second Post')
-      expect(rows[3]).toHaveTextContent('Third Post')
+      expect(screen.getByText('↑')).toBeInTheDocument()
     })
 
-    it('should respect descending direction from initialSort', () => {
-      render(
-        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'desc' }} />,
-      )
-
-      const rows = screen.getAllByRole('row')
-      // Sorted descending by title: Third, Second, First
-      expect(rows[1]).toHaveTextContent('Third Post')
-      expect(rows[2]).toHaveTextContent('Second Post')
-      expect(rows[3]).toHaveTextContent('First Post')
-    })
-
-    it('should show sort indicator on the initialSort column', () => {
+    it('should show sort indicator on the initialSort column (desc)', () => {
       render(
         <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'desc' }} />,
       )
@@ -122,69 +106,74 @@ describe('ListViewClient', () => {
       expect(screen.getByText('↓')).toBeInTheDocument()
     })
 
+    it('should preserve item order provided by server (no in-memory sort)', () => {
+      // Items arrive pre-sorted by the server; the client renders them as-is.
+      const sortedItems = [
+        { id: '3', title: 'Third Post', status: 'published', views: 200 },
+        { id: '2', title: 'Second Post', status: 'draft', views: 50 },
+        { id: '1', title: 'First Post', status: 'published', views: 100 },
+      ]
+      render(
+        <ListViewClient
+          {...defaultProps}
+          items={sortedItems}
+          initialSort={{ field: 'title', direction: 'desc' }}
+        />,
+      )
+
+      const rows = screen.getAllByRole('row')
+      expect(rows[1]).toHaveTextContent('Third Post')
+      expect(rows[2]).toHaveTextContent('Second Post')
+      expect(rows[3]).toHaveTextContent('First Post')
+    })
+
     it('should not apply any default sort when initialSort is absent', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      const rows = screen.getAllByRole('row')
-      // Unchanged: items render in their original (input) order, no indicator.
-      expect(rows[1]).toHaveTextContent('First Post')
-      expect(rows[2]).toHaveTextContent('Second Post')
-      expect(rows[3]).toHaveTextContent('Third Post')
+      // No sort indicator when no initialSort.
       expect(screen.queryByText('↑')).not.toBeInTheDocument()
       expect(screen.queryByText('↓')).not.toBeInTheDocument()
     })
   })
 
   describe('sorting', () => {
-    it('should sort items ascending when header clicked', async () => {
+    it('should navigate with sort param when column header clicked', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
       await user.click(screen.getByText('Title'))
 
-      const rows = screen.getAllByRole('row')
-      // First row is header, so data rows start at index 1
-      expect(rows[1]).toHaveTextContent('First Post')
-      expect(rows[2]).toHaveTextContent('Second Post')
-      expect(rows[3]).toHaveTextContent('Third Post')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Aasc&page=1')
     })
 
-    it('should toggle sort order when same header clicked twice', async () => {
+    it('should navigate with toggled direction when already-sorted column clicked', async () => {
       const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} />)
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'asc' }} />,
+      )
 
-      const titleHeader = screen.getByText('Title')
-      await user.click(titleHeader)
-      await user.click(titleHeader)
+      await user.click(screen.getByText('Title'))
 
-      const rows = screen.getAllByRole('row')
-      // Should be descending now
-      expect(rows[1]).toHaveTextContent('Third Post')
-      expect(rows[2]).toHaveTextContent('Second Post')
-      expect(rows[3]).toHaveTextContent('First Post')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=1')
     })
 
     it('should show sort indicator on active column', async () => {
-      const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} />)
-
-      await user.click(screen.getByText('Title'))
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'asc' }} />,
+      )
 
       expect(screen.getByText('↑')).toBeInTheDocument()
     })
 
-    it('should sort numeric fields correctly', async () => {
+    it('should navigate with asc when switching to a different column', async () => {
       const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} />)
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'title', direction: 'desc' }} />,
+      )
 
       await user.click(screen.getByText('Views'))
 
-      const rows = screen.getAllByRole('row')
-      // Should sort by views: 100, 200, 50 (string comparison)
-      // Note: The current implementation sorts as strings, not numbers
-      expect(rows[1]).toHaveTextContent('100')
-      expect(rows[2]).toHaveTextContent('200')
-      expect(rows[3]).toHaveTextContent('50')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=views%3Aasc&page=1')
     })
   })
 
@@ -239,6 +228,22 @@ describe('ListViewClient', () => {
       await user.click(clearButton)
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post')
+    })
+
+    it('should preserve active sort when search is cleared', async () => {
+      const user = userEvent.setup()
+      render(
+        <ListViewClient
+          {...defaultProps}
+          search="existing"
+          initialSort={{ field: 'title', direction: 'desc' }}
+        />,
+      )
+
+      const clearButton = screen.getByText('✕')
+      await user.click(clearButton)
+
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc')
     })
 
     it('should reset to page 1 when new search submitted', async () => {
@@ -323,6 +328,24 @@ describe('ListViewClient', () => {
       await user.click(nextButton)
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=2')
+    })
+
+    it('should preserve sort in pagination URLs', async () => {
+      const user = userEvent.setup()
+      render(
+        <ListViewClient
+          {...defaultProps}
+          total={100}
+          pageSize={10}
+          page={1}
+          initialSort={{ field: 'title', direction: 'desc' }}
+        />,
+      )
+
+      const nextButton = screen.getByRole('button', { name: /next/i })
+      await user.click(nextButton)
+
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=2')
     })
   })
 
