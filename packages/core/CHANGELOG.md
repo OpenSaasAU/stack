@@ -1,5 +1,228 @@
 # @opensaas/stack-core
 
+## 0.25.0
+
+### Minor Changes
+
+- [#602](https://github.com/OpenSaasAU/stack/pull/602) [`44ec937`](https://github.com/OpenSaasAU/stack/commit/44ec9375baa4dacab4e34b03cbefb27c8aec07c9) Thanks [@borisno2](https://github.com/borisno2)! - Make `calendarDay` a `YYYY-MM-DD` string end-to-end (Keystone's CalendarDay scalar)
+
+  `calendarDay` is now a `YYYY-MM-DD` **string** at the `context.db` boundary in
+  both directions, so its type, validation, and runtime value finally agree.
+  Previously the field validated a `YYYY-MM-DD` string but its TypeScript type was
+  `Date`, so a typed caller passing `new Date(...)` hit a runtime `ValidationError`.
+  - The field/read type and the generated `CreateInput`/`UpdateInput` input types
+    are now `string`.
+  - Writes accept only a `YYYY-MM-DD` string; a malformed string or a `Date` is
+    rejected at runtime by validation (a `ValidationError`).
+  - Storage is unchanged: `DateTime @db.Date` on Postgres/MySQL, the SQLite TEXT
+    fallback as before.
+
+  **Behavioral change (reads):** reading a `calendarDay` now returns a
+  `YYYY-MM-DD` string instead of a `Date`. A field `resolveOutput` transform
+  normalises the value Prisma returns from the `@db.Date` column, using UTC
+  components to avoid timezone off-by-one. Consumers that previously relied on a
+  `Date` on read should update to the string form:
+
+  ```typescript
+  const event = await context.db.event.findUnique({ where: { id } })
+  event?.startDate // => '2025-01-15' (string, not Date)
+
+  // Writes: pass YYYY-MM-DD strings, not Date objects
+  await context.db.event.create({ data: { startDate: '2025-01-15' } })
+  ```
+
+- [#593](https://github.com/OpenSaasAU/stack/pull/593) [`fadd9db`](https://github.com/OpenSaasAU/stack/commit/fadd9dbd17085f4dd15899371a054ec46f943ce4) Thanks [@{](https://github.com/{)! - Nested relation writes now run the full hook pipeline inside one transaction ([#569](https://github.com/OpenSaasAU/stack/issues/569))
+
+  A record written via a nested `create`, `update`, or `delete` now fires the SAME
+  list- and field-level `beforeOperation`/`afterOperation` hooks as the equivalent
+  top-level write — so side effects (workflows, notifications, billing) are
+  identical whether a record is written nested or top-level. Previously nested
+  writes ran only `resolveInput`/`validate`/field-rules and silently skipped the
+  before/after side-effect hooks.
+  - Nested **create** runs `beforeOperation` (create) → persist → `afterOperation`
+    receiving the created `item`.
+  - Nested **update** runs `afterOperation` receiving both `originalItem` (the row
+    before) and the updated `item`.
+  - Nested **delete** runs `beforeOperation`/`afterOperation` receiving the
+    `originalItem`.
+
+  Existing access control, validation, silent-failure, sudo-bypass, and the [#578](https://github.com/OpenSaasAU/stack/issues/578)
+  nested-`connect`/`connectOrCreate` read-access + DB-reachability behavior are
+  unchanged. Pass-through nested kinds (`disconnect`/`set`/`updateMany`/
+  `deleteMany`) are out of scope and behave as before. See ADR-0010.
+
+  For to-many nested creates (`create: [{A},{B}]`), each created record's
+  `afterOperation` now fires exactly once against its OWN distinct row, recovered
+  by id-diff against the rows that existed before the write — so a pre-existing
+  sibling is never passed as the "created" item, and multiple creates no longer
+  collapse to a single row.
+
+  BEHAVIOR CHANGE — every write is now transactional, and a throwing
+  `beforeOperation`/`afterOperation` (or validation) rolls the whole write back.
+  The entire operation (parent + all nested writes) now runs inside one
+  `prisma.$transaction`, so it is atomic. Previously an `afterOperation` that threw
+  left the row committed; now it rolls back with the transaction (more
+  Keystone-correct). If you relied on a thrown `afterOperation` leaving the row
+  persisted, move that work to run after the write returns.
+
+  Inside a `beforeOperation`/`afterOperation` hook, `context.db` (and
+  `context.prisma`) are now bound to the write's transaction, so any `context.db`
+  write a hook performs participates in — and rolls back with — the same
+  transaction. Externally-visible side effects that must survive a rollback should
+  not use `context.db` from within these hooks (transaction-boundary hooks for
+  that are deferred — see [#590](https://github.com/OpenSaasAU/stack/issues/590)).
+
+  ```ts
+  // Nested create now fires the related list's beforeOperation/afterOperation,
+  // atomically with the parent — a throw anywhere rolls the whole write back.
+  await context.db.post.update({
+    where: { id },
+    data: {
+      title: 'Updated',
+   create: { name: 'New Author' } }, // User hooks fire; atomic
+    },
+  })
+  ```
+
+- [#594](https://github.com/OpenSaasAU/stack/pull/594) [`4f0d407`](https://github.com/OpenSaasAU/stack/commit/4f0d40721feff1a3109647a81fcbe47db5970026) Thanks [@borisno2](https://github.com/borisno2)! - Add an opt-in **Node build** of the generated `.opensaas/` bundle (ADR-0011, [#579](https://github.com/OpenSaasAU/stack/issues/579)).
+
+  Setting `output: { buildTarget: 'node' }` in `opensaas.config.ts` makes `opensaas generate` additionally compile the bundle to a plain-Node-loadable ESM form under `.opensaas/dist/` — `.js` + `.d.ts` with a `{"type":"module"}` marker — alongside the default `.ts` bundler form. The compiled entry is `.opensaas/dist/context.js`, with the Prisma client subtree at `.opensaas/dist/prisma-client/**` and the project config compiled in as a sibling, so a live module (e.g. better-auth's Prisma adapter) can be imported in a bundler-less runtime — plain Node, a Playwright e2e helper, or a build-time script — that the default `.ts` form cannot execute.
+
+  The Node build is purely additive: with `output.buildTarget` absent (the default), generation behaves exactly as before and no `.opensaas/dist/` is emitted.
+
+  ```typescript
+  // opensaas.config.ts
+  export default config({
+    output: { buildTarget: 'node' },
+    // ...
+  })
+
+  // then, from a plain-Node consumer (no bundler, no tsx):
+  import { createAuth } from '@opensaas/stack-auth/server'
+  import { config, rawOpensaasContext } from './.opensaas/dist/context.js'
+
+  const auth = createAuth(config, rawOpensaasContext)
+  await auth.api.signUpEmail({ body: { email, password, name } })
+  ```
+
+  The compile runs via the TypeScript compiler API with `rewriteRelativeImportExtensions` (turning the bundle's `.ts`-extension imports into runnable `.js` specifiers), `declaration`, `skipLibCheck`, and `noEmitOnError: false`, so it reuses the bundle's type-clean guarantee without adding a build dependency. `'node'` is the only `buildTarget` today; the field is a string-literal union so future compiled targets can be added without a breaking change.
+
+- [#592](https://github.com/OpenSaasAU/stack/pull/592) [`e355c05`](https://github.com/OpenSaasAU/stack/commit/e355c05a0787980b997609c4571271ab5c250f36) Thanks [@borisno2](https://github.com/borisno2)! - Make the generated `.opensaas/prisma-client` subtree statically resolvable by default and add a `db.prismaGeneratorOptions` passthrough.
+
+  The generated `generator client { ... }` block now emits `importFileExtension = "ts"` and `moduleFormat = "esm"` by default, so the prisma-client subtree uses explicit `.ts` import extensions and matches the extension style the rest of the `.opensaas` bundle already uses — the whole import graph is statically resolvable by a bundler out of the box, no post-generation surgery required.
+
+  A new optional `db.prismaGeneratorOptions` lets you override these values when you need a different module/extension story (e.g. emitting `.js` extensions for a plain-Node consumer). Any value you supply wins; omitted keys fall back to the `ts`/`esm` defaults. The existing `previewFeatures = ["multiSchema"]` emission (when `db.schemas` is set) is preserved and coexists with the new options.
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      prismaGeneratorOptions: {
+        importFileExtension: 'js',
+        moduleFormat: 'commonjs',
+      },
+      // ... rest of config
+    },
+    // ...
+  })
+  ```
+
+- [#600](https://github.com/OpenSaasAU/stack/pull/600) [`a93cebb`](https://github.com/OpenSaasAU/stack/commit/a93cebb5a6ba6550d8cdbb94f010c902ad7e29f1) Thanks [@relationship({](https://github.com/relationship({)! - Gate nested `connect` by the owning relationship field's field-level access
+
+  Nested `connect` (and the connect branch of `connectOrCreate`) is now gated by
+  the owning relationship field's create/update field-level access, in addition to
+  the target list's read/query access and DB-reachability check. This completes
+  the Keystone-parity rule that a connect requires both read access on the target
+  AND write access on the owning relationship field. `sudo` bypasses the check.
+
+  ```typescript
+  Post: list({
+    fields: {
+      // A non-sudo caller can only connect an author when this field's
+      // update access permits it (and the target User is readable/reachable).
+
+        ref: 'User.posts',
+        access: { update: ({ session }) => session?.role === 'editor' },
+      }),
+    },
+  })
+  ```
+
+- [#584](https://github.com/OpenSaasAU/stack/pull/584) [`b17ec45`](https://github.com/OpenSaasAU/stack/commit/b17ec45127fe55f02437892e9fd389c67373635a) Thanks [@borisno2](https://github.com/borisno2)! - Add `findFirst` to access-controlled `context.db.<list>` delegates
+
+  `findFirst` is sugar over the existing access-filtered `findMany` (`take: 1`), so
+  it introduces no new access surface: it applies the exact same query-access checks
+  and access-controlled include building as `findMany`, then returns the first
+  matching row or `null`. It honours the read-side silent-failure contract — an
+  access-denied query yields `null` rather than throwing.
+
+  ```ts
+  // Non-unique single-row lookup
+  const account = await context.db.account.findFirst({
+    where: { userId: '123' },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  // Narrow the single result with a query fragment
+  const post = await context.db.post.findFirst({
+    where: { published: true },
+    query: postFragment,
+  })
+  // post: ResultOf<typeof postFragment> | null
+  ```
+
+  The CLI type generator now emits a `findFirst` method (and `<List>FindFirstArgs`
+  type) for each list in the generated `.opensaas/types.ts`, so migrated apps that
+  reach for the familiar Prisma `findFirst` pattern get full type support.
+
+- [#601](https://github.com/OpenSaasAU/stack/pull/601) [`8f98e25`](https://github.com/OpenSaasAU/stack/commit/8f98e25fbef4ec0fc3ff0cba456ff7f2f7ba2ea8) Thanks [@borisno2](https://github.com/borisno2)! - Add `beforeTransaction` / `afterTransaction` transaction-boundary hooks (list- and field-level)
+
+  These run OUTSIDE the write's database transaction (in addition to the in-transaction `beforeOperation`/`afterOperation`), for non-transactional side effects like external API calls that must not hold a transaction open and cannot be rolled back. They fire per `(list, operation)` involved in the write (the top-level list plus each nested create/update/delete list) and form a symmetric compensation bracket: `afterTransaction` always runs when its paired `beforeTransaction` ran, receiving the outcome (`status: 'committed' | 'rolled-back'` plus `error` on rollback). On commit it gets the persisted `item` (and `originalItem` for update/delete) **only for the top-level record** — for nested lists these are `undefined`, since the per-record persisted row is not recoverable outside the transaction; use the in-transaction `afterOperation` for per-record nested compensation. On rollback it gets no `item` so it can undo what `beforeTransaction` did. `connectOrCreate` is enumerated as a best-effort create involvement (a resolve-to-connect still fires the bracket with no write), so compensators should be idempotent.
+
+  ```typescript
+  list({
+    fields: { name: text() },
+    hooks: {
+      // Runs before the transaction opens.
+      beforeTransaction: async ({ operation, inputData }) => {
+        await billing.reserveSeat(inputData.seatId)
+      },
+      // Always runs after the transaction settles.
+      afterTransaction: async (args) => {
+        if (args.status === 'rolled-back') {
+          // The write did not persist (args.error explains why) — compensate.
+          await billing.releaseSeat(args.inputData.seatId)
+        } else {
+          await billing.confirmSeat(args.item.seatId)
+        }
+      },
+    },
+  })
+  ```
+
+  A throwing `beforeTransaction` aborts the write (the transaction never opens) and fires `afterTransaction` (`rolled-back`) only for lists whose `beforeTransaction` already ran. A throwing `afterTransaction` does not stop the other compensators; errors are surfaced afterward. Sudo does not affect these hooks. This is an additive, non-Keystone extension and does not change the existing `beforeOperation`/`afterOperation` semantics.
+
+### Patch Changes
+
+- [#603](https://github.com/OpenSaasAU/stack/pull/603) [`be9a896`](https://github.com/OpenSaasAU/stack/commit/be9a8965ad6338c279e99cfe3bf24162e63ffb92) Thanks [@borisno2](https://github.com/borisno2)! - Enforce required json fields on create: an omitted key is now rejected while any
+  present value (object, array, primitive, or null) is still accepted.
+
+- [#583](https://github.com/OpenSaasAU/stack/pull/583) [`e39d6e9`](https://github.com/OpenSaasAU/stack/commit/e39d6e9e37be2337c8cf1979053e76877f14296c) Thanks [@borisno2](https://github.com/borisno2)! - Make non-sudo writes fail loud in `filterWritableFields` (Keystone parity).
+
+  Undeclared `data` keys on create/update now throw instead of passing through unchecked ([#564](https://github.com/OpenSaasAU/stack/issues/564)), and fields denied by field-level access now throw instead of being silently stripped ([#568](https://github.com/OpenSaasAU/stack/issues/568)). `sudo` remains the single trusted bypass; system fields and relationship foreign keys still pass through. Raw multi-column split columns (e.g. `media_url`/`media_size` from an `image()`/`file()` field) are now gated by their owning field's write access — supplying them directly under non-sudo when that field denies the write throws, instead of bypassing the field's `access.create`/`access.update`.
+
+  Behavioural narrowing: a list-level `resolveInput` hook that adds keys to `resolvedData` which are not declared fields will now be rejected by the undeclared-key throw. No production hook does this today.
+
+- [#605](https://github.com/OpenSaasAU/stack/pull/605) [`ca4973b`](https://github.com/OpenSaasAU/stack/commit/ca4973b504eadb123d179e8f4d16d6ec8c9f8fc1) Thanks [@borisno2](https://github.com/borisno2)! - Required json fields now reject a present `null` during validation rather than failing later as a DB NOT NULL violation. Omitted keys on update are still allowed; the Prisma column nullability is unchanged.
+
+- [#602](https://github.com/OpenSaasAU/stack/pull/602) [`44ec937`](https://github.com/OpenSaasAU/stack/commit/44ec9375baa4dacab4e34b03cbefb27c8aec07c9) Thanks [@borisno2](https://github.com/borisno2)! - Fix update validation rejecting omitted required fields under zod 4.4 by using key-optionality (`.optional()`) instead of `z.union([schema, z.undefined()])`. Partial updates that omit a required-on-create field now validate; present values still enforce their rules.
+
+- [#587](https://github.com/OpenSaasAU/stack/pull/587) [`ecbf834`](https://github.com/OpenSaasAU/stack/commit/ecbf834059a072c428b0739d6ebcf4c74be8c893) Thanks [@borisno2](https://github.com/borisno2)! - Fix false denial of nested `connect` (and `connectOrCreate`'s connect branch): connect now requires read/query access on the target and evaluates filter results via DB reachability (`findFirst({ where: { AND: [connection, accessFilter] } })`), so nested-relation and `AND`/`OR`/`some`/`none`/`not` filters no longer always fail.
+
+- [#589](https://github.com/OpenSaasAU/stack/pull/589) [`481d6e0`](https://github.com/OpenSaasAU/stack/commit/481d6e00be90b1159b0b30eff015e5079c840158) Thanks [@borisno2](https://github.com/borisno2)! - Fix row-level access bypass when an explicit `include` is passed to non-sudo `findUnique`/`findMany`. The caller's `include` is now merged with (not replaced by) the access-controlled include: denied relations are dropped, each relation's access `where` is AND-combined with any caller nested `where`, and nested includes are filtered at every level. Sudo and query-fragment paths are unchanged. When no access-controlled include is computed (inside a `resolveOutput`/virtual-field context, at max include depth, or for a list with no relationships), the caller's `include` is passed through unchanged rather than dropped — avoiding fail-closed data loss.
+
+- [#586](https://github.com/OpenSaasAU/stack/pull/586) [`4622b5f`](https://github.com/OpenSaasAU/stack/commit/4622b5fa8fc731e2c8995011f1be0cfe341578da) Thanks [@borisno2](https://github.com/borisno2)! - Enforce unique-`where` for `context.db.<list>.findUnique` — a non-unique `where` now throws a clear error instead of silently returning a nondeterministic row. Use `findFirst` for non-unique single-row lookups.
+
 ## 0.24.0
 
 ### Minor Changes

@@ -1,5 +1,128 @@
 # @opensaas/stack-cli
 
+## 0.25.0
+
+### Minor Changes
+
+- [#606](https://github.com/OpenSaasAU/stack/pull/606) [`801230e`](https://github.com/OpenSaasAU/stack/commit/801230e1a95efc17c8bec46c7094f0b72956f54b) Thanks [@borisno2](https://github.com/borisno2)! - Enforce field-level scalar narrowing at the write call site, and fix `checkbox({ defaultValue: false })` optionality
+
+  The generated `context.db.<list>.create()/update()/createMany()/updateMany()` `data`
+  type now narrows scalar fields to their OpenSaaS `getTypeScriptType()` types instead of
+  inheriting Prisma's wider input types. Field-level narrowing (e.g. `calendarDay` → `string`)
+  is now a genuine compile-time error to violate, not just a runtime validation failure.
+
+  ```ts
+  // calendarDay is a `string` end-to-end:
+  await context.db.event.create({ data: { startDate: new Date() } })
+  //                                                  ^^^^^^^^^^ Type 'Date' is not assignable to type 'string'.
+  await context.db.event.create({ data: { startDate: '2026-01-01' } }) // ✅ compiles
+  ```
+
+  Relationship nested writes (`connect`/`create`/`connectOrCreate`), unchecked foreign keys
+  (e.g. `authorId`), and `decimal`/`json` writes are unaffected: `decimal` still accepts
+  `Decimal | number | string` and `json` still accepts Prisma's `JsonNull`/`DbNull` sentinels.
+
+  Also fixes a latent bug where `checkbox({ defaultValue: false })` (and any field with a
+  falsy-but-present default) was generated as a required field on create — it is now correctly
+  optional.
+
+  Note: this may surface pre-existing type errors in consumer code that passed a `Date` to a
+  `calendarDay` field. Such code already failed at runtime; it now fails at compile time. Pass a
+  `YYYY-MM-DD` string instead.
+
+- [#609](https://github.com/OpenSaasAU/stack/pull/609) [`1d79fe6`](https://github.com/OpenSaasAU/stack/commit/1d79fe6aad79a3598ebb2ca973d9936757b25c1f) Thanks [@borisno2](https://github.com/borisno2)! - Consolidate nullability between the standalone `{List}CreateInput`/`{List}UpdateInput` exports and the call-site write-`data` override into a single source of truth ([#608](https://github.com/OpenSaasAU/stack/issues/608)).
+
+  The generated types previously described a list's create/update input shape in two places that disagreed on how a nullable scalar was represented: the write-`data` override emitted `name?: string | null` (matching Prisma's nullable-column input) while the standalone `{List}CreateInput`/`{List}UpdateInput` emitted `name?: string`. Both paths now render each scalar member through one shared helper, so a nullable scalar is consistently `name?: T | null` in every input representation. Required scalars stay required, and `decimal`/`json`/relationship/multi-column handling is unchanged.
+
+  This is a non-breaking type refinement, but if you assigned the standalone `{List}CreateInput`/`{List}UpdateInput` types into a stricter local type, a nullable scalar may now be inferred as `T | null`:
+
+  ```typescript
+  // A nullable text() field on Post now generates:
+  export type PostCreateInput = {
+    title: string // required scalar — unchanged
+    content?: string | null // nullable scalar — now includes `| null`
+  }
+  ```
+
+- [#594](https://github.com/OpenSaasAU/stack/pull/594) [`4f0d407`](https://github.com/OpenSaasAU/stack/commit/4f0d40721feff1a3109647a81fcbe47db5970026) Thanks [@borisno2](https://github.com/borisno2)! - Add an opt-in **Node build** of the generated `.opensaas/` bundle (ADR-0011, [#579](https://github.com/OpenSaasAU/stack/issues/579)).
+
+  Setting `output: { buildTarget: 'node' }` in `opensaas.config.ts` makes `opensaas generate` additionally compile the bundle to a plain-Node-loadable ESM form under `.opensaas/dist/` — `.js` + `.d.ts` with a `{"type":"module"}` marker — alongside the default `.ts` bundler form. The compiled entry is `.opensaas/dist/context.js`, with the Prisma client subtree at `.opensaas/dist/prisma-client/**` and the project config compiled in as a sibling, so a live module (e.g. better-auth's Prisma adapter) can be imported in a bundler-less runtime — plain Node, a Playwright e2e helper, or a build-time script — that the default `.ts` form cannot execute.
+
+  The Node build is purely additive: with `output.buildTarget` absent (the default), generation behaves exactly as before and no `.opensaas/dist/` is emitted.
+
+  ```typescript
+  // opensaas.config.ts
+  export default config({
+    output: { buildTarget: 'node' },
+    // ...
+  })
+
+  // then, from a plain-Node consumer (no bundler, no tsx):
+  import { createAuth } from '@opensaas/stack-auth/server'
+  import { config, rawOpensaasContext } from './.opensaas/dist/context.js'
+
+  const auth = createAuth(config, rawOpensaasContext)
+  await auth.api.signUpEmail({ body: { email, password, name } })
+  ```
+
+  The compile runs via the TypeScript compiler API with `rewriteRelativeImportExtensions` (turning the bundle's `.ts`-extension imports into runnable `.js` specifiers), `declaration`, `skipLibCheck`, and `noEmitOnError: false`, so it reuses the bundle's type-clean guarantee without adding a build dependency. `'node'` is the only `buildTarget` today; the field is a string-literal union so future compiled targets can be added without a breaking change.
+
+- [#592](https://github.com/OpenSaasAU/stack/pull/592) [`e355c05`](https://github.com/OpenSaasAU/stack/commit/e355c05a0787980b997609c4571271ab5c250f36) Thanks [@borisno2](https://github.com/borisno2)! - Make the generated `.opensaas/prisma-client` subtree statically resolvable by default and add a `db.prismaGeneratorOptions` passthrough.
+
+  The generated `generator client { ... }` block now emits `importFileExtension = "ts"` and `moduleFormat = "esm"` by default, so the prisma-client subtree uses explicit `.ts` import extensions and matches the extension style the rest of the `.opensaas` bundle already uses — the whole import graph is statically resolvable by a bundler out of the box, no post-generation surgery required.
+
+  A new optional `db.prismaGeneratorOptions` lets you override these values when you need a different module/extension story (e.g. emitting `.js` extensions for a plain-Node consumer). Any value you supply wins; omitted keys fall back to the `ts`/`esm` defaults. The existing `previewFeatures = ["multiSchema"]` emission (when `db.schemas` is set) is preserved and coexists with the new options.
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      prismaGeneratorOptions: {
+        importFileExtension: 'js',
+        moduleFormat: 'commonjs',
+      },
+      // ... rest of config
+    },
+    // ...
+  })
+  ```
+
+- [#584](https://github.com/OpenSaasAU/stack/pull/584) [`b17ec45`](https://github.com/OpenSaasAU/stack/commit/b17ec45127fe55f02437892e9fd389c67373635a) Thanks [@borisno2](https://github.com/borisno2)! - Add `findFirst` to access-controlled `context.db.<list>` delegates
+
+  `findFirst` is sugar over the existing access-filtered `findMany` (`take: 1`), so
+  it introduces no new access surface: it applies the exact same query-access checks
+  and access-controlled include building as `findMany`, then returns the first
+  matching row or `null`. It honours the read-side silent-failure contract — an
+  access-denied query yields `null` rather than throwing.
+
+  ```ts
+  // Non-unique single-row lookup
+  const account = await context.db.account.findFirst({
+    where: { userId: '123' },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  // Narrow the single result with a query fragment
+  const post = await context.db.post.findFirst({
+    where: { published: true },
+    query: postFragment,
+  })
+  // post: ResultOf<typeof postFragment> | null
+  ```
+
+  The CLI type generator now emits a `findFirst` method (and `<List>FindFirstArgs`
+  type) for each list in the generated `.opensaas/types.ts`, so migrated apps that
+  reach for the familiar Prisma `findFirst` pattern get full type support.
+
+### Patch Changes
+
+- [#606](https://github.com/OpenSaasAU/stack/pull/606) [`801230e`](https://github.com/OpenSaasAU/stack/commit/801230e1a95efc17c8bec46c7094f0b72956f54b) Thanks [@borisno2](https://github.com/borisno2)! - Remove unused getRelatedListName helper from the types generator (dead code, no behavior change)
+
+- [#591](https://github.com/OpenSaasAU/stack/pull/591) [`c741055`](https://github.com/OpenSaasAU/stack/commit/c74105548aadb9991a4cded3b12d9c1a5b0dcd0c) Thanks [@borisno2](https://github.com/borisno2)! - Fix `tsc` failure in generated `prisma-extensions.ts` for multi-column storage fields in `db: { columns: 'keystone' }` mode. The result extension's `needs` now references the physical part columns (e.g. `image_url`, `image_pathname`, …) derived from the field's `getColumnNames`, instead of the logical field name which has no scalar on the model (previously typed `true` against `never`). This removes the last error forcing `@ts-nocheck` on the generated bundle ([#559](https://github.com/OpenSaasAU/stack/issues/559)).
+
+- Updated dependencies [[`44ec937`](https://github.com/OpenSaasAU/stack/commit/44ec9375baa4dacab4e34b03cbefb27c8aec07c9), [`be9a896`](https://github.com/OpenSaasAU/stack/commit/be9a8965ad6338c279e99cfe3bf24162e63ffb92), [`e39d6e9`](https://github.com/OpenSaasAU/stack/commit/e39d6e9e37be2337c8cf1979053e76877f14296c), [`fadd9db`](https://github.com/OpenSaasAU/stack/commit/fadd9dbd17085f4dd15899371a054ec46f943ce4), [`4f0d407`](https://github.com/OpenSaasAU/stack/commit/4f0d40721feff1a3109647a81fcbe47db5970026), [`e355c05`](https://github.com/OpenSaasAU/stack/commit/e355c05a0787980b997609c4571271ab5c250f36), [`ca4973b`](https://github.com/OpenSaasAU/stack/commit/ca4973b504eadb123d179e8f4d16d6ec8c9f8fc1), [`44ec937`](https://github.com/OpenSaasAU/stack/commit/44ec9375baa4dacab4e34b03cbefb27c8aec07c9), [`ecbf834`](https://github.com/OpenSaasAU/stack/commit/ecbf834059a072c428b0739d6ebcf4c74be8c893), [`a93cebb`](https://github.com/OpenSaasAU/stack/commit/a93cebb5a6ba6550d8cdbb94f010c902ad7e29f1), [`481d6e0`](https://github.com/OpenSaasAU/stack/commit/481d6e00be90b1159b0b30eff015e5079c840158), [`4622b5f`](https://github.com/OpenSaasAU/stack/commit/4622b5fa8fc731e2c8995011f1be0cfe341578da), [`b17ec45`](https://github.com/OpenSaasAU/stack/commit/b17ec45127fe55f02437892e9fd389c67373635a), [`8f98e25`](https://github.com/OpenSaasAU/stack/commit/8f98e25fbef4ec0fc3ff0cba456ff7f2f7ba2ea8)]:
+  - @opensaas/stack-core@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes
