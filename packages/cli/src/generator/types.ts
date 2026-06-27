@@ -418,15 +418,6 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
 }
 
 /**
- * Extract the related list name from a relationship ref
- * @param ref - Relationship ref in format 'ListName' or 'ListName.fieldName'
- * @returns The list name (first part before '.')
- */
-function getRelatedListName(ref: string): string {
-  return ref.split('.')[0]
-}
-
-/**
  * Generate WhereInput type by re-exporting Prisma's native WhereInput
  * This ensures compatibility with all Prisma versions and includes all filter operators
  */
