@@ -717,7 +717,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
   })
 
   describe('Access Denial Scenarios', () => {
-    it('should deny nested connect when update access is denied on related item', async () => {
+    it('should deny nested connect when read (query) access scopes out the target row', async () => {
       const testConfig = config({
         db: {
           provider: 'postgresql',
@@ -730,11 +730,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
             },
             access: {
               operation: {
-                query: () => true,
-                update: ({ session }) => {
-                  // Only allow updating own profile
-                  return { id: { equals: session?.userId } }
-                },
+                // Only allow reading own profile (a scalar filter)
+                query: ({ session }) => ({ id: { equals: session?.userId } }),
+                update: () => true,
               },
             },
           }),
@@ -758,11 +756,8 @@ describe('Nested Operations - Access Control and Hooks', () => {
         title: 'Original Title',
       })
 
-      // Mock finding the user to connect (different from session user)
-      mockPrisma.user.findUnique.mockResolvedValue({
-        id: '2',
-        name: 'Other User',
-      })
+      // User 2 is NOT reachable under { id: { equals: '1' } } → findFirst returns null.
+      mockPrisma.user.findFirst.mockResolvedValue(null)
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
@@ -771,14 +766,19 @@ describe('Nested Operations - Access Control and Hooks', () => {
           where: { id: '1' },
           data: {
             author: {
-              connect: { id: '2' }, // Connecting to user 2, but session is user 1
+              connect: { id: '2' }, // Connecting to user 2, but session can only read user 1
             },
           },
         }),
       ).rejects.toThrow('Access denied: Cannot connect to this item')
+
+      // Reachability must be evaluated in the DB, AND-combining connection + filter.
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { AND: [{ id: '2' }, { id: { equals: '1' } }] },
+      })
     })
 
-    it('should allow nested connect when update access is granted', async () => {
+    it('should allow nested connect when read (query) access is granted (boolean true)', async () => {
       const testConfig = config({
         db: {
           provider: 'postgresql',
@@ -791,8 +791,8 @@ describe('Nested Operations - Access Control and Hooks', () => {
             },
             access: {
               operation: {
-                query: () => true,
-                update: () => true, // Allow all updates
+                query: () => true, // Allow reading all users
+                update: () => true,
               },
             },
           }),
@@ -840,6 +840,500 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       expect(result).toBeDefined()
       expect(mockPrisma.post.update).toHaveBeenCalled()
+      // Boolean-true access must not run a reachability re-check.
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('connect requires READ access, not target UPDATE (read-not-update repro)', async () => {
+      // Caller can READ the target (query=allowAll) but CANNOT update it
+      // (update=admin-only). Under the old behaviour this denied the connect;
+      // it must now succeed because connect only references the row.
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          LessonTerm: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: () => true, // anyone can read
+                update: () => false, // nobody (non-admin) can update
+              },
+            },
+          }),
+          Enrolment: list({
+            fields: {
+              title: text(),
+              term: relationship({ ref: 'LessonTerm' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                update: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.enrolment = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue({ id: 'e1', title: 'Term 1 Enrolment' }),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: 'e1', title: 'Term 1 Enrolment', termId: 't1' }),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.lessonTerm = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue({ id: 't1', name: 'Term 1' }),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'student-1' })
+
+      const result = await context.db.enrolment.update({
+        where: { id: 'e1' },
+        data: {
+          term: {
+            connect: { id: 't1' },
+          },
+        },
+      })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.enrolment.update).toHaveBeenCalled()
+      // query=true → existence check via findUnique, no reachability re-check.
+      expect(mockPrisma.lessonTerm.findUnique).toHaveBeenCalledWith({ where: { id: 't1' } })
+      expect(mockPrisma.lessonTerm.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('allows nested connect when a NESTED-RELATION filter is reachable (account-holder self-connect)', async () => {
+      // Account's row filter is a nested-relation filter:
+      //   { user: { id: { equals: session.userId } } }
+      // The old in-memory matcher could not evaluate this and always denied.
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Account: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: ({ session }) => ({ user: { id: { equals: session?.userId } } }),
+                update: () => true,
+              },
+            },
+          }),
+          Student: list({
+            fields: {
+              name: text(),
+              account: relationship({ ref: 'Account' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.account = {
+        findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.student = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: 's1', name: 'Kid', accountId: 'acc-1' }),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
+
+      const result = await context.db.student.create({
+        data: {
+          name: 'Kid',
+          account: { connect: { id: 'acc-1' } },
+        },
+      })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.student.create).toHaveBeenCalled()
+      // Reachability check evaluated the nested-relation filter in the DB.
+      expect(mockPrisma.account.findFirst).toHaveBeenCalledWith({
+        where: {
+          AND: [{ id: 'acc-1' }, { user: { id: { equals: 'user-1' } } }],
+        },
+      })
+    })
+
+    it('denies nested connect when a NESTED-RELATION filter is NOT reachable', async () => {
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Account: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: ({ session }) => ({ user: { id: { equals: session?.userId } } }),
+                update: () => true,
+              },
+            },
+          }),
+          Student: list({
+            fields: {
+              name: text(),
+              account: relationship({ ref: 'Account' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.account = {
+        // Not reachable for this caller → findFirst returns null.
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.student = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'attacker' })
+
+      await expect(
+        context.db.student.create({
+          data: {
+            name: 'Kid',
+            account: { connect: { id: 'someone-elses-account' } },
+          },
+        }),
+      ).rejects.toThrow('Access denied: Cannot connect to this item')
+      expect(mockPrisma.student.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluates AND/OR/some/none/not boolean-combinator filters via DB reachability', async () => {
+      const complexFilter = {
+        OR: [
+          { AND: [{ status: { equals: 'active' } }, { NOT: { archived: { equals: true } } }] },
+          { members: { some: { userId: { equals: 'user-1' } } } },
+        ],
+      }
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Team: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: () => complexFilter,
+                update: () => true,
+              },
+            },
+          }),
+          Project: list({
+            fields: {
+              title: text(),
+              team: relationship({ ref: 'Team' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.team = {
+        findFirst: vi.fn().mockResolvedValue({ id: 'team-1', name: 'Team A' }),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.project = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: 'p1', title: 'P1', teamId: 'team-1' }),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
+
+      const result = await context.db.project.create({
+        data: {
+          title: 'P1',
+          team: { connect: { id: 'team-1' } },
+        },
+      })
+
+      expect(result).toBeDefined()
+      // The full boolean-combinator filter is AND-combined with the connection
+      // and handed to the DB — no in-memory walk, no false denial.
+      expect(mockPrisma.team.findFirst).toHaveBeenCalledWith({
+        where: { AND: [{ id: 'team-1' }, complexFilter] },
+      })
+    })
+
+    it('sudo connect bypasses the access check entirely', async () => {
+      const queryAccess = vi.fn(() => false as const)
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          User: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: queryAccess, // would deny everything
+                update: () => false,
+              },
+            },
+          }),
+          Post: list({
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                update: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
+
+      const context = getContext(await testConfig, mockPrisma, { userId: '1' }).sudo()
+
+      const result = await context.db.post.update({
+        where: { id: '1' },
+        data: {
+          author: { connect: { id: '2' } },
+        },
+      })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.post.update).toHaveBeenCalled()
+      // Sudo skips access evaluation: neither the access fn nor reachability run.
+      expect(queryAccess).not.toHaveBeenCalled()
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
+    })
+
+    it("connectOrCreate's connect branch uses read-access + DB reachability and denies unreachable rows", async () => {
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Account: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: ({ session }) => ({ user: { id: { equals: session?.userId } } }),
+                create: () => true,
+                update: () => true,
+              },
+            },
+          }),
+          Student: list({
+            fields: {
+              name: text(),
+              account: relationship({ ref: 'Account' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.account = {
+        // Row exists ...
+        findUnique: vi.fn().mockResolvedValue({ id: 'acc-x', name: 'Other Account' }),
+        // ... but is NOT reachable under the access filter for this caller.
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.student = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
+
+      await expect(
+        context.db.student.create({
+          data: {
+            name: 'Kid',
+            account: {
+              connectOrCreate: {
+                where: { id: 'acc-x' },
+                create: { name: 'New Account' },
+              },
+            },
+          },
+        }),
+      ).rejects.toThrow('Access denied: Cannot connect to existing item')
+
+      expect(mockPrisma.account.findFirst).toHaveBeenCalledWith({
+        where: { AND: [{ id: 'acc-x' }, { user: { id: { equals: 'user-1' } } }] },
+      })
+      expect(mockPrisma.student.create).not.toHaveBeenCalled()
+    })
+
+    it("connectOrCreate's connect branch allows a reachable existing row", async () => {
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          Account: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: ({ session }) => ({ user: { id: { equals: session?.userId } } }),
+                create: () => true,
+                update: () => true,
+              },
+            },
+          }),
+          Student: list({
+            fields: {
+              name: text(),
+              account: relationship({ ref: 'Account' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.account = {
+        findUnique: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
+        findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+      mockPrisma.student = {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: 's1', name: 'Kid', accountId: 'acc-1' }),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+      }
+
+      const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
+
+      const result = await context.db.student.create({
+        data: {
+          name: 'Kid',
+          account: {
+            connectOrCreate: {
+              where: { id: 'acc-1' },
+              create: { name: 'New Account' },
+            },
+          },
+        },
+      })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.student.create).toHaveBeenCalled()
     })
 
     it('should deny nested update when update access is denied on related item', async () => {

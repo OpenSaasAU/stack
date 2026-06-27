@@ -117,8 +117,76 @@ async function processNestedCreate(
 }
 
 /**
+ * Verify that a single connection target is reachable for the caller.
+ *
+ * Connecting an existing row references it; it does not modify the row's own
+ * data. Mirroring Keystone, this requires **read/query** access on the target
+ * list (not `update`). When query access returns a filter object, the filter is
+ * evaluated in the DATABASE (not in memory) via
+ * `findFirst({ where: { AND: [connection, accessFilter] } })`. The connect is
+ * allowed iff that query returns a row, which correctly handles arbitrary
+ * nested-relation predicates and boolean combinators (`AND`/`OR`/`some`/
+ * `none`/`not`). The existence check is folded into the reachability query so a
+ * non-existent id is still denied.
+ *
+ * Sudo bypasses the entire check (handled by the caller).
+ *
+ * TODO(#578): also gate connect by the owning relationship field's field-level
+ * access. `NestedOpHandlerArgs` does not currently carry the owning field's
+ * config/access, so threading it through is deferred; the read-access +
+ * DB-reachability change here is the must-have correctness fix.
+ */
+async function verifyConnectReachable(
+  connection: Record<string, unknown>,
+  relatedListName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
+  context: AccessContext,
+  prisma: unknown,
+): Promise<void> {
+  // Access Prisma model dynamically - required because model names are generated at runtime
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const model = (prisma as any)[getDbKey(relatedListName)]
+
+  // Connecting references an existing row; it requires READ (query) access on
+  // the target, not update access.
+  const queryAccess = relatedListConfig.access?.operation?.query
+  const accessResult = await checkAccess(queryAccess, {
+    session: context.session,
+    context,
+  })
+
+  // Explicit denial.
+  if (accessResult === false) {
+    throw new Error('Access denied: Cannot connect to this item')
+  }
+
+  // Full access: still verify the row exists (keep "Item not found" behaviour).
+  if (accessResult === true) {
+    const item = await model.findUnique({ where: connection })
+    if (!item) {
+      throw new Error(`Cannot connect: Item not found`)
+    }
+    return
+  }
+
+  // Filter result: confirm the row is reachable under the access filter by
+  // AND-combining the connection identifier with the filter and querying the DB.
+  // A non-existent id and an unreachable row both yield no row → denied. This
+  // correctly evaluates arbitrary nested-relation predicates and boolean
+  // combinators because the database does the matching, not an in-memory walk.
+  const reachable = await model.findFirst({
+    where: { AND: [connection, accessResult] },
+  })
+
+  if (!reachable) {
+    throw new Error('Access denied: Cannot connect to this item')
+  }
+}
+
+/**
  * Process nested connect operations
- * Verifies update access to the items being connected
+ * Verifies read (query) access to the items being connected via DB reachability
  */
 async function processNestedConnect(
   connections: Record<string, unknown> | Array<Record<string, unknown>>,
@@ -130,47 +198,10 @@ async function processNestedConnect(
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections]
 
-  // Check update access for each item being connected (skip if sudo mode)
+  // Check read access for each item being connected (skip if sudo mode)
   if (!context._isSudo) {
     for (const connection of connectionsArray) {
-      // Access Prisma model dynamically - required because model names are generated at runtime
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = (prisma as any)[getDbKey(relatedListName)]
-
-      // Fetch the item to check access
-      const item = await model.findUnique({
-        where: connection,
-      })
-
-      if (!item) {
-        throw new Error(`Cannot connect: Item not found`)
-      }
-
-      // Check update access (connecting modifies the relationship)
-      const updateAccess = relatedListConfig.access?.operation?.update
-      const accessResult = await checkAccess(updateAccess, {
-        session: context.session,
-        item,
-        context,
-      })
-
-      if (accessResult === false) {
-        throw new Error('Access denied: Cannot connect to this item')
-      }
-
-      // If access returns a filter, check if item matches
-      if (typeof accessResult === 'object') {
-        // Simple field matching
-        for (const [key, value] of Object.entries(accessResult)) {
-          if (typeof value === 'object' && value !== null && 'equals' in value) {
-            if (item[key] !== (value as Record<string, unknown>).equals) {
-              throw new Error('Access denied: Cannot connect to this item')
-            }
-          } else if (item[key] !== value) {
-            throw new Error('Access denied: Cannot connect to this item')
-          }
-        }
-      }
+      await verifyConnectReachable(connection, relatedListName, relatedListConfig, context, prisma)
     }
   }
 
@@ -316,31 +347,47 @@ async function processNestedConnectOrCreate(
         config,
       )
 
-      // Check access for the connect portion (try to find existing item) (skip if sudo mode)
+      // Check access for the connect portion (skip if sudo mode).
+      //
+      // connectOrCreate connects an existing row when present, otherwise
+      // creates. So when the row exists we apply the same connect semantics as
+      // processNestedConnect — READ (query) access on the target, evaluated via
+      // DB reachability for filter results. When the row does not exist we fall
+      // through to create. We must NOT swallow an access-denied error: only the
+      // genuine "row absent" case may fall back to create.
       if (!context._isSudo) {
-        try {
-          // Access Prisma model dynamically - required because model names are generated at runtime
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const model = (prisma as any)[getDbKey(relatedListName)]
-          const existingItem = await model.findUnique({
-            where: opRecord.where,
+        // Access Prisma model dynamically - required because model names are generated at runtime
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = (prisma as any)[getDbKey(relatedListName)]
+        const where = opRecord.where as Record<string, unknown>
+
+        const existingItem = await model.findUnique({ where })
+
+        // Only enforce connect access when the row actually exists; otherwise
+        // the create branch (already processed) is used.
+        if (existingItem) {
+          const queryAccess = relatedListConfig.access?.operation?.query
+          const accessResult = await checkAccess(queryAccess, {
+            session: context.session,
+            item: existingItem,
+            context,
           })
 
-          if (existingItem) {
-            // Check update access for connection
-            const updateAccess = relatedListConfig.access?.operation?.update
-            const accessResult = await checkAccess(updateAccess, {
-              session: context.session,
-              item: existingItem,
-              context,
+          if (accessResult === false) {
+            throw new Error('Access denied: Cannot connect to existing item')
+          }
+
+          // Filter result: confirm the existing row is reachable under the
+          // access filter via DB reachability (handles nested/boolean filters).
+          if (accessResult !== true) {
+            const reachable = await model.findFirst({
+              where: { AND: [where, accessResult] },
             })
 
-            if (accessResult === false) {
+            if (!reachable) {
               throw new Error('Access denied: Cannot connect to existing item')
             }
           }
-        } catch {
-          // Item doesn't exist, will use create (already processed)
         }
       }
 
