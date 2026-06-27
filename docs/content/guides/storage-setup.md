@@ -51,6 +51,8 @@ export async function register() {
 
 Import this file's side effects in your upload route if you prefer a local import, or rely on `instrumentation.ts` to ensure it always runs first. The examples below use `instrumentation.ts`.
 
+> **Next.js version note:** `instrumentation.ts` is supported natively in Next.js 15+. For Next.js 13/14, add `experimental: { instrumentationHook: true }` to your `next.config.ts`.
+
 > **Local storage:** `'local'` is built in and needs no registration step. Skip ahead to the [Local Storage Setup](#local-storage-setup) section.
 
 ---
@@ -524,8 +526,8 @@ import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
 
 export async function register() {
   if (process.env.NODE_ENV === 'production') {
-    const { S3StorageProvider } = await import('@opensaas/stack-storage-s3')
-    registerStorageProvider('s3', (config) => new S3StorageProvider(config))
+    const { S3StorageProvider, type S3StorageConfig } = await import('@opensaas/stack-storage-s3')
+    registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
   }
   // 'local' is built in — no registration needed for development
 }
