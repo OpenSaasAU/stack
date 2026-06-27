@@ -344,6 +344,11 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
     writeOp,
     listName,
     originalItem,
+    // Pass the enclosing write's `inputData` (the SAME value the Phase-5
+    // `filterWritableFields` call above uses) so the connect-site owning-field
+    // gate evaluates item-/inputData-dependent field rules identically to Phase 5
+    // and the two cannot diverge into a spurious connect denial (#588 finding).
+    input,
   )
 
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
