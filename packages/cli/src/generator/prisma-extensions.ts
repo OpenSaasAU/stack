@@ -83,18 +83,44 @@ export function generatePrismaExtensions(config: OpenSaasConfig, configImport?: 
 
     for (const [fieldName, fieldConfig] of fieldsWithExtensions) {
       const isVirtual = fieldConfig.virtual
+      // Multi-column storage fields (e.g. image()/file() in keystone-columns
+      // mode) spread across several part columns (image_url, image_pathname, …)
+      // and have no single logical scalar on the model. Their logical value is
+      // re-assembled by core's read pipeline (assembleColumns), not by this
+      // result extension, so the compute here must not reference a scalar that
+      // doesn't exist. See #559.
+      const isMultiColumn = !isVirtual && typeof fieldConfig.getColumnNames === 'function'
 
       lines.push(`      ${fieldName}: {`)
 
       if (isVirtual) {
         // Virtual fields don't need database fields - they compute from the full item
         lines.push(`        needs: {},`)
+      } else if (isMultiColumn && fieldConfig.getColumnNames) {
+        // Prisma types `needs` against the model's scalar fields. Referencing the
+        // logical field name here would type the literal `true` against `never`
+        // (no such scalar exists). Derive `needs` from the physical part columns
+        // instead. getColumnNames already returns the resolved/overridden names,
+        // so custom column maps Just Work. See #559.
+        const columnNames = fieldConfig.getColumnNames(fieldName)
+        const needsEntries = columnNames.map((column) => `${column}: true`).join(', ')
+        lines.push(`        needs: { ${needsEntries} },`)
       } else {
-        // Non-virtual fields need their database value
+        // Non-virtual single-column fields need their database value
         lines.push(`        needs: { ${fieldName}: true },`)
       }
 
       lines.push(`        compute: (${modelKey}) => {`)
+
+      if (isMultiColumn) {
+        // The logical value lives across part columns and is assembled elsewhere;
+        // there is no scalar to read or transform here. Returning undefined keeps
+        // the assembled value (re-added via TransformedFields) authoritative.
+        lines.push(`          return undefined`)
+        lines.push(`        },`)
+        lines.push(`      },`)
+        continue
+      }
 
       if (!isVirtual) {
         // For non-virtual fields, get the database value and check nullability
