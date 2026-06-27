@@ -1376,8 +1376,14 @@ export function json<
       const baseSchema = z.unknown()
 
       if (isRequired && operation === 'create') {
-        // Required in create mode: value must be provided
-        return baseSchema
+        // Required in create mode: value must be provided (any present JSON
+        // value is accepted, including null). A bare z.unknown() is treated as
+        // optional inside z.object(), so an omitted key would silently pass;
+        // the refinement makes the key genuinely required by rejecting
+        // undefined (which also covers an absent key).
+        return baseSchema.refine((value) => value !== undefined, {
+          message: `${formatFieldName(fieldName)} is required`,
+        })
       } else if (isRequired && operation === 'update') {
         // Required in update mode: omitted keys pass; present values must be valid
         return baseSchema.optional()
