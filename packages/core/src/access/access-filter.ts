@@ -170,6 +170,16 @@ function andWhere(
  * `buildIncludeWithAccessControl`); beyond that depth no auto-include exists, so
  * deeper caller selections pass through unscoped — consistent with the existing
  * auto-include behaviour.
+ *
+ * `accessControlledInclude` being `undefined` is NOT "every relation denied". It
+ * means no access-controlled include was computed at all — a non-denial outcome
+ * that `buildIncludeWithAccessControl` returns when inside a `resolveOutput`/
+ * virtual-field context, at `MAX_DEPTH`, or when the list has no relationships.
+ * In every one of those cases there is nothing to merge against, so the caller's
+ * `include` is passed through unchanged (matching the prior `args.include || …`
+ * fallback). This is distinct from an `undefined` ENTRY inside a defined access
+ * include, which DOES mean the relation was denied and must be dropped (see the
+ * per-relation loop below). Only the whole-object `undefined` is a passthrough.
  */
 export function mergeIncludeWithAccessControl(
   callerInclude: Record<string, unknown>,
@@ -177,8 +187,17 @@ export function mergeIncludeWithAccessControl(
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaasConfig,
 ): Record<string, unknown> {
+  // No access-controlled include was computed (resolveOutput/virtual context,
+  // MAX_DEPTH, or a list with no relationships) → nothing to scope against, so
+  // pass the caller's include through unchanged. Dropping relations here would be
+  // fail-closed data loss, not a denial. Denied relations are dropped only when a
+  // defined access include OMITS them (handled per-relation below).
+  if (accessControlledInclude === undefined) {
+    return callerInclude
+  }
+
   const merged: Record<string, unknown> = {}
-  const accessInclude = accessControlledInclude ?? {}
+  const accessInclude = accessControlledInclude
 
   for (const [relationName, callerValue] of Object.entries(callerInclude)) {
     const fieldConfig = fieldConfigs[relationName]

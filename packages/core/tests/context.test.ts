@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { defineFragment } from '../src/query/index.js'
+import { virtual } from '../src/fields/index.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
 describe('getContext', () => {
@@ -618,6 +619,91 @@ describe('getContext', () => {
         // the fragment path, so the relation carries no access `where` here. (The
         // fragment posts-selection contains only scalars, so it builds to `true`.)
         expect(call.include).toEqual({ posts: true })
+      })
+
+      // Regression: when buildIncludeWithAccessControl returns `undefined` (a
+      // NON-denial outcome), the caller include must PASS THROUGH unchanged
+      // rather than every declared relation being silently dropped. The original
+      // #566 merge treated `undefined` as "all relations denied" (fail-closed
+      // data loss). `undefined` is returned in three non-denial cases:
+      //   1. inside a resolveOutput hook / virtual-field context,
+      //   2. at MAX_DEPTH,
+      //   3. when a list has no relationships.
+      describe('passes caller include through when no access include is computed', () => {
+        // Build an Author config with a virtual field whose resolveOutput issues a
+        // read WITH an explicit include. While that hook runs,
+        // _resolveOutputCounter.depth > 0, so buildIncludeWithAccessControl
+        // returns undefined for the inner read — exercising the
+        // `accessControlledInclude === undefined` passthrough path.
+        function configWithResolveOutputProbe(
+          callerInclude: Record<string, unknown>,
+          capture: (include: unknown) => void,
+        ): OpenSaasConfig {
+          return {
+            ...relConfig,
+            lists: {
+              ...relConfig.lists,
+              Author: {
+                ...relConfig.lists.Author,
+                fields: {
+                  ...relConfig.lists.Author.fields,
+                  commentSummary: virtual({
+                    type: 'string',
+                    hooks: {
+                      resolveOutput: async ({ context }) => {
+                        await context.db.comment.findMany({ include: callerInclude })
+                        capture(relPrisma.comment.findMany.mock.calls[0][0].include)
+                        return 'summary'
+                      },
+                    },
+                  }),
+                },
+              },
+            },
+          }
+        }
+
+        it('findUnique inside a resolveOutput hook keeps the caller include (not dropped)', async () => {
+          let innerIncludeSeen: unknown
+          const hookConfig = configWithResolveOutputProbe({ post: true }, (include) => {
+            innerIncludeSeen = include
+          })
+
+          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+          relPrisma.comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
+
+          const context = await getContext(hookConfig, relPrisma, null)
+          await context.db.author.findUnique({ where: { id: 'a1' } })
+
+          // The caller include `{ post: true }` survives: the declared `post`
+          // relation is NOT dropped despite the access include being undefined here.
+          expect(innerIncludeSeen).toEqual({ post: true })
+        })
+
+        it('findMany inside a resolveOutput hook passes a NESTED caller include through whole', async () => {
+          let innerIncludeSeen: unknown
+          const hookConfig = configWithResolveOutputProbe(
+            { post: { include: { author: true } } },
+            (include) => {
+              innerIncludeSeen = include
+            },
+          )
+
+          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+          relPrisma.comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
+
+          const context = await getContext(hookConfig, relPrisma, null)
+          await context.db.author.findMany()
+
+          // The whole nested caller include passes through untouched (no access
+          // include exists to merge against in resolveOutput context).
+          expect(innerIncludeSeen).toEqual({ post: { include: { author: true } } })
+        })
+
+        // The MAX_DEPTH and no-relationships cases also make
+        // buildIncludeWithAccessControl return undefined; they flow through the
+        // identical `accessControlledInclude === undefined` branch verified above,
+        // so the resolveOutput probe covers all three non-denial cases.
       })
     })
 
