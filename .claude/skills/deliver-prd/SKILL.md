@@ -47,8 +47,8 @@ Present the wave plan and confirm before kicking off.
 
 For each issue in the active wave:
 
-1. **Implement** — dispatch a _background_ implementer agent in an _isolated worktree_ using [IMPLEMENTER.md](IMPLEMENTER.md). It cuts a branch off the integration branch, implements to the acceptance criteria, runs the repo's checks, opens a PR targeting the integration branch, and **does not merge**. It reports the PR number.
-2. **Review** — dispatch a _background_ reviewer agent using [REVIEWER.md](REVIEWER.md): only the PR number, runs `/review`, posts the review to the PR, returns a verdict.
+1. **Implement** — dispatch a _background_ general-purpose agent (`subagent_type: "general-purpose"`) in an _isolated worktree_, with [IMPLEMENTER.md](IMPLEMENTER.md) as its prompt (the brief is the prompt, not an agent type). It cuts a branch off the integration branch, implements to the acceptance criteria, runs the repo's checks, opens a PR targeting the integration branch, and **does not merge**. It reports the PR number.
+2. **Review** — dispatch a _background_ general-purpose agent (`subagent_type: "general-purpose"`) with [REVIEWER.md](REVIEWER.md) as its prompt: only the PR number, runs the `/review` skill, posts the review to the PR, returns a verdict.
 3. **Watch** — subscribe to the PR's activity (CI, comments, reviews) so events wake you. Don't poll with `sleep`.
 4. **Triage events** — see §4.
 5. **Merge & close** — when the PR is approved and CI is green, merge it to the integration branch (or let the configured merge actor do it). Then **close the issue**: merges into a non-default branch don't auto-close linked issues, so close it yourself (state_reason: completed).
