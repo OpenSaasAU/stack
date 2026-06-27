@@ -34,15 +34,21 @@ import type { WriteOperation } from './write-pipeline.js'
  * One list involved in a write, with the data the transaction-boundary hooks
  * receive. Enumerated purely from the input tree (no DB reads).
  *
- * `originalItem` is best-effort: present for the TOP-LEVEL update/delete target
- * (the pipeline resolves it before the transaction opens) and `undefined` for
- * nested targets (not resolved at the boundary to avoid pre-transaction reads).
+ * The persisted/pre-write rows (`item`/`originalItem`) are surfaced to
+ * `afterTransaction` ONLY for the TOP-LEVEL record (`isTopLevel`). For nested
+ * lists the per-record persisted row is not reliably recoverable outside the
+ * transaction, so they are passed as `undefined` rather than mis-handing the
+ * top-level row as if it were the nested row. `originalItem` here is therefore
+ * populated only for the top-level update/delete target (the pipeline resolves
+ * it before the transaction opens).
  */
 export interface InvolvedList {
   listKey: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   operation: WriteOperation
+  /** Whether this is the top-level write target (the only list with a reliable persisted row). */
+  isTopLevel: boolean
   /** The input payload for this involvement (create/update); `undefined` for delete. */
   inputData: Record<string, unknown> | undefined
   /** The existing row for the TOP-LEVEL update/delete target; `undefined` otherwise. */
@@ -138,6 +144,7 @@ function walkNested(
           listKey: relatedListName,
           listConfig: relatedListConfig,
           operation,
+          isTopLevel: false,
           inputData: entries.length > 0 ? nestedInputData(kind, entries[0]) : undefined,
           originalItem: undefined,
         })
@@ -174,6 +181,7 @@ export function enumerateInvolvedLists(args: {
       listKey: listName,
       listConfig,
       operation,
+      isTopLevel: true,
       inputData,
       originalItem: topLevelOriginalItem,
     },
@@ -241,21 +249,25 @@ async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
   context: AccessContext<TPrisma>,
   errors: unknown[],
 ): Promise<void> {
-  const { listKey, listConfig, operation, inputData, originalItem } = involved
+  const { listKey, listConfig, operation, isTopLevel, inputData, originalItem } = involved
 
-  // On commit, the persisted top-level row is the outcome item. For nested
-  // lists we cannot recover the persisted row outside the transaction, so the
-  // committed `item` we surface is the top-level persisted row. (afterOperation
-  // — the in-transaction hook — already gave nested records their own row.)
+  // On commit, the persisted row (`outcome.item`) is the TOP-LEVEL row. We only
+  // surface `item`/`originalItem` for the top-level list — handing the top-level
+  // row to a nested list's hook (whose type is the nested list's own item) would
+  // be unsound, since the hook would silently read the wrong record. For nested
+  // lists we pass `undefined`; per-record nested compensation must use the
+  // in-transaction `afterOperation`, which already receives the correct nested row.
   try {
     if (outcome.status === 'committed') {
+      // The persisted row is surfaced only for the top-level list (see above).
+      const committedItem = isTopLevel ? outcome.item : undefined
       if (operation === 'create') {
         await executeAfterTransaction(listConfig.hooks, {
           listKey,
           operation: 'create',
           status: 'committed',
           inputData: inputData ?? {},
-          item: outcome.item,
+          item: committedItem,
           context,
         })
       } else if (operation === 'update') {
@@ -264,8 +276,8 @@ async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
           operation: 'update',
           status: 'committed',
           inputData: inputData ?? {},
-          originalItem: originalItem ?? outcome.item,
-          item: outcome.item,
+          originalItem: isTopLevel ? originalItem : undefined,
+          item: committedItem,
           context,
         })
       } else {
@@ -273,7 +285,7 @@ async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
           listKey,
           operation: 'delete',
           status: 'committed',
-          originalItem: originalItem ?? outcome.item,
+          originalItem: isTopLevel ? originalItem : undefined,
           context,
         })
       }
@@ -322,6 +334,7 @@ async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
       operation,
       context,
       listKey,
+      isTopLevel,
       originalItem,
     )
   } catch (err) {

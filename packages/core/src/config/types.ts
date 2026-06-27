@@ -195,8 +195,12 @@ export type FieldBeforeTransactionHookArgs<
  * Runs AFTER the transaction settles and ALWAYS runs when its paired
  * `beforeTransaction` ran (symmetric bracket). The `status` discriminant tells
  * the hook whether the write committed or rolled back:
- *  - `committed`: the persisted `item` is present (and `originalItem` for
- *    update/delete), like `afterOperation`.
+ *  - `committed`: the persisted `item`/`originalItem` are populated ONLY for the
+ *    TOP-LEVEL record of the write. For NESTED lists they are `undefined` — the
+ *    per-record persisted row is not reliably recoverable outside the
+ *    transaction, and these hooks fire at per-(list, operation) granularity, not
+ *    per record. For per-record nested compensation use the in-transaction
+ *    `afterOperation` (which receives the correct nested `item`).
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate for whatever
  *    `beforeTransaction` did externally.
@@ -211,7 +215,8 @@ export type FieldAfterTransactionHookArgs<
       operation: 'create'
       status: 'committed'
       inputData: TTypeInfo['inputs']['create']
-      item: TTypeInfo['item']
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TTypeInfo['item'] | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -229,8 +234,10 @@ export type FieldAfterTransactionHookArgs<
       operation: 'update'
       status: 'committed'
       inputData: TTypeInfo['inputs']['update']
-      originalItem: TTypeInfo['item']
-      item: TTypeInfo['item']
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TTypeInfo['item'] | undefined
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TTypeInfo['item'] | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -248,7 +255,8 @@ export type FieldAfterTransactionHookArgs<
       fieldKey: TFieldKey
       operation: 'delete'
       status: 'committed'
-      originalItem: TTypeInfo['item']
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TTypeInfo['item'] | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -417,7 +425,9 @@ export type FieldHooks<
    *
    * ALWAYS runs when the paired `beforeTransaction` ran (symmetric bracket),
    * receiving `status: 'committed' | 'rolled-back'`. On `committed` it gets the
-   * persisted `item`; on `rolled-back` it gets the `error` that caused the
+   * persisted `item` ONLY for the top-level record (`undefined` for nested
+   * lists — use the in-transaction `afterOperation` for per-record nested
+   * compensation); on `rolled-back` it gets the `error` that caused the
    * rollback and NO `item`, so it can compensate for whatever `beforeTransaction`
    * did externally.
    *
@@ -1465,8 +1475,15 @@ export type BeforeTransactionHookArgs<
  * Runs AFTER the write's transaction settles and ALWAYS runs when the paired
  * `beforeTransaction` ran (symmetric bracket). The `status` discriminant tells
  * the hook whether the write committed or rolled back:
- *  - `committed`: persisted `item` present (and `originalItem` for
- *    update/delete), like `afterOperation`.
+ *  - `committed`: the persisted `item`/`originalItem` are populated ONLY for the
+ *    TOP-LEVEL record of the write. For NESTED lists they are `undefined` — the
+ *    per-record persisted row is not reliably recoverable outside the
+ *    transaction (recovering it would duplicate #569's in-transaction id-diff
+ *    machinery), and these hooks fire at per-(list, operation) granularity, not
+ *    per record. For per-record nested compensation use the in-transaction
+ *    `afterOperation` (which receives the correct nested `item`);
+ *    transaction-boundary hooks are for external-call compensation keyed off
+ *    `status`/`inputData`.
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate.
  */
@@ -1480,7 +1497,8 @@ export type AfterTransactionHookArgs<
       operation: 'create'
       status: 'committed'
       inputData: TCreateInput
-      item: TOutput
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TOutput | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -1496,8 +1514,10 @@ export type AfterTransactionHookArgs<
       operation: 'update'
       status: 'committed'
       inputData: TUpdateInput
-      originalItem: TOutput
-      item: TOutput
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TOutput | undefined
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TOutput | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -1513,7 +1533,8 @@ export type AfterTransactionHookArgs<
       listKey: string
       operation: 'delete'
       status: 'committed'
-      originalItem: TOutput
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TOutput | undefined
       context: import('../access/types.js').AccessContext
     }
   | {
@@ -1552,7 +1573,8 @@ export type Hooks<
   /**
    * Side effect AFTER the write's transaction settles (#590 / ADR-0010).
    * ALWAYS runs when `beforeTransaction` ran; receives `committed | rolled-back`
-   * + `error`, with the persisted `item` present only on commit. The
+   * + `error`. The persisted `item`/`originalItem` are present only on commit
+   * AND only for the top-level record (`undefined` for nested lists). The
    * compensation half of the transaction-boundary bracket. See
    * {@link AfterTransactionHookArgs}.
    */

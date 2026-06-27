@@ -325,6 +325,19 @@ describe('#590 transaction-boundary hooks', () => {
     expect(userAfter).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'committed', operation: 'create', listKey: 'User' }),
     )
+
+    // The committed item/originalItem are surfaced ONLY for the top-level record.
+    // The top-level Post (update) gets the persisted item + its originalItem; the
+    // nested User (create) gets `item: undefined` — NOT the top-level Post row,
+    // which would be the wrong record for the nested list's own item type.
+    const postArg = postAfter.mock.calls[0][0]
+    expect(postArg.item).toEqual(expect.objectContaining({ id: 'p1', title: 'Updated' }))
+    expect(postArg.originalItem).toEqual(expect.objectContaining({ id: 'p1', title: 'Original' }))
+
+    const userArg = userAfter.mock.calls[0][0]
+    expect(userArg.item).toBeUndefined()
+    // Nested compensation keys off inputData, not the (unavailable) persisted row.
+    expect(userArg.inputData).toEqual(expect.objectContaining({ name: 'john' }))
   })
 
   it('a throwing afterTransaction does not prevent the other afterTransaction hooks running', async () => {

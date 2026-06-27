@@ -393,10 +393,13 @@ export type TransactionOutcome =
  * Execute field-level afterTransaction hooks (#590 / ADR-0010).
  *
  * Runs each field's `afterTransaction` (side effects only) with the settled
- * transaction outcome. On commit the field receives the persisted `item`; on
- * rollback it receives the `error` and NO `item`. Unlike the field
- * `afterOperation` gate, EVERY field with the hook runs (compensation must not
- * depend on the field appearing in the payload).
+ * transaction outcome. On commit the field receives the persisted `item`/
+ * `originalItem` — but ONLY for the top-level list (`isTopLevel`); for nested
+ * lists they are `undefined`, since `outcome.item` is the top-level persisted
+ * row and handing it to a nested field's hook would be unsound. On rollback the
+ * field receives the `error` and NO `item`. Unlike the field `afterOperation`
+ * gate, EVERY field with the hook runs (compensation must not depend on the
+ * field appearing in the payload).
  */
 export async function executeFieldAfterTransactionHooks(
   outcome: TransactionOutcome,
@@ -405,8 +408,13 @@ export async function executeFieldAfterTransactionHooks(
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
+  isTopLevel: boolean,
   originalItem?: Record<string, unknown>,
 ): Promise<void> {
+  // The persisted/pre-write rows are surfaced only for the top-level list.
+  const committedItem = outcome.status === 'committed' && isTopLevel ? outcome.item : undefined
+  const committedOriginalItem = isTopLevel ? originalItem : undefined
+
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.afterTransaction) continue
 
@@ -448,7 +456,7 @@ export async function executeFieldAfterTransactionHooks(
         ...base,
         operation: 'delete',
         status: 'committed',
-        originalItem,
+        originalItem: committedOriginalItem,
       } as Parameters<typeof fieldConfig.hooks.afterTransaction>[0])
     } else if (operation === 'create') {
       await fieldConfig.hooks.afterTransaction({
@@ -456,7 +464,7 @@ export async function executeFieldAfterTransactionHooks(
         operation: 'create',
         status: 'committed',
         inputData,
-        item: outcome.item,
+        item: committedItem,
       } as Parameters<typeof fieldConfig.hooks.afterTransaction>[0])
     } else {
       await fieldConfig.hooks.afterTransaction({
@@ -464,8 +472,8 @@ export async function executeFieldAfterTransactionHooks(
         operation: 'update',
         status: 'committed',
         inputData,
-        originalItem,
-        item: outcome.item,
+        originalItem: committedOriginalItem,
+        item: committedItem,
       } as Parameters<typeof fieldConfig.hooks.afterTransaction>[0])
     }
   }

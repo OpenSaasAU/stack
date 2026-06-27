@@ -143,6 +143,27 @@ hooks split into two families by where they run relative to that transaction:
   compensators still run and the error(s) are surfaced afterward — the database
   state is already final. Sudo does not affect these hooks; they always run.
 
+  Important caveats for these hooks:
+  - **`item`/`originalItem` are populated only for the TOP-LEVEL record.** On
+    `committed`, the persisted `item` (and `originalItem` for update/delete) is
+    surfaced only for the top-level list; for **nested** lists they are
+    `undefined`. The per-record persisted row is not reliably recoverable outside
+    the transaction, and these hooks fire at list (not record) granularity. For
+    per-record nested compensation use the in-transaction `afterOperation`, which
+    receives the correct nested `item`. Transaction-boundary hooks on nested lists
+    are for external-call compensation keyed off `status`/`inputData`.
+  - **Granularity is per-`(list, operation)`, not strictly per-list.** A list
+    reached under two operations (e.g. a nested `create` _and_ a nested `update`
+    of the same list) fires its boundary hooks **twice** — once per operation —
+    and only the **first** nested record's `inputData` for that operation is
+    surfaced. Many nested records of the same `(list, operation)` fire the bracket
+    once.
+  - **`connectOrCreate` is enumerated as create-involvement best-effort.** A
+    `connectOrCreate` that resolves to **connect** (the row already exists) still
+    fires the bracket as a `create` involvement even though no row is written.
+    Write your compensators to be **idempotent** so a no-op write is safe to
+    compensate.
+
 ### Compensation pattern
 
 Pair an external action in `beforeTransaction` with its undo in

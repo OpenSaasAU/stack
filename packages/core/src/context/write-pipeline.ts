@@ -233,13 +233,15 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
 
   // ── Pre-transaction access gate (#590) ──────────────────────────────────────
   // Resolve the TOP-LEVEL target + operation-level access OUTSIDE the
-  // transaction first. A denied/missing/filter-non-match target short-circuits
-  // to `null` (silent failure) WITHOUT firing any transaction-boundary hooks —
-  // a denied write opens no transaction and takes no external action, so it must
-  // not run beforeTransaction/afterTransaction. This resolution also yields the
-  // top-level `originalItem` the boundary hooks receive for update/delete. The
-  // authoritative in-transaction resolveTarget still runs again inside the
-  // transaction (#569 semantics unchanged).
+  // transaction first, using the NON-transactional client. A
+  // denied/missing/filter-non-match target short-circuits to `null` (silent
+  // failure) WITHOUT firing any transaction-boundary hooks — a denied write
+  // opens no transaction and takes no external action, so it must not run
+  // beforeTransaction/afterTransaction. This resolution also yields the
+  // top-level `originalItem` the boundary hooks receive for update/delete.
+  // The result is passed into the transaction as `preResolvedTarget` and REUSED
+  // there (the in-transaction resolveTarget does NOT re-run), so the target is
+  // read exactly once — #569's resolveTarget call-count semantics are preserved.
   const gate = await strategy.resolveTarget(getModel(prisma, listName))
   if (gate.status === 'denied') {
     return null
