@@ -778,9 +778,13 @@ describe('Field Types', () => {
         const field = json({ validation: { isRequired: true } })
         const schema = field.getZodSchema('metadata', 'create')
 
+        // Any present JSON value is accepted, including null (issue #597)
         expect(schema.safeParse({ key: 'value' }).success).toBe(true)
-        // JSON field with isRequired still accepts undefined due to z.unknown() behavior
-        expect(schema.safeParse(undefined).success).toBe(true)
+        expect(schema.safeParse([1, 2, 3]).success).toBe(true)
+        expect(schema.safeParse(0).success).toBe(true)
+        expect(schema.safeParse(null).success).toBe(true)
+        // A required json field must reject undefined on create (issue #597)
+        expect(schema.safeParse(undefined).success).toBe(false)
       })
 
       test('allows undefined for required field in update mode', () => {

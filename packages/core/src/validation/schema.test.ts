@@ -327,4 +327,83 @@ describe('Zod Schema Generation', () => {
       }
     })
   })
+
+  // Regression: issue #597
+  // A bare `z.unknown()` is treated as optional inside `z.object(...)`, so a
+  // required-on-create json field used to pass when the key was omitted. The
+  // create branch now refines the schema to reject undefined/absent keys while
+  // still accepting any present JSON value (object, array, primitive, null).
+  describe('required json on create (issue #597)', () => {
+    it('rejects an omitted required json field on create (key absent)', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+        label: text(),
+      }
+
+      const result = validateWithZod({ label: 'x' }, fields, 'create')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('meta')
+        expect(result.errors.meta).toContain('is required')
+      }
+    })
+
+    it('rejects an explicit undefined required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ meta: undefined }, fields, 'create')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('meta')
+      }
+    })
+
+    it('accepts a present object value for a required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ meta: { a: 1 } }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a present array value for a required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ meta: [] }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a present null value for a required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ meta: null }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts a present primitive (0) value for a required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ meta: 0 }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+
+    it('allows an omitted non-required json field on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json(),
+        label: text(),
+      }
+
+      const result = validateWithZod({ label: 'x' }, fields, 'create')
+      expect(result.success).toBe(true)
+    })
+  })
 })
