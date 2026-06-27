@@ -58,6 +58,10 @@ _Avoid_: legacy mode, compatibility flag, migration mode
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
 _Avoid_: generated context, output dir, .opensaas folder
 
+**Node build**:
+A compiled, plain-Node-loadable form of the Generated bundle, emitted _in addition to_ the default bundler form so a live module (e.g. the auth path) can be imported in a runtime that has no bundler — plain Node, a Playwright e2e helper, a build-time script. Opt-in per `output: { buildTarget: 'node' }`; absent it, only the bundler form is emitted. Distinct from the default bundler form, which is loaded by the host's bundler and is the stack's standing default.
+_Avoid_: compiled bundle, dist build, mjs build, node bundle
+
 ### Authentication
 
 **Auth lists**:
