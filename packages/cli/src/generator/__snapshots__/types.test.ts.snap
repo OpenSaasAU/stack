@@ -43,11 +43,11 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserWhereInput = Prisma.UserWhereInput
@@ -302,12 +302,12 @@ export type Post = PostOutput
 
 export type PostCreateInput = {
   title: string
-  content?: string
+  content?: string | null
 }
 
 export type PostUpdateInput = {
   title?: string
-  content?: string
+  content?: string | null
 }
 
 export type PostWhereInput = Prisma.PostWhereInput
@@ -565,12 +565,12 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
   posts?: { connect: Array<{ id: string }> }
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
@@ -835,12 +835,12 @@ export type PostOutput = {
 export type Post = PostOutput
 
 export type PostCreateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } }
 }
 
 export type PostUpdateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
@@ -1482,12 +1482,12 @@ export type Post = PostOutput
 
 export type PostCreateInput = {
   title: string
-  content?: string
+  content?: string | null
 }
 
 export type PostUpdateInput = {
   title?: string
-  content?: string
+  content?: string | null
 }
 
 export type PostWhereInput = Prisma.PostWhereInput
@@ -1744,11 +1744,11 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserWhereInput = Prisma.UserWhereInput
@@ -2265,11 +2265,11 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserWhereInput = Prisma.UserWhereInput
@@ -2445,11 +2445,11 @@ export type PostOutput = {
 export type Post = PostOutput
 
 export type PostCreateInput = {
-  title?: string
+  title?: string | null
 }
 
 export type PostUpdateInput = {
-  title?: string
+  title?: string | null
 }
 
 export type PostWhereInput = Prisma.PostWhereInput
@@ -2625,11 +2625,11 @@ export type CommentOutput = {
 export type Comment = CommentOutput
 
 export type CommentCreateInput = {
-  content?: string
+  content?: string | null
 }
 
 export type CommentUpdateInput = {
-  content?: string
+  content?: string | null
 }
 
 export type CommentWhereInput = Prisma.CommentWhereInput
@@ -2938,12 +2938,12 @@ export type PostOutput = {
 export type Post = PostOutput
 
 export type PostCreateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } }
 }
 
 export type PostUpdateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
@@ -3182,11 +3182,11 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserWhereInput = Prisma.UserWhereInput
@@ -3468,12 +3468,12 @@ export type PostOutput = {
 export type Post = PostOutput
 
 export type PostCreateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } }
 }
 
 export type PostUpdateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
@@ -3712,11 +3712,11 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
 }
 
 export type UserWhereInput = Prisma.UserWhereInput
@@ -3997,12 +3997,12 @@ export type UserOutput = {
 export type User = UserOutput
 
 export type UserCreateInput = {
-  name?: string
+  name?: string | null
   posts?: { connect: Array<{ id: string }> }
 }
 
 export type UserUpdateInput = {
-  name?: string
+  name?: string | null
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
@@ -4243,12 +4243,12 @@ export type PostOutput = {
 export type Post = PostOutput
 
 export type PostCreateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } }
 }
 
 export type PostUpdateInput = {
-  title?: string
+  title?: string | null
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
@@ -4592,12 +4592,12 @@ export type AccountOutput = {
 export type Account = AccountOutput
 
 export type AccountCreateInput = {
-  name?: string
+  name?: string | null
   bills?: { connect: Array<{ id: string }> }
 }
 
 export type AccountUpdateInput = {
-  name?: string
+  name?: string | null
   bills?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
@@ -4838,12 +4838,12 @@ export type BillOutput = {
 export type Bill = BillOutput
 
 export type BillCreateInput = {
-  name?: string
+  name?: string | null
   account?: { connect: { id: string } }
 }
 
 export type BillUpdateInput = {
-  name?: string
+  name?: string | null
   account?: { connect: { id: string } } | { disconnect: true }
 }
 

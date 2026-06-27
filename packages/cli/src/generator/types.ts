@@ -186,6 +186,56 @@ function generateModelTypeAlias(listName: string): string {
 }
 
 /**
+ * Render a single scalar create/update input member line — the SINGLE source of
+ * truth for a scalar field's member shape (name, `?` optionality, TypeScript
+ * type, and `| null` nullability).
+ *
+ * Both the standalone `{List}CreateInput`/`{List}UpdateInput` exports and the
+ * call-site write-`data` override (`buildScalarOverrideMembers`) render their
+ * scalar members through this helper so the two cannot drift on how a nullable
+ * scalar is represented (#608).
+ *
+ * Nullability: a nullable scalar (`getTypeScriptType().optional`) gets `| null`,
+ * matching Prisma's nullable-column input. A required scalar gets neither `?`
+ * nor `| null`.
+ *
+ * Optionality:
+ *  - create: optional (`?`) when nullable OR it has a default value. The
+ *    `defaultValue === undefined` check is explicit (not truthiness) so a
+ *    falsy-but-present default such as `checkbox({ defaultValue: false })` is
+ *    still treated as having a default. See #599.
+ *  - update: always optional (partial update).
+ *
+ * Returns `null` for fields whose `getTypeScriptType()` yields no type, so
+ * callers can skip them.
+ *
+ * @param indent - Leading whitespace for the emitted line (call sites differ:
+ *   standalone inputs use 2 spaces, the `data` override uses 4).
+ */
+function renderScalarInputMember(
+  fieldName: string,
+  fieldConfig: FieldConfig,
+  forCreate: boolean,
+  indent: string,
+): string | null {
+  const tsType = mapFieldTypeToTypeScript(fieldConfig)
+  if (!tsType) return null
+
+  const nullable = isFieldOptional(fieldConfig)
+  const nullability = nullable ? ' | null' : ''
+
+  let optional: string
+  if (forCreate) {
+    const required = !nullable && fieldConfig.defaultValue === undefined
+    optional = required ? '' : '?'
+  } else {
+    optional = '?'
+  }
+
+  return `${indent}${fieldName}${optional}: ${tsType}${nullability}`
+}
+
+/**
  * Generate CreateInput type
  */
 function generateCreateInputType(listName: string, fields: Record<string, FieldConfig>): string {
@@ -209,17 +259,11 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
         lines.push(`  ${fieldName}?: { connect: { id: string } }`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue // Skip if no type returned
-
-      // A field is optional on create when it is nullable OR has a default value.
-      // Use an explicit `!== undefined` check rather than a truthiness test:
-      // `!field.defaultValue` is truthy for a falsy-but-present default such as
-      // `checkbox({ defaultValue: false })`, which would wrongly mark the field
-      // required. See #599.
-      const required = !isFieldOptional(fieldConfig) && fieldConfig.defaultValue === undefined
-      const optional = required ? '' : '?'
-      lines.push(`  ${fieldName}${optional}: ${tsType}`)
+      // Shared source of truth with the write-`data` override (#608): same
+      // optionality + `| null` nullability for nullable scalars.
+      const member = renderScalarInputMember(fieldName, fieldConfig, true, '  ')
+      if (!member) continue // Skip if no type returned
+      lines.push(member)
     }
   }
 
@@ -296,22 +340,12 @@ function buildScalarOverrideMembers(
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (!shouldNarrowScalarWrite(fieldConfig)) continue
 
-    const tsType = mapFieldTypeToTypeScript(fieldConfig)
-    if (!tsType) continue
-
-    const nullable = isFieldOptional(fieldConfig)
-    const nullability = nullable ? ' | null' : ''
-
-    if (forCreate) {
-      // Optional on create when nullable OR has a default (see #599 bug fix in
-      // generateCreateInputType for the `defaultValue === undefined` rationale).
-      const required = !nullable && fieldConfig.defaultValue === undefined
-      const optional = required ? '' : '?'
-      members.push(`    ${fieldName}${optional}: ${tsType}${nullability}`)
-    } else {
-      // Partial update: every scalar is optional.
-      members.push(`    ${fieldName}?: ${tsType}${nullability}`)
-    }
+    // Shared source of truth with generateCreateInputType / generateUpdateInputType
+    // (#608): identical optionality + `| null` nullability rendering. The override
+    // uses 4-space indentation since it is nested inside the `data: ... & { ... }`.
+    const member = renderScalarInputMember(fieldName, fieldConfig, forCreate, '    ')
+    if (!member) continue
+    members.push(member)
   }
   return members
 }
@@ -405,10 +439,11 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
         lines.push(`  ${fieldName}?: { connect: { id: string } } | { disconnect: true }`)
       }
     } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue // Skip if no type returned
-
-      lines.push(`  ${fieldName}?: ${tsType}`)
+      // Shared source of truth with the write-`data` override (#608): partial
+      // update (always optional) with `| null` nullability for nullable scalars.
+      const member = renderScalarInputMember(fieldName, fieldConfig, false, '  ')
+      if (!member) continue // Skip if no type returned
+      lines.push(member)
     }
   }
 
