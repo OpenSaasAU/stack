@@ -448,6 +448,179 @@ describe('getContext', () => {
       })
     })
 
+    describe('explicit include merges with access control (#566)', () => {
+      // Author has many Posts; Post.query access scopes to published posts only.
+      // A caller-supplied `include` must NOT bypass that per-relation filter.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let relPrisma: any
+      let relConfig: OpenSaasConfig
+
+      beforeEach(() => {
+        relPrisma = {
+          author: {
+            findFirst: vi.fn(),
+            findUnique: vi.fn(),
+            findMany: vi.fn(),
+          },
+          post: {
+            findFirst: vi.fn(),
+            findUnique: vi.fn(),
+            findMany: vi.fn(),
+          },
+          comment: {
+            findFirst: vi.fn(),
+            findMany: vi.fn(),
+          },
+        }
+
+        relConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Author: {
+              fields: {
+                name: { type: 'text' },
+                posts: { type: 'relationship', ref: 'Post.author', many: true },
+              },
+              access: { operation: { query: () => true } },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: { type: 'relationship', ref: 'Author.posts' },
+                comments: { type: 'relationship', ref: 'Comment.post', many: true },
+              },
+              access: {
+                // Row filter: only published posts are visible.
+                operation: { query: () => ({ status: { equals: 'published' } }) },
+              },
+            },
+            Comment: {
+              fields: {
+                body: { type: 'text' },
+                post: { type: 'relationship', ref: 'Post.comments' },
+              },
+              access: {
+                operation: { query: () => ({ approved: { equals: true } }) },
+              },
+            },
+            Secret: {
+              fields: {
+                value: { type: 'text' },
+              },
+              // Fully denied list.
+              access: { operation: { query: () => false } },
+            },
+          },
+        }
+        // Add a denied relation onto Author for the "drop denied relation" test.
+        relConfig.lists.Author.fields.secrets = {
+          type: 'relationship',
+          ref: 'Secret',
+          many: true,
+        }
+      })
+
+      it('findMany: caller include {posts:true} applies the relation access where (not bare true)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findMany({ include: { posts: true } })
+
+        // The relation is fetched WITH the Post query-access where (NOT bare true),
+        // proving the row-level bypass is closed.
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        expect(call.include.posts).not.toBe(true)
+        expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
+      })
+
+      it('findUnique: caller include {posts:true} applies the relation access where', async () => {
+        relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findUnique({ where: { id: 'a1' }, include: { posts: true } })
+
+        const call = relPrisma.author.findFirst.mock.calls[0][0]
+        expect(call.where).toEqual(expect.objectContaining({ id: 'a1' }))
+        expect(call.include.posts).not.toBe(true)
+        expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
+      })
+
+      it('drops a relation whose query access is false when named in the caller include', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findMany({ include: { secrets: true, posts: true } })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        // Denied `secrets` relation is dropped; allowed `posts` keeps its filter.
+        expect(call.include.secrets).toBeUndefined()
+        expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
+      })
+
+      it('AND-combines a caller nested where with the relation access where', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findMany({
+          include: { posts: { where: { title: { contains: 'hello' } } } },
+        })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        // Both the access where and the caller where are applied via AND.
+        expect(call.include.posts.where).toEqual({
+          AND: [{ status: { equals: 'published' } }, { title: { contains: 'hello' } }],
+        })
+      })
+
+      it('access-filters nested (2-level) caller includes at every level', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findMany({
+          include: { posts: { include: { comments: true } } },
+        })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        // Level 1 (posts) and level 2 (comments) both carry their access where.
+        expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
+        expect(call.include.posts.include.comments.where).toEqual({ approved: { equals: true } })
+      })
+
+      it('sudo with explicit include returns the include unfiltered (behaviour preserved)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+
+        const context = await getContext(relConfig, relPrisma, null).sudo()
+        await context.db.author.findMany({ include: { posts: true, secrets: true } })
+
+        // Under sudo the caller include is used as-is: no filter, nothing dropped.
+        expect(relPrisma.author.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ include: { posts: true, secrets: true } }),
+        )
+      })
+
+      it('query fragment path is unaffected by the merge (fragment include used, unfiltered)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+        const postsFragment = defineFragment<{ id: string; title: string }>()({
+          title: true,
+        } as const)
+        const fragment = defineFragment<{ id: string; name: string; posts: unknown }>()({
+          id: true,
+          name: true,
+          posts: postsFragment,
+        } as const)
+
+        const context = await getContext(relConfig, relPrisma, null)
+        await context.db.author.findMany({ query: fragment })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        // Fragment-built include is used as-is; the merge helper is NOT applied to
+        // the fragment path, so the relation carries no access `where` here. (The
+        // fragment posts-selection contains only scalars, so it builds to `true`.)
+        expect(call.include).toEqual({ posts: true })
+      })
+    })
+
     it('should delegate create to prisma with access control and hooks', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
       mockPrisma.user.create.mockResolvedValue(mockUser)

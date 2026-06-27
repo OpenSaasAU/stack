@@ -22,6 +22,6 @@ export {
 // Canonical field-level access evaluation (shared by read and write paths).
 export { checkFieldAccess, filterWritableFields } from './field-access.js'
 // Phase 1 — Access Filter (pre-query row/relation scoping).
-export { buildIncludeWithAccessControl } from './access-filter.js'
+export { buildIncludeWithAccessControl, mergeIncludeWithAccessControl } from './access-filter.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
