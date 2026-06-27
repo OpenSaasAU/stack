@@ -5,7 +5,7 @@ import * as os from 'os'
 import { buildNodeBundle, rewriteConfigImport, findEscapingConfigImport } from './node-build.js'
 
 /**
- * Unit tests for the Node build emit (ADR-0010 / #579).
+ * Unit tests for the Node build emit (ADR-0011 / #579).
  *
  * These exercise the generator's compile-and-emit contract against a minimal,
  * self-contained on-disk bundle fixture (no `@opensaas/*` runtime needed): the

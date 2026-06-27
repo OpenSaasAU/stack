@@ -4,7 +4,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 
 /**
- * Node build verification (ADR-0010 / #579).
+ * Node build verification (ADR-0011 / #579).
  *
  * The Node build is the opt-in compiled form of the generated `.opensaas/`
  * bundle, emitted to `.opensaas/dist/` when `output: { buildTarget: 'node' }`
