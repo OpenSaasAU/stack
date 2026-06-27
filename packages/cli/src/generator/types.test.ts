@@ -387,4 +387,76 @@ describe('Types Generator', () => {
       expect(types).toMatchSnapshot()
     })
   })
+
+  // #608: the standalone {List}CreateInput / {List}UpdateInput exports and the
+  // call-site write-`data` override must agree on how a nullable scalar is
+  // represented (both `?: T | null`). A single shared helper
+  // (renderScalarInputMember) renders the member for both paths; these tests
+  // pin the agreement so the two sources of truth cannot silently drift again.
+  describe('create/update input nullability consolidation (#608)', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Post: {
+          fields: {
+            // Required scalar: stays required, no `?`, no `| null`.
+            title: text({ validation: { isRequired: true } }),
+            // Nullable scalar: optional + `| null` in every input representation.
+            content: text(),
+          },
+        },
+      },
+    }
+
+    it('emits `| null` for a nullable scalar in the standalone CreateInput', () => {
+      const types = generateTypes(config)
+      expect(types).toContain('export type PostCreateInput = {')
+      expect(types).toContain('  content?: string | null')
+    })
+
+    it('emits `| null` for a nullable scalar in the standalone UpdateInput', () => {
+      const types = generateTypes(config)
+      expect(types).toContain('export type PostUpdateInput = {')
+      // UpdateInput keeps every scalar optional and nullable scalars get `| null`.
+      expect(types).toContain('  content?: string | null')
+    })
+
+    it('emits the same nullable-scalar shape in the call-site create `data` override', () => {
+      const types = generateTypes(config)
+      // The CreateArgs `data` override narrows scalars; the nullable `content`
+      // member must match the standalone CreateInput member exactly.
+      expect(types).toContain("data: Omit<Prisma.PostCreateArgs['data'], 'title' | 'content'> & {")
+      expect(types).toContain('    content?: string | null')
+    })
+
+    it('emits the same nullable-scalar shape in the call-site update `data` override', () => {
+      const types = generateTypes(config)
+      expect(types).toContain("data: Omit<Prisma.PostUpdateArgs['data'], 'title' | 'content'> & {")
+      expect(types).toContain('    content?: string | null')
+    })
+
+    it('keeps a required scalar required (no `?`, no `| null`) in both create paths', () => {
+      const types = generateTypes(config)
+      // Standalone CreateInput: required scalar has neither `?` nor `| null`.
+      expect(types).toContain('  title: string\n')
+      // Override create `data`: same required shape.
+      expect(types).toContain('    title: string\n')
+      // A required scalar must never gain `| null` anywhere (create or update).
+      // (`title?: string` IS valid in UpdateInput, where every scalar is
+      // optional, but it must never become `title?: string | null`.)
+      expect(types).not.toContain('title: string | null')
+      expect(types).not.toContain('title?: string | null')
+    })
+
+    it('keeps standalone input and `data` override nullability in lock-step', () => {
+      const types = generateTypes(config)
+      // Both the standalone CreateInput member and the override `data` member
+      // render the nullable scalar identically (modulo indentation): `?: T | null`.
+      const nullableMemberPattern = /content\?: string \| null/g
+      const matches = types.match(nullableMemberPattern) ?? []
+      // At minimum: standalone CreateInput, standalone UpdateInput, create
+      // override, update override, plus createMany/updateMany overrides.
+      expect(matches.length).toBeGreaterThanOrEqual(4)
+    })
+  })
 })
