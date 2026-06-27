@@ -1,5 +1,9 @@
 import type { Session, AccessContext } from './types.js'
 import type { FieldAccess } from './types.js'
+// `ValidationError` is referenced only inside function bodies (call-time), never
+// at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
+// under ESM live bindings.
+import { ValidationError } from '../hooks/index.js'
 
 /**
  * Shared field-level access evaluation.
@@ -100,7 +104,14 @@ function matchesFilter(item: Record<string, unknown>, filter: Record<string, unk
  */
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
-  fieldConfigs: Record<string, { access?: FieldAccess; type?: string }>,
+  fieldConfigs: Record<
+    string,
+    {
+      access?: FieldAccess
+      type?: string
+      getColumnNames?: (fieldName: string) => string[]
+    }
+  >,
   operation: 'create' | 'update',
   args: {
     session: Session | null
@@ -114,6 +125,14 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // Build a set of foreign key field names to exclude
   // Foreign keys should not be in the data when using Prisma's relation syntax
   const foreignKeyFields = new Set<string>()
+  // Build a set of the raw per-part column names contributed by multi-column
+  // fields (e.g. storage image()/file() in Keystone-parity mode). These keys are
+  // injected into the write payload by the field's `splitColumns` AFTER
+  // resolveInput and are intentionally NOT declared in `fieldConfigs`, so they
+  // are legitimate undeclared keys that must NOT trip the #564 reject below.
+  // Their own write access was already enforced at split time (see
+  // `executeFieldResolveInputHooks`).
+  const splitColumnFields = new Set<string>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
       // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
@@ -122,7 +141,14 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
         foreignKeyFields.add(`${fieldName}Id`)
       }
     }
+    if (typeof fieldConfig.getColumnNames === 'function') {
+      for (const column of fieldConfig.getColumnNames(fieldName)) {
+        splitColumnFields.add(column)
+      }
+    }
   }
+
+  const isSudo = args.context._isSudo === true
 
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
@@ -144,15 +170,49 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Check field access (checkFieldAccess already handles sudo mode)
-    const canWrite = await checkFieldAccess(fieldConfig?.access, operation, {
+    // Pass through raw per-part columns produced by a multi-column field's
+    // `splitColumns`. They are undeclared by design; their write access was
+    // enforced when the logical field was split (see the #564 note above).
+    if (splitColumnFields.has(fieldName)) {
+      filtered[fieldName] = value
+      continue
+    }
+
+    // #564 — undeclared data keys must fail CLOSED.
+    // A key with no entry in `fieldConfigs` is not a field the list config
+    // exposes. The generated Prisma model has MORE fields than the config
+    // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
+    // an undeclared key to pass through lets a non-sudo caller drive ungated
+    // nested writes on undeclared back-relations. Mirror Keystone's
+    // GraphQL-schema behaviour and reject it. `sudo` is the single trusted
+    // bypass, so undeclared keys still pass through under sudo.
+    if (!fieldConfig) {
+      if (isSudo) {
+        filtered[fieldName] = value
+        continue
+      }
+      throw new ValidationError([
+        `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
+          `Undeclared data keys are rejected (use sudo to bypass).`,
+      ])
+    }
+
+    // #568 — fields denied by field-level access must THROW, not be silently
+    // dropped. Keystone threw a GraphQL access error for the same situation;
+    // silently stripping the field lets a write "succeed" while doing less than
+    // asked (and skips any hook side effects gated on that field).
+    // `checkFieldAccess` already returns `true` under sudo, so sudo writes never
+    // reach the throw below — no parallel sudo path is needed here.
+    const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
       ...args,
       inputData: args.inputData,
     })
 
-    if (canWrite) {
-      filtered[fieldName] = value
+    if (!canWrite) {
+      throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])
     }
+
+    filtered[fieldName] = value
   }
 
   return filtered as Partial<T>

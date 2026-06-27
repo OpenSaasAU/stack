@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest'
 import { filterWritableFields } from './field-access.js'
+import { ValidationError } from '../hooks/index.js'
+
+// A non-sudo access context. The cast is localized to test setup (mirrors the
+// existing sudo-context casts in this file): the runtime AccessContext carries
+// Prisma plumbing the unit under test never touches.
+function nonSudoContext() {
+  return {
+    session: null,
+    _isSudo: false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any
+}
+
+function sudoContext() {
+  return {
+    session: null,
+    _isSudo: true,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any
+}
 
 describe('filterWritableFields', () => {
   it('should filter out foreign key fields when their corresponding relationship field exists', async () => {
@@ -145,5 +165,179 @@ describe('filterWritableFields', () => {
 
     // authorId is a foreign key for author relationship, so it should be filtered
     expect(filtered).not.toHaveProperty('authorId')
+  })
+
+  // ── #564: undeclared data keys must fail CLOSED (throw) for non-sudo writes ──
+
+  it('throws on an undeclared data key for a non-sudo create', async () => {
+    const fieldConfigs = { title: { type: 'text' } }
+    const data = {
+      title: 'Test',
+      // Not a declared field — e.g. a Prisma back-relation the config never
+      // exposed (`from_Enrolment_student`). Must be rejected, not passed through.
+      from_Enrolment_student: { disconnect: [{ id: 'e1' }] },
+    }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(/from_Enrolment_student/)
+  })
+
+  it('throws on an undeclared data key for a non-sudo update', async () => {
+    const fieldConfigs = { title: { type: 'text' } }
+    const data = {
+      title: 'Updated',
+      bogusKey: 'value',
+    }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        item: { id: 'post-1' },
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(/bogusKey/)
+  })
+
+  it('passes undeclared data keys through under sudo (the single trusted bypass)', async () => {
+    const fieldConfigs = { title: { type: 'text' } }
+    const data = {
+      title: 'Test',
+      from_Enrolment_student: { disconnect: [{ id: 'e1' }] },
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: sudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).toHaveProperty('from_Enrolment_student')
+  })
+
+  it('still skips system fields and relationship FK fields cleanly for a non-sudo write', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      author: { type: 'relationship', many: false },
+    }
+    const data = {
+      id: 'post-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      title: 'Test',
+      authorId: 'user-1', // FK skipped, not rejected
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).not.toHaveProperty('id')
+    expect(filtered).not.toHaveProperty('createdAt')
+    expect(filtered).not.toHaveProperty('updatedAt')
+    expect(filtered).not.toHaveProperty('authorId')
+    expect(filtered).toHaveProperty('title', 'Test')
+  })
+
+  it('passes through raw per-part columns from a multi-column field (non-sudo)', async () => {
+    // Multi-column fields inject raw columns (e.g. m_url/m_size) that are not
+    // declared in fieldConfigs; they must not trip the undeclared-key reject.
+    const fieldConfigs = {
+      media: {
+        type: 'image',
+        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
+      },
+    }
+    const data = {
+      media_url: 'https://x/y.jpg',
+      media_size: 99,
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('media_url', 'https://x/y.jpg')
+    expect(filtered).toHaveProperty('media_size', 99)
+  })
+
+  // ── #568: field-access-denied keys must THROW, not be silently stripped ──────
+
+  it('throws when a declared field is denied by field-level access (non-sudo)', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      status: {
+        type: 'text',
+        access: { update: () => false, create: () => false },
+      },
+    }
+    const data = { title: 'Test', status: 'published' }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        item: { id: 'post-1' },
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(/status/)
+  })
+
+  it('does NOT throw on a would-be-denied field under sudo', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      status: {
+        type: 'text',
+        access: { update: () => false, create: () => false },
+      },
+    }
+    const data = { title: 'Test', status: 'published' }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+      session: null,
+      item: { id: 'post-1' },
+      context: sudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).toHaveProperty('status', 'published')
+  })
+
+  it('passes a declared relationship field through to nested operations (non-sudo)', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      author: { type: 'relationship', many: false },
+    }
+    const data = {
+      title: 'Test',
+      author: { connect: { id: 'user-1' } },
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('author')
+    expect(filtered.author).toEqual({ connect: { id: 'user-1' } })
   })
 })

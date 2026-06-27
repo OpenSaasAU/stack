@@ -266,31 +266,28 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
-      await context.db.post.update({
-        where: { id: '1' },
-        data: {
-          title: 'Updated Title',
-          author: {
-            create: {
-              name: 'John',
-              email: 'john@example.com',
-              role: 'admin', // Should be filtered out
+      // #568: a nested-create field denied by field-level access now THROWS
+      // (Keystone fail-loud parity) instead of being silently stripped. Nested
+      // writes flow through the same `filterWritableFields` gate, so the denied
+      // `role` field rejects the whole write.
+      await expect(
+        context.db.post.update({
+          where: { id: '1' },
+          data: {
+            title: 'Updated Title',
+            author: {
+              create: {
+                name: 'John',
+                email: 'john@example.com',
+                role: 'admin', // Denied on create -> throws
+              },
             },
           },
-        },
-      })
+        }),
+      ).rejects.toThrow(/role/)
 
-      // Verify the update was called
-      expect(mockPrisma.post.update).toHaveBeenCalled()
-
-      // Get the actual data passed to Prisma
-      const callArgs = mockPrisma.post.update.mock.calls[0][0]
-      const authorCreateData = callArgs.data.author.create
-
-      // Role should be filtered out
-      expect(authorCreateData.role).toBeUndefined()
-      expect(authorCreateData.name).toBe('John')
-      expect(authorCreateData.email).toBe('john@example.com')
+      // The denied field must abort the write, not let it proceed.
+      expect(mockPrisma.post.update).not.toHaveBeenCalled()
     })
 
     it('should run field validation on nested create', async () => {
