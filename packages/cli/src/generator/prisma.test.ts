@@ -1076,7 +1076,104 @@ describe('Prisma Schema Generator', () => {
 
       const schema = generatePrismaSchema(config)
 
-      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('previewFeatures     = ["multiSchema"]')
+      expect(schema).toContain('schemas  = ["public", "auth"]')
+    })
+
+    it('should default importFileExtension="ts" and moduleFormat="esm" in the generator block', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // Defaults make the prisma-client subtree statically resolvable (ADR-0008)
+      expect(schema).toContain('importFileExtension = "ts"')
+      expect(schema).toContain('moduleFormat        = "esm"')
+    })
+
+    it('should honour db.prismaGeneratorOptions overrides for the generator block', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          prismaGeneratorOptions: {
+            importFileExtension: 'js',
+            moduleFormat: 'commonjs',
+          },
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // User-supplied values win over the ts/esm defaults
+      expect(schema).toContain('importFileExtension = "js"')
+      expect(schema).toContain('moduleFormat        = "commonjs"')
+      expect(schema).not.toContain('importFileExtension = "ts"')
+      expect(schema).not.toContain('moduleFormat        = "esm"')
+    })
+
+    it('should fall back to defaults for any omitted prismaGeneratorOptions key', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // Only override the extension; moduleFormat falls back to the default
+          prismaGeneratorOptions: {
+            importFileExtension: 'js',
+          },
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('importFileExtension = "js"')
+      expect(schema).toContain('moduleFormat        = "esm"')
+    })
+
+    it('should emit multiSchema previewFeatures alongside the new generator options', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+          schemas: ['public', 'auth'],
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+            db: { schema: 'public' },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // The new options coexist with the preserved multiSchema preview feature
+      expect(schema).toContain('importFileExtension = "ts"')
+      expect(schema).toContain('moduleFormat        = "esm"')
+      expect(schema).toContain('previewFeatures     = ["multiSchema"]')
       expect(schema).toContain('schemas  = ["public", "auth"]')
     })
 
@@ -1237,7 +1334,7 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       // Multi-schema datasource is valid: preview feature + schemas array
-      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('previewFeatures     = ["multiSchema"]')
       expect(schema).toContain('schemas  = ["public", "auth"]')
 
       // Auth models pinned to their live table names, in the auth schema
@@ -2160,7 +2257,7 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       // Datasource is multi-schema
-      expect(schema).toContain('previewFeatures = ["multiSchema"]')
+      expect(schema).toContain('previewFeatures     = ["multiSchema"]')
       expect(schema).toContain('schemas  = ["public", "auth"]')
 
       // The enum block exists and carries @@schema (default public — the list

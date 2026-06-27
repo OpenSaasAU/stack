@@ -1673,6 +1673,40 @@ export type DatabaseConfig = {
    * ```
    */
   extendPrismaSchema?: (schema: string) => string
+  /**
+   * Override the Prisma `generator client { ... }` options the CLI emits for the
+   * `.opensaas` prisma-client subtree.
+   *
+   * By default the generator emits `importFileExtension = "ts"` and
+   * `moduleFormat = "esm"` so the whole generated bundle is statically
+   * resolvable and matches the explicit `.ts` import-extension style the rest of
+   * the `.opensaas` bundle uses (see ADR-0008). Supply this option only when you
+   * need a different module/extension story (e.g. emitting `.js` extensions for a
+   * Node-only consumer). Any value you provide wins; omitted keys fall back to
+   * the `ts`/`esm` defaults.
+   *
+   * @example Emit `.js` extensions and CommonJS for a plain-Node consumer
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   prismaGeneratorOptions: {
+   *     importFileExtension: 'js',
+   *     moduleFormat: 'commonjs',
+   *   },
+   *   // ... rest of config
+   * }
+   * ```
+   */
+  prismaGeneratorOptions?: {
+    /**
+     * Value for the generator's `importFileExtension` option. Defaults to `'ts'`.
+     */
+    importFileExtension?: 'ts' | 'js'
+    /**
+     * Value for the generator's `moduleFormat` option. Defaults to `'esm'`.
+     */
+    moduleFormat?: 'esm' | 'commonjs'
+  }
 }
 
 /**
