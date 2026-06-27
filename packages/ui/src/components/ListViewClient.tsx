@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { useState } from 'react'
 import Link from 'next/link.js'
 import { useRouter } from 'next/navigation.js'
 import { formatFieldName, getFieldDisplayValue } from '../lib/utils.js'
@@ -56,41 +55,30 @@ export function ListViewClient({
   search: initialSearch,
 }: ListViewClientProps) {
   const router = useRouter()
-  const [sortBy, setSortBy] = useState<string | null>(initialSort?.field ?? null)
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialSort?.direction ?? 'asc')
-  const [searchInput, setSearchInput] = useState(initialSearch || '')
+  const sortBy = initialSort?.field ?? null
+  const sortOrder = initialSort?.direction ?? 'asc'
+  const [searchInput, setSearchInput] = React.useState(initialSearch || '')
 
   // Determine which columns to show
   const displayColumns =
     columns ||
     Object.keys(fieldTypes).filter((key) => !['password', 'createdAt', 'updatedAt'].includes(key))
 
-  // Sort items if needed
-  const sortedItems = [...items]
-  if (sortBy) {
-    sortedItems.sort((a, b) => {
-      const aVal = a[sortBy]
-      const bVal = b[sortBy]
-      if (aVal === bVal) return 0
-      // Handle unknown types for comparison - convert to string for safety
-      const aStr = String(aVal ?? '')
-      const bStr = String(bVal ?? '')
-      const comparison = aStr > bStr ? 1 : -1
-      return sortOrder === 'asc' ? comparison : -comparison
-    })
-  }
+  // Items are already sorted by the server via orderBy; no in-memory sort needed.
 
   const totalPages = Math.ceil(total / pageSize)
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
 
   const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(column)
-      setSortOrder('asc')
+    const newDirection = sortBy === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc'
+    const params = new URLSearchParams()
+    if (initialSearch) {
+      params.set('search', initialSearch)
     }
+    params.set('sort', `${column}:${newDirection}`)
+    params.set('page', '1')
+    router.push(`${basePath}/${urlKey}?${params.toString()}`)
   }
 
   const handleSearch = (e: React.FormEvent) => {
@@ -98,6 +86,9 @@ export function ListViewClient({
     const params = new URLSearchParams()
     if (searchInput.trim()) {
       params.set('search', searchInput.trim())
+    }
+    if (sortBy) {
+      params.set('sort', `${sortBy}:${sortOrder}`)
     }
     params.set('page', '1') // Reset to page 1 on new search
     router.push(`${basePath}/${urlKey}?${params.toString()}`)
@@ -112,6 +103,9 @@ export function ListViewClient({
     const params = new URLSearchParams()
     if (initialSearch) {
       params.set('search', initialSearch)
+    }
+    if (sortBy) {
+      params.set('sort', `${sortBy}:${sortOrder}`)
     }
     params.set('page', newPage.toString())
     return `${basePath}/${urlKey}?${params.toString()}`
@@ -225,14 +219,14 @@ export function ListViewClient({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedItems.length === 0 ? (
+            {items.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={displayColumns.length + 1} className="h-24 text-center">
                   No items found
                 </TableCell>
               </TableRow>
             ) : (
-              sortedItems.map((item) => (
+              items.map((item) => (
                 <TableRow key={String(item.id)}>
                   {displayColumns.map((column) => (
                     <TableCell key={column}>

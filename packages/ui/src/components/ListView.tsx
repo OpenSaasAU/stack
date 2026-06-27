@@ -22,10 +22,15 @@ export interface ListViewProps {
   pageSize?: number
   search?: string
   /**
-   * Default sort applied to the table (from the list's `ui.listView.initialSort`).
-   * When omitted, no default sort is applied.
+   * Default sort from the list's `ui.listView.initialSort` config.
+   * Used when no URL sort param is present.
    */
   initialSort?: ListViewSort
+  /**
+   * Active sort from the `?sort=field:direction` URL param.
+   * Takes precedence over `initialSort`.
+   */
+  sort?: ListViewSort
 }
 
 /**
@@ -42,7 +47,10 @@ export async function ListView({
   pageSize = 50,
   search,
   initialSort,
+  sort,
 }: ListViewProps) {
+  // URL sort takes precedence over config initialSort.
+  const activeSort = sort ?? initialSort
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]
@@ -97,9 +105,11 @@ export async function ListView({
     })
     const delegate = dbContext[key]
     if (delegate?.findMany && delegate?.count) {
+      const orderBy = activeSort ? { [activeSort.field]: activeSort.direction } : undefined
       ;[items, total] = await Promise.all([
         delegate.findMany({
           where,
+          orderBy,
           skip,
           take: pageSize,
           ...(Object.keys(include).length > 0 ? { include } : {}),
@@ -157,7 +167,7 @@ export async function ListView({
         )}
         relationshipRefs={relationshipRefs}
         columns={columns}
-        initialSort={initialSort}
+        initialSort={activeSort}
         listKey={listKey}
         urlKey={urlKey}
         basePath={basePath}
