@@ -778,21 +778,31 @@ describe('Field Types', () => {
         const field = json({ validation: { isRequired: true } })
         const schema = field.getZodSchema('metadata', 'create')
 
-        // Any present JSON value is accepted, including null (issue #597)
+        // Any present non-null JSON value is accepted, including falsy values
         expect(schema.safeParse({ key: 'value' }).success).toBe(true)
         expect(schema.safeParse([1, 2, 3]).success).toBe(true)
         expect(schema.safeParse(0).success).toBe(true)
-        expect(schema.safeParse(null).success).toBe(true)
+        expect(schema.safeParse('').success).toBe(true)
+        expect(schema.safeParse(false).success).toBe(true)
         // A required json field must reject undefined on create (issue #597)
         expect(schema.safeParse(undefined).success).toBe(false)
+        // A required json field means non-null: reject a present null (issue #604)
+        expect(schema.safeParse(null).success).toBe(false)
       })
 
-      test('allows undefined for required field in update mode', () => {
+      test('allows undefined but rejects null for required field in update mode', () => {
         const field = json({ validation: { isRequired: true } })
         const schema = field.getZodSchema('metadata', 'update')
 
         expect(schema.safeParse({ key: 'value' }).success).toBe(true)
+        // Omitted/undefined still passes on update (issue #570)
         expect(schema.safeParse(undefined).success).toBe(true)
+        // Present non-null falsy values pass
+        expect(schema.safeParse(0).success).toBe(true)
+        expect(schema.safeParse('').success).toBe(true)
+        expect(schema.safeParse(false).success).toBe(true)
+        // A present null is rejected — required json means non-null (issue #604)
+        expect(schema.safeParse(null).success).toBe(false)
       })
     })
 
