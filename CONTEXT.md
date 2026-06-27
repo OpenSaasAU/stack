@@ -34,6 +34,14 @@ _Avoid_: operation handler, mutation service
 The module that runs the transform+validate span of a write — list `resolveInput` → field `resolveInput` → list `validate` → field `validate` → built-in field rules — owning that order and the `resolvedData` threading through it. It throws a validation error (never silent) when a validate hook reports via `addValidationError` or a built-in field rule fails, and returns the transformed `resolvedData` on success. The Write Pipeline delegates this span to it; side-effect hooks (`beforeOperation`/`afterOperation`), access, writable-field filtering, persistence and Field Visibility stay in the Write Pipeline.
 _Avoid_: validation service, input resolver
 
+**In-transaction hooks** (`beforeOperation` / `afterOperation`):
+Side-effect hooks that run _inside_ the write's database transaction and roll back with it — for work that must be atomic with the write (typically DB work through the transaction client). They fire per record written, including each nested record, so a record's side effects are identical whether it was written top-level or nested.
+_Avoid_: operation hooks (ambiguous about the boundary)
+
+**Transaction-boundary hooks** (`beforeTransaction` / `afterTransaction`):
+Side-effect hooks that run _outside_ the write's database transaction, for non-transactional work (e.g. external API calls) that must not hold the transaction open. `beforeTransaction` runs before the transaction opens; `afterTransaction` runs after it settles and **always** runs — receiving whether the transaction committed or rolled back — so the pair forms a compensation bracket around the atomic write. Like the in-transaction hooks, they fire per list involved in the write (including nested lists).
+_Avoid_: outer hooks, outbox hooks
+
 ### Migration & schema generation
 
 **Schema parity**:
