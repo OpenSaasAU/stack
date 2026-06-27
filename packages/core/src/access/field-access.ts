@@ -125,14 +125,23 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // Build a set of foreign key field names to exclude
   // Foreign keys should not be in the data when using Prisma's relation syntax
   const foreignKeyFields = new Set<string>()
-  // Build a set of the raw per-part column names contributed by multi-column
-  // fields (e.g. storage image()/file() in Keystone-parity mode). These keys are
-  // injected into the write payload by the field's `splitColumns` AFTER
-  // resolveInput and are intentionally NOT declared in `fieldConfigs`, so they
-  // are legitimate undeclared keys that must NOT trip the #564 reject below.
-  // Their own write access was already enforced at split time (see
-  // `executeFieldResolveInputHooks`).
-  const splitColumnFields = new Set<string>()
+  // Map each raw per-part column name contributed by a multi-column field
+  // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
+  // declared field. These columns are injected into the write payload by the
+  // field's `splitColumns` AFTER resolveInput and are intentionally NOT declared
+  // as their own entries in `fieldConfigs`, so without this map they would trip
+  // the #564 undeclared-key reject below.
+  //
+  // SECURITY (#568): a raw column must NOT be blanket-passed through. The hooks
+  // layer (`executeFieldResolveInputHooks`) only gates the owning field when the
+  // LOGICAL key (e.g. `media`) is present, because it iterates declared fields,
+  // not data keys. A non-sudo caller who supplies the raw columns DIRECTLY
+  // (`data: { media_url, media_size }`) never produces that logical key, so that
+  // gate never fires. We therefore gate each raw column HERE by its owning
+  // field's write access — denied (non-sudo) throws, allowed (or sudo) passes
+  // through — so the legitimate multi-column write path is preserved while the
+  // direct-raw-column bypass is closed.
+  const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
       // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
@@ -143,7 +152,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
       for (const column of fieldConfig.getColumnNames(fieldName)) {
-        splitColumnFields.add(column)
+        splitColumnOwners.set(column, { fieldName, access: fieldConfig.access })
       }
     }
   }
@@ -170,10 +179,27 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Pass through raw per-part columns produced by a multi-column field's
-    // `splitColumns`. They are undeclared by design; their write access was
-    // enforced when the logical field was split (see the #564 note above).
-    if (splitColumnFields.has(fieldName)) {
+    // Raw per-part columns produced by a multi-column field's `splitColumns`.
+    // They are undeclared by design, so they must not trip the #564 reject — but
+    // they must NOT be blanket-passed through either: gate each one by its
+    // OWNING field's write access (see the SECURITY note where the map is built).
+    // This is the real gate for callers who supply the raw columns directly,
+    // because the logical-key gate in `executeFieldResolveInputHooks` never fires
+    // for them. Denied (non-sudo) throws — same fail-loud behaviour as a denied
+    // declared field (#568); allowed (or sudo, via `checkFieldAccess`) passes
+    // through, preserving the legitimate multi-column write path.
+    const splitColumnOwner = splitColumnOwners.get(fieldName)
+    if (splitColumnOwner) {
+      const canWrite = await checkFieldAccess(splitColumnOwner.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      })
+      if (!canWrite) {
+        throw new ValidationError([
+          `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
+            `field-level access denied.`,
+        ])
+      }
       filtered[fieldName] = value
       continue
     }

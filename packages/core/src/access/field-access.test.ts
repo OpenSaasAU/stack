@@ -254,9 +254,10 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('title', 'Test')
   })
 
-  it('passes through raw per-part columns from a multi-column field (non-sudo)', async () => {
+  it('passes through raw per-part columns from a multi-column field whose write access ALLOWS (non-sudo)', async () => {
     // Multi-column fields inject raw columns (e.g. m_url/m_size) that are not
     // declared in fieldConfigs; they must not trip the undeclared-key reject.
+    // With no field-level access (allow), they pass through.
     const fieldConfigs = {
       media: {
         type: 'image',
@@ -271,6 +272,66 @@ describe('filterWritableFields', () => {
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
       session: null,
       context: nonSudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('media_url', 'https://x/y.jpg')
+    expect(filtered).toHaveProperty('media_size', 99)
+  })
+
+  it('THROWS when raw split columns are supplied for a field whose write access is DENIED (non-sudo)', async () => {
+    // Security (#568): a non-sudo caller who supplies the raw per-part columns
+    // DIRECTLY must not bypass the owning field's write-access gate. The
+    // logical-key gate in the hooks layer never fires here (no `media` key), so
+    // this filter is the only enforcement point — it must throw.
+    const fieldConfigs = {
+      media: {
+        type: 'image',
+        access: { create: () => false, update: () => false },
+        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
+      },
+    }
+    const data = {
+      media_url: 'https://evil/x.jpg',
+      media_size: 1,
+    }
+
+    // Throws ValidationError, and the message names the owning field.
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        item: { id: 'item-1' },
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(/media/)
+  })
+
+  it('passes raw split columns through under sudo regardless of denied owning-field access', async () => {
+    // sudo is the single trusted bypass; `checkFieldAccess` returns true under
+    // sudo, so even a would-be-denied multi-column field passes through.
+    const fieldConfigs = {
+      media: {
+        type: 'image',
+        access: { create: () => false, update: () => false },
+        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
+      },
+    }
+    const data = {
+      media_url: 'https://x/y.jpg',
+      media_size: 99,
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: sudoContext(),
       inputData: data,
     })
 
