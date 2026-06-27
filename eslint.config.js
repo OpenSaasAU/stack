@@ -61,5 +61,20 @@ export default [
       },
     },
   },
+  {
+    // Plain-Node ESM/CJS scripts (e.g. the Node-build verification consumer)
+    // run under `node` and use Node globals (`console`, `process`).
+    files: ['**/*.mjs', '**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
+    },
+  },
   prettier,
 ]

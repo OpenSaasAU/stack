@@ -13,6 +13,8 @@ import {
   writePluginTypes,
   writePrismaExtensions,
   resolveOutputPaths,
+  buildNodeBundle,
+  formatNodeBuildDiagnostics,
 } from '../generator/index.js'
 import { OpenSaasConfig, validateConfigFields } from '@opensaas/stack-core'
 import type { FieldConfigValidationError } from '@opensaas/stack-core'
@@ -105,6 +107,9 @@ export async function generateCommand() {
     validationSpinner.succeed(chalk.green('Field configuration valid'))
 
     // Generate Prisma schema, types, and context
+    // Captured here so the (optional) Node build step, which runs after
+    // `prisma generate` outside this try block, knows where the bundle lives.
+    let opensaasDir = ''
     const generatorSpinner = ora('Generating schema and types...').start()
     try {
       // Resolve write paths and the relative cross-references between generated
@@ -115,6 +120,7 @@ export async function generateCommand() {
       // default). With neither set this yields the historical defaults
       // (`prisma/schema.prisma`, `.opensaas/`) byte-for-byte.
       const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
+      opensaasDir = paths.opensaasDir
 
       const prismaSchemaPath = paths.prismaSchema
       const prismaConfigPath = paths.prismaConfig
@@ -228,6 +234,35 @@ export async function generateCommand() {
       const message = err instanceof Error ? err.message : String(err)
       console.error(chalk.red('\n❌ Error:'), message)
       process.exit(1)
+    }
+
+    // Optional Node build (ADR-0010): when `output.buildTarget === 'node'`,
+    // additionally compile the `.ts` bundle to a plain-Node-loadable ESM form
+    // under `<opensaasDir>/dist/` so a live module (e.g. better-auth's adapter)
+    // can be imported in a bundler-less runtime. Purely additive — the default
+    // `.ts` form is untouched. Runs after `prisma generate` so the compiled
+    // `prisma-client/**` subtree exists to compile in.
+    if (config.output?.buildTarget === 'node') {
+      const nodeBuildSpinner = ora('Building Node-loadable bundle...').start()
+      try {
+        const result = buildNodeBundle({ opensaasDir, configPath })
+        nodeBuildSpinner.succeed(chalk.green('Node-loadable bundle built'))
+        console.log(chalk.green(`✅ Node build emitted to ${path.relative(cwd, result.distDir)}`))
+
+        // The Node build is best-effort (`noEmitOnError: false`): emit proceeds
+        // even with stray type errors (e.g. the host's type-only `@/*` config
+        // alias). Surface any errors as a warning rather than failing.
+        const formattedErrors = formatNodeBuildDiagnostics(result.diagnostics)
+        if (formattedErrors.trim().length > 0) {
+          console.log(chalk.yellow('⚠️  Node build completed with type diagnostic(s) (non-fatal):'))
+          console.log(chalk.gray(formattedErrors))
+        }
+      } catch (err) {
+        nodeBuildSpinner.fail(chalk.red('Failed to build Node-loadable bundle'))
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(chalk.red('\n❌ Error:'), message)
+        process.exit(1)
+      }
     }
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))
