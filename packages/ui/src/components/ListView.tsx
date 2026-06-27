@@ -49,8 +49,6 @@ export async function ListView({
   initialSort,
   sort,
 }: ListViewProps) {
-  // URL sort takes precedence over config initialSort.
-  const activeSort = sort ?? initialSort
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]
@@ -65,6 +63,11 @@ export async function ListView({
       </div>
     )
   }
+
+  // URL sort takes precedence over config initialSort, but only if the field
+  // actually exists on the list — an unknown field would cause Prisma to throw.
+  const validatedSort = sort && sort.field in listConfig.fields ? sort : undefined
+  const activeSort = validatedSort ?? initialSort
 
   // Fetch items using access-controlled context
   const skip = (page - 1) * pageSize
