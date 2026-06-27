@@ -140,6 +140,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -188,6 +196,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -375,6 +386,14 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
+  select?: PostSelect | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select'> & {
@@ -423,6 +442,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
@@ -690,6 +712,15 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support in nested relationships
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support in nested relationships
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include'> & {
@@ -913,6 +944,15 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support in nested relationships
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
@@ -967,6 +1007,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<UserGetPayload<T>>>
@@ -990,6 +1033,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
@@ -1210,6 +1256,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -1258,6 +1312,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -1445,6 +1502,14 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
+  select?: PostSelect | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select'> & {
@@ -1493,6 +1558,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
@@ -1677,6 +1745,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -1725,6 +1801,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -1912,6 +1991,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -1960,6 +2047,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -2144,6 +2234,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -2297,6 +2395,14 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
  * Custom FindManyArgs for Post with virtual field support
  */
 export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+  select?: PostSelect | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
+ * Custom FindFirstArgs for Post with virtual field support
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -2460,6 +2566,14 @@ export type CommentFindManyArgs = Omit<Prisma.CommentFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for Comment with virtual field support
+ */
+export type CommentFindFirstArgs = Omit<Prisma.CommentFindFirstArgs, 'select'> & {
+  select?: CommentSelect | null
+  query?: Fragment<CommentOutput, FieldSelection<CommentOutput>>
+}
+
+/**
  * Custom CreateArgs for Comment with virtual field support
  */
 export type CommentCreateArgs = Omit<Prisma.CommentCreateArgs, 'select'> & {
@@ -2509,6 +2623,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<UserGetPayload<T>>>
@@ -2533,6 +2650,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<PostGetPayload<T>>>
@@ -2556,6 +2676,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   comment: {
     findUnique: <T extends CommentFindUniqueArgs>(
       args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
+    ) => Promise<CommentGetPayload<T> | null>
+    findFirst: <T extends CommentFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, CommentFindFirstArgs>
     ) => Promise<CommentGetPayload<T> | null>
     findMany: <T extends CommentFindManyArgs>(
       args?: Prisma.SelectSubset<T, CommentFindManyArgs>
@@ -2800,6 +2923,15 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support in nested relationships
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
@@ -2963,6 +3095,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -3012,6 +3152,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<PostGetPayload<T>>>
@@ -3035,6 +3178,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -3279,6 +3425,15 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support in nested relationships
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
@@ -3442,6 +3597,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -3491,6 +3654,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ) => Promise<Array<PostGetPayload<T>>>
@@ -3514,6 +3680,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
@@ -3757,6 +3926,15 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support in nested relationships
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'include'> & {
+  select?: UserSelect | null
+  include?: UserInclude | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support in nested relationships
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include'> & {
@@ -3980,6 +4158,15 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for Post with virtual field support in nested relationships
+ */
+export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+  select?: PostSelect | null
+  include?: PostInclude | null
+  query?: Fragment<PostOutput, FieldSelection<PostOutput>>
+}
+
+/**
  * Custom CreateArgs for Post with virtual field support in nested relationships
  */
 export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include'> & {
@@ -4034,6 +4221,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ) => Promise<Array<UserGetPayload<T>>>
@@ -4057,6 +4247,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   post: {
     findUnique: <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    ) => Promise<PostGetPayload<T> | null>
+    findFirst: <T extends PostFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ) => Promise<PostGetPayload<T> | null>
     findMany: <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
@@ -4294,6 +4487,15 @@ export type AccountFindUniqueArgs = Omit<Prisma.AccountFindUniqueArgs, 'select' 
  * Custom FindManyArgs for Account with virtual field support in nested relationships
  */
 export type AccountFindManyArgs = Omit<Prisma.AccountFindManyArgs, 'select' | 'include'> & {
+  select?: AccountSelect | null
+  include?: AccountInclude | null
+  query?: Fragment<AccountOutput, FieldSelection<AccountOutput>>
+}
+
+/**
+ * Custom FindFirstArgs for Account with virtual field support in nested relationships
+ */
+export type AccountFindFirstArgs = Omit<Prisma.AccountFindFirstArgs, 'select' | 'include'> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
   query?: Fragment<AccountOutput, FieldSelection<AccountOutput>>
@@ -4547,6 +4749,15 @@ export type BillFindManyArgs = Omit<Prisma.BillFindManyArgs, 'select' | 'include
 }
 
 /**
+ * Custom FindFirstArgs for Bill with virtual field support in nested relationships
+ */
+export type BillFindFirstArgs = Omit<Prisma.BillFindFirstArgs, 'select' | 'include'> & {
+  select?: BillSelect | null
+  include?: BillInclude | null
+  query?: Fragment<BillOutput, FieldSelection<BillOutput>>
+}
+
+/**
  * Custom CreateArgs for Bill with virtual field support in nested relationships
  */
 export type BillCreateArgs = Omit<Prisma.BillCreateArgs, 'select' | 'include'> & {
@@ -4601,6 +4812,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
     findUnique: <T extends AccountFindUniqueArgs>(
       args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
     ) => Promise<AccountGetPayload<T> | null>
+    findFirst: <T extends AccountFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, AccountFindFirstArgs>
+    ) => Promise<AccountGetPayload<T> | null>
     findMany: <T extends AccountFindManyArgs>(
       args?: Prisma.SelectSubset<T, AccountFindManyArgs>
     ) => Promise<Array<AccountGetPayload<T>>>
@@ -4624,6 +4838,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   bill: {
     findUnique: <T extends BillFindUniqueArgs>(
       args: Prisma.SelectSubset<T, BillFindUniqueArgs>
+    ) => Promise<BillGetPayload<T> | null>
+    findFirst: <T extends BillFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, BillFindFirstArgs>
     ) => Promise<BillGetPayload<T> | null>
     findMany: <T extends BillFindManyArgs>(
       args?: Prisma.SelectSubset<T, BillFindManyArgs>
