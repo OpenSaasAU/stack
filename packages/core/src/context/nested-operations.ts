@@ -88,34 +88,132 @@ function findListName(
 }
 
 /**
- * Read back a single persisted nested row from the parent result.
+ * Read the rows of a parent's included relation as an array.
  *
- * For a to-one relation the included value is the row itself. For a to-many
- * relation it is an array; the newly-created/updated row is identified by its
- * known id (update) or by excluding the ids that already existed before the
- * write (create), falling back to the last array entry.
+ * A to-one relation comes back as a single row (or `null`); a to-many relation
+ * comes back as an array. This normalises both to an array so callers can apply
+ * a uniform id-diff.
  */
-function recoverPersistedRow(
+function includedRows(
+  parentResult: Record<string, unknown>,
+  fieldName: string,
+): Array<Record<string, unknown>> {
+  const included = parentResult[fieldName]
+  if (included == null) return []
+  if (Array.isArray(included)) return included as Array<Record<string, unknown>>
+  return [included as Record<string, unknown>]
+}
+
+/**
+ * Recover an UPDATED nested row from the parent result by its known id.
+ *
+ * The updated row's id is known up front (it was fetched for access as
+ * `originalItem`), so the persisted row is the included row with that id.
+ */
+function recoverUpdatedRow(
   parentResult: Record<string, unknown>,
   fieldName: string,
   knownId: string | undefined,
-  excludeIds: Set<string>,
 ): Record<string, unknown> | undefined {
-  const included = parentResult[fieldName]
-  if (included == null) return undefined
+  if (knownId === undefined) return undefined
+  return includedRows(parentResult, fieldName).find((r) => r.id === knownId)
+}
 
-  if (Array.isArray(included)) {
-    const rows = included as Array<Record<string, unknown>>
-    if (knownId !== undefined) {
-      const match = rows.find((r) => r.id === knownId)
-      if (match) return match
-    }
-    const fresh = rows.filter((r) => typeof r.id === 'string' && !excludeIds.has(r.id as string))
-    if (fresh.length > 0) return fresh[fresh.length - 1]
-    return rows[rows.length - 1]
+/**
+ * Recover the CREATED nested rows from the parent result by id-diff.
+ *
+ * Created rows have no known id before the write, so they are identified as the
+ * included rows whose ids are NOT in `preExistingIds` (the set of related-row
+ * ids captured before the persist). Returned in include order, which the create
+ * handler pairs to its create-payload entries by position (see
+ * {@link CreatedRowRecovery}).
+ */
+function recoverCreatedRows(
+  parentResult: Record<string, unknown>,
+  fieldName: string,
+  preExistingIds: Set<string>,
+): Array<Record<string, unknown>> {
+  return includedRows(parentResult, fieldName).filter(
+    (r) => typeof r.id === 'string' && !preExistingIds.has(r.id as string),
+  )
+}
+
+/**
+ * Shared, memoised recovery of the rows created for ONE nested `create` payload
+ * on ONE relation field.
+ *
+ * A to-many `create: [{A},{B}]` produces several rows that must each fire their
+ * own `afterOperation` against their OWN row. We cannot tell which included row
+ * corresponds to which payload entry by content alone, so we identify the set of
+ * NEW rows by id-diff against the ids that existed before the persist, then pair
+ * them to the create-payload entries by POSITION (Prisma preserves create-array
+ * order in the included result). The id-diff is computed once per parent result
+ * and cached so every entry's task shares it.
+ *
+ * `inputData`↔row pairing is therefore positional and best-effort; `item`
+ * correctness (each task gets a genuinely-created, distinct row) is guaranteed:
+ * a pre-existing row can never be returned because it is excluded by the diff.
+ */
+interface CreatedRowRecovery {
+  /** Recover the created row for the create-payload entry at `index`. */
+  rowAt(parentResult: Record<string, unknown>, index: number): Record<string, unknown> | undefined
+}
+
+function createCreatedRowRecovery(
+  fieldName: string,
+  preExistingIds: Set<string>,
+): CreatedRowRecovery {
+  let cache: { source: Record<string, unknown>; rows: Array<Record<string, unknown>> } | undefined
+  return {
+    rowAt(parentResult, index) {
+      if (!cache || cache.source !== parentResult) {
+        cache = {
+          source: parentResult,
+          rows: recoverCreatedRows(parentResult, fieldName, preExistingIds),
+        }
+      }
+      return cache.rows[index]
+    },
+  }
+}
+
+/**
+ * Capture the ids of the rows currently linked to the parent via `fieldName`,
+ * BEFORE the parent persists. Used to identify which included rows are NEW
+ * (created by this write) afterwards.
+ *
+ * - For a parent CREATE there are no pre-existing related rows (the parent does
+ *   not exist yet), so the set is empty.
+ * - For a parent UPDATE we read the parent row's current relation and collect
+ *   its ids. The same `tx` client is used so the read participates in the
+ *   transaction and sees a consistent snapshot.
+ */
+async function capturePreExistingIds(
+  parentListName: string,
+  parentOriginalItem: Record<string, unknown> | undefined,
+  fieldName: string,
+  prisma: unknown,
+): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const parentId = parentOriginalItem?.id
+  if (typeof parentId !== 'string') {
+    // Parent create (no existing row) — nothing pre-exists.
+    return ids
   }
 
-  return included as Record<string, unknown>
+  // Access Prisma model dynamically - required because model names are generated at runtime
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parentModel = (prisma as any)[getDbKey(parentListName)]
+  if (!parentModel?.findUnique) return ids
+
+  const current = await parentModel.findUnique({
+    where: { id: parentId },
+    include: { [fieldName]: true },
+  })
+  for (const row of includedRows((current ?? {}) as Record<string, unknown>, fieldName)) {
+    if (typeof row.id === 'string') ids.add(row.id)
+  }
+  return ids
 }
 
 /**
@@ -135,12 +233,12 @@ async function processNestedCreate(
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
-  excludeIds: Set<string>,
+  recovery: CreatedRowRecovery,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const itemsArray = Array.isArray(items) ? items : [items]
 
   const processedItems = await Promise.all(
-    itemsArray.map(async (item) => {
+    itemsArray.map(async (item, index) => {
       // 1. Check create access (skip if sudo mode)
       if (!context._isSudo) {
         const createAccess = relatedListConfig.access?.operation?.create
@@ -212,13 +310,17 @@ async function processNestedCreate(
         },
       )
 
-      // 7. Recursively process nested operations in this item
+      // 7. Recursively process nested operations in this item. This nested row
+      // is itself being CREATED, so its own relations have no pre-existing rows
+      // (parent originalItem is undefined → empty pre-existing set).
       const { data: nestedData, afterTasks: childAfterTasks } = await processNestedOperations(
         filtered,
         relatedListConfig.fields,
         config,
         { ...context, prisma },
         'create',
+        relatedListName,
+        undefined,
       )
 
       // 8. Field-level beforeOperation (side effects) for this nested create
@@ -241,13 +343,27 @@ async function processNestedCreate(
       })
 
       // 10. Register afterOperation: fires once the parent (and thus this nested
-      // row) has persisted. The persisted row is recovered from the parent's
-      // included relation.
+      // row) has persisted. The created row is recovered by id-diff and paired
+      // to THIS create-payload entry by position (see CreatedRowRecovery), so a
+      // to-many `create: [{A},{B}]` fires once per row, each against its OWN
+      // distinct row, and never against a pre-existing sibling.
       afterTasks.push({
         fieldName,
         run: async (parentResult) => {
-          const persisted = recoverPersistedRow(parentResult, fieldName, undefined, excludeIds)
-          const createdItem = persisted ?? {}
+          const createdItem = recovery.rowAt(parentResult, index)
+          if (!createdItem) {
+            // The created row could not be identified by id-diff — the parent
+            // write did not return this nested relation (e.g. the underlying
+            // client does not echo `include`d relations). We must NOT hand an
+            // id-less `{}` to a hook as if it were the persisted row (finding 4:
+            // that would fire `afterOperation` against a fabricated item). The
+            // before-persist hooks have already run; we deliberately SKIP this
+            // record's create `afterOperation` rather than fire it with a bogus
+            // item. Real Prisma always echoes the `include`d relation, so this
+            // skip is reached only by clients/mocks that omit it. `item`
+            // correctness is the must-have; a missing row is never fabricated.
+            return
+          }
 
           await executeAfterOperation(relatedListConfig.hooks, {
             listKey: relatedListName,
@@ -384,7 +500,6 @@ async function processNestedUpdate(
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
-  excludeIds: Set<string>,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const updatesArray = Array.isArray(updates) ? updates : [updates]
 
@@ -403,10 +518,9 @@ async function processNestedUpdate(
         throw new Error('Cannot update: Item not found')
       }
 
-      // Record the known id so the included-result read-back can find this row
-      // (and so it is NOT mistaken for a freshly-created sibling).
+      // The updated row's id is known up front, so the included-result read-back
+      // finds this row directly by id.
       const knownId = typeof originalItem.id === 'string' ? (originalItem.id as string) : undefined
-      if (knownId !== undefined) excludeIds.add(knownId)
 
       // Check update access (skip if sudo mode)
       if (!context._isSudo) {
@@ -484,13 +598,16 @@ async function processNestedUpdate(
         },
       )
 
-      // Recursively process nested operations
+      // Recursively process nested operations. This nested row is being UPDATED,
+      // so its own relations' pre-existing rows are captured from `originalItem`.
       const { data: nestedData, afterTasks: childAfterTasks } = await processNestedOperations(
         filtered,
         relatedListConfig.fields,
         config,
         { ...context, prisma },
         'update',
+        relatedListName,
+        originalItem,
       )
 
       // Field-level beforeOperation (side effects)
@@ -519,7 +636,7 @@ async function processNestedUpdate(
       afterTasks.push({
         fieldName,
         run: async (parentResult) => {
-          const persisted = recoverPersistedRow(parentResult, fieldName, knownId, excludeIds)
+          const persisted = recoverUpdatedRow(parentResult, fieldName, knownId)
           const updatedItem = persisted ?? originalItem
 
           await executeAfterOperation(relatedListConfig.hooks, {
@@ -691,7 +808,7 @@ async function processNestedConnectOrCreate(
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
-  excludeIds: Set<string>,
+  recovery: CreatedRowRecovery,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const operationsArray = Array.isArray(operations) ? operations : [operations]
 
@@ -760,7 +877,7 @@ async function processNestedConnectOrCreate(
         config,
         prisma,
         createAfterTasks,
-        excludeIds,
+        recovery,
       )
 
       return {
@@ -791,9 +908,34 @@ interface NestedOpHandlerArgs {
   prisma: unknown
   /** Collector for deferred nested `afterOperation` tasks. */
   afterTasks: AfterTask[]
-  /** Ids known before the write (connect targets + update/delete targets). */
-  excludeIds: Set<string>
+  /**
+   * Recovery of the rows created on THIS field by id-diff (created kinds only —
+   * `create` and `connectOrCreate`'s create branch). Identifies each created row
+   * by excluding the ids that existed before the persist, and pairs them to the
+   * create-payload entries by position. Created lazily because it requires a
+   * pre-persist DB read; `undefined` for kinds that never create.
+   */
+  recovery: CreatedRowRecovery | undefined
 }
+
+/**
+ * Narrow the lazily-built {@link CreatedRowRecovery} to a present value for the
+ * created kinds (`create`, `connectOrCreate`). It is always provided for these
+ * kinds by {@link processFieldNestedOps}; the guard backstops a programming
+ * error rather than a user-facing path.
+ */
+function requireRecovery(
+  recovery: CreatedRowRecovery | undefined,
+  kind: string,
+): CreatedRowRecovery {
+  if (!recovery) {
+    throw new Error(`Internal error: missing created-row recovery for nested "${kind}"`)
+  }
+  return recovery
+}
+
+/** Nested-op kinds that can create new rows and so need created-row recovery. */
+const CREATING_KINDS = new Set(['create', 'connectOrCreate'])
 
 /**
  * A nested-operation handler describes how a single nested-op kind
@@ -831,7 +973,7 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       config,
       prisma,
       afterTasks,
-      excludeIds,
+      recovery,
     }) =>
       processNestedCreate(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -842,7 +984,7 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         config,
         prisma,
         afterTasks,
-        excludeIds,
+        requireRecovery(recovery, 'create'),
       ),
   },
   connect: {
@@ -867,7 +1009,7 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       config,
       prisma,
       afterTasks,
-      excludeIds,
+      recovery,
     }) =>
       processNestedConnectOrCreate(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -878,7 +1020,7 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         config,
         prisma,
         afterTasks,
-        excludeIds,
+        requireRecovery(recovery, 'connectOrCreate'),
       ),
   },
   update: {
@@ -892,7 +1034,6 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       config,
       prisma,
       afterTasks,
-      excludeIds,
     }) =>
       processNestedUpdate(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -903,7 +1044,6 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         config,
         prisma,
         afterTasks,
-        excludeIds,
       ),
   },
   delete: {
@@ -950,10 +1090,30 @@ const nestedOpOrder = [
 async function processFieldNestedOps(
   fieldName: string,
   valueRecord: Record<string, unknown>,
-  args: Omit<NestedOpHandlerArgs, 'value' | 'fieldName'>,
+  args: Omit<NestedOpHandlerArgs, 'value' | 'fieldName' | 'recovery'>,
   includeFields: Set<string>,
+  parentListName: string,
+  parentOriginalItem: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown>> {
   const nestedOp: Record<string, unknown> = {}
+
+  // Created-row recovery is only needed when this field has a creating kind
+  // (`create`/`connectOrCreate`). When present it requires a pre-persist read of
+  // the parent's current related ids, so build it once, lazily, and share it
+  // across the creating kinds on this field.
+  let recovery: CreatedRowRecovery | undefined
+  const hasCreatingKind = nestedOpOrder.some(
+    (kind) => CREATING_KINDS.has(kind) && valueRecord[kind] !== undefined,
+  )
+  if (hasCreatingKind) {
+    const preExistingIds = await capturePreExistingIds(
+      parentListName,
+      parentOriginalItem,
+      fieldName,
+      args.prisma,
+    )
+    recovery = createCreatedRowRecovery(fieldName, preExistingIds)
+  }
 
   for (const kind of nestedOpOrder) {
     const value = valueRecord[kind]
@@ -969,6 +1129,7 @@ async function processFieldNestedOps(
       ...args,
       value,
       fieldName,
+      recovery,
     })
   }
 
@@ -989,6 +1150,8 @@ export async function processNestedOperations(
   config: OpenSaasConfig,
   context: AccessContext & { prisma: unknown },
   operation: 'create' | 'update',
+  parentListName: string,
+  parentOriginalItem: Record<string, unknown> | undefined,
   depth: number = 0,
 ): Promise<NestedOpsResult> {
   const MAX_DEPTH = 5
@@ -1033,9 +1196,10 @@ export async function processNestedOperations(
         config,
         prisma: context.prisma,
         afterTasks,
-        excludeIds: new Set<string>(),
       },
       includeFields,
+      parentListName,
+      parentOriginalItem,
     )
   }
 

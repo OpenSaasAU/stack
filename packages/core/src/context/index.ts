@@ -303,41 +303,8 @@ export function getContext<
     _resolveOutputCounter: { depth: 0 },
   }
 
-  // Create access-controlled operations for each list
-  for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const dbKey = getDbKey(listName)
-
-    // Create base operations
-    const createOp = createCreate(listName, listConfig, prisma, context, config)
-    const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
-    const updateOp = createUpdate(listName, listConfig, prisma, context, config)
-    const operations: Record<string, unknown> = {
-      findUnique: createFindUnique(listName, listConfig, prisma, context, config),
-      findMany: findManyOp,
-      findFirst: createFindFirst(findManyOp),
-      create: createOp,
-      update: updateOp,
-      delete: createDelete(listName, listConfig, prisma, context, config),
-      count: createCount(listName, listConfig, prisma, context),
-      createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
-      updateMany: createUpdateMany(
-        listName,
-        listConfig,
-        prisma,
-        context,
-        config,
-        findManyOp,
-        updateOp,
-      ),
-    }
-
-    // Add get() method for singleton lists
-    if (isSingletonList(listConfig)) {
-      operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
-    }
-
-    db[dbKey] = operations
-  }
+  // Create access-controlled operations for each list, populating `db` in place.
+  populateDbDelegate(db, config, prisma, context)
 
   // Execute plugin runtime functions and populate context.plugins
   // Use _plugins (sorted by dependencies) if available, otherwise fall back to plugins array
@@ -458,6 +425,74 @@ export function getContext<
     sudo,
     _isSudo,
   }
+}
+
+/**
+ * Populate `target` with the access-controlled CRUD operations for every list,
+ * each bound to `prisma` and `context`. Used both by {@link getContext} (at
+ * request setup) and by the Write Pipeline to rebuild a `db` delegate against a
+ * transaction client (ADR-0010), so a hook's `context.db` write participates in
+ * the same transaction.
+ *
+ * The operations capture `prisma` at construction, so rebinding to a different
+ * client (e.g. a transaction `tx`) requires rebuilding the delegate — which is
+ * exactly what this function enables.
+ */
+export function populateDbDelegate<TPrisma extends PrismaClientLike>(
+  target: Record<string, unknown>,
+  config: OpenSaasConfig,
+  prisma: TPrisma,
+  context: AccessContext<TPrisma>,
+): void {
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
+    const dbKey = getDbKey(listName)
+
+    // Create base operations
+    const createOp = createCreate(listName, listConfig, prisma, context, config)
+    const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
+    const updateOp = createUpdate(listName, listConfig, prisma, context, config)
+    const operations: Record<string, unknown> = {
+      findUnique: createFindUnique(listName, listConfig, prisma, context, config),
+      findMany: findManyOp,
+      findFirst: createFindFirst(findManyOp),
+      create: createOp,
+      update: updateOp,
+      delete: createDelete(listName, listConfig, prisma, context, config),
+      count: createCount(listName, listConfig, prisma, context),
+      createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
+      updateMany: createUpdateMany(
+        listName,
+        listConfig,
+        prisma,
+        context,
+        config,
+        findManyOp,
+        updateOp,
+      ),
+    }
+
+    // Add get() method for singleton lists
+    if (isSingletonList(listConfig)) {
+      operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
+    }
+
+    target[dbKey] = operations
+  }
+}
+
+/**
+ * Build a fresh access-controlled `db` delegate bound to `prisma` and `context`.
+ * Convenience wrapper over {@link populateDbDelegate} returning a new object,
+ * used by the Write Pipeline to rebind `db` to a transaction client.
+ */
+export function buildDbDelegate<TPrisma extends PrismaClientLike>(
+  config: OpenSaasConfig,
+  prisma: TPrisma,
+  context: AccessContext<TPrisma>,
+): AccessControlledDB<TPrisma> {
+  const db: Record<string, unknown> = {}
+  populateDbDelegate(db, config, prisma, context)
+  return db as AccessControlledDB<TPrisma>
 }
 
 /**

@@ -19,6 +19,11 @@ import { hookPipeline } from './hook-pipeline.js'
 import { processNestedOperations, runAfterTasks } from './nested-operations.js'
 import type { AfterTask } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
+// NOTE: `index.ts` imports from this module too — this is an intentional cyclic
+// dependency. It is safe because `buildDbDelegate` is only INVOKED at write
+// time (never during module evaluation), so by the time it runs the export is
+// fully initialised.
+import { buildDbDelegate } from './index.js'
 
 /**
  * Write Pipeline — the single module that runs the canonical, secured write
@@ -221,7 +226,51 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   // back. `runWriteInTransaction` resolves the target row, runs the full hook
   // pipeline, persists, and runs nested + own `afterOperation` — all against
   // `tx`.
-  return runInTransaction(prisma, (tx) => runWriteInTransaction({ ...args, prisma: tx }))
+  return runInTransaction(prisma, (tx) =>
+    runWriteInTransaction({
+      ...args,
+      prisma: tx,
+      // ADR-0010 atomicity: hooks that write via `context.db` must hit the SAME
+      // transaction, or those writes would commit independently and survive a
+      // rollback. Rebind the context's `db` (and `prisma`) to the transaction
+      // client `tx` so before/afterOperation `context.db` writes participate in
+      // — and roll back with — this write's transaction.
+      context: bindContextToTransaction(args, tx),
+    }),
+  )
+}
+
+/**
+ * Build an {@link AccessContext} whose `db`/`prisma` target the transaction
+ * client `tx`, so any `context.db` write a hook performs runs inside this
+ * write's transaction and rolls back with it (ADR-0010).
+ *
+ * The access-controlled `db` delegates capture their Prisma client at
+ * construction, so the request-time `context.db` is bound to the ORIGINAL
+ * client. We rebuild the delegates against `tx` via {@link buildDbDelegate},
+ * reusing the request context's `session`, `storage`, `plugins`, `_isSudo`, and
+ * the shared `_resolveOutputCounter` reference (so resolveOutput depth tracking
+ * is preserved). Plugin runtimes are NOT re-executed; the existing
+ * `plugins` object is reused as-is.
+ */
+function bindContextToTransaction<TPrisma extends PrismaClientLike>(
+  args: WritePipelineArgs<TPrisma>,
+  tx: TPrisma,
+): AccessContext<TPrisma> {
+  const { context, config } = args
+  const txContext: AccessContext<TPrisma> = {
+    session: context.session,
+    prisma: tx,
+    db: context.db,
+    storage: context.storage,
+    plugins: context.plugins,
+    _isSudo: context._isSudo,
+    _resolveOutputCounter: context._resolveOutputCounter,
+  }
+  // Rebuild the db delegate against `tx`, pointing back at `txContext` so hooks
+  // reached through it also see the transactional context.
+  txContext.db = buildDbDelegate(config, tx, txContext)
+  return txContext
 }
 
 /**
@@ -293,6 +342,8 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
     config,
     { ...context, prisma: tx },
     writeOp,
+    listName,
+    originalItem,
   )
 
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
@@ -405,9 +456,11 @@ function buildIncludeFromFields(includeFields: Set<string>): Record<string, unkn
 
 /**
  * Run the deferred nested `afterOperation` tasks against the persisted parent
- * row. Defensive guard: if `item` is not a record (test mocks may return
- * unexpected shapes), tasks still run against an empty object so a nested
- * `afterOperation` is never silently skipped.
+ * row. The persisted parent is always a record here; the `?? {}` is only a
+ * type-narrowing guard. Each task recovers its OWN nested row from `item` by
+ * id-diff (create) or known id (update); if a created row cannot be recovered
+ * the task THROWS rather than firing `afterOperation` with a fabricated item
+ * (see `recoverCreatedRows`/the create task in `nested-operations.ts`).
  */
 async function runNestedAfterTasks(
   afterTasks: AfterTask[],

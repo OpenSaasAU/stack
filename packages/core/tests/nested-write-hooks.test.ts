@@ -496,3 +496,369 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     expect(txSpy).toHaveBeenCalledTimes(1)
   })
 })
+
+/**
+ * A richer transaction-aware mock that models a to-many relation
+ * (`Post.comments`) with real link tracking and `include`-echoing, so the
+ * created-row recovery (#569 finding 1+2) can be exercised against the actual
+ * id-diff: each created comment gets a fresh id, the parent `update`/`create`
+ * result echoes `include: { comments: true }` with the linked rows, and
+ * pre-existing comments are preserved.
+ */
+function createToManyPrisma() {
+  const tables: Record<string, Map<string, Record<string, unknown>>> = {
+    post: new Map(),
+    comment: new Map(),
+  }
+  // commentId -> postId link.
+  const commentToPost = new Map<string, string>()
+  let idCounter = 0
+  const nextId = () => `c-${++idCounter}`
+
+  function linkedComments(postId: string): Array<Record<string, unknown>> {
+    const rows: Array<Record<string, unknown>> = []
+    for (const [commentId, owner] of commentToPost.entries()) {
+      if (owner === postId) {
+        const row = tables.comment.get(commentId)
+        if (row) rows.push(row)
+      }
+    }
+    return rows
+  }
+
+  function applyCommentOps(postId: string, ops: Record<string, unknown>) {
+    if (ops.create) {
+      const creates = Array.isArray(ops.create) ? ops.create : [ops.create]
+      for (const data of creates as Array<Record<string, unknown>>) {
+        const id = (data.id as string) ?? nextId()
+        const row: Record<string, unknown> = { id, ...data }
+        tables.comment.set(id, row)
+        commentToPost.set(id, postId)
+      }
+    }
+    if (ops.update) {
+      const updates = Array.isArray(ops.update) ? ops.update : [ops.update]
+      for (const u of updates as Array<{ where: { id: string }; data: Record<string, unknown> }>) {
+        const existing = tables.comment.get(u.where.id) ?? { id: u.where.id }
+        tables.comment.set(u.where.id, { ...existing, ...u.data })
+      }
+    }
+    if (ops.delete) {
+      const deletes = Array.isArray(ops.delete) ? ops.delete : [ops.delete]
+      for (const d of deletes as Array<{ id: string }>) {
+        tables.comment.delete(d.id)
+        commentToPost.delete(d.id)
+      }
+    }
+  }
+
+  function buildPostResult(
+    postId: string,
+    include: Record<string, unknown> | undefined,
+  ): Record<string, unknown> {
+    const base = tables.post.get(postId) ?? { id: postId }
+    if (include?.comments) {
+      return { ...base, comments: linkedComments(postId) }
+    }
+    return { ...base }
+  }
+
+  const postModel = {
+    findUnique: vi.fn(
+      async ({ where, include }: { where: { id: string }; include?: Record<string, unknown> }) => {
+        if (!tables.post.has(where.id)) return null
+        return buildPostResult(where.id, include)
+      },
+    ),
+    findFirst: vi.fn(async ({ where }: { where?: { id?: string } }) => {
+      if (where?.id) return tables.post.get(where.id) ?? null
+      return tables.post.values().next().value ?? null
+    }),
+    findMany: vi.fn(async () => Array.from(tables.post.values())),
+    count: vi.fn(async () => tables.post.size),
+    create: vi.fn(
+      async ({
+        data,
+        include,
+      }: {
+        data: Record<string, unknown>
+        include?: Record<string, unknown>
+      }) => {
+        const id = (data.id as string) ?? `p-${++idCounter}`
+        const { comments, ...scalars } = data
+        tables.post.set(id, { id, ...scalars })
+        if (comments) applyCommentOps(id, comments as Record<string, unknown>)
+        return buildPostResult(id, include)
+      },
+    ),
+    update: vi.fn(
+      async ({
+        where,
+        data,
+        include,
+      }: {
+        where: { id: string }
+        data: Record<string, unknown>
+        include?: Record<string, unknown>
+      }) => {
+        const existing = tables.post.get(where.id) ?? { id: where.id }
+        const { comments, ...scalars } = data
+        tables.post.set(where.id, { ...existing, ...scalars })
+        if (comments) applyCommentOps(where.id, comments as Record<string, unknown>)
+        return buildPostResult(where.id, include)
+      },
+    ),
+    delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const existing = tables.post.get(where.id) ?? { id: where.id }
+      tables.post.delete(where.id)
+      return existing
+    }),
+  }
+
+  function makeCommentModel() {
+    return {
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) => tables.comment.get(where.id) ?? null,
+      ),
+      findFirst: vi.fn(async () => tables.comment.values().next().value ?? null),
+      findMany: vi.fn(async () => Array.from(tables.comment.values())),
+      count: vi.fn(async () => tables.comment.size),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const id = (data.id as string) ?? nextId()
+        const row = { id, ...data }
+        tables.comment.set(id, row)
+        return row
+      }),
+      update: vi.fn(
+        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+          const existing = tables.comment.get(where.id) ?? { id: where.id }
+          const updated = { ...existing, ...data }
+          tables.comment.set(where.id, updated)
+          return updated
+        },
+      ),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const existing = tables.comment.get(where.id) ?? { id: where.id }
+        tables.comment.delete(where.id)
+        commentToPost.delete(where.id)
+        return existing
+      }),
+    }
+  }
+
+  const client: Record<string, unknown> = {
+    post: postModel,
+    comment: makeCommentModel(),
+  }
+
+  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
+    const snapshot = {
+      post: new Map(tables.post),
+      comment: new Map(tables.comment),
+      links: new Map(commentToPost),
+    }
+    try {
+      return await fn(client)
+    } catch (err) {
+      tables.post = snapshot.post
+      tables.comment = snapshot.comment
+      commentToPost.clear()
+      for (const [k, v] of snapshot.links) commentToPost.set(k, v)
+      throw err
+    }
+  }
+
+  /** Link a pre-existing comment to a post (test setup helper). */
+  function seedComment(postId: string, comment: Record<string, unknown>) {
+    tables.comment.set(comment.id as string, comment)
+    commentToPost.set(comment.id as string, postId)
+  }
+
+  return { client, tables, seedComment, linkedComments }
+}
+
+describe('#569 nested writes — created-row recovery by id-diff (findings 1 + 2)', () => {
+  function makeConfig(afterOp: ReturnType<typeof vi.fn>) {
+    return config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Comment: list({
+          fields: { body: text() },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+          hooks: { afterOperation: afterOp },
+        }),
+        Post: list({
+          fields: {
+            title: text(),
+            comments: relationship({ ref: 'Comment', many: true }),
+          },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+        }),
+      },
+    })
+  }
+
+  it('multiple nested creates on a to-many relation each fire afterOperation once with their OWN distinct row', async () => {
+    const mock = createToManyPrisma()
+    const created: Array<{ id: unknown; body: unknown }> = []
+    const afterOp = vi.fn(({ operation, item }) => {
+      if (operation === 'create') created.push({ id: item.id, body: item.body })
+    })
+
+    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    const context = getContext(await makeConfig(afterOp), mock.client, { userId: '1' })
+
+    await context.db.post.update({
+      where: { id: 'p1' },
+      data: {
+        comments: { create: [{ body: 'A' }, { body: 'B' }] },
+      },
+    })
+
+    // afterOperation fired exactly once per created comment.
+    const createEvents = afterOp.mock.calls.filter((c) => c[0].operation === 'create')
+    expect(createEvents).toHaveLength(2)
+
+    // Each fired against its OWN distinct, persisted row — distinct ids, the two
+    // bodies, never the same row twice (the original bug recovered fresh[last]
+    // for every create).
+    expect(created).toHaveLength(2)
+    const ids = created.map((c) => c.id)
+    expect(new Set(ids).size).toBe(2)
+    for (const id of ids) expect(typeof id).toBe('string')
+    expect(created.map((c) => c.body).sort()).toEqual(['A', 'B'])
+  })
+
+  it('nested create on a to-many relation with pre-existing rows fires afterOperation ONLY for the newly-created row', async () => {
+    const mock = createToManyPrisma()
+    const createdItems: Array<Record<string, unknown>> = []
+    const afterOp = vi.fn(({ operation, item }) => {
+      if (operation === 'create') createdItems.push(item)
+    })
+
+    // A post that already has a pre-existing comment.
+    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    mock.seedComment('p1', { id: 'pre-1', body: 'pre-existing' })
+
+    const context = getContext(await makeConfig(afterOp), mock.client, { userId: '1' })
+
+    await context.db.post.update({
+      where: { id: 'p1' },
+      data: { comments: { create: { body: 'brand-new' } } },
+    })
+
+    // Exactly one create afterOperation — for the new row, NOT the pre-existing one.
+    const createEvents = afterOp.mock.calls.filter((c) => c[0].operation === 'create')
+    expect(createEvents).toHaveLength(1)
+    expect(createdItems).toHaveLength(1)
+    expect(createdItems[0].id).not.toBe('pre-1')
+    expect(createdItems[0].body).toBe('brand-new')
+
+    // Both comments now exist in the DB (pre-existing preserved).
+    expect(
+      mock
+        .linkedComments('p1')
+        .map((c) => c.body)
+        .sort(),
+    ).toEqual(['brand-new', 'pre-existing'])
+  })
+})
+
+describe('#569 nested writes — context.db inside hooks is transactional (finding 3)', () => {
+  it('a hook writing via context.db rolls back when the transaction later throws', async () => {
+    const mock = createToManyPrisma()
+
+    // The Comment afterOperation writes a SECOND comment via context.db, then a
+    // later (post) afterOperation throws — the whole transaction must roll back,
+    // including the context.db write, leaving NO comments persisted.
+    const testConfig = config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Comment: list({
+          fields: { body: text() },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+          hooks: {
+            afterOperation: async ({ operation, item, context }) => {
+              // Only the originally-created comment triggers the side-write, and
+              // guard against recursion (the side-write is body 'audit').
+              if (operation === 'create' && item.body === 'main') {
+                await context.db.comment.create({ data: { body: 'audit' } })
+              }
+            },
+          },
+        }),
+        Post: list({
+          fields: {
+            title: text(),
+            comments: relationship({ ref: 'Comment', many: true }),
+          },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+          hooks: {
+            afterOperation: ({ operation }) => {
+              if (operation === 'update') throw new Error('post afterOperation boom')
+            },
+          },
+        }),
+      },
+    })
+
+    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    const context = getContext(await testConfig, mock.client, { userId: '1' })
+
+    await expect(
+      context.db.post.update({
+        where: { id: 'p1' },
+        data: { comments: { create: { body: 'main' } } },
+      }),
+    ).rejects.toThrow('post afterOperation boom')
+
+    // Rollback: neither the nested 'main' comment nor the hook's 'audit'
+    // context.db write survived — proving the hook's context.db participated in
+    // the same transaction.
+    expect(mock.tables.comment.size).toBe(0)
+  })
+
+  it('a hook writing via context.db persists when the transaction commits', async () => {
+    const mock = createToManyPrisma()
+
+    const testConfig = config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Comment: list({
+          fields: { body: text() },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+          hooks: {
+            afterOperation: async ({ operation, item, context }) => {
+              if (operation === 'create' && item.body === 'main') {
+                await context.db.comment.create({ data: { body: 'audit' } })
+              }
+            },
+          },
+        }),
+        Post: list({
+          fields: {
+            title: text(),
+            comments: relationship({ ref: 'Comment', many: true }),
+          },
+          access: { operation: { query: () => true, create: () => true, update: () => true } },
+        }),
+      },
+    })
+
+    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    const context = getContext(await testConfig, mock.client, { userId: '1' })
+
+    await context.db.post.update({
+      where: { id: 'p1' },
+      data: { comments: { create: { body: 'main' } } },
+    })
+
+    // Commit: both the nested 'main' comment and the hook's 'audit' write
+    // persisted.
+    expect(
+      Array.from(mock.tables.comment.values())
+        .map((c) => c.body)
+        .sort(),
+    ).toEqual(['audit', 'main'])
+  })
+})

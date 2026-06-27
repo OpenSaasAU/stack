@@ -23,6 +23,12 @@ nested-`connect`/`connectOrCreate` read-access + DB-reachability behavior are
 unchanged. Pass-through nested kinds (`disconnect`/`set`/`updateMany`/
 `deleteMany`) are out of scope and behave as before. See ADR-0010.
 
+For to-many nested creates (`create: [{A},{B}]`), each created record's
+`afterOperation` now fires exactly once against its OWN distinct row, recovered
+by id-diff against the rows that existed before the write — so a pre-existing
+sibling is never passed as the "created" item, and multiple creates no longer
+collapse to a single row.
+
 BEHAVIOR CHANGE — every write is now transactional, and a throwing
 `beforeOperation`/`afterOperation` (or validation) rolls the whole write back.
 The entire operation (parent + all nested writes) now runs inside one
@@ -30,6 +36,13 @@ The entire operation (parent + all nested writes) now runs inside one
 left the row committed; now it rolls back with the transaction (more
 Keystone-correct). If you relied on a thrown `afterOperation` leaving the row
 persisted, move that work to run after the write returns.
+
+Inside a `beforeOperation`/`afterOperation` hook, `context.db` (and
+`context.prisma`) are now bound to the write's transaction, so any `context.db`
+write a hook performs participates in — and rolls back with — the same
+transaction. Externally-visible side effects that must survive a rollback should
+not use `context.db` from within these hooks (transaction-boundary hooks for
+that are deferred — see #590).
 
 ```ts
 // Nested create now fires the related list's beforeOperation/afterOperation,
