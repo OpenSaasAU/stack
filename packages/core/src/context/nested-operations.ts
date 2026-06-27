@@ -1,6 +1,7 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
-import type { AccessContext } from '../access/types.js'
+import type { AccessContext, FieldAccess } from '../access/types.js'
 import { checkAccess, filterWritableFields, getRelatedListConfig } from '../access/index.js'
+import { checkFieldAccess } from '../access/field-access.js'
 import {
   executeResolveInput,
   executeValidate,
@@ -409,6 +410,14 @@ async function processNestedCreate(
  * `none`/`not`). The existence check is folded into the reachability query so a
  * non-existent id is still denied.
  *
+ * In ADDITION to the target read/reachability check (#578), the OWNING
+ * relationship field's field-level access (its `create`/`update` access on the
+ * list being written, e.g. `Post.author`) must permit the connect (#588). This
+ * is the other half Keystone required: a connect needs read access on the
+ * target AND write access on the owning relationship field. If the owning
+ * field's field-level access denies, the connect is denied even when the target
+ * row is readable/reachable.
+ *
  * Sudo bypasses the entire check (handled by the caller).
  */
 async function verifyConnectReachable(
@@ -418,10 +427,26 @@ async function verifyConnectReachable(
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
   prisma: unknown,
+  owningFieldAccess: FieldAccess | undefined,
+  enclosingOperation: 'create' | 'update',
 ): Promise<void> {
   // Access Prisma model dynamically - required because model names are generated at runtime
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const model = (prisma as any)[getDbKey(relatedListName)]
+
+  // #588 — gate the connect by the OWNING relationship field's field-level
+  // access (evaluated for the enclosing write's operation). This runs in
+  // addition to the target read/reachability check below; a deny here denies
+  // the connect even if the target row is readable. `checkFieldAccess` returns
+  // `true` under sudo, but the caller already skips this whole function for
+  // sudo, so the gate never fires for trusted writes.
+  const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
+    session: context.session,
+    context,
+  })
+  if (!owningFieldAllowed) {
+    throw new Error('Access denied: Cannot connect to this item')
+  }
 
   // Connecting references an existing row; it requires READ (query) access on
   // the target, not update access.
@@ -461,7 +486,8 @@ async function verifyConnectReachable(
 
 /**
  * Process nested connect operations.
- * Verifies read (query) access to the items being connected via DB reachability.
+ * Verifies read (query) access to the items being connected via DB reachability
+ * AND the owning relationship field's field-level access (#588).
  */
 async function processNestedConnect(
   connections: Record<string, unknown> | Array<Record<string, unknown>>,
@@ -470,13 +496,23 @@ async function processNestedConnect(
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
   prisma: unknown,
+  owningFieldAccess: FieldAccess | undefined,
+  enclosingOperation: 'create' | 'update',
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections]
 
   // Check read access for each item being connected (skip if sudo mode)
   if (!context._isSudo) {
     for (const connection of connectionsArray) {
-      await verifyConnectReachable(connection, relatedListName, relatedListConfig, context, prisma)
+      await verifyConnectReachable(
+        connection,
+        relatedListName,
+        relatedListConfig,
+        context,
+        prisma,
+        owningFieldAccess,
+        enclosingOperation,
+      )
     }
   }
 
@@ -809,6 +845,8 @@ async function processNestedConnectOrCreate(
   prisma: unknown,
   afterTasks: AfterTask[],
   recovery: CreatedRowRecovery,
+  owningFieldAccess: FieldAccess | undefined,
+  enclosingOperation: 'create' | 'update',
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const operationsArray = Array.isArray(operations) ? operations : [operations]
 
@@ -821,9 +859,10 @@ async function processNestedConnectOrCreate(
       // connectOrCreate connects an existing row when present, otherwise
       // creates. So when the row exists we apply the same connect semantics as
       // processNestedConnect — READ (query) access on the target, evaluated via
-      // DB reachability for filter results. When the row does not exist we fall
-      // through to create. We must NOT swallow an access-denied error: only the
-      // genuine "row absent" case may fall back to create.
+      // DB reachability for filter results, PLUS the owning relationship field's
+      // field-level access (#588). When the row does not exist we fall through to
+      // create. We must NOT swallow an access-denied error: only the genuine
+      // "row absent" case may fall back to create.
       let rowExists = false
       if (!context._isSudo) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -836,6 +875,18 @@ async function processNestedConnectOrCreate(
         // the create branch is used.
         if (existingItem) {
           rowExists = true
+
+          // #588 — gate the connect branch by the OWNING relationship field's
+          // field-level access, identical to processNestedConnect. A deny here
+          // denies the connect even if the target row is readable/reachable.
+          const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
+            session: context.session,
+            context,
+          })
+          if (!owningFieldAllowed) {
+            throw new Error('Access denied: Cannot connect to existing item')
+          }
+
           const queryAccess = relatedListConfig.access?.operation?.query
           const accessResult = await checkAccess(queryAccess, {
             session: context.session,
@@ -902,6 +953,17 @@ interface NestedOpHandlerArgs {
   relatedListName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>
+  /**
+   * Field-level `access` of the OWNING relationship field on the list being
+   * written (e.g. `Post.author`). Used by the connect/connectOrCreate handlers
+   * to gate connects by the owning field's create/update access (#588).
+   */
+  owningFieldAccess: FieldAccess | undefined
+  /**
+   * The enclosing write's operation (`create`/`update`), used as the field-access
+   * operation for the owning-field connect gate (#588).
+   */
+  enclosingOperation: 'create' | 'update'
   context: AccessContext
   config: OpenSaasConfig
   /** Prisma client used for dynamic model access during access checks. */
@@ -989,13 +1051,23 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
   },
   connect: {
     needsInclude: false,
-    execute: ({ value, relatedListName, relatedListConfig, context, prisma }) =>
+    execute: ({
+      value,
+      relatedListName,
+      relatedListConfig,
+      context,
+      prisma,
+      owningFieldAccess,
+      enclosingOperation,
+    }) =>
       processNestedConnect(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
         relatedListName,
         relatedListConfig,
         context,
         prisma,
+        owningFieldAccess,
+        enclosingOperation,
       ),
   },
   connectOrCreate: {
@@ -1010,6 +1082,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       prisma,
       afterTasks,
       recovery,
+      owningFieldAccess,
+      enclosingOperation,
     }) =>
       processNestedConnectOrCreate(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -1021,6 +1095,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         prisma,
         afterTasks,
         requireRecovery(recovery, 'connectOrCreate'),
+        owningFieldAccess,
+        enclosingOperation,
       ),
   },
   update: {
@@ -1186,12 +1262,20 @@ export async function processNestedOperations(
     // Sanity: ensure the resolved list name matches the config identity.
     const resolvedListName = relatedListName || findListName(relatedListConfig, config)
 
+    // #588 — the owning relationship field's field-level access (e.g. the
+    // `access` on `Post.author`). Threaded into the nested-op handlers so the
+    // connect/connectOrCreate handlers can gate connects by this field's
+    // create/update access, in addition to the target's read access.
+    const owningFieldAccess = fieldConfig.access
+
     processed[fieldName] = await processFieldNestedOps(
       fieldName,
       value as Record<string, unknown>,
       {
         relatedListName: resolvedListName,
         relatedListConfig,
+        owningFieldAccess,
+        enclosingOperation: operation,
         context,
         config,
         prisma: context.prisma,

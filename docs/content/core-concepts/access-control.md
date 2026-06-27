@@ -176,6 +176,53 @@ Fields `id`, `createdAt`, `updatedAt` are automatically:
 
 You cannot override access control for system fields.
 
+## Nested `connect` requires read/query access on the target
+
+When a write uses a nested `connect` (or the connect branch of `connectOrCreate`)
+to link an existing related row, the connect is gated by **read/query access on
+the target list**, evaluated against the database. The caller must be able to
+_read_ the row to connect it — a connect references an existing row but does not
+modify its data, so it requires read access on the target, not `update`. The
+owning relationship field's own create/update field-level access (e.g. the
+`access` on `Post.author`) must also permit the write, as with any field.
+
+```typescript
+lists: {
+  Author: list({
+    fields: { name: text() },
+    access: {
+      operation: {
+        // Without a `query` rule, read access is DENY-BY-DEFAULT...
+        update: () => true, // ...even though update is permissive.
+      },
+    },
+  }),
+  Post: list({
+    fields: {
+      title: text(),
+      author: relationship({ ref: 'Author' }),
+    },
+    access: { operation: { query: () => true, update: () => true } },
+  }),
+}
+
+// This nested connect is DENIED, because Author has no `query` rule
+// (deny-by-default), even though Author's `update` is permissive:
+await context.db.post.update({
+  where: { id },
+  data: { author: { connect: { id: authorId } } },
+})
+```
+
+> **Behaviour change / migration note.** Because the access engine is
+> **deny-by-default** for an undefined access rule, a related list that defines a
+> permissive `update` but leaves `query` **undefined** now **denies** nested
+> `connect` (previously such connects were allowed). This is the correct,
+> read-gated direction and is consistent with how normal reads of that list
+> already behave (they return empty). If you rely on connecting to such a list,
+> **define a `query` rule** that permits the connect (for example a permissive
+> `query: () => true` or a scoped filter). `sudo` bypasses the check entirely.
+
 ## Access Control Execution Order
 
 For **write operations** (create/update):
