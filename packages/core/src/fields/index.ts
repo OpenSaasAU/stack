@@ -84,7 +84,7 @@ export function text<
           : withMin
 
       if (isRequired && operation === 'update') {
-        return z.union([withMax, z.undefined()])
+        return withMax.optional()
       }
 
       return !isRequired ? withMax.optional().nullable() : withMax
@@ -574,8 +574,8 @@ export function calendarDay<
       if (isRequired && operation === 'create') {
         return dateSchema
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: can be undefined for partial updates
-        return z.union([dateSchema, z.undefined()])
+        // Required in update mode: omitted keys pass; present values must be valid
+        return dateSchema.optional()
       } else {
         return dateSchema.optional().nullable()
       }
@@ -752,13 +752,13 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
             message: `${formatFieldName(fieldName)} is required`,
           })
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: if provided, reject empty strings
-        return z.union([
-          z.string().min(1, {
+        // Required in update mode: omitted keys pass; if provided, reject empty strings
+        return z
+          .string()
+          .min(1, {
             message: `${formatFieldName(fieldName)} is required`,
-          }),
-          z.undefined(),
-        ])
+          })
+          .optional()
       } else {
         // Not required: can be undefined or any string
         return z
@@ -1315,8 +1315,8 @@ export function json<
         // Required in create mode: value must be provided
         return baseSchema
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: can be undefined for partial updates
-        return z.union([baseSchema, z.undefined()])
+        // Required in update mode: omitted keys pass; present values must be valid
+        return baseSchema.optional()
       } else {
         // Not required: can be undefined or null
         return baseSchema.optional().nullable()
