@@ -2505,7 +2505,7 @@ export interface OutputConfig {
    * with a `{"type":"module"}` marker). The compiled entry is
    * `<opensaasDir>/dist/context.js`; a portable module imports it directly so
    * the bundler traces it AND plain Node executes it (one specifier, both
-   * runtimes — see ADR-0010). The default `.ts` form is unchanged and still
+   * runtimes — see ADR-0011). The default `.ts` form is unchanged and still
    * emitted; the Node build is purely additive.
    *
    * `'node'` is the only target today. The field is a string-literal union so

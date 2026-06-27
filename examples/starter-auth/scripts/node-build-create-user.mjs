@@ -1,4 +1,4 @@
-// Plain-Node verification consumer for the Node build (ADR-0010 / #579).
+// Plain-Node verification consumer for the Node build (ADR-0011 / #579).
 //
 // This script is the in-repo consumer that anchors the Node build: it imports
 // the COMPILED bundle (`.opensaas/dist/context.js`) under plain Node — NO

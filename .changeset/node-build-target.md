@@ -3,7 +3,7 @@
 '@opensaas/stack-core': minor
 ---
 
-Add an opt-in **Node build** of the generated `.opensaas/` bundle (ADR-0010, #579).
+Add an opt-in **Node build** of the generated `.opensaas/` bundle (ADR-0011, #579).
 
 Setting `output: { buildTarget: 'node' }` in `opensaas.config.ts` makes `opensaas generate` additionally compile the bundle to a plain-Node-loadable ESM form under `.opensaas/dist/` — `.js` + `.d.ts` with a `{"type":"module"}` marker — alongside the default `.ts` bundler form. The compiled entry is `.opensaas/dist/context.js`, with the Prisma client subtree at `.opensaas/dist/prisma-client/**` and the project config compiled in as a sibling, so a live module (e.g. better-auth's Prisma adapter) can be imported in a bundler-less runtime — plain Node, a Playwright e2e helper, or a build-time script — that the default `.ts` form cannot execute.
 

@@ -236,7 +236,7 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // Optional Node build (ADR-0010): when `output.buildTarget === 'node'`,
+    // Optional Node build (ADR-0011): when `output.buildTarget === 'node'`,
     // additionally compile the `.ts` bundle to a plain-Node-loadable ESM form
     // under `<opensaasDir>/dist/` so a live module (e.g. better-auth's adapter)
     // can be imported in a bundler-less runtime. Purely additive — the default

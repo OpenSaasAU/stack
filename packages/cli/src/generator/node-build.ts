@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import ts from 'typescript'
 
 /**
- * The **Node build** (ADR-0010): an opt-in, plain-Node-loadable form of the
+ * The **Node build** (ADR-0011): an opt-in, plain-Node-loadable form of the
  * Generated bundle, compiled to `<opensaasDir>/dist/` alongside the default
  * `.ts` bundler form (ADR-0008).
  *
@@ -35,7 +35,7 @@ import ts from 'typescript'
  * The on-disk `context.ts`/`prisma-extensions.ts` import the project config via
  * `../opensaas.config.ts` — one level ABOVE `<opensaasDir>`, outside the compile
  * root. To keep the compiled entry at `<opensaasDir>/dist/context.js` (per
- * ADR-0010) with a config import that resolves inside `dist/`, we stage the
+ * ADR-0011) with a config import that resolves inside `dist/`, we stage the
  * bundle plus a copy of `opensaas.config.ts` into a hidden source directory
  * inside the bundle, rewrite the bundle's relative `opensaas.config` imports
  * (of any `../` depth) to the sibling `./opensaas.config.ts`, and compile that
@@ -202,7 +202,7 @@ function nodeBuildCompilerOptions(rootDir: string, outDir: string): ts.CompilerO
 
 /**
  * Compile the Generated bundle to a plain-Node-loadable ESM build under
- * `<opensaasDir>/dist/` (ADR-0010). Additive: the caller only invokes this when
+ * `<opensaasDir>/dist/` (ADR-0011). Additive: the caller only invokes this when
  * `output.buildTarget === 'node'`, and it never touches the default `.ts` form.
  *
  * Assumes the `.ts` bundle and the Prisma client subtree
