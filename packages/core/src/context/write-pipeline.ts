@@ -16,7 +16,8 @@ import {
   ValidationError,
 } from '../hooks/index.js'
 import { hookPipeline } from './hook-pipeline.js'
-import { processNestedOperations } from './nested-operations.js'
+import { processNestedOperations, runAfterTasks } from './nested-operations.js'
+import type { AfterTask } from './nested-operations.js'
 import { getDbKey } from '../lib/case-utils.js'
 
 /**
@@ -57,10 +58,14 @@ export interface PrismaModel {
   findUnique: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>
   findFirst: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>
   count: () => Promise<number>
-  create: (args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>
+  create: (args: {
+    data: Record<string, unknown>
+    include?: Record<string, unknown>
+  }) => Promise<Record<string, unknown>>
   update: (args: {
     where: Record<string, unknown>
     data: Record<string, unknown>
+    include?: Record<string, unknown>
   }) => Promise<Record<string, unknown>>
   delete: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown>>
 }
@@ -95,8 +100,14 @@ export interface WriteStrategy {
   /**
    * Axis 3: execute the database write and return the persisted/deleted row.
    * `data` is the fully-resolved write payload (empty object for delete).
+   * `include` (create/update) asks the DB to return nested relations so nested
+   * `afterOperation` can recover its persisted `item`; delete ignores it.
    */
-  persist(model: PrismaModel, data: Record<string, unknown>): Promise<Record<string, unknown>>
+  persist(
+    model: PrismaModel,
+    data: Record<string, unknown>,
+    include?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>
 }
 
 /**
@@ -110,6 +121,43 @@ function getModel<TPrisma extends PrismaClientLike>(
 ): PrismaModel {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- model names are generated at runtime
   return (prisma as any)[getDbKey(listName)] as PrismaModel
+}
+
+/**
+ * Minimal shape of a Prisma interactive-transaction-capable client.
+ *
+ * The transaction client `tx` is dynamically typed exactly like the model
+ * surface above (model names are generated at runtime), so the cast is kept
+ * localized and commented per the house rules.
+ */
+interface TransactionCapable {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- $transaction callback receives a dynamically-typed tx client
+  $transaction?: (fn: (tx: any) => Promise<unknown>) => Promise<unknown>
+}
+
+/**
+ * Run `fn` inside ONE interactive transaction (ADR-0010: every write is
+ * transactional, so the hook contract does not depend on whether a write
+ * happened to be nested). The transaction client `tx` is passed to `fn` and
+ * used as the persistence target for the parent + all nested writes, so they
+ * are atomic and a throwing hook rolls the whole write back.
+ *
+ * If the client does not expose `$transaction` (e.g. a test mock), `fn` runs
+ * directly against the client — the hook ordering and arguments are identical;
+ * only the rollback guarantee is provided by the real transaction.
+ */
+async function runInTransaction<TPrisma extends PrismaClientLike>(
+  prisma: TPrisma,
+  fn: (tx: TPrisma) => Promise<Record<string, unknown> | null>,
+): Promise<Record<string, unknown> | null> {
+  const client = prisma as unknown as TransactionCapable
+  if (typeof client.$transaction === 'function') {
+    return (await client.$transaction(async (tx) => fn(tx as TPrisma))) as Record<
+      string,
+      unknown
+    > | null
+  }
+  return fn(prisma)
 }
 
 /**
@@ -165,9 +213,29 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
 export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
 ): Promise<Record<string, unknown> | null> {
-  const { listName, listConfig, prisma, context, config, inputData, strategy } = args
+  const { prisma } = args
+  // ADR-0010: every write runs inside ONE interactive transaction. The parent
+  // and ALL nested writes share this transaction's client `tx` as their
+  // persistence target, so they are atomic and a throwing
+  // `beforeOperation`/`afterOperation` (or validation) rolls the whole write
+  // back. `runWriteInTransaction` resolves the target row, runs the full hook
+  // pipeline, persists, and runs nested + own `afterOperation` — all against
+  // `tx`.
+  return runInTransaction(prisma, (tx) => runWriteInTransaction({ ...args, prisma: tx }))
+}
+
+/**
+ * The body of one secured write, executed against the transaction client `tx`
+ * (passed in as `args.prisma`). Returns `null` for the silent-failure cases and
+ * the Field-Visibility-filtered row otherwise. Any throw here propagates out of
+ * `runInTransaction` and rolls the transaction back.
+ */
+async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
+  args: WritePipelineArgs<TPrisma>,
+): Promise<Record<string, unknown> | null> {
+  const { listName, listConfig, prisma: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
-  const model = getModel(prisma, listName)
+  const model = getModel(tx, listName)
 
   // ── Phase 1: resolve target + operation-level access ──────────────────────
   // Short-circuits to `null` (silent failure) for missing target, denied
@@ -214,11 +282,16 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   })
 
   // ── Phase 5.5: process nested relationship operations ───────────────────────
-  const data = await processNestedOperations(
+  // This runs each nested record's resolveInput/validate/field-rules AND its
+  // `beforeOperation` (inside this transaction), returning the transformed
+  // payload plus deferred `afterOperation` tasks and the relation fields to
+  // `include` so those tasks can recover their persisted `item`. All nested DB
+  // reads/persistence go through `tx`.
+  const { data, afterTasks, includeFields } = await processNestedOperations(
     filteredData,
     listConfig.fields,
     config,
-    { ...context, prisma },
+    { ...context, prisma: tx },
     writeOp,
   )
 
@@ -255,7 +328,10 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   )
 
   // ── Phase 8: DB write ───────────────────────────────────────────────────────
-  const item = await strategy.persist(model, data)
+  // Ask the DB to return the nested relations that have deferred
+  // `afterOperation` tasks so they can recover their persisted `item`.
+  const include = buildIncludeFromFields(includeFields)
+  const item = await strategy.persist(model, data, include)
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
   await executeAfterOperation(
@@ -293,6 +369,12 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
     originalItem, // undefined for create, original row for update
   )
 
+  // ── Phase 10.5: nested afterOperation (deferred, in this transaction) ────────
+  // Each nested create/update/delete's `afterOperation` fires now, with the
+  // persisted nested row recovered from the parent's included relations. A throw
+  // here rolls the whole transaction back (parent write included).
+  await runNestedAfterTasks(afterTasks, item)
+
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
   return filterReadableFields(
     item,
@@ -305,6 +387,34 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
     0,
     listName,
   )
+}
+
+/**
+ * Build a Prisma `include` from the set of relation field names that have
+ * deferred nested `afterOperation` tasks, so the parent write returns those
+ * relations and the tasks can recover their persisted `item`.
+ */
+function buildIncludeFromFields(includeFields: Set<string>): Record<string, unknown> | undefined {
+  if (includeFields.size === 0) return undefined
+  const include: Record<string, unknown> = {}
+  for (const field of includeFields) {
+    include[field] = true
+  }
+  return include
+}
+
+/**
+ * Run the deferred nested `afterOperation` tasks against the persisted parent
+ * row. Defensive guard: if `item` is not a record (test mocks may return
+ * unexpected shapes), tasks still run against an empty object so a nested
+ * `afterOperation` is never silently skipped.
+ */
+async function runNestedAfterTasks(
+  afterTasks: AfterTask[],
+  item: Record<string, unknown>,
+): Promise<void> {
+  if (afterTasks.length === 0) return
+  await runAfterTasks(afterTasks, item ?? {})
 }
 
 /**
@@ -434,10 +544,10 @@ export function createWriteStrategy(
 
       return { status: 'ok', originalItem: undefined }
     },
-    async persist(model, data) {
+    async persist(model, data, include) {
       // Singleton lists use Int @id with value always 1 (matching Keystone 6).
       const createData = singleton ? { id: 1, ...data } : data
-      return model.create({ data: createData })
+      return model.create(include ? { data: createData, include } : { data: createData })
     },
   }
 }
@@ -504,8 +614,8 @@ export function updateWriteStrategy(
     operation: 'update',
     runInputPhases: true,
     resolveTarget: resolveExistingTarget(listConfig, context, where, 'update'),
-    async persist(model, data) {
-      return model.update({ where, data })
+    async persist(model, data, include) {
+      return model.update(include ? { where, data, include } : { where, data })
     },
   }
 }

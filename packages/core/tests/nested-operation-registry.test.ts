@@ -118,14 +118,18 @@ describe('Nested Operation Handler Registry', () => {
       expect(passedData.author).toEqual({ disconnect: true })
     })
 
-    it('passes delete, deleteMany, set and updateMany through unchanged', async () => {
+    it('passes deleteMany, set and updateMany through unchanged', async () => {
+      // NOTE (#569 / ADR-0010): nested `delete` is no longer a pass-through kind —
+      // it now runs the full delete hook pipeline (access + before/afterOperation),
+      // so it is tested separately below. `deleteMany`/`set`/`updateMany` remain
+      // pass-through (out of scope for #569) and the payload is handed to Prisma
+      // unchanged.
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
       await context.db.post.update({
         where: { id: '1' },
         data: {
           tags: {
-            delete: { id: 'a' },
             deleteMany: { label: { contains: 'x' } },
             set: [{ id: 'b' }],
             updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
@@ -135,11 +139,32 @@ describe('Nested Operation Handler Registry', () => {
 
       const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
       expect(passedTags).toEqual({
-        delete: { id: 'a' },
         deleteMany: { label: { contains: 'x' } },
         set: [{ id: 'b' }],
         updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
       })
+    })
+
+    it('runs the delete hook pipeline for nested delete then hands the payload to Prisma', async () => {
+      // Nested `delete` now resolves the target row (access + hooks), then the
+      // identifying payload is still handed to Prisma's nested write unchanged.
+      mockPrisma.tag.findUnique.mockResolvedValue({ id: 'a', label: 'doomed' })
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
+
+      await context.db.post.update({
+        where: { id: '1' },
+        data: {
+          tags: {
+            delete: { id: 'a' },
+          },
+        },
+      })
+
+      // The target row was resolved for access/hooks.
+      expect(mockPrisma.tag.findUnique).toHaveBeenCalledWith({ where: { id: 'a' } })
+      // The delete payload reaches Prisma unchanged.
+      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      expect(passedTags).toEqual({ delete: { id: 'a' } })
     })
   })
 
