@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
+import { checkFieldAccess } from '../src/access/field-access.js'
 
 /**
  * Mock Prisma Client for testing
@@ -1819,6 +1820,165 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       expect(result).toBeDefined()
       expect(mockPrisma.student.create).toHaveBeenCalled()
+    })
+
+    // #588 finding — the connect-site owning-field gate must receive the SAME
+    // `item`/`inputData` the canonical Phase-5 `filterWritableFields` call passes,
+    // so a field-access rule that depends on `item`/`inputData` cannot be ALLOWED
+    // by Phase 5 yet DENIED at the connect site (a spurious denial). With those
+    // values threaded, an item-/inputData-dependent rule that resolves to ALLOW at
+    // Phase 5 also resolves to ALLOW at the connect site, so the legitimate connect
+    // succeeds. (#568's Phase-5 gate is the first line of defense and evaluates the
+    // identical rule with the identical values; this test pins that the connect-site
+    // gate does not diverge from it.)
+    it('does not spuriously deny: owning-field access depending on item/inputData allows the connect (enclosing UPDATE)', async () => {
+      const owningUpdate = vi.fn(
+        ({ item, inputData }: { item?: { status?: string }; inputData?: { title?: string } }) =>
+          // Depends on BOTH the existing row (`item`) and the write payload
+          // (`inputData`). If the connect-site gate were called without these, it
+          // would throw on `item.status`/`inputData.title` and the legitimate
+          // connect would fail spuriously.
+          item?.status === 'draft' && inputData?.title === 'Updated',
+      )
+
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          User: list({
+            fields: {
+              name: text(),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                update: () => true,
+              },
+            },
+          }),
+          Post: list({
+            fields: {
+              title: text(),
+              author: relationship({
+                ref: 'User.posts',
+                access: {
+                  // Item-/inputData-dependent: allowed only when editing a draft
+                  // and setting title to 'Updated'.
+                  update: owningUpdate,
+                },
+              }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                update: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      // Existing row is a draft → the item-dependent rule allows.
+      mockPrisma.post.findUnique.mockResolvedValue({
+        id: '1',
+        title: 'Original Title',
+        status: 'draft',
+      })
+      mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Updated', authorId: '2' })
+
+      const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+      const result = await context.db.post.update({
+        where: { id: '1' },
+        data: {
+          title: 'Updated',
+          author: { connect: { id: '2' } },
+        },
+      })
+
+      // No spurious denial: the connect succeeded.
+      expect(result).toBeDefined()
+      expect(mockPrisma.post.update).toHaveBeenCalled()
+      // Owning field allowed → fall through to the #578 target existence check.
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { id: '2' } })
+
+      // The gate was evaluated with the enclosing write's `item` (the draft
+      // originalItem) and `inputData` (the update payload) — the same values
+      // Phase-5 uses — proving the two evaluations cannot diverge.
+      const sawItemAndInput = owningUpdate.mock.calls.some(
+        ([arg]) => arg?.item?.status === 'draft' && arg?.inputData?.title === 'Updated',
+      )
+      expect(sawItemAndInput).toBe(true)
+    })
+  })
+
+  // Focused unit test of the connect-site gate's evaluator (#588 finding).
+  //
+  // The connect-site gate calls the SHARED `checkFieldAccess` evaluator with the
+  // enclosing write's `item`/`inputData`. #568 (Phase-5 `filterWritableFields`) is
+  // the first line of defense and calls the same evaluator with the same values,
+  // so an end-to-end sole-connect-site DENY is not separately constructible. This
+  // test therefore pins the evaluator directly: with `item`/`inputData` provided
+  // it honours an item-/inputData-dependent rule (DENY and ALLOW branches), which
+  // is exactly the contract the connect-site gate now relies on.
+  describe('Connect-site field gate evaluator honours item/inputData (#588)', () => {
+    it('DENIES when the item-/inputData-dependent rule resolves false', async () => {
+      const access = {
+        update: ({
+          item,
+          inputData,
+        }: {
+          item?: { status?: string }
+          inputData?: { title?: string }
+        }) => item?.status === 'draft' && inputData?.title === 'Updated',
+      }
+      const ctx = getContext(
+        await config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: { User: list({ fields: { name: text() } }) },
+        }),
+        mockPrisma,
+        { userId: '1' },
+      )
+
+      const allowed = await checkFieldAccess(access, 'update', {
+        session: ctx.session,
+        item: { status: 'published' }, // not a draft → rule is false
+        inputData: { title: 'Updated' },
+        context: ctx,
+      })
+      expect(allowed).toBe(false)
+    })
+
+    it('ALLOWS when the item-/inputData-dependent rule resolves true', async () => {
+      const access = {
+        update: ({
+          item,
+          inputData,
+        }: {
+          item?: { status?: string }
+          inputData?: { title?: string }
+        }) => item?.status === 'draft' && inputData?.title === 'Updated',
+      }
+      const ctx = getContext(
+        await config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: { User: list({ fields: { name: text() } }) },
+        }),
+        mockPrisma,
+        { userId: '1' },
+      )
+
+      const allowed = await checkFieldAccess(access, 'update', {
+        session: ctx.session,
+        item: { status: 'draft' },
+        inputData: { title: 'Updated' },
+        context: ctx,
+      })
+      expect(allowed).toBe(true)
     })
   })
 

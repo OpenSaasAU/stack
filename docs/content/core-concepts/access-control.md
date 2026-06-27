@@ -176,15 +176,22 @@ Fields `id`, `createdAt`, `updatedAt` are automatically:
 
 You cannot override access control for system fields.
 
-## Nested `connect` requires read/query access on the target
+## Nested `connect` is gated by the owning relationship field's access
 
 When a write uses a nested `connect` (or the connect branch of `connectOrCreate`)
-to link an existing related row, the connect is gated by **read/query access on
-the target list**, evaluated against the database. The caller must be able to
-_read_ the row to connect it — a connect references an existing row but does not
-modify its data, so it requires read access on the target, not `update`. The
-owning relationship field's own create/update field-level access (e.g. the
-`access` on `Post.author`) must also permit the write, as with any field.
+to link an existing related row, the connect is gated by the **owning relationship
+field's create/update field-level access** (e.g. the `access` on `Post.author`),
+evaluated for the enclosing write's operation. If that field's field-level access
+denies the write, the connect is denied — exactly as for any other field on the
+write. This gate receives the same `item` (the row being updated) and `inputData`
+(the write payload) the parent write's field-access check uses, so a rule that
+depends on either evaluates identically wherever the field is enforced.
+
+For context, the connect is **also** gated by **read/query access on the target
+list** (evaluated against the database): the caller must be able to _read_ the row
+to connect it, because a connect references an existing row but does not modify its
+data, so it requires read access on the target, not `update`. Both checks must pass
+for a connect to succeed.
 
 ```typescript
 lists: {

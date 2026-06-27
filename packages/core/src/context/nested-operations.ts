@@ -322,6 +322,9 @@ async function processNestedCreate(
         'create',
         relatedListName,
         undefined,
+        // This nested row is being CREATED, so its enclosing inputData is its own
+        // create payload (passed to the connect-site owning-field gate, #588).
+        item,
       )
 
       // 8. Field-level beforeOperation (side effects) for this nested create
@@ -429,6 +432,8 @@ async function verifyConnectReachable(
   prisma: unknown,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
+  enclosingItem: Record<string, unknown> | undefined,
+  enclosingInputData: Record<string, unknown> | undefined,
 ): Promise<void> {
   // Access Prisma model dynamically - required because model names are generated at runtime
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -440,8 +445,16 @@ async function verifyConnectReachable(
   // the connect even if the target row is readable. `checkFieldAccess` returns
   // `true` under sudo, but the caller already skips this whole function for
   // sudo, so the gate never fires for trusted writes.
+  //
+  // `item`/`inputData` are the ENCLOSING write's `originalItem`/`inputData` —
+  // the SAME values the canonical Phase-5 `filterWritableFields` call passes for
+  // this field — so a field-access rule that depends on `item` or `inputData`
+  // (e.g. `({ item }) => item.status === 'draft'`) evaluates identically here and
+  // at Phase 5, and the two gates cannot diverge into a spurious connect denial.
   const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
     session: context.session,
+    item: enclosingItem,
+    inputData: enclosingInputData,
     context,
   })
   if (!owningFieldAllowed) {
@@ -498,6 +511,8 @@ async function processNestedConnect(
   prisma: unknown,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
+  enclosingItem: Record<string, unknown> | undefined,
+  enclosingInputData: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections]
 
@@ -512,6 +527,8 @@ async function processNestedConnect(
         prisma,
         owningFieldAccess,
         enclosingOperation,
+        enclosingItem,
+        enclosingInputData,
       )
     }
   }
@@ -644,6 +661,9 @@ async function processNestedUpdate(
         'update',
         relatedListName,
         originalItem,
+        // This nested row is being UPDATED, so its enclosing inputData is its own
+        // update payload (passed to the connect-site owning-field gate, #588).
+        updateData,
       )
 
       // Field-level beforeOperation (side effects)
@@ -847,6 +867,8 @@ async function processNestedConnectOrCreate(
   recovery: CreatedRowRecovery,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
+  enclosingItem: Record<string, unknown> | undefined,
+  enclosingInputData: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const operationsArray = Array.isArray(operations) ? operations : [operations]
 
@@ -879,8 +901,14 @@ async function processNestedConnectOrCreate(
           // #588 — gate the connect branch by the OWNING relationship field's
           // field-level access, identical to processNestedConnect. A deny here
           // denies the connect even if the target row is readable/reachable.
+          // `item`/`inputData` are the ENCLOSING write's `originalItem`/
+          // `inputData` (the same values Phase-5 `filterWritableFields` passes),
+          // so item-/inputData-dependent field rules cannot diverge between the
+          // two gates.
           const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
             session: context.session,
+            item: enclosingItem,
+            inputData: enclosingInputData,
             context,
           })
           if (!owningFieldAllowed) {
@@ -964,6 +992,20 @@ interface NestedOpHandlerArgs {
    * operation for the owning-field connect gate (#588).
    */
   enclosingOperation: 'create' | 'update'
+  /**
+   * The enclosing write's existing row (the parent `originalItem`): present for an
+   * enclosing UPDATE, `undefined` for an enclosing CREATE. Threaded into the
+   * connect-site owning-field gate so it evaluates `item` exactly like the
+   * canonical Phase-5 `filterWritableFields` call and the two cannot diverge
+   * (#588 finding).
+   */
+  enclosingItem: Record<string, unknown> | undefined
+  /**
+   * The enclosing write's input data. Threaded into the connect-site owning-field
+   * gate so it evaluates `inputData` exactly like the canonical Phase-5
+   * `filterWritableFields` call (#588 finding).
+   */
+  enclosingInputData: Record<string, unknown> | undefined
   context: AccessContext
   config: OpenSaasConfig
   /** Prisma client used for dynamic model access during access checks. */
@@ -1059,6 +1101,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       prisma,
       owningFieldAccess,
       enclosingOperation,
+      enclosingItem,
+      enclosingInputData,
     }) =>
       processNestedConnect(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -1068,6 +1112,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         prisma,
         owningFieldAccess,
         enclosingOperation,
+        enclosingItem,
+        enclosingInputData,
       ),
   },
   connectOrCreate: {
@@ -1084,6 +1130,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
       recovery,
       owningFieldAccess,
       enclosingOperation,
+      enclosingItem,
+      enclosingInputData,
     }) =>
       processNestedConnectOrCreate(
         value as Record<string, unknown> | Array<Record<string, unknown>>,
@@ -1097,6 +1145,8 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         requireRecovery(recovery, 'connectOrCreate'),
         owningFieldAccess,
         enclosingOperation,
+        enclosingItem,
+        enclosingInputData,
       ),
   },
   update: {
@@ -1228,6 +1278,11 @@ export async function processNestedOperations(
   operation: 'create' | 'update',
   parentListName: string,
   parentOriginalItem: Record<string, unknown> | undefined,
+  // The enclosing write's input data (the SAME value Phase-5 `filterWritableFields`
+  // passes as `inputData`). Threaded into the connect-site owning-field gate (#588
+  // finding) so item-/inputData-dependent field-access rules cannot diverge between
+  // Phase 5 and the connect site. `undefined` is tolerated (defaults to `{}`).
+  parentInputData: Record<string, unknown> | undefined = undefined,
   depth: number = 0,
 ): Promise<NestedOpsResult> {
   const MAX_DEPTH = 5
@@ -1276,6 +1331,12 @@ export async function processNestedOperations(
         relatedListConfig,
         owningFieldAccess,
         enclosingOperation: operation,
+        // The enclosing write's `originalItem`/`inputData` — the SAME values the
+        // canonical Phase-5 `filterWritableFields` call passes for this field — so
+        // the connect-site owning-field gate evaluates item-/inputData-dependent
+        // rules identically and cannot diverge into a spurious connect denial (#588).
+        enclosingItem: parentOriginalItem,
+        enclosingInputData: parentInputData ?? {},
         context,
         config,
         prisma: context.prisma,
