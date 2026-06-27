@@ -37,8 +37,9 @@ import ts from 'typescript'
  * root. To keep the compiled entry at `<opensaasDir>/dist/context.js` (per
  * ADR-0010) with a config import that resolves inside `dist/`, we stage the
  * bundle plus a copy of `opensaas.config.ts` into a hidden source directory
- * inside the bundle, rewrite the two `../opensaas.config.ts` imports to the
- * sibling `./opensaas.config.ts`, and compile that staging root to
+ * inside the bundle, rewrite the bundle's relative `opensaas.config` imports
+ * (of any `../` depth) to the sibling `./opensaas.config.ts`, and compile that
+ * staging root to
  * `<opensaasDir>/dist/`. Staging inside the project (rather than a temp dir)
  * keeps `node_modules` resolution intact so `@opensaas/*` and `@prisma/*`
  * resolve during the type-check pass. The staging directory is removed after
@@ -72,12 +73,30 @@ const STAGING_DIRNAME = '.node-build'
 const DIST_DIRNAME = 'dist'
 
 /**
- * The on-disk specifier the bundle uses to import the project config (one level
- * above `<opensaasDir>`), and the sibling specifier it is rewritten to so the
- * compiled entry imports the config from inside `dist/`.
+ * Matches a relative config specifier of ANY depth — one-or-more `../` segments
+ * followed by `opensaas.config` (with or without a `.ts`/`.js` extension), in
+ * either quote style. The generator emits that specifier from a configurable
+ * source (`configImport ?? '../opensaas.config'` in `context.ts`/
+ * `prisma-extensions.ts`), so a non-default project layout (e.g. a deeper
+ * `../../opensaas.config.ts`) would otherwise make a literal-string rewrite
+ * silently no-op. Capture group 1 preserves the quote style.
  */
-const CONFIG_IMPORT_FROM = '../opensaas.config.ts'
+const CONFIG_IMPORT_RE = /(['"])(?:\.\.\/)+opensaas\.config(?:\.ts|\.js)?\1/g
+
+/**
+ * The sibling specifier the config import is rewritten to so the compiled entry
+ * imports the config from inside `dist/`. Mirrors the source `.ts` extension
+ * (TypeScript's `rewriteRelativeImportExtensions` turns it into `.js` on emit).
+ */
 const CONFIG_IMPORT_TO = './opensaas.config.ts'
+
+/**
+ * Detects a relative config import that still escapes the staging/`dist` root
+ * after the rewrite — one-or-more `../` segments followed by `opensaas.config`.
+ * Non-global so it can be used with `String.prototype.match` to capture the
+ * offending specifier for the error message.
+ */
+const ESCAPING_CONFIG_IMPORT_RE = /(['"])(?:\.\.\/)+opensaas\.config(?:\.ts|\.js)?\1/
 
 export interface BuildNodeBundleOptions {
   /**
@@ -119,14 +138,33 @@ function copyDir(src: string, dest: string): void {
 }
 
 /**
- * Copy a bundle source file into the staging root, rewriting the
- * `../opensaas.config.ts` import to the sibling `./opensaas.config.ts` so the
- * compiled output's config import resolves inside `dist/`.
+ * Rewrite any relative `../`-rooted `opensaas.config` import (of any depth) in a
+ * source string to the sibling `./opensaas.config.ts`, preserving the original
+ * quote style, so the compiled output's config import resolves inside `dist/`.
+ * Exported for unit testing of the any-depth rewrite.
+ */
+export function rewriteConfigImport(source: string): string {
+  return source.replace(CONFIG_IMPORT_RE, (_match, quote: string) => {
+    return `${quote}${CONFIG_IMPORT_TO}${quote}`
+  })
+}
+
+/**
+ * Return the first relative config import that still escapes the staging/`dist`
+ * root (one-or-more `../` segments before `opensaas.config`), or `undefined` if
+ * none remains. Exported so the silent-failure guard is unit-testable.
+ */
+export function findEscapingConfigImport(source: string): string | undefined {
+  return source.match(ESCAPING_CONFIG_IMPORT_RE)?.[0]
+}
+
+/**
+ * Copy a bundle source file into the staging root, rewriting the config import
+ * to the sibling `./opensaas.config.ts`.
  */
 function stageBundleFile(src: string, dest: string): void {
   const source = fs.readFileSync(src, 'utf-8')
-  const rewritten = source.split(CONFIG_IMPORT_FROM).join(CONFIG_IMPORT_TO)
-  fs.writeFileSync(dest, rewritten)
+  fs.writeFileSync(dest, rewriteConfigImport(source))
 }
 
 /**
@@ -186,7 +224,24 @@ export function buildNodeBundle(options: BuildNodeBundleOptions): BuildNodeBundl
     for (const file of STAGED_BUNDLE_FILES) {
       const src = path.join(opensaasDir, file)
       if (!fs.existsSync(src)) continue
-      stageBundleFile(src, path.join(stagingDir, file))
+      const dest = path.join(stagingDir, file)
+      stageBundleFile(src, dest)
+
+      // Silent-failure guard (`noEmitOnError: false` lets TS emit even when a
+      // config import escapes `dist/`): if a staged file STILL contains a
+      // `../`-rooted `opensaas.config` import after the rewrite, the compiled
+      // entry's config import would escape `dist/` and fail under plain Node
+      // with no error surfaced. Fail loudly instead of emitting a broken build.
+      const escaping = findEscapingConfigImport(fs.readFileSync(dest, 'utf-8'))
+      if (escaping) {
+        throw new Error(
+          `Node build: staged bundle file "${file}" still imports the config ` +
+            `via a relative path that escapes dist/ (${escaping}). The config ` +
+            `import must be rewritten to a sibling of the entry. This is a ` +
+            `silent-failure guard — compiling it would emit a Node build whose ` +
+            `config import resolves outside dist/ and fails under plain Node.`,
+        )
+      }
     }
 
     // Stage the compiled Prisma client subtree as-is.

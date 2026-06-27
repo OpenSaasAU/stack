@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
-import { buildNodeBundle } from './node-build.js'
+import { buildNodeBundle, rewriteConfigImport, findEscapingConfigImport } from './node-build.js'
 
 /**
  * Unit tests for the Node build emit (ADR-0010 / #579).
@@ -17,8 +17,16 @@ import { buildNodeBundle } from './node-build.js'
  * runnable `.js` (not `.ts`) extensions and resolve inside `dist/`.
  */
 
-/** Write a minimal `.opensaas/`-shaped bundle plus a project config to disk. */
-function writeFixture(projectRoot: string): { opensaasDir: string; configPath: string } {
+/**
+ * Write a minimal `.opensaas/`-shaped bundle plus a project config to disk. The
+ * `configImport` specifier (the bundle's relative config import) is
+ * configurable so tests can exercise non-default layouts (e.g. a deeper
+ * `../../opensaas.config.ts` from a nested `.opensaas/` directory).
+ */
+function writeFixture(
+  projectRoot: string,
+  configImport = '../opensaas.config.ts',
+): { opensaasDir: string; configPath: string } {
   const opensaasDir = path.join(projectRoot, '.opensaas')
   const prismaClientDir = path.join(opensaasDir, 'prisma-client')
   fs.mkdirSync(prismaClientDir, { recursive: true })
@@ -27,13 +35,13 @@ function writeFixture(projectRoot: string): { opensaasDir: string; configPath: s
   fs.writeFileSync(path.join(prismaClientDir, 'client.ts'), 'export class PrismaClient {}\n')
 
   // The bundle's context: imports the sibling client via `.ts`, the config via
-  // `../opensaas.config.ts`, and re-exports both. This is the shape the Node
-  // build must rewrite (`.ts` -> `.js`) and self-contain (`..` -> `.`).
+  // a relative `../`-rooted specifier, and re-exports both. This is the shape
+  // the Node build must rewrite (`.ts` -> `.js`) and self-contain (`..` -> `.`).
   fs.writeFileSync(
     path.join(opensaasDir, 'context.ts'),
     [
       "import { PrismaClient } from './prisma-client/client.ts'",
-      "import configValue from '../opensaas.config.ts'",
+      `import configValue from '${configImport}'`,
       'export const prisma = new PrismaClient()',
       'export const config = configValue',
     ].join('\n') + '\n',
@@ -43,7 +51,7 @@ function writeFixture(projectRoot: string): { opensaasDir: string; configPath: s
   fs.writeFileSync(
     path.join(opensaasDir, 'prisma-extensions.ts'),
     [
-      "import configValue from '../opensaas.config.ts'",
+      `import configValue from '${configImport}'`,
       'export const prismaExtensions = { config: configValue }',
     ].join('\n') + '\n',
   )
@@ -54,7 +62,13 @@ function writeFixture(projectRoot: string): { opensaasDir: string; configPath: s
   return { opensaasDir, configPath }
 }
 
-describe('buildNodeBundle', () => {
+// Each of these tests runs a REAL `tsc` compile of the bundle (incl. the
+// prisma-client subtree). On a slow/cold CI runner that takes ~13–25s, well
+// over vitest's 5000ms default — so raise the timeout generously for the whole
+// block (the assertions are unaffected).
+const COMPILE_TIMEOUT_MS = 60000
+
+describe('buildNodeBundle', { timeout: COMPILE_TIMEOUT_MS }, () => {
   let projectRoot: string
 
   beforeEach(() => {
@@ -128,6 +142,18 @@ describe('buildNodeBundle', () => {
 
     expect(fs.existsSync(path.join(opensaasDir, '.node-build'))).toBe(false)
   })
+
+  it('self-contains a deeper config import (../../opensaas.config.ts -> ./opensaas.config.ts)', () => {
+    // A non-default layout makes the bundle import the config from a deeper
+    // relative depth. The rewrite must still self-contain it inside `dist/`.
+    const { opensaasDir, configPath } = writeFixture(projectRoot, '../../opensaas.config.ts')
+
+    buildNodeBundle({ opensaasDir, configPath })
+
+    const entry = fs.readFileSync(path.join(opensaasDir, 'dist', 'context.js'), 'utf-8')
+    expect(entry).toMatch(/from ['"]\.\/opensaas\.config\.js['"]/)
+    expect(entry).not.toContain('../opensaas.config')
+  })
 })
 
 /**
@@ -157,5 +183,43 @@ describe('Node build opt-in guard', () => {
     }
 
     expect(fs.existsSync(path.join(opensaasDir, 'dist'))).toBe(false)
+  })
+})
+
+/**
+ * Pure-helper coverage for the config-import rewrite (no compile): the rewrite
+ * must self-contain a relative config import of ANY `../` depth, and the
+ * silent-failure guard must detect a config import that still escapes `dist/`.
+ */
+describe('config import rewrite/guard helpers', () => {
+  it('rewrites a relative config import of any depth to a sibling specifier', () => {
+    expect(rewriteConfigImport("from '../opensaas.config.ts'")).toBe("from './opensaas.config.ts'")
+    expect(rewriteConfigImport("from '../../opensaas.config.ts'")).toBe(
+      "from './opensaas.config.ts'",
+    )
+    expect(rewriteConfigImport('from "../../../opensaas.config"')).toBe(
+      'from "./opensaas.config.ts"',
+    )
+    // A non-config relative import is left untouched.
+    expect(rewriteConfigImport("from '../something-else.ts'")).toBe("from '../something-else.ts'")
+  })
+
+  it('detects a config import that still escapes dist after rewrite', () => {
+    // The guard fires for any `../`-rooted config specifier the rewrite missed.
+    // The match includes the surrounding quotes (the regex matches the quoted
+    // specifier) so it can be quoted back into the error message verbatim.
+    expect(findEscapingConfigImport("from '../../opensaas.config.ts'")).toBe(
+      "'../../opensaas.config.ts'",
+    )
+    // A correctly self-contained sibling import does not trip the guard.
+    expect(findEscapingConfigImport("from './opensaas.config.ts'")).toBeUndefined()
+  })
+
+  it('throws loudly when staged source escapes dist (guarding the no-emit-on-error path)', () => {
+    // Simulate a staged source whose config import was NOT rewritten to a
+    // sibling: the guard must surface it rather than silently compile a build
+    // whose config import resolves outside `dist/`.
+    const escaped = "import config from '../../opensaas.config.ts'"
+    expect(findEscapingConfigImport(escaped)).toBeTruthy()
   })
 })
