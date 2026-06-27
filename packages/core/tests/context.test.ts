@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
+import { defineFragment } from '../src/query/index.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
 describe('getContext', () => {
@@ -224,6 +225,102 @@ describe('getContext', () => {
 
       expect(mockPrisma.user.findMany).toHaveBeenCalled()
       expect(result).toEqual(mockUsers)
+    })
+
+    describe('findFirst', () => {
+      it('should return the first matching row', async () => {
+        const mockUsers = [
+          { id: '1', name: 'John', email: 'john@example.com' },
+          { id: '2', name: 'Jane', email: 'jane@example.com' },
+        ]
+        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findFirst()
+
+        // Delegates to the access-controlled findMany with take: 1
+        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
+        expect(result).toEqual(mockUsers[0])
+      })
+
+      it('should return null (not undefined, not throw) when nothing matches', async () => {
+        mockPrisma.user.findMany.mockResolvedValue([])
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findFirst({ where: { name: 'Nobody' } })
+
+        expect(result).toBeNull()
+        expect(result).not.toBeUndefined()
+      })
+
+      it('should respect where and orderBy', async () => {
+        const mockUser = { id: '2', name: 'Jane', email: 'jane@example.com' }
+        mockPrisma.user.findMany.mockResolvedValue([mockUser])
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findFirst({
+          where: { name: 'Jane' },
+          orderBy: { name: 'asc' },
+        })
+
+        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ name: 'Jane' }),
+            orderBy: { name: 'asc' },
+            take: 1,
+          }),
+        )
+        expect(result).toEqual(mockUser)
+      })
+
+      it('should honour query-access denial the same as findMany (denied -> null)', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            User: {
+              ...config.lists.User,
+              access: {
+                operation: {
+                  query: () => false,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+        mockPrisma.user.findMany.mockResolvedValue([
+          { id: '1', name: 'John', email: 'john@example.com' },
+        ])
+
+        const context = await getContext(deniedConfig, mockPrisma, null)
+        const result = await context.db.user.findFirst()
+
+        // Denied query short-circuits before hitting prisma — exactly like findMany
+        expect(result).toBeNull()
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
+      })
+
+      it('should respect a query fragment, narrowing the returned single result', async () => {
+        const mockUsers = [
+          { id: '1', name: 'John', email: 'john@example.com' },
+          { id: '2', name: 'Jane', email: 'jane@example.com' },
+        ]
+        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+
+        const fragment = defineFragment<{ id: string; name: string; email: string }>()({
+          id: true,
+          name: true,
+        } as const)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findFirst({ query: fragment })
+
+        // Fragment narrows the result to only the requested fields (email omitted)
+        expect(result).toEqual({ id: '1', name: 'John' })
+      })
     })
 
     it('should delegate create to prisma with access control and hooks', async () => {

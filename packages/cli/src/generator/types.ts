@@ -701,6 +701,32 @@ export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'sele
 }
 
 /**
+ * Generate custom FindFirstArgs type that uses our extended Select/Include
+ */
+function generateFindFirstArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom FindFirstArgs for ${listName} with virtual field support in nested relationships
+ */
+export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'select' | 'include'> & {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
+}`
+  } else {
+    return `/**
+ * Custom FindFirstArgs for ${listName} with virtual field support
+ */
+export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'select'> & {
+  select?: ${listName}Select | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
+}`
+  }
+}
+
+/**
  * Generate custom CreateArgs type that uses our extended Select/Include
  */
 function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
@@ -863,6 +889,11 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
     lines.push(`    findUnique: <T extends ${listName}FindUniqueArgs>(`)
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
+    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
+
+    // findFirst - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+    lines.push(`    findFirst: <T extends ${listName}FindFirstArgs>(`)
+    lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
     lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
 
     // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
@@ -1085,6 +1116,8 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(generateFindUniqueArgsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateFindManyArgsType(listName, listConfig.fields))
+    lines.push('')
+    lines.push(generateFindFirstArgsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateCreateArgsType(listName, listConfig.fields))
     lines.push('')

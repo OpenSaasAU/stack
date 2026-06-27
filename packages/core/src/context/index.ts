@@ -247,6 +247,7 @@ export function getContext<
     const operations: Record<string, unknown> = {
       findUnique: createFindUnique(listName, listConfig, prisma, context, config),
       findMany: findManyOp,
+      findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
       delete: createDelete(listName, listConfig, prisma, context, config),
@@ -600,6 +601,31 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     }
 
     return filtered
+  }
+}
+
+/**
+ * Create findFirst operation with access control.
+ *
+ * findFirst is sugar over the access-controlled findMany: it runs the exact same
+ * query-access checks and access-controlled include building as findMany, then
+ * returns the first matching row (or null when nothing matches). This introduces
+ * no new access surface — it inherits findMany's silent-failure contract (an
+ * access-denied query yields `[]`, which becomes `null` here).
+ */
+function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
+  return async (args?: {
+    where?: Record<string, unknown>
+    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
+    skip?: number
+    include?: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query?: any
+    // `select` is not honoured — accepted only so the no-op can be made visible.
+    select?: Record<string, unknown>
+  }) => {
+    const result = await findManyOp({ ...args, take: 1 })
+    return result[0] ?? null
   }
 }
 
