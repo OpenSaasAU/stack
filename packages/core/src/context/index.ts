@@ -5,6 +5,7 @@ import {
   mergeFilters,
   filterReadableFields,
   buildIncludeWithAccessControl,
+  mergeIncludeWithAccessControl,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -522,6 +523,10 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
 
     if (fragment) {
       include = buildInclude(fragment._fields) ?? undefined
+    } else if (context._isSudo) {
+      // Sudo bypasses access control entirely — the caller's include is trusted
+      // and used as-is (matching the prior behaviour); no per-relation filtering.
+      include = args.include
     } else {
       // Build include with access control filters
       const accessControlledInclude = await buildIncludeWithAccessControl(
@@ -532,7 +537,18 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         },
         config,
       )
-      include = args.include || accessControlledInclude
+      // MERGE (not replace) a caller-supplied include with the access-controlled
+      // include: the caller selects WHICH relations to fetch, access control
+      // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
+      // caller include) still uses the access-controlled include directly.
+      include = args.include
+        ? mergeIncludeWithAccessControl(
+            args.include,
+            accessControlledInclude,
+            listConfig.fields,
+            config,
+          )
+        : accessControlledInclude
     }
 
     // Execute query with optimized includes
@@ -630,6 +646,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     let include: Record<string, unknown> | undefined
     if (fragment) {
       include = buildInclude(fragment._fields) ?? undefined
+    } else if (context._isSudo) {
+      // Sudo bypasses access control entirely — the caller's include is trusted
+      // and used as-is (matching the prior behaviour); no per-relation filtering.
+      include = args?.include
     } else {
       // Build include with access control filters
       const accessControlledInclude = await buildIncludeWithAccessControl(
@@ -640,7 +660,18 @@ function createFindMany<TPrisma extends PrismaClientLike>(
         },
         config,
       )
-      include = args?.include || accessControlledInclude
+      // MERGE (not replace) a caller-supplied include with the access-controlled
+      // include: the caller selects WHICH relations to fetch, access control
+      // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
+      // caller include) still uses the access-controlled include directly.
+      include = args?.include
+        ? mergeIncludeWithAccessControl(
+            args.include,
+            accessControlledInclude,
+            listConfig.fields,
+            config,
+          )
+        : accessControlledInclude
     }
 
     // Execute query with optimized includes
