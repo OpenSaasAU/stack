@@ -514,11 +514,23 @@ export function timestamp<
 /**
  * Calendar Day field - date only (no time) in ISO8601 format
  *
+ * Mirrors Keystone's `CalendarDay` scalar: the wire format through
+ * `context.db.*` is a `YYYY-MM-DD` **string** in both directions (read and
+ * write). The field's TypeScript type — entity, `CreateInput`, and
+ * `UpdateInput` — is `string`, so passing a `Date` is a compile-time error.
+ *
  * **Features:**
  * - Stores date values only (no time component)
  * - PostgreSQL/MySQL: Uses native DATE type via @db.Date
  * - SQLite: Uses String representation
- * - Accepts ISO8601 date strings (YYYY-MM-DD format)
+ * - **Writes:** accept only a `YYYY-MM-DD` string; a malformed string or a
+ *   `Date` is rejected at runtime by validation (a `ValidationError`). Genuine
+ *   compile-time rejection at the `context.db` call site is tracked in #599.
+ * - **Reads:** always return a `YYYY-MM-DD` string. Even though the underlying
+ *   `@db.Date` column hands Prisma a `Date`, a `resolveOutput` transform
+ *   normalises it back to a `YYYY-MM-DD` string so the runtime value matches
+ *   the declared `string` type. UTC components are used to avoid timezone
+ *   off-by-one errors.
  * - Optional validation for required fields
  * - Database column mapping and nullability control
  * - Index support (boolean or 'unique')
@@ -539,13 +551,17 @@ export function timestamp<
  *   })
  * }
  *
- * // Creating with date values
+ * // Creating with date values — pass YYYY-MM-DD strings (NOT Date objects)
  * const event = await context.db.event.create({
  *   data: {
  *     startDate: '2025-01-15',
  *     endDate: '2025-01-20'
  *   }
  * })
+ *
+ * // Reading — values come back as YYYY-MM-DD strings
+ * const e = await context.db.event.findUnique({ where: { id } })
+ * e?.startDate // => '2025-01-15' (a string, not a Date)
  * ```
  *
  * @param options - Field configuration options
@@ -557,6 +573,19 @@ export function calendarDay<
   return {
     type: 'calendarDay',
     ...options,
+    // Reads: the underlying @db.Date column hands Prisma a Date (or a TEXT
+    // string under the SQLite fallback). Normalise to a YYYY-MM-DD string so the
+    // runtime value matches the declared `string` type. UTC components are used
+    // so the formatting never drifts a day in non-UTC timezones.
+    // Cast hooks to any since field builders are generic and can't know the
+    // specific TFieldKey (same pattern as password()).
+    hooks: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveOutput: ({ value }: { value: any }) => formatCalendarDay(value),
+      // Merge with user-provided hooks if any
+      ...options?.hooks,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hook object needs type assertion for field builder
+    } as any,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
       const isRequired = validation?.isRequired
@@ -628,12 +657,47 @@ export function calendarDay<
       const isRequired = validation?.isRequired
       const isNullable = db?.isNullable ?? !isRequired
 
+      // calendarDay is a YYYY-MM-DD string end-to-end (Keystone's CalendarDay
+      // scalar). Returning 'string' here makes the entity/read type and the
+      // standalone generated CreateInput/UpdateInput types `string`. At the
+      // context.db write path a Date is still rejected at runtime by validation
+      // (the generated db method `data` type derives from Prisma's `Date | string`
+      // input — making it a compile-time error is tracked in #599).
       return {
-        type: 'Date',
+        type: 'string',
         optional: isNullable,
       }
     },
   }
+}
+
+/**
+ * Format a stored calendar-day value to a `YYYY-MM-DD` string.
+ *
+ * Handles the value being a `Date` (Postgres/MySQL `@db.Date`), an already
+ * formatted string (SQLite TEXT fallback), or null/undefined. Dates are
+ * formatted from their UTC components so the result never drifts a day in
+ * non-UTC timezones.
+ */
+function formatCalendarDay(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) {
+    return value as null | undefined
+  }
+
+  if (value instanceof Date) {
+    // toISOString() is UTC; the YYYY-MM-DD prefix is timezone-safe.
+    return value.toISOString().slice(0, 10)
+  }
+
+  if (typeof value === 'string') {
+    // SQLite stores DateTime as TEXT. The value may already be YYYY-MM-DD or a
+    // full ISO timestamp — take the date-only prefix either way.
+    return value.slice(0, 10)
+  }
+
+  // Any other shape is unexpected for a @db.Date column; surface it untouched
+  // by returning undefined so callers see the field as absent rather than wrong.
+  return undefined
 }
 
 /**
