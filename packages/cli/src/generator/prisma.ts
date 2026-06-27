@@ -108,12 +108,25 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   const schemas = config.db.schemas
   const multiSchema = Array.isArray(schemas) && schemas.length > 0
 
+  // Prisma generator options for the `.opensaas/prisma-client` subtree. By
+  // default we emit `importFileExtension = "ts"` and `moduleFormat = "esm"` so
+  // the generated client uses explicit `.ts` import extensions — matching the
+  // rest of the `.opensaas` bundle (ADR-0008) and keeping the whole import graph
+  // statically resolvable by a bundler. A project can override either value via
+  // `db.prismaGeneratorOptions`; any supplied value wins, omitted keys fall back
+  // to the `ts`/`esm` defaults.
+  const prismaGeneratorOptions = config.db.prismaGeneratorOptions
+  const importFileExtension = prismaGeneratorOptions?.importFileExtension ?? 'ts'
+  const moduleFormat = prismaGeneratorOptions?.moduleFormat ?? 'esm'
+
   // Generator and datasource
   lines.push('generator client {')
-  lines.push('  provider = "prisma-client"')
-  lines.push(`  output   = "${clientOutput}"`)
+  lines.push('  provider            = "prisma-client"')
+  lines.push(`  output              = "${clientOutput}"`)
+  lines.push(`  importFileExtension = "${importFileExtension}"`)
+  lines.push(`  moduleFormat        = "${moduleFormat}"`)
   if (multiSchema) {
-    lines.push('  previewFeatures = ["multiSchema"]')
+    lines.push('  previewFeatures     = ["multiSchema"]')
   }
   lines.push('}')
   lines.push('')

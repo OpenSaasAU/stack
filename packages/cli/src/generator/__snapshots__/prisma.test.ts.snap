@@ -2,8 +2,10 @@
 
 exports[`Prisma Schema Generator > Keystone-compat mode (db.keystoneCompat) > emits @default("") for non-null text without an explicit default (snapshot) 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -24,8 +26,10 @@ model Account {
 
 exports[`Prisma Schema Generator > field defaultValue → @default(...) > generates a representative multi-field model with mixed defaults 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -44,8 +48,10 @@ model Config {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate basic schema with datasource and generator 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -56,8 +62,10 @@ datasource db {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate many-to-one relationship 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -82,8 +90,10 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with basic fields 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -101,8 +111,10 @@ model User {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with checkbox field 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -119,8 +131,10 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate model with timestamp field 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -137,8 +151,10 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate multiple models 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -164,8 +180,10 @@ model Comment {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should generate one-to-many relationship 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -187,8 +205,10 @@ model Post {
 
 exports[`Prisma Schema Generator > generatePrismaSchema > should use custom opensaasPath for generator output 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.custom-path/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.custom-path/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -199,8 +219,10 @@ datasource db {
 
 exports[`Prisma Schema Generator > select field with enum type > should generate singleton model with bare Int @id (no @default) 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -217,8 +239,10 @@ model Settings {
 
 exports[`Prisma Schema Generator > select field with enum type > should match snapshot for enum select field 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {

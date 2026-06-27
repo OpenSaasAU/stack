@@ -122,8 +122,10 @@ export const config = getConfig()
 
 exports[`Generate Command Integration > Generator Integration > should generate all files for a basic config > prisma-schema 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -386,8 +388,10 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseCo
 
 exports[`Generate Command Integration > Generator Integration > should generate consistent output across multiple runs > consistent-output 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -403,8 +407,10 @@ model User {
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > mysql-provider 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -415,8 +421,10 @@ datasource db {
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > postgresql-provider 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -427,8 +435,10 @@ datasource db {
 
 exports[`Generate Command Integration > Generator Integration > should handle different database providers > sqlite-provider 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -439,8 +449,10 @@ datasource db {
 
 exports[`Generate Command Integration > Generator Integration > should handle empty lists config > empty-lists-schema 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -501,8 +513,10 @@ export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseCo
 
 exports[`Generate Command Integration > Generator Integration > should overwrite existing files > overwrite-after 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {
@@ -518,8 +532,10 @@ model Post {
 
 exports[`Generate Command Integration > Generator Integration > should overwrite existing files > overwrite-before 1`] = `
 "generator client {
-  provider = "prisma-client"
-  output   = "../.opensaas/prisma-client"
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
 }
 
 datasource db {

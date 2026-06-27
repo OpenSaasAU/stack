@@ -398,7 +398,7 @@ describe('Generate Command Integration', () => {
       const { paths, crossReferences } = generateWithResolvedPaths(config)
 
       const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
-      expect(schema).toContain(`output   = "${crossReferences.prismaClientOutput}"`)
+      expect(schema).toContain(`output              = "${crossReferences.prismaClientOutput}"`)
 
       // Resolved from the schema file's directory, the output lands inside the
       // configured bundle directory.
@@ -428,7 +428,7 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(path.join(tempDir, '.opensaas', 'context.ts'))).toBe(true)
 
       const schema = fs.readFileSync(path.join(tempDir, 'prisma', 'schema.prisma'), 'utf-8')
-      expect(schema).toContain('output   = "../.opensaas/prisma-client"')
+      expect(schema).toContain('output              = "../.opensaas/prisma-client"')
 
       const context = fs.readFileSync(path.join(tempDir, '.opensaas', 'context.ts'), 'utf-8')
       // The default config import carries an explicit `.ts` extension (ADR-0008).
@@ -472,7 +472,7 @@ describe('Generate Command Integration', () => {
       // The prisma client output cross-reference follows opensaasPath, so the
       // emitted schema points at the relocated bundle (no longer a no-op).
       const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
-      expect(schema).toContain('output   = "../.custom/prisma-client"')
+      expect(schema).toContain('output              = "../.custom/prisma-client"')
     })
 
     it('lets output.opensaasDir override opensaasPath when both are set', () => {
@@ -496,7 +496,7 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(path.join(tempDir, '.opensaas'))).toBe(false)
 
       const schema = fs.readFileSync(paths.prismaSchema, 'utf-8')
-      expect(schema).toContain('output   = "../generated/opensaas/prisma-client"')
+      expect(schema).toContain('output              = "../generated/opensaas/prisma-client"')
     })
   })
 
