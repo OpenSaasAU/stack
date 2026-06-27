@@ -28,13 +28,46 @@ The simplest way to add an admin interface to your Next.js app:
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { getUrlKey } from '@opensaas/stack-core'
 import '@opensaas/stack-ui/styles'
 
-export default async function AdminPage() {
-  const context = await getAdminContext()
-  return <AdminUI context={context} config={config} />
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  const result = await context.serverAction(props)
+  if (result && typeof result === 'object' && 'success' in result && result.success) {
+    redirect(`/admin/${getUrlKey(props.listKey)}`)
+  }
+  return result
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  const session = await getSession()
+  if (!session) {
+    return <div>You must be signed in to access the admin interface.</div>
+  }
+  return (
+    <AdminUI
+      context={await getContext(session)}
+      config={await config}
+      params={resolvedParams.admin}
+      searchParams={resolvedSearchParams}
+      basePath="/admin"
+      serverAction={serverAction}
+    />
+  )
 }
 ```
 
@@ -65,8 +98,8 @@ import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fi
 // Standalone components - Composable CRUD components
 import { ItemCreateForm, ItemEditForm, ListTable } from '@opensaas/stack-ui/standalone'
 
-// Server utilities - Context and session management
-import { getAdminContext } from '@opensaas/stack-ui/server'
+// Server utilities - Type imports for server actions
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
 
 // Styles - Tailwind CSS
 import '@opensaas/stack-ui/styles'
@@ -80,19 +113,34 @@ The `AdminUI` component provides a complete admin interface with routing, naviga
 
 ```typescript
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  return context.serverAction(props)
+}
 
 export default async function AdminPage() {
-  const context = await getAdminContext()
-  return <AdminUI context={context} config={config} />
+  const session = await getSession()
+  return (
+    <AdminUI
+      context={await getContext(session ?? undefined)}
+      config={await config}
+      serverAction={serverAction}
+    />
+  )
 }
 ```
 
 **Props:**
 
-- `context` - Admin context with session and database access
+- `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
+- `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
 
 **Features:**
 
@@ -156,10 +204,12 @@ A standalone form for creating new items.
 
 ```typescript
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import { getAdminContext } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
 export default async function CreatePostPage() {
-  const context = await getAdminContext()
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
 
   return (
     <ItemCreateForm
@@ -191,10 +241,12 @@ A standalone form for editing existing items.
 
 ```typescript
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { getAdminContext } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
 export default async function EditPostPage({ params }: { params: { id: string } }) {
-  const context = await getAdminContext()
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
 
   return (
     <ItemEditForm
@@ -226,10 +278,12 @@ A standalone table component for displaying lists of items.
 
 ```typescript
 import { ListTable } from '@opensaas/stack-ui/standalone'
-import { getAdminContext } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
 export default async function PostsPage() {
-  const context = await getAdminContext()
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
 
   return (
     <div>
@@ -488,19 +542,26 @@ The `FieldRenderer` resolves components in the following order:
 
 ## Server Utilities
 
-### getAdminContext
+The `@opensaas/stack-ui/server` export provides TypeScript types for server action integration.
 
-Get an admin context with session from request headers.
+### ServerActionInput
+
+`ServerActionInput` is the type for the props passed to your server action wrapper. Import it to type the `serverAction` function you pass to `<AdminUI />`.
 
 ```typescript
-import { getAdminContext } from '@opensaas/stack-ui/server'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
-export default async function AdminPage() {
-  const context = await getAdminContext()
-  // context includes session if using @opensaas/stack-auth
-  return <AdminUI context={context} config={config} />
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  return context.serverAction(props)
 }
 ```
+
+There is no `getAdminContext` helper in this package. The host application is responsible for resolving the session and constructing the context using `getContext` from the generated `.opensaas/context` module.
 
 ## Styling
 
@@ -553,7 +614,7 @@ All components are fully typed with TypeScript:
 
 The UI package is optimized for performance:
 
-- Server components by default (AdminUI, getAdminContext)
+- Server components by default (AdminUI, standalone components)
 - Client components only where needed (forms, interactive elements)
 - Minimal client-side JavaScript
 - Data fetching on the server reduces bundle size
@@ -567,10 +628,12 @@ Build a custom dashboard using standalone components:
 ```typescript
 import { ListTable, ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { Card, CardHeader, CardContent } from '@opensaas/stack-ui/primitives'
-import { getAdminContext } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
 export default async function CustomDashboard() {
-  const context = await getAdminContext()
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
 
   return (
     <div className="grid gap-4 p-4">
