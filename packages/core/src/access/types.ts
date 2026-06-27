@@ -111,6 +111,48 @@ export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
 }
 
 /**
+ * Extra query arguments accepted when a `query` Fragment is provided alongside
+ * `context.db.<list>.findFirst({ query: myFragment, ... })`.
+ */
+export type FindFirstQueryArgs = {
+  where?: Record<string, unknown>
+  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
+  skip?: number
+}
+
+/**
+ * Overloaded `findFirst` that accepts an optional `query` Fragment.
+ *
+ * `findFirst` is sugar over the access-controlled `findMany` (`take: 1`), so it
+ * applies the exact same query-access checks and access-controlled include
+ * building, then returns the first matching record or `null`.
+ *
+ * - **With `query`**: builds the Prisma `include` from the fragment, executes the
+ *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
+ *   or `null`.
+ * - **Without `query`**: behaves exactly like the original Prisma `findFirst`.
+ *
+ * @example
+ * ```ts
+ * const post = await context.db.post.findFirst({
+ *   where:   { published: true },
+ *   orderBy: { createdAt: 'desc' },
+ *   query:   postFragment,
+ * })
+ * // post: ResultOf<typeof postFragment> | null
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
+  // Overload 1: with query fragment — return type narrows to ResultOf<fragment> | null
+  <TItem, TFields extends FieldSelection<TItem>>(
+    args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
+  ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
+  // Overload 2: original Prisma behaviour
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
+
+/**
  * Overloaded `findUnique` that accepts an optional `query` Fragment.
  *
  * - **With `query`**: builds the Prisma `include` from the fragment, executes the
@@ -149,6 +191,8 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     findUnique: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findFirst: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     findMany: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: any
@@ -161,6 +205,7 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
   }
     ? {
         findUnique: AugmentedFindUnique<TPrisma[K]['findUnique']>
+        findFirst: AugmentedFindFirst<TPrisma[K]['findFirst']>
         findMany: AugmentedFindMany<TPrisma[K]['findMany']>
         create: TPrisma[K]['create']
         update: TPrisma[K]['update']

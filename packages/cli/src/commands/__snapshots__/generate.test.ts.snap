@@ -281,6 +281,14 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 }
 
 /**
+ * Custom FindFirstArgs for User with virtual field support
+ */
+export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+  select?: UserSelect | null
+  query?: Fragment<UserOutput, FieldSelection<UserOutput>>
+}
+
+/**
  * Custom CreateArgs for User with virtual field support
  */
 export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select'> & {
@@ -329,6 +337,9 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
   user: {
     findUnique: <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ) => Promise<UserGetPayload<T> | null>
+    findFirst: <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ) => Promise<UserGetPayload<T> | null>
     findMany: <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
