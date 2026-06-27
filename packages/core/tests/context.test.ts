@@ -213,6 +213,131 @@ describe('getContext', () => {
       expect(result).toEqual(mockUser)
     })
 
+    describe('findUnique unique-where enforcement (#567)', () => {
+      it('accepts a valid unique where (id) and keeps access + include intact', async () => {
+        const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
+        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findUnique({
+          where: { id: '1' },
+          include: { posts: true },
+        })
+
+        // Access control still runs and the underlying delegate is invoked with
+        // the merged where + include (proving access + include path is intact).
+        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ id: '1' }),
+            include: { posts: true },
+          }),
+        )
+        expect(result).toEqual(mockUser)
+      })
+
+      it('accepts a configured-unique field (email) as the unique where', async () => {
+        const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
+        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findUnique({
+          where: { email: 'john@example.com' },
+        })
+
+        expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+        expect(result).toEqual(mockUser)
+      })
+
+      it('narrows the result through a query fragment with a unique where', async () => {
+        const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
+        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+
+        const fragment = defineFragment<{ id: string; name: string; email: string }>()({
+          id: true,
+          name: true,
+        } as const)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findUnique({ where: { id: '1' }, query: fragment })
+
+        // Fragment narrows the result to only the requested fields (email omitted)
+        expect(result).toEqual({ id: '1', name: 'John' })
+      })
+
+      it('THROWS on a non-unique where (caller-shape error, not a silent null)', async () => {
+        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John' })
+
+        const context = await getContext(config, mockPrisma, null)
+
+        // `name` is not a unique key — this is misuse and must throw, not return null.
+        await expect(context.db.user.findUnique({ where: { name: 'John' } })).rejects.toThrow(
+          /requires a unique `where`/,
+        )
+        // The error guides the caller toward findFirst (the non-unique escape hatch).
+        await expect(context.db.user.findUnique({ where: { name: 'John' } })).rejects.toThrow(
+          /findFirst/,
+        )
+        // Guard runs before any DB access.
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      })
+
+      it('THROWS when a unique key is mixed with extra non-unique keys', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(
+          context.db.user.findUnique({ where: { id: '1', name: 'John' } }),
+        ).rejects.toThrow(/requires a unique `where`/)
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      })
+
+      it('THROWS on an empty where', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(context.db.user.findUnique({ where: {} })).rejects.toThrow(
+          /requires a unique `where`/,
+        )
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      })
+
+      it('returns null on access denial (silent-failure contract preserved)', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            User: {
+              ...config.lists.User,
+              access: {
+                operation: {
+                  query: () => false,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John' })
+
+        const context = await getContext(deniedConfig, mockPrisma, null)
+        const result = await context.db.user.findUnique({ where: { id: '1' } })
+
+        // Access denied -> null (not a throw), and the DB is never queried.
+        expect(result).toBeNull()
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      })
+
+      it('returns null when no record matches a valid unique where', async () => {
+        mockPrisma.user.findFirst.mockResolvedValue(null)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findUnique({ where: { id: 'missing' } })
+
+        expect(result).toBeNull()
+        expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+      })
+    })
+
     it('should delegate findMany to prisma with access control', async () => {
       const mockUsers = [
         { id: '1', name: 'John' },

@@ -66,6 +66,72 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 /**
+ * Compute the set of single-field unique selectors a `findUnique` `where` may be
+ * keyed by, derived from what the list config exposes at runtime.
+ *
+ * The set is:
+ * - `id` — always a unique identifier on every list.
+ * - Any field declared `isIndexed: 'unique'` in the config (e.g. `text({ isIndexed: 'unique' })`).
+ * - For a `relationship` field declared `isIndexed: 'unique'`, the foreign-key
+ *   column name (`<field>Id`) — that is the column Prisma marks `@unique`, so the
+ *   unique `where` is keyed by `<field>Id`, not the relation field itself.
+ *
+ * Chosen rule (documented intentionally): the config does NOT expose compound
+ * (`@@unique`) keys at runtime — there is no list-level unique declaration in the
+ * config API — so we cannot validate compound `<Model>_<a>_<b>` selectors. We
+ * therefore enforce the tractable subset: `where` must contain EXACTLY ONE
+ * recognised single-field unique key and NO other keys. This rejects non-unique
+ * filters (the bug in #567) and rejects extra non-unique keys alongside a unique
+ * one, while never falsely rejecting a valid single-field unique lookup. If a
+ * project legitimately needs a compound-unique lookup, that path is not covered
+ * here and would need explicit config support; the safe escape hatch for any
+ * non-unique single-row lookup is `findFirst` (see #565).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function getUniqueWhereKeys(listConfig: ListConfig<any>): Set<string> {
+  const keys = new Set<string>(['id'])
+
+  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
+    if (!fieldConfig || typeof fieldConfig !== 'object') continue
+    if (!('isIndexed' in fieldConfig) || fieldConfig.isIndexed !== 'unique') continue
+
+    if (fieldConfig.type === 'relationship') {
+      // A unique relationship's `@unique` lives on the FK column `<field>Id`.
+      keys.add(`${fieldKey}Id`)
+    } else {
+      keys.add(fieldKey)
+    }
+  }
+
+  return keys
+}
+
+/**
+ * Enforce Keystone `findOne` semantics for `findUnique`: the caller-supplied
+ * `where` must be a valid unique selector. A non-unique `where` is a caller-shape
+ * error (not an access denial), so this THROWS rather than silently returning
+ * `null` — consistent with the fail-loud-on-misuse stance of PRD #581. A
+ * non-unique single-row lookup should use `findFirst` instead (see #565).
+ */
+function assertUniqueWhere(
+  where: Record<string, unknown> | undefined,
+  uniqueKeys: Set<string>,
+  listName: string,
+): void {
+  const keys = where ? Object.keys(where) : []
+
+  const message =
+    `findUnique on "${listName}" requires a unique \`where\` (a single unique key such as ` +
+    `${Array.from(uniqueKeys).join(', ')}). ` +
+    `Received: ${keys.length === 0 ? '{}' : `{ ${keys.join(', ')} }`}. ` +
+    `Use \`findFirst\` for a non-unique single-row lookup.`
+
+  if (keys.length !== 1 || !uniqueKeys.has(keys[0])) {
+    throw new ValidationError([message], {})
+  }
+}
+
+/**
  * Check if auto-create is enabled for a singleton list
  * Defaults to true if not explicitly set to false
  */
@@ -405,7 +471,10 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   config: OpenSaasConfig,
 ) {
   return async (args: {
-    where: { id: string }
+    // Accepts any unique selector at the delegate level (the generated
+    // `<List>FindUniqueArgs` type narrows `where` to Prisma's `WhereUniqueInput`).
+    // The runtime guard below rejects non-unique shapes.
+    where: Record<string, unknown>
     include?: Record<string, unknown>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query?: any
@@ -414,6 +483,15 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   }) => {
     // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'findUnique')
+
+    // Enforce unique-`where` (Keystone `findOne` parity). This is a caller-shape
+    // check independent of access, so it runs first and THROWS on misuse — it is
+    // not an access denial and must not be masked as a silent `null`. The
+    // type-level constraint already lives on the generated delegate: the custom
+    // `<List>FindUniqueArgs` only Omits `select`/`include` from
+    // `Prisma.<List>FindUniqueArgs`, so its `where` stays Prisma's
+    // `<List>WhereUniqueInput` — this runtime guard backstops untyped callers.
+    assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
 
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = args.where
