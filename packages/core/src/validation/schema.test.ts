@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { generateZodSchema, validateWithZod } from './schema.js'
 import type { FieldConfig } from '../config/types.js'
-import { text, integer, select } from '../fields/index.js'
+import { text, integer, select, calendarDay, json, password } from '../fields/index.js'
 
 describe('Zod Schema Generation', () => {
   describe('generateZodSchema', () => {
@@ -217,6 +217,114 @@ describe('Zod Schema Generation', () => {
 
       const result = validateWithZod({}, fields, 'update')
       expect(result.success).toBe(true)
+    })
+  })
+
+  // Regression: issue #570
+  // Under zod 4.4, `z.union([schema, z.undefined()])` rejects a MISSING key,
+  // so partial updates that omit a required-on-create field used to throw a
+  // ValidationError before the DB write. Update-shapes must use key-optionality
+  // (`.optional()`) so validation only checks the keys actually present.
+  describe('omitted required field on update (issue #570)', () => {
+    it('passes when a required text field is omitted while another field is present', () => {
+      const fields: Record<string, FieldConfig> = {
+        name: text({ validation: { isRequired: true } }),
+        bio: text(),
+      }
+
+      const result = validateWithZod({ bio: 'hello' }, fields, 'update')
+      expect(result.success).toBe(true)
+    })
+
+    it('still enforces present-value rules for a required text field on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        name: text({ validation: { isRequired: true } }),
+      }
+
+      // Empty string must still be rejected when the key IS present
+      const result = validateWithZod({ name: '' }, fields, 'update')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('name')
+      }
+    })
+
+    it('still enforces length rules for a required text field present on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        title: text({ validation: { isRequired: true, length: { min: 5 } } }),
+      }
+
+      const result = validateWithZod({ title: 'Hi' }, fields, 'update')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors.title).toContain('at least 5 characters')
+      }
+    })
+
+    it('keeps required text fields required on create', () => {
+      const fields: Record<string, FieldConfig> = {
+        name: text({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({}, fields, 'create')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('name')
+      }
+    })
+
+    it('allows an omitted required calendarDay field on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        startsOn: calendarDay({ validation: { isRequired: true } }),
+        label: text(),
+      }
+
+      const result = validateWithZod({ label: 'x' }, fields, 'update')
+      expect(result.success).toBe(true)
+    })
+
+    it('still rejects an invalid calendarDay value when present on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        startsOn: calendarDay({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ startsOn: 'not-a-date' }, fields, 'update')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('startsOn')
+      }
+    })
+
+    it('allows an omitted required json field on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        meta: json({ validation: { isRequired: true } }),
+        label: text(),
+      }
+
+      const result = validateWithZod({ label: 'x' }, fields, 'update')
+      expect(result.success).toBe(true)
+    })
+
+    it('allows an omitted required password field on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        secret: password({ validation: { isRequired: true } }),
+        label: text(),
+      }
+
+      const result = validateWithZod({ label: 'x' }, fields, 'update')
+      expect(result.success).toBe(true)
+    })
+
+    it('still rejects an empty required password value when present on update', () => {
+      const fields: Record<string, FieldConfig> = {
+        secret: password({ validation: { isRequired: true } }),
+      }
+
+      const result = validateWithZod({ secret: '' }, fields, 'update')
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.errors).toHaveProperty('secret')
+      }
     })
   })
 })
