@@ -151,6 +151,125 @@ export type FieldAfterOperationHookArgs<
     }
 
 /**
+ * Arguments for field-level beforeTransaction hook (#590 / ADR-0010).
+ *
+ * Transaction-boundary hooks run OUTSIDE the write's database transaction.
+ * `beforeTransaction` runs before the transaction opens, so it has the input
+ * data but no persisted `item` yet (and, for create, no `item` to read). For
+ * update/delete the existing `item` is best-effort: present for the top-level
+ * target (which the pipeline resolves before opening the transaction) and
+ * `undefined` for nested targets (not resolved at the boundary to avoid
+ * pre-transaction reads). Use it for non-transactional side effects (e.g.
+ * external API calls) whose compensation pairs with `afterTransaction`.
+ */
+export type FieldBeforeTransactionHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      inputData: TTypeInfo['inputs']['create']
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      inputData: TTypeInfo['inputs']['update']
+      item: TTypeInfo['item'] | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      item: TTypeInfo['item'] | undefined
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Arguments for field-level afterTransaction hook (#590 / ADR-0010).
+ *
+ * Runs AFTER the transaction settles and ALWAYS runs when its paired
+ * `beforeTransaction` ran (symmetric bracket). The `status` discriminant tells
+ * the hook whether the write committed or rolled back:
+ *  - `committed`: the persisted `item`/`originalItem` are populated ONLY for the
+ *    TOP-LEVEL record of the write. For NESTED lists they are `undefined` — the
+ *    per-record persisted row is not reliably recoverable outside the
+ *    transaction, and these hooks fire at per-(list, operation) granularity, not
+ *    per record. For per-record nested compensation use the in-transaction
+ *    `afterOperation` (which receives the correct nested `item`).
+ *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
+ *    `error` that caused the rollback so it can compensate for whatever
+ *    `beforeTransaction` did externally.
+ */
+export type FieldAfterTransactionHookArgs<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> =
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      status: 'committed'
+      inputData: TTypeInfo['inputs']['create']
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TTypeInfo['item'] | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'create'
+      status: 'rolled-back'
+      inputData: TTypeInfo['inputs']['create']
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      status: 'committed'
+      inputData: TTypeInfo['inputs']['update']
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TTypeInfo['item'] | undefined
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TTypeInfo['item'] | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'update'
+      status: 'rolled-back'
+      inputData: TTypeInfo['inputs']['update']
+      originalItem: TTypeInfo['item'] | undefined
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      status: 'committed'
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TTypeInfo['item'] | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      fieldKey: TFieldKey
+      operation: 'delete'
+      status: 'rolled-back'
+      originalItem: TTypeInfo['item'] | undefined
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
  * Arguments for field-level resolveOutput hook
  * Used to transform field values after database read
  */
@@ -277,6 +396,53 @@ export type FieldHooks<
    * ```
    */
   afterOperation?: (args: FieldAfterOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+
+  /**
+   * Perform side effects BEFORE the write's database transaction opens
+   * (#590 / ADR-0010 transaction-boundary hook).
+   *
+   * Unlike `beforeOperation` (which runs INSIDE the transaction and rolls back
+   * with it), this runs OUTSIDE the transaction — use it for non-transactional
+   * side effects such as external API calls that must not hold a DB transaction
+   * open and cannot be rolled back. If this throws, the write is aborted (the
+   * transaction never opens) and the paired `afterTransaction` fires with
+   * `status: 'rolled-back'`.
+   *
+   * @example
+   * ```typescript
+   * beforeTransaction: async ({ operation, inputData }) => {
+   *   await externalApi.reserve(inputData.externalId)
+   * }
+   * ```
+   */
+  beforeTransaction?: (
+    args: FieldBeforeTransactionHookArgs<TTypeInfo, TFieldKey>,
+  ) => Promise<void> | void
+
+  /**
+   * Perform side effects AFTER the write's database transaction settles
+   * (#590 / ADR-0010 transaction-boundary hook).
+   *
+   * ALWAYS runs when the paired `beforeTransaction` ran (symmetric bracket),
+   * receiving `status: 'committed' | 'rolled-back'`. On `committed` it gets the
+   * persisted `item` ONLY for the top-level record (`undefined` for nested
+   * lists — use the in-transaction `afterOperation` for per-record nested
+   * compensation); on `rolled-back` it gets the `error` that caused the
+   * rollback and NO `item`, so it can compensate for whatever `beforeTransaction`
+   * did externally.
+   *
+   * @example
+   * ```typescript
+   * afterTransaction: async (args) => {
+   *   if (args.status === 'rolled-back') {
+   *     await externalApi.release(args.inputData.externalId)
+   *   }
+   * }
+   * ```
+   */
+  afterTransaction?: (
+    args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>,
+  ) => Promise<void> | void
 
   /**
    * Transform field value after database read
@@ -1269,6 +1435,117 @@ export type AfterOperationHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
+/**
+ * Hook arguments for the list-level beforeTransaction hook (#590 / ADR-0010).
+ *
+ * Runs BEFORE the write's transaction opens (outside it). Has input data but no
+ * persisted `item`. For update/delete the existing `item` is best-effort:
+ * present for the top-level target (resolved before the transaction opens) and
+ * `undefined` for nested targets. For non-transactional side effects whose
+ * compensation pairs with `afterTransaction`.
+ */
+export type BeforeTransactionHookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
+  | {
+      listKey: string
+      operation: 'create'
+      inputData: TCreateInput
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'update'
+      inputData: TUpdateInput
+      item: TOutput | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'delete'
+      item: TOutput | undefined
+      context: import('../access/types.js').AccessContext
+    }
+
+/**
+ * Hook arguments for the list-level afterTransaction hook (#590 / ADR-0010).
+ *
+ * Runs AFTER the write's transaction settles and ALWAYS runs when the paired
+ * `beforeTransaction` ran (symmetric bracket). The `status` discriminant tells
+ * the hook whether the write committed or rolled back:
+ *  - `committed`: the persisted `item`/`originalItem` are populated ONLY for the
+ *    TOP-LEVEL record of the write. For NESTED lists they are `undefined` — the
+ *    per-record persisted row is not reliably recoverable outside the
+ *    transaction (recovering it would duplicate #569's in-transaction id-diff
+ *    machinery), and these hooks fire at per-(list, operation) granularity, not
+ *    per record. For per-record nested compensation use the in-transaction
+ *    `afterOperation` (which receives the correct nested `item`);
+ *    transaction-boundary hooks are for external-call compensation keyed off
+ *    `status`/`inputData`.
+ *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
+ *    `error` that caused the rollback so it can compensate.
+ */
+export type AfterTransactionHookArgs<
+  TOutput = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
+  | {
+      listKey: string
+      operation: 'create'
+      status: 'committed'
+      inputData: TCreateInput
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TOutput | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'create'
+      status: 'rolled-back'
+      inputData: TCreateInput
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'update'
+      status: 'committed'
+      inputData: TUpdateInput
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TOutput | undefined
+      /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
+      item: TOutput | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'update'
+      status: 'rolled-back'
+      inputData: TUpdateInput
+      originalItem: TOutput | undefined
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'delete'
+      status: 'committed'
+      /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
+      originalItem: TOutput | undefined
+      context: import('../access/types.js').AccessContext
+    }
+  | {
+      listKey: string
+      operation: 'delete'
+      status: 'rolled-back'
+      originalItem: TOutput | undefined
+      error: unknown
+      context: import('../access/types.js').AccessContext
+    }
+
 export type Hooks<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
@@ -1284,6 +1561,26 @@ export type Hooks<
   afterOperation?: (
     args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void>
+  /**
+   * Side effect BEFORE the write's transaction opens (#590 / ADR-0010).
+   * Runs OUTSIDE the transaction — for non-transactional work (external API
+   * calls). Throwing aborts the write; the paired `afterTransaction` then fires
+   * with `status: 'rolled-back'`. See {@link BeforeTransactionHookArgs}.
+   */
+  beforeTransaction?: (
+    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+  ) => Promise<void> | void
+  /**
+   * Side effect AFTER the write's transaction settles (#590 / ADR-0010).
+   * ALWAYS runs when `beforeTransaction` ran; receives `committed | rolled-back`
+   * + `error`. The persisted `item`/`originalItem` are present only on commit
+   * AND only for the top-level record (`undefined` for nested lists). The
+   * compensation half of the transaction-boundary bracket. See
+   * {@link AfterTransactionHookArgs}.
+   */
+  afterTransaction?: (
+    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+  ) => Promise<void> | void
   /**
    * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
    */

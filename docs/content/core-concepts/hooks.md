@@ -51,6 +51,15 @@ Post: list({
         console.log('Changed from:', originalItem, 'to:', item)
       }
     },
+    beforeTransaction: async ({ operation, inputData }) => {
+      // OUTSIDE the transaction — non-transactional side effects only.
+    },
+    afterTransaction: async (args) => {
+      // OUTSIDE the transaction — always runs; compensate on rollback.
+      if (args.status === 'rolled-back') {
+        // undo whatever beforeTransaction did externally (args.error explains why)
+      }
+    },
   },
 })
 ```
@@ -100,6 +109,83 @@ fields: {
 2. **Field-level access control** - Filter readable fields
 3. **Field-level `resolveOutput`** - Transform individual field values
 4. **Field-level `afterOperation`** - Side effects for individual fields
+
+## In-transaction vs transaction-boundary hooks
+
+Every write runs inside one database transaction (see ADR-0010). The side-effect
+hooks split into two families by where they run relative to that transaction:
+
+- **In-transaction hooks — `beforeOperation` / `afterOperation`.** They run
+  _inside_ the transaction and roll back with it. Use them for work that must be
+  atomic with the write — typically further database work through
+  `context.db`/`context.prisma` (which the pipeline binds to the transaction for
+  the duration of the write). A throwing `afterOperation` rolls the write back.
+  **Do not** make non-transactional external calls (HTTP, email, billing) here:
+  holding a transaction open across a network call is bad, and such calls can't
+  be rolled back.
+
+- **Transaction-boundary hooks — `beforeTransaction` / `afterTransaction`.** They
+  run _outside_ the transaction and form a compensation bracket around it:
+  - `beforeTransaction` runs **before** the transaction opens.
+  - `afterTransaction` runs **after** it settles and **always runs** (when its
+    paired `beforeTransaction` ran), receiving the outcome:
+    `status: 'committed' | 'rolled-back'`. On `committed` it gets the persisted
+    `item`; on `rolled-back` it gets the `error` that caused the rollback and **no
+    `item`** — so it can undo whatever `beforeTransaction` did externally.
+
+  Both fire **per list involved** in the write (the top-level list plus each
+  nested create/update/delete list). The bracket is **symmetric**: a list's
+  `afterTransaction` runs if and only if its `beforeTransaction` ran, so every
+  external action taken has its paired compensator. A throwing
+  `beforeTransaction` aborts the write (the transaction never opens) and triggers
+  `afterTransaction` (`rolled-back`) only for the lists whose `beforeTransaction`
+  already ran. If an `afterTransaction` itself throws, the remaining
+  compensators still run and the error(s) are surfaced afterward — the database
+  state is already final. Sudo does not affect these hooks; they always run.
+
+  Important caveats for these hooks:
+  - **`item`/`originalItem` are populated only for the TOP-LEVEL record.** On
+    `committed`, the persisted `item` (and `originalItem` for update/delete) is
+    surfaced only for the top-level list; for **nested** lists they are
+    `undefined`. The per-record persisted row is not reliably recoverable outside
+    the transaction, and these hooks fire at list (not record) granularity. For
+    per-record nested compensation use the in-transaction `afterOperation`, which
+    receives the correct nested `item`. Transaction-boundary hooks on nested lists
+    are for external-call compensation keyed off `status`/`inputData`.
+  - **Granularity is per-`(list, operation)`, not strictly per-list.** A list
+    reached under two operations (e.g. a nested `create` _and_ a nested `update`
+    of the same list) fires its boundary hooks **twice** — once per operation —
+    and only the **first** nested record's `inputData` for that operation is
+    surfaced. Many nested records of the same `(list, operation)` fire the bracket
+    once.
+  - **`connectOrCreate` is enumerated as create-involvement best-effort.** A
+    `connectOrCreate` that resolves to **connect** (the row already exists) still
+    fires the bracket as a `create` involvement even though no row is written.
+    Write your compensators to be **idempotent** so a no-op write is safe to
+    compensate.
+
+### Compensation pattern
+
+Pair an external action in `beforeTransaction` with its undo in
+`afterTransaction`'s `rolled-back` branch:
+
+```typescript
+hooks: {
+  beforeTransaction: async ({ operation, inputData }) => {
+    // Non-transactional side effect — reserve an external resource.
+    await billing.reserveSeat(inputData.seatId)
+  },
+  afterTransaction: async (args) => {
+    if (args.status === 'rolled-back') {
+      // The DB write did not persist — release what beforeTransaction reserved.
+      await billing.releaseSeat(args.inputData.seatId)
+    } else {
+      // Committed — finalize the external action.
+      await billing.confirmSeat(args.item.seatId)
+    }
+  },
+}
+```
 
 ## Hook Context
 
