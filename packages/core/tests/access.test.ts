@@ -9,6 +9,7 @@ import {
   isPrismaFilter,
 } from '../src/access/index.js'
 import type { AccessControl, FieldAccess, AccessContext } from '../src/access/types.js'
+import { ValidationError } from '../src/hooks/index.js'
 
 describe('Access Control', () => {
   const mockContext: AccessContext = {
@@ -406,7 +407,9 @@ describe('Access Control', () => {
       expect(result.name).toBe('John')
     })
 
-    it('should filter out fields with denied write access', async () => {
+    // #568: a denied write field must THROW (Keystone fail-loud parity), rather
+    // than being silently stripped. Updated from the old silent-strip contract.
+    it('should throw when a field with denied write access is supplied', async () => {
       const data = {
         name: 'John',
         email: 'john@example.com',
@@ -424,16 +427,21 @@ describe('Access Control', () => {
         },
       }
 
-      const result = await filterWritableFields(data, fieldConfigs, 'create', {
-        session: null,
-        context: mockContext,
-      })
-
-      expect(result.name).toBe('John')
-      expect(result.email).toBe('john@example.com')
-      expect(result.role).toBeUndefined()
+      await expect(
+        filterWritableFields(data, fieldConfigs, 'create', {
+          session: null,
+          context: mockContext,
+        }),
+      ).rejects.toThrow(ValidationError)
+      await expect(
+        filterWritableFields(data, fieldConfigs, 'create', {
+          session: null,
+          context: mockContext,
+        }),
+      ).rejects.toThrow(/role/)
     })
 
+    // #568: create-allowed / update-denied — create passes, update THROWS.
     it('should respect different access for create vs update', async () => {
       const data = {
         email: 'john@example.com',
@@ -457,13 +465,13 @@ describe('Access Control', () => {
 
       expect(createResult.email).toBe('john@example.com')
 
-      // Deny on update
-      const updateResult = await filterWritableFields(data, fieldConfigs, 'update', {
-        session: null,
-        context: mockContext,
-      })
-
-      expect(updateResult.email).toBeUndefined()
+      // Deny on update — now throws instead of silently dropping the field.
+      await expect(
+        filterWritableFields(data, fieldConfigs, 'update', {
+          session: null,
+          context: mockContext,
+        }),
+      ).rejects.toThrow(/email/)
     })
 
     it('should pass item to field access on update', async () => {
