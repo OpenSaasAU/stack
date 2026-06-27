@@ -1376,17 +1376,27 @@ export function json<
       const baseSchema = z.unknown()
 
       if (isRequired && operation === 'create') {
-        // Required in create mode: value must be provided (any present JSON
-        // value is accepted, including null). A bare z.unknown() is treated as
-        // optional inside z.object(), so an omitted key would silently pass;
-        // the refinement makes the key genuinely required by rejecting
-        // undefined (which also covers an absent key).
-        return baseSchema.refine((value) => value !== undefined, {
+        // Required in create mode: a value must be provided and it must be
+        // non-null (issue #604 — a required json field means non-null). A bare
+        // z.unknown() is treated as optional inside z.object(), so an omitted
+        // key would silently pass; the refinement makes the key genuinely
+        // required by rejecting undefined (which also covers an absent key) and
+        // rejecting a present null, while still accepting any other present
+        // JSON value (object, array, primitive, including falsy 0/""/false).
+        return baseSchema.refine((value) => value !== undefined && value !== null, {
           message: `${formatFieldName(fieldName)} is required`,
         })
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: omitted keys pass; present values must be valid
-        return baseSchema.optional()
+        // Required in update mode: omitted keys still pass (issue #570 — partial
+        // updates may leave the field untouched), but a present null is rejected
+        // (issue #604 — required json means non-null). The `.refine()` runs
+        // before `.optional()` short-circuits on undefined: absent/undefined
+        // passes, a present null is rejected, and other present values pass.
+        return baseSchema
+          .refine((value) => value !== null, {
+            message: `${formatFieldName(fieldName)} is required`,
+          })
+          .optional()
       } else {
         // Not required: can be undefined or null
         return baseSchema.optional().nullable()
