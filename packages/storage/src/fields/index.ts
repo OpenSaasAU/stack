@@ -302,8 +302,11 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
         metadata: z.record(z.string(), z.unknown()).optional(),
       })
 
-      // Allow null or undefined values
-      return z.union([fileMetadataSchema, z.null(), z.undefined()])
+      // Allow null or undefined values. `.nullish()` (= `.nullable().optional()`)
+      // makes the object KEY optional in Zod 4 — a bare union that merely accepts
+      // an `undefined` value does NOT (see issue #618, and the #570 precedent in
+      // core's validation tests).
+      return fileMetadataSchema.nullish()
     },
 
     getPrismaType: (_fieldName: string) => {
@@ -506,8 +509,11 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           .optional(),
       })
 
-      // Allow null or undefined values
-      return z.union([imageMetadataSchema, z.null(), z.undefined()])
+      // Allow null or undefined values. `.nullish()` (= `.nullable().optional()`)
+      // makes the object KEY optional in Zod 4 — a bare union that merely accepts
+      // an `undefined` value does NOT (see issue #618, and the #570 precedent in
+      // core's validation tests).
+      return imageMetadataSchema.nullish()
     },
 
     getPrismaType: (_fieldName: string) => {
