@@ -240,6 +240,27 @@ describe('#614 context.transaction (interactive transaction)', () => {
     expect(seen).toBe('42')
   })
 
+  it('sudo() writes inside the transaction are atomic and roll back with it', async () => {
+    const context = getContext(await baseConfig(), mock.client, { userId: '1' })
+
+    // A sudo write persists when the transaction commits.
+    const created = await context.transaction((tx) =>
+      tx.sudo().db.user.create({ data: { name: 'jane' } }),
+    )
+    expect(created).toEqual(expect.objectContaining({ name: 'jane' }))
+    expect(mock.tables.user.size).toBe(1)
+
+    // A sudo write rolls back when the transaction throws (it is bound to `tx`,
+    // not the original client).
+    await expect(
+      context.transaction(async (tx) => {
+        await tx.sudo().db.user.create({ data: { name: 'rollback-me' } })
+        throw new Error('boom')
+      }),
+    ).rejects.toThrow('boom')
+    expect(mock.tables.user.size).toBe(1)
+  })
+
   it('falls back to running directly when the client has no $transaction', async () => {
     // A client without `$transaction` (e.g. a plain mock or an already-open tx).
     const tables = new Map<string, Record<string, unknown>>()

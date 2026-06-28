@@ -299,6 +299,13 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
    * the client cannot open an interactive transaction (e.g. a plain mock, or we
    * are already inside a transaction), `fn` runs directly against the current
    * client with identical hook/access semantics.
+   *
+   * Caveat: plugin runtime services (`txContext.plugins`) stay bound to the
+   * top-level (non-transaction) client — they are shared services initialised
+   * once per request. Reads through a plugin service therefore won't see this
+   * transaction's uncommitted writes, and a plugin service that WRITES would
+   * escape the transaction and survive a rollback. Use `txContext.db` (not a
+   * plugin service) for writes that must be atomic with the transaction.
    */
   transaction: <T>(
     fn: (txContext: StackContext<TPrisma>) => Promise<T>,
