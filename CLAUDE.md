@@ -626,6 +626,19 @@ const context = await getContext({ userId: 'user-123' })
 const myPosts = await context.db.post.findMany()
 ```
 
+**Interactive transactions:** Use `context.transaction(async (txContext) => { … }, { isolationLevel })` to run several access-checked, hook-firing `context.db.*` operations atomically in one transaction. Unlike raw `prisma.$transaction` (which bypasses access control and hooks), `txContext.db.*` keeps the security/validation boundary. Pass `{ isolationLevel: 'Serializable' }` for concurrency-sensitive invariants (e.g. a capacity gate); serialization failures (Prisma `P2034`) propagate so the caller can retry. See ADR-0012 and `packages/core/CLAUDE.md`.
+
+```typescript
+const result = await context.transaction(
+  async (tx) => {
+    const count = await tx.db.booking.count({ where: { slotId } })
+    if (count >= capacity) return { booked: false }
+    return { booked: true, item: await tx.db.booking.create({ data: { slotId } }) }
+  },
+  { isolationLevel: 'Serializable' },
+)
+```
+
 **Prisma Client Constructor (Required for Prisma 7):**
 
 Prisma 7 requires database adapters. You must provide a `prismaClientConstructor` function in your config:

@@ -34,6 +34,11 @@ export type {
 
 // Context factory
 export { getContext } from './context/index.js'
+export type {
+  StackContext,
+  TransactionOptions,
+  TransactionIsolationLevel,
+} from './context/index.js'
 
 // Naming utilities (documented public helpers; used for URLs and db keys)
 export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'

@@ -118,6 +118,56 @@ Hook types:
 
 - `createContext(config, prisma, session?)` - Creates context wrapper
 - Returns `{ db, session }` where `db` is Prisma client with access control
+- `context.transaction(fn, options?)` - Interactive, hook-firing transaction (see below)
+
+#### Interactive transactions (`context.transaction`)
+
+`context.transaction(async (txContext) => { … }, { isolationLevel })` runs the
+callback inside **one** Prisma interactive transaction. `txContext` is a full
+context whose `db.*` operations are access-checked and hook-firing exactly like
+the request context, but persist against the transaction client — so every write
+in the callback is **atomic** and a throw anywhere rolls the whole transaction
+back. This is the secured alternative to raw `prisma.$transaction`, which
+bypasses access control and hooks.
+
+Use it to atomically enforce concurrency-sensitive invariants (e.g. a
+capacity/quota gate) while preserving the access/hook boundary:
+
+```typescript
+async function bookSlot(context: StackContext, slotId: string) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await context.transaction(
+        async (tx) => {
+          const count = await tx.db.booking.count({ where: { slotId } })
+          if (count >= CAPACITY) return { booked: false }
+          return { booked: true, item: await tx.db.booking.create({ data: { slotId } }) }
+        },
+        { isolationLevel: 'Serializable' },
+      )
+    } catch (err) {
+      // Serialization failures (Prisma P2034) PROPAGATE — the caller owns retry.
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'P2034') continue
+      throw err
+    }
+  }
+  throw new Error('exceeded retry budget')
+}
+```
+
+Key points:
+
+- **Options pass through** to Prisma — `isolationLevel` (incl. `'Serializable'`),
+  `maxWait`, `timeout`.
+- **Serialization failures propagate** (they are NOT converted to a silent
+  `null`), so the caller can implement a retry loop. Built-in retry is not
+  provided — the caller owns it (matching Keystone 6's `context.transaction`).
+- **Nested `context.db` writes join** the outer transaction (a Prisma tx client
+  exposes no `$transaction`, so the Write Pipeline's existing fallback runs them
+  against the active client).
+- If the client cannot open an interactive transaction (e.g. a test mock, or you
+  are already inside one), `fn` runs directly with identical hook/access
+  semantics. See ADR-0012.
 
 ### Generators (`src/generator/`)
 
