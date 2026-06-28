@@ -1,5 +1,45 @@
 # @opensaas/stack-core
 
+## 0.26.0
+
+### Minor Changes
+
+- [#616](https://github.com/OpenSaasAU/stack/pull/616) [`322d5b6`](https://github.com/OpenSaasAU/stack/commit/322d5b64d11c3e3401493511e0c0e3a1fa20e210) Thanks [@borisno2](https://github.com/borisno2)! - Add `context.transaction()` — an interactive, hook-firing transaction
+
+  You can now run multiple access-checked `context.db.*` operations atomically in one transaction while preserving the access/hook boundary (unlike raw `prisma.$transaction`, which bypasses both). The callback receives a full context whose `db.*` operations enforce access control and run list/field hooks, but persist against a single interactive transaction — so a throw anywhere rolls the whole transaction back.
+
+  Options (notably `isolationLevel`, plus `maxWait`/`timeout`) pass through to Prisma, and serialization failures (Prisma `P2034`) propagate to the caller so you own the retry loop. This makes concurrency-sensitive invariants such as a capacity gate enforceable:
+
+  ```typescript
+  async function bookSlot(context, slotId) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await context.transaction(
+          async (tx) => {
+            const count = await tx.db.booking.count({ where: { slotId } })
+            if (count >= CAPACITY) return { booked: false }
+            return { booked: true, item: await tx.db.booking.create({ data: { slotId } }) }
+          },
+          { isolationLevel: 'Serializable' },
+        )
+      } catch (err) {
+        // Serialization failures propagate — retry is caller-owned.
+        if (err && typeof err === 'object' && 'code' in err && err.code === 'P2034') continue
+        throw err
+      }
+    }
+    throw new Error('exceeded retry budget')
+  }
+  ```
+
+  Nested `context.db` writes inside the callback join the outer transaction. New `StackContext`, `TransactionOptions`, and `TransactionIsolationLevel` types are exported from `@opensaas/stack-core`. See ADR-0012.
+
+### Patch Changes
+
+- [#620](https://github.com/OpenSaasAU/stack/pull/620) [`0be254e`](https://github.com/OpenSaasAU/stack/commit/0be254e2b2e6bbc0c2f168438aea49d2e1cc7f0b) Thanks [@borisno2](https://github.com/borisno2)! - Apply a field's defaultValue to omitted inputs before create validation (resolve-then-validate, matching Keystone), so isRequired + defaultValue no longer fails on create.
+
+  Note: because an omitted-but-defaulted field is now filled into `resolvedData` before validation, that field's create-side field-level `beforeOperation`/`afterOperation` hooks (gated on the field key being present in `resolvedData`) now fire for defaulted fields where they previously would not.
+
 ## 0.25.0
 
 ### Minor Changes

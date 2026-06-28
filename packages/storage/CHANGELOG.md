@@ -1,5 +1,11 @@
 # @opensaas/stack-storage
 
+## 0.26.0
+
+### Patch Changes
+
+- [#619](https://github.com/OpenSaasAU/stack/pull/619) [`29ca3a9`](https://github.com/OpenSaasAU/stack/commit/29ca3a9fdd90af4e34b9ff770ae9a5ae94df2337) Thanks [@borisno2](https://github.com/borisno2)! - Fix file()/image() fields being required on create/update: their Zod schema now uses key-optionality (.nullish()) so an omitted field validates and stores null (Zod 4).
+
 ## 0.25.0
 
 ## 0.24.0
