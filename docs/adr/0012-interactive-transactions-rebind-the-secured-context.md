@@ -1,0 +1,30 @@
+# Interactive transactions rebind the secured context to one transaction client
+
+Status: accepted
+
+To let an application atomically enforce a **concurrency-sensitive invariant** (e.g. a capacity/quota gate) without dropping the access/hook boundary (issue #614), the stack `Context` exposes an interactive transaction: `context.transaction(async (txContext) => { … }, { isolationLevel })`. The `txContext.db.*` operations are access-checked and hook-firing — identical to the request context — but persist against **one** Prisma interactive transaction, so every write in the callback is atomic and a throw anywhere rolls the whole transaction back. `options` (notably `isolationLevel`, plus `maxWait`/`timeout`) pass through to Prisma, and serialization failures (e.g. Prisma `P2034`) propagate to the caller for a caller-owned retry loop.
+
+**Realized mechanism (rebind, don't rebuild the engine).** `transaction()` opens `prisma.$transaction(fn, options)` and, inside it, rebuilds the whole secured context against the transaction client `tx` via the same `getContext` factory used at request time — reusing the existing per-write rebind primitive (`buildDbDelegate`/`populateDbDelegate`) that ADR-0010 already threads for nested writes. The callback receives a full `StackContext` (`db`, `session`, `prisma`, `storage`, `plugins`, `serverAction`, `sudo`, `transaction`) whose only difference is that `db`/`prisma` target `tx`. Nested `context.db` writes inside the callback therefore go through the unchanged Write Pipeline; because a Prisma transaction client exposes **no** `$transaction`, the pipeline's existing "no interactive client → run directly against the current client" fallback makes them **join** the outer transaction rather than (illegally) opening a nested one.
+
+**Plugin runtimes run once.** Rebuilding the context per transaction must not re-run plugin `runtime()` side effects, so the transaction rebind passes the already-initialised `plugins` object through to `getContext` and the runtime loop is skipped when shared plugins are supplied. Plugin services thus stay bound to the top-level context (the shared-services contract), which is acceptable: the transaction boundary is about `db` persistence, not plugin re-initialisation.
+
+## Context
+
+The stack already made **every write** transactional (ADR-0010), but that boundary is per top-level write: there was no caller-facing way to span **multiple** `context.db.*` operations in one transaction. The only multi-operation transaction available was the raw `prisma.$transaction`, which runs against the bare Prisma client and so **bypasses** operation/field access control and list `resolveInput`/`validate`/`beforeOperation`/`afterOperation` hooks — dropping the security/validation boundary.
+
+A capacity gate ("re-read the live count inside the transaction, gate on `count < capacity`, then create — atomically, serializable") cannot be expressed safely without this. A `context.db`-only workaround (create + recount + compensating delete) is not atomic and cannot guarantee exactly-N under contention. Keystone 6 provided exactly this as `context.transaction`.
+
+## Considered options
+
+- **Rebind the secured context to the transaction client via `getContext` (chosen).** Reuse the request-time factory and the ADR-0010 rebind primitive; the callback gets a normal `StackContext` bound to `tx`. Full access/hook parity with zero new persistence logic, and nested writes join the transaction through the existing fallback. Cost: a per-transaction context rebuild (cheap — it only rebuilds delegates) and the need to avoid re-running plugin runtimes.
+- **Caller-owned retry only; no built-in retry helper (chosen for serialization failures).** `P2034` (and any thrown business/validation error) propagates out of `transaction()` unchanged so the caller owns the retry loop — matching Keystone 6. A built-in `retryOnSerializationFailure` helper is deferred as a later convenience; baking a retry policy into core now would prejudge backoff/limits the caller is better placed to choose.
+- **Expose raw `prisma.$transaction` and document it.** Rejected: it is precisely the access/hook-bypassing path this issue exists to replace.
+- **A non-interactive (array-of-operations) transaction form.** Rejected for #614: the concurrency-gate use case requires reading and branching **inside** the transaction, which only the interactive callback form supports.
+
+## Consequences
+
+- **`context.transaction` is the secured multi-operation transaction; raw `prisma.$transaction` remains the unsecured escape hatch.** Application code that needs atomicity across several `context.db` calls — especially under contention — should use `context.transaction`.
+- **Selectable isolation, including `Serializable`.** `options.isolationLevel` passes through to Prisma. `Serializable` (PostgreSQL) plus a caller retry loop yields the exactly-N capacity guarantee; under contention racers that read a now-stale predicate fail with `P2034`, retry, re-read, and converge.
+- **Serialization failures are not silent.** Consistent with the rule that only access denial returns `null` while misuse/database errors throw, a `P2034` raised inside the callback rejects the `transaction()` promise rather than collapsing to `null`.
+- **Nested-transaction calls degrade to "join".** Calling `txContext.transaction(...)` inside a transaction (or running against a client with no `$transaction`, e.g. a test mock) runs the inner callback directly against the current client — identical hook/access semantics, with atomicity provided by the enclosing transaction. This mirrors the ADR-0010 `runInTransaction` fallback and avoids an illegal nested interactive transaction.
+- **Builds directly on ADR-0010.** This is the caller-facing surface over the same single-transaction boundary and rebind primitive ADR-0010 introduced for nested writes; the in-transaction `beforeOperation`/`afterOperation` and `beforeTransaction`/`afterTransaction` semantics are unchanged.

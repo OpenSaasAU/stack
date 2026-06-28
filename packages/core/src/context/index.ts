@@ -231,6 +231,84 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
 }
 
 /**
+ * Database transaction isolation levels.
+ *
+ * Mirrors Prisma's `TransactionIsolationLevel`. The level passed to
+ * {@link StackContext.transaction} is forwarded to the underlying interactive
+ * transaction; provider support varies (e.g. `Serializable` is supported by
+ * PostgreSQL — required for the concurrency-sensitive capacity-gate pattern).
+ */
+export type TransactionIsolationLevel =
+  | 'ReadUncommitted'
+  | 'ReadCommitted'
+  | 'RepeatableRead'
+  | 'Serializable'
+  | 'Snapshot'
+
+/**
+ * Options for {@link StackContext.transaction}, forwarded verbatim to the
+ * underlying Prisma interactive transaction.
+ */
+export interface TransactionOptions {
+  /** Max ms to wait to acquire a transaction from the pool. */
+  maxWait?: number
+  /** Max ms the interactive transaction may run before timing out. */
+  timeout?: number
+  /** Isolation level for the transaction (e.g. `'Serializable'`). */
+  isolationLevel?: TransactionIsolationLevel
+}
+
+/**
+ * Minimal shape of a Prisma client that can open an interactive transaction.
+ * A Prisma transaction client (the `tx` handed to the callback) intentionally
+ * does NOT expose `$transaction`, which is how nested writes detect they are
+ * already inside a transaction and join it rather than opening another.
+ */
+interface TransactionCapable<TPrisma> {
+  $transaction?: (
+    fn: (tx: TPrisma) => Promise<unknown>,
+    options?: TransactionOptions,
+  ) => Promise<unknown>
+}
+
+/**
+ * The access-controlled context returned by {@link getContext}.
+ *
+ * Exposes the secured `db` delegate plus the session, raw `prisma`, storage,
+ * plugin services, the generic `serverAction` handler, `sudo()` (bypasses access
+ * control but still runs hooks), and `transaction()` (interactive, hook-firing
+ * transaction). All access-checked operations run their list/field hooks.
+ */
+export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
+  db: AccessControlledDB<TPrisma>
+  session: Session | null
+  prisma: TPrisma
+  storage: StorageUtils
+  plugins: Record<string, unknown>
+  serverAction: (props: ServerActionProps) => Promise<unknown>
+  /**
+   * Run `fn` inside ONE interactive transaction. The `txContext` handed to `fn`
+   * is a full {@link StackContext} whose `db.*` operations are access-checked and
+   * hook-firing (identical to this context) but persist against the transaction
+   * client, so every write in the callback is atomic — a throw anywhere rolls the
+   * whole transaction back.
+   *
+   * `options` (notably `isolationLevel`) is forwarded to the underlying Prisma
+   * transaction. Serialization failures (e.g. Prisma `P2034`) propagate to the
+   * caller rather than being swallowed, so the caller can own a retry loop. If
+   * the client cannot open an interactive transaction (e.g. a plain mock, or we
+   * are already inside a transaction), `fn` runs directly against the current
+   * client with identical hook/access semantics.
+   */
+  transaction: <T>(
+    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
+    options?: TransactionOptions,
+  ) => Promise<T>
+  sudo: () => StackContext<TPrisma>
+  _isSudo: boolean
+}
+
+/**
  * Create an access-controlled context
  *
  * @param config - OpenSaas configuration
@@ -247,25 +325,10 @@ export function getContext<
   session: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
-): {
-  db: AccessControlledDB<TPrisma>
-  session: Session | null
-  prisma: TPrisma
-  storage: StorageUtils
-  plugins: Record<string, unknown>
-  serverAction: (props: ServerActionProps) => Promise<unknown>
-  _isSudo: boolean
-  sudo: () => {
-    db: AccessControlledDB<TPrisma>
-    session: Session | null
-    prisma: TPrisma
-    storage: StorageUtils
-    plugins: Record<string, unknown>
-    serverAction: (props: ServerActionProps) => Promise<unknown>
-    sudo: () => unknown
-    _isSudo: boolean
-  }
-} {
+  // Internal: when rebuilding the context against a transaction client, reuse the
+  // already-initialised plugin services rather than re-running plugin runtimes.
+  _sharedPlugins?: Record<string, unknown>,
+): StackContext<TPrisma> {
   // Initialize db object - will be populated with access-controlled operations
   // Type is intentionally broad to allow dynamic model access
   const db: Record<string, unknown> = {}
@@ -298,7 +361,9 @@ export function getContext<
         )
       },
     },
-    plugins: {}, // Will be populated with plugin runtime services
+    // Reuse already-initialised plugin services when rebinding to a transaction
+    // client, otherwise start empty and populate via plugin runtimes below.
+    plugins: _sharedPlugins ?? {},
     _isSudo,
     _resolveOutputCounter: { depth: 0 },
   }
@@ -306,16 +371,20 @@ export function getContext<
   // Create access-controlled operations for each list, populating `db` in place.
   populateDbDelegate(db, config, prisma, context)
 
-  // Execute plugin runtime functions and populate context.plugins
+  // Execute plugin runtime functions and populate context.plugins.
+  // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
+  // any side effects they carry — run exactly once per top-level context.
   // Use _plugins (sorted by dependencies) if available, otherwise fall back to plugins array
-  const pluginsToExecute = config._plugins || config.plugins || []
-  for (const plugin of pluginsToExecute) {
-    if (plugin.runtime) {
-      try {
-        context.plugins[plugin.name] = plugin.runtime(context)
-      } catch (error) {
-        console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
-        // Continue with other plugins even if one fails
+  if (!_sharedPlugins) {
+    const pluginsToExecute = config._plugins || config.plugins || []
+    for (const plugin of pluginsToExecute) {
+      if (plugin.runtime) {
+        try {
+          context.plugins[plugin.name] = plugin.runtime(context)
+        } catch (error) {
+          console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
+          // Continue with other plugins even if one fails
+        }
       }
     }
   }
@@ -411,11 +480,35 @@ export function getContext<
 
   // Sudo function - creates a new context that bypasses access control
   // but still executes all hooks and validation
-  function sudo() {
+  function sudo(): StackContext<TPrisma> {
     return getContext(config, prisma, session, context.storage, true)
   }
 
-  return {
+  // Interactive, hook-firing transaction (#614). Rebinds the access-controlled
+  // context to the transaction client so every `txContext.db.*` write runs its
+  // access checks + hooks but persists inside ONE transaction (atomic). The
+  // transaction `options` (e.g. `isolationLevel`) pass through to Prisma, and a
+  // serialization failure thrown inside the callback propagates to the caller
+  // for retry (it is never converted to a silent `null`).
+  function transaction<T>(
+    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
+    options?: TransactionOptions,
+  ): Promise<T> {
+    const client = prisma as unknown as TransactionCapable<TPrisma>
+    if (typeof client.$transaction !== 'function') {
+      // No interactive transaction available — either a plain client/mock or we
+      // are already inside a transaction (a Prisma tx client exposes no
+      // `$transaction`). Run directly: hook/access semantics are identical and
+      // atomicity is provided by any enclosing transaction.
+      return fn(returned)
+    }
+    return client.$transaction(
+      (tx) => fn(getContext(config, tx, session, context.storage, _isSudo, context.plugins)),
+      options,
+    ) as Promise<T>
+  }
+
+  const returned: StackContext<TPrisma> = {
     db: db as AccessControlledDB<TPrisma>,
     session,
     prisma,
@@ -423,8 +516,10 @@ export function getContext<
     plugins: context.plugins,
     serverAction,
     sudo,
+    transaction,
     _isSudo,
   }
+  return returned
 }
 
 /**
