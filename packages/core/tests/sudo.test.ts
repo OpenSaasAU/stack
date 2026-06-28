@@ -138,8 +138,10 @@ describe('Sudo Context', () => {
         data: { title: 'New Post' },
       })
       expect(sudoResult).toMatchObject({ title: 'New Post' })
+      // `views` declares `defaultValue: 0`, so the omitted value is resolved to
+      // its default before persistence (#615 resolve-then-validate).
       expect(mockPrisma.post.create).toHaveBeenCalledWith({
-        data: { title: 'New Post' },
+        data: { title: 'New Post', views: 0 },
       })
     })
 
@@ -155,9 +157,11 @@ describe('Sudo Context', () => {
         data: { title: 'New Post', secretField: 'secret' },
       })
 
-      // Verify that secretField was passed to Prisma
+      // Verify that secretField was passed to Prisma. `views` declares
+      // `defaultValue: 0`, so the omitted value is resolved to its default
+      // before persistence (#615 resolve-then-validate).
       expect(mockPrisma.post.create).toHaveBeenCalledWith({
-        data: { title: 'New Post', secretField: 'secret' },
+        data: { title: 'New Post', secretField: 'secret', views: 0 },
       })
     })
 

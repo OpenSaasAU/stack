@@ -15,6 +15,7 @@ import {
   ValidationError,
 } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
+import { applyCreateDefaults } from './apply-defaults.js'
 
 /**
  * Nested writes (#569 / ADR-0010).
@@ -272,6 +273,12 @@ async function processNestedCreate(
         context,
         relatedListName,
       )
+
+      // 3.5 Apply field defaults to omitted inputs (resolve-then-validate, #615).
+      // Mirrors the top-level Hook Pipeline so a nested required-with-default
+      // field resolves to its default before validation instead of failing
+      // `isRequired`. Create-only; explicit values (incl. null) are preserved.
+      resolvedData = applyCreateDefaults(resolvedData, relatedListConfig.fields)
 
       // 4. Execute validate hook
       await executeValidate(relatedListConfig.hooks, {

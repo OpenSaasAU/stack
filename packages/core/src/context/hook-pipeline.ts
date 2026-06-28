@@ -8,6 +8,7 @@ import {
   validateFieldRules,
   ValidationError,
 } from '../hooks/index.js'
+import { applyCreateDefaults } from './apply-defaults.js'
 
 /**
  * Hook Pipeline — the single module that runs the transform+validate span of a
@@ -108,6 +109,16 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
     listName,
     item,
   )
+
+  // ── Phase 1.75: apply field defaults to omitted inputs (CREATE only) ───────
+  // Resolve-then-validate (Keystone parity, #615): a field declaring a
+  // `defaultValue` is filled into `resolvedData` here — AFTER resolveInput hooks
+  // and BEFORE validation — but only when the field was OMITTED, so a
+  // required-with-default field passes `isRequired` instead of failing it.
+  // Update is untouched (no default injection on update).
+  if (operation === 'create') {
+    resolvedData = applyCreateDefaults(resolvedData, listConfig.fields)
+  }
 
   // ── Phase 2: list-level validate ──────────────────────────────────────────
   await executeValidate(
