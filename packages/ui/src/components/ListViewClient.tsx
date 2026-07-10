@@ -17,6 +17,19 @@ import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
 import { getUrlKey } from '@opensaas/stack-core'
 
+/**
+ * A relationship value after the server has resolved its label via the
+ * shared label seam (`getItemLabel`) — see `ListView.tsx`.
+ */
+interface RelationshipLabelValue {
+  id: string
+  label: string
+}
+
+function isRelationshipLabelValue(value: unknown): value is RelationshipLabelValue {
+  return !!value && typeof value === 'object' && 'id' in value && 'label' in value
+}
+
 export interface ListViewClientProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
@@ -117,59 +130,62 @@ export function ListViewClient({
   }
 
   /**
-   * Render a relationship field as a clickable link or links
+   * Render a relationship field as a clickable link or links.
+   *
+   * `value` has already been resolved server-side (`ListView.tsx`) into
+   * `{ id, label }` pairs via the shared label seam (`getItemLabel`), so no
+   * label derivation happens here.
    */
   const renderRelationshipCell = (value: unknown, fieldName: string) => {
-    const ref = relationshipRefs[fieldName]
-    if (!ref) {
-      return getFieldDisplayValue(value, 'relationship')
-    }
-
-    // Parse ref to get related list name
-    const [relatedListKey] = ref.split('.')
-    const relatedUrlKey = getUrlKey(relatedListKey)
-
-    if (!value || typeof value !== 'object') {
+    if (!value) {
       return <span className="text-muted-foreground">-</span>
     }
 
+    const ref = relationshipRefs[fieldName]
+    const relatedUrlKey = ref ? getUrlKey(ref.split('.')[0]) : undefined
+
     // Handle array of relationships (many: true)
     if (Array.isArray(value)) {
-      if (value.length === 0) return <span className="text-muted-foreground">-</span>
+      const relatedItems = value.filter(isRelationshipLabelValue)
+      if (relatedItems.length === 0) return <span className="text-muted-foreground">-</span>
       return (
         <span className="flex flex-wrap gap-1">
-          {value.map((item, idx) => {
-            if (!item || typeof item !== 'object') return null
-            const displayValue = getFieldDisplayValue(item, 'relationship')
-            const itemId = 'id' in item ? item.id : null
-            const key = itemId || idx
-            return (
-              <React.Fragment key={key}>
-                {idx > 0 && <span className="text-muted-foreground">, </span>}
+          {relatedItems.map((item, idx) => (
+            <React.Fragment key={item.id}>
+              {idx > 0 && <span className="text-muted-foreground">, </span>}
+              {relatedUrlKey ? (
                 <Link
-                  href={`${basePath}/${relatedUrlKey}/${itemId}`}
+                  href={`${basePath}/${relatedUrlKey}/${item.id}`}
                   className="text-primary hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {displayValue}
+                  {item.label}
                 </Link>
-              </React.Fragment>
-            )
-          })}
+              ) : (
+                item.label
+              )}
+            </React.Fragment>
+          ))}
         </span>
       )
     }
 
     // Handle single relationship
-    const itemId = 'id' in value ? value.id : null
-    const displayValue = getFieldDisplayValue(value, 'relationship')
+    if (!isRelationshipLabelValue(value)) {
+      return <span className="text-muted-foreground">-</span>
+    }
+
+    if (!relatedUrlKey) {
+      return value.label
+    }
+
     return (
       <Link
-        href={`${basePath}/${relatedUrlKey}/${itemId}`}
+        href={`${basePath}/${relatedUrlKey}/${value.id}`}
         className="text-primary hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
-        {displayValue}
+        {value.label}
       </Link>
     )
   }

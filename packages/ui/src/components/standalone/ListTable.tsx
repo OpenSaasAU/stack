@@ -13,6 +13,37 @@ import {
   TableRow,
 } from '../../primitives/table.js'
 
+/**
+ * `ListTable` is a standalone component embedded by consumers with raw
+ * Prisma-shaped items and no list config, so it can't resolve labels via the
+ * shared label seam (`getItemLabel`) the way `ListView`/`ListViewClient` do.
+ * This local fallback (name → title → label → id) is intentionally private
+ * to this component so it can't drift against another copy elsewhere.
+ */
+function getRelationshipDisplayValue(value: unknown): string {
+  if (!value || typeof value !== 'object') {
+    return '-'
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-'
+    return value.map((item) => getRelationshipDisplayValue(item)).join(', ')
+  }
+
+  let displayValue: unknown
+  if ('name' in value) {
+    displayValue = value.name
+  } else if ('title' in value) {
+    displayValue = value.title
+  } else if ('label' in value) {
+    displayValue = value.label
+  } else if ('id' in value) {
+    displayValue = value.id
+  }
+
+  return displayValue ? String(displayValue) : '-'
+}
+
 export interface ListTableProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
@@ -64,12 +95,12 @@ export function ListTable({
    */
   const renderRelationshipCell = (value: unknown, fieldName: string) => {
     if (!relationshipRefs) {
-      return getFieldDisplayValue(value, 'relationship')
+      return getRelationshipDisplayValue(value)
     }
 
     const ref = relationshipRefs[fieldName]
     if (!ref) {
-      return getFieldDisplayValue(value, 'relationship')
+      return getRelationshipDisplayValue(value)
     }
 
     // Parse ref to get related list name
@@ -87,7 +118,7 @@ export function ListTable({
         <span className="flex flex-wrap gap-1">
           {value.map((item, idx) => {
             if (!item || typeof item !== 'object') return null
-            const displayValue = getFieldDisplayValue(item, 'relationship')
+            const displayValue = getRelationshipDisplayValue(item)
             const itemId = 'id' in item ? item.id : null
             const key = itemId || idx
             return (
@@ -109,7 +140,7 @@ export function ListTable({
 
     // Handle single relationship
     const itemId = 'id' in value ? value.id : null
-    const displayValue = getFieldDisplayValue(value, 'relationship')
+    const displayValue = getRelationshipDisplayValue(value)
     return (
       <Link
         href={`${basePath}/${relatedUrlKey}/${itemId}`}
