@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.25.0",
-    "@tiptap/pm": "^3.20.1",
+    "@tiptap/pm": "^3.27.1",
     "@tiptap/react": "^3.20.4",
     "@tiptap/starter-kit": "^3.20.1",
     "zod": "^4.3.6"
