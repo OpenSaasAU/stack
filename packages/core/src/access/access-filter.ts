@@ -251,3 +251,57 @@ export function mergeIncludeWithAccessControl(
 
   return merged
 }
+
+/**
+ * Remove keys that correspond to `virtual` fields from a Prisma `include`
+ * object, recursing into nested relationship includes using the related
+ * list's field configs.
+ *
+ * Virtual fields are computed in JavaScript (via `resolveOutput` in
+ * `field-visibility.ts`) and have no database column. Naming one in `include`
+ * type-checks — the generated `Include` type lists every field the config
+ * declares — but Prisma throws `Unknown field '<name>' for include statement`
+ * at runtime. This is applied as the final step on whatever `include` a read
+ * op ends up with (fragment-built, access-controlled merge, or sudo
+ * passthrough) so a virtual key never reaches the Prisma client, regardless
+ * of which path produced it. The virtual value is still computed
+ * unconditionally by `filterReadableFields`, so stripping the include key has
+ * no effect on whether the value appears in the result (#628).
+ */
+export function stripVirtualFieldsFromInclude(
+  include: Record<string, unknown> | undefined,
+  fieldConfigs: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
+): Record<string, unknown> | undefined {
+  if (!include) return include
+
+  const result: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(include)) {
+    const fieldConfig = fieldConfigs[key]
+
+    // Virtual fields have no database column — drop them from the include.
+    if (fieldConfig?.virtual) continue
+
+    const isDeclaredRelationship =
+      fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
+    const entry = asEntryObject(value)
+
+    if (isDeclaredRelationship && entry?.include) {
+      const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
+      if (relatedConfig) {
+        const nestedInclude = stripVirtualFieldsFromInclude(
+          entry.include,
+          relatedConfig.listConfig.fields,
+          config,
+        )
+        result[key] = { ...(value as Record<string, unknown>), include: nestedInclude }
+        continue
+      }
+    }
+
+    result[key] = value
+  }
+
+  return result
+}
