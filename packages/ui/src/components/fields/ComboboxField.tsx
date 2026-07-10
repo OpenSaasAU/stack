@@ -11,6 +11,8 @@ import {
   ComboboxEmpty,
   ComboboxItem,
 } from '../../primitives/combobox.js'
+import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
+import type { ServerActionInput } from '../../server/types.js'
 
 export interface ComboboxFieldProps {
   name: string
@@ -24,6 +26,12 @@ export interface ComboboxFieldProps {
   mode?: 'read' | 'edit'
   isLoading?: boolean
   placeholder?: string
+  /** Raw list key of the list being edited — required (with `serverAction`) to live-search. */
+  listKey?: string
+  /** Generic server action used to resolve `relationshipOptions`. */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /** Debounce delay (ms) before a typed query issues a server search. @default 300 */
+  debounceMs?: number
 }
 
 export function ComboboxField({
@@ -38,27 +46,34 @@ export function ComboboxField({
   mode = 'edit',
   isLoading = false,
   placeholder = 'Select...',
+  listKey,
+  serverAction,
+  debounceMs = 300,
 }: ComboboxFieldProps) {
   const [open, setOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const { searchQuery, setSearchQuery, searchResults, isSearching, resolveLabel } =
+    useRelationshipSearch({
+      initialItems: items,
+      listKey,
+      fieldName: name,
+      serverAction,
+      selectedIds: value ? [value] : [],
+      debounceMs,
+    })
+
+  const selectedLabel = value
+    ? (resolveLabel(value) ?? items.find((item) => item.id === value)?.label)
+    : undefined
 
   // Read mode
   if (mode === 'read') {
-    const selectedItem = items.find((item) => item.id === value)
     return (
       <div className="space-y-1">
         <label className="text-sm font-medium text-muted-foreground">{label}</label>
-        <p className="text-sm">{selectedItem?.label || '-'}</p>
+        <p className="text-sm">{selectedLabel || '-'}</p>
       </div>
     )
   }
-
-  // Filter items based on search query
-  const filteredItems = searchQuery
-    ? items.filter((item) => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
-    : items
-
-  const selectedItem = items.find((item) => item.id === value)
 
   return (
     <div className="space-y-2">
@@ -68,8 +83,8 @@ export function ComboboxField({
       </label>
       <Combobox open={open} onOpenChange={setOpen}>
         <ComboboxTrigger disabled={disabled || isLoading}>
-          <span className={!selectedItem ? 'text-muted-foreground' : ''}>
-            {isLoading ? 'Loading...' : selectedItem ? selectedItem.label : placeholder}
+          <span className={!selectedLabel ? 'text-muted-foreground' : ''}>
+            {isLoading ? 'Loading...' : selectedLabel || placeholder}
           </span>
         </ComboboxTrigger>
         <ComboboxContent>
@@ -85,7 +100,9 @@ export function ComboboxField({
             }}
           />
           <ComboboxList>
-            {filteredItems.length === 0 ? (
+            {isSearching ? (
+              <ComboboxEmpty>Searching...</ComboboxEmpty>
+            ) : searchResults.length === 0 ? (
               <ComboboxEmpty />
             ) : (
               <>
@@ -103,7 +120,7 @@ export function ComboboxField({
                     <div className="-mx-1 my-1 h-px bg-border" />
                   </>
                 )}
-                {filteredItems.map((item) => (
+                {searchResults.map((item) => (
                   <ComboboxItem
                     key={item.id}
                     selected={item.id === value}
