@@ -66,3 +66,9 @@ export type { FieldConfigValidationError } from './validation/field-config.js'
 // root surface — those live on '@opensaas/stack-core/internal'.
 export { defineFragment, runQuery, runQueryOne } from './query/index.js'
 export type { ResultOf, RelationSelector, QueryArgs } from './query/index.js'
+
+// Relationship-options read primitive — bounded, projected fetch for
+// relationship editors. Backs the `relationshipOptions` context.serverAction
+// op; also callable directly wherever a full context is already in hand.
+export { getRelationshipOptions } from './query/relationship-options.js'
+export type { RelationshipOption, RelationshipOptionsArgs } from './query/relationship-options.js'

@@ -74,5 +74,9 @@ export type {
 // Utility functions
 export { cn, formatListName, formatFieldName, getFieldDisplayValue } from './lib/utils.js'
 
+// Relationship-options read primitive (re-exported from @opensaas/stack-core)
+export { getRelationshipOptions } from './lib/getRelationshipOptions.js'
+export type { RelationshipOption, RelationshipOptionsArgs } from './lib/getRelationshipOptions.js'
+
 // Theme utilities
 export { generateThemeCSS, getThemeStyleTag, presetThemes } from './lib/theme.js'
