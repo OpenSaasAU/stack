@@ -6,6 +6,7 @@ import {
   filterReadableFields,
   buildIncludeWithAccessControl,
   mergeIncludeWithAccessControl,
+  stripVirtualFieldsFromInclude,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -688,6 +689,13 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         : accessControlledInclude
     }
 
+    // Virtual fields have no database column. Whichever path produced
+    // `include` (fragment, access-controlled merge, or sudo passthrough), a
+    // virtual key must never reach Prisma — it would throw "Unknown field"
+    // (#628). The virtual value is still computed unconditionally below by
+    // `filterReadableFields`, independent of what was requested here.
+    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
+
     // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -810,6 +818,13 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           )
         : accessControlledInclude
     }
+
+    // Virtual fields have no database column. Whichever path produced
+    // `include` (fragment, access-controlled merge, or sudo passthrough), a
+    // virtual key must never reach Prisma — it would throw "Unknown field"
+    // (#628). The virtual value is still computed unconditionally below by
+    // `filterReadableFields`, independent of what was requested here.
+    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime

@@ -705,6 +705,112 @@ describe('getContext', () => {
         // identical `accessControlledInclude === undefined` branch verified above,
         // so the resolveOutput probe covers all three non-denial cases.
       })
+
+      // Regression for #628: a virtual field named in `include` used to be
+      // forwarded straight through to Prisma, which throws "Unknown field"
+      // because virtual fields have no database column. The runtime must
+      // strip virtual keys from the include payload while still computing
+      // the virtual value (via resolveOutput) and leaving real relationship
+      // includes — access-controlled or not — untouched.
+      describe('virtual fields named in include no longer reach Prisma (#628)', () => {
+        function configWithVirtualDisplayName(): OpenSaasConfig {
+          return {
+            ...relConfig,
+            lists: {
+              ...relConfig.lists,
+              Author: {
+                ...relConfig.lists.Author,
+                fields: {
+                  ...relConfig.lists.Author.fields,
+                  displayName: virtual({
+                    type: 'string',
+                    hooks: {
+                      resolveOutput: ({ item }) => `Author: ${item.name}`,
+                    },
+                  }),
+                },
+              },
+            },
+          }
+        }
+
+        it('findMany: strips the virtual key from the Prisma include but keeps the real relationship include, and computes the virtual value', async () => {
+          const vConfig = configWithVirtualDisplayName()
+          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+          const context = await getContext(vConfig, relPrisma, null)
+          const result = await context.db.author.findMany({
+            include: { displayName: true, posts: true },
+          })
+
+          const call = relPrisma.author.findMany.mock.calls[0][0]
+          expect(call.include).not.toHaveProperty('displayName')
+          expect(call.include.posts).toBeDefined()
+          expect(result[0].displayName).toBe('Author: Jo')
+        })
+
+        it('findUnique: strips the virtual key from the Prisma include but keeps the real relationship include, and computes the virtual value', async () => {
+          const vConfig = configWithVirtualDisplayName()
+          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
+
+          const context = await getContext(vConfig, relPrisma, null)
+          const result = await context.db.author.findUnique({
+            where: { id: 'a1' },
+            include: { displayName: true, posts: true },
+          })
+
+          const call = relPrisma.author.findFirst.mock.calls[0][0]
+          expect(call.include).not.toHaveProperty('displayName')
+          expect(call.include.posts).toBeDefined()
+          expect(result.displayName).toBe('Author: Jo')
+        })
+
+        it('the virtual value is populated even when omitted from include', async () => {
+          const vConfig = configWithVirtualDisplayName()
+          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+
+          const context = await getContext(vConfig, relPrisma, null)
+          const result = await context.db.author.findUnique({ where: { id: 'a1' } })
+
+          expect(result.displayName).toBe('Author: Jo')
+        })
+
+        it('sudo: the virtual key is stripped from the Prisma include even though it bypasses access control', async () => {
+          const vConfig = configWithVirtualDisplayName()
+          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+
+          const context = await getContext(vConfig, relPrisma, null).sudo()
+          const result = await context.db.author.findMany({
+            include: { displayName: true, posts: true },
+          })
+
+          const call = relPrisma.author.findMany.mock.calls[0][0]
+          expect(call.include).not.toHaveProperty('displayName')
+          // The real relationship is unaffected — sudo still passes it through as-is.
+          expect(call.include.posts).toBe(true)
+          expect(result[0].displayName).toBe('Author: Jo')
+        })
+
+        it('read access control on the virtual field is still enforced (denied field is omitted)', async () => {
+          const vConfig = configWithVirtualDisplayName()
+          vConfig.lists.Author.fields.displayName = virtual({
+            type: 'string',
+            access: { read: () => false },
+            hooks: {
+              resolveOutput: ({ item }) => `Author: ${item.name}`,
+            },
+          })
+          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+
+          const context = await getContext(vConfig, relPrisma, null)
+          const result = await context.db.author.findUnique({
+            where: { id: 'a1' },
+            include: { displayName: true },
+          })
+
+          expect(result).not.toHaveProperty('displayName')
+        })
+      })
     })
 
     it('should delegate create to prisma with access control and hooks', async () => {
