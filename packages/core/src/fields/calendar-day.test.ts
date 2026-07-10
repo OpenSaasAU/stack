@@ -1,7 +1,9 @@
-import { describe, it, expect, expectTypeOf } from 'vitest'
+import { describe, it, expect, expectTypeOf, vi } from 'vitest'
 import { calendarDay } from './index.js'
 import { generateZodSchema, validateWithZod } from '../validation/schema.js'
+import { getContext } from '../context/index.js'
 import type { FieldConfig } from '../config/types.js'
+import type { OpenSaasConfig } from '../config/types.js'
 
 /**
  * calendarDay is a YYYY-MM-DD string end-to-end (Keystone's CalendarDay
@@ -54,7 +56,7 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
     })
   })
 
-  describe('write validation (string-only)', () => {
+  describe('write validation (YYYY-MM-DD string, or a Date post-resolveInput)', () => {
     const fields: Record<string, FieldConfig> = {
       startsOn: calendarDay({ validation: { isRequired: true } }),
     }
@@ -73,21 +75,80 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       }
     })
 
-    it('rejects a Date instance at runtime (not a string)', () => {
-      // A typed caller cannot reach here (input type is `string`), but the
-      // validator is string-only as a runtime backstop.
+    it('accepts a Date instance (the shape resolveInput produces from a valid string)', () => {
+      // The write pipeline runs field `resolveInput` BEFORE this schema, and
+      // calendarDay's resolveInput turns a valid YYYY-MM-DD string into a UTC
+      // Date (see #621) so Prisma's `@db.Date` write validator accepts it. So
+      // by the time this schema runs, a successful write reaches it as a
+      // Date, not the original string — the schema must accept both shapes.
       const result = validateWithZod(
-        { startsOn: new Date('2025-01-15') } as unknown as Record<string, unknown>,
+        { startsOn: new Date('2025-01-15T00:00:00.000Z') } as unknown as Record<string, unknown>,
         fields,
         'create',
       )
-      expect(result.success).toBe(false)
+      expect(result.success).toBe(true)
     })
 
     it('zod schema for the field validates the YYYY-MM-DD shape', () => {
       const schema = generateZodSchema(fields, 'create')
       expect(schema.safeParse({ startsOn: '2025-12-31' }).success).toBe(true)
       expect(schema.safeParse({ startsOn: 'nope' }).success).toBe(false)
+    })
+  })
+
+  describe('write transform (resolveInput coerces YYYY-MM-DD string to a UTC Date, #621)', () => {
+    // The write pipeline calls fieldConfig.hooks.resolveInput({ resolvedData,
+    // fieldKey, ... }) BEFORE zod validation runs. We exercise that hook
+    // directly with the value shapes a caller (or an upstream list-level
+    // resolveInput) can produce.
+    function writeValue(value: unknown): unknown {
+      const field = calendarDay()
+      const hook = field.hooks?.resolveInput
+      if (!hook) throw new Error('calendarDay must define a resolveInput hook')
+      return (
+        hook as unknown as (args: {
+          resolvedData: Record<string, unknown>
+          fieldKey: string
+        }) => unknown
+      )({ resolvedData: { startsOn: value }, fieldKey: 'startsOn' })
+    }
+
+    it('converts a YYYY-MM-DD string to a UTC-midnight Date', () => {
+      const result = writeValue('2025-01-15') as Date
+      expect(result).toBeInstanceOf(Date)
+      expect(result.toISOString()).toBe('2025-01-15T00:00:00.000Z')
+    })
+
+    it('passes an already-Date value through unchanged', () => {
+      const date = new Date('2025-06-01T00:00:00.000Z')
+      expect(writeValue(date)).toBe(date)
+    })
+
+    it('passes null/undefined through unchanged (so isRequired can still reject a missing value)', () => {
+      expect(writeValue(null)).toBeNull()
+      expect(writeValue(undefined)).toBeUndefined()
+    })
+
+    it('leaves a malformed string untouched so zod still rejects it with a clear message', () => {
+      expect(writeValue('15/01/2025')).toBe('15/01/2025')
+    })
+
+    it('reads resolvedData[fieldKey], not inputData — survives a list-level resolveInput default', () => {
+      // A list-level resolveInput can inject a default for an omitted key
+      // into resolvedData before field resolveInput runs. Reading
+      // resolvedData (not the original inputData) here means that injected
+      // default is what gets coerced, instead of being read as `undefined`
+      // and overwriting the injected default with null.
+      const field = calendarDay()
+      const hook = field.hooks?.resolveInput as unknown as (args: {
+        resolvedData: Record<string, unknown>
+        fieldKey: string
+      }) => unknown
+      const result = hook({
+        resolvedData: { startsOn: '2025-03-20' }, // injected by a list-level hook
+        fieldKey: 'startsOn',
+      }) as Date
+      expect(result.toISOString()).toBe('2025-03-20T00:00:00.000Z')
     })
   })
 
@@ -135,6 +196,96 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       })
       const hook = field.hooks?.resolveOutput as unknown as (args: { value: unknown }) => unknown
       expect(hook({ value: '2025-01-15' })).toBe('custom:2025-01-15')
+    })
+  })
+
+  describe('end-to-end via context.db.*.create/update (#621 repro)', () => {
+    // Prisma 7's client validator rejects a bare YYYY-MM-DD string for a
+    // `@db.Date` column. Assert the value actually forwarded to the Prisma
+    // client is a Date, not the string the caller passed in.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock Prisma client
+    let mockPrisma: any
+
+    function buildConfig(): OpenSaasConfig {
+      mockPrisma = {
+        event: {
+          findFirst: vi.fn(),
+          findUnique: vi.fn(),
+          findMany: vi.fn(),
+          create: vi.fn(),
+          update: vi.fn(),
+          delete: vi.fn(),
+          count: vi.fn(),
+        },
+      }
+      return {
+        db: {
+          provider: 'postgresql',
+          prismaClientConstructor: (PrismaClient) => new PrismaClient(),
+        },
+        lists: {
+          Event: {
+            fields: {
+              startsOn: calendarDay({ validation: { isRequired: true } }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+                update: () => true,
+                delete: () => true,
+              },
+            },
+          },
+        },
+      }
+    }
+
+    it('create: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
+      const config = buildConfig()
+      mockPrisma.event.create.mockResolvedValue({
+        id: '1',
+        startsOn: new Date('2025-01-15T00:00:00.000Z'),
+      })
+      const context = await getContext(config, mockPrisma, null)
+
+      await context.db.event.create({ data: { startsOn: '2025-01-15' } })
+
+      expect(mockPrisma.event.create).toHaveBeenCalledTimes(1)
+      const callArgs = mockPrisma.event.create.mock.calls[0][0]
+      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
+      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
+    })
+
+    it('update: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
+      const config = buildConfig()
+      const existing = { id: '1', startsOn: new Date('2025-01-15T00:00:00.000Z') }
+      mockPrisma.event.findUnique.mockResolvedValue(existing)
+      mockPrisma.event.update.mockResolvedValue({
+        ...existing,
+        startsOn: new Date('2025-02-20T00:00:00.000Z'),
+      })
+      const context = await getContext(config, mockPrisma, null)
+
+      await context.db.event.update({ where: { id: '1' }, data: { startsOn: '2025-02-20' } })
+
+      expect(mockPrisma.event.update).toHaveBeenCalledTimes(1)
+      const callArgs = mockPrisma.event.update.mock.calls[0][0]
+      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
+      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
+    })
+
+    it('the read result is still normalised back to a YYYY-MM-DD string', async () => {
+      const config = buildConfig()
+      mockPrisma.event.create.mockResolvedValue({
+        id: '1',
+        startsOn: new Date('2025-01-15T00:00:00.000Z'),
+      })
+      const context = await getContext(config, mockPrisma, null)
+
+      const result = await context.db.event.create({ data: { startsOn: '2025-01-15' } })
+
+      expect(result?.startsOn).toBe('2025-01-15')
     })
   })
 })

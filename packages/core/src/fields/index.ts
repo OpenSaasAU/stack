@@ -523,9 +523,13 @@ export function timestamp<
  * - Stores date values only (no time component)
  * - PostgreSQL/MySQL: Uses native DATE type via @db.Date
  * - SQLite: Uses String representation
- * - **Writes:** accept only a `YYYY-MM-DD` string; a malformed string or a
- *   `Date` is rejected at runtime by validation (a `ValidationError`). Genuine
- *   compile-time rejection at the `context.db` call site is tracked in #599.
+ * - **Writes:** pass a `YYYY-MM-DD` string (the declared type). A
+ *   `resolveInput` hook converts a valid string to a UTC-midnight `Date`
+ *   before validation, since Prisma 7's client validator rejects a bare date
+ *   string for a `@db.Date` column (#621); a `Date` is also accepted
+ *   directly. A malformed string is rejected at runtime by validation (a
+ *   `ValidationError`). Genuine compile-time rejection of a `Date` at the
+ *   `context.db` call site is tracked in #599.
  * - **Reads:** always return a `YYYY-MM-DD` string. Even though the underlying
  *   `@db.Date` column hands Prisma a `Date`, a `resolveOutput` transform
  *   normalises it back to a `YYYY-MM-DD` string so the runtime value matches
@@ -573,6 +577,17 @@ export function calendarDay<
   return {
     type: 'calendarDay',
     ...options,
+    // Writes: the write pipeline runs field resolveInput BEFORE zod
+    // validation (Hook Pipeline: field resolveInput → built-in field rules),
+    // so this is the only point a YYYY-MM-DD string can be turned into
+    // something Prisma's `@db.Date` write validator accepts — Prisma 7
+    // rejects a bare date string there (#621). Convert a valid string to a
+    // UTC-midnight Date; leave anything else (a Date already, null/undefined,
+    // or a malformed string) untouched so the zod schema below still rejects
+    // malformed input with a clear message. Reads resolvedData[fieldKey]
+    // (not raw inputData) so a list-level resolveInput that injects a default
+    // for an omitted key is still coerced instead of being overwritten.
+    //
     // Reads: the underlying @db.Date column hands Prisma a Date (or a TEXT
     // string under the SQLite fallback). Normalise to a YYYY-MM-DD string so the
     // runtime value matches the declared `string` type. UTC components are used
@@ -580,6 +595,15 @@ export function calendarDay<
     // Cast hooks to any since field builders are generic and can't know the
     // specific TFieldKey (same pattern as password()).
     hooks: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
+      resolveInput: ({ resolvedData, fieldKey }: { resolvedData: any; fieldKey: string }) => {
+        const value = resolvedData?.[fieldKey]
+        if (value == null || value instanceof Date) return value
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return new Date(`${value}T00:00:00.000Z`)
+        }
+        return value
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveOutput: ({ value }: { value: any }) => formatCalendarDay(value),
       // Merge with user-provided hooks if any
@@ -590,15 +614,19 @@ export function calendarDay<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      // Accept ISO8601 date strings (YYYY-MM-DD)
-      const baseSchema = z.string({
-        message: `${formatFieldName(fieldName)} must be a valid date in ISO8601 format (YYYY-MM-DD)`,
-      })
+      // Accept ISO8601 date strings (YYYY-MM-DD) in the shape a caller passes,
+      // or a `Date` — the shape resolveInput above turns a valid string into
+      // before this schema runs. Malformed strings fall through resolveInput
+      // untouched and still fail the regex here with a clear message.
+      const stringSchema = z
+        .string({
+          message: `${formatFieldName(fieldName)} must be a valid date in ISO8601 format (YYYY-MM-DD)`,
+        })
+        .regex(/^\d{4}-\d{2}-\d{2}$/, {
+          message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
+        })
 
-      // Validate ISO8601 date format (YYYY-MM-DD)
-      const dateSchema = baseSchema.regex(/^\d{4}-\d{2}-\d{2}$/, {
-        message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
-      })
+      const dateSchema = z.union([stringSchema, z.date()])
 
       if (isRequired && operation === 'create') {
         return dateSchema
