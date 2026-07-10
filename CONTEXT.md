@@ -81,3 +81,13 @@ _Avoid_: storage backend, storage adapter, uploader
 **Provider registry**:
 The lookup from a configured provider `type` to the constructor that builds it, which the storage runtime consults instead of a closed `switch`. A host registers the (optional) provider packages it uses, so non-`local` and custom providers are constructable without the runtime depending on every provider's SDK.
 _Avoid_: provider switch, provider map, plugin registry
+
+### Admin UI
+
+**Label field**:
+The field a list uses to represent its rows as a single value — resolved by `getLabelFieldName` from `ui.labelField` (when configured and pointing at a declared, non-relationship field) or the fallback order `name` → `title` → `id`. The single source of truth so the field chosen for projection can never drift from the field used for rendering.
+_Avoid_: display field, title field, name field (the fallback happens to check a field called `name`, but the concept isn't tied to that key)
+
+**Item label**:
+The rendered text for one row, produced by `getItemLabel` reading the Label field off that row and falling back to `id` when the field is missing (e.g. stripped by field-level access). Used anywhere the admin UI shows a row as a reference — relationship cells, dropdown options, page headings.
+_Avoid_: display value, row label

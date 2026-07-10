@@ -43,6 +43,11 @@ export type {
 // Naming utilities (documented public helpers; used for URLs and db keys)
 export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'
 
+// Label seam — resolves the field that represents a row as a single label
+// (projection) and reads it off a row (render). Used by the admin UI for
+// relationship cells, dropdown options, and page headings.
+export { getLabelFieldName, getItemLabel } from './config/label.js'
+
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
 
