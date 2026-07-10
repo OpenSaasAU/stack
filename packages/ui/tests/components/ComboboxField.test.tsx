@@ -120,5 +120,32 @@ describe('ComboboxField', () => {
       await user.click(screen.getByText('Grace Hopper'))
       expect(onChange).toHaveBeenCalledWith('u3')
     })
+
+    it('recovers from a rejected search instead of getting stuck on "Searching..."', async () => {
+      const user = userEvent.setup()
+      const serverAction = vi.fn().mockRejectedValue(new Error('network error'))
+
+      render(
+        <ComboboxField
+          name="author"
+          value={null}
+          onChange={vi.fn()}
+          label="Author"
+          items={initialItems}
+          listKey="Post"
+          serverAction={serverAction}
+          debounceMs={10}
+        />,
+      )
+
+      await user.click(screen.getByRole('button'))
+      await user.type(screen.getByPlaceholderText('Search...'), 'Grace')
+
+      await waitFor(() => expect(serverAction).toHaveBeenCalled())
+      await waitFor(() => {
+        expect(screen.queryByText('Searching...')).not.toBeInTheDocument()
+      })
+      expect(screen.getByText('No results found.')).toBeInTheDocument()
+    })
   })
 })

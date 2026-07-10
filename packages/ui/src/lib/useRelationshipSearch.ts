@@ -110,24 +110,32 @@ export function useRelationshipSearch({
         field: currentFieldName!,
         search: trimmedQuery,
         selectedIds: currentSelectedIds,
-      }).then((result) => {
-        if (cancelled) return
-        const options = extractOptions(result)
-        setLiveResults(options)
-        setIsSearching(false)
-        setFetchedLabels((prev) => {
-          if (options.length === 0) return prev
-          let changed = false
-          const next = new Map(prev)
-          for (const { id, label } of options) {
-            if (next.get(id) !== label) {
-              next.set(id, label)
-              changed = true
-            }
-          }
-          return changed ? next : prev
-        })
       })
+        .then((result) => {
+          if (cancelled) return
+          const options = extractOptions(result)
+          setLiveResults(options)
+          setFetchedLabels((prev) => {
+            if (options.length === 0) return prev
+            let changed = false
+            const next = new Map(prev)
+            for (const { id, label } of options) {
+              if (next.get(id) !== label) {
+                next.set(id, label)
+                changed = true
+              }
+            }
+            return changed ? next : prev
+          })
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return
+          console.error('Failed to search relationship options:', error)
+          setLiveResults([])
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearching(false)
+        })
     }, debounceMs)
 
     return () => {
