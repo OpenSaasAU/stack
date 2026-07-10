@@ -350,12 +350,15 @@ describe('ListViewClient', () => {
   })
 
   describe('relationships', () => {
+    // Relationship values arrive pre-resolved to { id, label } — the server
+    // component (ListView.tsx) computes `label` via the shared label seam
+    // (getItemLabel) before crossing the server/client boundary.
     it('should render relationship as link when relationshipRefs provided', () => {
       const items = [
         {
           id: '1',
           title: 'Post 1',
-          author: { id: 'user-1', name: 'John Doe' },
+          author: { id: 'user-1', label: 'John Doe' },
         },
       ]
 
@@ -380,8 +383,8 @@ describe('ListViewClient', () => {
           id: '1',
           title: 'Post 1',
           tags: [
-            { id: 'tag-1', name: 'JavaScript' },
-            { id: 'tag-2', name: 'TypeScript' },
+            { id: 'tag-1', label: 'JavaScript' },
+            { id: 'tag-2', label: 'TypeScript' },
           ],
         },
       ]

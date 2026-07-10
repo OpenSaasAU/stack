@@ -1,7 +1,29 @@
 import Link from 'next/link.js'
 import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AccessContext,
+  getDbKey,
+  getItemLabel,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
+
+/**
+ * Resolve a fetched relationship value (the full related record, or `null`)
+ * into the `{ id, label }` shape `ListViewClient` renders — computing the
+ * label via the shared label seam (`getItemLabel`) so list-page cells never
+ * drift from the item form's relationship-option labels.
+ */
+function toRelationshipLabel(
+  value: unknown,
+  relatedListConfig: OpenSaasConfig['lists'][string] | undefined,
+): { id: string; label: string } | null {
+  if (!value || typeof value !== 'object' || !relatedListConfig) return null
+  const row = value as Record<string, unknown>
+  if (!('id' in row)) return null
+  return { id: String(row.id), label: getItemLabel(relatedListConfig, row) }
+}
 
 /**
  * Default sort for the list table, mirroring Keystone's `ui.listView.initialSort`.
@@ -124,9 +146,6 @@ export async function ListView({
     console.error(`Failed to fetch ${listKey}:`, error)
   }
 
-  // Serialize items for client component (convert Dates, etc to JSON-safe format)
-  const serializedItems = JSON.parse(JSON.stringify(items))
-
   // Extract only the relationship refs needed by client (don't send entire config)
   const relationshipRefs: Record<string, string> = {}
   Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
@@ -139,6 +158,27 @@ export async function ListView({
       relationshipRefs[fieldName] = field.ref
     }
   })
+
+  // Resolve each relationship value into { id, label } via the shared label
+  // seam before crossing the server/client boundary — ListConfig objects
+  // carry functions and can't be passed as props to the client component.
+  const itemsWithResolvedLabels = items.map((item) => {
+    const resolved: Record<string, unknown> = { ...item }
+    for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
+      const [relatedListKey] = ref.split('.')
+      const relatedListConfig = config.lists[relatedListKey]
+      const rawValue = item[fieldName]
+      resolved[fieldName] = Array.isArray(rawValue)
+        ? rawValue
+            .map((row) => toRelationshipLabel(row, relatedListConfig))
+            .filter((row): row is { id: string; label: string } => row !== null)
+        : toRelationshipLabel(rawValue, relatedListConfig)
+    }
+    return resolved
+  })
+
+  // Serialize items for client component (convert Dates, etc to JSON-safe format)
+  const serializedItems = JSON.parse(JSON.stringify(itemsWithResolvedLabels))
 
   return (
     <div className="p-8">
