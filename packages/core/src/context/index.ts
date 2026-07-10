@@ -12,6 +12,7 @@ import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
 import { buildInclude, pickFields, isFragment } from '../query/index.js'
+import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
   createWriteStrategy,
@@ -23,6 +24,14 @@ export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
+  | {
+      listKey: string
+      action: 'relationshipOptions'
+      field: string
+      search?: string
+      take?: number
+      selectedIds?: string[]
+    }
 
 /**
  * Tracks which (listName, operation) pairs have already warned about an ignored
@@ -422,6 +431,27 @@ export function getContext<
     }
 
     try {
+      if (props.action === 'relationshipOptions') {
+        const fieldConfig = listConfig.fields[props.field] as
+          | { type?: string; ref?: string }
+          | undefined
+        if (!fieldConfig || fieldConfig.type !== 'relationship' || !fieldConfig.ref) {
+          return {
+            success: false,
+            error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+          }
+        }
+
+        const relatedListKey = fieldConfig.ref.split('.')[0]
+        const options = await getRelationshipOptions(context, config, relatedListKey, {
+          search: props.search,
+          take: props.take,
+          selectedIds: props.selectedIds,
+        })
+
+        return { success: true, data: options }
+      }
+
       let result: unknown = null
 
       if (props.action === 'create') {

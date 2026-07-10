@@ -57,6 +57,7 @@ describe('getContext', () => {
           fields: {
             title: { type: 'text' },
             content: { type: 'text' },
+            author: { type: 'relationship', ref: 'User.posts' },
           },
           access: {
             operation: {
@@ -198,6 +199,119 @@ describe('getContext', () => {
       expect(result).toMatchObject({
         success: false,
         error: 'Database connection failed',
+      })
+    })
+
+    describe('relationshipOptions', () => {
+      it('returns { id, label }[] for the related list, unfiltered/unincluded', async () => {
+        mockPrisma.user.findMany.mockResolvedValue([
+          { id: 'u1', name: 'Ada' },
+          { id: 'u2', name: 'Alan' },
+        ])
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'author',
+        })
+
+        expect(result).toEqual({
+          success: true,
+          data: [
+            { id: 'u1', label: 'Ada' },
+            { id: 'u2', label: 'Alan' },
+          ],
+        })
+        const call = mockPrisma.user.findMany.mock.calls[0][0]
+        expect(call.include).toBeUndefined()
+      })
+
+      it('bounds the query by take', async () => {
+        mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+
+        const context = await getContext(config, mockPrisma, null)
+        await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'author',
+          take: 1,
+        })
+
+        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
+      })
+
+      it('unions selectedIds beyond the take/search window', async () => {
+        mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u9', name: 'Zed' }])
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'author',
+          take: 1,
+          selectedIds: ['u9'],
+        })
+
+        expect(result).toEqual({
+          success: true,
+          data: [
+            { id: 'u1', label: 'Ada' },
+            { id: 'u9', label: 'Zed' },
+          ],
+        })
+      })
+
+      it('returns [] data when the related list query access is denied', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            User: {
+              ...config.lists.User,
+              access: { operation: { query: () => false } },
+            },
+          },
+        }
+        mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+
+        const context = await getContext(deniedConfig, mockPrisma, null)
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'author',
+        })
+
+        expect(result).toEqual({ success: true, data: [] })
+      })
+
+      it('returns an error when the field is not a relationship field', async () => {
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'title',
+        })
+
+        expect(result).toEqual({
+          success: false,
+          error: 'Field "title" on list "Post" is not a relationship field',
+        })
+      })
+
+      it('returns an error when the field does not exist', async () => {
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'relationshipOptions',
+          field: 'nonexistent',
+        })
+
+        expect(result).toEqual({
+          success: false,
+          error: 'Field "nonexistent" on list "Post" is not a relationship field',
+        })
       })
     })
   })
