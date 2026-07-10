@@ -1711,11 +1711,11 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
 /**
  * List-level UI configuration for the admin interface.
  *
- * Mirrors Keystone's `ui` block on a list. Only the list-view defaults
- * (column selection/order and default sort) are supported today; other
- * Keystone concerns (`label`, `labelField`, `description`) are intentionally
- * deferred as they cover different concerns (navigation text and
- * relationship-picker labels rather than list-view defaults).
+ * Mirrors Keystone's `ui` block on a list. List-view defaults (column
+ * selection/order and default sort) and the label field are supported
+ * today; other Keystone concerns (`label`, `description`) are intentionally
+ * deferred as they cover navigation text rather than list-view or
+ * row-labelling defaults.
  */
 export type ListUIConfig = {
   /**
@@ -1723,6 +1723,20 @@ export type ListUIConfig = {
    * Keystone's `ui.listView`.
    */
   listView?: ListViewUIConfig
+  /**
+   * The field used to represent a row as a single label — in relationship
+   * cells, dropdown options, and page headings. Must reference a declared,
+   * non-relationship field on this list.
+   *
+   * When omitted, resolves via `getLabelFieldName`'s fallback order: `name`
+   * → `title` → `id` (first field that exists on the list).
+   *
+   * @example
+   * ```typescript
+   * ui: { labelField: 'email' }
+   * ```
+   */
+  labelField?: string
 }
 
 /**
