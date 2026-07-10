@@ -1,6 +1,22 @@
-import { type AccessContext, getDbKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs, type SerializableFieldConfig } from './serializeFieldConfig.js'
+
+/**
+ * Extract the currently-selected id(s) from a hydrated relationship value so
+ * they can be unioned into the bounded options fetch (the item's current
+ * value must always resolve a label, even outside the window).
+ */
+function extractSelectedIds(value: unknown, many: boolean | undefined): string[] {
+  if (many) {
+    return Array.isArray(value)
+      ? value
+          .map((item) => (item as { id?: string })?.id)
+          .filter((id): id is string => typeof id === 'string')
+      : []
+  }
+  return value && typeof value === 'object' && 'id' in value ? [(value as { id: string }).id] : []
+}
 
 /**
  * Data prepared on the server for the client item form.
@@ -49,27 +65,28 @@ export async function prepareItemForm(
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
 ): Promise<PreparedItemForm> {
-  // Fetch relationship options for all relationship fields
+  // Fetch a bounded window of relationship options for all relationship
+  // fields via the relationship-options read primitive — this replaces an
+  // unbounded `findMany({})` per field with a scalar-only, take-limited
+  // fetch that always unions the item's currently-selected id(s) so their
+  // label renders even outside the window.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    const fieldConfigAny = fieldConfig as { type: string; ref?: string }
+    const fieldConfigAny = fieldConfig as { type: string; ref?: string; many?: boolean }
     if (fieldConfigAny.type === 'relationship') {
       const ref = fieldConfigAny.ref
       if (ref) {
         // Parse ref format: "ListName.fieldName"
         const relatedListName = ref.split('.')[0]
-        const relatedListConfig = config.lists[relatedListName]
 
-        if (relatedListConfig) {
+        if (config.lists[relatedListName]) {
           try {
-            const delegate = context.db[getDbKey(relatedListName)]
-            const relatedItems = delegate?.findMany ? await delegate.findMany({}) : []
-
-            // Use 'name' field as label if it exists, otherwise use 'id'
-            relationshipData[fieldName] = relatedItems.map((item: Record<string, unknown>) => ({
-              id: item.id as string,
-              label: ((item.name || item.title || item.id) as string) || '',
-            }))
+            relationshipData[fieldName] = await getRelationshipOptions(
+              context,
+              config,
+              relatedListName,
+              { selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many) },
+            )
           } catch (error) {
             console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
             relationshipData[fieldName] = []

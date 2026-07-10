@@ -2,6 +2,7 @@
 
 import { ComboboxField } from './ComboboxField.js'
 import { RelationshipManager } from './RelationshipManager.js'
+import type { ServerActionInput } from '../../server/types.js'
 
 export interface RelationshipFieldProps {
   name: string
@@ -17,6 +18,10 @@ export interface RelationshipFieldProps {
   many?: boolean
   relatedListKey?: string
   basePath?: string
+  /** Raw list key of the list being edited — required (with `serverAction`) to live-search. */
+  listKey?: string
+  /** Generic server action used to resolve `relationshipOptions`. */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
 }
 
 export function RelationshipField({
@@ -33,6 +38,8 @@ export function RelationshipField({
   many = false,
   relatedListKey,
   basePath,
+  listKey,
+  serverAction,
 }: RelationshipFieldProps) {
   // Delegate to specialized components based on cardinality
   if (many) {
@@ -50,6 +57,8 @@ export function RelationshipField({
         isLoading={isLoading}
         relatedListKey={relatedListKey}
         basePath={basePath}
+        listKey={listKey}
+        serverAction={serverAction}
       />
     )
   }
@@ -66,6 +75,8 @@ export function RelationshipField({
       required={required}
       mode={mode}
       isLoading={isLoading}
+      listKey={listKey}
+      serverAction={serverAction}
     />
   )
 }

@@ -5,6 +5,7 @@ import { getFieldComponent } from './registry.js'
 import { formatFieldName } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
+import type { ServerActionInput } from '../../server/types.js'
 
 export interface FieldRendererProps {
   fieldName: string
@@ -17,6 +18,10 @@ export interface FieldRendererProps {
   relationshipItems?: Array<{ id: string; label: string }>
   relationshipLoading?: boolean
   basePath?: string
+  /** Raw list key of the list being edited — required (with `serverAction`) for relationship fields to live-search. */
+  listKey?: string
+  /** Generic server action used to resolve `relationshipOptions` for relationship fields. */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
 }
 
 /**
@@ -34,6 +39,8 @@ function FieldRendererInner({
   relationshipItems,
   relationshipLoading,
   basePath,
+  listKey,
+  serverAction,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }: FieldRendererProps & { Component: React.ComponentType<any> }) {
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
@@ -63,6 +70,8 @@ function FieldRendererInner({
     relationshipItems,
     relationshipLoading,
     basePath,
+    listKey,
+    serverAction,
   )
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
@@ -84,6 +93,8 @@ function buildFallbackUIProps(
   relationshipItems: Array<{ id: string; label: string }> | undefined,
   relationshipLoading: boolean | undefined,
   basePath: string | undefined,
+  listKey: string | undefined,
+  serverAction: ((input: ServerActionInput) => Promise<unknown>) | undefined,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {}
 
@@ -100,6 +111,11 @@ function buildFallbackUIProps(
     props.items = relationshipItems
     props.isLoading = relationshipLoading
     props.basePath = basePath
+    // Live search needs the raw listKey of the list being edited (the
+    // `relationshipOptions` op resolves the related list itself from the
+    // field config) plus the generic server action to call it through.
+    props.listKey = listKey
+    props.serverAction = serverAction
   }
 
   return props

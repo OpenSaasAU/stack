@@ -21,6 +21,8 @@ import {
   ComboboxItem,
 } from '../../primitives/combobox.js'
 import { Button } from '../../primitives/button.js'
+import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
+import type { ServerActionInput } from '../../server/types.js'
 
 export interface RelationshipManagerProps {
   name: string
@@ -35,10 +37,16 @@ export interface RelationshipManagerProps {
   isLoading?: boolean
   relatedListKey?: string
   basePath?: string
+  /** Raw list key of the list being edited — required (with `serverAction`) to live-search. */
+  listKey?: string
+  /** Generic server action used to resolve `relationshipOptions`. */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /** Debounce delay (ms) before a typed query issues a server search. @default 300 */
+  debounceMs?: number
 }
 
 export function RelationshipManager({
-  name: _name,
+  name,
   value,
   onChange,
   label,
@@ -50,13 +58,29 @@ export function RelationshipManager({
   isLoading = false,
   relatedListKey,
   basePath = '/admin',
+  listKey,
+  serverAction,
+  debounceMs = 300,
 }: RelationshipManagerProps) {
   const [showConnectModal, setShowConnectModal] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
 
   const selectedIds = Array.isArray(value) ? value : []
-  const selectedItems = items.filter((item) => selectedIds.includes(item.id))
-  const availableItems = items.filter((item) => !selectedIds.includes(item.id))
+
+  const { searchQuery, setSearchQuery, searchResults, isSearching, resolveLabel } =
+    useRelationshipSearch({
+      initialItems: items,
+      listKey,
+      fieldName: name,
+      serverAction,
+      selectedIds,
+      debounceMs,
+    })
+
+  const selectedItems = selectedIds.map((id) => ({
+    id,
+    label: resolveLabel(id) ?? items.find((item) => item.id === id)?.label ?? id,
+  }))
+  const availableItems = searchResults.filter((item) => !selectedIds.includes(item.id))
 
   // Read mode
   if (mode === 'read') {
@@ -69,11 +93,6 @@ export function RelationshipManager({
       </div>
     )
   }
-
-  // Filter available items based on search
-  const filteredAvailableItems = searchQuery
-    ? availableItems.filter((item) => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
-    : availableItems
 
   const handleRemove = (itemId: string) => {
     onChange(selectedIds.filter((id) => id !== itemId))
@@ -144,10 +163,7 @@ export function RelationshipManager({
       {/* Action Buttons */}
       <div className="flex gap-2">
         <Combobox open={showConnectModal} onOpenChange={setShowConnectModal}>
-          <ComboboxTrigger
-            disabled={disabled || isLoading || availableItems.length === 0}
-            className="h-9 px-3"
-          >
+          <ComboboxTrigger disabled={disabled || isLoading} className="h-9 px-3">
             <span>{isLoading ? 'Loading...' : 'Connect Existing'}</span>
           </ComboboxTrigger>
           <ComboboxContent>
@@ -162,14 +178,12 @@ export function RelationshipManager({
               }}
             />
             <ComboboxList>
-              {filteredAvailableItems.length === 0 ? (
-                <ComboboxEmpty>
-                  {availableItems.length === 0
-                    ? 'All items are already connected'
-                    : 'No results found'}
-                </ComboboxEmpty>
+              {isSearching ? (
+                <ComboboxEmpty>Searching...</ComboboxEmpty>
+              ) : availableItems.length === 0 ? (
+                <ComboboxEmpty>No results found</ComboboxEmpty>
               ) : (
-                filteredAvailableItems.map((item) => (
+                availableItems.map((item) => (
                   <ComboboxItem key={item.id} onClick={() => handleConnect(item.id)}>
                     {item.label}
                   </ComboboxItem>

@@ -144,6 +144,8 @@ export function ItemFormClient({
             relationshipItems={relationshipData[fieldName] || []}
             relationshipLoading={false}
             basePath={basePath}
+            listKey={listKey}
+            serverAction={serverAction}
           />
         ))}
       </div>
