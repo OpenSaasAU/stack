@@ -22,7 +22,7 @@
     "@tailwindcss/postcss": "^4.2.1",
     "better-auth": "^1.5.5",
     "better-sqlite3": "^12.6.2",
-    "next": "^16.1.6",
+    "next": "^16.2.10",
     "postcss": "^8.5.17",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
