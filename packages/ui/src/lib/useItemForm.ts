@@ -94,8 +94,7 @@ export function getEditableFields(
  * failed and the form should surface `error` (and optional per-field errors).
  */
 export type ItemFormSubmitResult =
-  | { success: true }
-  | { success: false; error: string; fieldErrors?: Record<string, string> }
+  { success: true } | { success: false; error: string; fieldErrors?: Record<string, string> }
 
 export interface UseItemFormOptions {
   /** Serialized field configs (drives rendering + the submit transform). */

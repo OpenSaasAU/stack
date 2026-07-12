@@ -249,11 +249,7 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
  * PostgreSQL — required for the concurrency-sensitive capacity-gate pattern).
  */
 export type TransactionIsolationLevel =
-  | 'ReadUncommitted'
-  | 'ReadCommitted'
-  | 'RepeatableRead'
-  | 'Serializable'
-  | 'Snapshot'
+  'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
 
 /**
  * Options for {@link StackContext.transaction}, forwarded verbatim to the
@@ -433,8 +429,7 @@ export function getContext<
     try {
       if (props.action === 'relationshipOptions') {
         const fieldConfig = listConfig.fields[props.field] as
-          | { type?: string; ref?: string }
-          | undefined
+          { type?: string; ref?: string } | undefined
         if (!fieldConfig || fieldConfig.type !== 'relationship' || !fieldConfig.ref) {
           return {
             success: false,

@@ -476,9 +476,7 @@ export function myPlugin(options: MyPluginOptions): Plugin {
     throw new Error('myPlugin: retries must be positive')
   }
 
-  return {
-    /* ... */
-  }
+  return {/* ... */}
 }
 ```
 
@@ -494,9 +492,7 @@ export function myPlugin(options?: { apiKey?: string }): Plugin {
     throw new Error('myPlugin: API key not found')
   }
 
-  return {
-    /* ... */
-  }
+  return {/* ... */}
 }
 ```
 

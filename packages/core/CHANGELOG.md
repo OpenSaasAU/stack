@@ -338,12 +338,8 @@
       prismaSchema: 'prisma-opensaas/schema.prisma',
       opensaasDir: 'generated/opensaas',
     },
-    db: {
-      /* ... */
-    },
-    lists: {
-      /* ... */
-    },
+    db: {/* ... */},
+    lists: {/* ... */},
   })
   ```
 
@@ -423,9 +419,7 @@
       timestamps: true, // re-enable auto createdAt/updatedAt for all lists
       // ...
     },
-    lists: {
-      /* ... */
-    },
+    lists: {/* ... */},
   })
   ```
 
@@ -1123,9 +1117,7 @@
 
   ```typescript
   Settings: list({
-    fields: {
-      /* ... */
-    },
+    fields: {/* ... */},
     isSingleton: {
       autoCreate: false, // Must manually create the record
     },

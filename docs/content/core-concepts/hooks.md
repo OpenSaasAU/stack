@@ -19,9 +19,7 @@ Defined at the list level, these hooks run for all operations on the list:
 
 ```typescript
 Post: list({
-  fields: {
-    /* ... */
-  },
+  fields: {/* ... */},
   hooks: {
     resolveInput: async ({ resolvedData, operation, context }) => {
       // Transform input data before database operation

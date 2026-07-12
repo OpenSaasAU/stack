@@ -518,15 +518,11 @@ export default config({
   },
   lists: {
     AuthUser: list({
-      fields: {
-        /* ... */
-      },
+      fields: {/* ... */},
       db: { schema: 'auth', map: 'user' },
     }),
     Post: list({
-      fields: {
-        /* ... */
-      },
+      fields: {/* ... */},
     }), // defaults to public
   },
 })
@@ -564,9 +560,7 @@ export default config({
     prismaSchema: 'prisma-opensaas/schema.prisma', // default: prisma/schema.prisma
     opensaasDir: '.opensaas', // default: .opensaas
   },
-  db: {
-    /* ... */
-  },
+  db: {/* ... */},
   // ...
 })
 ```

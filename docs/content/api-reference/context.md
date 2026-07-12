@@ -971,9 +971,7 @@ if (!post) {
 ```typescript
 try {
   const post = await context.db.post.create({
-    data: {
-      /* ... */
-    },
+    data: {/* ... */},
   })
 } catch (error) {
   // Prisma errors (unique constraint, foreign key, etc.)
