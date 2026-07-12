@@ -1,6 +1,23 @@
 import * as path from 'path'
 import * as fs from 'fs'
-import ts from 'typescript'
+import { execFileSync } from 'child_process'
+import { createRequire } from 'module'
+
+/**
+ * Absolute path to this package's own pinned native TypeScript 7 `tsc`
+ * binary, resolved via the `@typescript/native` dependency (an alias for the
+ * real `typescript` package — the plain `typescript` dependency is itself
+ * aliased to the `@typescript/typescript6` compatibility shim so this
+ * package's own code/tests can still use the classic Program API) rather
+ * than shelled out to via `npx`. The Node build must always compile with the
+ * version `@opensaas/stack-cli` ships, not whatever (if anything) happens to
+ * be on `PATH`/installed in the target project.
+ */
+const tscBin = path.join(
+  path.dirname(createRequire(import.meta.url).resolve('@typescript/native/package.json')),
+  'bin',
+  'tsc',
+)
 
 /**
  * The **Node build** (ADR-0011): an opt-in, plain-Node-loadable form of the
@@ -116,8 +133,11 @@ export interface BuildNodeBundleResult {
   distDir: string
   /** Absolute path to the compiled entry, `<opensaasDir>/dist/context.js`. */
   entry: string
-  /** TypeScript diagnostics surfaced during the compile (non-fatal; emit still proceeds). */
-  diagnostics: readonly ts.Diagnostic[]
+  /**
+   * Formatted `tsc` error lines surfaced during the compile (non-fatal; emit
+   * still proceeds since the Node build never sets `--noEmitOnError`).
+   */
+  diagnostics: readonly string[]
 }
 
 /**
@@ -168,11 +188,15 @@ function stageBundleFile(src: string, dest: string): void {
 }
 
 /**
- * The compiler options for the Node build. ESM output (`esnext` + `bundler`)
- * with the import-extension rewrite, declaration emit, and the lenient settings
- * that keep third-party `.d.ts` noise from blocking the emit on an opt-in path.
+ * The `tsconfig.json` compiler options for the Node build, as plain JSON
+ * (TypeScript 7 dropped the synchronous `ts.createProgram`/`Program#emit()`
+ * API from the `typescript` package's public surface, so the Node build now
+ * shells out to the `tsc` CLI against a generated config instead). ESM output
+ * (`esnext` + `bundler`) with the import-extension rewrite, declaration emit,
+ * and the lenient settings that keep third-party `.d.ts` noise from blocking
+ * the emit on an opt-in path.
  */
-function nodeBuildCompilerOptions(rootDir: string, outDir: string): ts.CompilerOptions {
+function nodeBuildCompilerOptions(outDir: string): Record<string, unknown> {
   return {
     // Rewrites the bundle's explicit `.ts`-extension imports (e.g.
     // `./prisma-client/client.ts`) to runnable `.js` specifiers.
@@ -184,17 +208,18 @@ function nodeBuildCompilerOptions(rootDir: string, outDir: string): ts.CompilerO
     // ESM output. `bundler` resolution permits the `.ts`-extension imports while
     // `esnext` keeps `import`/`export` syntax (the `{"type":"module"}` marker
     // written into `dist/` makes the emitted `.js` unambiguous ESM).
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    target: ts.ScriptTarget.ES2022,
-    rootDir,
+    module: 'esnext',
+    moduleResolution: 'bundler',
+    target: 'es2022',
+    rootDir: '.',
     outDir,
     // Third-party `.d.ts` (e.g. Prisma's) must not fail the type-check pass.
     skipLibCheck: true,
     // A production auth path must still emit even if a stray type error remains
     // (the bundle itself type-checks clean; this guards against host-config
     // noise like the `@/*` path alias, which is type-only and elided from JS).
-    noEmitOnError: false,
+    // `tsc` already defaults to emitting on type error when `--noEmitOnError`
+    // is omitted, so no explicit option is needed here.
     esModuleInterop: true,
     forceConsistentCasingInFileNames: true,
   }
@@ -253,13 +278,22 @@ export function buildNodeBundle(options: BuildNodeBundleOptions): BuildNodeBundl
     // Stage the project config as a sibling of the entry.
     fs.copyFileSync(configPath, path.join(stagingDir, CONFIG_FILENAME))
 
-    // Collect the staged `.ts` files as the program's root files.
-    const rootNames = collectTsFiles(stagingDir)
-    const compilerOptions = nodeBuildCompilerOptions(stagingDir, distDir)
-
-    const program = ts.createProgram({ rootNames, options: compilerOptions })
-    const emitResult = program.emit()
-    const diagnostics = ts.getPreEmitDiagnostics(program).concat(emitResult.diagnostics)
+    // Write a throwaway tsconfig.json for the staged compile and shell out to
+    // `tsc` (see `nodeBuildCompilerOptions` for why: TS 7 no longer exposes a
+    // synchronous, emit-to-disk Program API from the `typescript` package).
+    const tsconfigPath = path.join(stagingDir, 'tsconfig.json')
+    fs.writeFileSync(
+      tsconfigPath,
+      JSON.stringify(
+        {
+          compilerOptions: nodeBuildCompilerOptions(distDir),
+          include: ['**/*.ts'],
+        },
+        null,
+        2,
+      ),
+    )
+    const diagnostics = runTsc(tsconfigPath, stagingDir)
 
     // Write the ESM marker so the emitted `.js` are unambiguous ESM.
     fs.writeFileSync(path.join(distDir, 'package.json'), '{"type":"module"}\n')
@@ -275,32 +309,37 @@ export function buildNodeBundle(options: BuildNodeBundleOptions): BuildNodeBundl
   }
 }
 
-/** Recursively collect every `.ts` file under a directory (skips `.d.ts`). */
-function collectTsFiles(dir: string): string[] {
-  const out: string[] = []
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      out.push(...collectTsFiles(full))
-    } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
-      out.push(full)
-    }
+/**
+ * Run `tsc -p <tsconfigPath>` and return its reported error lines. `tsc`
+ * emits on type error by default (no `--noEmitOnError` is passed), so a
+ * non-zero exit here means "compiled with diagnostics", not "failed to
+ * compile" — `execFileSync` throws on that exit code, so both the success and
+ * failure paths are handled to recover the captured stdout either way.
+ */
+function runTsc(tsconfigPath: string, cwd: string): string[] {
+  let stdout: string
+  try {
+    stdout = execFileSync(process.execPath, [tscBin, '-p', tsconfigPath, '--pretty', 'false'], {
+      cwd,
+      encoding: 'utf-8',
+    })
+  } catch (err) {
+    const execErr = err as { stdout?: string }
+    stdout = execErr.stdout ?? ''
   }
-  return out
+  // Non-pretty `tsc` output is one diagnostic per line, e.g.
+  // `src/context.ts(12,3): error TS2304: Cannot find name 'console'.`
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /: error TS\d+:/.test(line))
 }
 
 /**
  * Format Node-build diagnostics into a short, human-readable list. The Node
- * build is best-effort (`noEmitOnError: false`), so these are surfaced as a
- * warning rather than a failure.
+ * build is best-effort (`tsc` emits despite type errors here), so these are
+ * surfaced as a warning rather than a failure.
  */
-export function formatNodeBuildDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
-  return ts.formatDiagnostics(
-    diagnostics.filter((d) => d.category === ts.DiagnosticCategory.Error),
-    {
-      getCanonicalFileName: (f) => f,
-      getCurrentDirectory: () => process.cwd(),
-      getNewLine: () => '\n',
-    },
-  )
+export function formatNodeBuildDiagnostics(diagnostics: readonly string[]): string {
+  return diagnostics.join('\n')
 }

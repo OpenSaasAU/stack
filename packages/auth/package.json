@@ -66,12 +66,13 @@
     "@opensaas/stack-core": "workspace:*",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "better-auth": "^1.5.5",
     "next": "^16.1.6",
     "react": "^19.2.4",
-    "typescript": "^5.9.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"
   }
 }

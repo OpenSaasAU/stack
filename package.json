@@ -35,8 +35,9 @@
     "@manypkg/cli": "^0.25.1",
     "@playwright/test": "^1.60.0",
     "@types/node": "^26.1.1",
-    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -45,6 +46,6 @@
     "playwright": "^1.60.0",
     "prettier": "^3.9.5",
     "turbo": "^2.8.20",
-    "typescript": "^5.9.3"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
