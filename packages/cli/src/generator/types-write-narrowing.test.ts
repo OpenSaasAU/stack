@@ -213,11 +213,12 @@ function compileFixture(generatedTypes: string): ts.Diagnostic[] {
       noEmit: true,
       skipLibCheck: true,
       allowImportingTsExtensions: true,
-      baseUrl: dir,
+      // `baseUrl` is deprecated as of TS 7 (https://aka.ms/ts6); absolute
+      // `paths` targets resolve without it.
       paths: {
-        '@opensaas/stack-core': ['./_stubs/core.ts'],
-        '@opensaas/stack-core/internal': ['./_stubs/core-internal.ts'],
-        'decimal.js': ['./_stubs/decimal.ts'],
+        '@opensaas/stack-core': [path.join(coreDir, 'core.ts')],
+        '@opensaas/stack-core/internal': [path.join(coreDir, 'core-internal.ts')],
+        'decimal.js': [path.join(coreDir, 'decimal.ts')],
       },
     }
     fs.writeFileSync(

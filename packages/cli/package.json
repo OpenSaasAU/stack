@@ -55,6 +55,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opensaas/stack-core": "workspace:*",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
@@ -63,7 +64,7 @@
     "jiti": "^2.6.1",
     "ora": "^9.3.0",
     "prompts": "^2.4.2",
-    "typescript": "^5.9.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
