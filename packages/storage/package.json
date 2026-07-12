@@ -38,7 +38,7 @@
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^5.9.3",

@@ -56,7 +56,7 @@
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "next": "^16.1.6",

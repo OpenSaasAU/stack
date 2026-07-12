@@ -34,7 +34,7 @@
     "@eslint/js": "^9.39.4",
     "@manypkg/cli": "^0.25.1",
     "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.1",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.63.0",
     "eslint": "^9.39.4",
