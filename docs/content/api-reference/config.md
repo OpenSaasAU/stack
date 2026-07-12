@@ -12,12 +12,8 @@ Creates and validates an OpenSaaS Stack configuration. Executes plugins if provi
 import { config } from '@opensaas/stack-core'
 
 export default config({
-  db: {
-    /* ... */
-  },
-  lists: {
-    /* ... */
-  },
+  db: {/* ... */},
+  lists: {/* ... */},
   // ... other options
 })
 ```
@@ -38,15 +34,9 @@ Defines a list (data model) with type-safe field definitions, access control, an
 import { list } from '@opensaas/stack-core'
 
 User: list({
-  fields: {
-    /* ... */
-  },
-  access: {
-    /* ... */
-  },
-  hooks: {
-    /* ... */
-  },
+  fields: {/* ... */},
+  access: {/* ... */},
+  hooks: {/* ... */},
 })
 ```
 

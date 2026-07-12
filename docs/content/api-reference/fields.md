@@ -875,9 +875,7 @@ Default selected value (must match one of the option values).
 
 ```typescript
 status: select({
-  options: [
-    /* ... */
-  ],
+  options: [/* ... */],
   defaultValue: 'draft',
 })
 ```
@@ -1656,9 +1654,7 @@ Side effects before database operation. Does NOT modify data.
 
 ```typescript
 status: select({
-  options: [
-    /* ... */
-  ],
+  options: [/* ... */],
   hooks: {
     beforeOperation: async ({ operation, resolvedValue, item }) => {
       // Log status changes
@@ -1758,9 +1754,7 @@ Default value when creating new items.
 
 ```typescript
 status: select({
-  options: [
-    /* ... */
-  ],
+  options: [/* ... */],
   defaultValue: 'draft',
 })
 

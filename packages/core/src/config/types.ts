@@ -5,14 +5,7 @@ import type { z } from 'zod'
  * Field configuration types
  */
 export type FieldType =
-  | 'text'
-  | 'integer'
-  | 'checkbox'
-  | 'timestamp'
-  | 'password'
-  | 'select'
-  | 'relationship'
-  | string // Allow custom field types from third-party packages
+  'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
 
 /**
  * Field-level hook argument types (exported for user annotations)

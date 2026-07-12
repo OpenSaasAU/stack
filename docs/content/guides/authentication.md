@@ -33,9 +33,7 @@ export default config({
     }),
   ],
   db: { provider: 'sqlite', url: 'file:./dev.db' },
-  lists: {
-    /* your lists */
-  },
+  lists: {/* your lists */},
 })
 ```
 
@@ -674,9 +672,7 @@ authPlugin({
 
   extendUserList: {
     fields: {
-      role: select({
-        /* ... */
-      }),
+      role: select({/* ... */}),
       company: text(),
     },
   },
@@ -1496,9 +1492,7 @@ authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'], // Include 'role'
   extendUserList: {
     fields: {
-      role: select({
-        /* ... */
-      }),
+      role: select({/* ... */}),
     },
   },
 })

@@ -91,9 +91,7 @@ export class SqliteVssStorage implements VectorStorage {
 
       for (const item of items) {
         const embeddingData = item[fieldName] as
-          | import('../config/types.js').StoredEmbedding
-          | null
-          | undefined
+          import('../config/types.js').StoredEmbedding | null | undefined
 
         if (!embeddingData || !embeddingData.vector) {
           continue

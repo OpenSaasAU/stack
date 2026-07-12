@@ -53,8 +53,7 @@ export type WriteOperation = 'create' | 'update' | 'delete'
  *   any input phases, before-hooks, or the DB call.
  */
 export type TargetResolution =
-  | { status: 'ok'; originalItem: Record<string, unknown> | undefined }
-  | { status: 'denied' }
+  { status: 'ok'; originalItem: Record<string, unknown> | undefined } | { status: 'denied' }
 
 /**
  * Minimal dynamic Prisma model surface used by the write pipeline. Model names

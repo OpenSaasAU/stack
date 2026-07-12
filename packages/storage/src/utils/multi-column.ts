@@ -19,13 +19,7 @@ import type { FileMetadata, ImageMetadata } from '../config/types.js'
  * column (whose physical name is configurable via `@map`).
  */
 export type ImageColumnPart =
-  | 'url'
-  | 'width'
-  | 'height'
-  | 'filesize'
-  | 'contentType'
-  | 'contentDisposition'
-  | 'pathname'
+  'url' | 'width' | 'height' | 'filesize' | 'contentType' | 'contentDisposition' | 'pathname'
 
 /**
  * The logical "parts" of a Keystone file field.

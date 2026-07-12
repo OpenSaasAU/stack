@@ -386,8 +386,7 @@ export async function executeFieldBeforeTransactionHooks(
  *    so hooks can compensate.
  */
 export type TransactionOutcome =
-  | { status: 'committed'; item: Record<string, unknown> }
-  | { status: 'rolled-back'; error: unknown }
+  { status: 'committed'; item: Record<string, unknown> } | { status: 'rolled-back'; error: unknown }
 
 /**
  * Execute field-level afterTransaction hooks (#590 / ADR-0010).

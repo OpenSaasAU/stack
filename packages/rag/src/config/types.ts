@@ -38,9 +38,7 @@ export type EmbeddingProviderName = 'openai' | 'ollama' | string
  * OpenAI embedding model options
  */
 export type OpenAIEmbeddingModel =
-  | 'text-embedding-3-small'
-  | 'text-embedding-3-large'
-  | 'text-embedding-ada-002'
+  'text-embedding-3-small' | 'text-embedding-3-large' | 'text-embedding-ada-002'
 
 /**
  * OpenAI embedding provider configuration
@@ -96,9 +94,7 @@ export type CustomEmbeddingConfig = {
  * Embedding provider configuration union
  */
 export type EmbeddingProviderConfig =
-  | OpenAIEmbeddingConfig
-  | OllamaEmbeddingConfig
-  | CustomEmbeddingConfig
+  OpenAIEmbeddingConfig | OllamaEmbeddingConfig | CustomEmbeddingConfig
 
 /**
  * Vector storage backend types
@@ -150,10 +146,7 @@ export type CustomStorageConfig = {
  * Vector storage configuration union
  */
 export type VectorStorageConfig =
-  | PgVectorStorageConfig
-  | SqliteVssStorageConfig
-  | JsonStorageConfig
-  | CustomStorageConfig
+  PgVectorStorageConfig | SqliteVssStorageConfig | JsonStorageConfig | CustomStorageConfig
 
 /**
  * Build-time embedding generation configuration

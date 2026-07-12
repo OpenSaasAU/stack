@@ -390,12 +390,8 @@ ragPlugin({
 
   // OR multiple providers
   providers: {
-    openai: openaiEmbeddings({
-      /* ... */
-    }),
-    ollama: ollamaEmbeddings({
-      /* ... */
-    }),
+    openai: openaiEmbeddings({/* ... */}),
+    ollama: ollamaEmbeddings({/* ... */}),
   },
 
   // Storage backend
