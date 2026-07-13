@@ -21,7 +21,7 @@
     "@vercel/analytics": "^2.0.1",
     "clipboard-copy": "^4.0.1",
     "lucide-react": "^0.562.0",
-    "next": "^16.1.6",
+    "next": "^16.2.10",
     "openai": "^6.32.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
