@@ -1,5 +1,46 @@
 # @opensaas/stack-ui
 
+## 0.27.0
+
+### Minor Changes
+
+- [#638](https://github.com/OpenSaasAU/stack/pull/638) [`95560e4`](https://github.com/OpenSaasAU/stack/commit/95560e4db69ae390131f02c357c7c0e0b82d4304) Thanks [@borisno2](https://github.com/borisno2)! - Wire the edit page onto the relationship-options primitive so relationship dropdowns are fast and live-searchable. The item-form preparation now fetches a bounded, take-limited window via `getRelationshipOptions` instead of an unbounded `findMany({})` per relationship field, always unioning the current value's id(s) so its label renders even outside the window.
+
+  `ComboboxField` (single) and `RelationshipManager` (many) gain debounced live search: typing narrows results against the label field via the `relationshipOptions` serverAction op, without any wiring changes required in host apps — `ItemForm`/`SingletonView` already pass `serverAction` and `listKey` through.
+
+  ```typescript
+  // No config changes needed — AdminUI's edit page picks this up automatically.
+  // A field's relationship dropdown now:
+  // 1. Renders a bounded initial window (default 50) with the current value's label always visible
+  // 2. Debounces typed input and searches server-side via context.serverAction({ action: 'relationshipOptions', ... })
+  ```
+
+  Components without a wired `serverAction` (e.g. custom usages of `ComboboxField`/`RelationshipManager`) fall back to client-side filtering over the initial window, unchanged from previous behavior.
+
+- [#636](https://github.com/OpenSaasAU/stack/pull/636) [`a15e566`](https://github.com/OpenSaasAU/stack/commit/a15e5660d736c8ea2d4b804c5ef6891510b2ea3d) Thanks [@borisno2](https://github.com/borisno2)! - Add a relationship-options read primitive: `getRelationshipOptions(context, config, relatedListKey, { search?, take?, selectedIds? })` returns a bounded, projected `{ id, label }[]` for relationship editors. It selects only `id` and the resolved label field (via `getLabelFieldName`), so no depth-5 auto-include ever runs; `search` filters via `contains` when the label field is text; results are ordered by the label field; and currently-selected `selectedIds` are always unioned into the result even when outside the `search`/`take` window. Operation-level `query` access on the related list still applies (denied → `[]`).
+
+  Also adds a `relationshipOptions` op on `context.serverAction` so hosts can resolve options from a client without a bespoke endpoint:
+
+  ```typescript
+  await context.serverAction({
+    listKey: 'Post',
+    action: 'relationshipOptions',
+    field: 'author',
+    search: 'ada',
+    take: 20,
+    selectedIds: ['user-123'],
+  })
+  // => { success: true, data: [{ id: 'user-123', label: 'Ada Lovelace' }, ...] }
+  ```
+
+  `getRelationshipOptions` is exported from `@opensaas/stack-core` and re-exported from `@opensaas/stack-ui` for server components that already hold a context.
+
+### Patch Changes
+
+- [#639](https://github.com/OpenSaasAU/stack/pull/639) [`3b2beb7`](https://github.com/OpenSaasAU/stack/commit/3b2beb7fbe64ce34510a5f59e0403a9b2fdab52d) Thanks [@borisno2](https://github.com/borisno2)! - List-page relationship cells now render their label via the shared label seam (`getItemLabel`), honouring a related list's `ui.labelField` instead of an inline `name → title → label → id` guess that had drifted from the item form.
+
+- [#664](https://github.com/OpenSaasAU/stack/pull/664) [`37838ef`](https://github.com/OpenSaasAU/stack/commit/37838efbf726b27baa5e1da448d44223c6953e3f) Thanks [@borisno2](https://github.com/borisno2)! - Upgrade TypeScript to v7. `typescript` now resolves to the `@typescript/typescript6` compatibility shim (keeping the classic compiler API available for `typescript-eslint` and Next.js's build-time type-checking, neither of which support TS 7's restructured package yet), while `@typescript-eslint/eslint-plugin` is bumped to 8.63.0 to match. The CLI's Node-build compiler step (ADR-0011) now shells out to `tsc` instead of the removed synchronous `Program` API, using its own pinned native TS 7 binary via a new `@typescript/native` dependency.
+
 ## 0.26.0
 
 ## 0.25.0
