@@ -1,5 +1,49 @@
 # @opensaas/stack-core
 
+## 0.27.0
+
+### Minor Changes
+
+- [#635](https://github.com/OpenSaasAU/stack/pull/635) [`18c39c8`](https://github.com/OpenSaasAU/stack/commit/18c39c8b8ffc0b0c5c4551385bb67054448e5781) Thanks [@borisno2](https://github.com/borisno2)! - Add a label seam for the admin UI: `getLabelFieldName(listConfig)` resolves the field that represents a list's rows as a single label (`ui.labelField` → `name` → `title` → `id`), and `getItemLabel(listConfig, item)` reads that field off a row, falling back to `id` when it's missing. Both are exported from the root entry point.
+
+  ```typescript
+  import { getLabelFieldName, getItemLabel } from '@opensaas/stack-core'
+
+  Post: list({
+    fields: { title: text() },
+    ui: { labelField: 'title' },
+  })
+
+  getLabelFieldName(listConfig) // 'title'
+  getItemLabel(listConfig, item) // item.title, or item.id if title is missing
+  ```
+
+- [#636](https://github.com/OpenSaasAU/stack/pull/636) [`a15e566`](https://github.com/OpenSaasAU/stack/commit/a15e5660d736c8ea2d4b804c5ef6891510b2ea3d) Thanks [@borisno2](https://github.com/borisno2)! - Add a relationship-options read primitive: `getRelationshipOptions(context, config, relatedListKey, { search?, take?, selectedIds? })` returns a bounded, projected `{ id, label }[]` for relationship editors. It selects only `id` and the resolved label field (via `getLabelFieldName`), so no depth-5 auto-include ever runs; `search` filters via `contains` when the label field is text; results are ordered by the label field; and currently-selected `selectedIds` are always unioned into the result even when outside the `search`/`take` window. Operation-level `query` access on the related list still applies (denied → `[]`).
+
+  Also adds a `relationshipOptions` op on `context.serverAction` so hosts can resolve options from a client without a bespoke endpoint:
+
+  ```typescript
+  await context.serverAction({
+    listKey: 'Post',
+    action: 'relationshipOptions',
+    field: 'author',
+    search: 'ada',
+    take: 20,
+    selectedIds: ['user-123'],
+  })
+  // => { success: true, data: [{ id: 'user-123', label: 'Ada Lovelace' }, ...] }
+  ```
+
+  `getRelationshipOptions` is exported from `@opensaas/stack-core` and re-exported from `@opensaas/stack-ui` for server components that already hold a context.
+
+### Patch Changes
+
+- [#664](https://github.com/OpenSaasAU/stack/pull/664) [`37838ef`](https://github.com/OpenSaasAU/stack/commit/37838efbf726b27baa5e1da448d44223c6953e3f) Thanks [@borisno2](https://github.com/borisno2)! - Upgrade TypeScript to v7. `typescript` now resolves to the `@typescript/typescript6` compatibility shim (keeping the classic compiler API available for `typescript-eslint` and Next.js's build-time type-checking, neither of which support TS 7's restructured package yet), while `@typescript-eslint/eslint-plugin` is bumped to 8.63.0 to match. The CLI's Node-build compiler step (ADR-0011) now shells out to `tsc` instead of the removed synchronous `Program` API, using its own pinned native TS 7 binary via a new `@typescript/native` dependency.
+
+- [#633](https://github.com/OpenSaasAU/stack/pull/633) [`9d9c7f8`](https://github.com/OpenSaasAU/stack/commit/9d9c7f8e5afd0b4afb01dc40cb16217f8d675354) Thanks [@borisno2](https://github.com/borisno2)! - Fix virtual fields named in `include`/`select` throwing a Prisma "Unknown field" error. Virtual field keys are now stripped from the query payload while their value is still computed via `resolveOutput`.
+
+- [#637](https://github.com/OpenSaasAU/stack/pull/637) [`002e755`](https://github.com/OpenSaasAU/stack/commit/002e755ca405c23127b3c88378955127cc8b3f67) Thanks [@borisno2](https://github.com/borisno2)! - Fix `calendarDay` writes 500ing on Prisma 7 `@db.Date` columns — a `resolveInput` hook now coerces a `YYYY-MM-DD` string to a UTC-midnight `Date` before validation, and the field's zod schema accepts either shape.
+
 ## 0.26.0
 
 ### Minor Changes
