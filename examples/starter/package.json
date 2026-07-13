@@ -21,7 +21,7 @@
     "@tailwindcss/postcss": "^4.2.1",
     "better-sqlite3": "^12.6.2",
     "next": "^16.2.10",
-    "postcss": "^8.5.17",
+    "postcss": "^8.5.18",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.2.1"
