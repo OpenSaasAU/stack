@@ -699,6 +699,10 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
           context,
         },
         config,
+        0,
+        // Seed the cycle guard with the root list so a relationship cycle back
+        // to it (self-referential or longer) stops re-descending.
+        [listName],
       )
       // MERGE (not replace) a caller-supplied include with the access-controlled
       // include: the caller selects WHICH relations to fetch, access control
@@ -829,6 +833,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           context,
         },
         config,
+        0,
+        // Seed the cycle guard with the root list so a relationship cycle back
+        // to it (self-referential or longer) stops re-descending.
+        [listName],
       )
       // MERGE (not replace) a caller-supplied include with the access-controlled
       // include: the caller selects WHICH relations to fetch, access control
@@ -1141,6 +1149,10 @@ function createGet<TPrisma extends PrismaClientLike>(
         context,
       },
       config,
+      0,
+      // Seed the cycle guard with the root list so a relationship cycle back
+      // to it (self-referential or longer) stops re-descending.
+      [listName],
     )
 
     // Try to find the record
