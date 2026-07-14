@@ -30,6 +30,10 @@ export async function buildIncludeWithAccessControl(
   },
   config: OpenSaasConfig,
   depth: number = 0,
+  // List names already on the path from the root to here. Used to detect
+  // relationship cycles (A → B → … → A) and stop the auto-include from
+  // re-descending them. Seed it with the root list name at the call site.
+  visitedLists: readonly string[] = [],
 ) {
   const MAX_DEPTH = 5
   if (depth >= MAX_DEPTH) {
@@ -75,16 +79,31 @@ export async function buildIncludeWithAccessControl(
           includeEntry.where = accessResult
         }
 
-        // Recursively build nested includes
-        const nestedInclude = await buildIncludeWithAccessControl(
-          relatedConfig.listConfig.fields,
-          args,
-          config,
-          depth + 1,
-        )
+        // Cycle guard: if the related list already appears on the path from the
+        // root, DO NOT auto-include its relationships again. On a cyclic
+        // readable-relationship graph (A → B → … → A) the depth-first walk would
+        // otherwise re-descend the cycle on every branch, and — combined with the
+        // bare-`true` leaf re-expansion in `mergeIncludeWithAccessControl` — build
+        // an include tree deep/large enough to overflow the call stack in
+        // downstream processing (the RSC serializer's recursive `Map.set`). This
+        // extends the SF-20 (#566) fix: a bare-`true` leaf must resolve to a
+        // genuine single-level fetch, not a re-expansion of the full auto-include.
+        // The relation itself is still included (as a FLAT fetch of its own
+        // columns); only its onward relationships are pruned at the back-edge.
+        const relatedListName = relatedConfig.listName
+        if (!visitedLists.includes(relatedListName)) {
+          // Recursively build nested includes
+          const nestedInclude = await buildIncludeWithAccessControl(
+            relatedConfig.listConfig.fields,
+            args,
+            config,
+            depth + 1,
+            [...visitedLists, relatedListName],
+          )
 
-        if (nestedInclude && Object.keys(nestedInclude).length > 0) {
-          includeEntry.include = nestedInclude
+          if (nestedInclude && Object.keys(nestedInclude).length > 0) {
+            includeEntry.include = nestedInclude
+          }
         }
 
         // Add to include object
