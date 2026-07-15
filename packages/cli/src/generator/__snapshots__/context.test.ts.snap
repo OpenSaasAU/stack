@@ -103,8 +103,10 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 }
 
 /**
- * Raw context for synchronous initialization (e.g., Better-auth setup)
- * This is only available after config is resolved, use with caution
+ * Raw context as a Promise, for module-init-time consumers that can't \`await\` directly
+ * (e.g., Better-auth setup). Resolves once config and the Prisma client are ready.
+ * Pass this promise itself to helpers like \`createAuth\` that defer real construction
+ * behind a lazy Proxy until it resolves - do not await it at module scope.
  */
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
@@ -223,8 +225,10 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 }
 
 /**
- * Raw context for synchronous initialization (e.g., Better-auth setup)
- * This is only available after config is resolved, use with caution
+ * Raw context as a Promise, for module-init-time consumers that can't \`await\` directly
+ * (e.g., Better-auth setup). Resolves once config and the Prisma client are ready.
+ * Pass this promise itself to helpers like \`createAuth\` that defer real construction
+ * behind a lazy Proxy until it resolves - do not await it at module scope.
  */
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
@@ -343,8 +347,10 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 }
 
 /**
- * Raw context for synchronous initialization (e.g., Better-auth setup)
- * This is only available after config is resolved, use with caution
+ * Raw context as a Promise, for module-init-time consumers that can't \`await\` directly
+ * (e.g., Better-auth setup). Resolves once config and the Prisma client are ready.
+ * Pass this promise itself to helpers like \`createAuth\` that defer real construction
+ * behind a lazy Proxy until it resolves - do not await it at module scope.
  */
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()

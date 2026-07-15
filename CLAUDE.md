@@ -701,6 +701,32 @@ export default config({
 
 The generated context will use your custom constructor to instantiate PrismaClient with the appropriate adapter.
 
+**Getting the ORM client outside a request (module-init-time consumers):** There is no synchronous, framework-provided accessor for the configured Prisma client — config resolution is async (plugins can contribute config asynchronously), so the generated context's singleton client cannot be built without an `await`. Depending on what your consumer needs, pick one of:
+
+- **Can `await`:** use `getContext()` / `context.prisma` as shown above. This is the framework's singleton — no second connection.
+- **Must construct synchronously at module scope, but only needs to defer method calls** (e.g. a library whose calls you can lazily forward): pass the generated `rawOpensaasContext` promise to a lazy `Proxy` that awaits it on first access, the same pattern `@opensaas/stack-auth`'s `createAuth()` uses for better-auth's Prisma adapter (`packages/auth/src/server/index.ts`):
+
+  ```typescript
+  // lib/auth.ts
+  import { createAuth } from '@opensaas/stack-auth/server'
+  import config from '../opensaas.config'
+  import { rawOpensaasContext } from '@/.opensaas/context'
+
+  export const auth = createAuth(config, rawOpensaasContext)
+  ```
+
+- **Must construct synchronously with a resolved client value** (a third-party contract that does `new SomeAdapter(new PrismaClient(...))` at import time, where deferring behind a Proxy isn't an option): import the generated `PrismaClient` and reuse your own `prismaClientConstructor` to build a second, independent client instance — the same adapter/connection selection as the generated context, not a hand-rolled re-derivation of it:
+
+  ```typescript
+  // lib/sync-client.ts
+  import { PrismaClient } from '../.opensaas/prisma-client/client.js'
+  import { prismaClientConstructor } from '../opensaas.config' // factor this out if opensaas.config.ts isn't import-safe at this point
+
+  export const syncPrismaClient = prismaClientConstructor(PrismaClient)
+  ```
+
+  This client is a **second connection**, separate from the framework's singleton, and it is the **raw** Prisma client — it carries none of `context.db`'s access control or hooks. Both are intentional for this use case; state them explicitly wherever this pattern is reused. See ADR-0014 for the full decision record.
+
 ### 3. Silent Failures
 
 Access-controlled operations return `null` (single record) or `[]` (multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist.
