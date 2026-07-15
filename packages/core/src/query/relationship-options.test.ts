@@ -39,6 +39,13 @@ function makeConfig(): OpenSaasConfig {
         ui: { labelField: 'rank' },
         access: { operation: { query: () => true } },
       },
+      VirtualLabel: {
+        fields: {
+          displayName: { type: 'virtual', virtual: true },
+        },
+        ui: { labelField: 'displayName' },
+        access: { operation: { query: () => true } },
+      },
     },
   } as unknown as OpenSaasConfig
 }
@@ -97,6 +104,36 @@ describe('getRelationshipOptions', () => {
     const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
     expect(call.where).toBeUndefined()
     expect(call.orderBy).toEqual({ rank: 'asc' })
+  })
+
+  it('falls back to ordering by id when the label field is virtual (no backing column)', async () => {
+    const rows = [{ id: 'v1', displayName: 'Computed One' }]
+    const delegate = makeDelegate(rows)
+    const context = makeContext({ virtualLabel: delegate })
+    const config = makeConfig()
+
+    const result = await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
+
+    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
+    // Virtual label fields have no backing column, so ordering by them would
+    // 500 in Prisma — order by id instead, and skip the text `contains` filter.
+    expect(call.orderBy).toEqual({ id: 'asc' })
+    expect(call.where).toBeUndefined()
+    expect(result).toEqual([{ id: 'v1', label: 'Computed One' }])
+  })
+
+  it('treats a field flagged virtual via type alone as non-orderable (orders by id)', async () => {
+    const config = makeConfig()
+    // Only `type: 'virtual'` is set here (no `virtual: true`) to lock in the
+    // discriminator against future refactors.
+    ;(config.lists.VirtualLabel.fields.displayName as { virtual?: boolean }).virtual = undefined
+    const delegate = makeDelegate([{ id: 'v1', displayName: 'Computed One' }])
+    const context = makeContext({ virtualLabel: delegate })
+
+    await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
+
+    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
+    expect(call.orderBy).toEqual({ id: 'asc' })
   })
 
   it('unions currently-selected ids even when beyond take / not matching search', async () => {

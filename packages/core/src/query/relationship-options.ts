@@ -44,13 +44,21 @@ export async function getRelationshipOptions(
   })
 
   const { search, take = DEFAULT_TAKE, selectedIds = [] } = args
-  const labelFieldConfig = relatedListConfig.fields[labelField] as { type?: string } | undefined
+  const labelFieldConfig = relatedListConfig.fields[labelField] as
+    { type?: string; virtual?: boolean } | undefined
   const where =
     search && labelFieldConfig?.type === 'text' ? { [labelField]: { contains: search } } : undefined
 
+  // Virtual/computed label fields (resolved at read time via `resolveOutput`)
+  // have no backing database column, so passing them into `orderBy` fails
+  // Prisma validation and 500s the request. Fall back to ordering by `id` —
+  // always a real, orderable column — whenever the label field is virtual.
+  const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
+  const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
+
   const primary = await runQuery(context, relatedListKey, fragment, {
     where,
-    orderBy: { [labelField]: 'asc' },
+    orderBy,
     take,
   })
 
