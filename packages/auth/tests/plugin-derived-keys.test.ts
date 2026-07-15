@@ -71,6 +71,60 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     expect(user.fields).toHaveProperty('email') // auth field merged in
     expect(user.fields).toHaveProperty('sessions')
   })
+
+  it('routes a better-auth plugin schema extension of `user` onto the remapped Auth list, not an unrelated host User', async () => {
+    // A better-auth provider plugin (e.g. the `anonymous` plugin) that ships a
+    // schema extension for the base `user` model.
+    const anonymousBetterAuthPlugin = {
+      id: 'anonymous',
+      schema: {
+        user: {
+          fields: {
+            isAnonymous: { type: 'boolean', required: false },
+          },
+        },
+      },
+    }
+
+    const hostUserUpdate = vi.fn(() => false)
+    const result = await config({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          user: { modelName: 'AuthUser' },
+          session: { modelName: 'AuthSession' },
+          account: { modelName: 'AuthAccount' },
+          verification: { modelName: 'AuthVerification' },
+          betterAuthPlugins: [anonymousBetterAuthPlugin],
+        }),
+      ],
+      lists: {
+        // An app's own unrelated domain list that happens to share the
+        // default (unmapped) auth user key.
+        User: list({
+          fields: {
+            subjectId: text({ validation: { isRequired: true } }),
+          },
+          access: { operation: { update: hostUserUpdate } },
+        }),
+      },
+    })
+
+    // The plugin's schema extension lands on the adopted Auth list...
+    expect(result.lists.AuthUser.fields).toHaveProperty('isAnonymous')
+    expect(result.lists.AuthUser.fields).toHaveProperty('email')
+
+    // ...and the unrelated host `User` list is left completely untouched: no
+    // injected column, and its own (admin-only-style) access control survives
+    // instead of being overwritten by the plugin's permissive defaults.
+    const appUser = result.lists.User
+    expect(appUser.fields).toHaveProperty('subjectId')
+    expect(appUser.fields).not.toHaveProperty('isAnonymous')
+    expect(appUser.fields).not.toHaveProperty('email')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- access control parameters are runtime values
+    expect(appUser.access?.operation?.update?.({} as any)).toBe(false)
+    expect(appUser.access?.operation?.update).toBe(hostUserUpdate)
+  })
 })
 
 describe('authPlugin - runtime user-key resolution', () => {

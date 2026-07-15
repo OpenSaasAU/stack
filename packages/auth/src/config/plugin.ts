@@ -46,12 +46,24 @@ export function authPlugin(config: AuthConfig): Plugin {
       // match the developer's live better-auth tables.
       const authLists = getAuthLists(normalized.extendUserList, normalized.models)
 
+      // The same base-model list keys the Auth lists above were derived under
+      // (e.g. `user.modelName: 'AuthUser'`). A provider plugin's schema
+      // extension of a base model (e.g. `user`) must resolve against this
+      // remap too, so it lands on the adopted Auth list rather than a
+      // re-derived key that can collide with an unrelated host list.
+      const baseModelKeys = {
+        user: normalized.models.user.modelName,
+        session: normalized.models.session.modelName,
+        account: normalized.models.account.modelName,
+        verification: normalized.models.verification.modelName,
+      }
+
       // Extract additional lists from Better Auth plugins
       for (const plugin of normalized.betterAuthPlugins) {
         if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
           // Plugin has schema property - convert to OpenSaaS lists
           const pluginSchema = plugin.schema
-          const pluginLists = convertBetterAuthSchema(pluginSchema)
+          const pluginLists = convertBetterAuthSchema(pluginSchema, baseModelKeys)
 
           // Add or extend lists from plugin
           for (const [listName, listConfig] of Object.entries(pluginLists)) {
