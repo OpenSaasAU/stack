@@ -4,7 +4,6 @@ import type {
   PluginContext,
   ListConfig,
   Hooks,
-  OperationAccess,
   McpCustomTool,
   BaseFieldConfig,
 } from './types.js'
@@ -126,29 +125,6 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
 }
 
 /**
- * Merge access control from extension into existing access
- */
-function mergeAccess(
-  existing: { operation?: OperationAccess } | undefined,
-  extension: { operation?: OperationAccess } | undefined,
-): { operation?: OperationAccess } | undefined {
-  if (!extension) return existing
-  if (!existing) return extension
-
-  const merged: { operation?: OperationAccess } = {}
-
-  // Merge operation access (use extension if provided, otherwise keep existing)
-  if (existing.operation || extension.operation) {
-    merged.operation = {
-      ...existing.operation,
-      ...extension.operation,
-    }
-  }
-
-  return merged
-}
-
-/**
  * Execute plugins and transform config
  * Returns modified config with plugin data attached
  */
@@ -197,6 +173,19 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           )
         }
 
+        // Operation-level access belongs to whoever owns the list (the
+        // application, or an earlier plugin that created it via addList).
+        // An extension of a pre-existing list must never define or override
+        // that access — see ADR-0013. Fields/hooks/relationships/mcp may
+        // still be merged in below.
+        if (extension.access?.operation) {
+          throw new Error(
+            `Plugin "${plugin.name}" tried to set operation-level access while extending list "${name}", ` +
+              `but access control belongs to the application (or whichever party created the list), never a ` +
+              `plugin extending it. Remove "access" from this extension — see ADR-0013.`,
+          )
+        }
+
         // Deep merge fields
         const mergedFields = {
           ...existing.fields,
@@ -205,9 +194,6 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
         // Merge hooks
         const mergedHooks = mergeHooks(existing.hooks, extension.hooks)
-
-        // Merge access control
-        const mergedAccess = mergeAccess(existing.access, extension.access)
 
         // Merge MCP config
         const mergedMcp = extension.mcp
@@ -221,7 +207,6 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           ...existing,
           fields: mergedFields,
           hooks: mergedHooks,
-          access: mergedAccess,
           mcp: mergedMcp,
         }
       },
