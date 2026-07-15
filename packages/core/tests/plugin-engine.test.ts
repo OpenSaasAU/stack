@@ -681,8 +681,8 @@ describe('Plugin Engine', () => {
     })
   })
 
-  describe('access control merging', () => {
-    test('merges access control from plugins', async () => {
+  describe('access control guardrail (ADR-0013)', () => {
+    test('throws when an extension carries operation access for a pre-existing list', async () => {
       const plugin: Plugin = {
         name: 'test-plugin',
         init: async (context) => {
@@ -711,23 +711,19 @@ describe('Plugin Engine', () => {
         plugins: [plugin],
       }
 
-      const result = await executePlugins(config)
-
-      expect(result.lists.Post.access?.operation?.query).toBeDefined()
-      expect(result.lists.Post.access?.operation?.create).toBeDefined()
-      expect(result.lists.Post.access?.operation?.update).toBeDefined()
+      await expect(executePlugins(config)).rejects.toThrow(
+        'Plugin "test-plugin" tried to set operation-level access while extending list "Post"',
+      )
     })
 
-    test('plugin access control overrides existing', async () => {
-      const pluginQuery = vi.fn(() => false)
-
+    test('extension attempting to override existing access throws instead of silently winning', async () => {
       const plugin: Plugin = {
         name: 'test-plugin',
         init: async (context) => {
           context.extendList('Post', {
             access: {
               operation: {
-                query: pluginQuery,
+                query: () => false,
               },
             },
           })
@@ -750,10 +746,67 @@ describe('Plugin Engine', () => {
         plugins: [plugin],
       }
 
+      await expect(executePlugins(config)).rejects.toThrow('Post')
+
+      // The host's access is untouched — the throw happens before any mutation.
+      expect(config.lists.Post.access?.operation?.query).toBe(originalQuery)
+    })
+
+    test('extension providing only fields/hooks for a pre-existing list leaves its access untouched', async () => {
+      const originalQuery = vi.fn(() => true)
+
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async (context) => {
+          context.extendList('Post', {
+            fields: { views: integer() },
+          })
+        },
+      }
+
+      const config: OpenSaasConfig = {
+        lists: {
+          Post: {
+            fields: { title: text() },
+            access: {
+              operation: {
+                query: originalQuery,
+              },
+            },
+          },
+        },
+        plugins: [plugin],
+      }
+
       const result = await executePlugins(config)
 
-      // Plugin's access control should override original
-      expect(result.lists.Post.access?.operation?.query).toBe(pluginQuery)
+      expect(result.lists.Post.fields.views).toBeDefined()
+      expect(result.lists.Post.access?.operation?.query).toBe(originalQuery)
+    })
+
+    test('a plugin creating a new list may still set its access via addList', async () => {
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async (context) => {
+          context.addList('Widget', {
+            fields: { name: text() },
+            access: {
+              operation: {
+                query: () => true,
+              },
+            },
+          })
+        },
+      }
+
+      const config: OpenSaasConfig = {
+        lists: {},
+        plugins: [plugin],
+      }
+
+      const result = await executePlugins(config)
+
+      expect(result.lists.Widget.access?.operation?.query).toBeDefined()
     })
   })
 

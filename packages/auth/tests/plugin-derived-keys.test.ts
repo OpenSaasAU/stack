@@ -72,6 +72,42 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     expect(user.fields).toHaveProperty('sessions')
   })
 
+  it("does not overwrite an app's admin-only access when the auth plugin extends the same default key (ADR-0013)", async () => {
+    // Regression test for #678: the auth plugin ships permissive defaults
+    // (query: () => true, self-only update/delete) for its own User list.
+    // Before the ADR-0013 fix, extending an app-declared `User` at the
+    // default key forwarded those permissive defaults and silently replaced
+    // the app's admin-only access. Now the plugin must not forward `access`
+    // at all on its extend path, so the app's access survives untouched.
+    const adminOnlyUpdate = vi.fn(() => false)
+    const adminOnlyQuery = vi.fn(() => false)
+
+    const result = await config({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({})],
+      lists: {
+        User: list({
+          fields: { bio: text() },
+          access: {
+            operation: {
+              query: adminOnlyQuery,
+              update: adminOnlyUpdate,
+            },
+          },
+        }),
+      },
+    })
+
+    const user = result.lists.User
+    expect(user.fields).toHaveProperty('email') // auth fields still merged in
+    // The app's admin-only access is intact — not replaced by the plugin's
+    // permissive `query: () => true` / self-only `update` defaults.
+    expect(user.access?.operation?.query).toBe(adminOnlyQuery)
+    expect(user.access?.operation?.update).toBe(adminOnlyUpdate)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- access control parameters are runtime values
+    expect(user.access?.operation?.query?.({} as any)).toBe(false)
+  })
+
   it('routes a better-auth plugin schema extension of `user` onto the remapped Auth list, not an unrelated host User', async () => {
     // A better-auth provider plugin (e.g. the `anonymous` plugin) that ships a
     // schema extension for the base `user` model.

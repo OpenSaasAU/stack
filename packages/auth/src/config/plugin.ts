@@ -68,11 +68,13 @@ export function authPlugin(config: AuthConfig): Plugin {
           // Add or extend lists from plugin
           for (const [listName, listConfig] of Object.entries(pluginLists)) {
             if (context.config.lists[listName]) {
-              // List exists, extend it
+              // List already exists — merge fields/hooks/mcp in only. Access
+              // control belongs to whoever owns the list; per ADR-0013 an
+              // extension must never carry operation-level access for a
+              // pre-existing list (the plugin engine throws if it does).
               context.extendList(listName, {
                 fields: listConfig.fields,
                 hooks: listConfig.hooks,
-                access: listConfig.access,
                 mcp: listConfig.mcp,
               })
             } else {
@@ -94,11 +96,13 @@ export function authPlugin(config: AuthConfig): Plugin {
       // "merge auth fields into my User" behaviour.
       for (const [listName, listConfig] of Object.entries(authLists)) {
         if (context.config.lists[listName]) {
-          // A list already exists under this derived key — merge auth fields in.
+          // A list already exists under this derived key — merge auth fields
+          // in only. Access control belongs to whoever owns the list (the
+          // application declared it first), so the plugin never forwards its
+          // own access here — see ADR-0013.
           context.extendList(listName, {
             fields: listConfig.fields,
             hooks: listConfig.hooks,
-            access: listConfig.access,
             mcp: listConfig.mcp,
           })
         } else {
