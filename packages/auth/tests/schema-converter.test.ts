@@ -276,6 +276,54 @@ describe('convertBetterAuthSchema', () => {
     expect(lists).toEqual({})
   })
 
+  it('should resolve a base-model table against the configured baseModelKeys remap instead of the table name', () => {
+    const schema = {
+      user: {
+        modelName: '',
+        fields: {
+          isAnonymous: { type: 'boolean' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema, { user: 'AuthUser' })
+
+    expect(lists).toHaveProperty('AuthUser')
+    expect(lists).not.toHaveProperty('User')
+    expect(lists.AuthUser.fields).toHaveProperty('isAnonymous')
+  })
+
+  it('should prefer the baseModelKeys remap over an explicit tableSchema.modelName', () => {
+    const schema = {
+      user: {
+        modelName: 'User',
+        fields: {
+          isAnonymous: { type: 'boolean' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema, { user: 'AuthUser' })
+
+    expect(lists).toHaveProperty('AuthUser')
+    expect(lists).not.toHaveProperty('User')
+  })
+
+  it('should leave non-base tables unaffected by baseModelKeys', () => {
+    const schema = {
+      oauth_application: {
+        modelName: '',
+        fields: {
+          data: { type: 'string' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema, { user: 'AuthUser' })
+
+    expect(lists).toHaveProperty('OauthApplication')
+  })
+
   it('should convert complex schema with multiple field types', () => {
     const schema = {
       test_table: {

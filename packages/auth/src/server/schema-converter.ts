@@ -282,18 +282,47 @@ export function convertTableToList(
 }
 
 /**
+ * Base better-auth model keys — the four tables the auth plugin's own model
+ * config (`user`/`session`/`account`/`verification`) can remap via `modelName`.
+ */
+type BaseAuthModelKey = 'user' | 'session' | 'account' | 'verification'
+
+/**
+ * Resolved list key for each base better-auth model, as derived by
+ * {@link deriveAuthLists} from the plugin's configured model-key remap (e.g.
+ * `user.modelName: 'AuthUser'`). Passed to {@link convertBetterAuthSchema} so a
+ * provider plugin's schema extension of a base model (e.g. `user`) lands on the
+ * same adopted Auth list rather than being re-derived from the plugin's own
+ * table name.
+ */
+export type BaseAuthModelKeys = Partial<Record<BaseAuthModelKey, string>>
+
+/**
  * Convert all Better Auth tables to OpenSaaS list configs
  * This is called by authPlugin() to generate lists from Better Auth + plugins
+ *
+ * @param tables - The better-auth plugin's declared schema extension
+ * @param baseModelKeys - The resolved list keys for the four base auth models
+ *   (`user`/`session`/`account`/`verification`), from the same model-key remap
+ *   the Auth lists themselves use. When a table name matches one of these keys
+ *   (case-insensitively), its list key is taken from here instead of being
+ *   re-derived from the table name — so a schema extension targeting `user`
+ *   lands on the adopted Auth list (e.g. `AuthUser`) rather than a re-derived
+ *   `User`, even when that key collides with an unrelated host list.
  */
 export function convertBetterAuthSchema(
   tables: Record<string, BetterAuthTableSchema>,
+  baseModelKeys: BaseAuthModelKeys = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
   const lists: Record<string, ListConfig<any>> = {} // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 
   for (const [tableName, tableSchema] of Object.entries(tables)) {
-    // Convert table name to PascalCase for OpenSaaS list key
-    const listKey = tableSchema.modelName || toPascalCase(tableName)
+    const baseModelKey = baseModelKeys[tableName.toLowerCase() as BaseAuthModelKey]
+    // A base-model remap always wins: it reflects the actual configured list
+    // key for that model, whereas `tableSchema.modelName`/the table name are
+    // just how the provider plugin happens to describe its own extension.
+    const listKey = baseModelKey || tableSchema.modelName || toPascalCase(tableName)
     lists[listKey] = convertTableToList(tableName, tableSchema)
   }
 
