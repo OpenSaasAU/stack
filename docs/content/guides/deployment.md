@@ -464,12 +464,12 @@ This is the same command used in [Step 4](#step-4-author-the-first-migration) ab
 Requirements:
 
 - A reachable database. Any disposable Postgres works for CI (a `postgres:16` service container is the common choice).
-- Postgres additionally needs a **shadow database**, which Prisma creates and drops automatically using the same connection — this requires the connecting role to have `CREATEDB`, or a separate `shadowDatabaseUrl` configured. See [Prisma's shadow database docs](https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/shadow-database) if the CI role can't create databases.
+- Postgres additionally needs a **shadow database**, which Prisma creates and drops automatically using the same connection — this requires the connecting role to have `CREATEDB`, or a separate database with `shadowDatabaseUrl` set on the `datasource` block in `prisma.config.ts` (alongside `url`). See [Prisma's shadow database docs](https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/shadow-database) if the CI role can't create databases.
 - The existing migration history must apply cleanly against that database — if it's drifted, `migrate dev` falls back to its reset-confirmation prompt (see below).
 
-**DB-less fallback — `prisma migrate diff`**
+**Fallback — `prisma migrate diff` against a throwaway database**
 
-Where a database genuinely can't run (e.g. a fully sandboxed agent with no way to provision Postgres), author the migration from a pure schema diff instead:
+Where authoring against your actual project database isn't possible or desirable (e.g. a sandboxed agent that can't reach it), `prisma migrate diff` computes the same migration SQL without ever touching your project's database — it only needs somewhere disposable to replay the existing migration history:
 
 ```bash
 pnpm generate # regenerate prisma/schema.prisma from opensaas.config.ts
@@ -479,13 +479,16 @@ mkdir -p "$DIR"
 
 npx prisma migrate diff \
   --from-migrations prisma/migrations \
-  --to-schema-datamodel prisma/schema.prisma \
+  --to-schema prisma/schema.prisma \
   --script > "$DIR/migration.sql"
 ```
 
+- **SQLite:** this is genuinely database-less — Prisma creates and discards a temporary file automatically, no extra config needed.
+- **PostgreSQL / MySQL:** `--from-migrations` still needs somewhere to replay the migration history into, via `shadowDatabaseUrl` set on the `datasource` block in `prisma.config.ts` (alongside `url`). It can be any empty, disposable database of the right provider — it doesn't need to be reachable from your app, match your project's current state, or grant `CREATEDB` on your real connection, unlike `migrate dev`'s auto-managed shadow database (which piggybacks on the same connection as your target DB).
+
 `migration_lock.toml` (just the provider name) is created once per project by the first migration and doesn't need to be recreated by hand for subsequent ones.
 
-> **Fidelity caveat.** `migrate diff` compares the target schema against the migration history's resulting schema on paper — it does not replay the history against a real database via a shadow DB the way `migrate dev` does. It won't catch drift between your committed migrations and what's actually deployed, and it can miss provider-specific behaviour that only surfaces against a live database. Treat its output as a starting point to review, not a guarantee, and prefer the primary `migrate dev` path whenever a database is available.
+> **Fidelity caveat.** `migrate diff` never connects to your actual deployed database — it only replays your committed migration history onto the disposable shadow database and diffs the result against the target schema file. So it won't catch drift between what's actually deployed and what your migration history says should be deployed (e.g. a manual hotfix applied outside migrations). Treat its output as a starting point to review, and prefer the primary `migrate dev` path — which does check against your real target database — whenever that's available.
 
 **Why the "non-interactive...not supported" error appears**
 
