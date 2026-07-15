@@ -444,6 +444,53 @@ pnpm migrate:deploy
 
 `migrate deploy` only applies existing committed migrations; it never edits your schema, which makes it safe to run in an automated pipeline.
 
+### Authoring Migrations in CI / Agent Environments
+
+The above covers _applying_ migrations, which `migrate deploy` already does non-interactively. _Authoring_ a new migration (`migrate dev`) in a CI runner or a sandboxed coding agent is a different question, and the requirement is a **database to diff against, not a TTY**.
+
+**Primary path — `prisma migrate dev --name <name>` against a real database**
+
+`migrate dev` only prompts when it needs a decision it can't make on its own: the migration name (supplied via `--name`), or how to handle detected drift/reset. On a clean, in-sync migration history, supplying `--name` is enough — the command runs headless:
+
+```bash
+# Point DATABASE_URL / DIRECT_DATABASE_URL at a disposable database first
+# (a CI Postgres service container, Docker, or a throwaway Neon branch — SQLite needs no extra setup)
+pnpm generate
+pnpm migrate -- --name add_status_field
+```
+
+This is the same command used in [Step 4](#step-4-author-the-first-migration) above — it produces a correctly named, timestamped migration directory (`migration.sql` + updated `migration_lock.toml`), identical to what an interactive local run would produce.
+
+Requirements:
+
+- A reachable database. Any disposable Postgres works for CI (a `postgres:16` service container is the common choice).
+- Postgres additionally needs a **shadow database**, which Prisma creates and drops automatically using the same connection — this requires the connecting role to have `CREATEDB`, or a separate `shadowDatabaseUrl` configured. See [Prisma's shadow database docs](https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/shadow-database) if the CI role can't create databases.
+- The existing migration history must apply cleanly against that database — if it's drifted, `migrate dev` falls back to its reset-confirmation prompt (see below).
+
+**DB-less fallback — `prisma migrate diff`**
+
+Where a database genuinely can't run (e.g. a fully sandboxed agent with no way to provision Postgres), author the migration from a pure schema diff instead:
+
+```bash
+pnpm generate # regenerate prisma/schema.prisma from opensaas.config.ts
+
+DIR="prisma/migrations/$(date +%Y%m%d%H%M%S)_add_status_field"
+mkdir -p "$DIR"
+
+npx prisma migrate diff \
+  --from-migrations prisma/migrations \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script > "$DIR/migration.sql"
+```
+
+`migration_lock.toml` (just the provider name) is created once per project by the first migration and doesn't need to be recreated by hand for subsequent ones.
+
+> **Fidelity caveat.** `migrate diff` compares the target schema against the migration history's resulting schema on paper — it does not replay the history against a real database via a shadow DB the way `migrate dev` does. It won't catch drift between your committed migrations and what's actually deployed, and it can miss provider-specific behaviour that only surfaces against a live database. Treat its output as a starting point to review, not a guarantee, and prefer the primary `migrate dev` path whenever a database is available.
+
+**Why the "non-interactive...not supported" error appears**
+
+If you've hit `Prisma Migrate has detected that the environment is non-interactive, which is not supported`, it isn't because `migrate dev` requires a TTY in general — it's the **reset/confirmation path**: either there's no reachable database/shadow database to diff against, or the migration history has drifted from it, and Prisma needs to ask "reset the database?" with no way to answer non-interactively. Point the command at a clean, reachable database (and pass `--name`) and it runs headless.
+
 ## Production Considerations
 
 ### Bundling the Generated `.opensaas` bundle
