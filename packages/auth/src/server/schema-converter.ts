@@ -298,6 +298,30 @@ type BaseAuthModelKey = 'user' | 'session' | 'account' | 'verification'
 export type BaseAuthModelKeys = Partial<Record<BaseAuthModelKey, string>>
 
 /**
+ * Look up the configured remap for a table name, if it names one of the four
+ * base better-auth models (case-insensitively). Written as an explicit switch
+ * rather than an indexed lookup so no type assertion is needed to narrow the
+ * table name into {@link BaseAuthModelKey}.
+ */
+function resolveBaseModelKey(
+  tableName: string,
+  baseModelKeys: BaseAuthModelKeys,
+): string | undefined {
+  switch (tableName.toLowerCase()) {
+    case 'user':
+      return baseModelKeys.user
+    case 'session':
+      return baseModelKeys.session
+    case 'account':
+      return baseModelKeys.account
+    case 'verification':
+      return baseModelKeys.verification
+    default:
+      return undefined
+  }
+}
+
+/**
  * Convert all Better Auth tables to OpenSaaS list configs
  * This is called by authPlugin() to generate lists from Better Auth + plugins
  *
@@ -318,11 +342,13 @@ export function convertBetterAuthSchema(
   const lists: Record<string, ListConfig<any>> = {} // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 
   for (const [tableName, tableSchema] of Object.entries(tables)) {
-    const baseModelKey = baseModelKeys[tableName.toLowerCase() as BaseAuthModelKey]
     // A base-model remap always wins: it reflects the actual configured list
     // key for that model, whereas `tableSchema.modelName`/the table name are
     // just how the provider plugin happens to describe its own extension.
-    const listKey = baseModelKey || tableSchema.modelName || toPascalCase(tableName)
+    const listKey =
+      resolveBaseModelKey(tableName, baseModelKeys) ||
+      tableSchema.modelName ||
+      toPascalCase(tableName)
     lists[listKey] = convertTableToList(tableName, tableSchema)
   }
 
