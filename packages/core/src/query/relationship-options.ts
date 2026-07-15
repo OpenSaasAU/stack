@@ -54,7 +54,7 @@ export async function getRelationshipOptions(
   // Prisma validation and 500s the request. Fall back to ordering by `id` —
   // always a real, orderable column — whenever the label field is virtual.
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
-  const orderBy = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
+  const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
 
   const primary = await runQuery(context, relatedListKey, fragment, {
     where,

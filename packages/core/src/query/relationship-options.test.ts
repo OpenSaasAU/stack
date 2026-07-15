@@ -122,6 +122,20 @@ describe('getRelationshipOptions', () => {
     expect(result).toEqual([{ id: 'v1', label: 'Computed One' }])
   })
 
+  it('treats a field flagged virtual via type alone as non-orderable (orders by id)', async () => {
+    const config = makeConfig()
+    // Only `type: 'virtual'` is set here (no `virtual: true`) to lock in the
+    // discriminator against future refactors.
+    ;(config.lists.VirtualLabel.fields.displayName as { virtual?: boolean }).virtual = undefined
+    const delegate = makeDelegate([{ id: 'v1', displayName: 'Computed One' }])
+    const context = makeContext({ virtualLabel: delegate })
+
+    await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
+
+    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
+    expect(call.orderBy).toEqual({ id: 'asc' })
+  })
+
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
     // The bounded/search-scoped query only returns a1 (mimicking take:1 + search).
     const primaryDelegate = makeDelegate([authors[0]])
