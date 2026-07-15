@@ -715,12 +715,32 @@ The generated context will use your custom constructor to instantiate PrismaClie
   export const auth = createAuth(config, rawOpensaasContext)
   ```
 
-- **Must construct synchronously with a resolved client value** (a third-party contract that does `new SomeAdapter(new PrismaClient(...))` at import time, where deferring behind a Proxy isn't an option): import the generated `PrismaClient` and reuse your own `prismaClientConstructor` to build a second, independent client instance — the same adapter/connection selection as the generated context, not a hand-rolled re-derivation of it:
+- **Must construct synchronously with a resolved client value** (a third-party contract that does `new SomeAdapter(new PrismaClient(...))` at import time, where deferring behind a Proxy isn't an option): import the generated `PrismaClient` and reuse your own adapter constructor to build a second, independent client instance — the same adapter/connection selection as the generated context, not a hand-rolled re-derivation of it. Don't import `prismaClientConstructor` from `opensaas.config.ts` itself — its default export can be a `Promise` when plugins are present, which defeats the point of a synchronous accessor. Factor the constructor into its own plain module that both `opensaas.config.ts` and this consumer import:
+
+  ```typescript
+  // lib/db-adapter.ts — no plugin/config imports, safe to import synchronously
+  import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+
+  export function prismaClientConstructor(PrismaClient) {
+    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
+    return new PrismaClient({ adapter })
+  }
+  ```
+
+  ```typescript
+  // opensaas.config.ts
+  import { prismaClientConstructor } from './lib/db-adapter'
+
+  export default config({
+    db: { provider: 'sqlite', prismaClientConstructor /* ... */ },
+    // ...
+  })
+  ```
 
   ```typescript
   // lib/sync-client.ts
-  import { PrismaClient } from '../.opensaas/prisma-client/client.js'
-  import { prismaClientConstructor } from '../opensaas.config' // factor this out if opensaas.config.ts isn't import-safe at this point
+  import { PrismaClient } from '../.opensaas/prisma-client/client.ts'
+  import { prismaClientConstructor } from './db-adapter'
 
   export const syncPrismaClient = prismaClientConstructor(PrismaClient)
   ```
