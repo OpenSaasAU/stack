@@ -281,6 +281,8 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 ```
 
+`createAuth()` returns a `Proxy` synchronously and defers the real `betterAuth()` construction (and the `context.prisma` it wraps) until `rawOpensaasContext` resolves — the sanctioned pattern for a module-init-time consumer that only needs to defer method calls, not obtain a resolved client value. See ADR-0014 and root `CLAUDE.md`'s "Getting the ORM client outside a request" for the full decision record and the synchronous-client alternative.
+
 ### With Better-auth
 
 - Direct wrapper around Better-auth core

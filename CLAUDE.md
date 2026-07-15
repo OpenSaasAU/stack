@@ -745,7 +745,7 @@ The generated context will use your custom constructor to instantiate PrismaClie
   export const syncPrismaClient = prismaClientConstructor(PrismaClient)
   ```
 
-  This client is a **second connection**, separate from the framework's singleton, and it is the **raw** Prisma client — it carries none of `context.db`'s access control or hooks. Both are intentional for this use case; state them explicitly wherever this pattern is reused. See ADR-0014 for the full decision record.
+  This client is a **second connection**, separate from the framework's singleton, and it is the **raw** Prisma client — it carries none of `context.db`'s access control or hooks. Both are intentional for this use case; state them explicitly wherever this pattern is reused. See ADR-0014 and `packages/auth/CLAUDE.md` for the full decision record.
 
 ### 3. Silent Failures
 
