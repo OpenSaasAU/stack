@@ -24,8 +24,17 @@ import * as path from 'path'
  * because the upstream helper throws when a variable is unset, which would break
  * the `??` fallback. The local helper returns `undefined` for missing variables
  * so the fallback can take effect.
+ *
+ * @param extraDatasourceLines - Verbatim `datasource` block entries the
+ *   generator does not itself manage (e.g. a host-added `shadowDatabaseUrl`),
+ *   extracted from a pre-existing file by {@link extractExtraDatasourceLines}.
+ *   Re-emitted after the managed `url` key so a re-generate does not drop them.
  */
-export function generatePrismaConfig(_config: OpenSaasConfig, schemaPath?: string): string {
+export function generatePrismaConfig(
+  _config: OpenSaasConfig,
+  schemaPath?: string,
+  extraDatasourceLines: string[] = [],
+): string {
   const lines: string[] = []
 
   // The schema path Prisma's CLI resolves (a directory or a `.prisma` file).
@@ -48,6 +57,9 @@ export function generatePrismaConfig(_config: OpenSaasConfig, schemaPath?: strin
   lines.push(`  schema: '${schema}',`)
   lines.push('  datasource: {')
   lines.push("    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),")
+  for (const extraLine of extraDatasourceLines) {
+    lines.push(`    ${extraLine}`)
+  }
   lines.push('  },')
   lines.push('})')
   lines.push('')
@@ -56,7 +68,37 @@ export function generatePrismaConfig(_config: OpenSaasConfig, schemaPath?: strin
 }
 
 /**
+ * Extract host-added `datasource` block entries from a pre-existing
+ * `prisma.config.ts` file, so a re-generate can preserve them instead of
+ * clobbering the block wholesale.
+ *
+ * Only the `url` key is generator-managed; every other entry in the block
+ * (e.g. `shadowDatabaseUrl`) is treated as host-owned and returned verbatim
+ * for re-emission by {@link generatePrismaConfig}.
+ *
+ * This is a lightweight line-based extraction, not a TypeScript parser: it
+ * assumes the `datasource` block contains flat, single-line `key: value,`
+ * entries with no nested braces, which matches every entry this generator or
+ * documented host customization emits.
+ */
+export function extractExtraDatasourceLines(existingContent: string): string[] {
+  const match = existingContent.match(/datasource:\s*\{([^}]*)\}/)
+  if (!match) {
+    return []
+  }
+
+  return match[1]
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('url:'))
+}
+
+/**
  * Write Prisma config to file
+ *
+ * If a `prisma.config.ts` already exists at `outputPath`, its `datasource`
+ * block is read first so host-added keys the generator does not manage (e.g.
+ * `shadowDatabaseUrl`) survive the rewrite — see {@link extractExtraDatasourceLines}.
  *
  * @param schemaPath - Optional override for the `schema` field, forwarded to
  *   {@link generatePrismaConfig}.
@@ -66,7 +108,11 @@ export function writePrismaConfig(
   outputPath: string,
   schemaPath?: string,
 ): void {
-  const prismaConfig = generatePrismaConfig(config, schemaPath)
+  const extraDatasourceLines = fs.existsSync(outputPath)
+    ? extractExtraDatasourceLines(fs.readFileSync(outputPath, 'utf-8'))
+    : []
+
+  const prismaConfig = generatePrismaConfig(config, schemaPath, extraDatasourceLines)
 
   // Ensure directory exists
   const dir = path.dirname(outputPath)
