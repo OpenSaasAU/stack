@@ -9,10 +9,10 @@ You are the **engineering manager**. You do **not** write code. You plan the wor
 
 This skill assumes the issues already exist. If they don't:
 
-- No PRD yet → `/to-prd`.
-- PRD but no issues → `/to-issues`.
+- No PRD yet → `/to-spec`.
+- PRD but no issues → `/to-tickets`.
 
-It picks up from a PRD issue (or an explicit list of issues) and gets them merged. It does **not** replicate `/to-prd`, `/to-issues`, `/review`, or `/qa-prd` — it conducts them.
+It picks up from a PRD issue (or an explicit list of issues) and gets them merged. It does **not** replicate `/to-spec`, `/to-tickets`, `/review`, or `/qa-prd` — it conducts them.
 
 ## Prime directives
 
