@@ -55,7 +55,7 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     expect(lists.User.fields.name.db?.map).toBeUndefined()
     expect(lists.Session.fields.token.db?.map).toBeUndefined()
     // FK column not overridden -> no foreignKey map on the relationship
-    expect(lists.Session.fields.user.db).toBeUndefined()
+    expect(lists.Session.fields.user.db?.foreignKey).toBeUndefined()
   })
 
   it('opts every auth list into auto-timestamps', () => {
@@ -69,6 +69,59 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     expect(lists.Session.db?.timestamps).toBe(true)
     expect(lists.Account.db?.timestamps).toBe(true)
     expect(lists.Verification.db?.timestamps).toBe(true)
+  })
+})
+
+describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679)', () => {
+  it('disables the default FK index on Session.user and Account.user', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.Session.fields.user.isIndexed).toBe(false)
+    expect(lists.Account.fields.user.isIndexed).toBe(false)
+  })
+
+  it('does not touch isIndexed on the email/token unique fields', () => {
+    // Existing @@unique mirroring must be unaffected by the FK shape change.
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.User.fields.email.isIndexed).toBe('unique')
+    expect(lists.Session.fields.token.isIndexed).toBe('unique')
+  })
+
+  it('adds onDelete: Cascade to the user relation line via extendPrismaSchema', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    for (const field of [lists.Session.fields.user, lists.Account.fields.user]) {
+      const extend = field.db?.extendPrismaSchema
+      expect(extend).toBeTypeOf('function')
+
+      const result = extend!({
+        fkLine: '  userId       String?',
+        relationLine: '  user         User?  @relation(fields: [userId], references: [id])',
+      })
+
+      expect(result.relationLine).toBe(
+        '  user         User?  @relation(onDelete: Cascade, fields: [userId], references: [id])',
+      )
+      // The FK line itself is untouched by the cascade rewrite.
+      expect(result.fkLine).toBe('  userId       String?')
+    }
+  })
+
+  it('keeps the cascade extendPrismaSchema alongside a userId column override', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'User', fields: {} },
+      session: { modelName: 'Session', fields: { userId: 'user_id' } },
+      account: { modelName: 'Account', fields: { userId: 'user_id' } },
+      verification: { modelName: 'Verification', fields: {} },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.Session.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
+    expect(lists.Session.fields.user.db?.extendPrismaSchema).toBeTypeOf('function')
+    expect(lists.Account.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
+    expect(lists.Account.fields.user.db?.extendPrismaSchema).toBeTypeOf('function')
   })
 })
 
