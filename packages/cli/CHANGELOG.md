@@ -1,5 +1,18 @@
 # @opensaas/stack-cli
 
+## 0.28.0
+
+### Patch Changes
+
+- [#696](https://github.com/OpenSaasAU/stack/pull/696) [`0bcfb4a`](https://github.com/OpenSaasAU/stack/commit/0bcfb4a6f1183ee75017bee73566f5aaa3b5408e) Thanks [@borisno2](https://github.com/borisno2)! - Note in the generated Keystone auth migration guide that Auth-injected lists now ship closed by default (ADR-0013) and how to grant them access via `authPlugin({ access: { ... } })`.
+
+- [#691](https://github.com/OpenSaasAU/stack/pull/691) [`7f113a9`](https://github.com/OpenSaasAU/stack/commit/7f113a9c454a9c92ca4769687832da661acf250a) Thanks [@borisno2](https://github.com/borisno2)! - Fix misleading doc comment on the generated `rawOpensaasContext` export: it's a `Promise<Context>` meant to be passed to a lazy-Proxy consumer (e.g. `createAuth`), not a synchronous value.
+
+- [#694](https://github.com/OpenSaasAU/stack/pull/694) [`529fa98`](https://github.com/OpenSaasAU/stack/commit/529fa984cccab50ba88cf22c69431e9f5f927f8a) Thanks [@borisno2](https://github.com/borisno2)! - Preserve host-added `datasource` keys (e.g. `shadowDatabaseUrl`) in `prisma.config.ts` across `generate` runs instead of overwriting the block wholesale.
+
+- Updated dependencies [[`0bcfb4a`](https://github.com/OpenSaasAU/stack/commit/0bcfb4a6f1183ee75017bee73566f5aaa3b5408e), [`aec907f`](https://github.com/OpenSaasAU/stack/commit/aec907f29b31ca507831d729182938975ec4b4fa), [`fd64913`](https://github.com/OpenSaasAU/stack/commit/fd64913ac65ed60440eaee210a34a6f8e3824c21)]:
+  - @opensaas/stack-core@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

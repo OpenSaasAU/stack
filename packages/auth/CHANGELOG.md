@@ -1,5 +1,47 @@
 # @opensaas/stack-auth
 
+## 0.28.0
+
+### Minor Changes
+
+- [#696](https://github.com/OpenSaasAU/stack/pull/696) [`0bcfb4a`](https://github.com/OpenSaasAU/stack/commit/0bcfb4a6f1183ee75017bee73566f5aaa3b5408e) Thanks [@{](https://github.com/{)! - BREAKING: Auth-injected lists (User/Session/Account/Verification) now ship **closed** — no operation-level access — instead of shipping permissive defaults (`query: () => true`, self-only update/delete). Per ADR-0013, access control belongs to the application. With no access configured, `context.db` reads/writes against these lists return `null`/`[]` and they no longer appear in the admin UI. better-auth's own sign-in/sign-up/session flows are unaffected — they write through the raw Prisma client, bypassing access control entirely.
+
+  Grant access with the new `authPlugin({ access: { ... } })` passthrough, keyed by better-auth model name (`user`/`session`/`account`/`verification` — not the derived list key, so it stays correct if you rename a model via `modelName`). Each entry is a full list access config (operation and field-level):
+
+  ```typescript
+  authPlugin({
+    access: {
+
+        operation: {
+          query: ({ session }) => !!session,
+          update: ({ session, item }) => session?.userId === item.id,
+        },
+      },
+      session: {
+        operation: {
+          query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
+        },
+      },
+    },
+  })
+  ```
+
+  For the User list specifically, `extendUserList.access` (unchanged) still works and takes precedence over `access.user` if both are set.
+
+  The runtime `getUser`/`getCurrentUser` helpers now resolve through the `sudo` helper `@opensaas/stack-core` passes to `plugin.runtime(context, sudo)`, so "who is this session" no longer depends on the application's User list access policy.
+
+  Migration: if you relied on the old permissive defaults, add the equivalent rules under `authPlugin({ access: { ... } })` for any Auth list your app reads or writes through `context.db` or the admin UI.
+
+- [#698](https://github.com/OpenSaasAU/stack/pull/698) [`cf8b4bd`](https://github.com/OpenSaasAU/stack/commit/cf8b4bd17af15c5dadc898e76465913909c74c89) Thanks [@borisno2](https://github.com/borisno2)! - The derived `Session.user` and `Account.user` foreign keys now mirror a live better-auth database's shape: no `@@index([userId])` (better-auth carries no separate FK index) and `onDelete: Cascade` (Prisma's default was `Restrict`). This applies to both greenfield installs and adopted databases, so a generated Auth schema diffs clean against a standard better-auth Prisma schema.
+
+  Migration note: existing greenfield stack-auth apps will see a schema diff on next `pnpm generate` — a migration that drops the `userId` index on `Session`/`Account` and adds `onDelete: Cascade` to both foreign keys. Review the generated migration before applying it; deleting a user now cascades to their sessions and accounts instead of being blocked.
+
+### Patch Changes
+
+- [#689](https://github.com/OpenSaasAU/stack/pull/689) [`8db2c57`](https://github.com/OpenSaasAU/stack/commit/8db2c57130f270b73a6a007312d743cac97a8743) Thanks [@borisno2](https://github.com/borisno2)! - Fix better-auth plugin schema extensions (e.g. `user`) resolving against a re-derived list key instead of the configured model-key remap, which could silently apply the extension's fields/access to an unrelated host list sharing the default key.
+
+- [#695](https://github.com/OpenSaasAU/stack/pull/695) [`fd64913`](https://github.com/OpenSaasAU/stack/commit/fd64913ac65ed60440eaee210a34a6f8e3824c21) Thanks [@borisno2](https://github.com/borisno2)! - Fix a plugin's `extendList()` silently overwriting a pre-existing list's operation-level access. Per ADR-0013, an extension that carries `access.operation` for an existing list now throws a config-time error naming the plugin and the list; the auth plugin no longer forwards its own access when extending a list an app already declared.
+
 ## 0.27.1
 
 ## 0.27.0

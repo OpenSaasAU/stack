@@ -1,5 +1,17 @@
 # @opensaas/stack-core
 
+## 0.28.0
+
+### Minor Changes
+
+- [#696](https://github.com/OpenSaasAU/stack/pull/696) [`0bcfb4a`](https://github.com/OpenSaasAU/stack/commit/0bcfb4a6f1183ee75017bee73566f5aaa3b5408e) Thanks [@borisno2](https://github.com/borisno2)! - `Plugin['runtime']` now receives a `sudo` helper as a second argument — `runtime(context, sudo)` — mirroring `StackContext.sudo()` one layer lower. Call `sudo().db` for reads/writes that must bypass access control but still run hooks, for example a plugin's identity lookup that shouldn't depend on the caller's own list access policy. `sudo` is a plain function argument, not a method on `context` (`AccessContext`) itself.
+
+### Patch Changes
+
+- [#690](https://github.com/OpenSaasAU/stack/pull/690) [`aec907f`](https://github.com/OpenSaasAU/stack/commit/aec907f29b31ca507831d729182938975ec4b4fa) Thanks [@borisno2](https://github.com/borisno2)! - Fix relationship live-search 500 when the target list's label field is a virtual field by ordering by `id` instead of the non-orderable virtual column
+
+- [#695](https://github.com/OpenSaasAU/stack/pull/695) [`fd64913`](https://github.com/OpenSaasAU/stack/commit/fd64913ac65ed60440eaee210a34a6f8e3824c21) Thanks [@borisno2](https://github.com/borisno2)! - Fix a plugin's `extendList()` silently overwriting a pre-existing list's operation-level access. Per ADR-0013, an extension that carries `access.operation` for an existing list now throws a config-time error naming the plugin and the list; the auth plugin no longer forwards its own access when extending a list an app already declared.
+
 ## 0.27.1
 
 ### Patch Changes
