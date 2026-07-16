@@ -306,6 +306,15 @@ ${options.map((o) => `+   ${o}`).join('\n')}
 
 The auth plugin automatically provides User, Session, Account, and Verification lists.
 **Remove those from your own \`lists\` config** if you have them.
+
+**Access control:** unlike Keystone's \`User\` list (which you declared and
+secured yourself), the auth plugin's lists ship **closed** by default — no
+\`context.db\` reads/writes on User/Session/Account/Verification until you
+grant access. Add the access rules your Keystone \`User\` list had via
+\`authPlugin({ access: { user: { ... } } })\` (keyed by \`user\`/\`session\`/
+\`account\`/\`verification\`, not the list name). Sign-in/sign-up are
+unaffected — better-auth talks to these tables directly, bypassing access
+control.
 `
   }
 

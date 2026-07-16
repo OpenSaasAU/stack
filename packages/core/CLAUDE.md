@@ -56,6 +56,8 @@ Access control functions receive `{ session, context, item, operation }` and ret
 - `boolean` - Allow/deny
 - `Prisma filter object` - Scope access to matching records
 
+The `context` (an `AccessContext`) passed to hooks, access control functions, and a plugin's `runtime(context)` factory carries `context.sudo()` — an access-bypassing (but still hook-firing) context, for reads/writes that must not depend on the caller's own list access policy (e.g. an auth plugin resolving "who is this session" independent of the User list's access rules). It's the same escape hatch as `StackContext.sudo()`, exposed one layer lower.
+
 ### Session Typing (`src/access/types.ts`)
 
 The `Session` interface can be augmented to provide type safety and autocomplete for session fields.

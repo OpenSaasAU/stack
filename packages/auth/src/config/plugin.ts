@@ -44,7 +44,11 @@ export function authPlugin(config: AuthConfig): Plugin {
       // User/Session/Account/Verification keys; with overrides (e.g.
       // user.modelName: 'AuthUser') the lists are keyed and column-mapped to
       // match the developer's live better-auth tables.
-      const authLists = getAuthLists(normalized.extendUserList, normalized.models)
+      const authLists = getAuthLists(
+        normalized.extendUserList,
+        normalized.models,
+        normalized.access,
+      )
 
       // The same base-model list keys the Auth lists above were derived under
       // (e.g. `user.modelName: 'AuthUser'`). A provider plugin's schema
@@ -167,24 +171,29 @@ export function authPlugin(config: AuthConfig): Plugin {
       // Provide auth-related utilities at runtime
       return {
         /**
-         * Get user by ID
-         * Uses the access-controlled context to fetch user data
+         * Get user by ID.
+         *
+         * Resolves through `context.sudo()` (per ADR-0013): the User list ships
+         * closed by default, and "who is this session" must not depend on the
+         * application's User access policy.
          */
         getUser: async (userId: string) => {
-          return await context.db[userDbKey].findUnique({
+          const sudoContext = context.sudo?.() ?? context
+          return await sudoContext.db[userDbKey].findUnique({
             where: { id: userId },
           })
         },
 
         /**
-         * Get current user from session
-         * Extracts userId from session and fetches user data
+         * Get current user from session. Extracts userId from session and
+         * fetches user data via `context.sudo()` — see {@link getUser}.
          */
         getCurrentUser: async () => {
           if (!context.session?.userId) {
             return null
           }
-          return await context.db[userDbKey].findUnique({
+          const sudoContext = context.sudo?.() ?? context
+          return await sudoContext.db[userDbKey].findUnique({
             where: { id: context.session.userId },
           })
         },

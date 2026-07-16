@@ -13,9 +13,12 @@
  *  - relationship refs between the auth lists wired to the *derived* keys
  *    (e.g. `Session.user → AuthUser.sessions`)
  *
- * When the developer supplies no `modelName`/`fields` overrides, the output is
- * byte-for-byte the historical default set keyed `User`/`Session`/`Account`/
- * `Verification` with the original field shapes — see the unit tests.
+ * When the developer supplies no `modelName`/`fields` overrides, the output
+ * keeps the historical default keys (`User`/`Session`/`Account`/
+ * `Verification`) and field shapes — see the unit tests. Per ADR-0013, each
+ * list ships with **no** operation-level access unless the caller supplies it
+ * (`accessConfig`, or `userConfig.access` for the user list) — deny-by-default,
+ * not the plugin's former permissive defaults.
  *
  * `getAuthLists`/`convertBetterAuthSchema` (and the runtime user-key
  * resolution) consume this module so derivation lives in exactly one place.
@@ -25,7 +28,7 @@ import { list } from '@opensaas/stack-core'
 import { text, timestamp, checkbox, relationship } from '@opensaas/stack-core/fields'
 import type { ListConfig } from '@opensaas/stack-core'
 import type { ExtendUserListConfig } from '../lists/index.js'
-import type { NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
+import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
 
 /**
  * Default better-auth model names — used to decide whether a `@@map` is needed
@@ -116,11 +119,17 @@ function userForeignKeyDb(
 /**
  * Create the Auth user list, applying derived field column maps + table map and
  * wiring the session/account relationships to the derived keys.
+ *
+ * Per ADR-0013, the plugin ships no permissive access default: the list is
+ * closed unless the application supplies access via `extendUserList.access`
+ * (takes precedence — it predates the keyed `access` passthrough and is
+ * User-specific) or the `access.user` passthrough.
  */
 function createUserList(
   model: NormalizedAuthModelConfig,
   keys: DerivedAuthLists['keys'],
   userConfig: ExtendUserListConfig,
+  access: AuthAccessConfig['user'],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
   const f = model.fields
@@ -143,34 +152,21 @@ function createUserList(
       ...(userConfig.fields || {}),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.user),
-    access: userConfig.access || {
-      operation: {
-        query: () => true,
-        create: () => true,
-        update: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-      },
-    },
+    access: userConfig.access || access,
     hooks: userConfig.hooks,
   })
 }
 
 /**
  * Create the Auth session list.
+ *
+ * Per ADR-0013, the plugin ships no permissive access default — closed unless
+ * the application supplies `access.session`.
  */
 function createSessionList(
   model: NormalizedAuthModelConfig,
   keys: DerivedAuthLists['keys'],
+  access: AuthAccessConfig['session'],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
   const f = model.fields
@@ -190,35 +186,20 @@ function createSessionList(
       }),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.session),
-    access: {
-      operation: {
-        query: ({ session }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          return {
-            user: { id: { equals: userId } },
-          } as Record<string, unknown>
-        },
-        create: () => true,
-        update: () => false,
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    },
+    access,
   })
 }
 
 /**
  * Create the Auth account list.
+ *
+ * Per ADR-0013, the plugin ships no permissive access default — closed unless
+ * the application supplies `access.account`.
  */
 function createAccountList(
   model: NormalizedAuthModelConfig,
   keys: DerivedAuthLists['keys'],
+  access: AuthAccessConfig['account'],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
   const f = model.fields
@@ -239,39 +220,19 @@ function createAccountList(
       password: text({ db: fieldDb('password', f) }),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.account),
-    access: {
-      operation: {
-        query: ({ session }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          return {
-            user: { id: { equals: userId } },
-          } as Record<string, unknown>
-        },
-        create: () => true,
-        update: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-        delete: ({ session, item }) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    },
+    access,
   })
 }
 
 /**
  * Create the Auth verification list.
+ *
+ * Per ADR-0013, the plugin ships no permissive access default — closed unless
+ * the application supplies `access.verification`.
  */
 function createVerificationList(
   model: NormalizedAuthModelConfig,
+  access: AuthAccessConfig['verification'],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
   const f = model.fields
@@ -282,27 +243,28 @@ function createVerificationList(
       expiresAt: timestamp({ db: fieldDb('expiresAt', f) }),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.verification),
-    access: {
-      operation: {
-        query: () => false,
-        create: () => true,
-        update: () => false,
-        delete: () => true,
-      },
-    },
+    access,
   })
 }
 
 /**
  * Derive the OpenSaaS Auth lists from the resolved better-auth model config.
  *
+ * Per ADR-0013 the derived lists ship **closed** (no permissive operation
+ * access) unless the application supplies access via `accessConfig` (the
+ * `authPlugin({ access: … })` passthrough, keyed by better-auth model name) or,
+ * for the user list specifically, `userConfig.access` (`extendUserList.access`,
+ * which takes precedence — see {@link AuthAccessConfig}).
+ *
  * @param models - Resolved better-auth per-model config (modelName + field column maps)
  * @param userConfig - Extra User-list fields/access/hooks supplied via `extendUserList`
+ * @param accessConfig - App-authored access for each Auth list, keyed by better-auth model name
  * @returns The derived list keys and the four Auth list configs keyed by those keys
  */
 export function deriveAuthLists(
   models: NormalizedAuthModels,
   userConfig: ExtendUserListConfig = {},
+  accessConfig: AuthAccessConfig = {},
 ): DerivedAuthLists {
   const keys = {
     user: models.user.modelName,
@@ -313,10 +275,10 @@ export function deriveAuthLists(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   const lists: Record<string, ListConfig<any>> = {
-    [keys.user]: createUserList(models.user, keys, userConfig),
-    [keys.session]: createSessionList(models.session, keys),
-    [keys.account]: createAccountList(models.account, keys),
-    [keys.verification]: createVerificationList(models.verification),
+    [keys.user]: createUserList(models.user, keys, userConfig, accessConfig.user),
+    [keys.session]: createSessionList(models.session, keys, accessConfig.session),
+    [keys.account]: createAccountList(models.account, keys, accessConfig.account),
+    [keys.verification]: createVerificationList(models.verification, accessConfig.verification),
   }
 
   return { keys, lists }

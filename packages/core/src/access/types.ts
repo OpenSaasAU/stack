@@ -290,6 +290,16 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
   plugins: Record<string, unknown>
   _isSudo: boolean
   /**
+   * Get an access-controlled context whose `db` bypasses access control (but
+   * still runs hooks/validation) for this same session. Populated by
+   * {@link import('../context/index.js').getContext}; not set on hand-built
+   * `AccessContext` mocks unless the mock provides it. Plugin `runtime`
+   * factories and hooks can use `context.sudo().db` for reads/writes that must
+   * not depend on the application's list access policy (e.g. an auth plugin's
+   * "who is this session" identity lookup) — see ADR-0013.
+   */
+  sudo?: () => AccessContext<TPrisma>
+  /**
    * Internal mutable counter to track resolveOutput hook depth.
    * When depth > 0, we skip auto-including relationships to prevent infinite loops
    * when hooks make database queries that include relationships back to the original entity.

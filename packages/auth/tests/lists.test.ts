@@ -58,56 +58,10 @@ describe('createUserList', () => {
     expect(userList.fields).toHaveProperty('email')
   })
 
-  it('should have default access control', () => {
+  it('ships closed (no access control) by default, per ADR-0013', () => {
     const userList = createUserList()
 
-    expect(userList.access).toBeDefined()
-    expect(userList.access?.operation).toBeDefined()
-    expect(userList.access?.operation?.query).toBeDefined()
-    expect(userList.access?.operation?.create).toBeDefined()
-    expect(userList.access?.operation?.update).toBeDefined()
-    expect(userList.access?.operation?.delete).toBeDefined()
-  })
-
-  it('should allow querying users', () => {
-    const userList = createUserList()
-    const queryAccess = userList.access?.operation?.query
-
-    expect(typeof queryAccess).toBe('function')
-    expect(queryAccess?.({})).toBe(true)
-  })
-
-  it('should allow creating users', () => {
-    const userList = createUserList()
-    const createAccess = userList.access?.operation?.create
-
-    expect(typeof createAccess).toBe('function')
-    expect(createAccess?.({})).toBe(true)
-  })
-
-  it('should allow users to update their own record', () => {
-    const userList = createUserList()
-    const updateAccess = userList.access?.operation?.update
-
-    expect(typeof updateAccess).toBe('function')
-    expect(
-      updateAccess?.({
-        session: { userId: 'user-1' },
-        item: { id: 'user-1' },
-      }),
-    ).toBe(true)
-  })
-
-  it('should deny users from updating other users', () => {
-    const userList = createUserList()
-    const updateAccess = userList.access?.operation?.update
-
-    expect(
-      updateAccess?.({
-        session: { userId: 'user-1' },
-        item: { id: 'user-2' },
-      }),
-    ).toBe(false)
+    expect(userList.access).toBeUndefined()
   })
 
   it('should allow custom access control', () => {
@@ -170,43 +124,10 @@ describe('createSessionList', () => {
     expect(sessionList.fields.user.ref).toBe('User.sessions')
   })
 
-  it('should have restrictive access control', () => {
+  it('ships closed (no access control) by default, per ADR-0013', () => {
     const sessionList = createSessionList()
 
-    expect(sessionList.access).toBeDefined()
-    expect(sessionList.access?.operation).toBeDefined()
-  })
-
-  it('should deny querying sessions without session', () => {
-    const sessionList = createSessionList()
-    const queryAccess = sessionList.access?.operation?.query
-
-    expect(queryAccess?.({})).toBe(false)
-    expect(queryAccess?.({ session: null })).toBe(false)
-  })
-
-  it('should allow querying own sessions with filter', () => {
-    const sessionList = createSessionList()
-    const queryAccess = sessionList.access?.operation?.query
-
-    const result = queryAccess?.({ session: { userId: 'user-1' } })
-    expect(result).toEqual({
-      user: { id: { equals: 'user-1' } },
-    })
-  })
-
-  it('should allow creating sessions', () => {
-    const sessionList = createSessionList()
-    const createAccess = sessionList.access?.operation?.create
-
-    expect(createAccess?.({})).toBe(true)
-  })
-
-  it('should deny manual session updates', () => {
-    const sessionList = createSessionList()
-    const updateAccess = sessionList.access?.operation?.update
-
-    expect(updateAccess?.({})).toBe(false)
+    expect(sessionList.access).toBeUndefined()
   })
 })
 
@@ -241,46 +162,10 @@ describe('createAccountList', () => {
     expect(accountList.fields.user.ref).toBe('User.accounts')
   })
 
-  it('should deny querying accounts without session', () => {
+  it('ships closed (no access control) by default, per ADR-0013', () => {
     const accountList = createAccountList()
-    const queryAccess = accountList.access?.operation?.query
 
-    expect(queryAccess?.({})).toBe(false)
-    expect(queryAccess?.({ session: null })).toBe(false)
-  })
-
-  it('should allow querying own accounts with filter', () => {
-    const accountList = createAccountList()
-    const queryAccess = accountList.access?.operation?.query
-
-    const result = queryAccess?.({ session: { userId: 'user-1' } })
-    expect(result).toEqual({
-      user: { id: { equals: 'user-1' } },
-    })
-  })
-
-  it('should allow users to update their own accounts', () => {
-    const accountList = createAccountList()
-    const updateAccess = accountList.access?.operation?.update
-
-    expect(
-      updateAccess?.({
-        session: { userId: 'user-1' },
-        item: { user: { id: 'user-1' } },
-      }),
-    ).toBe(true)
-  })
-
-  it('should deny users from updating other accounts', () => {
-    const accountList = createAccountList()
-    const updateAccess = accountList.access?.operation?.update
-
-    expect(
-      updateAccess?.({
-        session: { userId: 'user-1' },
-        item: { user: { id: 'user-2' } },
-      }),
-    ).toBe(false)
+    expect(accountList.access).toBeUndefined()
   })
 })
 
@@ -305,32 +190,10 @@ describe('createVerificationList', () => {
     expect(verificationList.fields.value.validation?.isRequired).toBe(true)
   })
 
-  it('should deny querying verification tokens', () => {
+  it('ships closed (no access control) by default, per ADR-0013', () => {
     const verificationList = createVerificationList()
-    const queryAccess = verificationList.access?.operation?.query
 
-    expect(queryAccess?.({})).toBe(false)
-  })
-
-  it('should allow creating verification tokens', () => {
-    const verificationList = createVerificationList()
-    const createAccess = verificationList.access?.operation?.create
-
-    expect(createAccess?.({})).toBe(true)
-  })
-
-  it('should deny updates to verification tokens', () => {
-    const verificationList = createVerificationList()
-    const updateAccess = verificationList.access?.operation?.update
-
-    expect(updateAccess?.({})).toBe(false)
-  })
-
-  it('should allow deleting verification tokens', () => {
-    const verificationList = createVerificationList()
-    const deleteAccess = verificationList.access?.operation?.delete
-
-    expect(deleteAccess?.({})).toBe(true)
+    expect(verificationList.access).toBeUndefined()
   })
 })
 
@@ -352,5 +215,39 @@ describe('getAuthLists', () => {
     })
 
     expect(lists.User.fields).toHaveProperty('role')
+  })
+
+  it('applies the accessConfig passthrough to each list, keyed by model name', () => {
+    const queryTrue = () => true
+    const lists = getAuthLists(undefined, undefined, {
+      user: { operation: { query: queryTrue } },
+      session: { operation: { query: queryTrue } },
+      account: { operation: { query: queryTrue } },
+      verification: { operation: { query: queryTrue } },
+    })
+
+    expect(lists.User.access?.operation?.query).toBe(queryTrue)
+    expect(lists.Session.access?.operation?.query).toBe(queryTrue)
+    expect(lists.Account.access?.operation?.query).toBe(queryTrue)
+    expect(lists.Verification.access?.operation?.query).toBe(queryTrue)
+  })
+
+  it('prefers extendUserList.access over accessConfig.user when both are set', () => {
+    const extendAccess = { operation: { query: () => false } }
+    const accessConfigUser = { operation: { query: () => true } }
+
+    const lists = getAuthLists({ access: extendAccess }, undefined, { user: accessConfigUser })
+
+    expect(lists.User.access).toBe(extendAccess)
+  })
+
+  it('leaves lists with no accessConfig entry closed', () => {
+    const lists = getAuthLists(undefined, undefined, {
+      user: { operation: { query: () => true } },
+    })
+
+    expect(lists.Session.access).toBeUndefined()
+    expect(lists.Account.access).toBeUndefined()
+    expect(lists.Verification.access).toBeUndefined()
   })
 })

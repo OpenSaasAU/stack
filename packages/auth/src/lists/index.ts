@@ -1,5 +1,5 @@
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
-import type { NormalizedAuthModels } from '../config/types.js'
+import type { AuthAccessConfig, NormalizedAuthModels } from '../config/types.js'
 import { deriveAuthLists } from '../config/derive-auth-lists.js'
 
 /**
@@ -12,8 +12,12 @@ export type ExtendUserListConfig = {
    */
   fields?: Record<string, FieldConfig>
   /**
-   * Access control for the User list
-   * If not provided, defaults to basic access control (users can update their own records)
+   * Access control for the User list.
+   *
+   * Per ADR-0013, if neither this nor `authPlugin({ access: { user: … } })` is
+   * provided, the User list is **closed** (deny-by-default) — it no longer
+   * defaults to permissive access. Takes precedence over `access.user` when
+   * both are set.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   access?: ListConfig<any>['access']
@@ -83,11 +87,13 @@ export function createVerificationList(): ListConfig<any> {
  *
  * @param userConfig - Extra User-list fields/access/hooks (from `extendUserList`)
  * @param models - Resolved better-auth model config; defaults to the better-auth defaults
+ * @param accessConfig - App-authored access for each Auth list, keyed by better-auth model name
  */
 export function getAuthLists(
   userConfig?: ExtendUserListConfig,
   models: NormalizedAuthModels = DEFAULT_MODELS,
+  accessConfig?: AuthAccessConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
-  return deriveAuthLists(models, userConfig || {}).lists
+  return deriveAuthLists(models, userConfig || {}, accessConfig || {}).lists
 }

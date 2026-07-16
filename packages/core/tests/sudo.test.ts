@@ -3,6 +3,8 @@ import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, integer, relationship } from '../src/fields/index.js'
 import type { PrismaClient } from '@prisma/client'
+import type { Plugin } from '../src/config/types.js'
+import type { AccessContext } from '../src/access/types.js'
 
 describe('Sudo Context', () => {
   // Mock Prisma client
@@ -622,6 +624,53 @@ describe('Sudo Context', () => {
           },
         }),
       ).rejects.toThrow('Access denied')
+    })
+  })
+
+  describe('Plugin runtime context sudo access', () => {
+    // A plugin's `runtime(context)` factory receives the request's bare
+    // `AccessContext` (the same object hooks and access control functions see),
+    // not the full `StackContext` returned by `getContext`. Plugins that need an
+    // access-bypassing identity lookup (e.g. the auth plugin's getUser/
+    // getCurrentUser, see ADR-0013) rely on `context.sudo()` being populated
+    // there too.
+    it('exposes a working sudo() on the AccessContext passed to plugin.runtime()', async () => {
+      let capturedContext: AccessContext<typeof mockPrisma> | undefined
+
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async () => {},
+        runtime: (context) => {
+          capturedContext = context as AccessContext<typeof mockPrisma>
+          return {}
+        },
+      }
+
+      const pluginConfig = await config({
+        db: { provider: 'sqlite' },
+        plugins: [plugin],
+        lists: {
+          Post: list({
+            fields: { title: text({ validation: { isRequired: true } }) },
+            // Closed list: only sudo() should be able to read from it.
+            access: { operation: { query: () => false } },
+          }),
+        },
+      })
+
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Test Post' }])
+
+      getContext(pluginConfig, mockPrisma, null)
+
+      expect(capturedContext?.sudo).toBeTypeOf('function')
+
+      const regularResult = await capturedContext!.db.post.findMany()
+      expect(regularResult).toEqual([])
+
+      const sudoContext = capturedContext!.sudo!()
+      const sudoResult = await sudoContext.db.post.findMany()
+      expect(sudoResult).toHaveLength(1)
+      expect(sudoResult[0].title).toBe('Test Post')
     })
   })
 })

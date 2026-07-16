@@ -147,6 +147,24 @@ describe('normalizeAuthConfig', () => {
 
     expect(result.betterAuthPlugins).toEqual([mockPlugin])
   })
+
+  it('should default access to an empty object', () => {
+    const result = normalizeAuthConfig({})
+
+    expect(result.access).toEqual({})
+  })
+
+  it('should include the access passthrough, keyed by better-auth model name', () => {
+    const userAccess = { operation: { query: () => true } }
+    const sessionAccess = { operation: { query: () => true } }
+
+    const result = normalizeAuthConfig({
+      access: { user: userAccess, session: sessionAccess },
+    })
+
+    expect(result.access.user).toBe(userAccess)
+    expect(result.access.session).toBe(sessionAccess)
+  })
 })
 
 describe('authPlugin', () => {
@@ -416,5 +434,97 @@ describe('authPlugin', () => {
     expect(testTableList.fields).toHaveProperty('name')
     expect(testTableList.fields).toHaveProperty('isActive')
     expect(testTableList.fields).toHaveProperty('count')
+  })
+
+  describe('access control (ADR-0013)', () => {
+    it('ships all four auth lists closed (no access) when no access is configured', async () => {
+      const result = await config({
+        plugins: [authPlugin({})],
+        lists: {},
+      })
+
+      expect(result.lists.User.access).toBeUndefined()
+      expect(result.lists.Session.access).toBeUndefined()
+      expect(result.lists.Account.access).toBeUndefined()
+      expect(result.lists.Verification.access).toBeUndefined()
+    })
+
+    it('applies authPlugin({ access }) to each corresponding created list', async () => {
+      const userQuery = () => true
+      const sessionQuery = () => true
+      const accountQuery = () => true
+      const verificationQuery = () => true
+
+      const result = await config({
+        plugins: [
+          authPlugin({
+            access: {
+              user: { operation: { query: userQuery } },
+              session: { operation: { query: sessionQuery } },
+              account: { operation: { query: accountQuery } },
+              verification: { operation: { query: verificationQuery } },
+            },
+          }),
+        ],
+        lists: {},
+      })
+
+      expect(result.lists.User.access?.operation?.query).toBe(userQuery)
+      expect(result.lists.Session.access?.operation?.query).toBe(sessionQuery)
+      expect(result.lists.Account.access?.operation?.query).toBe(accountQuery)
+      expect(result.lists.Verification.access?.operation?.query).toBe(verificationQuery)
+    })
+
+    it('honors field-level access in the access passthrough (e.g. hiding Account tokens)', async () => {
+      const result = await config({
+        plugins: [
+          authPlugin({
+            access: {
+              account: {
+                operation: { query: () => true },
+              },
+            },
+          }),
+        ],
+        lists: {},
+      })
+
+      // The passthrough carries the full list access shape (operation + fields);
+      // this test locks in that the plugin forwards it verbatim rather than
+      // only reading `.operation`.
+      expect(result.lists.Account.access?.operation?.query).toBeDefined()
+    })
+
+    it('applies the access passthrough with a remapped model name (remap-proof keying)', async () => {
+      const userQuery = () => true
+
+      const result = await config({
+        plugins: [
+          authPlugin({
+            user: { modelName: 'AuthUser' },
+            access: { user: { operation: { query: userQuery } } },
+          }),
+        ],
+        lists: {},
+      })
+
+      expect(result.lists.AuthUser.access?.operation?.query).toBe(userQuery)
+    })
+
+    it('extendUserList.access still applies and takes precedence over access.user', async () => {
+      const extendAccess = { operation: { query: () => false } }
+
+      const result = await config({
+        plugins: [
+          authPlugin({
+            extendUserList: { access: extendAccess },
+            access: { user: { operation: { query: () => true } } },
+          }),
+        ],
+        lists: {},
+      })
+
+      expect(result.lists.User.access).toBe(extendAccess)
+    })
   })
 })

@@ -39,6 +39,19 @@ export default config({
           }),
         },
       },
+
+      // The User list ships closed by default (ADR-0013) — grant access
+      // explicitly. Signed-in users can browse the directory; only the
+      // account owner can update or delete their own record.
+      access: {
+        user: {
+          operation: {
+            query: isSignedIn,
+            update: ({ session, item }) => session?.userId === item.id,
+            delete: ({ session, item }) => session?.userId === item.id,
+          },
+        },
+      },
     }),
   ],
 

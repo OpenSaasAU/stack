@@ -138,7 +138,7 @@ describe('convertTableToList', () => {
     expect(listConfig.fields.customField.type).toBe('text')
   })
 
-  it('should apply default access control for User table', () => {
+  it('should ship the User table closed (no access control) per ADR-0013', () => {
     const tableSchema = {
       modelName: 'User',
       fields: {
@@ -148,12 +148,10 @@ describe('convertTableToList', () => {
 
     const listConfig = convertTableToList('user', tableSchema)
 
-    expect(listConfig.access).toBeDefined()
-    expect(listConfig.access?.operation?.query?.({})).toBe(true)
-    expect(listConfig.access?.operation?.create?.({})).toBe(true)
+    expect(listConfig.access).toBeUndefined()
   })
 
-  it('should apply default access control for Session table', () => {
+  it('should ship the Session table closed (no access control) per ADR-0013', () => {
     const tableSchema = {
       modelName: 'Session',
       fields: {
@@ -163,12 +161,10 @@ describe('convertTableToList', () => {
 
     const listConfig = convertTableToList('session', tableSchema)
 
-    expect(listConfig.access?.operation?.query?.({ session: null })).toBe(false)
-    expect(listConfig.access?.operation?.create?.({})).toBe(true)
-    expect(listConfig.access?.operation?.update?.({})).toBe(false)
+    expect(listConfig.access).toBeUndefined()
   })
 
-  it('should apply default access control for Verification table', () => {
+  it('should ship the Verification table closed (no access control) per ADR-0013', () => {
     const tableSchema = {
       modelName: 'Verification',
       fields: {
@@ -178,13 +174,10 @@ describe('convertTableToList', () => {
 
     const listConfig = convertTableToList('verification', tableSchema)
 
-    expect(listConfig.access?.operation?.query?.({})).toBe(false)
-    expect(listConfig.access?.operation?.create?.({})).toBe(true)
-    expect(listConfig.access?.operation?.update?.({})).toBe(false)
-    expect(listConfig.access?.operation?.delete?.({})).toBe(true)
+    expect(listConfig.access).toBeUndefined()
   })
 
-  it('should apply restrictive default access for unknown tables', () => {
+  it('should ship unknown tables closed (no access control)', () => {
     const tableSchema = {
       modelName: 'UnknownTable',
       fields: {
@@ -194,13 +187,10 @@ describe('convertTableToList', () => {
 
     const listConfig = convertTableToList('unknown_table', tableSchema)
 
-    expect(listConfig.access?.operation?.query?.({})).toBe(false)
-    expect(listConfig.access?.operation?.create?.({})).toBe(false)
-    expect(listConfig.access?.operation?.update?.({})).toBe(false)
-    expect(listConfig.access?.operation?.delete?.({})).toBe(false)
+    expect(listConfig.access).toBeUndefined()
   })
 
-  it('should handle OAuth application table', () => {
+  it('should ship OAuth application table closed (no access control)', () => {
     const tableSchema = {
       modelName: 'OAuthApplication',
       fields: {
@@ -211,8 +201,7 @@ describe('convertTableToList', () => {
 
     const listConfig = convertTableToList('oauthapplication', tableSchema)
 
-    expect(listConfig.access?.operation?.query?.({ session: null })).toBe(false)
-    expect(listConfig.access?.operation?.create?.({})).toBe(true)
+    expect(listConfig.access).toBeUndefined()
   })
 })
 
