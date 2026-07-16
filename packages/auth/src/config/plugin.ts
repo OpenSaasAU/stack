@@ -163,7 +163,7 @@ export function authPlugin(config: AuthConfig): Plugin {
       }
     },
 
-    runtime: (context) => {
+    runtime: (context, sudo) => {
       // Resolve the user list's context.db key from the configured user model.
       // context.db is keyed camelCase, so 'User' -> 'user', 'AuthUser' -> 'authUser'.
       const userDbKey = getDbKey(normalized.models.user.modelName)
@@ -173,27 +173,25 @@ export function authPlugin(config: AuthConfig): Plugin {
         /**
          * Get user by ID.
          *
-         * Resolves through `context.sudo()` (per ADR-0013): the User list ships
-         * closed by default, and "who is this session" must not depend on the
+         * Resolves through `sudo()` (per ADR-0013): the User list ships closed
+         * by default, and "who is this session" must not depend on the
          * application's User access policy.
          */
         getUser: async (userId: string) => {
-          const sudoContext = context.sudo?.() ?? context
-          return await sudoContext.db[userDbKey].findUnique({
+          return await sudo().db[userDbKey].findUnique({
             where: { id: userId },
           })
         },
 
         /**
          * Get current user from session. Extracts userId from session and
-         * fetches user data via `context.sudo()` — see {@link getUser}.
+         * fetches user data via `sudo()` — see {@link getUser}.
          */
         getCurrentUser: async () => {
           if (!context.session?.userId) {
             return null
           }
-          const sudoContext = context.sudo?.() ?? context
-          return await sudoContext.db[userDbKey].findUnique({
+          return await sudo().db[userDbKey].findUnique({
             where: { id: context.session.userId },
           })
         },

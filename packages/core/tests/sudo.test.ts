@@ -627,21 +627,24 @@ describe('Sudo Context', () => {
     })
   })
 
-  describe('Plugin runtime context sudo access', () => {
-    // A plugin's `runtime(context)` factory receives the request's bare
-    // `AccessContext` (the same object hooks and access control functions see),
-    // not the full `StackContext` returned by `getContext`. Plugins that need an
-    // access-bypassing identity lookup (e.g. the auth plugin's getUser/
-    // getCurrentUser, see ADR-0013) rely on `context.sudo()` being populated
-    // there too.
-    it('exposes a working sudo() on the AccessContext passed to plugin.runtime()', async () => {
-      let capturedContext: AccessContext<typeof mockPrisma> | undefined
+  describe('Plugin runtime sudo access', () => {
+    // A plugin's `runtime(context, sudo)` factory receives a `sudo` helper as a
+    // plain second argument — NOT a method on `AccessContext` itself. A
+    // self-referential `sudo(): AccessContext` field on that shared, widely
+    // instantiated interface was found to break TypeScript's structural
+    // checking of unrelated generated Prisma types in a downstream app
+    // (nullable JSON `CreateInput` fields); passing it as a separate argument
+    // avoids that recursion while still giving plugins (e.g. the auth
+    // plugin's getUser/getCurrentUser, see ADR-0013) an access-bypassing
+    // identity-lookup path.
+    it('passes a working sudo() as the second argument to plugin.runtime()', async () => {
+      let capturedSudo: (() => AccessContext<typeof mockPrisma>) | undefined
 
       const plugin: Plugin = {
         name: 'test-plugin',
         init: async () => {},
-        runtime: (context) => {
-          capturedContext = context as AccessContext<typeof mockPrisma>
+        runtime: (_context, sudo) => {
+          capturedSudo = sudo as () => AccessContext<typeof mockPrisma>
           return {}
         },
       }
@@ -662,12 +665,9 @@ describe('Sudo Context', () => {
 
       getContext(pluginConfig, mockPrisma, null)
 
-      expect(capturedContext?.sudo).toBeTypeOf('function')
+      expect(capturedSudo).toBeTypeOf('function')
 
-      const regularResult = await capturedContext!.db.post.findMany()
-      expect(regularResult).toEqual([])
-
-      const sudoContext = capturedContext!.sudo!()
+      const sudoContext = capturedSudo!()
       const sudoResult = await sudoContext.db.post.findMany()
       expect(sudoResult).toHaveLength(1)
       expect(sudoResult[0].title).toBe('Test Post')

@@ -381,15 +381,6 @@ export function getContext<
     _resolveOutputCounter: { depth: 0 },
   }
 
-  // `sudo` is a hoisted function declaration (defined below), so it's callable
-  // here even though this assignment runs before its textual definition. Cast
-  // through `unknown`: the real `sudo()` returns a `StackContext`, which is a
-  // structural superset of `AccessContext` (its `db`/`session`/`prisma`/etc.
-  // are backed by a fully-formed internal `AccessContext`) but omits the
-  // request-scoped `_resolveOutputCounter` field, which no `AccessContext`
-  // consumer reads through this public accessor.
-  context.sudo = () => sudo() as unknown as AccessContext<TPrisma>
-
   // Create access-controlled operations for each list, populating `db` in place.
   populateDbDelegate(db, config, prisma, context)
 
@@ -402,7 +393,12 @@ export function getContext<
     for (const plugin of pluginsToExecute) {
       if (plugin.runtime) {
         try {
-          context.plugins[plugin.name] = plugin.runtime(context)
+          // Passed as a plain second argument rather than a method on
+          // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
+          context.plugins[plugin.name] = plugin.runtime(
+            context,
+            () => sudo() as unknown as AccessContext<TPrisma>,
+          )
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
           // Continue with other plugins even if one fails

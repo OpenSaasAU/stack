@@ -91,7 +91,8 @@ Because the plugin only ever adds/extends its **derived** keys, an app's own
 domain `User` (a different model from the better-auth user) is never extended
 or overwritten when the user model is renamed. The runtime `getUser`/
 `getCurrentUser` helpers resolve the user list's `context.db` key from the
-configured user `modelName`, and read through `context.sudo()` (see below).
+configured user `modelName`, and read through the `sudo` argument passed to
+`runtime(context, sudo)` (see below).
 
 ### Access control on Auth lists (ADR-0013)
 
@@ -111,9 +112,11 @@ takes precedence over `access.user` when both are set — `createUserList` in
 
 better-auth's own sign-in/sign-up/session flows are unaffected: they write
 through the raw Prisma client (the driver adapter), bypassing access control
-entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through
-`context.sudo()` for the same reason — "who is this session" must not depend
-on the application's User access policy.
+entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through the
+`sudo` argument core passes to `plugin.runtime(context, sudo)` for the same
+reason — "who is this session" must not depend on the application's User
+access policy. `sudo` is a plain second argument, not a method on `context`
+(`AccessContext`) itself — see `packages/core/CLAUDE.md`.
 
 `convertBetterAuthSchema`/`convertTableToList` (`src/server/schema-converter.ts`),
 which handle additional tables a better-auth plugin's own schema declares

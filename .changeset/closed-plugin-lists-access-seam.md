@@ -26,6 +26,6 @@ authPlugin({
 
 For the User list specifically, `extendUserList.access` (unchanged) still works and takes precedence over `access.user` if both are set.
 
-The runtime `getUser`/`getCurrentUser` helpers now resolve through `context.sudo()`, so "who is this session" no longer depends on the application's User list access policy.
+The runtime `getUser`/`getCurrentUser` helpers now resolve through the `sudo` helper `@opensaas/stack-core` passes to `plugin.runtime(context, sudo)`, so "who is this session" no longer depends on the application's User list access policy.
 
 Migration: if you relied on the old permissive defaults, add the equivalent rules under `authPlugin({ access: { ... } })` for any Auth list your app reads or writes through `context.db` or the admin UI.
