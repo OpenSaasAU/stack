@@ -17,8 +17,7 @@ authPlugin({
     },
     session: {
       operation: {
-        query: ({ session }) =>
-          session ? { user: { id: { equals: session.userId } } } : false,
+        query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
       },
     },
   },
