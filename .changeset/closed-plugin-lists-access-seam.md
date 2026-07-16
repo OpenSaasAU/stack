@@ -1,5 +1,5 @@
 ---
-'@opensaas/stack-auth': major
+'@opensaas/stack-auth': minor
 ---
 
 BREAKING: Auth-injected lists (User/Session/Account/Verification) now ship **closed** — no operation-level access — instead of shipping permissive defaults (`query: () => true`, self-only update/delete). Per ADR-0013, access control belongs to the application. With no access configured, `context.db` reads/writes against these lists return `null`/`[]` and they no longer appear in the admin UI. better-auth's own sign-in/sign-up/session flows are unaffected — they write through the raw Prisma client, bypassing access control entirely.
