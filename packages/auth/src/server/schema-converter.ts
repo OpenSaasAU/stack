@@ -91,157 +91,16 @@ function convertField(
 }
 
 /**
- * Get default access control for auth tables
- * Most auth tables should only be accessible to their owners
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getDefaultAccess(tableName: string): ListConfig<any>['access'] {
-  const lowerTableName = tableName.toLowerCase()
-
-  // User table - special access control
-  if (lowerTableName === 'user') {
-    return {
-      operation: {
-        query: () => true, // Anyone can query users
-        create: () => true, // Anyone can create (sign up)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        update: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        delete: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemId = (item as { id?: string })?.id
-          return userId === itemId
-        },
-      },
-    }
-  }
-
-  // Session table
-  if (lowerTableName === 'session') {
-    return {
-      operation: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        query: ({ session }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          return {
-            user: { id: { equals: userId } },
-          } as Record<string, unknown>
-        },
-        create: () => true, // Better-auth handles session creation
-        update: () => false, // No manual updates
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        delete: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    }
-  }
-
-  // Account table
-  if (lowerTableName === 'account') {
-    return {
-      operation: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        query: ({ session }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          return {
-            user: { id: { equals: userId } },
-          } as Record<string, unknown>
-        },
-        create: () => true, // Better-auth handles account creation
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        update: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        delete: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { user?: { id?: string } })?.user?.id
-          return userId === itemUserId
-        },
-      },
-    }
-  }
-
-  // Verification table
-  if (lowerTableName === 'verification') {
-    return {
-      operation: {
-        query: () => false, // No public querying
-        create: () => true, // Better-auth creates verification tokens
-        update: () => false, // No updates
-        delete: () => true, // Better-auth deletes used/expired tokens
-      },
-    }
-  }
-
-  // OAuth tables (from MCP/OIDC plugins)
-  if (
-    lowerTableName === 'oauthapplication' ||
-    lowerTableName === 'oauthaccesstoken' ||
-    lowerTableName === 'oauthconsent'
-  ) {
-    return {
-      operation: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        query: ({ session }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          if (!userId) return false
-          // Filter by userId if field exists
-          return {
-            userId: { equals: userId },
-          } as Record<string, unknown>
-        },
-        create: () => true, // Better-auth/plugins handle creation
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        update: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { userId?: string })?.userId
-          return userId === itemUserId
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Access control parameters are runtime values
-        delete: ({ session, item }: any) => {
-          if (!session) return false
-          const userId = (session as { userId?: string }).userId
-          const itemUserId = (item as { userId?: string })?.userId
-          return userId === itemUserId
-        },
-      },
-    }
-  }
-
-  // Default: restrict all access (safest default)
-  return {
-    operation: {
-      query: () => false,
-      create: () => false,
-      update: () => false,
-      delete: () => false,
-    },
-  }
-}
-
-/**
- * Convert Better Auth table schema to OpenSaaS ListConfig
+ * Convert Better Auth table schema to OpenSaaS ListConfig.
+ *
+ * Per ADR-0013, plugin-injected lists ship **closed** — no access is set here,
+ * so the list denies every operation until the application grants it. For a
+ * table that resolves onto one of the four base auth models (user/session/
+ * account/verification), that means `authPlugin({ access: { ... } })`; for any
+ * other better-auth-plugin-declared table (e.g. OAuth client tables from the
+ * `mcp` plugin), the application must declare the list itself under the same
+ * derived key so the plugin's field-only extend path can merge in (its access
+ * then stands untouched).
  */
 export function convertTableToList(
   tableName: string,
@@ -274,11 +133,7 @@ export function convertTableToList(
     }
   }
 
-  // Create list config with default access control
-  return list({
-    fields,
-    access: getDefaultAccess(tableName),
-  })
+  return list({ fields })
 }
 
 /**

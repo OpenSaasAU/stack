@@ -694,7 +694,11 @@ access: {
 
 ### Custom Access Control on User List
 
-Override the default User list access control:
+The User list ships closed by default (see
+[Access control: closed by default](#access-control-closed-by-default)).
+`extendUserList.access` is the User-specific way to grant it — it predates
+the more general `authPlugin({ access: { user: ... } })` passthrough and
+takes precedence over `access.user` when both are set:
 
 ```typescript
 authPlugin({
@@ -1048,6 +1052,65 @@ your app.
 
 The auth plugin automatically creates these lists in your database:
 
+### Access control: closed by default
+
+Per [ADR-0013](/docs/adr/0013-access-control-belongs-to-the-application-not-plugins),
+access control belongs to the application, not the plugin. The four Auth
+lists (User/Session/Account/Verification) ship with **no** operation-level
+access — with nothing configured, `context.db` reads/writes against them
+return `null`/`[]` and they don't appear in the admin UI. This does not affect
+sign-in/sign-up/session flows: better-auth talks to these tables through the
+raw Prisma client (the driver adapter), bypassing access control entirely.
+
+Grant access explicitly with `authPlugin({ access: { … } })`, keyed by
+better-auth model name (`user`/`session`/`account`/`verification`, not the
+derived list key — so it keeps working if you rename a model via `modelName`).
+Each entry is a full list access config (operation **and** field-level):
+
+```typescript
+authPlugin({
+  access: {
+    // Signed-in users can browse the directory; only self can write.
+    user: {
+      operation: {
+        query: ({ session }) => !!session,
+        update: ({ session, item }) => session?.userId === item.id,
+        delete: ({ session, item }) => session?.userId === item.id,
+      },
+    },
+    // A user can read only their own sessions.
+    session: {
+      operation: {
+        query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
+      },
+    },
+    // Hide OAuth tokens from field-level reads even for the account owner.
+    account: {
+      operation: {
+        query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
+      },
+      fields: {
+        accessToken: { read: () => false },
+        refreshToken: { read: () => false },
+      },
+    },
+    // Verification tokens stay closed — better-auth manages them directly.
+  },
+})
+```
+
+For the `user` model specifically, `extendUserList.access` (the pre-existing
+per-field User customization surface — see
+[Custom Access Control on User List](#custom-access-control-on-user-list))
+is still honored and takes precedence over `access.user` if both are set.
+
+**Migrating from an older version:** if you relied on the previous permissive
+defaults (`query: () => true`, self-only update/delete on User; session-owner
+filters on Session/Account; closed Verification), add the equivalent under
+`authPlugin({ access: { ... } })` — the first three blocks above reproduce
+that behavior for `user`/`session`/`account`. Without it, `context.db` reads
+on these lists (and their admin UI pages) go from visible to empty.
+
 ### User List
 
 ```typescript
@@ -1069,12 +1132,11 @@ The auth plugin automatically creates these lists in your database:
 }
 ```
 
-**Access Control:**
-
-- Query: Anyone
-- Create: Anyone (sign-up)
-- Update: Own user only
-- Delete: Own user only
+**Access Control:** closed by default (see
+[Access control: closed by default](#access-control-closed-by-default) above)
+— grant it via `authPlugin({ access: { user: { ... } } })` or
+`extendUserList.access`. Sign-up still works with no access configured:
+better-auth creates the row through the raw client, bypassing access control.
 
 ### Session List
 
@@ -1093,6 +1155,8 @@ The auth plugin automatically creates these lists in your database:
   user: User // Session owner
 }
 ```
+
+**Access Control:** closed by default — grant it via `authPlugin({ access: { session: { ... } } })`.
 
 ### Account List
 
@@ -1116,6 +1180,10 @@ Stores OAuth provider information and password hashes:
 }
 ```
 
+**Access Control:** closed by default — grant it via `authPlugin({ access: { account: { ... } } })`.
+Consider hiding `accessToken`/`refreshToken`/`password` at the field level
+even when you grant operation access (see the example above).
+
 ### Verification List
 
 Stores email verification and password reset tokens:
@@ -1130,6 +1198,10 @@ Stores email verification and password reset tokens:
   updatedAt: DateTime // Auto-updated
 }
 ```
+
+**Access Control:** closed by default — better-auth manages these tokens
+directly through the raw client, so most apps never need to grant
+`access.verification` at all.
 
 ## Best Practices
 
@@ -1321,6 +1393,16 @@ export default config({
           }),
         },
       },
+      // The User list ships closed by default (ADR-0013) — grant access
+      // explicitly. See "Access control: closed by default" above.
+      access: {
+        user: {
+          operation: {
+            query: isSignedIn,
+            update: ({ session, item }) => session?.userId === item.id,
+          },
+        },
+      },
     }),
   ],
 
@@ -1482,6 +1564,11 @@ Check your access control configuration:
 - Does the operation return `true` or a filter?
 - Is the session being passed correctly?
 - Are you checking the right session fields?
+- If this is one of the Auth lists (User/Session/Account/Verification): they
+  ship closed by default (ADR-0013) — see
+  [Access control: closed by default](#access-control-closed-by-default). Add
+  `authPlugin({ access: { user: { ... } } })` (or the matching model key) to
+  open it up.
 
 ### TypeScript Errors on Session Fields
 

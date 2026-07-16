@@ -2437,8 +2437,21 @@ export type Plugin = {
    * Optional: Provide runtime services
    * Called when creating context to provide plugin-specific services
    * Return value is stored in context.plugins[pluginName]
+   *
+   * `sudo` returns an access-bypassing (but still hook-firing) `AccessContext`
+   * for the same request — use `sudo().db` for reads/writes that must not
+   * depend on the caller's own list access policy (e.g. an identity lookup
+   * like "who is this session"). Deliberately NOT a method on `AccessContext`
+   * itself — a self-referential `sudo(): AccessContext` field on that shared,
+   * widely-instantiated interface tripped up TypeScript's structural checking
+   * of unrelated generated Prisma types elsewhere (nullable JSON `CreateInput`
+   * fields) in a downstream app; passing it as a plain second argument avoids
+   * that recursion entirely.
    */
-  runtime?: (context: import('../access/types.js').AccessContext) => unknown
+  runtime?: (
+    context: import('../access/types.js').AccessContext,
+    sudo: () => import('../access/types.js').AccessContext,
+  ) => unknown
 
   /**
    * Optional: Type metadata for runtime services

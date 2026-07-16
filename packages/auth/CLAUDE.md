@@ -91,7 +91,39 @@ Because the plugin only ever adds/extends its **derived** keys, an app's own
 domain `User` (a different model from the better-auth user) is never extended
 or overwritten when the user model is renamed. The runtime `getUser`/
 `getCurrentUser` helpers resolve the user list's `context.db` key from the
-configured user `modelName`.
+configured user `modelName`, and read through the `sudo` argument passed to
+`runtime(context, sudo)` (see below).
+
+### Access control on Auth lists (ADR-0013)
+
+The four Auth lists ship **closed** — no operation-level access — per
+[ADR-0013](../../docs/adr/0013-access-control-belongs-to-the-application-not-plugins.md).
+Grant access via `authPlugin({ access: { user, session, account, verification } })`,
+keyed by better-auth model name (not the derived list key, so it survives a
+`modelName` remap). Each entry is applied on the plugin's own `addList` path
+in `deriveAuthLists` (`src/config/derive-auth-lists.ts`), so it rides along
+with the list's `@@map`/`@@schema`/fields — it is **not** forwarded on the
+`extendList` path (an app-declared list of the same key keeps its own
+access, unchanged since #678/ADR-0013).
+
+`extendUserList.access` (the pre-existing User-only override) still works and
+takes precedence over `access.user` when both are set — `createUserList` in
+`derive-auth-lists.ts` resolves `userConfig.access || accessConfig.user`.
+
+better-auth's own sign-in/sign-up/session flows are unaffected: they write
+through the raw Prisma client (the driver adapter), bypassing access control
+entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through the
+`sudo` argument core passes to `plugin.runtime(context, sudo)` for the same
+reason — "who is this session" must not depend on the application's User
+access policy. `sudo` is a plain second argument, not a method on `context`
+(`AccessContext`) itself — see `packages/core/CLAUDE.md`.
+
+`convertBetterAuthSchema`/`convertTableToList` (`src/server/schema-converter.ts`),
+which handle additional tables a better-auth plugin's own schema declares
+(e.g. OAuth client tables from the `mcp` plugin), also ship closed — there is
+no `access` passthrough for them; an app that needs to grant access declares
+the list itself under the same derived key so the plugin's field-only extend
+path merges in (its own access then stands, same as any other `extendList`).
 
 ### Schema placement (relocatable Auth lists)
 

@@ -1,3 +1,4 @@
+import type { ListConfig } from '@opensaas/stack-core'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
 /**
@@ -100,6 +101,52 @@ export type SessionConfig = {
  * })
  * ```
  */
+/**
+ * App-authored operation + field-level access control for the Auth lists,
+ * keyed by better-auth model name (not by the derived list key, so it stays
+ * remap-proof when e.g. `user.modelName: 'AuthUser'`).
+ *
+ * Per ADR-0013, the auth plugin ships its created lists (User/Session/
+ * Account/Verification) **closed** — no permissive defaults. This is the
+ * application's seam to grant them access: the plugin applies each entry to
+ * the corresponding list when it creates it (its own `addList` path), so the
+ * access rides along with the list's `@@map`/`@@schema`/fields and can't
+ * drift from the plugin's shape. A model with no entry here stays closed
+ * (deny-by-default).
+ *
+ * @example
+ * ```typescript
+ * authPlugin({
+ *   access: {
+ *     // Signed-in users can read the directory; only self can write.
+ *     user: {
+ *       operation: {
+ *         query: ({ session }) => !!session,
+ *         update: ({ session, item }) => session?.userId === item.id,
+ *       },
+ *     },
+ *     // A user can read only their own sessions.
+ *     session: {
+ *       operation: {
+ *         query: ({ session }) =>
+ *           session ? { user: { id: { equals: session.userId } } } : false,
+ *       },
+ *     },
+ *   },
+ * })
+ * ```
+ */
+export type AuthAccessConfig = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  user?: ListConfig<any>['access']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  session?: ListConfig<any>['access']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  account?: ListConfig<any>['access']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  verification?: ListConfig<any>['access']
+}
+
 export type AuthModelConfig = {
   /**
    * The table/list name for this model.
@@ -238,6 +285,23 @@ export type AuthConfig = {
    * ```
    */
   extendUserList?: ExtendUserListConfig
+
+  /**
+   * App-authored access control for the Auth lists (User/Session/Account/
+   * Verification), keyed by better-auth model name. See {@link AuthAccessConfig}.
+   *
+   * Per ADR-0013 the auth plugin ships these lists **closed** by default — a
+   * model with no entry here denies every operation (`context.db` reads/writes
+   * return `null`/`[]` and the list doesn't surface in the admin UI). Grant
+   * access explicitly for any Auth list your application reads or writes
+   * through `context.db`.
+   *
+   * For the `user` model specifically, {@link ExtendUserListConfig.access}
+   * (via `extendUserList.access`) is still honoured and takes precedence over
+   * `access.user` if both are set — it predates this option and remains the
+   * narrower, User-specific override.
+   */
+  access?: AuthAccessConfig
 
   /**
    * Custom email sending function for verification and password reset

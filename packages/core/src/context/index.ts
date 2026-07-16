@@ -393,7 +393,12 @@ export function getContext<
     for (const plugin of pluginsToExecute) {
       if (plugin.runtime) {
         try {
-          context.plugins[plugin.name] = plugin.runtime(context)
+          // Passed as a plain second argument rather than a method on
+          // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
+          context.plugins[plugin.name] = plugin.runtime(
+            context,
+            () => sudo() as unknown as AccessContext<TPrisma>,
+          )
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
           // Continue with other plugins even if one fails

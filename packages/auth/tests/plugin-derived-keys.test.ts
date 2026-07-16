@@ -165,16 +165,33 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
 
 describe('authPlugin - runtime user-key resolution', () => {
   /**
-   * Build a minimal AccessContext whose `db` records which model key was
-   * accessed, so we can assert the runtime resolves the configured user model.
+   * Build a minimal AccessContext whose non-sudo `db` always denies (returns
+   * null, as an access-controlled `context.db` read does), plus a separate
+   * `sudo` factory (passed as `plugin.runtime`'s second argument, NOT a
+   * method on `context` itself — see ADR-0013 / the `Plugin['runtime']` doc)
+   * whose `.db` records which model key was accessed and returns the real
+   * record. Since the User list ships closed by default (ADR-0013),
+   * getUser/getCurrentUser only resolve a real user if they go through
+   * `sudo()` rather than the plain `context.db`.
    */
   function makeFakeContext(session: { userId?: string } | null) {
     const accessedKeys: string[] = []
+    const sudoAccessedKeys: string[] = []
+
     const db = new Proxy(
       {},
       {
         get(_target, key: string) {
           accessedKeys.push(key)
+          return { findUnique: async () => null }
+        },
+      },
+    )
+    const sudoDb = new Proxy(
+      {},
+      {
+        get(_target, key: string) {
+          sudoAccessedKeys.push(key)
           return {
             findUnique: async ({ where }: { where: { id: string } }) => ({
               id: where.id,
@@ -184,44 +201,49 @@ describe('authPlugin - runtime user-key resolution', () => {
         },
       },
     )
+    const sudoContext = { session, db: sudoDb, _isSudo: true } as unknown as AccessContext
     const context = { session, db } as unknown as AccessContext
-    return { context, accessedKeys }
+    const sudo = () => sudoContext
+    return { context, sudo, accessedKeys, sudoAccessedKeys }
   }
 
-  it('getUser uses the default `user` db key when no modelName override', () => {
+  it('getUser resolves through sudo(), not the plain (closed-by-default) context.db', async () => {
     const plugin = authPlugin({})
-    const { context, accessedKeys } = makeFakeContext({ userId: 'u1' })
-    const services = plugin.runtime?.(context) as AuthRuntimeServices
+    const { context, sudo, accessedKeys, sudoAccessedKeys } = makeFakeContext({ userId: 'u1' })
+    const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
-    void services.getUser('u1')
-    expect(accessedKeys).toContain('user')
+    const user = (await services.getUser('u1')) as { __model: string }
+    expect(sudoAccessedKeys).toContain('user')
+    expect(accessedKeys).not.toContain('user')
+    expect(user.__model).toBe('user')
   })
 
   it('getUser uses the configured user model db key (AuthUser -> authUser)', async () => {
     const plugin = authPlugin({ user: { modelName: 'AuthUser' } })
-    const { context, accessedKeys } = makeFakeContext({ userId: 'u1' })
-    const services = plugin.runtime?.(context) as AuthRuntimeServices
+    const { context, sudo, sudoAccessedKeys } = makeFakeContext({ userId: 'u1' })
+    const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     const user = (await services.getUser('u1')) as { __model: string }
-    expect(accessedKeys).toContain('authUser')
-    expect(accessedKeys).not.toContain('user')
+    expect(sudoAccessedKeys).toContain('authUser')
+    expect(sudoAccessedKeys).not.toContain('user')
     expect(user.__model).toBe('authUser')
   })
 
-  it('getCurrentUser uses the configured user model db key', async () => {
+  it('getCurrentUser uses the configured user model db key via sudo()', async () => {
     const plugin = authPlugin({ user: { modelName: 'AuthUser' } })
-    const { context, accessedKeys } = makeFakeContext({ userId: 'u1' })
-    const services = plugin.runtime?.(context) as AuthRuntimeServices
+    const { context, sudo, accessedKeys, sudoAccessedKeys } = makeFakeContext({ userId: 'u1' })
+    const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     const user = (await services.getCurrentUser()) as { __model: string }
-    expect(accessedKeys).toContain('authUser')
+    expect(sudoAccessedKeys).toContain('authUser')
+    expect(accessedKeys).not.toContain('authUser')
     expect(user.__model).toBe('authUser')
   })
 
   it('getCurrentUser returns null when there is no session', async () => {
     const plugin = authPlugin({ user: { modelName: 'AuthUser' } })
-    const { context } = makeFakeContext(null)
-    const services = plugin.runtime?.(context) as AuthRuntimeServices
+    const { context, sudo } = makeFakeContext(null)
+    const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     expect(await services.getCurrentUser()).toBeNull()
   })

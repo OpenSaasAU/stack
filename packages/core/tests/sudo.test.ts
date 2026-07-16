@@ -3,6 +3,8 @@ import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, integer, relationship } from '../src/fields/index.js'
 import type { PrismaClient } from '@prisma/client'
+import type { Plugin } from '../src/config/types.js'
+import type { AccessContext } from '../src/access/types.js'
 
 describe('Sudo Context', () => {
   // Mock Prisma client
@@ -622,6 +624,53 @@ describe('Sudo Context', () => {
           },
         }),
       ).rejects.toThrow('Access denied')
+    })
+  })
+
+  describe('Plugin runtime sudo access', () => {
+    // A plugin's `runtime(context, sudo)` factory receives a `sudo` helper as a
+    // plain second argument — NOT a method on `AccessContext` itself. A
+    // self-referential `sudo(): AccessContext` field on that shared, widely
+    // instantiated interface was found to break TypeScript's structural
+    // checking of unrelated generated Prisma types in a downstream app
+    // (nullable JSON `CreateInput` fields); passing it as a separate argument
+    // avoids that recursion while still giving plugins (e.g. the auth
+    // plugin's getUser/getCurrentUser, see ADR-0013) an access-bypassing
+    // identity-lookup path.
+    it('passes a working sudo() as the second argument to plugin.runtime()', async () => {
+      let capturedSudo: (() => AccessContext<typeof mockPrisma>) | undefined
+
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async () => {},
+        runtime: (_context, sudo) => {
+          capturedSudo = sudo as () => AccessContext<typeof mockPrisma>
+          return {}
+        },
+      }
+
+      const pluginConfig = await config({
+        db: { provider: 'sqlite' },
+        plugins: [plugin],
+        lists: {
+          Post: list({
+            fields: { title: text({ validation: { isRequired: true } }) },
+            // Closed list: only sudo() should be able to read from it.
+            access: { operation: { query: () => false } },
+          }),
+        },
+      })
+
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Test Post' }])
+
+      getContext(pluginConfig, mockPrisma, null)
+
+      expect(capturedSudo).toBeTypeOf('function')
+
+      const sudoContext = capturedSudo!()
+      const sudoResult = await sudoContext.db.post.findMany()
+      expect(sudoResult).toHaveLength(1)
+      expect(sudoResult[0].title).toBe('Test Post')
     })
   })
 })

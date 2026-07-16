@@ -113,6 +113,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     schema: config.schema,
     sessionFields,
     extendUserList: config.extendUserList || {},
+    access: config.access || {},
     sendEmail:
       config.sendEmail ||
       (async ({ to, subject, html }) => {
