@@ -27,6 +27,7 @@
 import { list } from '@opensaas/stack-core'
 import { text, timestamp, checkbox, relationship } from '@opensaas/stack-core/fields'
 import type { ListConfig } from '@opensaas/stack-core'
+import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
 
@@ -106,14 +107,23 @@ function fieldDb(fieldName: string, fields: Record<string, string>): { map: stri
 }
 
 /**
- * Build the foreign-key `db` config for a `user` relationship, honouring a
- * `userId` column override from the better-auth `fields` map.
+ * Build the `db` config for a `user` relationship (`Session.user` /
+ * `Account.user`), honouring a `userId` column override from the better-auth
+ * `fields` map and mirroring better-auth's own FK shape: no separate FK index
+ * — the index is applied at the field level via `isIndexed: false` — and
+ * `onDelete: Cascade`, so a generated Auth schema diffs clean against a live
+ * better-auth database on both dimensions instead of showing a spurious index
+ * drop and a referential-action change (issue #679).
  */
-function userForeignKeyDb(
-  fields: Record<string, string>,
-): { foreignKey: { map: string } } | undefined {
+function userRelationshipDb(fields: Record<string, string>): NonNullable<RelationshipField['db']> {
   const column = fields.userId
-  return column ? { foreignKey: { map: column } } : undefined
+  return {
+    ...(column ? { foreignKey: { map: column } } : {}),
+    extendPrismaSchema: ({ fkLine, relationLine }) => ({
+      fkLine,
+      relationLine: relationLine.replace('@relation(', '@relation(onDelete: Cascade, '),
+    }),
+  }
 }
 
 /**
@@ -182,7 +192,8 @@ function createSessionList(
       userAgent: text({ db: fieldDb('userAgent', f) }),
       user: relationship({
         ref: `${keys.user}.sessions`,
-        db: userForeignKeyDb(f),
+        isIndexed: false,
+        db: userRelationshipDb(f),
       }),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.session),
@@ -209,7 +220,8 @@ function createAccountList(
       providerId: text({ validation: { isRequired: true }, db: fieldDb('providerId', f) }),
       user: relationship({
         ref: `${keys.user}.accounts`,
-        db: userForeignKeyDb(f),
+        isIndexed: false,
+        db: userRelationshipDb(f),
       }),
       accessToken: text({ db: fieldDb('accessToken', f) }),
       refreshToken: text({ db: fieldDb('refreshToken', f) }),
