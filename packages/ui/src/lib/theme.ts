@@ -1,16 +1,47 @@
-import type { ThemeColors, ThemeConfig, ThemePreset } from '@opensaas/stack-core/internal'
+import type {
+  ThemeColors,
+  ThemeConfig,
+  ThemePreset,
+  ThemeShadows,
+} from '@opensaas/stack-core/internal'
 
 /**
- * Preset theme catalogs. Each preset supplies a full light + dark color set.
+ * A single preset entry. Every preset supplies a complete light + dark color
+ * set (all {@link ThemeColors} keys — no token may fall through to another
+ * preset). Shape (`radius`) and elevation (`shadows`) are optional: when a
+ * preset omits them it inherits the stylesheet defaults declared in
+ * `styles/globals.css`. This lets a preset express its own personality
+ * (`classic` is flat, `neon` is rounder) while the default `modern` preset
+ * stays byte-for-byte in sync with the stylesheet.
+ */
+export type PresetDefinition = {
+  light: ThemeColors
+  dark: ThemeColors
+  /** Base border radius in rem. Omitted → stylesheet default (0.625rem). */
+  radius?: number
+  /** Elevation shadows. Omitted → stylesheet defaults. `'none'` for flat. */
+  shadows?: ThemeShadows
+}
+
+/**
+ * Preset theme catalog (re-curated for the token vocabulary — issue #707).
  *
- * `modern` is the default and MUST stay in sync with the raw `--color-*-light`
- * / `--color-*-dark` values declared in `styles/globals.css`, so a preset-only
- * (or default) config produces the same visuals the stylesheet already ships.
+ * - `modern` (default) — the restrained, Linear-class direction: low-chroma
+ *   neutral surfaces, one saturated brand color used sparingly, the gradient
+ *   pair as garnish, quiet muted text, softer radius. It MUST stay in sync with
+ *   the raw `--color-*-light` / `--color-*-dark` values in `styles/globals.css`
+ *   (a test enforces this), so it deliberately omits `radius`/`shadows` and
+ *   inherits the stylesheet defaults rather than duplicating them.
+ * - `classic` — flat and enterprise-safe: blue primary, no gradient (the pair
+ *   collapses to a single color), squared-off radius, and elevation removed
+ *   (shadows `none`) so hierarchy comes from crisp borders alone.
+ * - `neon` — the high-chroma cyan / purple / pink personality preserved: pink
+ *   primary, purple accent, a cyan→pink signature gradient, rounder radius.
  *
  * Values are any valid CSS color string (ADR-0015) — the compiler never parses
  * them, it emits them verbatim.
  */
-export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: ThemeColors }> = {
+export const presetThemes: Record<ThemePreset, PresetDefinition> = {
   modern: {
     light: {
       background: 'oklch(0.99 0.002 264)',
@@ -66,8 +97,12 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       gradientFrom: 'oklch(0.62 0.19 264)',
       gradientTo: 'oklch(0.68 0.18 320)',
     },
+    // radius + shadows inherited from styles/globals.css (kept in sync there).
   },
   classic: {
+    // Squared-off corners and no elevation — hierarchy from borders alone.
+    radius: 0.375,
+    shadows: { sm: 'none', md: 'none', lg: 'none' },
     light: {
       background: 'hsl(0 0% 100%)',
       foreground: 'hsl(222 47% 11%)',
@@ -92,6 +127,7 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       border: 'hsl(214 32% 91%)',
       input: 'hsl(214 32% 91%)',
       ring: 'hsl(221 83% 53%)',
+      // No gradient: both stops are the primary, so it renders as a flat fill.
       gradientFrom: 'hsl(221 83% 53%)',
       gradientTo: 'hsl(221 83% 53%)',
     },
@@ -124,6 +160,8 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
     },
   },
   neon: {
+    // Rounder, playful corners; keeps the stylesheet's soft elevation.
+    radius: 0.75,
     light: {
       background: 'hsl(0 0% 100%)',
       foreground: 'hsl(240 10% 5%)',
@@ -137,8 +175,9 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       secondaryForeground: 'hsl(240 10% 5%)',
       muted: 'hsl(240 5% 96%)',
       mutedForeground: 'hsl(240 5% 45%)',
-      accent: 'hsl(155 100% 50%)',
-      accentForeground: 'hsl(240 10% 5%)',
+      // Purple accent — the middle of the cyan/purple/pink signature.
+      accent: 'hsl(280 100% 60%)',
+      accentForeground: 'hsl(0 0% 100%)',
       destructive: 'hsl(0 100% 50%)',
       destructiveForeground: 'hsl(0 0% 100%)',
       success: 'hsl(155 100% 45%)',
@@ -148,8 +187,9 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       border: 'hsl(240 6% 90%)',
       input: 'hsl(240 6% 90%)',
       ring: 'hsl(330 100% 50%)',
-      gradientFrom: 'hsl(330 100% 50%)',
-      gradientTo: 'hsl(155 100% 50%)',
+      // Cyan → pink signature gradient (sweeps through purple).
+      gradientFrom: 'hsl(190 100% 50%)',
+      gradientTo: 'hsl(320 100% 55%)',
     },
     dark: {
       background: 'hsl(240 10% 5%)',
@@ -164,7 +204,7 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       secondaryForeground: 'hsl(0 0% 98%)',
       muted: 'hsl(240 5% 15%)',
       mutedForeground: 'hsl(240 5% 60%)',
-      accent: 'hsl(155 100% 60%)',
+      accent: 'hsl(280 100% 70%)',
       accentForeground: 'hsl(240 10% 5%)',
       destructive: 'hsl(0 100% 60%)',
       destructiveForeground: 'hsl(0 0% 100%)',
@@ -175,8 +215,8 @@ export const presetThemes: Record<ThemePreset, { light: ThemeColors; dark: Theme
       border: 'hsl(240 5% 20%)',
       input: 'hsl(240 5% 20%)',
       ring: 'hsl(330 100% 60%)',
-      gradientFrom: 'hsl(330 100% 60%)',
-      gradientTo: 'hsl(155 100% 60%)',
+      gradientFrom: 'hsl(190 100% 55%)',
+      gradientTo: 'hsl(320 100% 60%)',
     },
   },
 }
@@ -224,14 +264,18 @@ function toKebabCase(key: string): string {
  *
  * - Colors: preset (default `modern`) merged with `colors` (light) and
  *   `darkColors` (dark), emitted verbatim.
- * - Fonts / radius / shadows: emitted only when provided (the stylesheet ships
- *   the defaults).
+ * - Radius / shadows: the selected preset's values, overridden by any supplied
+ *   in `theme`. Emitted only when the merged result has a value (a preset that
+ *   omits them — e.g. `modern` — defers to the stylesheet defaults).
+ * - Fonts: emitted only when provided (the stylesheet ships the defaults).
  */
 export function compileTheme(theme: ThemeConfig): string {
   const preset = theme.preset ?? 'modern'
   const base = presetThemes[preset]
   const light: ThemeColors = { ...base.light, ...theme.colors }
   const dark: ThemeColors = { ...base.dark, ...theme.darkColors }
+  const radius = theme.radius ?? base.radius
+  const shadows: ThemeShadows = { ...base.shadows, ...theme.shadows }
 
   // Warn only on developer-supplied overrides — preset values are always valid.
   for (const [key, value] of Object.entries(theme.colors ?? {})) {
@@ -254,11 +298,11 @@ export function compileTheme(theme: ThemeConfig): string {
   if (theme.fonts?.mono) lines.push(`  --font-mono: ${theme.fonts.mono};`)
   if (theme.fonts?.heading) lines.push(`  --font-heading: ${theme.fonts.heading};`)
 
-  if (theme.radius !== undefined) lines.push(`  --radius: ${theme.radius}rem;`)
+  if (radius !== undefined) lines.push(`  --radius: ${radius}rem;`)
 
-  if (theme.shadows?.sm) lines.push(`  --shadow-sm: ${theme.shadows.sm};`)
-  if (theme.shadows?.md) lines.push(`  --shadow-md: ${theme.shadows.md};`)
-  if (theme.shadows?.lg) lines.push(`  --shadow-lg: ${theme.shadows.lg};`)
+  if (shadows.sm) lines.push(`  --shadow-sm: ${shadows.sm};`)
+  if (shadows.md) lines.push(`  --shadow-md: ${shadows.md};`)
+  if (shadows.lg) lines.push(`  --shadow-lg: ${shadows.lg};`)
 
   return `:root {\n${lines.join('\n')}\n}`
 }
