@@ -240,24 +240,35 @@ describe('preset catalog completeness', () => {
 describe('modern preset ↔ stylesheet sync', () => {
   // The default `modern` preset and the raw `--color-*-light`/`-dark` variables
   // declared in globals.css are two copies of one palette. This test fails if
-  // they drift, enforcing the "un-driftable" goal (ADR-0015) for the token set
-  // the stylesheet ships as its baked-in default.
+  // they drift — whether a token is added, removed, or renamed (the key set
+  // changes) OR a token's value is re-tuned on one side only (the value
+  // changes) — enforcing the "un-driftable" goal (ADR-0015) for the palette the
+  // stylesheet ships as its baked-in default.
   const globalsCss = readFileSync(join(import.meta.dirname, '../../src/styles/globals.css'), 'utf8')
 
-  const declaredRawVars = (suffix: 'light' | 'dark'): string[] => {
-    const matches = globalsCss.matchAll(new RegExp(`--color-([a-z-]+)-${suffix}\\s*:`, 'g'))
-    return [...matches].map((m) => `--color-${m[1]}-${suffix}`).sort()
-  }
-
-  const compiledVars = (suffix: 'light' | 'dark'): string[] => {
-    const css = compileTheme({ preset: 'modern' })
-    const matches = css.matchAll(new RegExp(`(--color-[a-z-]+-${suffix})\\s*:`, 'g'))
-    return [...matches].map((m) => m[1]).sort()
+  // Parse `--color-<name>-<suffix>: <value>;` declarations into a
+  // `{ '<name>-<suffix>': '<value>' }` map. Applied to both the raw `:root`
+  // vars in globals.css and the compiled modern-preset CSS, so the two are
+  // compared value-for-value, not merely by which variable names exist. The
+  // trailing `:` (with a captured value up to `;`) only matches the raw value
+  // declarations, never the `@theme` contract tokens that reference these vars
+  // via `light-dark(var(--color-*-light), …)`.
+  const parseColorVars = (css: string, suffix: 'light' | 'dark'): Record<string, string> => {
+    const map: Record<string, string> = {}
+    const matches = css.matchAll(new RegExp(`--color-([a-z-]+)-${suffix}\\s*:\\s*([^;]+);`, 'g'))
+    for (const match of matches) {
+      map[`${match[1]}-${suffix}`] = (match[2] ?? '').trim()
+    }
+    return map
   }
 
   for (const suffix of ['light', 'dark'] as const) {
-    it(`declares the same ${suffix} color variables the modern preset emits`, () => {
-      expect(declaredRawVars(suffix)).toEqual(compiledVars(suffix))
+    it(`emits the same ${suffix} color variables and values as globals.css`, () => {
+      const declared = parseColorVars(globalsCss, suffix)
+      const compiled = parseColorVars(compileTheme({ preset: 'modern' }), suffix)
+      // Deep-equal on the value maps: a missing/added/renamed token changes the
+      // key set and a re-tuned value changes the value — either divergence fails.
+      expect(compiled).toEqual(declared)
     })
   }
 })
