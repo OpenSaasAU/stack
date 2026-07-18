@@ -1,265 +1,126 @@
-# OpenSaas Theming System
+# Admin UI Design System
 
-The OpenSaas admin UI now includes a powerful theming system that makes it easy to customize the look and feel of your admin interface.
+Specification for the admin UI design system: the theming contract, token vocabulary, component customization mechanisms, visual direction, and the scope of the restyle that applies them.
 
-## Features
+Decisions recorded in [ADR-0015](../docs/adr/0015-css-variables-are-the-theming-contract.md) (theming contract) and [ADR-0016](../docs/adr/0016-component-customization-restyle-or-compose-never-swap.md) (customization ladder). Glossary terms (Theme token, Theme preset, Slot, Admin chrome) live in the root `CONTEXT.md`.
 
-- 🎨 **Three Built-in Preset Themes**: Modern (default), Classic, and Neon
-- 🌙 **Automatic Dark Mode**: All themes support dark mode based on system preferences
-- ⚡ **Gradient Accents**: Modern neon gradients and visual effects
-- 🎯 **Easy Customization**: Override specific colors while keeping the rest of the theme
-- 🔧 **Type-Safe Configuration**: Full TypeScript support for all theme options
+> **Status:** This spec replaces the previous THEMING.md, which documented a pipeline that emitted bare HSL triplets into variables consumed as direct CSS colors — i.e. every configured theme produced invalid CSS. The value-format change below is therefore a clean break with ~zero blast radius.
 
-## Quick Start
+## Goals
 
-### Using a Preset Theme
+1. **Themeable** — a developer overrides colours, fonts, and component design without forking the package.
+2. **Composable** — a developer or coding agent builds full custom forms/pages from the same components the prebuilt admin uses.
+3. **Un-driftable** — one token definition; every customization layer writes to it, none parallel to it.
 
-The easiest way to theme your admin UI is to use one of the built-in presets:
+## Foundation
 
-```typescript
-// opensaas.config.ts
-export default config({
-  ui: {
-    basePath: '/admin',
-    theme: {
-      preset: 'modern', // Options: "modern" | "classic" | "neon"
-    },
-  },
-})
-```
+Evolve the existing package in place: shadcn/ui-style primitives, Tailwind v4, and the four export levels (`AdminUI` → `/standalone` → `/fields` → `/primitives`) are retained. No ground-up rebuild, no new primitive library.
 
-### Theme Presets
+## Theming contract
 
-#### Modern (Default)
+**CSS custom properties are the single contract.** The token set is defined once in the package stylesheet (`@theme` block). Two layers write to it:
 
-- **Primary Color**: Neon Cyan (`hsl(190, 95%, 55%)`)
-- **Accent Color**: Neon Purple (`hsl(280, 85%, 65%)`)
-- **Style**: Clean, contemporary design with gradient accents
-- **Best For**: SaaS products, modern web apps
+1. **CSS-first (escape hatch, always available):** override tokens in any stylesheet loaded after `@opensaas/stack-ui/styles`. Works with zero app-side Tailwind setup.
+2. **Config-first (convenience):** `ui.theme` in `opensaas.config.ts` compiles to token overrides injected by `AdminUI`. It is a thin compiler — values pass through verbatim, it never parses or owns color science.
 
-#### Classic
+### Token vocabulary
 
-- **Primary Color**: Classic Blue (`hsl(221.2, 83.2%, 53.3%)`)
-- **Accent Color**: Subtle Gray (`hsl(210, 40%, 96.1%)`)
-- **Style**: Traditional, professional appearance
-- **Best For**: Enterprise applications, conservative designs
+Every token is a compatibility promise. The full set:
 
-#### Neon
+**Colors** (each with a `*Foreground` pair where applicable):
 
-- **Primary Color**: Hot Pink (`hsl(330, 100%, 50%)`)
-- **Accent Color**: Bright Green (`hsl(155, 100%, 50%)`)
-- **Style**: Bold, vibrant with high contrast
-- **Best For**: Creative tools, gaming interfaces, Gen-Z focused apps
+- Surfaces: `background`, `card`, `popover` (+ foregrounds)
+- Intent: `primary`, `secondary`, `accent`, `muted`, `destructive`, **`success`**, **`warning`** (+ foregrounds) — `success`/`warning` are new; status rendering (published/draft/error badges, toasts) must consume them instead of hardcoded colors
+- Structure: `border`, `input`, `ring`
+- Signature: `gradientFrom`, `gradientTo`
 
-## Customization
+**Typography:** `--font-sans`, `--font-mono`, `--font-heading` (defaults to `var(--font-sans)`). Family tokens only — sizes/weights stay on Tailwind's scale. Designed to compose with `next/font`: the app sets the variable from `font.variable`; the stack ships no webfont and defaults to the system stack.
 
-### Override Specific Colors
+**Shape:** `--radius` as the single knob; derived sm/md/lg radii computed from it.
 
-You can use a preset theme but override specific colors:
+**Elevation:** `--shadow-sm`, `--shadow-md`, `--shadow-lg`. A flat theme sets them to `none` instead of forking components.
 
-```typescript
-export default config({
-  ui: {
-    theme: {
-      preset: 'modern',
-      colors: {
-        primary: '280 100% 50%', // Custom magenta primary color
-        accent: '160 90% 55%', // Custom teal accent
-      },
-    },
-  },
-})
-```
+**Deliberately excluded:** spacing/density tokens and a font-size scale. Density theming would force every component to consume spacing variables everywhere; component-level customization covers it. Revisit only on concrete demand.
 
-### Full Custom Theme
+### `ThemeConfig` (config layer)
 
-Create a completely custom theme:
-
-```typescript
-export default config({
-  ui: {
-    theme: {
-      colors: {
-        background: '0 0% 100%',
-        foreground: '240 10% 5%',
-        primary: '280 100% 50%',
-        primaryForeground: '0 0% 100%',
-        accent: '160 90% 55%',
-        accentForeground: '240 10% 5%',
-        // ... other colors
-      },
-      darkColors: {
-        background: '240 10% 5%',
-        foreground: '0 0% 98%',
-        primary: '280 100% 60%',
-        primaryForeground: '240 10% 5%',
-        // ... other dark mode colors
-      },
-      radius: 0.5, // Border radius in rem
-    },
-  },
-})
-```
-
-## Color Format
-
-All colors use HSL (Hue, Saturation, Lightness) format **without** the `hsl()` wrapper:
-
-```typescript
-// ✅ Correct
-primary: '190 95% 55%'
-
-// ❌ Wrong
-primary: 'hsl(190, 95%, 55%)'
-primary: '#00bcd4'
-```
-
-This format allows Tailwind CSS to generate proper opacity variants automatically.
-
-## Available Color Variables
-
-### Essential Colors
-
-- `background` - Main page background
-- `foreground` - Main text color
-- `primary` - Primary brand color (buttons, links, active states)
-- `primaryForeground` - Text color on primary background
-- `accent` - Secondary accent color
-- `accentForeground` - Text color on accent background
-
-### UI Elements
-
-- `card` - Card background
-- `cardForeground` - Text on cards
-- `border` - Border color
-- `input` - Input field border
-- `ring` - Focus ring color
-- `muted` - Muted/disabled backgrounds
-- `mutedForeground` - Muted text
-
-### Special
-
-- `gradientFrom` - Start color for gradients
-- `gradientTo` - End color for gradients
-
-## Dark Mode
-
-All themes automatically support dark mode based on the user's system preference. You can specify different colors for dark mode:
-
-```typescript
-theme: {
-  preset: "modern",
-  colors: {
-    primary: "190 95% 55%", // Light mode cyan
-  },
-  darkColors: {
-    primary: "190 100% 70%", // Darker mode - brighter cyan for contrast
-  },
-}
-```
-
-## Border Radius
-
-Customize the roundness of UI elements:
-
-```typescript
-theme: {
-  preset: "modern",
-  radius: 1.0, // More rounded (default: 0.75)
-}
-```
-
-## Examples
-
-### SaaS Product Theme
+Mirrors the vocabulary exactly:
 
 ```typescript
 ui: {
   theme: {
-    preset: "modern",
-    colors: {
-      primary: "210 100% 50%", // Bright blue
-      accent: "170 90% 50%",   // Teal
-    },
-  },
+    preset?: 'modern' | 'classic' | 'neon',
+    colors?: { primary?: string, /* any token, any valid CSS color string */ },
+    darkColors?: { /* same keys, dark values */ },
+    fonts?: { sans?: string, mono?: string, heading?: string },
+    radius?: number,          // rem
+    shadows?: { sm?: string, md?: string, lg?: string },
+  }
 }
 ```
 
-### Gaming Platform Theme
+- **Value format — clean break:** any valid CSS color string (`oklch(…)`, `#hex`, `hsl(…)`). Bare HSL triplets (`'220 20% 97%'`) are no longer accepted; a dev-mode warning detects the pattern `/^[\d.]+\s+[\d.]+%\s+[\d.]+%$/` and suggests wrapping in `hsl()`.
+- Preset names survive; their token values are re-curated (see Visual direction). A preset-only config upgrades unchanged.
 
-```typescript
-ui: {
-  theme: {
-    preset: "neon",
-    colors: {
-      primary: "270 100% 50%", // Purple
-      accent: "30 100% 50%",   // Orange
-    },
-    radius: 0.25, // Sharp corners for edgy look
-  },
-}
-```
+## Dark mode
 
-### Enterprise Theme
+- Tokens keep the single-definition `light-dark()` structure — light and dark values live side by side; no duplicated `.dark` block.
+- A `data-theme="light" | "dark"` attribute on `<html>` sets `color-scheme`, overriding the system preference. Attribute absent = system. This is the full mechanism (~6 lines of CSS).
+- A small `ThemeToggle` client component (persists choice to `localStorage`, three states: light/dark/system) ships in the default Admin chrome's user menu, removable via composition.
+- Developers pin a scheme by setting the attribute statically.
 
-```typescript
-ui: {
-  theme: {
-    preset: "classic",
-    radius: 0.5,
-  },
-}
-```
+## Component customization ladder
 
-## Programmatic Access
+Per ADR-0016, in increasing power:
 
-You can also access theme utilities programmatically:
+1. **Tokens** — restyle everything consistently (this spec's main body).
+2. **`className` / `classNames` slot props** on every exported component, merged via `tailwind-merge`. Composites take structured slots, e.g. `<ListTable classNames={{ row, header, cell }}>`. _Caveat:_ arbitrary utility classes require the app to run its own Tailwind entry (`@import 'tailwindcss'` + `@source` pointing at the ui package) — documented as the opt-in "customizing" setup, since apps by default consume only the package's precompiled CSS.
+3. **Stable `data-slot` attributes** on every primitive and composite part (`data-slot="button"`, `data-slot="table-row"`, …). Plain-CSS restyling with no Tailwind pipeline; the attribute names are a stable public contract.
+4. **Composition** — build pages from `/standalone`, `/fields`, `/primitives`; replace field widgets via the existing field-component registry (`registerFieldComponent`, `ui.component`, `ui.fieldType`).
 
-```typescript
-import { generateThemeCSS, presetThemes } from '@opensaas/stack-ui'
+**Explicitly rejected:** a global primitive registry (swap `Button` everywhere inside `AdminUI`). The supported answers are "restyle it" or "compose your own pages."
 
-// Generate CSS for a theme
-const css = generateThemeCSS({
-  preset: 'modern',
-  colors: { primary: '280 100% 50%' },
-})
+## Visual direction
 
-// Access preset definitions
-const modernTheme = presetThemes.modern
-```
+Default = **restrained, Linear-class**. Personality is opt-in via preset.
 
-## Visual Components
+- Near-white/near-black surfaces with very low chroma tint; hierarchy from subtle borders and shadow tokens, not color blocking.
+- One saturated brand color used sparingly: primary actions, focus rings, active nav.
+- Gradient pair as garnish only — a few signature moments (dashboard header accent, avatar fallbacks, active glows), never on every button.
+- System font stack by default; tightened hierarchy — clear weights, slightly smaller base in dense areas, tabular numerals in tables.
+- Softer radius, crisper borders, quieter muted text than the current styles.
 
-The theming system automatically applies to:
+**Presets (re-curated):**
 
-- ✅ Navigation sidebar with gradient header and active states
-- ✅ Dashboard cards with hover effects and gradient accents
-- ✅ Buttons with multiple variants
-- ✅ Form inputs and fields
-- ✅ Tables and list views
-- ✅ Modals and dialogs
-- ✅ Loading states and skeletons
+| Preset    | Character                                                       |
+| --------- | --------------------------------------------------------------- |
+| `modern`  | The restrained direction above (default)                        |
+| `classic` | Flat, no gradients, blue primary, enterprise-safe               |
+| `neon`    | The current high-chroma cyan/purple/pink personality, preserved |
 
-## Tips
+## Scope of the restyle
 
-1. **Start with a preset**: Choose the closest preset to your desired look
-2. **Override sparingly**: Only customize colors that need to change
-3. **Test dark mode**: Always check how your theme looks in dark mode
-4. **Use gradients**: The `gradientFrom` and `gradientTo` colors create beautiful effects
-5. **Maintain contrast**: Ensure text is readable on all backgrounds
+**Tier: re-skin + chrome polish. No new capabilities.**
 
-## TypeScript Support
+In scope:
 
-All theme configuration is fully typed:
+- Every primitive and component restyled to the new tokens/direction, consuming `--font-*`, shadow tokens, `success`/`warning`, and carrying `data-slot` attributes + `classNames` props.
+- Chrome polish on existing screens: consistent page headers, designed empty states, skeleton coverage, nav active states, table density/alignment (tabular numerals, right-aligned numbers), form section rhythm, `ThemeToggle` in the user menu.
 
-```typescript
-import type { ThemeConfig, ThemePreset, ThemeColors } from '@opensaas/stack-core'
+Out of scope (future specs, on this foundation): command palette, saved views, new navigation paradigms, density theming, type-scale tokens.
 
-const myTheme: ThemeConfig = {
-  preset: 'modern', // Autocomplete works!
-  colors: {
-    primary: '280 100% 50%',
-    // TypeScript will warn about invalid properties
-  },
-}
-```
+## Migration notes
+
+- `ui.theme` color values: wrap old triplets in `hsl()` — `'220 20% 97%'` → `'hsl(220 20% 97%)'` — or move to any other CSS color format.
+- Preset-only configs: no change required; the upgrade is strictly a fix.
+- The old `generateThemeCSS` HSL output and the `--color-*-light/-dark` split in `globals.css` are internal details that may change; only the token names above are contract.
+
+## Suggested implementation sequence
+
+Slices that land independently:
+
+1. **Token pipeline rebuild** — new vocabulary in `globals.css`, fixed `ThemeConfig` compiler + dev warning, `data-theme` mechanism, re-curated presets.
+2. **Primitives pass** — restyle + `data-slot` + `className` merge on every primitive.
+3. **Fields & standalone pass** — `classNames` slots on composites, status colors, form rhythm.
+4. **Chrome pass** — navigation, page headers, empty/skeleton states, `ThemeToggle`, dashboard.
+5. **Docs** — theming guide rewrite, "customizing" Tailwind setup guide, preset gallery.
