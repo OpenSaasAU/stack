@@ -13,6 +13,17 @@ export { FieldRenderer } from './FieldRenderer.js'
 export { FileField } from './FileField.js'
 export { ImageField } from './ImageField.js'
 
+// Shared field shell primitives (consistent label / help / error rhythm)
+export {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldWarning,
+  FieldReadValue,
+} from './field-shell.js'
+export type { FieldRootProps, FieldLabelProps } from './field-shell.js'
+
 // Registry for custom field types
 export { fieldComponentRegistry, registerFieldComponent, getFieldComponent } from './registry.js'
 
@@ -26,7 +37,10 @@ export type { PasswordFieldProps } from './PasswordField.js'
 export type { RelationshipFieldProps } from './RelationshipField.js'
 export type { JsonFieldProps } from './JsonField.js'
 export type { ComboboxFieldProps } from './ComboboxField.js'
-export type { RelationshipManagerProps } from './RelationshipManager.js'
+export type {
+  RelationshipManagerProps,
+  RelationshipManagerClassNames,
+} from './RelationshipManager.js'
 export type { FieldRendererProps } from './FieldRenderer.js'
 export type { FileFieldProps } from './FileField.js'
 export type { ImageFieldProps } from './ImageField.js'

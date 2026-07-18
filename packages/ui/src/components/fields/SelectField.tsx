@@ -7,7 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../primitives/select.js'
-import { Label } from '../../primitives/label.js'
+import { cn } from '../../lib/utils.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface SelectFieldProps {
   name: string
@@ -19,6 +20,7 @@ export interface SelectFieldProps {
   disabled?: boolean
   required?: boolean
   mode?: 'read' | 'edit'
+  helpText?: string
 }
 
 export function SelectField({
@@ -31,30 +33,30 @@ export function SelectField({
   disabled,
   required,
   mode = 'edit',
+  helpText,
 }: SelectFieldProps) {
   if (mode === 'read') {
     const selectedOption = options.find((opt) => opt.value === value)
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{selectedOption?.label || '-'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{selectedOption?.label || '-'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      </FieldLabel>
       <Select
         value={value || undefined}
         onValueChange={(val) => onChange(val || null)}
         disabled={disabled}
         required={required}
       >
-        <SelectTrigger id={name} className={error ? 'border-destructive' : ''}>
+        <SelectTrigger id={name} className={cn(error && 'border-destructive')}>
           <SelectValue placeholder="Select an option..." />
         </SelectTrigger>
         <SelectContent>
@@ -65,7 +67,8 @@ export function SelectField({
           ))}
         </SelectContent>
       </Select>
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }

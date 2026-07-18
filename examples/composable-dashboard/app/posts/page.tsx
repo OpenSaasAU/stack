@@ -55,9 +55,14 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
           <CreatePostDialog fields={(await config).lists.Post.fields} />
         </div>
 
-        {/* Search Bar */}
+        {/* Search Bar — structured classNames slots (issue #709) let us tune a
+            single part (widen the input) without forking the component. */}
         <div className="mb-6">
-          <SearchBar defaultValue={search} placeholder="Search posts by title or content..." />
+          <SearchBar
+            defaultValue={search}
+            placeholder="Search posts by title or content..."
+            classNames={{ input: 'h-11' }}
+          />
         </div>
 
         {/* Posts Table */}
@@ -76,6 +81,13 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
               }}
               columns={['title', 'authorName', 'status', 'createdAt']}
               sortable
+              // Structured per-part classNames slots (issue #709) — restyle
+              // individual table parts without forking the composite.
+              classNames={{
+                frame: 'shadow-sm',
+                headerCell: 'uppercase text-xs tracking-wide',
+                row: 'hover:bg-accent/40',
+              }}
               emptyMessage={
                 search
                   ? `No posts found matching "${search}"`

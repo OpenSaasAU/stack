@@ -4,8 +4,8 @@ import React, { useCallback, useState } from 'react'
 import type { ImageMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
-import { Label } from '../../primitives/label.js'
 import { Upload, X, Eye, ImageIcon } from 'lucide-react'
+import { FieldLabel, FieldError } from './field-shell.js'
 import Image from 'next/image.js'
 
 export interface ImageFieldProps {
@@ -123,10 +123,9 @@ export function ImageField({
     return (
       <div className="space-y-2">
         {label && (
-          <Label htmlFor={name}>
+          <FieldLabel htmlFor={name} required={required}>
             {label}
-            {required && <span className="text-destructive ml-1">*</span>}
-          </Label>
+          </FieldLabel>
         )}
         {isImageMetadata ? (
           <div className="space-y-2">
@@ -188,10 +187,9 @@ export function ImageField({
   return (
     <div className="space-y-2">
       {label && (
-        <Label htmlFor={name}>
+        <FieldLabel htmlFor={name} required={required}>
           {label}
-          {required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        </FieldLabel>
       )}
 
       {previewUrl || isImageMetadata ? (
@@ -314,7 +312,7 @@ export function ImageField({
         </>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <FieldError>{error}</FieldError>}
     </div>
   )
 }

@@ -1,8 +1,8 @@
 'use client'
 
 import { Input } from '../../primitives/input.js'
-import { Label } from '../../primitives/label.js'
 import { cn } from '../../lib/utils.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface IntegerFieldProps {
   name: string
@@ -16,6 +16,7 @@ export interface IntegerFieldProps {
   mode?: 'read' | 'edit'
   min?: number
   max?: number
+  helpText?: string
 }
 
 export function IntegerField({
@@ -30,22 +31,22 @@ export function IntegerField({
   mode = 'edit',
   min,
   max,
+  helpText,
 }: IntegerFieldProps) {
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{value !== null ? value : '-'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{value !== null ? value : '-'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      </FieldLabel>
       <Input
         id={name}
         name={name}
@@ -60,9 +61,10 @@ export function IntegerField({
         required={required}
         min={min}
         max={max}
-        className={cn(error && 'border-destructive')}
+        className={cn('tabular-nums', error && 'border-destructive')}
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }

@@ -1,10 +1,10 @@
 'use client'
 
 import { Input } from '../../primitives/input.js'
-import { Label } from '../../primitives/label.js'
 import { Button } from '../../primitives/button.js'
 import { cn } from '../../lib/utils.js'
 import { useState } from 'react'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface PasswordFieldProps {
   name: string
@@ -17,6 +17,7 @@ export interface PasswordFieldProps {
   required?: boolean
   mode?: 'read' | 'edit'
   showConfirm?: boolean
+  helpText?: string
 }
 
 export function PasswordField({
@@ -30,6 +31,7 @@ export function PasswordField({
   required,
   mode = 'edit',
   showConfirm = true,
+  helpText,
 }: PasswordFieldProps) {
   // Check if value is the isSet object
   const isSetObject = typeof value === 'object' && value !== null && 'isSet' in value
@@ -42,18 +44,18 @@ export function PasswordField({
 
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{isPasswordSet ? '••••••••' : 'Not set'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{isPasswordSet ? '••••••••' : 'Not set'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   // If not changing password and it's set, show the button
   if (!isChangingPassword && isSetObject) {
     return (
-      <div className="space-y-2">
-        <Label>{label}</Label>
+      <FieldRoot>
+        <FieldLabel>{label}</FieldLabel>
         <div>
           <Button
             type="button"
@@ -64,7 +66,8 @@ export function PasswordField({
             {isPasswordSet ? 'Change Password' : 'Set Password'}
           </Button>
         </div>
-      </div>
+        {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      </FieldRoot>
     )
   }
 
@@ -92,11 +95,10 @@ export function PasswordField({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor={name}>
+      <FieldRoot>
+        <FieldLabel htmlFor={name} required={required && !isPasswordSet}>
           {label}
-          {required && !isPasswordSet && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        </FieldLabel>
         <div className="relative">
           <Input
             id={name}
@@ -117,15 +119,15 @@ export function PasswordField({
             {showPassword ? '👁️' : '👁️‍🗨️'}
           </button>
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
+        {helpText && <FieldHelp>{helpText}</FieldHelp>}
+        {error && <FieldError>{error}</FieldError>}
+      </FieldRoot>
 
       {showConfirm && (
-        <div className="space-y-2">
-          <Label htmlFor={`${name}-confirm`}>
+        <FieldRoot>
+          <FieldLabel htmlFor={`${name}-confirm`} required={required && !isPasswordSet}>
             Confirm {label}
-            {required && !isPasswordSet && <span className="text-destructive ml-1">*</span>}
-          </Label>
+          </FieldLabel>
           <Input
             id={`${name}-confirm`}
             name={`${name}-confirm`}
@@ -137,8 +139,8 @@ export function PasswordField({
             required={required && !isPasswordSet}
             className={cn(confirmError && 'border-destructive')}
           />
-          {confirmError && <p className="text-sm text-destructive">{confirmError}</p>}
-        </div>
+          {confirmError && <FieldError>{confirmError}</FieldError>}
+        </FieldRoot>
       )}
 
       {isSetObject && (

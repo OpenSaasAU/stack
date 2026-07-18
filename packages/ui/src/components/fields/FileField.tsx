@@ -4,8 +4,8 @@ import React, { useCallback, useState } from 'react'
 import type { FileMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
-import { Label } from '../../primitives/label.js'
 import { Upload, X, File, Check } from 'lucide-react'
+import { FieldLabel, FieldError } from './field-shell.js'
 
 export interface FileFieldProps {
   name: string
@@ -102,10 +102,9 @@ export function FileField({
     return (
       <div className="space-y-2">
         {label && (
-          <Label htmlFor={name}>
+          <FieldLabel htmlFor={name} required={required}>
             {label}
-            {required && <span className="text-destructive ml-1">*</span>}
-          </Label>
+          </FieldLabel>
         )}
         {isFileMetadata ? (
           <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
@@ -138,16 +137,15 @@ export function FileField({
   return (
     <div className="space-y-2">
       {label && (
-        <Label htmlFor={name}>
+        <FieldLabel htmlFor={name} required={required}>
           {label}
-          {required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        </FieldLabel>
       )}
 
       {isFile || isFileMetadata ? (
         // File selected/uploaded - show file info
         <div className="flex items-center gap-2 p-3 border rounded-md">
-          <Check className="h-4 w-4 text-green-600" />
+          <Check className="h-4 w-4 text-success" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">
               {isFile ? (value as File).name : (value as FileMetadata).originalFilename}
@@ -209,7 +207,7 @@ export function FileField({
         </>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <FieldError>{error}</FieldError>}
     </div>
   )
 }

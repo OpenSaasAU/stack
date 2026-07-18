@@ -14,6 +14,10 @@ export { ConfirmDialog } from './components/ConfirmDialog.js'
 export { LoadingSpinner } from './components/LoadingSpinner.js'
 export { SkeletonLoader, TableSkeleton, FormSkeleton } from './components/SkeletonLoader.js'
 
+// Status badge primitive (success / warning / destructive tokens)
+export { Badge, badgeVariants } from './primitives/badge.js'
+export type { BadgeProps } from './primitives/badge.js'
+
 // Field components
 export {
   TextField,
@@ -27,6 +31,12 @@ export {
   fieldComponentRegistry,
   registerFieldComponent,
   getFieldComponent,
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldWarning,
+  FieldReadValue,
 } from './components/fields/index.js'
 
 // Types
@@ -70,8 +80,12 @@ export type {
   ItemCreateFormProps,
   ItemEditFormProps,
   ListTableProps,
+  ListTableClassNames,
   SearchBarProps,
+  SearchBarClassNames,
   DeleteButtonProps,
+  DeleteButtonClassNames,
+  ItemFormClassNames,
 } from './components/standalone/index.js'
 
 // Utility functions

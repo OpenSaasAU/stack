@@ -4,6 +4,18 @@ import { useState } from 'react'
 import { Button } from '../../primitives/button.js'
 import { ConfirmDialog } from '../ConfirmDialog.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
+import { cn } from '../../lib/utils.js'
+
+/**
+ * Per-part `classNames` slots for `DeleteButton` (issue #709). Each merges onto
+ * its `data-slot` part via `cn`/tailwind-merge.
+ */
+export interface DeleteButtonClassNames {
+  /** The trigger button (`data-slot="button"`). */
+  button?: string
+  /** The inline error banner (`data-slot="delete-button-error"`). */
+  error?: string
+}
 
 export interface DeleteButtonProps {
   onDelete: () => Promise<{ success: boolean; error?: string }>
@@ -17,6 +29,8 @@ export interface DeleteButtonProps {
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
   size?: 'default' | 'sm' | 'lg' | 'icon'
   className?: string
+  /** Structured per-part class overrides; each merges onto its `data-slot` part. */
+  classNames?: DeleteButtonClassNames
   disabled?: boolean
 }
 
@@ -48,6 +62,7 @@ export function DeleteButton({
   buttonVariant = 'destructive',
   size = 'default',
   className,
+  classNames,
   disabled = false,
 }: DeleteButtonProps) {
   const [showConfirm, setShowConfirm] = useState(false)
@@ -79,7 +94,7 @@ export function DeleteButton({
         size={size}
         onClick={() => setShowConfirm(true)}
         disabled={disabled || isPending}
-        className={className}
+        className={cn(className, classNames?.button)}
       >
         {isPending && (
           <LoadingSpinner
@@ -91,7 +106,13 @@ export function DeleteButton({
       </Button>
 
       {error && (
-        <div className="mt-2 bg-destructive/10 border border-destructive text-destructive rounded-lg p-3">
+        <div
+          data-slot="delete-button-error"
+          className={cn(
+            'mt-2 bg-destructive/10 border border-destructive text-destructive rounded-lg p-3',
+            classNames?.error,
+          )}
+        >
           <p className="text-sm font-medium">{error}</p>
         </div>
       )}

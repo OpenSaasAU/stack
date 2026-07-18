@@ -23,6 +23,33 @@ import {
 import { Button } from '../../primitives/button.js'
 import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
 import type { ServerActionInput } from '../../server/types.js'
+import { cn } from '../../lib/utils.js'
+import { FieldRoot, FieldLabel, FieldError, FieldReadValue } from './field-shell.js'
+
+/**
+ * Per-part `classNames` slots for `RelationshipManager` (issue #709). Each merges
+ * onto its `data-slot` part via `cn`/tailwind-merge.
+ */
+export interface RelationshipManagerClassNames {
+  /** Outer wrapper (`data-slot="relationship-manager"`). */
+  root?: string
+  /** The field label (`data-slot="field-label"`). */
+  label?: string
+  /** The bordered frame around the connected-items table (`data-slot="relationship-manager-frame"`). */
+  frame?: string
+  /** Each connected-item row (`data-slot="table-row"`). */
+  row?: string
+  /** Each connected-item cell (`data-slot="table-cell"`). */
+  cell?: string
+  /** The empty state box (`data-slot="relationship-manager-empty"`). */
+  emptyState?: string
+  /** The action-button row (`data-slot="relationship-manager-actions"`). */
+  actions?: string
+  /** The connect-existing trigger (`data-slot="combobox-trigger"`). */
+  connectButton?: string
+  /** The error message (`data-slot="field-error"`). */
+  error?: string
+}
 
 export interface RelationshipManagerProps {
   name: string
@@ -43,6 +70,8 @@ export interface RelationshipManagerProps {
   serverAction?: (input: ServerActionInput) => Promise<unknown>
   /** Debounce delay (ms) before a typed query issues a server search. @default 300 */
   debounceMs?: number
+  /** Structured per-part class overrides; each merges onto its `data-slot` part. */
+  classNames?: RelationshipManagerClassNames
 }
 
 export function RelationshipManager({
@@ -61,6 +90,7 @@ export function RelationshipManager({
   listKey,
   serverAction,
   debounceMs = 300,
+  classNames,
 }: RelationshipManagerProps) {
   const [showConnectModal, setShowConnectModal] = useState(false)
 
@@ -85,12 +115,14 @@ export function RelationshipManager({
   // Read mode
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">{label}</label>
-        <p className="text-sm">
+      <FieldRoot mode="read" data-slot="relationship-manager" className={classNames?.root}>
+        <FieldLabel muted className={classNames?.label}>
+          {label}
+        </FieldLabel>
+        <FieldReadValue>
           {selectedItems.length > 0 ? selectedItems.map((item) => item.label).join(', ') : '-'}
-        </p>
-      </div>
+        </FieldReadValue>
+      </FieldRoot>
     )
   }
 
@@ -105,15 +137,17 @@ export function RelationshipManager({
   }
 
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium">
+    <FieldRoot data-slot="relationship-manager" className={classNames?.root}>
+      <FieldLabel required={required} className={classNames?.label}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </label>
+      </FieldLabel>
 
       {/* Selected Items Table */}
       {selectedItems.length > 0 ? (
-        <div className="rounded-md border border-input">
+        <div
+          data-slot="relationship-manager-frame"
+          className={cn('rounded-md border border-input', classNames?.frame)}
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -123,8 +157,8 @@ export function RelationshipManager({
             </TableHeader>
             <TableBody>
               {selectedItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
+                <TableRow key={item.id} className={classNames?.row}>
+                  <TableCell className={classNames?.cell}>
                     {relatedListKey ? (
                       <Link
                         href={`${basePath}/${relatedListKey}/${item.id}`}
@@ -136,7 +170,7 @@ export function RelationshipManager({
                       item.label
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={cn('text-right', classNames?.cell)}>
                     <Button
                       type="button"
                       variant="ghost"
@@ -153,7 +187,13 @@ export function RelationshipManager({
           </Table>
         </div>
       ) : (
-        <div className="rounded-md border border-input border-dashed p-8 text-center">
+        <div
+          data-slot="relationship-manager-empty"
+          className={cn(
+            'rounded-md border border-input border-dashed p-8 text-center',
+            classNames?.emptyState,
+          )}
+        >
           <p className="text-sm text-muted-foreground">
             No items connected. Click &quot;Connect Existing&quot; to add items.
           </p>
@@ -161,9 +201,15 @@ export function RelationshipManager({
       )}
 
       {/* Action Buttons */}
-      <div className="flex gap-2">
+      <div
+        data-slot="relationship-manager-actions"
+        className={cn('flex gap-2', classNames?.actions)}
+      >
         <Combobox open={showConnectModal} onOpenChange={setShowConnectModal}>
-          <ComboboxTrigger disabled={disabled || isLoading} className="h-9 px-3">
+          <ComboboxTrigger
+            disabled={disabled || isLoading}
+            className={cn('h-9 px-3', classNames?.connectButton)}
+          >
             <span>{isLoading ? 'Loading...' : 'Connect Existing'}</span>
           </ComboboxTrigger>
           <ComboboxContent>
@@ -197,7 +243,7 @@ export function RelationshipManager({
             and form rendering logic. For now, we'll leave it as a placeholder or implement in a future iteration */}
       </div>
 
-      {error && <p className="text-sm text-destructive mt-2">{error}</p>}
-    </div>
+      {error && <FieldError className={cn('mt-2', classNames?.error)}>{error}</FieldError>}
+    </FieldRoot>
   )
 }

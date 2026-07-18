@@ -8,6 +8,8 @@ import { Button } from '../../primitives/button.js'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
 import { useItemForm } from '../../lib/useItemForm.js'
+import { cn } from '../../lib/utils.js'
+import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
@@ -17,6 +19,8 @@ export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   submitLabel?: string
   cancelLabel?: string
   className?: string
+  /** Structured per-part class overrides; each merges onto its `data-slot` part. */
+  classNames?: ItemFormClassNames
 }
 
 /**
@@ -43,6 +47,7 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   submitLabel = 'Create',
   cancelLabel = 'Cancel',
   className,
+  classNames,
 }: ItemCreateFormProps<TData>) {
   // Serialize field configs to remove non-serializable properties
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
@@ -68,16 +73,26 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   })
 
   return (
-    <form onSubmit={handleSubmit} className={className}>
+    <form
+      data-slot="item-create-form"
+      onSubmit={handleSubmit}
+      className={cn(className, classNames?.root)}
+    >
       {/* General Error */}
       {generalError && (
-        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6">
+        <div
+          data-slot="form-error"
+          className={cn(
+            'bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6',
+            classNames?.error,
+          )}
+        >
           <p className="text-sm font-medium">{generalError}</p>
         </div>
       )}
 
       {/* Form Fields */}
-      <div className="space-y-6">
+      <div data-slot="form-fields" className={cn('space-y-6', classNames?.fields)}>
         {editableFields.map(([fieldName, fieldConfig]) => (
           <FieldRenderer
             key={fieldName}
@@ -95,15 +110,24 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
       </div>
 
       {/* Form Actions */}
-      <div className="flex gap-3 pt-6 mt-6 border-t border-border">
-        <Button type="submit" disabled={isPending} className="gap-2">
+      <div
+        data-slot="form-actions"
+        className={cn('flex gap-3 pt-6 mt-6 border-t border-border', classNames?.actions)}
+      >
+        <Button type="submit" disabled={isPending} className={cn('gap-2', classNames?.submit)}>
           {isPending && (
             <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
           )}
           {isPending ? 'Creating...' : submitLabel}
         </Button>
         {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={isPending}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onCancel}
+            disabled={isPending}
+            className={classNames?.cancel}
+          >
             {cancelLabel}
           </Button>
         )}

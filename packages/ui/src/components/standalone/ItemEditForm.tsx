@@ -8,6 +8,8 @@ import { Button } from '../../primitives/button.js'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
 import { useItemForm, transformInitialData } from '../../lib/useItemForm.js'
+import { cn } from '../../lib/utils.js'
+import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
@@ -18,6 +20,8 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
   submitLabel?: string
   cancelLabel?: string
   className?: string
+  /** Structured per-part class overrides; each merges onto its `data-slot` part. */
+  classNames?: ItemFormClassNames
   basePath?: string
 }
 
@@ -47,6 +51,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   submitLabel = 'Save',
   cancelLabel = 'Cancel',
   className,
+  classNames,
   basePath = '/admin',
 }: ItemEditFormProps<TData>) {
   // Serialize field configs to remove non-serializable properties
@@ -80,16 +85,26 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   })
 
   return (
-    <form onSubmit={handleSubmit} className={className}>
+    <form
+      data-slot="item-edit-form"
+      onSubmit={handleSubmit}
+      className={cn(className, classNames?.root)}
+    >
       {/* General Error */}
       {generalError && (
-        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6">
+        <div
+          data-slot="form-error"
+          className={cn(
+            'bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6',
+            classNames?.error,
+          )}
+        >
           <p className="text-sm font-medium">{generalError}</p>
         </div>
       )}
 
       {/* Form Fields */}
-      <div className="space-y-6">
+      <div data-slot="form-fields" className={cn('space-y-6', classNames?.fields)}>
         {editableFields.map(([fieldName, fieldConfig]) => (
           <FieldRenderer
             key={fieldName}
@@ -108,15 +123,24 @@ export function ItemEditForm<TData = Record<string, unknown>>({
       </div>
 
       {/* Form Actions */}
-      <div className="flex gap-3 pt-6 mt-6 border-t border-border">
-        <Button type="submit" disabled={isPending} className="gap-2">
+      <div
+        data-slot="form-actions"
+        className={cn('flex gap-3 pt-6 mt-6 border-t border-border', classNames?.actions)}
+      >
+        <Button type="submit" disabled={isPending} className={cn('gap-2', classNames?.submit)}>
           {isPending && (
             <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
           )}
           {isPending ? 'Saving...' : submitLabel}
         </Button>
         {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={isPending}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onCancel}
+            disabled={isPending}
+            className={classNames?.cancel}
+          >
             {cancelLabel}
           </Button>
         )}

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/pri
 import { Button } from '@opensaas/stack-ui/primitives'
 import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
+import { PostStatusBadge } from '../../../components/PostStatusBadge'
 import type { Post, PostUpdateInput } from '@/.opensaas/types'
 import { FieldConfig } from '@opensaas/stack-core'
 
@@ -35,6 +36,9 @@ export function PostEditor({ post, fields }: { post: Post; fields: Record<string
               return { success: true }
             }}
             onCancel={() => setEditing(false)}
+            // Structured per-part classNames slots (issue #709) — tune the
+            // actions footer without forking the form.
+            classNames={{ actions: 'justify-end' }}
           />
         </CardContent>
       </Card>
@@ -54,15 +58,7 @@ export function PostEditor({ post, fields }: { post: Post; fields: Record<string
                 <span>•</span>
                 <span>{new Date(post.createdAt).toLocaleDateString()}</span>
                 <span>•</span>
-                <span
-                  className={`px-2 py-1 text-xs font-medium rounded ${
-                    post.status === 'published'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}
-                >
-                  {post.status}
-                </span>
+                <PostStatusBadge status={post.status} />
               </div>
             </div>
             <div className="flex gap-2">
