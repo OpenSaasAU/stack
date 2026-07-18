@@ -367,6 +367,31 @@ Two pieces make it user-controllable:
   `suppressHydrationWarning` is needed because the script mutates `data-theme`
   before React hydrates.
 
+  **Strict-CSP apps:** a nonce-based `script-src` policy blocks inline scripts
+  unless they carry a matching `nonce`. Pass the per-request nonce (the same one
+  your middleware/CSP emits) so the flash-prevention script survives the policy:
+
+  ```tsx
+  import { headers } from 'next/headers'
+  import { ThemeScript } from '@opensaas/stack-ui'
+
+  export default async function RootLayout({ children }) {
+    const nonce = (await headers()).get('x-nonce') ?? undefined
+    return (
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <ThemeScript nonce={nonce} />
+        </head>
+        <body>{children}</body>
+      </html>
+    )
+  }
+  ```
+
+  `nonce` is optional: omit it and the output is byte-identical to before (no
+  `nonce` attribute emitted). The value is forwarded only to the `<script>`'s
+  `nonce` attribute — it is never interpolated into the script body.
+
 ### Pinning the admin to a single scheme
 
 To lock the admin to light-only or dark-only (matching a product with a fixed
