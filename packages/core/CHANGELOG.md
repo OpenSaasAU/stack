@@ -1,5 +1,51 @@
 # @opensaas/stack-core
 
+## 0.29.0
+
+### Minor Changes
+
+- [#725](https://github.com/OpenSaasAU/stack/pull/725) [`f51cef8`](https://github.com/OpenSaasAU/stack/commit/f51cef876d6376e4e2bc8ac990229ff60e232bb1) Thanks [@borisno2](https://github.com/borisno2)! - Wire field help text through the admin renderer via `ui.description`
+
+  Field authors can now set help/description text on a field's `ui.description`
+  and have it render beneath the control in the prebuilt admin UI. `FieldRenderer`
+  surfaces `ui.description` to the rendered field component as its `helpText` prop,
+  which displays through the shared field-shell `FieldHelp` (data-slot="field-help").
+  Previously `helpText` only worked when a field component was composed by hand.
+
+  ```typescript
+  fields: {
+    slug: text({
+      ui: { description: 'URL-friendly identifier, lowercase only.' },
+    }),
+  }
+  ```
+
+  The option is optional and non-breaking; fields without a description render no
+  help text, exactly as before.
+
+- [#713](https://github.com/OpenSaasAU/stack/pull/713) [`56e9f9b`](https://github.com/OpenSaasAU/stack/commit/56e9f9b0a4d1920662cf0564682e767993917b56) Thanks [@borisno2](https://github.com/borisno2)! - Add the theming token contract and a pure `ui.theme` compiler, proven end-to-end through Button.
+
+  The UI package stylesheet now defines the full Theme token vocabulary as a single, un-driftable contract: the shadcn color set plus `success`/`warning` (with foregrounds) and a `gradientFrom`/`gradientTo` pair, `--font-sans`/`--font-mono`/`--font-heading` (heading defaults to sans), a single `--radius` knob with derived sm/md/lg sizes, and `--shadow-sm`/`--shadow-md`/`--shadow-lg` — all with light and dark values side by side via `light-dark()`.
+
+  `ThemeConfig` is a clean break (ADR-0015). Colors accept any valid CSS color string and are emitted verbatim — the compiler never parses colors. Bare HSL triplets (`'220 20% 97%'`) are no longer accepted and fire a dev-mode warning suggesting an `hsl()` wrap.
+
+  ```typescript
+  ui: {
+    theme: {
+      preset: 'modern', // 'modern' | 'classic' | 'neon'
+      colors: { primary: '#16a34a' }, // hex, oklch(...), rgb(...), hsl(...)
+      darkColors: { primary: '#4ade80' },
+      fonts: { sans: 'var(--font-inter), system-ui, sans-serif' }, // compose with next/font
+      radius: 0.5, // rem
+      shadows: { sm: 'none', md: 'none', lg: 'none' }, // flat theme
+    },
+  }
+  ```
+
+  The config layer compiles onto the same CSS custom properties the stylesheet declares, so the two can never drift. `Button` is restyled to consume only these tokens (color, radius, shadow, font) and carries a stable `data-slot="button"`.
+
+  Migration: wrap any old bare-triplet color value in `hsl()` (`'220 20% 97%'` → `'hsl(220 20% 97%)'`). Preset-only configs need no changes.
+
 ## 0.28.0
 
 ### Minor Changes
