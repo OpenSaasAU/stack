@@ -88,7 +88,13 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
       React.isValidElement(child) && child.type === 'main',
   )
   if (!main) throw new Error('AdminUI <main> not found')
-  return main.props.children as React.ReactElement
+  // <main> wraps the routed content in a <Suspense> skeleton boundary; unwrap it
+  // to reach the routed screen component the router selected.
+  const boundary = main.props.children as React.ReactElement<{ children: React.ReactNode }>
+  if (React.isValidElement(boundary) && boundary.type === React.Suspense) {
+    return boundary.props.children as React.ReactElement
+  }
+  return boundary
 }
 
 describe('AdminUI singleton routing', () => {

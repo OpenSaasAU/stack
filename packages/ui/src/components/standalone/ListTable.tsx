@@ -2,7 +2,8 @@
 import * as React from 'react'
 import { useState } from 'react'
 import Link from 'next/link.js'
-import { cn, formatFieldName, getFieldDisplayValue } from '../../lib/utils.js'
+import { Inbox } from 'lucide-react'
+import { cn, formatFieldName, getFieldDisplayValue, isNumericField } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import {
   Table,
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../primitives/table.js'
+import { EmptyState } from '../EmptyState.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -220,23 +222,31 @@ export function ListTable({
         <Table className={classNames?.table}>
           <TableHeader className={classNames?.header}>
             <TableRow className={classNames?.headerRow}>
-              {displayColumns.map((column) => (
-                <TableHead
-                  key={column}
-                  className={cn(
-                    sortable && 'cursor-pointer hover:bg-muted/70 transition-colors',
-                    classNames?.headerCell,
-                  )}
-                  onClick={() => handleSort(column)}
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>{formatFieldName(column)}</span>
-                    {sortable && sortBy === column && (
-                      <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+              {displayColumns.map((column) => {
+                const numeric = isNumericField(fieldTypes[column])
+                return (
+                  <TableHead
+                    key={column}
+                    className={cn(
+                      sortable && 'cursor-pointer transition-colors hover:bg-muted/70',
+                      classNames?.headerCell,
                     )}
-                  </div>
-                </TableHead>
-              ))}
+                    onClick={() => handleSort(column)}
+                  >
+                    <div
+                      className={cn(
+                        'flex items-center space-x-1',
+                        numeric && 'justify-end text-right',
+                      )}
+                    >
+                      <span>{formatFieldName(column)}</span>
+                      {sortable && sortBy === column && (
+                        <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                )
+              })}
               {renderActions && (
                 <TableHead className={cn('text-right', classNames?.actionsHeader)}>
                   Actions
@@ -250,9 +260,13 @@ export function ListTable({
                 <TableCell
                   data-slot="list-table-empty"
                   colSpan={displayColumns.length + (renderActions ? 1 : 0)}
-                  className={cn('h-24 text-center', classNames?.empty)}
+                  className={cn('p-0', classNames?.empty)}
                 >
-                  {emptyMessage}
+                  <EmptyState
+                    className="border-0"
+                    icon={<Inbox className="h-6 w-6" />}
+                    title={emptyMessage}
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -263,7 +277,13 @@ export function ListTable({
                   onClick={() => onRowClick?.(item)}
                 >
                   {displayColumns.map((column) => (
-                    <TableCell key={column} className={classNames?.cell}>
+                    <TableCell
+                      key={column}
+                      className={cn(
+                        isNumericField(fieldTypes[column]) && 'text-right',
+                        classNames?.cell,
+                      )}
+                    >
                       {fieldTypes[column] === 'relationship'
                         ? renderRelationshipCell(item[column], column)
                         : getFieldDisplayValue(item[column], fieldTypes[column])}

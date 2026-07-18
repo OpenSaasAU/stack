@@ -1,6 +1,9 @@
 import Link from 'next/link.js'
+import { Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
+import { PageHeader } from './PageHeader.js'
+import { Button } from '../primitives/button.js'
 import {
   type AccessContext,
   getDbKey,
@@ -182,22 +185,18 @@ export async function ListView({
 
   return (
     <div className="p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">{formatListName(listKey)}</h1>
-          <p className="text-muted-foreground">
-            {total} {total === 1 ? 'item' : 'items'}
-          </p>
-        </div>
-        <Link
-          href={`${basePath}/${urlKey}/create`}
-          className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors"
-        >
-          <span className="mr-2">+</span>
-          Create {formatListName(listKey)}
-        </Link>
-      </div>
+      <PageHeader
+        title={formatListName(listKey)}
+        description={`${total} ${total === 1 ? 'item' : 'items'}`}
+        actions={
+          <Button asChild>
+            <Link href={`${basePath}/${urlKey}/create`}>
+              <Plus aria-hidden="true" />
+              Create {formatListName(listKey)}
+            </Link>
+          </Button>
+        }
+      />
 
       {/* Client Table */}
       <ListViewClient

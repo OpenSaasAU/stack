@@ -2,6 +2,7 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
+import { PageHeader } from './PageHeader.js'
 import type { ServerActionInput } from '../server/types.js'
 import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
@@ -93,26 +94,11 @@ export async function ItemForm({
 
   return (
     <div className="p-8 max-w-4xl">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          href={`${basePath}/${urlKey}`}
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
-        >
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to {formatListName(listKey)}
-        </Link>
-        <h1 className="text-3xl font-bold">
-          {mode === 'create' ? 'Create' : 'Edit'} {formatListName(listKey)}
-        </h1>
-      </div>
+      <PageHeader
+        backHref={`${basePath}/${urlKey}`}
+        backLabel={`Back to ${formatListName(listKey)}`}
+        title={`${mode === 'create' ? 'Create' : 'Edit'} ${formatListName(listKey)}`}
+      />
 
       {/* Form */}
       <div className="bg-card border border-border rounded-lg p-6">

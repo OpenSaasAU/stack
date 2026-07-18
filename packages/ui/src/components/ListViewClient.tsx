@@ -2,8 +2,9 @@
 
 import * as React from 'react'
 import Link from 'next/link.js'
+import { Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
-import { formatFieldName, getFieldDisplayValue } from '../lib/utils.js'
+import { cn, formatFieldName, getFieldDisplayValue, isNumericField } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import {
 import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
+import { EmptyState } from './EmptyState.js'
 import { getUrlKey } from '@opensaas/stack-core'
 
 /**
@@ -222,35 +224,77 @@ export function ListViewClient({
         <Table>
           <TableHeader>
             <TableRow>
-              {displayColumns.map((column) => (
-                <TableHead
-                  key={column}
-                  className="cursor-pointer hover:bg-muted/70 transition-colors"
-                  onClick={() => handleSort(column)}
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>{formatFieldName(column)}</span>
-                    {sortBy === column && (
-                      <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </TableHead>
-              ))}
+              {displayColumns.map((column) => {
+                const numeric = isNumericField(fieldTypes[column])
+                return (
+                  <TableHead
+                    key={column}
+                    className="cursor-pointer transition-colors hover:bg-muted/70"
+                    onClick={() => handleSort(column)}
+                  >
+                    <div
+                      className={cn(
+                        'flex items-center space-x-1',
+                        numeric && 'justify-end text-right',
+                      )}
+                    >
+                      <span>{formatFieldName(column)}</span>
+                      {sortBy === column && (
+                        <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                )
+              })}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={displayColumns.length + 1} className="h-24 text-center">
-                  No items found
+                <TableCell
+                  data-slot="list-view-empty"
+                  colSpan={displayColumns.length + 1}
+                  className="p-0"
+                >
+                  {initialSearch ? (
+                    <EmptyState
+                      className="border-0"
+                      icon={<SearchX className="h-6 w-6" />}
+                      title="No matches found"
+                      description={`Nothing matched “${initialSearch}”. Try a different search term.`}
+                      actions={
+                        <Button variant="outline" size="sm" onClick={handleClearSearch}>
+                          Clear search
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      className="border-0"
+                      icon={<Inbox className="h-6 w-6" />}
+                      title="No items yet"
+                      description="Create your first record to see it listed here."
+                      actions={
+                        <Button asChild size="sm">
+                          <Link href={`${basePath}/${urlKey}/create`}>
+                            <Plus aria-hidden="true" />
+                            Create
+                          </Link>
+                        </Button>
+                      }
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
               items.map((item) => (
                 <TableRow key={String(item.id)}>
                   {displayColumns.map((column) => (
-                    <TableCell key={column}>
+                    <TableCell
+                      key={column}
+                      className={cn(isNumericField(fieldTypes[column]) && 'text-right')}
+                    >
                       {fieldTypes[column] === 'relationship'
                         ? renderRelationshipCell(item[column], column)
                         : getFieldDisplayValue(item[column], fieldTypes[column])}
@@ -274,7 +318,7 @@ export function ListViewClient({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm tabular-nums text-muted-foreground">
             Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{' '}
             results
           </p>

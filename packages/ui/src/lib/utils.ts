@@ -29,6 +29,20 @@ export function formatFieldName(name: string): string {
 }
 
 /**
+ * Field types whose values are numeric. Numeric columns render right-aligned
+ * with tabular numerals so digits line up down the column (issue #710).
+ */
+const NUMERIC_FIELD_TYPES = new Set(['integer', 'float', 'decimal', 'bigint'])
+
+/**
+ * Whether a column of the given field type should be treated as numeric for
+ * table alignment (right-aligned cells and headers).
+ */
+export function isNumericField(fieldType: string | undefined): boolean {
+  return fieldType !== undefined && NUMERIC_FIELD_TYPES.has(fieldType)
+}
+
+/**
  * Get the display value for a scalar field.
  *
  * Relationship fields are not handled here — their label is resolved via the

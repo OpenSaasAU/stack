@@ -5,6 +5,7 @@ import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
 import { SingletonView } from './SingletonView.js'
+import { DashboardSkeleton, ItemFormSkeleton, ListViewSkeleton } from './SkeletonLoader.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
@@ -143,6 +144,17 @@ export function AdminUI({
     )
   }
 
+  // Skeleton fallback matching the routed screen, so every data-loading screen
+  // streams behind a placeholder of the same shape instead of a blank frame.
+  let fallback: React.ReactNode
+  if (!listKey) {
+    fallback = <DashboardSkeleton />
+  } else if (action || config.lists[listKey]?.isSingleton) {
+    fallback = <ItemFormSkeleton />
+  } else {
+    fallback = <ListViewSkeleton />
+  }
+
   // Generate theme styles if custom theme is configured
   const themeStyles = config.ui?.theme ? compileTheme(config.ui.theme) : null
 
@@ -157,7 +169,9 @@ export function AdminUI({
           currentPath={currentPath}
           onSignOut={onSignOut}
         />
-        <main className="flex-1 overflow-y-auto">{content}</main>
+        <main className="flex-1 overflow-y-auto">
+          <React.Suspense fallback={fallback}>{content}</React.Suspense>
+        </main>
       </div>
     </>
   )
