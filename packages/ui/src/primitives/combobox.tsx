@@ -10,8 +10,9 @@ const ComboboxTrigger = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <PopoverPrimitive.Trigger
     ref={ref}
+    data-slot="combobox-trigger"
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 font-sans text-sm ring-offset-background transition-[color,box-shadow] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}
     {...props}
@@ -41,10 +42,11 @@ const ComboboxContent = React.forwardRef<
   <PopoverPrimitive.Portal>
     <PopoverPrimitive.Content
       ref={ref}
+      data-slot="combobox-content"
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 w-full min-w-[var(--radix-popover-trigger-width)] rounded-md border border-border bg-popover p-0 text-popover-foreground shadow-md outline-none',
+        'z-50 w-full min-w-[var(--radix-popover-trigger-width)] rounded-md border border-border bg-popover p-0 font-sans text-popover-foreground shadow-md outline-none',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
         className,
@@ -77,8 +79,9 @@ const ComboboxSearch = React.forwardRef<
     </svg>
     <input
       ref={ref}
+      data-slot="combobox-search"
       className={cn(
-        'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full rounded-md bg-transparent py-3 font-sans text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
@@ -91,6 +94,7 @@ const ComboboxList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLD
   ({ className, children, ...props }, ref) => (
     <div
       ref={ref}
+      data-slot="combobox-list"
       className={cn('max-h-[300px] overflow-y-auto overflow-x-hidden', className)}
       {...props}
     >
@@ -104,6 +108,7 @@ const ComboboxEmpty = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
   ({ className, children = 'No results found.', ...props }, ref) => (
     <div
       ref={ref}
+      data-slot="combobox-empty"
       className={cn('py-6 text-center text-sm text-muted-foreground', className)}
       {...props}
     >
@@ -119,6 +124,7 @@ const ComboboxItem = React.forwardRef<
 >(({ className, children, selected, ...props }, ref) => (
   <div
     ref={ref}
+    data-slot="combobox-item"
     className={cn(
       'relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none',
       'hover:bg-accent hover:text-accent-foreground',
@@ -142,7 +148,12 @@ ComboboxItem.displayName = 'ComboboxItem'
 
 const ComboboxSeparator = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('-mx-1 my-1 h-px bg-border', className)} {...props} />
+    <div
+      ref={ref}
+      data-slot="combobox-separator"
+      className={cn('-mx-1 my-1 h-px bg-border', className)}
+      {...props}
+    />
   ),
 )
 ComboboxSeparator.displayName = 'ComboboxSeparator'

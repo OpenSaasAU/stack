@@ -38,7 +38,7 @@ export function TimePicker({ value, onChange, disabled, className }: TimePickerP
   }
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div data-slot="time-picker" className={cn('flex items-center gap-2', className)}>
       <div className="flex items-center">
         <Input
           type="number"

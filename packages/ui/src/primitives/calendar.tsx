@@ -63,7 +63,7 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
   }
 
   return (
-    <div className={cn('p-3', className)}>
+    <div data-slot="calendar" className={cn('p-3 font-sans', className)}>
       <div className="flex items-center justify-between mb-4">
         <Button
           variant="outline"
