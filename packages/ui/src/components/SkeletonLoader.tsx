@@ -24,34 +24,44 @@ export function SkeletonLoader({ className, variant = 'rectangular' }: SkeletonL
 }
 
 /**
- * Table skeleton loader
+ * Table skeleton loader.
+ *
+ * Rendered as a purely presentational grid of `<div>`s (not a real `<table>`):
+ * as a Suspense/`loading.tsx` fallback this can linger in Next.js's router cache
+ * as a hidden segment, and a real `<table>` here would collide with any
+ * `table`-role query against the loaded page (only the live data table, which
+ * carries `data-slot="table"`, should match). The layout still mirrors a table
+ * — a header row plus body rows of shimmer cells — so the loading state reads
+ * the same while data streams in.
  */
 export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; columns?: number }) {
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
+    <div
+      data-slot="table-skeleton"
+      aria-hidden="true"
+      className="bg-card border border-border rounded-lg overflow-hidden"
+    >
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-muted/50 border-b border-border">
-            <tr>
-              {Array.from({ length: columns }).map((_, i) => (
-                <th key={i} className="px-6 py-3">
-                  <SkeletonLoader variant="text" className="h-4 w-24" />
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {Array.from({ length: rows }).map((_, rowIndex) => (
-              <tr key={rowIndex}>
-                {Array.from({ length: columns }).map((_, colIndex) => (
-                  <td key={colIndex} className="px-6 py-4">
-                    <SkeletonLoader variant="text" className="h-4 w-32" />
-                  </td>
-                ))}
-              </tr>
+        <div className="min-w-full">
+          <div className="bg-muted/50 border-b border-border flex">
+            {Array.from({ length: columns }).map((_, i) => (
+              <div key={i} className="flex-1 px-6 py-3">
+                <SkeletonLoader variant="text" className="h-4 w-24" />
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+          <div className="divide-y divide-border">
+            {Array.from({ length: rows }).map((_, rowIndex) => (
+              <div key={rowIndex} className="flex">
+                {Array.from({ length: columns }).map((_, colIndex) => (
+                  <div key={colIndex} className="flex-1 px-6 py-4">
+                    <SkeletonLoader variant="text" className="h-4 w-32" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
