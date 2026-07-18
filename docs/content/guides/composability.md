@@ -495,26 +495,9 @@ export function PostDetailPage({ post }) {
 
 ## Styling and Theming
 
-All components use Tailwind CSS v4 with CSS variables matching the shadcn/ui color system:
+All components share a single set of theme tokens (CSS custom properties like `--color-primary`, `--radius`, and `--shadow-md`). You restyle everything at once either from config via `ui.theme` in `opensaas.config.ts` or by overriding the `--color-*` tokens in your own stylesheet, and dark mode is driven by a `data-theme` attribute on `<html>`.
 
-```css
-:root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 3.9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  /* ... */
-}
-```
-
-Override colors in your `globals.css`:
-
-```css
-:root {
-  --primary: 221.2 83.2% 53.3%; /* Custom blue */
-  --destructive: 0 84.2% 60.2%; /* Custom red */
-}
-```
+See the [Theming guide](/docs/guides/theming) for the full token vocabulary, `ThemeConfig`, dark mode, and the component customization ladder, and the [Theme Presets gallery](/docs/guides/theme-presets) for the built-in `modern` / `classic` / `neon` starting points.
 
 ## Accessibility
 
