@@ -20,8 +20,14 @@
  */
 
 :root {
+  /* stack:generated-start modern-preset-colors */
+  /* GENERATED from `presetThemes.modern` in lib/theme.ts — the single source
+     of truth for the baked-in default palette. Do NOT edit these values by
+     hand; run `pnpm --filter @opensaas/stack-ui generate:css` (also runs on
+     build). See issue #714. */
+
   /* Modern preset — light. Restrained, low-chroma surfaces with one saturated
-     brand color. Kept in sync with `presetThemes.modern.light` in lib/theme.ts. */
+     brand color. */
   --color-background-light: oklch(0.99 0.002 264);
   --color-foreground-light: oklch(0.21 0.02 264);
   --color-card-light: oklch(1 0 0);
@@ -48,7 +54,7 @@
   --color-gradient-from-light: oklch(0.55 0.2 264);
   --color-gradient-to-light: oklch(0.62 0.19 320);
 
-  /* Modern preset — dark. Kept in sync with `presetThemes.modern.dark`. */
+  /* Modern preset — dark. */
   --color-background-dark: oklch(0.17 0.015 264);
   --color-foreground-dark: oklch(0.96 0.005 264);
   --color-card-dark: oklch(0.21 0.018 264);
@@ -74,6 +80,7 @@
   --color-ring-dark: oklch(0.62 0.19 264);
   --color-gradient-from-dark: oklch(0.62 0.19 264);
   --color-gradient-to-dark: oklch(0.68 0.18 320);
+  /* stack:generated-end modern-preset-colors */
 
   /* Base radius knob — derived sizes are computed from it in @theme below. */
   --radius: 0.625rem;

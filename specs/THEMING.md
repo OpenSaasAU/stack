@@ -113,7 +113,7 @@ Out of scope (future specs, on this foundation): command palette, saved views, n
 
 - `ui.theme` color values: wrap old triplets in `hsl()` — `'220 20% 97%'` → `'hsl(220 20% 97%)'` — or move to any other CSS color format.
 - Preset-only configs: no change required; the upgrade is strictly a fix.
-- The old `generateThemeCSS` HSL output and the `--color-*-light/-dark` split in `globals.css` are internal details that may change; only the token names above are contract.
+- The `--color-*-light/-dark` split in `globals.css` is an internal detail that may change; only the token names above are contract. Its `modern`-default values are not hand-maintained — a `generate:css` codegen step emits that `:root` block from `presetThemes.modern` (the single source), so the stylesheet and preset can never drift.
 
 ## Suggested implementation sequence
 
