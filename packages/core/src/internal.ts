@@ -43,6 +43,8 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
+  ThemeFonts,
+  ThemeShadows,
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,

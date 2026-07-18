@@ -2029,8 +2029,13 @@ export type SessionConfig = {
 export type ThemePreset = 'modern' | 'classic' | 'neon'
 
 /**
- * Custom theme colors (HSL values without hsl() wrapper)
- * Format: "220 20% 97%" (hue saturation lightness)
+ * Custom theme colors.
+ *
+ * Each value is passed through verbatim to the corresponding CSS custom
+ * property, so any valid CSS color string works: `oklch(…)`, `#hex`, `rgb(…)`,
+ * or a wrapped `hsl(…)`. Bare HSL triplets (`"220 20% 97%"`) are a clean break —
+ * they are no longer accepted and trigger a dev-mode warning. See
+ * `specs/THEMING.md` and ADR-0015.
  */
 export type ThemeColors = {
   background?: string
@@ -2049,6 +2054,10 @@ export type ThemeColors = {
   accentForeground?: string
   destructive?: string
   destructiveForeground?: string
+  success?: string
+  successForeground?: string
+  warning?: string
+  warningForeground?: string
   border?: string
   input?: string
   ring?: string
@@ -2057,27 +2066,59 @@ export type ThemeColors = {
 }
 
 /**
- * Theme configuration
+ * Font family tokens. Each value is a CSS `font-family` string, designed to
+ * compose with `next/font`: set the value to the font's CSS variable, e.g.
+ * `sans: 'var(--font-inter), system-ui, sans-serif'`. `heading` defaults to the
+ * `sans` value when omitted.
+ */
+export type ThemeFonts = {
+  sans?: string
+  mono?: string
+  heading?: string
+}
+
+/**
+ * Elevation shadow tokens. Each value is a CSS `box-shadow` string. Set them to
+ * `'none'` for a fully flat theme without forking components.
+ */
+export type ThemeShadows = {
+  sm?: string
+  md?: string
+  lg?: string
+}
+
+/**
+ * Theme configuration. Compiles to token overrides written onto the same CSS
+ * custom properties the UI package stylesheet declares — the config layer and
+ * the stylesheet write to one token set so they can never drift (ADR-0015).
  */
 export type ThemeConfig = {
   /**
-   * Preset theme to use
+   * Preset theme to start from. Individual tokens can be overridden on top.
    * @default "modern"
    */
   preset?: ThemePreset
   /**
-   * Custom color overrides for light mode
+   * Custom color overrides for light mode.
    */
   colors?: ThemeColors
   /**
-   * Custom color overrides for dark mode
+   * Custom color overrides for dark mode.
    */
   darkColors?: ThemeColors
   /**
-   * Border radius in rem
-   * @default 0.75
+   * Font family overrides (`--font-sans`, `--font-mono`, `--font-heading`).
+   */
+  fonts?: ThemeFonts
+  /**
+   * Base border radius in rem. Derived sm/md/lg radii are computed from it.
+   * @default 0.625
    */
   radius?: number
+  /**
+   * Elevation shadow overrides (`--shadow-sm`, `--shadow-md`, `--shadow-lg`).
+   */
+  shadows?: ThemeShadows
 }
 
 /**

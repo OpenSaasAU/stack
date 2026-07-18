@@ -180,5 +180,25 @@ export default config({
 
   ui: {
     basePath: '/admin',
+    // Demonstrates the token pipeline end-to-end: a brand color (any valid CSS
+    // color string — hex here) and a next/font family both flow through to the
+    // admin's buttons, focus rings, and text. `--font-inter` is provided by
+    // next/font in app/layout.tsx.
+    theme: {
+      preset: 'modern',
+      colors: {
+        primary: '#16a34a',
+        primaryForeground: '#ffffff',
+        ring: '#16a34a',
+      },
+      darkColors: {
+        primary: '#4ade80',
+        primaryForeground: '#052e16',
+        ring: '#4ade80',
+      },
+      fonts: {
+        sans: 'var(--font-inter), system-ui, sans-serif',
+      },
+    },
   },
 })

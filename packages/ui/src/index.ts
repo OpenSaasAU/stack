@@ -79,4 +79,4 @@ export { getRelationshipOptions } from './lib/getRelationshipOptions.js'
 export type { RelationshipOption, RelationshipOptionsArgs } from './lib/getRelationshipOptions.js'
 
 // Theme utilities
-export { generateThemeCSS, getThemeStyleTag, presetThemes } from './lib/theme.js'
+export { compileTheme, presetThemes } from './lib/theme.js'
