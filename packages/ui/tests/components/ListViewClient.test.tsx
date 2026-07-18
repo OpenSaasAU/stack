@@ -60,10 +60,41 @@ describe('ListViewClient', () => {
       expect(editLinks).toHaveLength(3)
     })
 
-    it('should show empty state when no items', () => {
-      render(<ListViewClient {...defaultProps} items={[]} total={0} />)
+    it('should show a designed empty state when no items', () => {
+      const { container } = render(<ListViewClient {...defaultProps} items={[]} total={0} />)
 
-      expect(screen.getByText('No items found')).toBeInTheDocument()
+      // The empty cell now renders the designed EmptyState (data-slot contract).
+      expect(container.querySelector('[data-slot="list-view-empty"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-slot="empty-state"]')).toBeInTheDocument()
+      expect(screen.getByText('No items yet')).toBeInTheDocument()
+    })
+
+    it('should show a search-specific empty state when a search yields nothing', () => {
+      render(<ListViewClient {...defaultProps} items={[]} total={0} search="nomatch" />)
+
+      expect(screen.getByText('No matches found')).toBeInTheDocument()
+      // Offers a way back out of the fruitless search.
+      expect(screen.getByRole('button', { name: /clear search/i })).toBeInTheDocument()
+    })
+
+    it('should right-align numeric column cells and headers', () => {
+      const { container } = render(
+        <ListViewClient {...defaultProps} columns={['title', 'views']} />,
+      )
+
+      // Numeric header content is right-justified.
+      const headers = container.querySelectorAll('[data-slot="table-head"]')
+      const viewsHeader = Array.from(headers).find((h) => h.textContent?.includes('Views'))
+      expect(viewsHeader?.querySelector('div')).toHaveClass('text-right')
+
+      // Every numeric body cell is right-aligned; the text column is not.
+      const bodyRows = container.querySelectorAll(
+        '[data-slot="table-body"] [data-slot="table-row"]',
+      )
+      const firstRowCells = bodyRows[0].querySelectorAll('[data-slot="table-cell"]')
+      // Column order: title (text), views (integer), then actions.
+      expect(firstRowCells[0]).not.toHaveClass('text-right')
+      expect(firstRowCells[1]).toHaveClass('text-right')
     })
 
     it('should only render specified columns when provided', () => {

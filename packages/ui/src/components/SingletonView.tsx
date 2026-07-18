@@ -1,7 +1,7 @@
 import * as React from 'react'
-import Link from 'next/link.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
+import { PageHeader } from './PageHeader.js'
 import type { ServerActionInput } from '../server/types.js'
 import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
@@ -92,9 +92,7 @@ export async function SingletonView({
     if (!canQuery) {
       return (
         <div className="p-8 max-w-4xl">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold">{formatListName(listKey)}</h1>
-          </div>
+          <PageHeader title={formatListName(listKey)} />
           <div className="bg-muted/50 border border-border rounded-lg p-6">
             <p className="text-muted-foreground">
               You don&apos;t have access to {formatListName(listKey)}.
@@ -115,9 +113,7 @@ export async function SingletonView({
     if (!canCreate) {
       return (
         <div className="p-8 max-w-4xl">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold">{formatListName(listKey)}</h1>
-          </div>
+          <PageHeader title={formatListName(listKey)} />
           <div className="bg-muted/50 border border-border rounded-lg p-6">
             <p className="text-muted-foreground">
               There is no {formatListName(listKey)} record yet.
@@ -139,24 +135,12 @@ export async function SingletonView({
 
     return (
       <div className="p-8 max-w-4xl">
-        {/* Header — a singleton has no list view, so link back to the dashboard. */}
-        <div className="mb-8">
-          <Link
-            href={basePath}
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
-          >
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Back to dashboard
-          </Link>
-          <h1 className="text-3xl font-bold">Create {formatListName(listKey)}</h1>
-        </div>
+        {/* A singleton has no list view, so link back to the dashboard. */}
+        <PageHeader
+          backHref={basePath}
+          backLabel="Back to dashboard"
+          title={`Create ${formatListName(listKey)}`}
+        />
 
         {/* Create-on-first-save form */}
         <div className="bg-card border border-border rounded-lg p-6">
@@ -189,24 +173,12 @@ export async function SingletonView({
 
   return (
     <div className="p-8 max-w-4xl">
-      {/* Header — a singleton has no list view, so link back to the dashboard. */}
-      <div className="mb-8">
-        <Link
-          href={basePath}
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
-        >
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to dashboard
-        </Link>
-        <h1 className="text-3xl font-bold">Edit {formatListName(listKey)}</h1>
-      </div>
+      {/* A singleton has no list view, so link back to the dashboard. */}
+      <PageHeader
+        backHref={basePath}
+        backLabel="Back to dashboard"
+        title={`Edit ${formatListName(listKey)}`}
+      />
 
       {/* Form */}
       <div className="bg-card border border-border rounded-lg p-6">

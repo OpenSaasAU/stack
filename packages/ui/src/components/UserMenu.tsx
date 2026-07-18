@@ -23,11 +23,12 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
     }
     router.push('/sign-in')
   }
-
   return (
-    <div className="p-4 border-t border-border bg-gradient-to-br from-primary/5 to-accent/5">
-      <div className="flex items-center space-x-3 mb-3">
-        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/25">
+    <div className="border-t border-border p-4">
+      <div className="mb-3 flex items-center space-x-3">
+        {/* Avatar fallback uses the signature gradient pair (an allowed
+            signature moment per the spec) — the rest of the menu is restrained. */}
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gradient-from to-gradient-to shadow-sm">
           <span className="text-sm font-bold text-primary-foreground">
             {userName?.[0]?.toUpperCase() || '?'}
           </span>
