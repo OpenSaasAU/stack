@@ -96,6 +96,14 @@ export const navigation: NavItem[] = [
         href: '/docs/guides/custom-fields',
       },
       {
+        title: 'Theming',
+        href: '/docs/guides/theming',
+      },
+      {
+        title: 'Theme Presets',
+        href: '/docs/guides/theme-presets',
+      },
+      {
         title: 'Storage Setup',
         href: '/docs/guides/storage-setup',
       },

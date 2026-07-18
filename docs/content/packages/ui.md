@@ -582,25 +582,35 @@ export default function RootLayout({ children }) {
 
 ### Custom Theming
 
-The UI package uses CSS variables for theming (following shadcn/ui conventions):
+The UI package is themed through a single set of named CSS custom property
+tokens (`--color-*`, `--font-*`, `--radius`, `--shadow-*`) defined once in the
+package stylesheet. You override them from `opensaas.config.ts` (`ui.theme`) or
+from your own stylesheet — both layers write to the same tokens. Values are any
+valid CSS colour/length string:
 
-```css
-/* app/globals.css */
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    /* ... other variables */
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    /* ... other variables */
-  }
-}
+```typescript
+// opensaas.config.ts
+export default config({
+  // ...
+  ui: {
+    theme: {
+      preset: 'modern', // 'modern' | 'classic' | 'neon'
+      colors: { primary: 'oklch(0.55 0.2 264)' },
+      darkColors: { primary: 'oklch(0.62 0.19 264)' },
+      radius: 0.5,
+    },
+  },
+})
 ```
+
+Dark mode is driven by a `data-theme` attribute on `<html>` (with a `ThemeToggle`
+and `ThemeScript` for user control), and component design is customizable through
+a tokens → `classNames` → `data-slot` → composition ladder.
+
+See the [Theming guide](/docs/guides/theming) for the full token vocabulary,
+override paths, dark mode, and the customization ladder, and the
+[Theme Presets gallery](/docs/guides/theme-presets) for `modern` / `classic` /
+`neon` in light and dark.
 
 ## Type Safety
 
