@@ -2,6 +2,7 @@ import Link from 'next/link.js'
 import { formatListName } from '../lib/utils.js'
 import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { UserMenu } from './UserMenu.js'
+import { ThemeToggle } from './ThemeToggle.js'
 
 export interface NavigationProps {
   context: AccessContext<unknown>
@@ -150,13 +151,21 @@ export function Navigation({
         </div>
       </div>
 
-      {/* Footer - User Menu */}
-      {context.session && (
+      {/* Footer - User Menu (authenticated) or a bare theme toggle (anonymous).
+          The ThemeToggle lives in the user menu when signed in; when there is
+          no session (e.g. the starter example) it still appears in the footer
+          so the color-scheme control is always reachable. Custom chrome that
+          builds its own Navigation opts out simply by not rendering it. */}
+      {context.session ? (
         <UserMenu
           userName={String((context.session.data as Record<string, unknown>)?.name) || 'User'}
           userEmail={String((context.session.data as Record<string, unknown>)?.email) || ''}
           onSignOut={onSignOut}
         />
+      ) : (
+        <div className="p-4 border-t border-border flex justify-end">
+          <ThemeToggle />
+        </div>
       )}
     </nav>
   )

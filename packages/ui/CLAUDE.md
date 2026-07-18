@@ -330,6 +330,61 @@ import '@opensaas/stack-ui/styles'
 
 Custom theming via CSS variables (follows shadcn/ui conventions).
 
+## Dark mode / color scheme
+
+The token sheet defines every color once with `light-dark()`, driven by
+`color-scheme`. A `data-theme="light" | "dark"` attribute on the document root
+pins the scheme (overriding the OS preference); its absence follows the system
+preference. This is the whole mechanism — no duplicated `.dark` block.
+
+Two pieces make it user-controllable:
+
+- **`ThemeToggle`** — a `'use client'` control that cycles light → dark →
+  system, writes `data-theme` on `<html>`, persists the choice to
+  `localStorage` (`opensaas-theme`), and restores it on mount. It ships in the
+  default Admin chrome's user menu (footer). It is composable: custom chrome
+  that builds its own `Navigation`/`UserMenu` simply omits it, or the exported
+  `ThemeToggle` can be placed anywhere.
+- **`ThemeScript`** — a server-safe inline `<script>` for the document `<head>`
+  that applies the saved choice **before first paint**, preventing a flash of
+  the wrong scheme before hydration. Add it once in your root layout:
+
+  ```tsx
+  import { ThemeScript } from '@opensaas/stack-ui'
+
+  export default function RootLayout({ children }) {
+    return (
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <ThemeScript />
+        </head>
+        <body>{children}</body>
+      </html>
+    )
+  }
+  ```
+
+  `suppressHydrationWarning` is needed because the script mutates `data-theme`
+  before React hydrates.
+
+### Pinning the admin to a single scheme
+
+To lock the admin to light-only or dark-only (matching a product with a fixed
+appearance), **omit `ThemeToggle` and `ThemeScript`** and set the attribute
+statically in your root layout:
+
+```tsx
+// Dark-only admin — no toggle, no localStorage.
+<html lang="en" data-theme="dark">
+  <body>{children}</body>
+</html>
+```
+
+Because `data-theme` overrides the OS preference, the admin then renders in that
+scheme regardless of the visitor's system setting. Lower-level helpers
+(`applyThemeChoice`, `readStoredChoice`, `themeInitScript`, `THEME_STORAGE_KEY`,
+and the `ThemeChoice` type) are also exported for custom toggles.
+
 ## Type Safety
 
 All components are fully typed:

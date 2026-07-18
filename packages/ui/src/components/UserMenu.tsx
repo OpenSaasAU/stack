@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation.js'
 import { Button } from '../primitives/button.js'
+import { ThemeToggle } from './ThemeToggle.js'
 
 export interface UserMenuProps {
   userName?: string
@@ -36,9 +37,12 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
           <p className="text-xs text-muted-foreground truncate">{userEmail || ''}</p>
         </div>
       </div>
-      <Button onClick={handleSignOut} variant="outline" size="sm" className="w-full text-sm">
-        Sign Out
-      </Button>
+      <div className="flex items-center gap-2">
+        <ThemeToggle className="flex-1 justify-start" />
+        <Button onClick={handleSignOut} variant="outline" size="sm" className="flex-1 text-sm">
+          Sign Out
+        </Button>
+      </div>
     </div>
   )
 }
