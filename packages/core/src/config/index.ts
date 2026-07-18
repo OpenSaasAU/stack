@@ -153,6 +153,8 @@ export type {
   ThemeConfig,
   ThemePreset,
   ThemeColors,
+  ThemeFonts,
+  ThemeShadows,
   McpConfig,
   McpToolsConfig,
   McpAuthConfig,

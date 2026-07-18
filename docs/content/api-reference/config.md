@@ -807,14 +807,18 @@ Theme customization options.
 
 ### `ThemeConfig`
 
-Theme customization for the admin UI.
+Theme customization for the admin UI. Compiles to CSS custom property overrides
+written onto the same tokens the UI package stylesheet declares, so the config
+layer and the stylesheet can never drift (ADR-0015).
 
 ```typescript
 theme: {
   preset?: 'modern' | 'classic' | 'neon',
-  colors?: ThemeColors,
-  darkColors?: ThemeColors,
-  radius?: number,
+  colors?: ThemeColors,       // light-mode overrides
+  darkColors?: ThemeColors,   // dark-mode overrides
+  fonts?: { sans?: string, mono?: string, heading?: string },
+  radius?: number,            // rem; derived sm/md/lg sizes computed from it
+  shadows?: { sm?: string, md?: string, lg?: string },
 }
 ```
 
@@ -822,84 +826,78 @@ theme: {
 
 ##### `preset`
 
-Predefined theme preset.
+Predefined theme preset, used as a starting point for token overrides.
 
 **Type:** `'modern' | 'classic' | 'neon'`
 **Default:** `'modern'`
 
-##### `colors`
+##### `colors` / `darkColors`
 
-Custom color overrides for light mode.
-
-**Type:** [`ThemeColors`](#themecolors)
-
-##### `darkColors`
-
-Custom color overrides for dark mode.
+Custom color overrides for light and dark mode respectively.
 
 **Type:** [`ThemeColors`](#themecolors)
+
+##### `fonts`
+
+Font family tokens (`--font-sans`, `--font-mono`, `--font-heading`). Designed to
+compose with `next/font`: set a value to the font's CSS variable. `heading`
+defaults to `sans`.
+
+**Type:** `{ sans?: string; mono?: string; heading?: string }`
 
 ##### `radius`
 
-Border radius in rem units.
+Base border radius in rem units. Derived `sm`/`md`/`lg` radii are computed from it.
 
 **Type:** `number`
-**Default:** `0.75`
+**Default:** `0.625`
+
+##### `shadows`
+
+Elevation shadow tokens (`--shadow-sm`, `--shadow-md`, `--shadow-lg`). Set them
+to `'none'` for a fully flat theme.
+
+**Type:** `{ sm?: string; md?: string; lg?: string }`
 
 ---
 
 ### `ThemeColors`
 
-Custom theme color values (HSL format without `hsl()` wrapper).
+Custom theme color values. Each value is passed through **verbatim** to a CSS
+custom property, so any valid CSS color string works — `oklch(…)`, `#hex`,
+`rgb(…)`, or a wrapped `hsl(…)`.
 
-```typescript
-colors: {
-  background?: string,        // e.g., "220 20% 97%"
-  foreground?: string,
-  primary?: string,
-  primaryForeground?: string,
-  secondary?: string,
-  // ... more color options
-}
-```
-
-**Format:** HSL values as string: `"hue saturation% lightness%"`
-
-**Example:**
+> **Clean break (ADR-0015):** bare HSL triplets (`"220 20% 97%"`, the old
+> shadcn format) are no longer accepted. Passing one triggers a dev-mode warning
+> that suggests wrapping it in `hsl()`. Wrap old values — `"220 20% 97%"` →
+> `"hsl(220 20% 97%)"` — or move to any other CSS color format.
 
 ```typescript
 theme: {
   colors: {
-    primary: "221 83% 53%",           // Blue
-    primaryForeground: "0 0% 100%",   // White
-    background: "220 20% 97%",        // Light gray
+    primary: '#16a34a', // hex
+    primaryForeground: 'oklch(1 0 0)', // oklch
+    background: 'hsl(220 20% 97%)', // wrapped hsl
   }
 }
 ```
 
 #### Available Colors
 
-- `background` - Main background color
-- `foreground` - Main text color
-- `card` - Card background
-- `cardForeground` - Card text
-- `popover` - Popover background
-- `popoverForeground` - Popover text
-- `primary` - Primary action color
-- `primaryForeground` - Primary action text
-- `secondary` - Secondary action color
-- `secondaryForeground` - Secondary action text
-- `muted` - Muted background
-- `mutedForeground` - Muted text
-- `accent` - Accent color
-- `accentForeground` - Accent text
-- `destructive` - Destructive action color
-- `destructiveForeground` - Destructive action text
+- `background` / `foreground` - Main surface and text
+- `card` / `cardForeground` - Card surface and text
+- `popover` / `popoverForeground` - Popover surface and text
+- `primary` / `primaryForeground` - Primary action color and text
+- `secondary` / `secondaryForeground` - Secondary action color and text
+- `muted` / `mutedForeground` - Muted background and text
+- `accent` / `accentForeground` - Accent color and text
+- `destructive` / `destructiveForeground` - Destructive action color and text
+- `success` / `successForeground` - Success status color and text
+- `warning` / `warningForeground` - Warning status color and text
 - `border` - Border color
 - `input` - Input border color
 - `ring` - Focus ring color
-- `gradientFrom` - Gradient start color
-- `gradientTo` - Gradient end color
+- `gradientFrom` / `gradientTo` - Signature gradient pair
 
 ---
 

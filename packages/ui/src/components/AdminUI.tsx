@@ -12,7 +12,7 @@ import {
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
-import { generateThemeCSS } from '../lib/theme.js'
+import { compileTheme } from '../lib/theme.js'
 
 export interface AdminUIProps {
   context: AccessContext<unknown>
@@ -144,7 +144,7 @@ export function AdminUI({
   }
 
   // Generate theme styles if custom theme is configured
-  const themeStyles = config.ui?.theme ? generateThemeCSS(config.ui.theme) : null
+  const themeStyles = config.ui?.theme ? compileTheme(config.ui.theme) : null
 
   return (
     <>
