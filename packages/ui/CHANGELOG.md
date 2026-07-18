@@ -1,5 +1,234 @@
 # @opensaas/stack-ui
 
+## 0.29.0
+
+### Minor Changes
+
+- [#723](https://github.com/OpenSaasAU/stack/pull/723) [`a7babf9`](https://github.com/OpenSaasAU/stack/commit/a7babf9c6f579c333462adf58018a594d09790c6) Thanks [@borisno2](https://github.com/borisno2)! - Admin chrome polish pass: consistent page headers, designed empty states, skeleton coverage, nav active states, and table density (issue [#710](https://github.com/OpenSaasAU/stack/issues/710)).
+
+  The prebuilt admin now shares a restrained, token-driven chrome across every screen. Two new composable components are exported and used throughout:
+
+  - `PageHeader` — the consistent title/description/back-link/actions pattern used by the dashboard, list, item, and singleton screens. Exposes `data-slot` parts (`page-header`, `page-header-title`, `page-header-description`, `page-header-actions`, `page-header-back`, `page-header-icon`) and a structured `classNames` contract. An opt-in `gradient` prop frames the dashboard — the design system's single signature gradient moment.
+  - `EmptyState` — a designed empty surface (icon + title + description + actions) now shown on every list and relationship surface. Also exposes `data-slot` parts and a `classNames` contract.
+
+  ```tsx
+  import { PageHeader, EmptyState } from '@opensaas/stack-ui'
+
+  <PageHeader title="Posts" description="12 items" actions={<CreateButton />} />
+
+  <EmptyState
+    icon={<Inbox />}
+    title="No items yet"
+    description="Create your first record to see it listed here."
+    actions={<CreateButton />}
+  />
+  ```
+
+  Also included:
+
+  - Full-screen skeleton fallbacks (`DashboardSkeleton`, `ListViewSkeleton`, `ItemFormSkeleton`, `PageHeaderSkeleton`) wired through a `Suspense` boundary in `AdminUI`, so every data-loading screen streams behind a placeholder of the same shape.
+  - Navigation active states now use `aria-current="page"` and a flat solid brand fill (no gradient/pulse); nav and dashboard icons use `lucide-react` instead of emoji.
+  - Tables right-align numeric columns and use tabular numerals; a new `isNumericField(fieldType)` helper is exported.
+  - Gradient usage is limited to the dashboard header accent and avatar fallbacks per the spec; the brand wordmark and active nav are now solid tokens.
+
+  No new capabilities and no information-architecture changes — this is a visual/chrome polish pass consuming existing tokens.
+
+- [#718](https://github.com/OpenSaasAU/stack/pull/718) [`713409b`](https://github.com/OpenSaasAU/stack/commit/713409b88abdb5d23ebad5e86759eea4dbdd0717) Thanks [@borisno2](https://github.com/borisno2)! - Re-curate the theme presets (`modern` / `classic` / `neon`) in the token vocabulary
+
+  Each preset now defines every color token in both light and dark — including the
+  `success`/`warning` intent colors and the gradient pair — so switching `preset`
+  fully reskins the admin with no token falling through to another preset. Presets
+  also carry their own shape and elevation, and the theme compiler merges them
+  under any config overrides:
+
+  - `modern` (default): the restrained, low-chroma direction with one saturated
+    brand color and the gradient pair as garnish. Inherits the stylesheet's radius
+    and soft shadows (kept in sync with `globals.css`).
+  - `classic`: flat and enterprise-safe — blue primary, no gradient, squared-off
+    radius, and elevation removed (`--shadow-*: none`).
+  - `neon`: the high-chroma cyan/purple/pink personality — pink primary, purple
+    accent, a cyan→pink signature gradient, and a rounder radius.
+
+  Preset-only configs upgrade unchanged (the names are preserved):
+
+  ```ts
+  ui: {
+    theme: {
+      preset: 'neon'
+    }
+  }
+  ```
+
+- [#716](https://github.com/OpenSaasAU/stack/pull/716) [`316f976`](https://github.com/OpenSaasAU/stack/commit/316f9765336b3fc2aa2a743dcd6d33e53e01488b) Thanks [@borisno2](https://github.com/borisno2)! - Add user-controllable dark mode: `ThemeToggle` and `ThemeScript`
+
+  The admin chrome now ships a light/dark/system color-scheme control built on the
+  `light-dark()` token contract. A `data-theme` attribute on the document root pins
+  `color-scheme` (overriding the OS preference); its absence follows the system.
+
+  - `ThemeToggle` — a client component that cycles light → dark → system, writes
+    `data-theme` on `<html>`, persists the choice to `localStorage`
+    (`opensaas-theme`), and restores it on mount. It appears in the default Admin
+    chrome's user menu and is opt-out via composition (custom chrome omits it).
+  - `ThemeScript` — a server-safe inline `<script>` for the document `<head>` that
+    applies the saved choice before first paint, preventing a flash of the wrong
+    scheme.
+
+  ```tsx
+  import { ThemeScript } from '@opensaas/stack-ui'
+
+  export default function RootLayout({ children }) {
+    return (
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <ThemeScript />
+        </head>
+        <body>{children}</body>
+      </html>
+    )
+  }
+  ```
+
+  To pin the admin to a single scheme, omit both and set the attribute statically,
+  e.g. `<html data-theme="dark">`. The `ThemeChoice` type and the
+  `applyThemeChoice` / `readStoredChoice` / `themeInitScript` / `THEME_STORAGE_KEY`
+  helpers are also exported for building custom controls.
+
+- [#720](https://github.com/OpenSaasAU/stack/pull/720) [`c44b678`](https://github.com/OpenSaasAU/stack/commit/c44b678d9a3108c6e5a4d446e3966fded63687b6) Thanks [@borisno2](https://github.com/borisno2)! - Design system pass for field components and standalone composites: token-only styling, structured `classNames` slots, status tokens, and shared form rhythm.
+
+  **Field components** now share one label / help / error rhythm via a small shell (`FieldRoot`, `FieldLabel`, `FieldHelp`, `FieldError`, `FieldWarning`, `FieldReadValue`). Every field consumes theme tokens only — the previously hardcoded status colours (a green upload check, an amber JSON warning) now use the `success` / `warning` tokens. All fields accept a consistent `helpText` prop.
+
+  **Composites accept structured, strongly-typed `classNames` slots** merged per part via tailwind-merge, and every part carries a stable `data-slot`:
+
+  - `ListTable` — `classNames={{ root, frame, table, header, headerRow, headerCell, body, row, cell, actionsHeader, actionsCell, empty }}`; root `data-slot="list-table"`.
+  - `SearchBar` — `classNames={{ root, form, inputWrapper, input, clearButton, submit }}`; root `data-slot="search-bar"`.
+  - `DeleteButton` — `classNames={{ button, error }}`; error `data-slot="delete-button-error"`.
+  - `ItemCreateForm` / `ItemEditForm` — `classNames={{ root, error, fields, actions, submit, cancel }}`; roots `data-slot="item-create-form"` / `"item-edit-form"`.
+  - `RelationshipManager` — `classNames={{ root, label, frame, row, cell, emptyState, actions, connectButton, error }}`; root `data-slot="relationship-manager"`.
+
+  **New `Badge` primitive** for status rendering, with `success` / `warning` / `destructive` / `default` / `secondary` / `outline` variants driven entirely by tokens:
+
+  ```tsx
+  import { Badge } from '@opensaas/stack-ui/primitives'
+
+  ;<Badge variant={post.status === 'published' ? 'success' : 'warning'}>{post.status}</Badge>
+  ```
+
+  Example: restyle just the rows of a table without forking it:
+
+  ```tsx
+  <ListTable
+    items={posts}
+    fieldTypes={{ title: 'text', status: 'select' }}
+    classNames={{ frame: 'shadow-sm', headerCell: 'uppercase text-xs', row: 'hover:bg-accent/40' }}
+  />
+  ```
+
+- [#725](https://github.com/OpenSaasAU/stack/pull/725) [`f51cef8`](https://github.com/OpenSaasAU/stack/commit/f51cef876d6376e4e2bc8ac990229ff60e232bb1) Thanks [@borisno2](https://github.com/borisno2)! - Wire field help text through the admin renderer via `ui.description`
+
+  Field authors can now set help/description text on a field's `ui.description`
+  and have it render beneath the control in the prebuilt admin UI. `FieldRenderer`
+  surfaces `ui.description` to the rendered field component as its `helpText` prop,
+  which displays through the shared field-shell `FieldHelp` (data-slot="field-help").
+  Previously `helpText` only worked when a field component was composed by hand.
+
+  ```typescript
+  fields: {
+    slug: text({
+      ui: { description: 'URL-friendly identifier, lowercase only.' },
+    }),
+  }
+  ```
+
+  The option is optional and non-breaking; fields without a description render no
+  help text, exactly as before.
+
+- [#719](https://github.com/OpenSaasAU/stack/pull/719) [`c04590e`](https://github.com/OpenSaasAU/stack/commit/c04590e9b79399c29295f2001717241058f224d1) Thanks [@borisno2](https://github.com/borisno2)! - Restyle every primitive onto the design system tokens, with a stable `data-slot` contract and a tailwind-merge'd `className` on every part
+
+  Following Button ([#705](https://github.com/OpenSaasAU/stack/issues/705)), all remaining primitives — Input, Textarea, Label,
+  Checkbox, Card, Table, Dialog, Select, Popover, Calendar, TimePicker,
+  DateTimePicker, and Combobox — now consume only theme tokens (no hardcoded
+  colours or shadows remain; e.g. the Dialog no longer uses `bg-white` /
+  `border-gray-200` / `shadow-2xl` / `bg-black/80`).
+
+  Every primitive and composite part now carries a documented, stable `data-slot`
+  attribute, and merges a caller `className` via tailwind-merge so instance
+  overrides win:
+
+  ```tsx
+  // Instance override (tailwind-merge — caller wins over the default radius)
+  <Card className="rounded-none" />
+
+  // Deep restyle from plain CSS, no Tailwind pipeline required (ADR-0016)
+  [data-slot='table-row']:nth-child(even) { background: rgba(0, 0, 0, 0.04); }
+  ```
+
+  The `data-slot` name set is a public compatibility promise. Full contract:
+  `input`, `textarea`, `label`, `checkbox`, `checkbox-indicator`, `card`,
+  `card-header`, `card-title`, `card-description`, `card-content`, `card-footer`,
+  `table-container`, `table`, `table-header`, `table-body`, `table-footer`,
+  `table-row`, `table-head`, `table-cell`, `table-caption`, `dialog-overlay`,
+  `dialog-content`, `dialog-header`, `dialog-footer`, `dialog-title`,
+  `dialog-description`, `dialog-close`, `select-trigger`, `select-content`,
+  `select-viewport`, `select-label`, `select-item`, `select-separator`,
+  `select-scroll-up-button`, `select-scroll-down-button`, `popover-content`,
+  `calendar`, `time-picker`, `datetime-picker`, `combobox-trigger`,
+  `combobox-content`, `combobox-search`, `combobox-list`, `combobox-empty`,
+  `combobox-item`, `combobox-separator` (plus `button` from [#705](https://github.com/OpenSaasAU/stack/issues/705)).
+
+- [#724](https://github.com/OpenSaasAU/stack/pull/724) [`e180821`](https://github.com/OpenSaasAU/stack/commit/e180821e7f9537eceb0d889eda098dd8304a3e53) Thanks [@borisno2](https://github.com/borisno2)! - Add optional `nonce` prop to `ThemeScript` for strict-CSP compatibility
+
+  `ThemeScript` renders the flash-prevention code as an inline `<script>`, which a
+  strict nonce-based `script-src` Content-Security-Policy blocks unless the tag
+  carries a matching `nonce`. You can now forward the per-request nonce:
+
+  ```tsx
+  import { headers } from 'next/headers'
+  import { ThemeScript } from '@opensaas/stack-ui'
+
+  export default async function RootLayout({ children }) {
+    const nonce = (await headers()).get('x-nonce') ?? undefined
+    return (
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <ThemeScript nonce={nonce} />
+        </head>
+        <body>{children}</body>
+      </html>
+    )
+  }
+  ```
+
+  The prop is optional — omitting it is byte-identical to before (no `nonce`
+  attribute emitted). When provided, the value is forwarded only to the
+  `<script>`'s `nonce` attribute; it is never interpolated into the script body.
+
+- [#713](https://github.com/OpenSaasAU/stack/pull/713) [`56e9f9b`](https://github.com/OpenSaasAU/stack/commit/56e9f9b0a4d1920662cf0564682e767993917b56) Thanks [@borisno2](https://github.com/borisno2)! - Add the theming token contract and a pure `ui.theme` compiler, proven end-to-end through Button.
+
+  The UI package stylesheet now defines the full Theme token vocabulary as a single, un-driftable contract: the shadcn color set plus `success`/`warning` (with foregrounds) and a `gradientFrom`/`gradientTo` pair, `--font-sans`/`--font-mono`/`--font-heading` (heading defaults to sans), a single `--radius` knob with derived sm/md/lg sizes, and `--shadow-sm`/`--shadow-md`/`--shadow-lg` — all with light and dark values side by side via `light-dark()`.
+
+  `ThemeConfig` is a clean break (ADR-0015). Colors accept any valid CSS color string and are emitted verbatim — the compiler never parses colors. Bare HSL triplets (`'220 20% 97%'`) are no longer accepted and fire a dev-mode warning suggesting an `hsl()` wrap.
+
+  ```typescript
+  ui: {
+    theme: {
+      preset: 'modern', // 'modern' | 'classic' | 'neon'
+      colors: { primary: '#16a34a' }, // hex, oklch(...), rgb(...), hsl(...)
+      darkColors: { primary: '#4ade80' },
+      fonts: { sans: 'var(--font-inter), system-ui, sans-serif' }, // compose with next/font
+      radius: 0.5, // rem
+      shadows: { sm: 'none', md: 'none', lg: 'none' }, // flat theme
+    },
+  }
+  ```
+
+  The config layer compiles onto the same CSS custom properties the stylesheet declares, so the two can never drift. `Button` is restyled to consume only these tokens (color, radius, shadow, font) and carries a stable `data-slot="button"`.
+
+  Migration: wrap any old bare-triplet color value in `hsl()` (`'220 20% 97%'` → `'hsl(220 20% 97%)'`). Preset-only configs need no changes.
+
+### Patch Changes
+
+- [#726](https://github.com/OpenSaasAU/stack/pull/726) [`ababdc3`](https://github.com/OpenSaasAU/stack/commit/ababdc302c1c52d8085cf827a4d015b599af9d48) Thanks [@borisno2](https://github.com/borisno2)! - Derive the stylesheet's `modern` color defaults from `presetThemes.modern` via a `generate:css` codegen step (wired into build), so the preset and `globals.css` can no longer drift. No visual or behavioral change — the emitted CSS is byte-identical to the previous values.
+
 ## 0.28.0
 
 ## 0.27.1
