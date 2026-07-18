@@ -91,3 +91,19 @@ _Avoid_: display field, title field, name field (the fallback happens to check a
 **Item label**:
 The rendered text for one row, produced by `getItemLabel` reading the Label field off that row and falling back to `id` when the field is missing (e.g. stripped by field-level access). Used anywhere the admin UI shows a row as a reference — relationship cells, dropdown options, page headings.
 _Avoid_: display value, row label
+
+**Theme token**:
+A named visual variable — a colour, font family, radius, or shadow — that forms the admin UI's single theming contract: components consume only tokens, and every customization layer writes to them.
+_Avoid_: CSS variable (the mechanism, not the concept), design variable
+
+**Theme preset**:
+A named, curated assignment of values to every Theme token, selectable as a starting point and overridable per token.
+_Avoid_: skin, theme (ambiguous with the whole token set)
+
+**Slot**:
+A stable, named styling handle on one rendered part of an admin UI component, kept as a compatibility promise so custom styling can target that part without forking the component.
+_Avoid_: CSS hook, part, element selector
+
+**Admin chrome**:
+The persistent shell the admin UI wraps around list and item content — navigation, page headers, user menu, dashboard framing.
+_Avoid_: layout, shell, frame
