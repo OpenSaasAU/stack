@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -238,13 +239,25 @@ describe('preset catalog completeness', () => {
 })
 
 describe('modern preset ↔ stylesheet sync', () => {
-  // The default `modern` preset and the raw `--color-*-light`/`-dark` variables
-  // declared in globals.css are two copies of one palette. This test fails if
-  // they drift — whether a token is added, removed, or renamed (the key set
-  // changes) OR a token's value is re-tuned on one side only (the value
-  // changes) — enforcing the "un-driftable" goal (ADR-0015) for the palette the
-  // stylesheet ships as its baked-in default.
+  // The stylesheet's raw `--color-*-light`/`-dark` `:root` defaults are no longer
+  // a hand-maintained second copy of `presetThemes.modern` — the `generate:css`
+  // codegen emits that block FROM the preset (issue #714). These tests are the
+  // enforcement layer: the generator's `--check` mode fails if the checked-in
+  // globals.css is not byte-identical to a fresh regeneration, and the value-map
+  // comparison additionally documents that the two agree token-for-token.
   const globalsCss = readFileSync(join(import.meta.dirname, '../../src/styles/globals.css'), 'utf8')
+
+  it('checked-in globals.css is byte-identical to a fresh regeneration', () => {
+    // Runs the real codegen in --check mode against the single source of truth.
+    // Exit 0 means the checked-in stylesheet matches what presetThemes.modern
+    // generates; a non-zero exit (drift) throws with the generator's guidance.
+    const scriptPath = join(import.meta.dirname, '../../scripts/generate-globals-css.mts')
+    expect(() =>
+      execFileSync(process.execPath, ['--experimental-strip-types', scriptPath, '--check'], {
+        stdio: 'pipe',
+      }),
+    ).not.toThrow()
+  })
 
   // Parse `--color-<name>-<suffix>: <value>;` declarations into a
   // `{ '<name>-<suffix>': '<value>' }` map. Applied to both the raw `:root`

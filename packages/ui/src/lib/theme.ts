@@ -11,8 +11,8 @@ import type {
  * preset). Shape (`radius`) and elevation (`shadows`) are optional: when a
  * preset omits them it inherits the stylesheet defaults declared in
  * `styles/globals.css`. This lets a preset express its own personality
- * (`classic` is flat, `neon` is rounder) while the default `modern` preset
- * stays byte-for-byte in sync with the stylesheet.
+ * (`classic` is flat, `neon` is rounder) while the default `modern` preset is
+ * the single source the stylesheet's baked-in color defaults are generated from.
  */
 export type PresetDefinition = {
   light: ThemeColors
@@ -28,10 +28,12 @@ export type PresetDefinition = {
  *
  * - `modern` (default) — the restrained, Linear-class direction: low-chroma
  *   neutral surfaces, one saturated brand color used sparingly, the gradient
- *   pair as garnish, quiet muted text, softer radius. It MUST stay in sync with
- *   the raw `--color-*-light` / `--color-*-dark` values in `styles/globals.css`
- *   (a test enforces this), so it deliberately omits `radius`/`shadows` and
- *   inherits the stylesheet defaults rather than duplicating them.
+ *   pair as garnish, quiet muted text, softer radius. It is the SINGLE SOURCE
+ *   for the raw `--color-*-light` / `--color-*-dark` defaults in
+ *   `styles/globals.css`: the `generate:css` codegen emits that `:root` block
+ *   from these values (a test enforces the two are in sync), so they can never
+ *   drift. It deliberately omits `radius`/`shadows` and inherits the stylesheet
+ *   defaults rather than duplicating them.
  * - `classic` — flat and enterprise-safe: blue primary, no gradient (the pair
  *   collapses to a single color), squared-off radius, and elevation removed
  *   (shadows `none`) so hierarchy comes from crisp borders alone.
@@ -97,7 +99,8 @@ export const presetThemes: Record<ThemePreset, PresetDefinition> = {
       gradientFrom: 'oklch(0.62 0.19 264)',
       gradientTo: 'oklch(0.68 0.18 320)',
     },
-    // radius + shadows inherited from styles/globals.css (kept in sync there).
+    // radius + shadows inherited from styles/globals.css. The colors above are
+    // the source the stylesheet's `--color-*` defaults are generated from.
   },
   classic: {
     // Squared-off corners and no elevation — hierarchy from borders alone.
