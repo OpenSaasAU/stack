@@ -32,7 +32,7 @@ describe('status/composite plain-CSS override via [data-slot] (no Tailwind pipel
     style.setAttribute('data-test', 'status-plain-css')
     style.textContent = `
       [data-slot="badge"] { background-color: rgb(10, 11, 12); }
-      [data-slot="delete-button"] { background-color: rgb(13, 14, 15); }
+      [data-slot="button"] { background-color: rgb(13, 14, 15); }
     `
     document.head.appendChild(style)
 
@@ -48,11 +48,10 @@ describe('status/composite plain-CSS override via [data-slot] (no Tailwind pipel
       )
 
       expect(getComputedStyle(requireSlot('badge')).backgroundColor).toBe('rgb(10, 11, 12)')
-      const deleteButton = document.body.querySelector('.delete-button')
-      if (!(deleteButton instanceof HTMLElement)) {
-        throw new Error('Expected the DeleteButton trigger to render')
-      }
-      // The caller classNames.button slot landed on the trigger.
+      // The DeleteButton trigger restyles from a plain rule targeting its stable
+      // `data-slot="button"`, and the caller classNames.button slot also landed.
+      const deleteButton = requireSlot('button')
+      expect(getComputedStyle(deleteButton).backgroundColor).toBe('rgb(13, 14, 15)')
       expect(deleteButton).toHaveClass('delete-button')
     } finally {
       style.remove()

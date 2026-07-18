@@ -5,7 +5,7 @@ import type { ImageMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Upload, X, Eye, ImageIcon } from 'lucide-react'
-import { FieldLabel, FieldError } from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
 import Image from 'next/image.js'
 
 export interface ImageFieldProps {
@@ -121,7 +121,7 @@ export function ImageField({
   // Read-only mode
   if (mode === 'read') {
     return (
-      <div className="space-y-2">
+      <FieldRoot mode="read">
         {label && (
           <FieldLabel htmlFor={name} required={required}>
             {label}
@@ -179,13 +179,13 @@ export function ImageField({
         ) : (
           <p className="text-sm text-muted-foreground">No image uploaded</p>
         )}
-      </div>
+      </FieldRoot>
     )
   }
 
   // Edit mode
   return (
-    <div className="space-y-2">
+    <FieldRoot>
       {label && (
         <FieldLabel htmlFor={name} required={required}>
           {label}
@@ -306,14 +306,14 @@ export function ImageField({
                 <Upload className="h-8 w-8 text-muted-foreground" />
               )}
               <p className="text-sm font-medium">{placeholder}</p>
-              {helpText && <p className="text-xs text-muted-foreground">{helpText}</p>}
             </div>
           </div>
         </>
       )}
 
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
       {error && <FieldError>{error}</FieldError>}
-    </div>
+    </FieldRoot>
   )
 }
 

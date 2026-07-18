@@ -153,6 +153,25 @@ describe('Item forms classNames + data-slot contract', () => {
     expect(form).toHaveClass('os-form')
     expect(findSlot(container, 'form-actions')).toHaveClass('os-actions')
   })
+
+  it('overrides the form-actions padding default via classNames.actions (tailwind-merge)', () => {
+    const withDefault = render(
+      <ItemCreateForm fields={fields} onSubmit={vi.fn().mockResolvedValue({ success: true })} />,
+    )
+    expect(findSlot(withDefault.container, 'form-actions')).toHaveClass('pt-6')
+
+    const withOverride = render(
+      <ItemCreateForm
+        fields={fields}
+        onSubmit={vi.fn().mockResolvedValue({ success: true })}
+        classNames={{ actions: 'pt-2' }}
+      />,
+    )
+    const actions = findSlot(withOverride.container, 'form-actions')
+    // Caller's `pt-2` wins; the default `pt-6` is dropped.
+    expect(actions).toHaveClass('pt-2')
+    expect(actions).not.toHaveClass('pt-6')
+  })
 })
 
 describe('RelationshipManager classNames + data-slot contract', () => {
@@ -191,6 +210,35 @@ describe('RelationshipManager classNames + data-slot contract', () => {
     )
     expect(findSlot(container, 'relationship-manager-empty')).toHaveClass('os-empty')
     expect(findSlot(container, 'combobox-trigger')).toHaveClass('os-connect')
+  })
+
+  it('overrides a connected-item cell default via classNames.cell (tailwind-merge)', () => {
+    const withDefault = render(
+      <RelationshipManager
+        name="tags"
+        value={['t1']}
+        onChange={vi.fn()}
+        label="Tags"
+        items={items}
+      />,
+    )
+    const defaultCell = withDefault.container.querySelector('[data-slot="table-cell"]')
+    expect(defaultCell).toHaveClass('p-4')
+
+    const withOverride = render(
+      <RelationshipManager
+        name="tags"
+        value={['t1']}
+        onChange={vi.fn()}
+        label="Tags"
+        items={items}
+        classNames={{ cell: 'p-8' }}
+      />,
+    )
+    const overriddenCell = withOverride.container.querySelector('[data-slot="table-cell"]')
+    // Caller's `p-8` wins; the default `p-4` is dropped.
+    expect(overriddenCell).toHaveClass('p-8')
+    expect(overriddenCell).not.toHaveClass('p-4')
   })
 })
 

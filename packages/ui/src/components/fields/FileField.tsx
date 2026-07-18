@@ -5,7 +5,7 @@ import type { FileMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Upload, X, File, Check } from 'lucide-react'
-import { FieldLabel, FieldError } from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
 
 export interface FileFieldProps {
   name: string
@@ -100,7 +100,7 @@ export function FileField({
   // Read-only mode
   if (mode === 'read') {
     return (
-      <div className="space-y-2">
+      <FieldRoot mode="read">
         {label && (
           <FieldLabel htmlFor={name} required={required}>
             {label}
@@ -129,13 +129,13 @@ export function FileField({
         ) : (
           <p className="text-sm text-muted-foreground">No file uploaded</p>
         )}
-      </div>
+      </FieldRoot>
     )
   }
 
   // Edit mode
   return (
-    <div className="space-y-2">
+    <FieldRoot>
       {label && (
         <FieldLabel htmlFor={name} required={required}>
           {label}
@@ -201,14 +201,14 @@ export function FileField({
             <div className="flex flex-col items-center gap-2 text-center">
               <Upload className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm font-medium">{placeholder}</p>
-              {helpText && <p className="text-xs text-muted-foreground">{helpText}</p>}
             </div>
           </div>
         </>
       )}
 
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
       {error && <FieldError>{error}</FieldError>}
-    </div>
+    </FieldRoot>
   )
 }
 
