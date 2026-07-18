@@ -3,6 +3,8 @@ export { AdminUI } from './components/AdminUI.js'
 export { Dashboard } from './components/Dashboard.js'
 export { Navigation } from './components/Navigation.js'
 export { UserMenu } from './components/UserMenu.js'
+export { ThemeToggle } from './components/ThemeToggle.js'
+export { ThemeScript } from './components/ThemeScript.js'
 export { ListView } from './components/ListView.js'
 export { ListViewClient } from './components/ListViewClient.js'
 export { ItemForm } from './components/ItemForm.js'
@@ -32,6 +34,7 @@ export type { AdminUIProps } from './components/AdminUI.js'
 export type { DashboardProps } from './components/Dashboard.js'
 export type { NavigationProps } from './components/Navigation.js'
 export type { UserMenuProps } from './components/UserMenu.js'
+export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
 export type { ListViewClientProps } from './components/ListViewClient.js'
 export type { ItemFormProps } from './components/ItemForm.js'
@@ -80,3 +83,12 @@ export type { RelationshipOption, RelationshipOptionsArgs } from './lib/getRelat
 
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'
+
+// Color-scheme (dark mode) utilities
+export {
+  type ThemeChoice,
+  THEME_STORAGE_KEY,
+  themeInitScript,
+  applyThemeChoice,
+  readStoredChoice,
+} from './lib/theme-mode.js'

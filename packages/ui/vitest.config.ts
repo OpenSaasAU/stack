@@ -29,7 +29,14 @@ export default defineConfig({
           browser: 'chromium',
         },
       ],
-      provider: playwright(),
+      // Allow pointing at a preinstalled Chromium binary (e.g. sandboxed CI
+      // environments where Playwright cannot download browsers). Unset in
+      // normal CI, so Playwright uses its own managed browser.
+      provider: playwright(
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } }
+          : {},
+      ),
       headless: true,
       screenshotFailures: true,
     },
