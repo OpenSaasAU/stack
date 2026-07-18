@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { useState } from 'react'
 import Link from 'next/link.js'
-import { formatFieldName, getFieldDisplayValue } from '../../lib/utils.js'
+import { cn, formatFieldName, getFieldDisplayValue } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import {
   Table,
@@ -12,6 +12,38 @@ import {
   TableHeader,
   TableRow,
 } from '../../primitives/table.js'
+
+/**
+ * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
+ * onto the matching part via `cn`/tailwind-merge so caller classes win, and the
+ * part carries a stable `data-slot` for plain-CSS restyling.
+ */
+export interface ListTableClassNames {
+  /** Outer wrapper (`data-slot="list-table"`). */
+  root?: string
+  /** Bordered frame around the table (`data-slot="list-table-frame"`). */
+  frame?: string
+  /** The `<table>` element (`data-slot="table"`). */
+  table?: string
+  /** The `<thead>` (`data-slot="table-header"`). */
+  header?: string
+  /** The header `<tr>` (`data-slot="table-row"`). */
+  headerRow?: string
+  /** Each header `<th>` (`data-slot="table-head"`). */
+  headerCell?: string
+  /** The `<tbody>` (`data-slot="table-body"`). */
+  body?: string
+  /** Each body `<tr>` (`data-slot="table-row"`). */
+  row?: string
+  /** Each body `<td>` (`data-slot="table-cell"`). */
+  cell?: string
+  /** The actions column header, when `renderActions` is set. */
+  actionsHeader?: string
+  /** The actions column cell, when `renderActions` is set. */
+  actionsCell?: string
+  /** The empty-state cell (`data-slot="list-table-empty"`). */
+  empty?: string
+}
 
 /**
  * `ListTable` is a standalone component embedded by consumers with raw
@@ -54,6 +86,8 @@ export interface ListTableProps {
   sortable?: boolean
   emptyMessage?: string
   className?: string
+  /** Structured per-part class overrides; each merges onto its `data-slot` part. */
+  classNames?: ListTableClassNames
   renderActions?: (item: Record<string, unknown>) => React.ReactNode
 }
 
@@ -85,6 +119,7 @@ export function ListTable({
   sortable = true,
   emptyMessage = 'No items found',
   className,
+  classNames,
   renderActions,
 }: ListTableProps) {
   const [sortBy, setSortBy] = useState<string | null>(null)
@@ -180,15 +215,18 @@ export function ListTable({
   }
 
   return (
-    <div className={className}>
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
+    <div data-slot="list-table" className={cn(className, classNames?.root)}>
+      <div data-slot="list-table-frame" className={cn('rounded-lg border', classNames?.frame)}>
+        <Table className={classNames?.table}>
+          <TableHeader className={classNames?.header}>
+            <TableRow className={classNames?.headerRow}>
               {displayColumns.map((column) => (
                 <TableHead
                   key={column}
-                  className={sortable ? 'cursor-pointer hover:bg-muted/70 transition-colors' : ''}
+                  className={cn(
+                    sortable && 'cursor-pointer hover:bg-muted/70 transition-colors',
+                    classNames?.headerCell,
+                  )}
                   onClick={() => handleSort(column)}
                 >
                   <div className="flex items-center space-x-1">
@@ -199,15 +237,20 @@ export function ListTable({
                   </div>
                 </TableHead>
               ))}
-              {renderActions && <TableHead className="text-right">Actions</TableHead>}
+              {renderActions && (
+                <TableHead className={cn('text-right', classNames?.actionsHeader)}>
+                  Actions
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className={classNames?.body}>
             {sortedItems.length === 0 ? (
-              <TableRow>
+              <TableRow className={classNames?.row}>
                 <TableCell
+                  data-slot="list-table-empty"
                   colSpan={displayColumns.length + (renderActions ? 1 : 0)}
-                  className="h-24 text-center"
+                  className={cn('h-24 text-center', classNames?.empty)}
                 >
                   {emptyMessage}
                 </TableCell>
@@ -216,18 +259,21 @@ export function ListTable({
               sortedItems.map((item) => (
                 <TableRow
                   key={String(item.id)}
-                  className={onRowClick ? 'cursor-pointer' : ''}
+                  className={cn(onRowClick && 'cursor-pointer', classNames?.row)}
                   onClick={() => onRowClick?.(item)}
                 >
                   {displayColumns.map((column) => (
-                    <TableCell key={column}>
+                    <TableCell key={column} className={classNames?.cell}>
                       {fieldTypes[column] === 'relationship'
                         ? renderRelationshipCell(item[column], column)
                         : getFieldDisplayValue(item[column], fieldTypes[column])}
                     </TableCell>
                   ))}
                   {renderActions && (
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell
+                      className={cn('text-right', classNames?.actionsCell)}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {renderActions(item)}
                     </TableCell>
                   )}

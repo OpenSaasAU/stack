@@ -13,6 +13,7 @@ import {
 } from '../../primitives/combobox.js'
 import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
 import type { ServerActionInput } from '../../server/types.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface ComboboxFieldProps {
   name: string
@@ -26,6 +27,7 @@ export interface ComboboxFieldProps {
   mode?: 'read' | 'edit'
   isLoading?: boolean
   placeholder?: string
+  helpText?: string
   /** Raw list key of the list being edited — required (with `serverAction`) to live-search. */
   listKey?: string
   /** Generic server action used to resolve `relationshipOptions`. */
@@ -49,6 +51,7 @@ export function ComboboxField({
   listKey,
   serverAction,
   debounceMs = 300,
+  helpText,
 }: ComboboxFieldProps) {
   const [open, setOpen] = useState(false)
   const { searchQuery, setSearchQuery, searchResults, isSearching, resolveLabel } =
@@ -68,19 +71,18 @@ export function ComboboxField({
   // Read mode
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground">{label}</label>
-        <p className="text-sm">{selectedLabel || '-'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{selectedLabel || '-'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium">
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </label>
+      </FieldLabel>
       <Combobox open={open} onOpenChange={setOpen}>
         <ComboboxTrigger disabled={disabled || isLoading}>
           <span className={!selectedLabel ? 'text-muted-foreground' : ''}>
@@ -138,7 +140,8 @@ export function ComboboxField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }

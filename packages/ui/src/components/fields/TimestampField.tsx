@@ -1,8 +1,8 @@
 'use client'
 
-import { Label } from '../../primitives/label.js'
 import { DateTimePicker } from '../../primitives/datetime-picker.js'
 import { format } from 'date-fns'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface TimestampFieldProps {
   name: string
@@ -13,6 +13,7 @@ export interface TimestampFieldProps {
   disabled?: boolean
   required?: boolean
   mode?: 'read' | 'edit'
+  helpText?: string
 }
 
 export function TimestampField({
@@ -24,26 +25,27 @@ export function TimestampField({
   disabled,
   required,
   mode = 'edit',
+  helpText,
 }: TimestampFieldProps) {
   const dateValue = value ? new Date(value) : null
 
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{dateValue ? format(dateValue, 'PPpp') : '-'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{dateValue ? format(dateValue, 'PPpp') : '-'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      </FieldLabel>
       <DateTimePicker value={dateValue} onChange={onChange} disabled={disabled} />
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }

@@ -4,8 +4,8 @@ import React, { useCallback, useState } from 'react'
 import type { ImageMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
-import { Label } from '../../primitives/label.js'
 import { Upload, X, Eye, ImageIcon } from 'lucide-react'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
 import Image from 'next/image.js'
 
 export interface ImageFieldProps {
@@ -121,12 +121,11 @@ export function ImageField({
   // Read-only mode
   if (mode === 'read') {
     return (
-      <div className="space-y-2">
+      <FieldRoot mode="read">
         {label && (
-          <Label htmlFor={name}>
+          <FieldLabel htmlFor={name} required={required}>
             {label}
-            {required && <span className="text-destructive ml-1">*</span>}
-          </Label>
+          </FieldLabel>
         )}
         {isImageMetadata ? (
           <div className="space-y-2">
@@ -180,18 +179,17 @@ export function ImageField({
         ) : (
           <p className="text-sm text-muted-foreground">No image uploaded</p>
         )}
-      </div>
+      </FieldRoot>
     )
   }
 
   // Edit mode
   return (
-    <div className="space-y-2">
+    <FieldRoot>
       {label && (
-        <Label htmlFor={name}>
+        <FieldLabel htmlFor={name} required={required}>
           {label}
-          {required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        </FieldLabel>
       )}
 
       {previewUrl || isImageMetadata ? (
@@ -308,14 +306,14 @@ export function ImageField({
                 <Upload className="h-8 w-8 text-muted-foreground" />
               )}
               <p className="text-sm font-medium">{placeholder}</p>
-              {helpText && <p className="text-xs text-muted-foreground">{helpText}</p>}
             </div>
           </div>
         </>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }
 

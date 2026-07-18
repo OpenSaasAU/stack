@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/pri
 import { Button } from '@opensaas/stack-ui/primitives'
 import { config, getContext } from '@/.opensaas/context'
 import { CreatePostDialog } from '../components/CreatePostDialog'
+import { PostStatusBadge } from '../components/PostStatusBadge'
 import { connection } from 'next/server'
 
 export default async function HomePage() {
@@ -67,7 +68,7 @@ export default async function HomePage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Published</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-green-600">{publishedPosts}</p>
+              <p className="text-3xl font-bold text-success">{publishedPosts}</p>
             </CardContent>
           </Card>
 
@@ -76,7 +77,7 @@ export default async function HomePage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Drafts</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-yellow-600">{draftPosts}</p>
+              <p className="text-3xl font-bold text-warning">{draftPosts}</p>
             </CardContent>
           </Card>
 
@@ -138,15 +139,7 @@ export default async function HomePage() {
                             {new Date(post.createdAt).toLocaleDateString()}
                           </p>
                         </div>
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded ${
-                            post.status === 'published'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {post.status}
-                        </span>
+                        <PostStatusBadge status={post.status} />
                       </div>
                     </Link>
                   ))}

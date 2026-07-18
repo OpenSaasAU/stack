@@ -16,8 +16,27 @@ This example demonstrates building a custom admin interface using OpenSaas stand
 
 - **Card** - Stats cards and content containers
 - **Button** - Navigation and actions
+- **Badge** - Status rendering via the `success`/`warning` design-system tokens
 - **Dialog** - Modal for creating posts
 - **Table** components (via ListTable)
+
+### Design system parity (issue #709)
+
+The fully custom create form, edit form, and list page are assembled from the
+same field components and standalone composites the prebuilt admin uses, so they
+look native to the design system:
+
+- **Status tokens** — post status (published/draft) renders through the shared
+  `Badge` primitive (`success`/`warning` tokens) via `components/PostStatusBadge`.
+  No hardcoded status colours anywhere in the example.
+- **Structured `classNames` slots** — the composites expose per-part class
+  overrides merged via tailwind-merge, demonstrated here without forking:
+  - `ListTable classNames={{ frame, headerCell, row }}` on the posts list page
+  - `SearchBar classNames={{ input }}` on the posts search bar
+  - `ItemCreateForm` / `ItemEditForm classNames={{ actions }}` on the forms
+- **Stable `data-slot` attributes** — every composite part carries one
+  (`list-table`, `search-bar`, `item-create-form`, `item-edit-form`, …) so the
+  same pages can be restyled from plain CSS.
 
 ### Key Features
 

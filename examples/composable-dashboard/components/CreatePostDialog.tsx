@@ -44,6 +44,8 @@ export function CreatePostDialog({ fields }: { fields: Record<string, FieldConfi
             onCancel={() => setOpen(false)}
             submitLabel="Create Post"
             className="space-y-6"
+            // Structured per-part classNames slots (issue #709).
+            classNames={{ actions: 'justify-end' }}
           />
         </DialogContent>
       </Dialog>

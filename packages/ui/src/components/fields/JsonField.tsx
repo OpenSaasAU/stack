@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { Textarea } from '../../primitives/textarea.js'
-import { Label } from '../../primitives/label.js'
 import { cn } from '../../lib/utils.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldWarning } from './field-shell.js'
 
 export interface JsonFieldProps {
   name: string
@@ -17,6 +17,7 @@ export interface JsonFieldProps {
   mode?: 'read' | 'edit'
   rows?: number
   formatted?: boolean
+  helpText?: string
 }
 
 export function JsonField({
@@ -31,6 +32,7 @@ export function JsonField({
   mode = 'edit',
   rows = 8,
   formatted = true,
+  helpText,
 }: JsonFieldProps) {
   // Track the string being edited separately from the prop value
   const [editingValue, setEditingValue] = useState<string | null>(null)
@@ -82,19 +84,23 @@ export function JsonField({
 
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <pre className="text-sm bg-muted rounded-md p-3 overflow-x-auto">{displayValue || '-'}</pre>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <pre
+          data-slot="field-value"
+          className="text-sm bg-muted rounded-md p-3 overflow-x-auto font-mono"
+        >
+          {displayValue || '-'}
+        </pre>
+      </FieldRoot>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      </FieldLabel>
       <Textarea
         id={name}
         name={name}
@@ -107,8 +113,9 @@ export function JsonField({
         rows={rows}
         className={cn('font-mono text-sm', (error || parseError) && 'border-destructive')}
       />
-      {parseError && <p className="text-sm text-amber-600">{parseError}</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {parseError && <FieldWarning>{parseError}</FieldWarning>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }

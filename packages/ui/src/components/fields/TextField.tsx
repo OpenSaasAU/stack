@@ -2,8 +2,8 @@
 
 import { Input } from '../../primitives/input.js'
 import { Textarea } from '../../primitives/textarea.js'
-import { Label } from '../../primitives/label.js'
 import { cn } from '../../lib/utils.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface TextFieldProps {
   name: string
@@ -16,6 +16,7 @@ export interface TextFieldProps {
   required?: boolean
   mode?: 'read' | 'edit'
   displayMode?: 'input' | 'textarea'
+  helpText?: string
 }
 
 export function TextField({
@@ -29,24 +30,24 @@ export function TextField({
   required,
   mode = 'edit',
   displayMode = 'input',
+  helpText,
 }: TextFieldProps) {
   if (mode === 'read') {
     return (
-      <div className="space-y-1">
-        <Label className="text-muted-foreground">{label}</Label>
-        <p className="text-sm">{value || '-'}</p>
-      </div>
+      <FieldRoot mode="read">
+        <FieldLabel muted>{label}</FieldLabel>
+        <FieldReadValue>{value || '-'}</FieldReadValue>
+      </FieldRoot>
     )
   }
 
   const InputComponent = displayMode === 'textarea' ? Textarea : Input
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>
+    <FieldRoot>
+      <FieldLabel htmlFor={name} required={required}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      </FieldLabel>
       <InputComponent
         id={name}
         name={name}
@@ -58,7 +59,8 @@ export function TextField({
         required={required}
         className={cn(error && 'border-destructive')}
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+      {helpText && <FieldHelp>{helpText}</FieldHelp>}
+      {error && <FieldError>{error}</FieldError>}
+    </FieldRoot>
   )
 }
