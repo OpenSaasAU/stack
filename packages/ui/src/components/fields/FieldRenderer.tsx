@@ -76,8 +76,19 @@ function FieldRendererInner({
 
   // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
-    const { component: _component, fieldType: _fieldType, ...uiOptions } = fieldConfig.ui
+    const {
+      component: _component,
+      fieldType: _fieldType,
+      description,
+      ...uiOptions
+    } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
+    // Surface the field's help/description text to the component as `helpText`
+    // (rendered through the shared field-shell `FieldHelp`). Config exposes this
+    // as `ui.description` (Keystone-aligned); the component prop is `helpText`.
+    if (description !== undefined && specificProps.helpText === undefined) {
+      specificProps.helpText = description
+    }
   }
 
   const allProps = { ...baseProps, ...specificProps }

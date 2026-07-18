@@ -21,6 +21,8 @@ export type SerializableFieldConfig = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
     fieldType?: string
+    /** Help / description text surfaced to the field component as `helpText`. */
+    description?: string
     [key: string]: unknown
   }
 }

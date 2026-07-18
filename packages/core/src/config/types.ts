@@ -594,6 +594,21 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      */
     fieldType?: string
     /**
+     * Help / description text rendered beneath the field control in the admin UI.
+     *
+     * `FieldRenderer` surfaces this to the rendered field component as its
+     * `helpText` prop, so it appears via the shared field-shell `FieldHelp`
+     * rhythm (data-slot="field-help") for admin-rendered fields.
+     *
+     * @example
+     * ```typescript
+     * fields: {
+     *   slug: text({ ui: { description: 'URL-friendly identifier, lowercase only.' } })
+     * }
+     * ```
+     */
+    description?: string
+    /**
      * Transform field value before sending to client (browser)
      * Useful for sensitive fields (e.g., passwords) or complex data structures
      * that shouldn't be serialized in their raw form
