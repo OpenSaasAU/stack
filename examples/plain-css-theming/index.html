@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plain-CSS theming via data-slot (no Tailwind)</title>
+
+    <!--
+      1. The package's PRECOMPILED stylesheet (built by `pnpm --filter
+         @opensaas/stack-ui build`). This is the only stylesheet an app that
+         imports `@opensaas/stack-ui/styles` ships — no Tailwind runs here.
+    -->
+    <link rel="stylesheet" href="../../packages/ui/dist/styles/globals.css" />
+
+    <!--
+      2. Our plain-CSS overrides, targeting the stable `data-slot` selectors.
+         Loaded AFTER the package styles so instance rules win. No build step.
+    -->
+    <link rel="stylesheet" href="./theme-overrides.css" />
+  </head>
+  <body style="padding: 2rem; max-width: 40rem; margin: 0 auto">
+    <!--
+      The markup below is exactly what the `@opensaas/stack-ui` primitives emit:
+      the same `data-slot` attributes and the same token utility classes. Open
+      this file in a browser with zero tooling and the restyle from
+      `theme-overrides.css` is applied — proving the ADR-0016 promise.
+    -->
+
+    <div
+      data-slot="card"
+      class="rounded-lg border border-border bg-card text-card-foreground shadow-sm"
+    >
+      <div data-slot="card-header" class="flex flex-col space-y-1.5 p-6">
+        <div
+          data-slot="card-title"
+          class="font-heading text-2xl font-semibold leading-none tracking-tight"
+        >
+          Posts
+        </div>
+        <div data-slot="card-description" class="text-sm text-muted-foreground">
+          Restyled entirely from plain CSS — no component was forked.
+        </div>
+      </div>
+
+      <div data-slot="card-content" class="p-6 pt-0">
+        <input
+          data-slot="input"
+          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 font-sans text-base"
+          placeholder="Filter posts…"
+        />
+
+        <div data-slot="table-container" class="relative mt-4 w-full overflow-auto">
+          <table data-slot="table" class="w-full caption-bottom font-sans text-sm">
+            <thead data-slot="table-header" class="[&_tr]:border-b">
+              <tr data-slot="table-row" class="border-b">
+                <th data-slot="table-head" class="h-12 px-4 text-left align-middle font-medium">
+                  Title
+                </th>
+                <th data-slot="table-head" class="h-12 px-4 text-left align-middle font-medium">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody data-slot="table-body">
+              <tr data-slot="table-row" class="border-b">
+                <td data-slot="table-cell" class="p-4 align-middle tabular-nums">Hello world</td>
+                <td data-slot="table-cell" class="p-4 align-middle tabular-nums">Published</td>
+              </tr>
+              <tr data-slot="table-row" class="border-b">
+                <td data-slot="table-cell" class="p-4 align-middle tabular-nums">Draft idea</td>
+                <td data-slot="table-cell" class="p-4 align-middle tabular-nums">Draft</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-slot="card-footer" class="flex items-center p-6 pt-0">
+        <button
+          data-slot="button"
+          class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 font-sans text-sm font-medium text-primary-foreground"
+        >
+          New post
+        </button>
+      </div>
+    </div>
+  </body>
+</html>

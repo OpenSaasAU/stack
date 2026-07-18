@@ -1,0 +1,47 @@
+/*
+ * Plain-CSS restyle of the admin UI primitives — NO Tailwind, NO build step.
+ *
+ * Every rule targets a stable `data-slot` selector. Per ADR-0016 the
+ * `data-slot` name set is a public compatibility promise, so these selectors
+ * keep working in an app that consumes only the package's precompiled CSS
+ * (`@opensaas/stack-ui/styles`) and never runs its own Tailwind pipeline.
+ *
+ * This file is hand-written CSS. It is the lowest rung of the customization
+ * ladder that still works without any tooling: token overrides and this.
+ */
+
+/* Make every card a flat, square, high-contrast panel. */
+[data-slot='card'] {
+  border-radius: 0;
+  border-width: 2px;
+  box-shadow: none;
+}
+
+[data-slot='card-title'] {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Recolour the primary button without touching component source. */
+[data-slot='button'] {
+  border-radius: 9999px;
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+/* Zebra-stripe table rows purely from the row slot. */
+[data-slot='table-row']:nth-child(even) {
+  background-color: rgba(15, 23, 42, 0.04);
+}
+
+[data-slot='table-head'] {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+/* Square, tinted inputs. */
+[data-slot='input'] {
+  border-radius: 0;
+  border-color: #0f172a;
+}
