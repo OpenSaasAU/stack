@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "next/link.js": ["./stubs/next/link.tsx"],
+      "next/navigation.js": ["./stubs/next/navigation.tsx"],
+      "next/image.js": ["./stubs/next/image.tsx"],
+      "@/*": ["../packages/ui/src/*"]
+    }
+  }
+}
