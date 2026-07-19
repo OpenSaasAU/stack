@@ -107,3 +107,31 @@ _Avoid_: CSS hook, part, element selector
 **Admin chrome**:
 The persistent shell the admin UI wraps around list and item content — navigation, page headers, user menu, dashboard framing.
 _Avoid_: layout, shell, frame
+
+**Filter builder**:
+The list view's single query input that turns a typed query into scoped, server-executed filtering. Filter state lives in the URL, so a filtered view is shareable and survives refresh; filtering always runs through the secured context so access control is never bypassed.
+_Avoid_: search bar (that's the free-text subset), query builder
+
+**Filter token**:
+One parsed unit of a filter query — a field, an operator, and a value — displayed as a removable chip. The v1 grammar is AND-only: tokens combine conjunctively, values with spaces are quoted, numeric/date fields take comparison operators, and a bare word is free-text search across text-searchable fields.
+_Avoid_: filter chip (the chip is the rendering, not the concept), predicate
+
+**Filter spec**:
+A field's self-declared filtering capability: which operators it supports, how a token maps to a query condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested.
+_Avoid_: filter config, operator list
+
+**Bulk action**:
+An operation applied to an explicitly selected set of rows in a list view. Delete is the only built-in, shown only when the session's access allows it and honouring Silent failure per row; every other bulk action is list-specific, declared in that list's config, and runs server-side with the secured context. Selection is always an explicit set of row ids — accumulated across pages, cleared when the filter changes — never "everything matching the filter".
+_Avoid_: batch operation, mass action
+
+**Cell**:
+The list-table rendering of one field's value, resolved through the same priority chain as form field components (per-field override → custom type registry → field-type registry → plain text). Each field type ships its own default cell, so a third-party field's values render correctly in tables without core changes.
+_Avoid_: column renderer, formatter
+
+**Relationship table**:
+The edit view's rendering of a to-many relationship as a table of the related list's rows. Its columns default to the related list's own column curation (minus the back-reference to the parent), its cells are the related list's Cells, and every edit in it is an operation on the related list — subject to that list's access control, never the parent's. Removing a row disconnects by default; true deletion is an explicit per-relationship opt-in.
+_Avoid_: nested table, child table, sub-list
+
+**Inline cell edit**:
+Editing a single field of a row directly in a Relationship table cell: commit on Enter or blur, cancel on Escape, applied optimistically and reverted — with the reason shown — when the write comes back as a Silent failure or a validation error. Fields the session cannot write never show the edit affordance.
+_Avoid_: in-place edit, quick edit
