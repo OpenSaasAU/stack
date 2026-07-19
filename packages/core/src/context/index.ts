@@ -64,7 +64,7 @@ function warnIfSelectIgnored(
     `[@opensaas/stack-core] \`select\` is ignored by context.db.${getDbKey(listName)}.${operation}() ` +
       `and the full (access-filtered) record is returned. ` +
       `Narrow a read with \`include\` or a fragment \`query\` instead. ` +
-      `See https://stack.opensaas.au/docs/core-concepts/queries`,
+      `See https://stack.opensaas.au/docs/concepts/queries`,
   )
 }
 

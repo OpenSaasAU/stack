@@ -34,7 +34,7 @@ npm create opensaas-app@latest my-app --with-auth
 
 > The scaffolder runs install → generate → db:push for you. To skip that and run the steps yourself, pass `--no-install`.
 
-📚 **[Full documentation →](https://stack.opensaas.au/docs)** · **[Quick Start guide →](https://stack.opensaas.au/docs/quick-start)** · **[Building with Claude Code →](https://stack.opensaas.au/docs/guides/claude-code)**
+📚 **[Full documentation →](https://stack.opensaas.au/docs)** · **[Quick Start guide →](https://stack.opensaas.au/docs/tutorials/quick-start)** · **[Building with Claude Code →](https://stack.opensaas.au/docs/how-to/claude-code)**
 
 ## How it works
 
@@ -147,16 +147,16 @@ import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone' // 3. 
 import { AdminUI } from '@opensaas/stack-ui' // 4. full admin UI
 ```
 
-See [`examples/composable-dashboard`](./examples/composable-dashboard) and the [UI docs](https://stack.opensaas.au/docs/packages/ui).
+See [`examples/composable-dashboard`](./examples/composable-dashboard) and the [UI docs](https://stack.opensaas.au/docs/reference/ui).
 
 ## Learn more
 
-- **[Quick Start](https://stack.opensaas.au/docs/quick-start)** — build a working app
-- **[Migrating from Keystone](https://stack.opensaas.au/docs/guides/migrating-from-keystone)** — the canonical Keystone → stack guide (run `npx @opensaas/stack-cli migrate` to get started)
-- **[Building with Claude Code](https://stack.opensaas.au/docs/guides/claude-code)** — the AI-assisted workflow
-- **[Access Control](https://stack.opensaas.au/docs/core-concepts/access-control)** · **[Field Types](https://stack.opensaas.au/docs/core-concepts/field-types)** · **[Hooks](https://stack.opensaas.au/docs/core-concepts/hooks)**
-- **[Authentication](https://stack.opensaas.au/docs/guides/authentication)** · **[Storage](https://stack.opensaas.au/docs/guides/storage-setup)** · **[RAG](https://stack.opensaas.au/docs/packages/rag)**
-- **[Deployment](https://stack.opensaas.au/docs/guides/deployment)** — ship to production on Vercel + Postgres with `prisma migrate`
+- **[Quick Start](https://stack.opensaas.au/docs/tutorials/quick-start)** — build a working app
+- **[Migrating from Keystone](https://stack.opensaas.au/docs/how-to/migrate-from-keystone)** — the canonical Keystone → stack guide (run `npx @opensaas/stack-cli migrate` to get started)
+- **[Building with Claude Code](https://stack.opensaas.au/docs/how-to/claude-code)** — the AI-assisted workflow
+- **[Access Control](https://stack.opensaas.au/docs/concepts/access-control)** · **[Field Types](https://stack.opensaas.au/docs/concepts/field-types)** · **[Hooks](https://stack.opensaas.au/docs/concepts/hooks)**
+- **[Authentication](https://stack.opensaas.au/docs/how-to/authentication)** · **[Storage](https://stack.opensaas.au/docs/how-to/storage)** · **[RAG](https://stack.opensaas.au/docs/reference/rag)**
+- **[Deployment](https://stack.opensaas.au/docs/how-to/deploy)** — ship to production on Vercel + Postgres with `prisma migrate`
 
 ## Contributing & monorepo development
 

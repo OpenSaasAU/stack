@@ -1,0 +1,236 @@
+# Generators
+
+Generators transform your `opensaas.config.ts` into Prisma schemas and TypeScript types.
+
+## Overview
+
+The generator system reads your declarative config and creates:
+
+1. **Prisma Schema** (`prisma/schema.prisma`)
+2. **TypeScript Types** (`.opensaas/types.ts`)
+3. **Context Factory** (`.opensaas/context.ts`)
+
+## Running the Generator
+
+```bash
+pnpm generate
+```
+
+Or in a specific example:
+
+```bash
+cd examples/blog
+pnpm generate
+```
+
+## What Gets Generated
+
+### 1. Prisma Schema
+
+From your config:
+
+```typescript
+Post: list({
+  fields: {
+    title: text({ validation: { isRequired: true } }),
+    author: relationship({ ref: 'User.posts' }),
+  },
+})
+```
+
+The generator creates:
+
+```prisma
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+### 2. TypeScript Types
+
+Type-safe types for all your lists:
+
+```typescript
+export type Lists = {
+  Post: {
+    fields: {
+      title: string
+      author: User
+    }
+  }
+  // ... more lists
+}
+```
+
+### 3. Context Factory
+
+Auto-generated context creation function:
+
+```typescript
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext({ userId: '123' })
+```
+
+## Generator Architecture
+
+Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic:
+
+```typescript
+text({
+  getPrismaType: (fieldName) => {
+    return { type: 'String', modifiers: '?' }
+  },
+  getTypeScriptType: () => {
+    return { type: 'string', optional: true }
+  },
+})
+```
+
+This allows field types to be fully self-contained and extensible.
+
+## Custom Prisma Client Constructor
+
+To use custom database drivers (e.g., Neon, Turso, PlanetScale), provide a `prismaClientConstructor`:
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    url: process.env.DATABASE_URL,
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaNeon({
+        connectionString: process.env.DATABASE_URL,
+      })
+      return new PrismaClient({ adapter })
+    },
+  },
+  // ... rest of config
+})
+```
+
+## Extending the Generated Prisma Schema
+
+The `extendPrismaSchema` function allows you to modify the generated Prisma schema before it's written to disk. This is useful for advanced Prisma features not directly supported by the config API.
+
+```typescript
+export default config({
+  db: {
+    provider: 'postgresql',
+    prismaClientConstructor: (PrismaClient) => {
+      // ... adapter setup
+    },
+    extendPrismaSchema: (schema) => {
+      // Modify the schema as needed
+      let modifiedSchema = schema
+
+      // Example: Add multi-schema support for PostgreSQL
+      modifiedSchema = modifiedSchema.replace(
+        /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
+        '$1\n  schemas = ["public", "auth"]',
+      )
+
+      // Example: Add @@schema attribute to all models
+      modifiedSchema = modifiedSchema.replace(
+        /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
+        (match, modelContent) => {
+          if (!modelContent.includes('@@schema')) {
+            return `${modelContent}\n  @@schema("public")\n}`
+          }
+          return match
+        },
+      )
+
+      return modifiedSchema
+    },
+  },
+  // ... rest of config
+})
+```
+
+### Common Use Cases
+
+- **Multi-schema support**: Add Prisma's multi-schema support for PostgreSQL
+- **Custom attributes**: Add model-level or field-level attributes not exposed in the config API
+- **Preview features**: Enable Prisma preview features via datasource or generator configuration
+- **Output path modifications**: Adjust the Prisma Client output path
+
+### Field-Level Schema Extension
+
+For more granular control, relationship fields support `extendPrismaSchema` in their `db` config. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions:
+
+```typescript
+fields: {
+  parent: relationship({
+    ref: 'Category.children',
+    db: {
+      foreignKey: true,
+      extendPrismaSchema: ({ fkLine, relationLine }) => ({
+        fkLine,
+        relationLine: relationLine.replace(
+          '@relation(',
+          '@relation(onDelete: SetNull, onUpdate: Cascade, '
+        ),
+      }),
+    },
+  }),
+  children: relationship({ ref: 'Category.parent', many: true }),
+}
+```
+
+The function receives:
+
+- `fkLine`: The foreign key field line (only present for single relationships that own the FK)
+- `relationLine`: The relation field line
+
+Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular and broad modifications.
+
+## Generator Limitations
+
+Current generators are basic:
+
+- ✅ Migration support: the generated `prisma.config.ts` supports `prisma migrate dev` / `prisma migrate deploy`. Local SQLite dev still uses `prisma db push` for a zero-setup loop; production uses `prisma migrate` (see ADR-0003).
+- ❌ No introspection support
+- ❌ Limited Prisma features (no raw queries, advanced transactions)
+
+## Best Practices
+
+### 1. Regenerate After Config Changes
+
+Always run the generator after modifying your config:
+
+```bash
+pnpm generate
+```
+
+### 2. Commit Generated Files
+
+Commit the generated files to version control for consistency:
+
+```bash
+git add prisma/schema.prisma
+git add .opensaas/
+git commit -m "Regenerate schema"
+```
+
+### 3. Use Type-Safe Operations
+
+Use the generated types for type safety:
+
+```typescript
+import type { Lists } from '@/.opensaas/types'
+
+const post: Lists['Post'] = await context.db.post.findUnique({
+  where: { id: '123' },
+})
+```
+
+## Next Steps
+
+- **[Config System](/docs/concepts/config)** - Learn about config options
+- **[Field Types](/docs/concepts/field-types)** - Available field types

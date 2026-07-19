@@ -127,14 +127,14 @@ Once your app is ready, deploy to Vercel + Neon in ~15 minutes:
 # Deploy to Vercel
 ```
 
-See the [Deployment Guide](https://stack.opensaas.au/docs/guides/deployment) for full instructions.
+See the [Deployment Guide](https://stack.opensaas.au/docs/how-to/deploy) for full instructions.
 
 ## Learn More
 
 - [Documentation](https://stack.opensaas.au/docs)
-- [Quick Start Guide](https://stack.opensaas.au/docs/quick-start)
-- [Access Control](https://stack.opensaas.au/docs/core-concepts/access-control)
-- [Authentication Guide](https://stack.opensaas.au/docs/guides/authentication)
+- [Quick Start Guide](https://stack.opensaas.au/docs/tutorials/quick-start)
+- [Access Control](https://stack.opensaas.au/docs/concepts/access-control)
+- [Authentication Guide](https://stack.opensaas.au/docs/how-to/authentication)
 
 ## License
 

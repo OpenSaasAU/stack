@@ -1,0 +1,1445 @@
+# Config API Reference
+
+Complete API reference for the Stack configuration system. For basic usage and examples, see the [Config System guide](/docs/concepts/config).
+
+## Core Functions
+
+### `config()`
+
+Creates and validates an Stack configuration. Executes plugins if provided.
+
+```typescript
+import { config } from '@opensaas/stack-core'
+
+export default config({
+  db: {/* ... */},
+  lists: {/* ... */},
+  // ... other options
+})
+```
+
+**Parameters:**
+
+- `userConfig: OpenSaasConfig` - The configuration object
+
+**Returns:**
+
+- `OpenSaasConfig | Promise<OpenSaasConfig>` - Synchronous if no plugins, async if plugins are present
+
+### `list()`
+
+Defines a list (data model) with type-safe field definitions, access control, and hooks.
+
+```typescript
+import { list } from '@opensaas/stack-core'
+
+User: list({
+  fields: {/* ... */},
+  access: {/* ... */},
+  hooks: {/* ... */},
+})
+```
+
+**Type Parameter:**
+
+- `T` - The TypeScript type of items in this list (optional, auto-inferred from generated types)
+
+**Parameters:**
+
+- `config: object` - List configuration object
+
+**Returns:**
+
+- `ListConfig<T>` - Typed list configuration
+
+---
+
+## Configuration Types
+
+### `OpenSaasConfig`
+
+The root configuration object for your Stack application.
+
+```typescript
+export default config({
+  db: DatabaseConfig,
+  lists: Record<string, ListConfig>,
+  session?: SessionConfig,
+  ui?: UIConfig,
+  mcp?: McpConfig,
+  storage?: StorageConfig,
+  opensaasPath?: string,
+  output?: OutputConfig,
+  plugins?: Plugin[],
+})
+```
+
+#### Properties
+
+##### `db` (required)
+
+Database connection configuration.
+
+**Type:** [`DatabaseConfig`](#databaseconfig)
+
+##### `lists` (required)
+
+Dictionary of list definitions. Keys must be in PascalCase (e.g., `Post`, `BlogPost`, `AuthUser`).
+
+**Type:** `Record<string, ListConfig>`
+
+**Example:**
+
+```typescript
+lists: {
+  Post: list({ /* ... */ }),
+  User: list({ /* ... */ }),
+  BlogPost: list({ /* ... */ }),
+}
+```
+
+##### `session`
+
+Session configuration for authentication integration.
+
+**Type:** [`SessionConfig`](#sessionconfig)
+
+##### `ui`
+
+Admin UI customization options.
+
+**Type:** [`UIConfig`](#uiconfig)
+
+##### `mcp`
+
+Model Context Protocol server configuration for AI assistant integration.
+
+**Type:** [`McpConfig`](#mcpconfig)
+
+##### `storage`
+
+File/image upload storage provider configuration.
+
+**Type:** [`StorageConfig`](#storageconfig)
+
+##### `opensaasPath`
+
+Directory where the generated `.opensaas` bundle is placed (context, types, lists, plugin types, prisma extensions, and the patched Prisma client).
+
+**Type:** `string`
+**Default:** `".opensaas"`
+
+> **Precedence:** This option still works exactly as before. When [`output.opensaasDir`](#outputconfig) is set, it takes precedence over `opensaasPath`. The effective bundle directory is `output.opensaasDir` (if set), else `opensaasPath` (if set), else the default `.opensaas`.
+
+##### `output`
+
+Relocate the generator's output so `opensaas generate` can coexist with an existing `prisma/` directory (for example during a KeystoneJS → stack migration) without clobbering it.
+
+**Type:** [`OutputConfig`](#outputconfig)
+
+##### `plugins`
+
+Array of plugins to extend stack functionality.
+
+**Type:** [`Plugin[]`](#plugin)
+
+---
+
+### `OutputConfig`
+
+Configures where `opensaas generate` writes its output. All paths are resolved relative to the project root (the directory the CLI runs in). When omitted, defaults are unchanged: the schema is written to `prisma/schema.prisma` and the bundle to `.opensaas/`.
+
+The generated files' cross-references follow these locations automatically — `context.ts` and `prisma-extensions.ts` import the project's `opensaas.config` from the resolved bundle directory, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema directory.
+
+```typescript
+output: {
+  prismaSchema?: string,
+  opensaasDir?: string,
+}
+```
+
+#### Properties
+
+##### `prismaSchema`
+
+Path to the generated Prisma schema file.
+
+**Type:** `string`
+**Default:** `"prisma/schema.prisma"`
+
+##### `opensaasDir`
+
+Directory for the generated `.opensaas` bundle (types, lists, context, plugin types, prisma extensions, and the patched Prisma client).
+
+**Type:** `string`
+**Default:** `".opensaas"`
+
+> **Precedence with `opensaasPath`:** The effective bundle directory is resolved as `output.opensaasDir` > [`opensaasPath`](#opensaaspath) > the default `.opensaas`. `output.opensaasDir` overrides the pre-existing top-level `opensaasPath` when both are set; setting `opensaasPath` alone continues to relocate the bundle exactly as before.
+
+**Example:**
+
+```typescript
+export default config({
+  output: {
+    prismaSchema: 'prisma-opensaas/schema.prisma',
+    opensaasDir: 'generated/opensaas',
+  },
+  // ...
+})
+```
+
+---
+
+### `DatabaseConfig`
+
+Database connection and adapter configuration.
+
+```typescript
+db: {
+  provider: 'postgresql' | 'mysql' | 'sqlite',
+  prismaClientConstructor: (PrismaClientClass: any) => any,
+}
+```
+
+#### Properties
+
+##### `provider` (required)
+
+Database type.
+
+**Type:** `'postgresql' | 'mysql' | 'sqlite'`
+
+##### `prismaClientConstructor` (required)
+
+Factory function that creates a Prisma client instance with a database adapter. **Required in Prisma 7** - all database connections must use adapters.
+
+The database connection URL is passed directly to the adapter, not to the OpenSaas config.
+
+**Type:** `(PrismaClientClass: any) => any`
+
+**Example - SQLite:**
+
+```typescript
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+
+db: {
+  provider: 'sqlite',
+  prismaClientConstructor: (PrismaClient) => {
+    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
+    return new PrismaClient({ adapter })
+  }
+}
+```
+
+**Example - PostgreSQL (Neon):**
+
+```typescript
+import { PrismaNeon } from '@prisma/adapter-neon'
+import { neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
+
+db: {
+  provider: 'postgresql',
+  prismaClientConstructor: (PrismaClient) => {
+    neonConfig.webSocketConstructor = ws
+    const adapter = new PrismaNeon({
+      connectionString: process.env.DATABASE_URL
+    })
+    return new PrismaClient({ adapter })
+  }
+}
+```
+
+##### `extendPrismaSchema`
+
+Optional function to extend or modify the generated Prisma schema before it's written to disk. Receives the generated schema as a string and should return the modified schema.
+
+This is useful for advanced Prisma features not directly supported by the config API.
+
+**Type:** `(schema: string) => string`
+
+**Example - Multi-schema support for PostgreSQL:**
+
+```typescript
+db: {
+  provider: 'postgresql',
+  prismaClientConstructor: (PrismaClient) => {
+    // ... adapter setup
+  },
+  extendPrismaSchema: (schema) => {
+    let modifiedSchema = schema
+
+    // Add schemas array to datasource
+    modifiedSchema = modifiedSchema.replace(
+      /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
+      '$1\n  schemas = ["public", "auth"]',
+    )
+
+    // Add @@schema("public") to all models
+    modifiedSchema = modifiedSchema.replace(
+      /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
+      (match, modelContent) => {
+        if (!modelContent.includes('@@schema')) {
+          return `${modelContent}\n  @@schema("public")\n}`
+        }
+        return match
+      },
+    )
+
+    return modifiedSchema
+  },
+}
+```
+
+**Common use cases:**
+
+- Multi-schema support for PostgreSQL
+- Custom model or field attributes
+- Prisma preview features
+- Output path modifications
+
+---
+
+### `ListConfig`
+
+Configuration for a single list (data model).
+
+```typescript
+list({
+  fields: Record<string, FieldConfig>,
+  access?: {
+    operation?: OperationAccess
+  },
+  hooks?: Hooks,
+  mcp?: ListMcpConfig,
+})
+```
+
+#### Properties
+
+##### `fields` (required)
+
+Field definitions for this list. Keys are field names (camelCase recommended).
+
+**Type:** `Record<string, FieldConfig>`
+
+**See:** [Field Types guide](/docs/concepts/field-types) for available field types
+
+##### `access`
+
+Access control rules for this list.
+
+**Type:** `{ operation?: OperationAccess }`
+
+**See:** [Access Control guide](/docs/concepts/access-control)
+
+##### `hooks`
+
+List-level hooks for data transformation and side effects.
+
+**Type:** [`Hooks`](#hooks)
+
+**See:** [Hooks guide](/docs/concepts/hooks)
+
+##### `mcp`
+
+Model Context Protocol configuration for this list.
+
+**Type:** [`ListMcpConfig`](#listmcpconfig)
+
+---
+
+### `OperationAccess`
+
+Operation-level access control rules.
+
+```typescript
+access: {
+  operation: {
+    query?: AccessControl,
+    create?: AccessControl,
+    update?: AccessControl,
+    delete?: AccessControl,
+  }
+}
+```
+
+#### Properties
+
+Each operation accepts an `AccessControl` function that returns:
+
+- `true` - Allow access
+- `false` - Deny access
+- `PrismaFilter` - Prisma where clause to filter accessible records
+
+**Type:** `AccessControl<T>`
+
+**Function signature:**
+
+```typescript
+;(args: {
+  session: Session
+  item?: T // Present for update/delete
+  context: AccessContext
+}) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
+```
+
+**Examples:**
+
+```typescript
+// Boolean: Allow all authenticated users to query
+query: ({ session }) => !!session
+
+// Filter: Users can only update their own posts
+update: ({ session, item }) => session?.userId === item.authorId
+
+// Filter object: Scope access to specific records
+query: ({ session }) => ({
+  authorId: { equals: session?.userId },
+})
+```
+
+---
+
+### `Hooks`
+
+List-level hooks for data transformation and side effects.
+
+```typescript
+hooks: {
+  resolveInput?: (args: HookArgs) => Promise<Partial<T>>,
+  validateInput?: (args: HookArgs & { addValidationError: (msg: string) => void }) => Promise<void>,
+  beforeOperation?: (args: HookArgs) => Promise<void>,
+  afterOperation?: (args: HookArgs) => Promise<void>,
+}
+```
+
+#### Hook Types
+
+##### `resolveInput`
+
+Transform input data before validation and database write.
+
+**When called:** During `create` and `update` operations
+
+**Use cases:** Auto-populate fields, set defaults, normalize data
+
+**Example:**
+
+```typescript
+resolveInput: async ({ resolvedData, operation }) => {
+  // Auto-set publishedAt when status changes to published
+  if (resolvedData.status === 'published' && !resolvedData.publishedAt) {
+    resolvedData.publishedAt = new Date()
+  }
+  return resolvedData
+}
+```
+
+##### `validateInput`
+
+Custom validation logic beyond field-level validation rules.
+
+**When called:** During `create` and `update` operations, after `resolveInput`
+
+**Use cases:** Cross-field validation, business logic validation
+
+**Example:**
+
+```typescript
+validateInput: async ({ operation, resolvedData, addValidationError }) => {
+  if (operation === 'delete') return
+  if (resolvedData.endDate < resolvedData.startDate) {
+    addValidationError('End date must be after start date')
+  }
+}
+```
+
+##### `beforeOperation`
+
+Side effects before database operation. Does NOT modify data.
+
+**When called:** Before `create`, `update`, or `delete` operations
+
+**Use cases:** Logging, notifications, pre-operation checks
+
+**Example:**
+
+```typescript
+beforeOperation: async ({ operation, item, context }) => {
+  await auditLog.record({
+    operation,
+    userId: context.session?.userId,
+    itemId: item?.id,
+  })
+}
+```
+
+##### `afterOperation`
+
+Side effects after database operation. Does NOT modify data.
+
+**When called:** After `create`, `update`, or `delete` operations
+
+**Use cases:** Cache invalidation, webhooks, post-operation cleanup
+
+**Parameters:**
+
+- `operation` - The operation that was performed
+- `item` - The item after the operation
+- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create`)
+- `context` - Access context with session and database access
+
+**Example:**
+
+```typescript
+afterOperation: async ({ operation, item, originalItem, context }) => {
+  await invalidateCache(`post:${item.id}`)
+  await sendWebhook({ event: `post.${operation}`, data: item })
+
+  // Compare previous and new values for update operations
+  if (operation === 'update' && originalItem) {
+    if (originalItem.status !== item.status) {
+      await notifyStatusChange(originalItem.status, item.status)
+    }
+  }
+}
+```
+
+#### `HookArgs`
+
+Arguments passed to hook functions.
+
+```typescript
+type HookArgs<T> = {
+  operation: 'create' | 'update' | 'delete'
+  resolvedData?: Partial<T> // Input data (not present for delete)
+  item?: T // Existing item (for update/delete)
+  context: AccessContext
+}
+```
+
+---
+
+### `FieldConfig`
+
+Base configuration for all field types. Each field type extends this with type-specific options.
+
+```typescript
+type BaseFieldConfig = {
+  type: string
+  access?: FieldAccess
+  defaultValue?: unknown
+  hooks?: FieldHooks
+  typePatch?: TypePatchConfig
+  ui?: object
+}
+```
+
+#### Common Properties
+
+##### `type` (required)
+
+Field type identifier (e.g., `'text'`, `'integer'`, `'relationship'`).
+
+**Type:** `string`
+
+##### `access`
+
+Field-level access control.
+
+**Type:** [`FieldAccess`](#fieldaccess)
+
+**Example:**
+
+```typescript
+internalNotes: text({
+  access: {
+    read: ({ session }) => session?.role === 'admin',
+    create: ({ session }) => session?.role === 'admin',
+    update: ({ session }) => session?.role === 'admin',
+  },
+})
+```
+
+##### `defaultValue`
+
+Default value when creating new items.
+
+**Type:** Varies by field type
+
+##### `hooks`
+
+Field-level hooks for data transformation.
+
+**Type:** [`FieldHooks`](#fieldhooks)
+
+##### `typePatch`
+
+Configuration for patching Prisma-generated TypeScript types (advanced).
+
+**Type:** [`TypePatchConfig`](#typepatchconfig)
+
+##### `ui`
+
+UI-specific configuration passed to field components.
+
+**Type:** `object`
+
+**Common UI options:**
+
+- `component?: React.Component` - Custom field component
+- `fieldType?: string` - Reference to globally registered field type
+- `valueForClientSerialization?: (args) => unknown` - Transform value before sending to browser
+
+---
+
+### `FieldAccess`
+
+Field-level access control rules.
+
+```typescript
+access: {
+  read?: AccessControl,
+  create?: AccessControl,
+  update?: AccessControl,
+}
+```
+
+#### Properties
+
+Each property accepts an `AccessControl` function that returns `true` (allow) or `false` (deny).
+
+**Example:**
+
+```typescript
+password: password({
+  access: {
+    // Never allow reading password field
+    read: () => false,
+    // Only admins can set passwords
+    create: ({ session }) => session?.role === 'admin',
+    update: ({ session }) => session?.role === 'admin',
+  },
+})
+```
+
+---
+
+### `FieldHooks`
+
+Field-level hooks for data transformation and side effects.
+
+```typescript
+hooks: {
+  resolveInput?: (args) => Promise<TInput | undefined> | TInput | undefined,
+  resolveOutput?: (args) => TOutput | undefined,
+  beforeOperation?: (args) => Promise<void> | void,
+  afterOperation?: (args) => Promise<void> | void,
+}
+```
+
+#### Hook Types
+
+##### `resolveInput`
+
+Transform field value before database write.
+
+**When called:** During `create` and `update` operations
+
+**Use cases:** Hash passwords, normalize data, transform input format
+
+**Example:**
+
+```typescript
+password: password({
+  hooks: {
+    resolveInput: async ({ inputValue }) => {
+      if (typeof inputValue === 'string' && inputValue.length > 0) {
+        return await bcrypt.hash(inputValue, 10)
+      }
+      return inputValue
+    },
+  },
+})
+```
+
+##### `resolveOutput`
+
+Transform field value after database read.
+
+**When called:** During `query` operations
+
+**Use cases:** Wrap sensitive data, format values, compute derived values
+
+**Example:**
+
+```typescript
+password: password({
+  hooks: {
+    resolveOutput: ({ value }) => {
+      return new HashedPassword(value) // Wrap to prevent accidental exposure
+    },
+  },
+})
+```
+
+##### `beforeOperation`
+
+Side effects before database operation. Does NOT modify data.
+
+**When called:** Before `create`, `update`, or `delete` operations
+
+**Example:**
+
+```typescript
+profileImage: text({
+  hooks: {
+    beforeOperation: async ({ operation, resolvedValue }) => {
+      console.log(`About to ${operation} profile image:`, resolvedValue)
+    },
+  },
+})
+```
+
+##### `afterOperation`
+
+Side effects after database operation. Does NOT modify data.
+
+**When called:** After `create`, `update`, `delete`, or `query` operations
+
+**Parameters:**
+
+- `operation` - The operation that was performed
+- `value` - The field value after the operation
+- `item` - The item after the operation
+- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create` and `query`)
+- `fieldName` - The name of the field
+- `listKey` - The name of the list
+- `context` - Access context with session and database access
+
+**Example:**
+
+```typescript
+thumbnail: text({
+  hooks: {
+    afterOperation: async ({ operation, value, item, originalItem }) => {
+      if (operation === 'delete') {
+        await deleteFromCDN(value) // Cleanup on delete
+      }
+
+      // For updates, check if the value changed
+      if (operation === 'update' && originalItem) {
+        const oldValue = originalItem.thumbnail
+        if (oldValue !== value) {
+          console.log(`Thumbnail changed from ${oldValue} to ${value}`)
+          // Clean up old thumbnail
+          if (oldValue) await deleteFromCDN(oldValue)
+        }
+      }
+    },
+  },
+})
+```
+
+---
+
+### `SessionConfig`
+
+Session management configuration.
+
+```typescript
+session: {
+  getSession: () => Promise<Session>
+}
+```
+
+#### Properties
+
+##### `getSession` (required)
+
+Function that retrieves the current session.
+
+**Type:** `() => Promise<Session>`
+
+**Example:**
+
+```typescript
+import { auth } from '@/lib/auth'
+
+session: {
+  getSession: async () => {
+    const session = await auth()
+    return session?.user ? { userId: session.user.id } : null
+  }
+}
+```
+
+---
+
+### `UIConfig`
+
+Admin UI customization options.
+
+```typescript
+ui: {
+  basePath?: string,
+  theme?: ThemeConfig,
+}
+```
+
+#### Properties
+
+##### `basePath`
+
+Base URL path for admin UI routes.
+
+**Type:** `string`
+**Default:** `"/admin"`
+
+##### `theme`
+
+Theme customization options.
+
+**Type:** [`ThemeConfig`](#themeconfig)
+
+---
+
+### `ThemeConfig`
+
+Theme customization for the admin UI. Compiles to CSS custom property overrides
+written onto the same tokens the UI package stylesheet declares, so the config
+layer and the stylesheet can never drift (ADR-0015).
+
+```typescript
+theme: {
+  preset?: 'modern' | 'classic' | 'neon',
+  colors?: ThemeColors,       // light-mode overrides
+  darkColors?: ThemeColors,   // dark-mode overrides
+  fonts?: { sans?: string, mono?: string, heading?: string },
+  radius?: number,            // rem; derived sm/md/lg sizes computed from it
+  shadows?: { sm?: string, md?: string, lg?: string },
+}
+```
+
+#### Properties
+
+##### `preset`
+
+Predefined theme preset, used as a starting point for token overrides.
+
+**Type:** `'modern' | 'classic' | 'neon'`
+**Default:** `'modern'`
+
+##### `colors` / `darkColors`
+
+Custom color overrides for light and dark mode respectively.
+
+**Type:** [`ThemeColors`](#themecolors)
+
+##### `fonts`
+
+Font family tokens (`--font-sans`, `--font-mono`, `--font-heading`). Designed to
+compose with `next/font`: set a value to the font's CSS variable. `heading`
+defaults to `sans`.
+
+**Type:** `{ sans?: string; mono?: string; heading?: string }`
+
+##### `radius`
+
+Base border radius in rem units. Derived `sm`/`md`/`lg` radii are computed from it.
+
+**Type:** `number`
+**Default:** `0.625`
+
+##### `shadows`
+
+Elevation shadow tokens (`--shadow-sm`, `--shadow-md`, `--shadow-lg`). Set them
+to `'none'` for a fully flat theme.
+
+**Type:** `{ sm?: string; md?: string; lg?: string }`
+
+---
+
+### `ThemeColors`
+
+Custom theme color values. Each value is passed through **verbatim** to a CSS
+custom property, so any valid CSS color string works — `oklch(…)`, `#hex`,
+`rgb(…)`, or a wrapped `hsl(…)`.
+
+> **Clean break (ADR-0015):** bare HSL triplets (`"220 20% 97%"`, the old
+> shadcn format) are no longer accepted. Passing one triggers a dev-mode warning
+> that suggests wrapping it in `hsl()`. Wrap old values — `"220 20% 97%"` →
+> `"hsl(220 20% 97%)"` — or move to any other CSS color format.
+
+```typescript
+theme: {
+  colors: {
+    primary: '#16a34a', // hex
+    primaryForeground: 'oklch(1 0 0)', // oklch
+    background: 'hsl(220 20% 97%)', // wrapped hsl
+  }
+}
+```
+
+#### Available Colors
+
+- `background` / `foreground` - Main surface and text
+- `card` / `cardForeground` - Card surface and text
+- `popover` / `popoverForeground` - Popover surface and text
+- `primary` / `primaryForeground` - Primary action color and text
+- `secondary` / `secondaryForeground` - Secondary action color and text
+- `muted` / `mutedForeground` - Muted background and text
+- `accent` / `accentForeground` - Accent color and text
+- `destructive` / `destructiveForeground` - Destructive action color and text
+- `success` / `successForeground` - Success status color and text
+- `warning` / `warningForeground` - Warning status color and text
+- `border` - Border color
+- `input` - Input border color
+- `ring` - Focus ring color
+- `gradientFrom` / `gradientTo` - Signature gradient pair
+
+---
+
+### `McpConfig`
+
+Model Context Protocol server configuration for AI assistant integration.
+
+```typescript
+mcp: {
+  enabled?: boolean,
+  basePath?: string,
+  auth?: McpAuthConfig,
+  defaultTools?: McpToolsConfig,
+  resource?: string,
+}
+```
+
+#### Properties
+
+##### `enabled`
+
+Enable MCP server globally.
+
+**Type:** `boolean`
+**Default:** `false`
+
+##### `basePath`
+
+Base path for MCP API routes.
+
+**Type:** `string`
+**Default:** `"/api/mcp"`
+
+##### `auth`
+
+Authentication configuration (required when MCP is enabled).
+
+**Type:** [`McpAuthConfig`](#mcpauthconfig)
+
+##### `defaultTools`
+
+Default CRUD tool configuration for all lists.
+
+**Type:** [`McpToolsConfig`](#mcptoolsconfig)
+
+##### `resource`
+
+OAuth resource identifier for protected resource metadata.
+
+**Type:** `string`
+**Default:** `"https://yourdomain.com"`
+
+---
+
+### `McpAuthConfig`
+
+OAuth configuration for MCP authentication.
+
+#### Better Auth Integration
+
+```typescript
+mcp: {
+  auth: {
+    type: 'better-auth',
+    loginPage: string,
+    scopes?: string[],
+    oidcConfig?: {
+      codeExpiresIn?: number,
+      accessTokenExpiresIn?: number,
+      refreshTokenExpiresIn?: number,
+      defaultScope?: string,
+      scopes?: string[],
+    }
+  }
+}
+```
+
+**Example:**
+
+```typescript
+mcp: {
+  enabled: true,
+  auth: {
+    type: 'better-auth',
+    loginPage: '/sign-in',
+    scopes: ['openid', 'profile', 'email'],
+  }
+}
+```
+
+#### Custom Auth Provider
+
+```typescript
+mcp: {
+  auth: {
+    type: string,
+    // Additional provider-specific configuration
+  }
+}
+```
+
+---
+
+### `ListMcpConfig`
+
+List-level MCP configuration to control tool generation.
+
+```typescript
+mcp: {
+  enabled?: boolean,
+  tools?: McpToolsConfig,
+  customTools?: McpCustomTool[],
+}
+```
+
+#### Properties
+
+##### `enabled`
+
+Enable MCP tools for this list.
+
+**Type:** `boolean`
+**Default:** `true`
+
+##### `tools`
+
+Configure which CRUD tools to enable.
+
+**Type:** [`McpToolsConfig`](#mcptoolsconfig)
+
+##### `customTools`
+
+Custom MCP tools specific to this list.
+
+**Type:** [`McpCustomTool[]`](#mcpcustomtool)
+
+---
+
+### `McpToolsConfig`
+
+Configuration for which CRUD tools to enable.
+
+```typescript
+tools: {
+  read?: boolean,    // Default: true
+  create?: boolean,  // Default: true
+  update?: boolean,  // Default: true
+  delete?: boolean,  // Default: true
+}
+```
+
+**Example:**
+
+```typescript
+Post: list({
+  mcp: {
+    tools: {
+      read: true,
+      create: true,
+      update: true,
+      delete: false, // Disable delete tool for safety
+    },
+  },
+})
+```
+
+---
+
+### `McpCustomTool`
+
+Custom MCP tool definition for specialized operations.
+
+```typescript
+type McpCustomTool = {
+  name: string
+  description: string
+  inputSchema: ZodSchema
+  handler: (args) => Promise<unknown>
+}
+```
+
+**Example:**
+
+```typescript
+import { z } from 'zod'
+
+customTools: [
+  {
+    name: 'publish-post',
+    description: 'Publish a draft post and notify subscribers',
+    inputSchema: z.object({
+      postId: z.string(),
+      notifySubscribers: z.boolean().optional(),
+    }),
+    handler: async ({ input, context }) => {
+      const post = await context.db.post.update({
+        where: { id: input.postId },
+        data: { status: 'published', publishedAt: new Date() },
+      })
+
+      if (input.notifySubscribers) {
+        await notifySubscribers(post)
+      }
+
+      return post
+    },
+  },
+]
+```
+
+---
+
+### `StorageConfig`
+
+File/image upload storage provider configuration.
+
+```typescript
+storage: Record<string, StorageProviderConfig>
+```
+
+Maps provider names to their configurations.
+
+**Example:**
+
+```typescript
+import { s3Storage, localStorage } from '@opensaas/stack-storage'
+
+storage: {
+  avatars: s3Storage({
+    bucket: 'my-avatars',
+    region: 'us-east-1',
+  }),
+  documents: localStorage({
+    uploadDir: './uploads',
+    serveUrl: '/api/files',
+  }),
+}
+```
+
+---
+
+### `TypePatchConfig`
+
+Configuration for patching Prisma-generated TypeScript types (advanced use).
+
+```typescript
+typePatch: {
+  resultType: string,
+  patchScope?: 'scalars-only' | 'all',
+}
+```
+
+#### Properties
+
+##### `resultType` (required)
+
+TypeScript import statement for the type to use in Prisma result types.
+
+**Type:** `string`
+
+**Format:** `"import('@package/name').TypeName"`
+
+##### `patchScope`
+
+Where to apply the type patch.
+
+**Type:** `'scalars-only' | 'all'`
+**Default:** `'scalars-only'`
+
+**Example:**
+
+```typescript
+password: password({
+  typePatch: {
+    resultType: "import('@opensaas/stack-core').HashedPassword",
+    patchScope: 'scalars-only',
+  },
+})
+```
+
+---
+
+## Plugin System
+
+### `Plugin`
+
+Plugin definition for extending stack functionality.
+
+```typescript
+type Plugin = {
+  name: string
+  version?: string
+  dependencies?: string[]
+  init: (context: PluginContext) => void | Promise<void>
+  beforeGenerate?: (config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>
+  afterGenerate?: (files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>
+  runtime?: (context: AccessContext) => unknown
+}
+```
+
+#### Properties
+
+##### `name` (required)
+
+Unique plugin identifier.
+
+**Type:** `string`
+
+##### `version`
+
+Semantic version string.
+
+**Type:** `string`
+
+##### `dependencies`
+
+Array of plugin names this plugin depends on.
+
+**Type:** `string[]`
+
+**Example:**
+
+```typescript
+dependencies: ['auth'] // This plugin requires auth plugin to run first
+```
+
+##### `init` (required)
+
+Main initialization hook. Called during config processing.
+
+**Type:** `(context: PluginContext) => void | Promise<void>`
+
+**Example:**
+
+```typescript
+init: async (context) => {
+  // Add new list
+  context.addList(
+    'MyList',
+    list({
+      fields: { name: text() },
+    }),
+  )
+
+  // Extend existing list
+  context.extendList('User', {
+    fields: { myField: text() },
+  })
+
+  // Store plugin data
+  context.setPluginData('my-plugin', { apiKey: '...' })
+}
+```
+
+##### `beforeGenerate`
+
+Hook called before Prisma schema generation. Allows config transformation.
+
+**Type:** `(config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>`
+
+##### `afterGenerate`
+
+Hook called after file generation. Allows post-processing generated files.
+
+**Type:** `(files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>`
+
+##### `runtime`
+
+Provides runtime services attached to context.
+
+**Type:** `(context: AccessContext) => unknown`
+
+**Example:**
+
+```typescript
+runtime: (context) => ({
+  sendEmail: async (to, subject, body) => {
+    // Email service implementation
+  },
+})
+
+// Access in your app:
+// context.plugins.myPlugin.sendEmail(...)
+```
+
+---
+
+### `PluginContext`
+
+Context provided to plugins during initialization.
+
+```typescript
+type PluginContext = {
+  readonly config: OpenSaasConfig
+  addList: (name: string, listConfig: ListConfig) => void
+  extendList: (name: string, extension: object) => void
+  registerFieldType?: (type: string, builder: Function) => void
+  registerMcpTool?: (tool: McpCustomTool) => void
+  setPluginData: <T>(pluginName: string, data: T) => void
+}
+```
+
+#### Methods
+
+##### `addList()`
+
+Add a new list to the config. Throws if list already exists.
+
+**Signature:**
+
+```typescript
+addList(name: string, listConfig: ListConfig): void
+```
+
+##### `extendList()`
+
+Extend an existing list with additional fields, hooks, or access control. Deep merges configuration.
+
+**Signature:**
+
+```typescript
+extendList(name: string, extension: {
+  fields?: Record<string, FieldConfig>,
+  hooks?: Hooks,
+  access?: { operation?: OperationAccess },
+  mcp?: ListMcpConfig,
+}): void
+```
+
+##### `registerFieldType()`
+
+Register a custom field type globally.
+
+**Signature:**
+
+```typescript
+registerFieldType(type: string, builder: (options?: unknown) => BaseFieldConfig): void
+```
+
+##### `registerMcpTool()`
+
+Register a custom MCP tool globally.
+
+**Signature:**
+
+```typescript
+registerMcpTool(tool: McpCustomTool): void
+```
+
+##### `setPluginData()`
+
+Store plugin-specific data for runtime access.
+
+**Signature:**
+
+```typescript
+setPluginData<T>(pluginName: string, data: T): void
+```
+
+**Access at runtime:**
+
+```typescript
+const pluginData = config._pluginData[pluginName]
+```
+
+---
+
+## Runtime Context
+
+### `AccessContext`
+
+Context object passed to access control functions, hooks, and custom tools.
+
+```typescript
+type AccessContext = {
+  session: Session
+  prisma: PrismaClient
+  db: AccessControlledDB
+  storage: StorageUtils
+  plugins: Record<string, unknown>
+  _isSudo: boolean
+}
+```
+
+#### Properties
+
+##### `session`
+
+Current user session (user-defined structure).
+
+**Type:** `Session | null`
+
+##### `prisma`
+
+Raw Prisma client (bypasses access control - use with caution).
+
+**Type:** `PrismaClient`
+
+##### `db`
+
+Access-controlled database interface (enforces access rules).
+
+**Type:** `AccessControlledDB`
+
+##### `storage`
+
+File/image upload utilities.
+
+**Type:** [`StorageUtils`](#storageutils)
+
+##### `plugins`
+
+Plugin-provided runtime services.
+
+**Type:** `Record<string, unknown>`
+
+##### `_isSudo`
+
+Internal flag for sudo mode (bypasses all access control).
+
+**Type:** `boolean`
+
+---
+
+### `StorageUtils`
+
+Storage utilities for file/image uploads.
+
+```typescript
+type StorageUtils = {
+  uploadFile: (providerName, file, buffer, options?) => Promise<FileMetadata>
+  uploadImage: (providerName, file, buffer, options?) => Promise<ImageMetadata>
+  deleteFile: (providerName, filename) => Promise<void>
+  deleteImage: (metadata) => Promise<void>
+}
+```
+
+---
+
+## Next Steps
+
+- **[Field Types](/docs/concepts/field-types)** - Detailed field type reference
+- **[Access Control](/docs/concepts/access-control)** - Access control patterns
+- **[Hooks](/docs/concepts/hooks)** - Hook execution and examples
+- **[Plugins](/docs/how-to/write-a-plugin)** - Creating custom plugins

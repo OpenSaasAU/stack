@@ -35,18 +35,18 @@ export function CopyMarkdownButton({ slug }: CopyMarkdownButtonProps) {
     <button
       onClick={handleCopy}
       disabled={loading || copied}
-      className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+      className="flex items-center gap-2 px-3 sm:px-4 py-2 border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
       title="Copy page contents in markdown format"
     >
       {copied ? (
         <>
           <Check className="h-4 w-4 text-green-600" />
-          <span className="text-sm">Copied!</span>
+          <span className="text-sm hidden sm:inline">Copied!</span>
         </>
       ) : (
         <>
           <Copy className="h-4 w-4" />
-          <span className="text-sm">Copy Markdown</span>
+          <span className="text-sm hidden sm:inline">Copy Markdown</span>
         </>
       )}
     </button>

@@ -111,11 +111,12 @@ export function SearchModal() {
     return (
       <button
         onClick={() => setIsOpen(true)}
+        aria-label="Search docs"
         className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 bg-gray-800 rounded-md border border-gray-700 hover:border-gray-600 transition-colors"
       >
         <Search className="w-4 h-4" />
-        <span>Search docs...</span>
-        <kbd className="ml-auto px-2 py-1 text-xs text-gray-500 bg-gray-900 rounded border border-gray-700">
+        <span className="hidden sm:inline">Search docs...</span>
+        <kbd className="ml-auto hidden sm:inline px-2 py-1 text-xs text-gray-500 bg-gray-900 rounded border border-gray-700">
           ⌘K
         </kbd>
       </button>

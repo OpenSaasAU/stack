@@ -82,6 +82,36 @@ _Avoid_: storage backend, storage adapter, uploader
 The lookup from a configured provider `type` to the constructor that builds it, which the storage runtime consults instead of a closed `switch`. A host registers the (optional) provider packages it uses, so non-`local` and custom providers are constructable without the runtime depending on every provider's SDK.
 _Avoid_: provider switch, provider map, plugin registry
 
+### Website & docs
+
+**Stack** (public name):
+The product's name in public-site copy and the wordmark, attributed "by OpenSaas". Package names (`@opensaas/stack-*`) and the GitHub org keep their full names; only the public voice shortens.
+_Avoid_: OpenSaaS Stack (in site copy), the stack (as a name)
+
+**Guardrails story**:
+The site's core narrative: AI coding agents ship features fast but can't be trusted with security, so Stack makes the secure path the only path — access control enforced on every operation is the reason agent-built features can be trusted. Speaks to developers already building with AI agents; names Claude Code as the first-class workflow, not the headline.
+_Avoid_: AI story, marketing angle, Claude Code story
+
+**Narrative landing**:
+The single public page that tells the Guardrails story as one scroll — pain, turn, proof, how it works, get started. All other public content lives in the docs.
+_Avoid_: marketing site, homepage (ambiguous with the docs landing)
+
+**Session switcher**:
+The Narrative landing's interactive proof block: one config and one query with the requesting session switchable (anonymous / author / other user), showing rows being scoped and Silent failure happening. Runs on precomputed results and says so — it demonstrates, it does not execute.
+_Avoid_: live demo (it isn't one), playground
+
+**Docs quadrants**:
+The Diátaxis organization of the docs — Tutorials, How-to guides, Concepts, Reference — where every page has exactly one of those four jobs. Concepts carry this glossary's vocabulary; per-package pages are Reference.
+_Avoid_: docs sections, categories
+
+**Flagship tutorial**:
+The learning-path tutorial anchoring the Tutorials quadrant: build a small real app by describing features to Claude Code, punctuated by Checkpoints.
+_Avoid_: quick start (that's setup), walkthrough
+
+**Checkpoint**:
+A canonical config snapshot inside the Flagship tutorial that re-anchors the reader ("your config should now look like this") regardless of what the agent generated along the way — the device that keeps an agent-driven tutorial truthful.
+_Avoid_: step, milestone
+
 ### Admin UI
 
 **Label field**:

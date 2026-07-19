@@ -6,7 +6,15 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { navigation, type NavItem } from '@/lib/navigation'
 import { useState } from 'react'
 
-function NavItemComponent({ item, level = 0 }: { item: NavItem; level?: number }) {
+function NavItemComponent({
+  item,
+  level = 0,
+  onNavigate,
+}: {
+  item: NavItem
+  level?: number
+  onNavigate?: () => void
+}) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(true)
   const hasChildren = item.items && item.items.length > 0
@@ -25,7 +33,12 @@ function NavItemComponent({ item, level = 0 }: { item: NavItem; level?: number }
         {isOpen && (
           <div className="ml-4 border-l pl-4 mt-1">
             {item.items?.map((child, index) => (
-              <NavItemComponent key={index} item={child} level={level + 1} />
+              <NavItemComponent
+                key={index}
+                item={child}
+                level={level + 1}
+                onNavigate={onNavigate}
+              />
             ))}
           </div>
         )}
@@ -36,6 +49,7 @@ function NavItemComponent({ item, level = 0 }: { item: NavItem; level?: number }
   return (
     <Link
       href={item.href || '#'}
+      onClick={onNavigate}
       className={`block text-sm py-2 hover:text-primary transition-colors ${
         isActive ? 'text-primary font-medium' : 'text-muted-foreground'
       }`}
@@ -45,14 +59,21 @@ function NavItemComponent({ item, level = 0 }: { item: NavItem; level?: number }
   )
 }
 
+/** The docs navigation tree, shared by the desktop sidebar and the mobile drawer. */
+export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <div className="space-y-4">
+      {navigation.map((section, index) => (
+        <NavItemComponent key={index} item={section} onNavigate={onNavigate} />
+      ))}
+    </div>
+  )
+}
+
 export function Sidebar() {
   return (
-    <aside className="w-64 border-r h-screen sticky top-0 overflow-y-auto p-6">
-      <div className="space-y-4">
-        {navigation.map((section, index) => (
-          <NavItemComponent key={index} item={section} />
-        ))}
-      </div>
+    <aside className="hidden md:block w-64 shrink-0 border-r h-screen sticky top-0 overflow-y-auto p-6">
+      <SidebarNav />
     </aside>
   )
 }

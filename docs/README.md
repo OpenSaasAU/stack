@@ -38,31 +38,28 @@ pnpm start
 
 ## Content Structure
 
-All documentation pages are stored in the `content/` directory as Markdown files:
+All documentation pages are stored in the `content/` directory as Markdown files, organized as [Diátaxis](https://diataxis.fr/) quadrants (see ADR-0019):
 
 ```
 content/
-├── quick-start.md
-├── getting-started.md
-├── core-concepts/
-│   ├── access-control.md
-│   ├── field-types.md
-│   ├── hooks.md
-│   └── config.md
-├── packages/
-│   ├── core.md
-│   ├── auth.md
-│   └── ui.md
-└── guides/
-    ├── custom-fields.md
-    └── deployment.md
+├── tutorials/        # Learning-oriented (quick-start, build-with-claude-code)
+├── how-to/           # Task-oriented guides (authentication, storage, deploy, …)
+├── concepts/         # Understanding-oriented (access-control, hooks, config, …)
+└── reference/        # Lookup-oriented (config-api, fields-api, per-package pages)
 ```
 
 ## Adding New Pages
 
-1. Create a new `.md` file in the `content/` directory
+1. Create a new `.md` file in the right `content/` quadrant
 2. Add the page to `lib/navigation.ts`
 3. The page will automatically be available at `/docs/[...slug]`
+
+## Moving or Renaming Pages
+
+Published URLs must keep resolving. If a page moves, add its old URL to
+`lib/redirects.mjs` (served as permanent redirects and validated by
+`scripts/link-check.ts`, which runs before every build). Extend that table —
+never prune it.
 
 ## Markdoc Components
 
