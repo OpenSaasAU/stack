@@ -7,6 +7,7 @@ import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import {
   type AccessContext,
+  buildListFilterWhere,
   getDbKey,
   getItemLabel,
   getUrlKey,
@@ -106,24 +107,16 @@ export async function ListView({
       throw new Error(`Context for ${listKey} not found`)
     }
 
-    // Build search filter if search term provided
-    let where: Record<string, unknown> | undefined = undefined
-    if (search && search.trim()) {
-      // Find all text fields to search across
-      const searchableFields = Object.entries(listConfig.fields)
-        .filter(([_, field]) => (field as { type: string }).type === 'text')
-        .map(([fieldName]) => fieldName)
-
-      if (searchableFields.length > 0) {
-        where = {
-          OR: searchableFields.map((fieldName) => ({
-            [fieldName]: {
-              contains: search.trim(),
-            },
-          })),
-        }
-      }
-    }
+    // Parse the URL filter query into a server-side `where` fragment via the
+    // filter engine (ADR-0017). Field-scoped tokens, comparisons, quoted values
+    // and bare-word free text are all driven by each field's Filter spec — no
+    // hard-coded `type === 'text'` search here. The fragment is handed to the
+    // secured `context.db` below, which ANDs it with the access filter, so the
+    // filter can only ever narrow (never widen) what this session may see.
+    const where =
+      search && search.trim()
+        ? buildListFilterWhere(search, listConfig, listKey, config)
+        : undefined
 
     // Build include object for relationship fields
     const include: Record<string, boolean> = {}

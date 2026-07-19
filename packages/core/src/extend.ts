@@ -17,3 +17,12 @@ export type {
   TypeDescriptor,
   MultiColumnPrismaResult,
 } from './config/index.js'
+
+// Filter spec authoring — a field's optional `getFilterSpec` returns these
+// (ADR-0017). Additive: a field without one is simply not filterable.
+export type {
+  FilterSpec,
+  FilterOperator,
+  FilterCondition,
+  FilterValueSource,
+} from './filter/index.js'

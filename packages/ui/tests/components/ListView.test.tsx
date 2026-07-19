@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
-import { text, relationship } from '@opensaas/stack-core/fields'
+import { text, relationship, select } from '@opensaas/stack-core/fields'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
@@ -208,5 +208,69 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     const props = findListViewClientProps(tree)
 
     expect(props.items[0].author).toBeNull()
+  })
+})
+
+describe('ListView server-side filtering (filter engine, secured context)', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'sqlite', url: 'file:./test.db' },
+    lists: {
+      Post: list({
+        fields: {
+          title: text(),
+          status: select({
+            options: [
+              { label: 'Draft', value: 'draft' },
+              { label: 'Published', value: 'published' },
+            ],
+          }),
+        },
+      }),
+    },
+  }
+
+  it('passes a field-token filter (status:Published) to context.db.findMany/count as a where', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ post: { findMany, count } })
+
+    // The URL filter query is the ListView `search` prop.
+    await ListView({
+      context,
+      config,
+      listKey: 'Post',
+      basePath: '/admin',
+      search: 'status:Published',
+    })
+
+    // Filtering runs through the secured context.db (never client-side); the
+    // engine mapped the select token to an equality on the stored value.
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: { equals: 'published' } } }),
+    )
+    expect(count).toHaveBeenCalledWith({ where: { status: { equals: 'published' } } })
+  })
+
+  it('maps a bare word to a free-text contains over text fields', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ post: { findMany, count } })
+
+    await ListView({ context, config, listKey: 'Post', basePath: '/admin', search: 'hello' })
+
+    // Only `title` is a text (free-text) field → a single contains condition.
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { title: { contains: 'hello' } } }),
+    )
+  })
+
+  it('passes where: undefined when there is no filter query', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ post: { findMany, count } })
+
+    await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }))
   })
 })
