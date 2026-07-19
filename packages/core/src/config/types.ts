@@ -814,9 +814,34 @@ export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
   }
 }
 
+/**
+ * Badge-variant vocabulary a select option can map its value to for status-Cell
+ * rendering in the admin UI (issue #729). Mirrors the admin UI Badge primitive's
+ * variants; `secondary` is the neutral fallback used for unmapped options.
+ */
+export type SelectOptionVariant =
+  'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline'
+
+/**
+ * A single choice in a `select` field.
+ *
+ * `label`/`value` are the long-standing shape; `ui` is additive, optional
+ * metadata (issue #729). `ui.variant` lets a value render as a coloured status
+ * badge in list-table Cells — an option without it renders with the neutral
+ * badge, so existing options keep working unchanged.
+ */
+export type SelectOption = {
+  label: string
+  value: string
+  ui?: {
+    /** Badge variant used when this option's value renders as a status Cell. */
+    variant?: SelectOptionVariant
+  }
+}
+
 export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'select'
-  options: Array<{ label: string; value: string }>
+  options: Array<SelectOption>
   defaultValue?: string
   db?: {
     /**

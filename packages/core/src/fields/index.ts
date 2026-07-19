@@ -30,6 +30,8 @@ export type {
   CalendarDayField,
   PasswordField,
   SelectField,
+  SelectOption,
+  SelectOptionVariant,
   RelationshipField,
   JsonField,
   VirtualField,

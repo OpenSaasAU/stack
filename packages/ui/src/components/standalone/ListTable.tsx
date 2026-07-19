@@ -3,7 +3,7 @@ import * as React from 'react'
 import { useState } from 'react'
 import Link from 'next/link.js'
 import { Inbox } from 'lucide-react'
-import { cn, formatFieldName, getFieldDisplayValue, isNumericField } from '../../lib/utils.js'
+import { cn, formatFieldName, isNumericField } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import {
   Table,
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '../../primitives/table.js'
 import { EmptyState } from '../EmptyState.js'
+import { CellRenderer } from '../cells/CellRenderer.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -284,9 +285,16 @@ export function ListTable({
                         classNames?.cell,
                       )}
                     >
-                      {fieldTypes[column] === 'relationship'
-                        ? renderRelationshipCell(item[column], column)
-                        : getFieldDisplayValue(item[column], fieldTypes[column])}
+                      {fieldTypes[column] === 'relationship' ? (
+                        renderRelationshipCell(item[column], column)
+                      ) : (
+                        <CellRenderer
+                          value={item[column]}
+                          field={{ type: fieldTypes[column] }}
+                          fieldName={column}
+                          basePath={basePath}
+                        />
+                      )}
                     </TableCell>
                   ))}
                   {renderActions && (

@@ -110,6 +110,32 @@ test.describe('Admin UI', () => {
         page.getByRole('row', { name: /Full Post/ }).getByRole('cell', { name: 'published' }),
       ).toBeVisible()
     })
+
+    test('should render the select column value as a coloured status badge', async ({ page }) => {
+      // Create a published post so the status column has a value to badge.
+      await page.goto('/admin/post')
+      await page.waitForLoadState('networkidle')
+
+      await page.click('text=/create|new/i')
+      await page.waitForLoadState('networkidle')
+      await page.fill('input[name="title"]', 'Badged Post')
+      await page.fill('input[name="slug"]', 'badged-post')
+      await page.fill('textarea[name="content"]', 'Content here')
+      await page.getByLabel('Status').click()
+      await page.getByRole('option', { name: 'published' }).click()
+      await page.click('button[type="submit"]')
+      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+
+      // The status cell renders through the select Cell → a Badge (Slot
+      // `cell-select`) coloured by the option's `ui.variant` (success → the
+      // success token class), not raw text.
+      const badge = page
+        .getByRole('row', { name: /Badged Post/ })
+        .locator('[data-slot="cell-select"]')
+      await expect(badge).toBeVisible()
+      await expect(badge).toHaveText('Published')
+      await expect(badge).toHaveClass(/text-success/)
+    })
   })
 
   test.describe('Create Form', () => {

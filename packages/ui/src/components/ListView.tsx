@@ -2,6 +2,7 @@ import Link from 'next/link.js'
 import { Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import { formatListName } from '../lib/utils.js'
+import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import {
@@ -207,6 +208,7 @@ export async function ListView({
             (field as { type: string }).type,
           ]),
         )}
+        fields={serializeFieldConfigs(listConfig.fields)}
         relationshipRefs={relationshipRefs}
         columns={columns}
         initialSort={activeSort}

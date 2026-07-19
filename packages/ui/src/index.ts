@@ -49,6 +49,21 @@ export {
   FieldReadValue,
 } from './components/fields/index.js'
 
+// Cell components + registry (list-table rendering of field values)
+export {
+  TextCell,
+  IntegerCell,
+  CheckboxCell,
+  SelectCell,
+  TimestampCell,
+  RelationshipCell,
+  CellRenderer,
+  cellComponentRegistry,
+  registerCellComponent,
+  getCellComponent,
+} from './components/cells/index.js'
+export type { CellComponent, CellComponentProps } from './components/cells/index.js'
+
 // Types
 export type { AdminUIProps } from './components/AdminUI.js'
 export type { DashboardProps } from './components/Dashboard.js'

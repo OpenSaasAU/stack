@@ -1,5 +1,7 @@
 import type { FieldConfig } from '@opensaas/stack-core'
+import type { SelectOption } from '@opensaas/stack-core/fields'
 import type { ComponentType } from 'react'
+import type { CellComponent } from '../components/cells/registry.js'
 
 /**
  * Serializable field config for client components
@@ -14,12 +16,21 @@ export type SerializableFieldConfig = {
     min?: number
     max?: number
   }
-  options?: Array<{ label: string; value: string }>
+  /**
+   * Select options. Carries the additive per-option `ui.variant` metadata
+   * (issue #729) so list-table select Cells can colour their badge.
+   */
+  options?: Array<SelectOption>
   many?: boolean
   ref?: string
   ui?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
+    /**
+     * Per-field Cell override — the highest-priority entry in the cell
+     * resolution chain, mirroring `component` for form fields (issue #729).
+     */
+    cell?: CellComponent
     fieldType?: string
     /** Help / description text surfaced to the field component as `helpText`. */
     description?: string
@@ -54,9 +65,9 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
     config.validation = fieldConfig.validation as SerializableFieldConfig['validation']
   }
 
-  // Extract options for select fields
+  // Extract options for select fields (including additive per-option ui.variant)
   if ('options' in fieldConfig && fieldConfig.options !== undefined) {
-    config.options = fieldConfig.options as Array<{ label: string; value: string }>
+    config.options = fieldConfig.options as Array<SelectOption>
   }
 
   // Extract many for relationship fields
