@@ -127,8 +127,8 @@ export default config({
         }),
         status: select({
           options: [
-            { label: 'Draft', value: 'draft' },
-            { label: 'Published', value: 'published' },
+            { label: 'Draft', value: 'draft', ui: { variant: 'secondary' } },
+            { label: 'Published', value: 'published', ui: { variant: 'success' } },
           ],
           defaultValue: 'draft',
           ui: { displayMode: 'segmented-control' },

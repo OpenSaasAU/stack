@@ -474,7 +474,7 @@ describe('ListViewClient', () => {
   })
 
   describe('field display values', () => {
-    it('should display checkbox values as Yes/No', () => {
+    it('should display checkbox values as accessible marks (Yes/No)', () => {
       const items = [
         { id: '1', title: 'Post 1', published: true },
         { id: '2', title: 'Post 2', published: false },
@@ -489,8 +489,9 @@ describe('ListViewClient', () => {
         />,
       )
 
-      expect(screen.getByText('Yes')).toBeInTheDocument()
-      expect(screen.getByText('No')).toBeInTheDocument()
+      // Checkbox Cells render a mark; the boolean survives as the accessible name.
+      expect(screen.getByLabelText('Yes')).toBeInTheDocument()
+      expect(screen.getByLabelText('No')).toBeInTheDocument()
     })
 
     it('should display timestamp values as formatted dates', () => {

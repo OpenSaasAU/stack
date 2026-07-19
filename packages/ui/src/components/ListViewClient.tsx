@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
-import { cn, formatFieldName, getFieldDisplayValue, isNumericField } from '../lib/utils.js'
+import { cn, formatFieldName, isNumericField } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -17,24 +17,19 @@ import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { Card } from '../primitives/card.js'
 import { EmptyState } from './EmptyState.js'
-import { getUrlKey } from '@opensaas/stack-core'
-
-/**
- * A relationship value after the server has resolved its label via the
- * shared label seam (`getItemLabel`) — see `ListView.tsx`.
- */
-interface RelationshipLabelValue {
-  id: string
-  label: string
-}
-
-function isRelationshipLabelValue(value: unknown): value is RelationshipLabelValue {
-  return !!value && typeof value === 'object' && 'id' in value && 'label' in value
-}
+import { CellRenderer } from './cells/CellRenderer.js'
+import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 
 export interface ListViewClientProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
+  /**
+   * Serialised per-field config, keyed by field name. Drives Cell resolution
+   * (per-field override, select option variants, relationship ref). Optional so
+   * callers that only have `fieldTypes` still render via the field-type
+   * registry; a minimal config is synthesised from `fieldTypes` when absent.
+   */
+  fields?: Record<string, SerializableFieldConfig>
   relationshipRefs: Record<string, string>
   columns?: string[]
   /**
@@ -59,6 +54,7 @@ export interface ListViewClientProps {
 export function ListViewClient({
   items,
   fieldTypes,
+  fields,
   relationshipRefs,
   columns,
   initialSort,
@@ -132,64 +128,17 @@ export function ListViewClient({
   }
 
   /**
-   * Render a relationship field as a clickable link or links.
-   *
-   * `value` has already been resolved server-side (`ListView.tsx`) into
-   * `{ id, label }` pairs via the shared label seam (`getItemLabel`), so no
-   * label derivation happens here.
+   * The serialised field config for a column. Prefer the explicit `fields`
+   * prop; otherwise synthesise a minimal config from `fieldTypes` (and the
+   * relationship ref) so Cells still resolve via the field-type registry.
    */
-  const renderRelationshipCell = (value: unknown, fieldName: string) => {
-    if (!value) {
-      return <span className="text-muted-foreground">-</span>
+  const columnField = (column: string): SerializableFieldConfig => {
+    if (fields?.[column]) return fields[column]
+    const ref = relationshipRefs[column]
+    return {
+      type: fieldTypes[column],
+      ...(ref ? { ref } : {}),
     }
-
-    const ref = relationshipRefs[fieldName]
-    const relatedUrlKey = ref ? getUrlKey(ref.split('.')[0]) : undefined
-
-    // Handle array of relationships (many: true)
-    if (Array.isArray(value)) {
-      const relatedItems = value.filter(isRelationshipLabelValue)
-      if (relatedItems.length === 0) return <span className="text-muted-foreground">-</span>
-      return (
-        <span className="flex flex-wrap gap-1">
-          {relatedItems.map((item, idx) => (
-            <React.Fragment key={item.id}>
-              {idx > 0 && <span className="text-muted-foreground">, </span>}
-              {relatedUrlKey ? (
-                <Link
-                  href={`${basePath}/${relatedUrlKey}/${item.id}`}
-                  className="text-primary hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                item.label
-              )}
-            </React.Fragment>
-          ))}
-        </span>
-      )
-    }
-
-    // Handle single relationship
-    if (!isRelationshipLabelValue(value)) {
-      return <span className="text-muted-foreground">-</span>
-    }
-
-    if (!relatedUrlKey) {
-      return value.label
-    }
-
-    return (
-      <Link
-        href={`${basePath}/${relatedUrlKey}/${value.id}`}
-        className="text-primary hover:underline"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {value.label}
-      </Link>
-    )
   }
 
   return (
@@ -295,9 +244,12 @@ export function ListViewClient({
                       key={column}
                       className={cn(isNumericField(fieldTypes[column]) && 'text-right')}
                     >
-                      {fieldTypes[column] === 'relationship'
-                        ? renderRelationshipCell(item[column], column)
-                        : getFieldDisplayValue(item[column], fieldTypes[column])}
+                      <CellRenderer
+                        value={item[column]}
+                        field={columnField(column)}
+                        fieldName={column}
+                        basePath={basePath}
+                      />
                     </TableCell>
                   ))}
                   <TableCell className="text-right">
