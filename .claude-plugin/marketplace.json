@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Official OpenSaaS Stack plugin marketplace for development and migration tools",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "homepage": "https://stack.opensaas.au/"
   },
   "plugins": [
@@ -14,7 +14,7 @@
       "name": "opensaas-stack",
       "source": "./claude-plugins/opensaas-stack",
       "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "author": {
         "name": "OpenSaaS",
         "url": "https://opensaas.au"

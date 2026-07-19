@@ -15,8 +15,8 @@ $ARGUMENTS
 | ------------------------------------------- | ----------------------------------- |
 | `context.graphql.run({ query, variables })` | `context.db.{list}.{method}(args)`  |
 | `context.graphql.raw({ query, variables })` | `context.db.{list}.{method}(args)`  |
-| `context.query.PostList.findMany(...)`      | `context.db.post.findMany(...)`     |
-| `context.query.PostList.count(...)`         | `context.db.post.count(...)`        |
+| `context.query.Post.findMany(...)`          | `context.db.post.findMany(...)`     |
+| `context.query.Post.count(...)`             | `context.db.post.count(...)`        |
 | `context.sudo().graphql.run(...)`           | `context.sudo().db.post.findMany()` |
 
 **List names are camelCase**: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`, `AuthUser` → `context.db.authUser`.
@@ -133,7 +133,7 @@ const { posts } = await context.graphql.run({
 })
 
 // After — define fragments once, compose and reuse them
-import type { User, Post, Tag } from '.prisma/client'
+import type { User, Post, Tag } from '@/.opensaas/prisma-client/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
@@ -392,7 +392,7 @@ async function getPosts(vars: PostsVars) {
 
 ```typescript
 // After — defineFragment + ResultOf (no GraphQL schema, no codegen)
-import type { Post, User } from '.prisma/client'
+import type { Post, User } from '@/.opensaas/prisma-client/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
@@ -449,7 +449,7 @@ A `defineFragment` selection maps directly onto a Prisma query under the hood, a
 - **Relationship fields selected with a nested fragment / `RelationSelector`** generate a Prisma `include` entry (recursively). The fragment walker emits `{ include: { author: { include: { … } } } }`; nested `where` / `orderBy` / `take` / `skip` from a `RelationSelector` are attached to that include entry.
 
 ```typescript
-import type { Post, User, Comment } from '.prisma/client'
+import type { Post, User, Comment } from '@/.opensaas/prisma-client/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const authorFragment = defineFragment<User>()({ id: true, name: true } as const)

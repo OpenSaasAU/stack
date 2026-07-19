@@ -89,9 +89,12 @@ This allows testing plugin changes before publishing.
 ## Marketplace Structure
 
 ```
-claude-plugins/
+.claude-plugin/
 ├── marketplace.json          # Marketplace manifest
-├── MARKETPLACE.md            # This file
+└── MARKETPLACE.md            # This file
+
+claude-plugins/
+├── README.md                 # Plugins directory overview
 ├── opensaas-stack/
 │   ├── .claude-plugin/
 │   │   └── plugin.json       # opensaas-stack plugin manifest

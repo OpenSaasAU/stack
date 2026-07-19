@@ -21,11 +21,24 @@ Feature-driven development assistant for building OpenSaaS Stack applications.
 
 This plugin works with the MCP server built into `@opensaas/stack-cli` which provides:
 
+**Feature wizards:**
+
 - `opensaas_implement_feature` - Interactive feature implementation wizards
-- `opensaas_feature_docs` - Live documentation search
+- `opensaas_answer_feature` / `opensaas_answer_followup` - Progress through wizard questions
 - `opensaas_list_features` - Browse available features
 - `opensaas_suggest_features` - Get personalized recommendations
 - `opensaas_validate_feature` - Validate implementations
+
+**Documentation:**
+
+- `opensaas_feature_docs` - Live documentation search
+- `opensaas_get_example` - Example code for common patterns
+
+**Migration (shared with the opensaas-migration plugin):**
+
+- `opensaas_start_migration` / `opensaas_answer_migration` - Migration wizard
+- `opensaas_introspect_prisma` / `opensaas_introspect_keystone` - Schema analysis
+- `opensaas_search_migration_docs` - Migration documentation search
 
 ## Installation
 
@@ -136,7 +149,7 @@ Agent will:
 ## What Makes This Different
 
 1. **App-level thinking** - Describe goals, not infrastructure
-2. **Complete solutions** - Config + UI + access control + docs + tests
+2. **Complete solutions** - Config + UI + access control + docs
 3. **Conversational wizards** - Natural Q&A, not configuration files
 4. **Smart suggestions** - Recommends next features based on context
 5. **Live documentation** - Always current with production docs
@@ -186,14 +199,14 @@ Each wizard generates:
 
 ## Links
 
-- [MCP Server Package](../packages/stack-mcp/) - Implementation details
+- [MCP Server Implementation](../../packages/cli/src/mcp/) - Ships inside `@opensaas/stack-cli`
 - [OpenSaaS Stack Docs](https://stack.opensaas.au/) - Full documentation
 - [GitHub Repository](https://github.com/OpenSaasAU/stack)
-- [Examples](../examples/) - Reference implementations
+- [Examples](../../examples/) - Reference implementations
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](../CONTRIBUTING.md).
+We welcome contributions! Please see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## License
 

@@ -54,6 +54,7 @@ Your schema lives in `opensaas.config.ts`. Running the generator (which the
 scaffolder did for you, and which you re-run with `pnpm generate`) produces:
 
 - **`prisma/schema.prisma`** — the Prisma schema
+- **`prisma.config.ts`** — Prisma CLI configuration (datasource URL for db push/migrations)
 - **`.opensaas/types.ts`** — TypeScript types for your lists
 - **`.opensaas/context.ts`** — the access-controlled context factory
 

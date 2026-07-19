@@ -322,6 +322,7 @@ Add OpenSaaS packages:
 
 ```bash
 pnpm add @opensaas/stack-core @opensaas/stack-ui
+pnpm add -D @opensaas/stack-cli
 # If using auth:
 pnpm add @opensaas/stack-auth better-auth
 # SQLite adapter:
@@ -538,4 +539,4 @@ Guide them through:
 3. Run `npx prisma db push`
 4. Start dev server: `pnpm dev`
 5. If Admin UI was set up: visit `http://localhost:3000/{adminPath}` (e.g. `http://localhost:3000/admin`)
-6. If Admin UI was skipped: mention that they can set it up any time — see https://stack.opensaas.au/admin-ui
+6. If Admin UI was skipped: mention that they can set it up any time — see https://stack.opensaas.au/docs/reference/ui

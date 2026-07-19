@@ -212,6 +212,8 @@ storage: {
 
 Because the multi-column mode reads existing stored URLs in place, you can adopt any of these providers without re-uploading the assets already referenced by the live columns. The provider only handles new uploads.
 
+**Provider registration (S3 / Vercel Blob)**: only the `'local'` provider is built in. For new uploads to work with S3 or Vercel Blob, register the provider at startup via `registerStorageProvider(...)` from `@opensaas/stack-storage/runtime` (an unregistered type throws `Unknown storage provider type` on upload). Reads of existing assets need no provider.
+
 ---
 
 ## Destructive alternative (opt-in): consolidate to a single JSON column

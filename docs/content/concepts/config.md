@@ -5,7 +5,7 @@ The config system is the heart of Stack. Define your entire schema, access contr
 ## Basic Config
 
 ```typescript
-import { config, list } from '@opensaas/stack-core/config'
+import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 

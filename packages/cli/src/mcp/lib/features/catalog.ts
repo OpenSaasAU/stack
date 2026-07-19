@@ -23,7 +23,7 @@ export const AUTHENTICATION_FEATURE: Feature = {
       text: 'Which authentication methods do you want to support?',
       type: 'multiselect',
       required: true,
-      options: ['Email & Password', 'Google OAuth', 'GitHub OAuth', 'Magic Links'],
+      options: ['Email & Password', 'Google OAuth', 'GitHub OAuth'],
       defaultValue: ['Email & Password'],
     },
     {
@@ -247,7 +247,7 @@ export const SEMANTIC_SEARCH_FEATURE: Feature = {
       text: 'Which embedding provider?',
       type: 'select',
       required: true,
-      options: ['OpenAI (text-embedding-3-small)', 'Cohere', 'Anthropic'],
+      options: ['OpenAI (text-embedding-3-small)', 'Ollama (local, self-hosted)'],
       defaultValue: 'OpenAI (text-embedding-3-small)',
     },
     {

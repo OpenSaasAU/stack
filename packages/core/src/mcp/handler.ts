@@ -3,10 +3,66 @@
  * Creates MCP API handlers from OpenSaaS config at runtime
  */
 
-import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
+import * as z from 'zod'
+import type { OpenSaasConfig, FieldConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { McpSession, McpSessionProvider } from './types.js'
+
+/**
+ * Context session type accepted by the generated getContext factory.
+ * userId is always present; auth adapters may pass additional session fields
+ * (email, role, ...) through for access control.
+ */
+type ContextSession = { userId: string; [key: string]: unknown }
+
+/**
+ * Convert an MCP session into a context session.
+ * Transport-level fields (accessToken, expiresAt, scopes) are stripped;
+ * everything else — userId plus any custom fields the session provider
+ * attached (email, role, ...) — flows through to access control.
+ */
+function toContextSession(session: McpSession): ContextSession {
+  const { accessToken: _accessToken, expiresAt: _expiresAt, scopes: _scopes, ...rest } = session
+  return rest as ContextSession
+}
+
+/**
+ * MCP tools registered globally by plugins via `registerMcpTool`
+ * (stored by the plugin engine under `_pluginData.__mcpTools`).
+ */
+function getPluginMcpTools(config: OpenSaasConfig): McpCustomTool[] {
+  return (config._pluginData?.__mcpTools as McpCustomTool[] | undefined) ?? []
+}
+
+/**
+ * Whether a custom tool's inputSchema is a Zod schema (as opposed to a plain
+ * JSON Schema object). Duck-typed so it works across zod module instances.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing across zod instances
+function isZodSchema(schema: any): schema is z.ZodType {
+  return !!schema && typeof schema.safeParse === 'function'
+}
+
+/**
+ * Normalize a custom tool's inputSchema for the tools/list response.
+ * Zod schemas are converted to JSON Schema (the MCP wire format); plain
+ * objects are passed through as-is.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- inputSchema is user-supplied
+function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
+  if (isZodSchema(inputSchema)) {
+    try {
+      const { $schema: _$schema, ...jsonSchema } = z.toJSONSchema(inputSchema)
+      return jsonSchema as McpTool['inputSchema']
+    } catch {
+      // Unconvertible schema (transforms, custom types) — advertise a
+      // permissive object schema; runtime validation still applies.
+      return { type: 'object', properties: {} }
+    }
+  }
+  return inputSchema as McpTool['inputSchema']
+}
 
 /**
  * Create MCP route handlers
@@ -32,7 +88,7 @@ import type { McpSession, McpSessionProvider } from './types.js'
 export function createMcpHandlers(options: {
   config: OpenSaasConfig
   getSession: McpSessionProvider
-  getContext: (session?: { userId: string }) => Promise<AccessContext>
+  getContext: (session?: ContextSession) => Promise<AccessContext>
 }): {
   GET: (req: Request) => Promise<Response>
   POST: (req: Request) => Promise<Response>
@@ -378,10 +434,19 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
         tools.push({
           name: customTool.name,
           description: customTool.description,
-          inputSchema: customTool.inputSchema,
+          inputSchema: toolInputSchemaToJson(customTool.inputSchema),
         })
       }
     }
+  }
+
+  // Tools registered globally by plugins (e.g. the RAG plugin's semantic search)
+  for (const pluginTool of getPluginMcpTools(config)) {
+    tools.push({
+      name: pluginTool.name,
+      description: pluginTool.description,
+      inputSchema: toolInputSchemaToJson(pluginTool.inputSchema),
+    })
   }
 
   return new Response(
@@ -404,7 +469,7 @@ async function handleToolsCall(
   params: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => Promise<AccessContext>,
+  getContext: (session?: ContextSession) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
   const toolName = params?.name
@@ -446,11 +511,11 @@ async function handleCrudTool(
   args: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => Promise<AccessContext>,
+  getContext: (session?: ContextSession) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
-  // Create context with user session
-  const context = await getContext({ userId: session.userId })
+  // Create context with the user session (custom session fields pass through)
+  const context = await getContext(toContextSession(session))
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
@@ -529,34 +594,59 @@ async function handleCustomTool(
   args: any,
   session: McpSession,
   config: OpenSaasConfig,
-  getContext: (session?: { userId: string }) => Promise<AccessContext>,
+  getContext: (session?: ContextSession) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
-  // Find custom tool in config
-  for (const [_listKey, listConfig] of Object.entries(config.lists)) {
-    const customTool = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
+  // Find the tool: list-level custom tools first, then plugin-registered tools
+  let customTool: McpCustomTool | undefined
+  for (const listConfig of Object.values(config.lists)) {
+    customTool = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
+    if (customTool) break
+  }
+  customTool ??= getPluginMcpTools(config).find((t) => t.name === toolName)
 
-    if (customTool) {
-      const context = await getContext({ userId: session.userId })
-
-      try {
-        const result = await customTool.handler({
-          input: args,
-          context,
-        })
-
-        return createSuccessResponse(result, id)
-      } catch (error) {
-        return createErrorResponse(
-          'Custom tool execution failed: ' +
-            (error instanceof Error ? error.message : 'Unknown error'),
-          id,
-        )
-      }
-    }
+  if (!customTool) {
+    return createErrorResponse(`Unknown tool: ${toolName}`, id)
   }
 
-  return createErrorResponse(`Unknown tool: ${toolName}`, id)
+  // Validate input when the tool declares a Zod schema
+  let input = args
+  if (isZodSchema(customTool.inputSchema)) {
+    const parsed = customTool.inputSchema.safeParse(args)
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: id ?? null,
+          error: {
+            code: -32602,
+            message: `Invalid params: ${parsed.error.message}`,
+          },
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
+    input = parsed.data
+  }
+
+  const context = await getContext(toContextSession(session))
+
+  try {
+    const result = await customTool.handler({
+      input,
+      context,
+    })
+
+    return createSuccessResponse(result, id)
+  } catch (error) {
+    return createErrorResponse(
+      'Custom tool execution failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+      id,
+    )
+  }
 }
 
 /**

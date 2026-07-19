@@ -34,10 +34,11 @@ pnpm generate
 This generates:
 
 - `prisma/schema.prisma` - Prisma schema
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
-- `.opensaas/mcp/tools.json` - MCP tool reference (metadata only)
-- `.opensaas/mcp/README.md` - Usage instructions
+
+(MCP tools are not generated to disk — they are derived from the config at request time by `createMcpHandlers`.)
 
 ### 4. Push Schema to Database
 
@@ -167,7 +168,9 @@ Post: list({
 - **list_user_query** - Query users
 - **list_user_create** - Create a new user
 - **list_user_update** - Update user information
-- (delete disabled for safety)
+- **list_user_delete** - Delete a user (enabled by this example's `defaultTools`)
+
+The auth-injected lists (Session, Account, Verification) also get CRUD tools; all of them are governed by the access control rules in `opensaas.config.ts`. Disable tools per list with `mcp: { enabled: false }` or `mcp: { tools: { delete: false } }`.
 
 ## Claude Desktop Integration
 
@@ -269,8 +272,8 @@ curl -X POST http://localhost:3000/api/mcp \
          │ Access Token
          ↓
 ┌─────────────────┐
-│   MCP Server    │ ← Generated Tools
-│ (.opensaas/mcp) │
+│   MCP Handler   │ ← Tools derived from
+│ (stack-core/mcp)│   config at runtime
 └────────┬────────┘
          │ context.db
          ↓
@@ -304,16 +307,13 @@ examples/mcp-demo/
 │           └── route.ts         # Resource metadata
 └── .opensaas/                   # Generated
     ├── types.ts
-    ├── context.ts
-    └── mcp/
-        ├── tools.json           # Tool reference (metadata)
-        └── README.md            # Usage instructions
+    └── context.ts
 ```
 
 ## Next Steps
 
-1. **Add Authentication UI** - Create sign-in/sign-up pages
-2. **Customize Access Control** - Add more granular rules
+1. **Customize Access Control** - Add more granular rules (a sign-in page ships at `app/sign-in/`)
+2. **Seed a Test User** - Run `npx tsx create-user.ts`
 3. **Add More Custom Tools** - Extend MCP capabilities
 4. **Deploy** - Deploy to production with proper OAuth setup
 

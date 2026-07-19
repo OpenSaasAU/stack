@@ -16,15 +16,18 @@ Entry point exposing `opensaas` CLI command
 
 - `generate.ts` - One-time generation
 - `dev.ts` - Watch mode with automatic regeneration
-- `init.ts` - Project scaffolding (future)
+- `init.ts` - Project scaffolding (delegates to `create-opensaas-app`)
+- `mcp.ts` - MCP server management (`mcp install`/`uninstall`/`start`)
+- `migrate.ts` - Migration from Prisma/KeystoneJS/Next.js projects
 
 ### Generators (`src/generator/`)
 
 - `prisma.ts` - Generates `prisma/schema.prisma` from config
+- `prisma-config.ts` - Generates `prisma.config.ts` (Prisma CLI configuration)
 - `types.ts` - Generates `.opensaas/types.ts` TypeScript types
 - `context.ts` - Generates `.opensaas/context.ts` context factory
-- `mcp.ts` - Generates MCP tools metadata
-- `type-patcher.ts` - Patches Prisma types for relationships
+- `lists.ts` - Generates the `.opensaas/lists` type namespace
+- Supporting modules: `extension.ts`, `node-build.ts`, `output-paths.ts`, `plugin-types.ts`, `prisma-extensions.ts`
 
 ## Architecture
 
@@ -41,9 +44,11 @@ const config = jiti('./opensaas.config.ts').default
 
 1. Load config from `opensaas.config.ts`
 2. Generate Prisma schema → `prisma/schema.prisma`
-3. Generate TypeScript types → `.opensaas/types.ts`
-4. Generate context factory → `.opensaas/context.ts`
-5. Generate MCP tools (if enabled) → `.opensaas/mcp-tools.json`
+3. Generate Prisma CLI config → `prisma.config.ts`
+4. Generate TypeScript types → `.opensaas/types.ts`
+5. Generate context factory → `.opensaas/context.ts`
+
+(No MCP files are generated — MCP tools are derived at request time by `@opensaas/stack-core/mcp`.)
 
 ### Watch Mode
 
@@ -181,8 +186,8 @@ export function getContext(session?: any) {
 
 ### With MCP (Model Context Protocol)
 
-- Generates MCP tools metadata when MCP enabled in config
-- MCP functionality is now in `@opensaas/stack-core/mcp` (runtime) and `@opensaas/stack-auth/mcp` (adapter)
+- Ships the dev-assistant MCP server (`src/mcp/`) exposed via `opensaas mcp start` — feature wizards, docs search, migration tools
+- Runtime MCP for applications lives in `@opensaas/stack-core/mcp` (handlers) and `@opensaas/stack-auth/mcp` (Better-auth adapter); the generator emits no MCP files
 
 ### With Prisma
 
@@ -347,20 +352,13 @@ opensaas migrate --with-ai
 
 Includes basic mode steps plus:
 
-4. **Setup Claude Code integration**:
+4. **Setup Claude Code integration** (`setupClaudeCode` in `migrate.ts`):
    - Create `.claude/` directory
-   - Generate `settings.json` with MCP server config
-   - Generate `README.md` with project summary
-   - Generate `.claude/agents/migration-assistant.md` agent
-   - Generate slash commands:
-     - `/analyze-schema` - Detailed schema analysis
-     - `/generate-config` - Generate config file
-     - `/validate-migration` - Validate configuration
+   - Write `.claude/opensaas-project.json` (project metadata: projectTypes, provider, models, hasAuth)
+   - Write `.claude/settings.json` registering `opensaas-stack-marketplace` (`extraKnownMarketplaces`) and enabling `opensaas-migration@opensaas-stack-marketplace` (`enabledPlugins`)
+   - Write `.claude/README.md` with a project summary
 
-5. **Template system**:
-   - All generated files use template placeholders
-   - `{{PROJECT_TYPES}}`, `{{PROVIDER}}`, `{{MODEL_COUNT}}`, etc.
-   - Templates populated from `ProjectAnalysis` data
+The migration agent, slash commands (`/analyze-schema`, `/generate-config`, `/validate-migration`), and skills are NOT generated — they ship statically in `claude-plugins/opensaas-migration/` and arrive via the enabled plugin. The MCP server comes from the plugin's `plugin.json` `mcpServers` entry.
 
 ### Migration Types
 
@@ -531,21 +529,23 @@ interface MigrationOutput {
 
 ### MCP Integration
 
-**New MCP Tools:**
+**Registered MCP Tools:**
 
-Registered in `src/mcp/server/stack-mcp-server.ts`:
+Declared in the `TOOLS` array and dispatched in `src/mcp/server/index.ts` (implementations live in `stack-mcp-server.ts`):
 
-1. **opensaas_introspect_prisma** - Analyze Prisma schema
-2. **opensaas_introspect_keystone** - Analyze Keystone config
-3. **opensaas_introspect_nextjs** - Analyze Next.js project
-4. **opensaas_start_migration** - Begin wizard
-5. **opensaas_answer_migration** - Answer wizard question
-6. **opensaas_get_migration_status** - Check wizard progress
-7. **opensaas_search_migration_docs** - Search migration docs
-8. **opensaas_get_migration_example** - Get code examples
-9. **opensaas_list_field_types** - List available field types
-10. **opensaas_validate_migration** - Validate config
-11. **opensaas_generate_config_file** - Write config to disk
+1. **opensaas_implement_feature** - Start a feature wizard (authentication, blog, comments, file-upload, semantic-search, custom)
+2. **opensaas_answer_feature** - Answer a feature wizard question
+3. **opensaas_answer_followup** - Answer a wizard follow-up question
+4. **opensaas_feature_docs** - Search hosted documentation
+5. **opensaas_list_features** - List available features
+6. **opensaas_suggest_features** - Suggest complementary features
+7. **opensaas_validate_feature** - Feature validation checklist
+8. **opensaas_start_migration** - Begin migration wizard
+9. **opensaas_answer_migration** - Answer migration wizard question
+10. **opensaas_introspect_prisma** - Analyze Prisma schema
+11. **opensaas_introspect_keystone** - Analyze Keystone config
+12. **opensaas_search_migration_docs** - Search migration docs (local CLAUDE.md + hosted)
+13. **opensaas_get_example** - Get example code for common patterns
 
 **MCP Response Format:**
 
@@ -562,21 +562,9 @@ All tools return standardized format:
 }
 ```
 
-### Claude Code Templates
+### Claude Code Plugin Integration
 
-**Generated Agent:** `.claude/agents/migration-assistant.md`
-
-**Purpose:** Contextual agent that knows project details
-
-**Template Variables:**
-
-- `{{PROJECT_TYPES}}` - Detected types (e.g., "prisma, nextjs")
-- `{{PROVIDER}}` - Database provider (e.g., "postgresql")
-- `{{MODEL_COUNT}}` - Number of models
-- `{{MODEL_DETAILS}}` - Formatted model list
-- `{{PROJECT_TYPE}}` - Primary type (e.g., "Prisma")
-- `{{PROJECT_TYPE_LOWER}}` - Lowercase type (e.g., "prisma")
-- `{{HAS_AUTH}}` - Whether auth detected
+The migration agent (`migration-assistant`), slash commands (`/analyze-schema`, `/generate-config`, `/validate-migration`), and skills ship statically in `claude-plugins/opensaas-migration/` — `migrate --with-ai` enables that plugin rather than generating files. The agent reads `.claude/opensaas-project.json` (written by `migrate --with-ai`) for project context.
 
 **Agent Behavior:**
 
@@ -586,45 +574,6 @@ All tools return standardized format:
 4. Show progress throughout
 5. Generate and explain config
 6. Provide validation and next steps
-
-**Generated Slash Commands:**
-
-`.claude/commands/analyze-schema.md`:
-
-```markdown
-Analyze the current project schema and provide a detailed breakdown.
-
-## Instructions
-
-1. Use `opensaas_introspect_prisma` or `opensaas_introspect_keystone`
-2. Present results in clear format
-3. Highlight models, relations, potential access patterns
-```
-
-`.claude/commands/generate-config.md`:
-
-```markdown
-Generate the opensaas.config.ts file for this project.
-
-## Instructions
-
-1. Start migration wizard if not started
-2. Guide through questions
-3. Display generated config and dependencies
-```
-
-`.claude/commands/validate-migration.md`:
-
-```markdown
-Validate the generated opensaas.config.ts file.
-
-## Instructions
-
-1. Check file exists
-2. Verify syntax and imports
-3. Try running `opensaas generate`
-4. Report errors and suggest fixes
-```
 
 ### Common Patterns
 
@@ -674,21 +623,6 @@ async function analyzePrismaSchema(cwd: string) {
   const provider = providerMatch?.[1] || 'unknown'
 
   return { models, provider }
-}
-```
-
-**Template Rendering:**
-
-```typescript
-function generateTemplateContent(template: string, data: ProjectAnalysis): string {
-  return template
-    .replace(/\{\{PROJECT_TYPES\}\}/g, data.projectTypes.join(', '))
-    .replace(/\{\{PROVIDER\}\}/g, data.provider || 'sqlite')
-    .replace(/\{\{MODEL_COUNT\}\}/g, String(data.models?.length || 0))
-    .replace(
-      /\{\{MODEL_LIST\}\}/g,
-      data.models?.map((m) => `- ${m.name} (${m.fieldCount} fields)`).join('\n'),
-    )
 }
 ```
 

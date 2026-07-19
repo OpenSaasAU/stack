@@ -267,7 +267,7 @@ const count = await context.db.post.count({
 
 ### Related data
 
-Keystone returns nested GraphQL results in a single query. OpenSaaS Stack uses separate `context.db` calls per list:
+Keystone returns nested GraphQL results in a single query. OpenSaaS Stack does the same in one call with a fragment (`defineFragment` + the `query` param) — see the `migrate-context-calls` skill for the full pattern:
 
 ```typescript
 // Keystone — nested in one query
@@ -282,11 +282,21 @@ const { post } = await context.graphql.run({
   variables: { id: postId },
 })
 
-// OpenSaaS Stack — separate calls
-const post = await context.db.post.findUnique({ where: { id: postId } })
-const author = post?.authorId
-  ? await context.db.user.findUnique({ where: { id: post.authorId } })
-  : null
+// OpenSaaS Stack — one call with a fragment
+import type { User, Post, Tag } from '@/.opensaas/prisma-client/client'
+import { defineFragment } from '@opensaas/stack-core'
+
+const postFragment = defineFragment<Post>()({
+  id: true,
+  title: true,
+  author: defineFragment<User>()({ id: true, name: true, email: true } as const),
+  tags: defineFragment<Tag>()({ id: true, name: true } as const),
+} as const)
+
+const post = await context.db.post.findUnique({
+  where: { id: postId },
+  query: postFragment,
+})
 ```
 
 ### Bypassing access control (sudo)

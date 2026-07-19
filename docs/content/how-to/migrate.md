@@ -54,8 +54,9 @@ This command will:
    └─ Session (5 fields)
 ✔ Claude Code ready
    ├─ Created .claude directory
-   ├─ Generated migration assistant
-   └─ Registered MCP server
+   ├─ Added opensaas-stack-marketplace
+   ├─ Enabled opensaas-migration plugin (with MCP server)
+   └─ Wrote .claude/settings.json and .claude/opensaas-project.json
 
 ✅ Analysis complete!
 
@@ -65,7 +66,7 @@ This command will:
    2. Ask: "Help me migrate to Stack"
    3. Follow the interactive wizard
 
-📚 Documentation: https://stack.opensaas.au/guides/migration
+📚 Documentation: https://stack.opensaas.au/docs/how-to/migrate-from-keystone
 ```
 
 ### Using Claude Code
@@ -196,7 +197,11 @@ export default config({
       },
       access: {
         operation: {
-          query: ({ session, item }) => item?.published || session?.userId === item?.authorId,
+          // Filter-based: anonymous users see published posts, authors see their own
+          query: ({ session }) =>
+            session
+              ? { OR: [{ published: { equals: true } }, { authorId: { equals: session.userId } }] }
+              : { published: { equals: true } },
           create: ({ session }) => !!session,
           update: ({ session, item }) => session?.userId === item?.authorId,
           delete: ({ session, item }) => session?.userId === item?.authorId,
@@ -358,7 +363,8 @@ Options:
   ```typescript
   access: {
     operation: {
-      query: ({ session, item }) => session?.userId === item?.userId,
+      // Filter-based: users only ever see their own records
+      query: ({ session }) => (session ? { userId: { equals: session.userId } } : false),
       create: ({ session }) => !!session,
       update: ({ session, item }) => session?.userId === item?.userId,
       delete: ({ session, item }) => session?.userId === item?.userId,
@@ -431,24 +437,16 @@ The migration system provides these MCP tools to Claude:
 
 - **`opensaas_introspect_prisma`** - Detailed Prisma schema analysis
 - **`opensaas_introspect_keystone`** - KeystoneJS config analysis
-- **`opensaas_introspect_nextjs`** - Next.js project structure
 
 #### Migration Wizard
 
 - **`opensaas_start_migration`** - Begin interactive migration
 - **`opensaas_answer_migration`** - Answer wizard questions
-- **`opensaas_get_migration_status`** - Check wizard progress
 
 #### Documentation
 
 - **`opensaas_search_migration_docs`** - Search migration docs
-- **`opensaas_get_migration_example`** - Get code examples
-- **`opensaas_list_field_types`** - Available field types
-
-#### Validation
-
-- **`opensaas_validate_migration`** - Validate generated config
-- **`opensaas_generate_config_file`** - Write config to disk
+- **`opensaas_get_example`** - Get code examples for common patterns
 
 ### Available Slash Commands
 
@@ -460,7 +458,7 @@ After running `migrate --with-ai`, you get these commands:
 
 ### Migration Assistant Agent
 
-The migration creates a specialized agent (`.claude/agents/migration-assistant.md`) that:
+The opensaas-migration plugin ships a specialized agent (`migration-assistant`) that:
 
 - Understands your project context
 - Guides you through the wizard
@@ -500,6 +498,7 @@ model Post {
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   plugins: [
@@ -508,7 +507,14 @@ export default config({
       sessionFields: ['userId', 'email', 'name'],
     }),
   ],
-  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  db: {
+    provider: 'sqlite',
+    url: 'file:./dev.db',
+    prismaClientConstructor: (PrismaClient) => {
+      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
+      return new PrismaClient({ adapter })
+    },
+  },
   lists: {
     Post: list({
       fields: {
@@ -519,7 +525,8 @@ export default config({
       },
       access: {
         operation: {
-          query: ({ item }) => item?.published || !!session,
+          // Anonymous visitors only see published posts (filter-based access)
+          query: ({ session }) => (session ? true : { published: { equals: true } }),
           create: ({ session }) => !!session,
           update: ({ session, item }) => session?.userId === item?.authorId,
           delete: ({ session, item }) => session?.userId === item?.authorId,
@@ -564,9 +571,13 @@ Product: list({
 Order: list({
   access: {
     operation: {
-      query: ({ session, item }) =>
-        session?.userId === item?.userId ||
-        session?.role === 'admin',
+      // Filter-based: admins see everything, users see their own orders
+      query: ({ session }) =>
+        session?.role === 'admin'
+          ? true
+          : session
+            ? { userId: { equals: session.userId } }
+            : false,
       create: ({ session }) => !!session,
       update: ({ session }) => session?.role === 'admin',
       delete: ({ session }) => session?.role === 'admin',
@@ -716,19 +727,21 @@ MCP server not responding
 
 **Solutions:**
 
-1. Check `.claude/settings.json` was created
-2. Restart Claude Code
-3. Verify MCP server registration:
+1. Check `.claude/settings.json` was created and enables the plugin:
    ```json
    {
-     "mcpServers": {
-       "opensaas-migration": {
-         "command": "npx",
-         "args": ["@opensaas/stack-cli", "mcp", "start"]
+     "extraKnownMarketplaces": {
+       "opensaas-stack-marketplace": {
+         "source": { "source": "github", "repo": "OpenSaasAU/stack" }
        }
+     },
+     "enabledPlugins": {
+       "opensaas-migration@opensaas-stack-marketplace": true
      }
    }
    ```
+2. Restart Claude Code
+3. The MCP server (named `opensaas-stack`) is declared by the plugin's own manifest — no `mcpServers` entry is written to settings.json
 4. Check for errors in Claude Code console
 
 ### Generated Config Errors
@@ -1044,11 +1057,13 @@ Add comments to your config:
 ```typescript
 lists: {
   Post: list({
-    // Public read for published posts, author-only for drafts
+    // Public read for published posts, author-only for drafts (filter-based)
     access: {
       operation: {
-        query: ({ session, item }) =>
-          item?.published || session?.userId === item?.authorId,
+        query: ({ session }) =>
+          session
+            ? { OR: [{ published: { equals: true } }, { authorId: { equals: session.userId } }] }
+            : { published: { equals: true } },
       },
     },
   }),

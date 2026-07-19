@@ -1,124 +1,38 @@
-# OpenSaaS Migration Assistant Plugin
+# OpenSaaS Stack Claude Code Plugins
 
-A Claude Code plugin that provides AI-guided migration assistance for converting existing Prisma, KeystoneJS, or Next.js projects to OpenSaaS Stack.
+This directory contains the Claude Code plugins distributed through the OpenSaaS Stack marketplace (defined in `../.claude-plugin/marketplace.json`).
 
-## Features
+## Plugins
 
-- **Migration Assistant Agent**: Contextual agent that guides you through the migration process
-- **Interactive Commands**: Slash commands for schema analysis, config generation, and validation
-- **Migration Skill**: Expert knowledge about migration patterns and best practices
-- **MCP Integration**: Works with the OpenSaaS MCP server for advanced tooling
+### [opensaas-stack](./opensaas-stack/)
+
+Feature-driven development assistant for building OpenSaaS Stack applications. Describe what you want to build and the plugin's agent, skill, and MCP feature wizards implement it — authentication, blog, comments, file uploads, semantic search, or fully custom features.
+
+### [opensaas-migration](./opensaas-migration/)
+
+Migration assistant for converting existing Prisma, KeystoneJS, or Next.js projects to OpenSaaS Stack. Includes a migration agent, slash commands for schema analysis and config generation, and eight skills covering context calls, imports, document/image/virtual fields, and admin UI setup.
 
 ## Installation
-
-This plugin is automatically set up when you run:
-
-```bash
-npx @opensaas/stack-cli migrate --with-ai
-```
-
-The CLI will:
-
-1. Add the OpenSaaS Stack marketplace to your project
-2. Install this plugin from the marketplace
-3. Create `.claude/opensaas-project.json` with your project metadata
-4. Configure `.claude/settings.json` with marketplace and plugin settings
-
-The plugin automatically sets up MCP server integration for migration tools.
-
-### Manual Installation
-
-You can also install this plugin manually by adding the marketplace:
 
 ```bash
 # In Claude Code
 /plugin marketplace add OpenSaasAU/stack
+/plugin install opensaas-stack@opensaas-stack-marketplace
 /plugin install opensaas-migration@opensaas-stack-marketplace
 ```
 
-## What's Included
+Or let the tooling set things up for you:
 
-### Migration Assistant Agent
+```bash
+# New projects — prompts "Enable AI development tools?"
+npm create opensaas-app@latest my-app
 
-A specialized agent that:
-
-- Reads your project metadata from `.claude/opensaas-project.json`
-- Guides you through the migration wizard
-- Explains access control patterns
-- Generates `opensaas.config.ts`
-
-### Slash Commands
-
-- `/analyze-schema` - Detailed schema analysis with recommendations
-- `/generate-config` - Generate opensaas.config.ts
-- `/validate-migration` - Validate generated configuration
-
-### Migration Skill
-
-Expert knowledge including:
-
-- Access control patterns
-- Field type mappings
-- Database configuration examples
-- Common challenges and solutions
-
-## Usage
-
-Once installed, simply ask Claude:
-
-```
-Help me migrate to OpenSaaS Stack
+# Existing projects — sets up the migration plugin
+npx @opensaas/stack-cli migrate --with-ai
 ```
 
-The migration assistant will:
+Both plugins bundle the OpenSaaS Stack MCP server from `@opensaas/stack-cli` (feature wizards, documentation search, schema introspection, and migration tooling).
 
-1. Read your project details
-2. Start the interactive wizard
-3. Guide you through configuration
-4. Generate your opensaas.config.ts
+## Versioning
 
-## Project Metadata
-
-The CLI creates `.claude/opensaas-project.json` with information about your project:
-
-```json
-{
-  "projectTypes": ["prisma"],
-  "provider": "sqlite",
-  "models": [
-    { "name": "User", "fieldCount": 5 },
-    { "name": "Post", "fieldCount": 7 }
-  ],
-  "hasAuth": true
-}
-```
-
-The plugin reads this file to provide contextual assistance.
-
-## Development
-
-This plugin is part of the `@opensaas/stack-cli` package and is distributed with it.
-
-**Directory structure:**
-
-```
-plugin/
-├── .claude-plugin/
-│   └── plugin.json          # Plugin manifest
-├── agents/
-│   └── migration-assistant.md   # Migration agent
-├── commands/
-│   ├── analyze-schema.md
-│   ├── generate-config.md
-│   └── validate-migration.md
-├── skills/
-│   └── opensaas-migration/
-│       └── SKILL.md
-└── README.md
-```
-
-## Links
-
-- [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
-- [Migration Guide](https://stack.opensaas.au/docs/how-to/migrate-from-keystone)
-- [GitHub Repository](https://github.com/OpenSaasAU/stack)
+Plugin versions are managed directly in each plugin's `.claude-plugin/plugin.json` and the marketplace entry in `../.claude-plugin/marketplace.json` — see the `plugin-version` skill in the monorepo.

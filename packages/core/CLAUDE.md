@@ -273,10 +273,10 @@ const context = createContext<typeof prisma>(config, prisma, session)
 ### With MCP (Model Context Protocol)
 
 - Core provides auth-agnostic MCP runtime via `@opensaas/stack-core/mcp`
-- MCP handler reads config to generate tools
-- Uses context for all operations (access control enforced)
-- Zod schemas from fields validate tool inputs
-- Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration
+- MCP handler reads config to derive tools at request time (CRUD per list, list `mcp.customTools`, plugin-registered tools)
+- Uses context for all operations (access control enforced); writes are validated by the normal `context.db` pipeline (field Zod schemas, hooks, access control)
+- Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
+- Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control
 
 ### With Third-Party Field Packages
 
