@@ -1,5 +1,24 @@
 # @opensaas/stack-cli
 
+## 0.30.0
+
+### Minor Changes
+
+- [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - MCP feature wizards now generate current-API code for all five features
+
+  - `comments`, `file-upload`, and `semantic-search` wizards previously returned "coming soon" stubs — they now generate real config (Comment list with moderation/threading, storage config with local/S3/R2/Vercel Blob providers, ragPlugin with OpenAI or Ollama embeddings and `searchable()` fields).
+  - The `authentication` wizard output was rewritten to the current API: `authPlugin` with `socialProviders`/`extendUserList`/`access` (ADR-0013), the required `prismaClientConstructor`, `SignInForm`/`SignUpForm` with the `authClient` prop, and `lib/auth.ts` wiring via `createAuth(config, rawOpensaasContext)`.
+  - The `blog` wizard now emits valid `select()` options, wires Category/Tag relationships on both sides, and uses filter-based query access.
+  - `opensaas mcp start` no longer prints its startup banner to stdout, which corrupted the MCP stdio JSON-RPC stream.
+  - Removed unsupported options from wizard catalogs (Cohere/Anthropic embeddings, magic links) and fixed the docs provider's field-type guidance (`json()` mapping, `getPrismaType` modifiers).
+
+### Patch Changes
+
+- [#741](https://github.com/OpenSaasAU/stack/pull/741) [`afa865f`](https://github.com/OpenSaasAU/stack/commit/afa865f62ed7968b494a87e0621cf71bacd36f39) Thanks [@borisno2](https://github.com/borisno2)! - Update documentation links to the restructured docs site URLs (Diátaxis layout)
+
+- Updated dependencies [[`afa865f`](https://github.com/OpenSaasAU/stack/commit/afa865f62ed7968b494a87e0621cf71bacd36f39), [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e)]:
+  - @opensaas/stack-core@0.30.0
+
 ## 0.29.0
 
 ### Patch Changes
