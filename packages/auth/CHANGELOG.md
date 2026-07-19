@@ -1,5 +1,13 @@
 # @opensaas/stack-auth
 
+## 0.30.0
+
+### Patch Changes
+
+- [#741](https://github.com/OpenSaasAU/stack/pull/741) [`afa865f`](https://github.com/OpenSaasAU/stack/commit/afa865f62ed7968b494a87e0621cf71bacd36f39) Thanks [@borisno2](https://github.com/borisno2)! - Update documentation links to the restructured docs site URLs (Diátaxis layout)
+
+- [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - Fix stale `withMcpAuth` JSDoc example that imported a nonexistent generated module
+
 ## 0.29.0
 
 ## 0.28.0

@@ -1,5 +1,11 @@
 # create-opensaas-app
 
+## 0.3.3
+
+### Patch Changes
+
+- [#741](https://github.com/OpenSaasAU/stack/pull/741) [`afa865f`](https://github.com/OpenSaasAU/stack/commit/afa865f62ed7968b494a87e0621cf71bacd36f39) Thanks [@borisno2](https://github.com/borisno2)! - Update documentation links to the restructured docs site URLs (Diátaxis layout)
+
 ## 0.3.2
 
 ### Patch Changes
