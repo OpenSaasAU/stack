@@ -24,8 +24,12 @@ function isWhitespace(ch: string): boolean {
  * - `field:>value`, `field:>=value`, `field:<value`, `field:<=value` →
  *   comparison operators.
  * - `field:"multi word"` / bare `"multi word"` → quoted values keep spaces.
- * - anything else (`beta`, `>5`, `http://x`) → a bare free-text token
- *   (`field: null`).
+ * - anything else (`beta`, `>5`) → a bare free-text token (`field: null`).
+ *
+ * A `word:` is *not* treated as a field prefix when the colon is immediately
+ * followed by `//` (a URL scheme like `http://x` or `https://…`); the whole
+ * token stays free text so a pasted URL is searched verbatim rather than
+ * mangled into `{ field: 'http', value: '//x' }`.
  *
  * @example
  * parseFilterQuery('role:Editor orders:>5 name:"Ada Lovelace" beta')
@@ -50,10 +54,12 @@ export function parseFilterQuery(query: string): FilterToken[] {
 
     const start = i
 
-    // Optional `field:` prefix.
+    // Optional `field:` prefix. A URL scheme (`http://…`) is not a field
+    // prefix: when the colon is immediately followed by `//`, keep the whole
+    // token as free text so pasted URLs are searched verbatim.
     let field: string | null = null
     const prefixMatch = FIELD_PREFIX_RE.exec(query.slice(i))
-    if (prefixMatch) {
+    if (prefixMatch && !query.startsWith('//', i + prefixMatch[0].length)) {
       field = prefixMatch[1]
       i += prefixMatch[0].length
     }

@@ -70,6 +70,23 @@ describe('parseFilterQuery', () => {
       { field: null, operator: 'eq', value: '>5', raw: '>5' },
     ])
   })
+
+  it('treats a URL scheme (`http://…`) as whole free text, not a field prefix', () => {
+    // `http:` must NOT be parsed as a `field:` prefix — the `//` after the
+    // colon marks a URL scheme, so the entire URL stays a free-text token.
+    expect(() => parseFilterQuery('http://x')).not.toThrow()
+    expect(parseFilterQuery('http://x')).toEqual([
+      { field: null, operator: 'eq', value: 'http://x', raw: 'http://x' },
+    ])
+    expect(parseFilterQuery('https://example.com/path?q=1')).toEqual([
+      {
+        field: null,
+        operator: 'eq',
+        value: 'https://example.com/path?q=1',
+        raw: 'https://example.com/path?q=1',
+      },
+    ])
+  })
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -187,6 +204,17 @@ describe('buildFilterWhere', () => {
   it('drops a degraded token entirely when there are no free-text fields', () => {
     const noFreeText = { orders: ordersSpec }
     expect(buildFilterWhere(parseFilterQuery('role:Editor'), noFreeText)).toBeUndefined()
+  })
+
+  it('searches a pasted URL as whole free text (scheme not dropped)', () => {
+    // `http://x` must be searched in full, not mangled to `//x` by a spurious
+    // `http:` field prefix.
+    expect(buildFilterWhere(parseFilterQuery('http://x'), specs)).toEqual({
+      name: { contains: 'http://x' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('https://example.com'), specs)).toEqual({
+      name: { contains: 'https://example.com' },
+    })
   })
 })
 
