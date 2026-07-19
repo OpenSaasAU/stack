@@ -127,9 +127,10 @@ describe('ListViewClient row selection', () => {
 describe('ListViewClient bulk delete', () => {
   it('reports "N of M deleted" and refreshes, absorbing per-row Silent failures', async () => {
     const user = userEvent.setup()
-    // Row 1 deletes; row 2 is denied (Silent failure → { success: false }).
-    const serverAction = vi.fn(async (input: { action: string; id?: string }) => {
-      if (input.action === 'delete' && input.id === '1') return { success: true, data: {} }
+    // One bulkDelete round-trip: the server deleted 1 of the 2 attempted (the
+    // other denied via Silent failure server-side) and reports the count.
+    const serverAction = vi.fn(async (input: { action: string; ids?: string[] }) => {
+      if (input.action === 'bulkDelete') return { deleted: 1, total: input.ids?.length ?? 0 }
       return { success: false, error: 'Access denied or operation failed' }
     })
 
@@ -143,12 +144,18 @@ describe('ListViewClient bulk delete', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
 
-    // Both rows attempted, only the allowed one counted; report never says which.
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('1 of 2 deleted')
-    expect(serverAction).toHaveBeenCalledTimes(2)
-    expect(serverAction).toHaveBeenCalledWith({ listKey: 'Post', action: 'delete', id: '1' })
-    expect(serverAction).toHaveBeenCalledWith({ listKey: 'Post', action: 'delete', id: '2' })
+    // Only the allowed row counted; report never says which. Target the report by
+    // its Slot (the Delete button's spinner also uses role="status").
+    const status = await screen.findByText('1 of 2 deleted')
+    expect(status).toHaveAttribute('data-slot', 'selection-status')
+    // One secured server round-trip with both selected ids; denials are absorbed
+    // server-side into the count.
+    expect(serverAction).toHaveBeenCalledTimes(1)
+    expect(serverAction).toHaveBeenCalledWith({
+      listKey: 'Post',
+      action: 'bulkDelete',
+      ids: ['1', '2'],
+    })
     expect(mockRefresh).toHaveBeenCalled()
 
     // Selection is cleared after the delete.

@@ -21,21 +21,25 @@ import { EmptyState } from './EmptyState.js'
 import { CellRenderer } from './cells/CellRenderer.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
+import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
 
 /**
- * Narrow a `serverAction` result to a success without leaking a shape onto the
- * external API. A denied delete comes back `{ success: false }` (Silent
- * failure) and is simply not counted.
+ * Read the `{ deleted, total }` count a bulk-delete server action returns. The
+ * deletion runs row-by-row through the secured context server-side, so denied
+ * rows (Silent failure) are already absent from `deleted`; `total` falls back to
+ * the number attempted if the result shape is unexpected.
  */
-function isServerActionSuccess(result: unknown): boolean {
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    'success' in result &&
-    (result as { success: unknown }).success === true
-  )
+function parseBulkDeleteResult(
+  result: unknown,
+  attempted: number,
+): { deleted: number; total: number } {
+  if (typeof result === 'object' && result !== null && 'deleted' in result && 'total' in result) {
+    const { deleted, total } = result as { deleted: unknown; total: unknown }
+    if (typeof deleted === 'number' && typeof total === 'number') return { deleted, total }
+  }
+  return { deleted: 0, total: attempted }
 }
 
 export interface ListViewClientProps {
@@ -105,10 +109,12 @@ export function ListViewClient({
   const sortOrder = initialSort?.direction ?? 'asc'
   const [searchInput, setSearchInput] = React.useState(initialSearch || '')
 
-  // Row selection (issue #733). The filter identity is the active search — page
-  // and sort changes keep it stable (selection persists while paging) while a
-  // filter change resets it. When the Filter builder lands this becomes the full
-  // filter query string.
+  // Row selection (issue #733). The selection is keyed on the ACTIVE FILTER
+  // STATE: the `search` param is the filter engine's URL filter query (#730 —
+  // field-scoped tokens, comparisons, quoted values, bare-word free text), so
+  // changing ANY filter token changes `filterKey` and clears the accumulated id
+  // set, while page and sort changes keep it stable (selection persists while
+  // paging). Reads back empty under a different filter.
   const filterKey = initialSearch ?? ''
   const selection = useRowSelection(listKey, filterKey)
 
@@ -118,30 +124,22 @@ export function ListViewClient({
   const selectionEnabled = canDelete
   const canBulkDelete = canDelete && !!serverAction
 
-  // The "N of M deleted" report persists after the selection clears, so it lives
-  // here (always mounted) rather than in the selection bar (which unmounts once
-  // the selection empties).
-  const [bulkStatus, setBulkStatus] = React.useState<string | null>(null)
+  // The "N of M deleted" report must outlive the table refresh: `router.refresh()`
+  // remounts this client component (the async ListView re-suspends), so the
+  // report is persisted (sessionStorage) rather than held in React state that
+  // the remount would discard.
+  const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
 
   const pageIds = items.map((item) => String(item.id))
 
-  const handleBulkDelete = async () => {
-    if (!serverAction) return
-    const ids = [...selection.selectedIds]
-    setBulkStatus(null)
-
-    // Row-by-row through the secured context. A denied row returns a Silent
-    // failure (`{ success: false }`) and is simply not counted — the report
-    // never reveals which rows were denied or why.
-    let deleted = 0
-    for (const id of ids) {
-      const result = await serverAction({ listKey, action: 'delete', id })
-      if (isServerActionSuccess(result)) deleted++
-    }
-
-    selection.clear()
-    setBulkStatus(`${deleted} of ${ids.length} deleted`)
-    router.refresh()
+  // Starting a fresh selection dismisses any prior report.
+  const handleToggle = (id: string) => {
+    clearStatus()
+    selection.toggle(id)
+  }
+  const handleTogglePage = () => {
+    clearStatus()
+    selection.togglePage(pageIds)
   }
 
   // Determine which columns to show
@@ -207,6 +205,32 @@ export function ListViewClient({
     }
     params.set('page', newPage.toString())
     return `${basePath}/${urlKey}?${withPageSize(params).toString()}`
+  }
+
+  const handleBulkDelete = async () => {
+    if (!serverAction) return
+    const ids = [...selection.selectedIds]
+
+    // One server round-trip: the deletion runs row-by-row through the secured
+    // context server-side, honouring Silent failure (a denied row is not
+    // counted). A single call avoids a client loop of Server Actions — each of
+    // which would trigger its own route refresh/redirect — and yields the
+    // "N of M" count directly without revealing which rows were denied or why.
+    const result = await serverAction({ listKey, action: 'bulkDelete', ids })
+    const { deleted, total } = parseBulkDeleteResult(result, ids.length)
+
+    // Persist the report before mutating the view, so it survives the remount the
+    // navigation below triggers and renders against the fresh list.
+    setBulkStatus(`${deleted} of ${total} deleted`)
+    selection.clear()
+
+    // Reset to page 1 of the current filter: a bulk delete can remove the rows
+    // that made the current page exist (deleting across pages leaves the current
+    // page out of range). `router.refresh()` first invalidates the client Router
+    // Cache (so a previously-visited page 1 is not served stale), then the push
+    // lands on page 1 and fetches the now-shorter list fresh.
+    router.refresh()
+    router.push(buildPaginationUrl(1))
   }
 
   /**
@@ -282,7 +306,7 @@ export function ListViewClient({
                   <Checkbox
                     aria-label="Select all rows on this page"
                     checked={getPageCheckboxState(selection.selectedIds, pageIds)}
-                    onCheckedChange={() => selection.togglePage(pageIds)}
+                    onCheckedChange={handleTogglePage}
                     disabled={pageIds.length === 0}
                   />
                 </TableHead>
@@ -363,7 +387,7 @@ export function ListViewClient({
                         <Checkbox
                           aria-label={`Select row ${rowId}`}
                           checked={selection.isSelected(rowId)}
-                          onCheckedChange={() => selection.toggle(rowId)}
+                          onCheckedChange={() => handleToggle(rowId)}
                         />
                       </TableCell>
                     )}

@@ -42,8 +42,9 @@ test.describe('Bulk delete', () => {
     // Narrow to these three via search, two per page → page 1 has two, page 2
     // has one. The search (the filter) is kept across page nav, so the selection
     // persists.
-    await page.goto(`/admin/post?search=${stamp}&pageSize=2`)
-    await page.waitForLoadState('networkidle')
+    // Sort by title so pagination is deterministic: page 1 = [A, B], page 2 = [C].
+    await page.goto(`/admin/post?search=${stamp}&pageSize=2&sort=title:asc`)
+    await expect(page.getByText(titles[0])).toBeVisible()
 
     const toolbar = page.getByRole('toolbar', { name: /selection/i })
 
@@ -51,9 +52,15 @@ test.describe('Bulk delete', () => {
     await page.getByRole('checkbox', { name: /select all rows on this page/i }).click()
     await expect(toolbar).toContainText('2 selected')
 
-    // Page 2: the page-1 selection persists across the navigation…
+    // Go to page 2 and wait for its (distinct) row to load before interacting —
+    // the selection persists on both pages, so a content wait is what proves the
+    // navigation actually landed on page 2.
     await page.getByRole('button', { name: /next/i }).click()
-    await page.waitForLoadState('networkidle')
+    await page.waitForURL(/[?&]page=2\b/)
+    await expect(page.getByText(titles[2])).toBeVisible()
+    await expect(page.getByText(titles[0])).toHaveCount(0)
+
+    // The page-1 selection persisted across the navigation…
     await expect(toolbar).toContainText('2 selected')
 
     // …and adding the remaining row accumulates to three.
@@ -64,8 +71,10 @@ test.describe('Bulk delete', () => {
     await toolbar.getByRole('button', { name: 'Delete' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
 
-    // All three were the author's own → "3 of 3 deleted", table refreshed.
-    await expect(page.getByRole('status')).toContainText('3 of 3 deleted')
+    // All three were the author's own → "3 of 3 deleted", table refreshed. Target
+    // the report by its Slot (the Delete button's spinner also uses role="status")
+    // and because it must survive the router.refresh() that reloads the table.
+    await expect(page.locator('[data-slot="selection-status"]')).toContainText('3 of 3 deleted')
     for (const title of titles) {
       await expect(page.getByText(title)).toHaveCount(0)
     }

@@ -24,6 +24,7 @@ export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
+  | { listKey: string; action: 'bulkDelete'; ids: string[] }
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -409,11 +410,14 @@ export function getContext<
 
   // Generic server action handler with discriminated union for type safety
   // Returns a result object instead of throwing to work properly in Next.js production
-  async function serverAction(
-    props: ServerActionProps,
-  ): Promise<
+  async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
     | { success: false; error: string; fieldErrors?: Record<string, string> }
+    // Bulk actions report a count rather than a single-op `success` flag: the
+    // shape is deliberately distinct so a UI wrapper that redirects on a
+    // single-item `success` (the item-form pattern) does not hijack a
+    // list-level bulk operation.
+    | { deleted: number; total: number }
   > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
@@ -429,6 +433,24 @@ export function getContext<
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
       update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
       delete: (args: { where: { id: string } }) => Promise<unknown>
+    }
+
+    // Bulk delete: remove each id row-by-row through the secured context,
+    // honouring Silent failure — a denied (or missing) row returns `null` and is
+    // simply not counted. Returns "N of M" so partial denials are visible without
+    // revealing which rows were denied or why. One row's error never aborts the
+    // rest.
+    if (props.action === 'bulkDelete') {
+      let deleted = 0
+      for (const id of props.ids) {
+        try {
+          const result = await model.delete({ where: { id } })
+          if (result !== null && result !== undefined) deleted++
+        } catch {
+          // Skip this row (e.g. a DB constraint error); it is not counted.
+        }
+      }
+      return { deleted, total: props.ids.length }
     }
 
     try {
