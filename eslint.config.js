@@ -18,6 +18,7 @@ export default [
       '**/next.config.*',
       '**/next-env.d.ts',
       '**/__generated__/**',
+      '**/.design-sync/**',
     ],
   },
   js.configs.recommended,
