@@ -7,7 +7,8 @@
   "cssEntry": "dist/styles/globals.css",
   "readmeHeader": ".design-sync/conventions.md",
   "tsconfig": "../../.design-sync/next-stub-tsconfig.json",
-  "extraEntries": ["./dist/primitives/index.js"],
+  "extraEntries": ["./dist/primitives/index.js", "../../.design-sync/preview-theme.tsx"],
+  "provider": { "component": "DsPreviewLight" },
   "overrides": {
     "Dialog": { "cardMode": "single", "viewport": "560x420" },
     "Popover": { "cardMode": "single", "viewport": "420x320" },

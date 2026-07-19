@@ -7,10 +7,18 @@ the real shipped component — import it from `@opensaas/stack-ui` and compose w
 
 Components carry their own token-based classes, so they render on-brand as soon as the design system's
 stylesheet is loaded (it already is, in this environment). There is **no ThemeProvider to wrap** — just
-render the components. Dark mode is driven by `data-theme="dark"` on a root element (tokens use CSS
-`light-dark()`); default is light. (The admin *composites* — `AdminUI`, `Dashboard`, `ListView`,
-`ItemForm`, `SingletonView` — are the exception: they need a live server `context` + `config` and are
-data-fetching, so build screens from the primitives/fields/standalone components, not these.)
+render the components.
+
+**Pin a color scheme on the root.** The tokens use CSS `light-dark()`, driven by `color-scheme`. Set
+`data-theme="light"` (or `"dark"`) on the root/`<html>` so text stays readable — e.g. `text-foreground`
+resolves to dark-on-light under `light`. If you leave it unpinned it follows the viewer's OS preference
+(`:root { color-scheme: light dark }`), which can put near-white `text-foreground` on a light surface for
+a dark-mode viewer. For a fixed light layout, wrap the screen root in
+`<div data-theme="light" style={{ colorScheme: 'light' }}>…</div>`.
+
+(The admin *composites* — `AdminUI`, `Dashboard`, `ListView`, `ItemForm`, `SingletonView` — are the
+exception to "just render": they need a live server `context` + `config` and are data-fetching, so build
+screens from the primitives/fields/standalone components, not these.)
 
 ## Styling idiom — Tailwind v4 utilities backed by design tokens
 

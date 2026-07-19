@@ -87,6 +87,19 @@ reachable to designs via `styles.css` → `_ds_bundle.css`. `light-dark()` token
 light. Contract tokens: `--color-{background,foreground,card,primary,secondary,muted,accent,
 destructive,success,warning,border,input,ring,...}`, `--radius`, `--font-sans/heading/mono`.
 
+## Preview color-scheme (readability on the design pane)
+
+The DS tokens use CSS `light-dark()` driven by `color-scheme`; the default `:root { color-scheme:
+light dark }` (no pinned `data-theme`) follows the VIEWER's OS preference. The claude.ai/design pane
+draws every card on a white canvas, so a dark-mode viewer got near-white `text-foreground` (e.g.
+CheckboxField/field labels, read values) on white = unreadable. Fix (preview-only, does NOT force
+light on shipped designs): `.design-sync/preview-theme.tsx` exports `DsPreviewLight` (wraps children
+in `<div style={{colorScheme:'light'}}>`), wired via `cfg.extraEntries` + `cfg.provider:
+{component:"DsPreviewLight"}`. `color-scheme` is inherited, so pinning it on the preview root cascades
+to every `light-dark()` token. Verified: field label goes 0.96 (near-white) → 0.21 (near-black) under
+a dark viewer. Real designs should pin their own theme (see conventions.md) — the wrapper only affects
+preview cards, not the exported bundle.
+
 ## Presentational & standalone authoring notes
 
 - **SkeletonLoader** only reads `{className, variant}` — it does NOT spread `style`/rest props, and
