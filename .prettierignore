@@ -19,3 +19,8 @@ next-env.d.ts
 *.log
 pnpm-lock.yaml
 .agents
+
+# design-sync (tooling inputs + gitignored build artifacts)
+.design-sync/
+ds-bundle/
+.ds-sync/

@@ -1,0 +1,35 @@
+{
+  "pkg": "@opensaas/stack-ui",
+  "globalName": "StackUI",
+  "projectId": "08206dc2-60c0-4681-969c-a12af2587f76",
+  "shape": "package",
+  "buildCmd": "pnpm -F \"@opensaas/stack-ui...\" build",
+  "cssEntry": "dist/styles/globals.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "tsconfig": "../../.design-sync/next-stub-tsconfig.json",
+  "extraEntries": ["./dist/primitives/index.js", "../../.design-sync/preview-theme.tsx"],
+  "provider": { "component": "DsPreviewLight" },
+  "overrides": {
+    "Dialog": { "cardMode": "single", "viewport": "560x420" },
+    "Popover": { "cardMode": "single", "viewport": "420x320" },
+    "Combobox": { "cardMode": "single", "viewport": "420x360" },
+    "Select": { "cardMode": "single", "viewport": "420x360" },
+    "ConfirmDialog": { "cardMode": "single", "viewport": "520x360" }
+  },
+  "componentSrcMap": {
+    "Button": "src/primitives/button.tsx",
+    "Input": "src/primitives/input.tsx",
+    "Textarea": "src/primitives/textarea.tsx",
+    "Label": "src/primitives/label.tsx",
+    "Card": "src/primitives/card.tsx",
+    "Table": "src/primitives/table.tsx",
+    "Dialog": "src/primitives/dialog.tsx",
+    "Select": "src/primitives/select.tsx",
+    "Checkbox": "src/primitives/checkbox.tsx",
+    "Popover": "src/primitives/popover.tsx",
+    "Calendar": "src/primitives/calendar.tsx",
+    "TimePicker": "src/primitives/time-picker.tsx",
+    "DateTimePicker": "src/primitives/datetime-picker.tsx",
+    "Combobox": "src/primitives/combobox.tsx"
+  }
+}
