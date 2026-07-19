@@ -1,4 +1,5 @@
 import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 
 /**
@@ -663,6 +664,29 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     type: string
     optional: boolean
   }
+  /**
+   * Declare this field's filtering capability — its {@link FilterSpec} — for the
+   * admin UI's Filter builder (ADR-0017). Optional and additive: a field that
+   * omits it (like `password`, `json`, `virtual`, or a third-party field that
+   * hasn't adopted filtering) is simply not filterable and never suggested, so
+   * absence degrades gracefully everywhere.
+   *
+   * Self-contained, like {@link getPrismaType} and friends — the filter engine
+   * delegates to each field's spec rather than switching on field type. The
+   * returned `toCondition` mapper must stay pure (no DB/Prisma imports); its
+   * output is ANDed with the access filter through the secured context.
+   *
+   * @param fieldName The field's config key (closed over by the mapper).
+   * @param listKey   The owning list's key.
+   * @param config    The full config (e.g. relationship specs resolve their
+   *   target list's label field from it).
+   * @returns The field's Filter spec, or `undefined` when not filterable.
+   */
+  getFilterSpec?: (
+    fieldName: string,
+    listKey: string,
+    config: OpenSaasConfig,
+  ) => FilterSpec | undefined
   /**
    * Get TypeScript imports needed for this field's type
    * @returns Array of import statements needed for the generated types file

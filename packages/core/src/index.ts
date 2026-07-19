@@ -72,3 +72,24 @@ export type { ResultOf, RelationSelector, QueryArgs } from './query/index.js'
 // op; also callable directly wherever a full context is already in hand.
 export { getRelationshipOptions } from './query/relationship-options.js'
 export type { RelationshipOption, RelationshipOptionsArgs } from './query/relationship-options.js'
+
+// Filter engine (ADR-0017) — the admin UI's Filter builder. The pure seam
+// (`parseFilterQuery`, `buildFilterWhere`) plus config-aware helpers that
+// collect each field's Filter spec and compose a list's server-side `where`.
+// The produced fragment is ANDed with the access filter through the secured
+// context, so the filter can only ever narrow visibility.
+export {
+  parseFilterQuery,
+  buildFilterWhere,
+  collectFilterSpecs,
+  buildListFilterWhere,
+  collectFilterSuggestions,
+} from './filter/index.js'
+export type {
+  FilterOperator,
+  FilterToken,
+  FilterCondition,
+  FilterSpec,
+  FilterValueSource,
+  FilterFieldSuggestion,
+} from './filter/index.js'

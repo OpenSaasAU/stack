@@ -17,6 +17,19 @@ import type {
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 import { formatPrismaDefault } from './format-prisma-default.js'
+import { getLabelFieldName } from '../config/label.js'
+import type { FilterOperator, FilterSpec } from '../filter/types.js'
+
+/**
+ * Operators shared by numeric/date fields: plain equality plus the four
+ * comparisons. `eq` maps to Prisma's `equals`; the comparisons pass through.
+ */
+const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
+
+/** Map a Filter operator to its Prisma condition key (`eq` → `equals`). */
+function prismaComparisonKey(operator: FilterOperator): string {
+  return operator === 'eq' ? 'equals' : operator
+}
 
 // Field-config types live here, alongside the builders that produce them.
 // (The umbrella `FieldConfig` and authoring `BaseFieldConfig` stay on the root
@@ -154,6 +167,16 @@ export function text<
         optional: !isRequired,
       }
     },
+    // Text fields drive free-text search: a bare word (or a `field:value`) maps
+    // to a case-preserving `contains`. This is what replaces the old hard-coded
+    // `type === 'text'` search in the admin list view.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: ['eq'],
+      freeText: true,
+      toCondition: (operator, value) =>
+        operator === 'eq' ? { [fieldName]: { contains: value } } : null,
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
   }
 }
 
@@ -231,6 +254,17 @@ export function integer<
         optional: !isRequired,
       }
     },
+    // Integers support equality and comparisons (`orders:>5`). A non-integer
+    // value can't be interpreted, so its token degrades to free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: COMPARISON_OPERATORS,
+      toCondition: (operator, value) => {
+        const trimmed = value.trim()
+        if (!/^-?\d+$/.test(trimmed)) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
   }
 }
 
@@ -397,6 +431,17 @@ export function decimal<
         },
       ]
     },
+    // Decimals compare like integers, but the value stays a string so Prisma's
+    // Decimal keeps full precision. A non-numeric value degrades to free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: COMPARISON_OPERATORS,
+      toCondition: (operator, value) => {
+        const trimmed = value.trim()
+        if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
   }
 }
 
@@ -443,6 +488,27 @@ export function checkbox<
         optional: options?.defaultValue === undefined,
       }
     },
+    // Checkboxes filter by equality against the two enumerated values. Anything
+    // other than true/false can't be interpreted and degrades to free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: ['eq'],
+      toCondition: (operator, value) => {
+        if (operator !== 'eq') return null
+        const normalized = value.trim().toLowerCase()
+        if (normalized === 'true') return { [fieldName]: { equals: true } }
+        if (normalized === 'false') return { [fieldName]: { equals: false } }
+        return null
+      },
+      suggestions: {
+        valueSource: {
+          kind: 'enum',
+          options: [
+            { value: 'true', label: 'True' },
+            { value: 'false', label: 'False' },
+          ],
+        },
+      },
+    }),
   }
 }
 
@@ -508,6 +574,17 @@ export function timestamp<
         optional: !hasDefault,
       }
     },
+    // Timestamps support equality and comparisons (`joined:>2024-01-01`). An
+    // unparseable date degrades to free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: COMPARISON_OPERATORS,
+      toCondition: (operator, value) => {
+        const date = new Date(value.trim())
+        if (Number.isNaN(date.getTime())) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
   }
 }
 
@@ -696,6 +773,20 @@ export function calendarDay<
         optional: isNullable,
       }
     },
+    // Calendar days compare on the `YYYY-MM-DD` value (coerced to a UTC-midnight
+    // Date so it matches the `@db.Date` column). A malformed value degrades to
+    // free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: COMPARISON_OPERATORS,
+      toCondition: (operator, value) => {
+        const trimmed = value.trim()
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
+        const date = new Date(`${trimmed}T00:00:00.000Z`)
+        if (Number.isNaN(date.getTime())) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
   }
 }
 
@@ -1014,6 +1105,28 @@ export function select<
         optional: !options.validation?.isRequired || options.defaultValue !== undefined,
       }
     },
+    // Selects filter by equality against their enumerated options. The token
+    // value is matched (case-insensitively) against option value or label and
+    // resolved to the canonical stored value; an unknown option degrades to
+    // free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: ['eq'],
+      toCondition: (operator, value) => {
+        if (operator !== 'eq') return null
+        const needle = value.trim().toLowerCase()
+        const match = options.options.find(
+          (opt) => opt.value.toLowerCase() === needle || opt.label.toLowerCase() === needle,
+        )
+        if (!match) return null
+        return { [fieldName]: { equals: match.value } }
+      },
+      suggestions: {
+        valueSource: {
+          kind: 'enum',
+          options: options.options.map((opt) => ({ value: opt.value, label: opt.label })),
+        },
+      },
+    }),
   }
 }
 
@@ -1343,6 +1456,38 @@ export function relationship<
     listKey: string,
     config: OpenSaasConfig,
   ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
+
+  // Relationships filter by the related Item's label — `author:"Ada Lovelace"`
+  // becomes a nested `contains` on the target list's Label field (`is` for a
+  // to-one, `some` for a to-many). The mapper stays pure: it emits a Prisma
+  // nested filter, no DB lookup. Suggestions point the client at the target
+  // list so it can use the existing access-controlled label lookup.
+  field.getFilterSpec = (
+    _fieldName: string,
+    _listKey: string,
+    config: OpenSaasConfig,
+  ): FilterSpec | undefined => {
+    const { list: targetList } = parseRelationshipRef(field.ref)
+    const relatedListConfig = config.lists[targetList]
+    if (!relatedListConfig) return undefined
+
+    const labelField = getLabelFieldName(relatedListConfig)
+    const labelFieldConfig = relatedListConfig.fields[labelField]
+    // A virtual label field has no queryable column, so `contains` can't run
+    // against it — the relationship is then not filterable.
+    if (labelFieldConfig?.virtual === true) return undefined
+
+    const many = field.many === true
+    return {
+      operators: ['eq'],
+      toCondition: (operator, value) => {
+        if (operator !== 'eq') return null
+        const inner = { [labelField]: { contains: value } }
+        return many ? { [_fieldName]: { some: inner } } : { [_fieldName]: { is: inner } }
+      },
+      suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many } },
+    }
+  }
 
   return field
 }
