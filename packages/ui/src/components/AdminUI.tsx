@@ -108,6 +108,14 @@ export function AdminUI({
     // List view
     const search = typeof searchParams.search === 'string' ? searchParams.search : undefined
     const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1
+    // Optional `?pageSize=` override (Keystone-style). When absent, ListView's
+    // own default applies.
+    const pageSizeParam =
+      typeof searchParams.pageSize === 'string' ? parseInt(searchParams.pageSize, 10) : undefined
+    const pageSize =
+      pageSizeParam !== undefined && Number.isFinite(pageSizeParam) && pageSizeParam > 0
+        ? pageSizeParam
+        : undefined
 
     // Read list-view defaults (column selection/order + default sort) from the
     // list-level `ui.listView` config (mirrors Keystone). When absent, the
@@ -137,9 +145,11 @@ export function AdminUI({
         basePath={basePath}
         search={search}
         page={page}
+        pageSize={pageSize}
         columns={listView?.initialColumns}
         initialSort={listView?.initialSort}
         sort={urlSort}
+        serverAction={serverAction}
       />
     )
   }
