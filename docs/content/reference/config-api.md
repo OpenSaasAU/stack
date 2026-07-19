@@ -933,7 +933,7 @@ Base path for MCP API routes.
 
 ##### `auth`
 
-Authentication metadata (optional, currently informational). The MCP runtime authenticates via the session provider passed to `createMcpHandlers` — for Better Auth, the OAuth flow is wired through the `mcp` plugin in `authPlugin`'s `betterAuthPlugins` plus `createBetterAuthMcpAdapter`. See the [MCP Setup Guide](/docs/guides/mcp-setup).
+Authentication metadata (optional, currently informational). The MCP runtime authenticates via the session provider passed to `createMcpHandlers` — for Better Auth, the OAuth flow is wired through the `mcp` plugin in `authPlugin`'s `betterAuthPlugins` plus `createBetterAuthMcpAdapter`. See the [MCP Setup Guide](/docs/how-to/mcp).
 
 **Type:** [`McpAuthConfig`](#mcpauthconfig)
 

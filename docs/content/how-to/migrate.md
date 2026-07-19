@@ -66,7 +66,7 @@ This command will:
    2. Ask: "Help me migrate to Stack"
    3. Follow the interactive wizard
 
-📚 Documentation: https://stack.opensaas.au/docs/guides/migrating-from-keystone
+📚 Documentation: https://stack.opensaas.au/docs/how-to/migrate-from-keystone
 ```
 
 ### Using Claude Code
