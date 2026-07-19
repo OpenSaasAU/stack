@@ -1,5 +1,5 @@
 import { config, list } from '@opensaas/stack-core'
-import { text, relationship, select, timestamp } from '@opensaas/stack-core/fields'
+import { text, relationship, select, timestamp, integer } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
@@ -61,10 +61,19 @@ export default config({
       // Extend User list with custom fields
       extendUserList: {
         fields: {
-          // Add a posts relationship
+          // Add a posts relationship. On the User item view this renders as a
+          // read-only Relationship table (issue #734): its columns default to
+          // Post's curation minus the `author` back-reference, and the totals
+          // footer sums the numeric `viewCount` column.
           posts: relationship({
             ref: 'Post.author',
             many: true,
+            ui: {
+              itemView: {
+                columns: ['title', 'status', 'viewCount'],
+                sum: ['viewCount'],
+              },
+            },
           }),
         },
       },
@@ -134,6 +143,8 @@ export default config({
           ui: { displayMode: 'segmented-control' },
         }),
         publishedAt: timestamp(),
+        // Numeric field summed by the User item view's Relationship-table footer.
+        viewCount: integer({ defaultValue: 0 }),
         author: relationship({
           ref: 'User.posts',
           access: {
