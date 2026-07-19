@@ -933,7 +933,7 @@ Base path for MCP API routes.
 
 ##### `auth`
 
-Authentication configuration (required when MCP is enabled).
+Authentication metadata (optional, currently informational). The MCP runtime authenticates via the session provider passed to `createMcpHandlers` — for Better Auth, the OAuth flow is wired through the `mcp` plugin in `authPlugin`'s `betterAuthPlugins` plus `createBetterAuthMcpAdapter`. See the [MCP Setup Guide](/docs/guides/mcp-setup).
 
 **Type:** [`McpAuthConfig`](#mcpauthconfig)
 
@@ -945,10 +945,9 @@ Default CRUD tool configuration for all lists.
 
 ##### `resource`
 
-OAuth resource identifier for protected resource metadata.
+OAuth resource identifier for protected resource metadata (optional, currently informational — the `.well-known/oauth-protected-resource` route you create serves this metadata).
 
 **Type:** `string`
-**Default:** `"https://yourdomain.com"`
 
 ---
 
@@ -1074,7 +1073,9 @@ Custom MCP tool definition for specialized operations.
 type McpCustomTool = {
   name: string
   description: string
-  inputSchema: ZodSchema
+  // Zod schema (validated on tools/call, converted to JSON Schema for
+  // tools/list) or a plain JSON Schema object
+  inputSchema: ZodSchema | Record<string, unknown>
   handler: (args) => Promise<unknown>
 }
 ```

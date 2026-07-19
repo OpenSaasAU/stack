@@ -25,7 +25,7 @@ Each key in the selection maps to:
 - A `RelationSelector` — include a relationship with optional Prisma `where`/`orderBy`/`take`/`skip`.
 
 ```typescript
-import type { User, Post } from '.prisma/client'
+import type { User, Post } from '@/.opensaas/prisma-client/client'
 import { defineFragment } from '@opensaas/stack-core'
 
 export const userFragment = defineFragment<User>()({
@@ -125,7 +125,7 @@ Both forms produce the same result and enforce the same access control.
 To filter, sort, or paginate a nested relationship **within the same query**, use a `RelationSelector` object — `{ query, where?, orderBy?, take?, skip? }` — instead of a plain fragment:
 
 ```typescript
-import type { Post, Comment } from '.prisma/client'
+import type { Post, Comment } from '@/.opensaas/prisma-client/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)

@@ -6,7 +6,7 @@ This directory contains Claude Code settings for OpenSaaS Stack contributors.
 
 ### `settings.json`
 
-Automatically connects to the `@opensaas/stack-mcp` MCP server, giving contributors access to:
+Automatically connects to the OpenSaaS Stack MCP server (`opensaas mcp start`, from `@opensaas/stack-cli`), giving contributors access to:
 
 - Feature implementation wizards
 - Live documentation search
@@ -45,7 +45,13 @@ Just trust the repository folder in Claude Code and everything works automatical
 Install the MCP server and plugin separately:
 
 ```bash
-npx @opensaas/stack-mcp install
+npx @opensaas/stack-cli mcp install
 ```
 
-Then optionally install the plugin from a marketplace.
+Or install the plugins from the marketplace (which bundle the MCP server):
+
+```bash
+# In Claude Code
+/plugin marketplace add OpenSaasAU/stack
+/plugin install opensaas-stack@opensaas-stack-marketplace
+```

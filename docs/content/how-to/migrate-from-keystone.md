@@ -306,7 +306,7 @@ This is the largest API change. Stack has **no GraphQL layer** ([ADR-0005](https
 | `VariablesOf<typeof query>`                          | Plain function params / `where` args (or a fragment factory)       |
 | `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, … })`         |
 | `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
-| `context.query.PostList.findMany(...)`               | `context.db.post.findMany(...)`                                    |
+| `context.query.Post.findMany(...)`                   | `context.db.post.findMany(...)`                                    |
 | `context.sudo().graphql.run(...)`                    | `context.sudo().db.post.findMany(...)`                             |
 | Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
 

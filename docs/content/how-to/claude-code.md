@@ -35,11 +35,24 @@ The Stack Claude Code plugin enables **feature-driven development**:
 
 When the MCP server is installed, Claude has access to:
 
+**Feature wizards:**
+
 - `opensaas_implement_feature` - Start feature implementation wizards
-- `opensaas_feature_docs` - Search live documentation
+- `opensaas_answer_feature` / `opensaas_answer_followup` - Progress through wizard questions
 - `opensaas_list_features` - Browse available features
 - `opensaas_suggest_features` - Get personalized recommendations
 - `opensaas_validate_feature` - Validate implementations
+
+**Documentation:**
+
+- `opensaas_feature_docs` - Search live documentation
+- `opensaas_get_example` - Example code for common patterns
+
+**Migration:**
+
+- `opensaas_start_migration` / `opensaas_answer_migration` - Migration wizard
+- `opensaas_introspect_prisma` / `opensaas_introspect_keystone` - Schema analysis
+- `opensaas_search_migration_docs` - Migration documentation search
 
 ## Installation
 
@@ -72,7 +85,7 @@ Add the OpenSaaS repository as a plugin marketplace:
 Install the plugin:
 
 ```shell
-/plugin install opensaas-stack@OpenSaasAU/stack
+/plugin install opensaas-stack@opensaas-stack-marketplace
 ```
 
 ### For Stack Contributors
@@ -93,7 +106,13 @@ This command updates your Claude Code configuration automatically.
 
 ### Manual Configuration
 
-If you prefer manual setup, add to your Claude Code MCP configuration:
+If you prefer manual setup in Claude Code, register the server directly:
+
+```bash
+claude mcp add opensaas-stack -- npx -y @opensaas/stack-cli mcp start
+```
+
+For **Claude Desktop**, add the server to its config file instead:
 
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
@@ -106,7 +125,7 @@ If you prefer manual setup, add to your Claude Code MCP configuration:
   "mcpServers": {
     "opensaas": {
       "command": "npx",
-      "args": ["@opensaas/stack-cli", "mcp", "serve"],
+      "args": ["-y", "@opensaas/stack-cli", "mcp", "start"],
       "env": {}
     }
   }

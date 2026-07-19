@@ -217,18 +217,11 @@ export async function GET() {
 }
 ```
 
-## Generate Schema
+## How Tools Are Built
 
-Run the generator to create your MCP tools:
+MCP tools are derived from your config **at request time** by `createMcpHandlers` — nothing MCP-specific is generated to disk. Every list gets CRUD tools automatically (unless disabled via `mcp.enabled: false` on the list), plus any custom tools you define and any tools registered by plugins.
 
-```bash
-pnpm generate
-```
-
-This creates:
-
-- `.opensaas/mcp/tools.json` - Tool metadata reference
-- `.opensaas/mcp/README.md` - Usage instructions
+You only need to run `pnpm generate` when your schema or lists change, to keep the Prisma schema and generated context in sync.
 
 ## Configure Claude Desktop
 
@@ -270,11 +263,11 @@ When Claude Desktop connects to your MCP server:
 
 ## Generated Tools
 
-The generator creates CRUD tools for each list:
+The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase form of the list key (`Post` → `list_post_query`, `BlogPost` → `list_blogPost_query`):
 
 ### Query Tool
 
-**Tool Name:** `list_{listKey}_query`
+**Tool Name:** `list_{dbKey}_query`
 
 **Description:** Query records with filters, sorting, and pagination
 
@@ -301,7 +294,7 @@ The generator creates CRUD tools for each list:
 
 ### Create Tool
 
-**Tool Name:** `list_{listKey}_create`
+**Tool Name:** `list_{dbKey}_create`
 
 **Description:** Create a new record
 
@@ -328,7 +321,7 @@ The generator creates CRUD tools for each list:
 
 ### Update Tool
 
-**Tool Name:** `list_{listKey}_update`
+**Tool Name:** `list_{dbKey}_update`
 
 **Description:** Update an existing record
 
@@ -352,7 +345,7 @@ The generator creates CRUD tools for each list:
 
 ### Delete Tool
 
-**Tool Name:** `list_{listKey}_delete`
+**Tool Name:** `list_{dbKey}_delete`
 
 **Description:** Delete a record
 
@@ -424,7 +417,11 @@ fields: {
 
 ### Silent Failures
 
-When access is denied, tools return empty results rather than errors. This prevents information leakage about whether records exist.
+When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a JSON-RPC error ("Access denied or record not found") that deliberately does not distinguish between a missing record and denied access.
+
+### Session Fields over MCP
+
+The Better Auth MCP adapter's session carries `userId` only. Access rules that rely on other session fields (e.g. `session.role`) will see them as `undefined` over MCP unless you use a custom session provider that loads and attaches those fields — any extra fields on the MCP session are passed through to access control.
 
 ## Testing MCP Tools
 
@@ -485,8 +482,8 @@ curl -X POST http://localhost:3000/api/mcp \
          │ Access Token
          ↓
 ┌─────────────────┐
-│   MCP Server    │ ← Generated Tools
-│ (.opensaas/mcp) │
+│   MCP Handler   │ ← Tools derived from
+│ (stack-core/mcp)│   config at runtime
 └────────┬────────┘
          │ context.db
          ↓
@@ -569,9 +566,9 @@ curl -X POST http://localhost:3000/api/mcp \
 
 **Solutions:**
 
-1. Run `pnpm generate` to regenerate tools
-2. Restart development server
-3. Verify Zod schema is valid
+1. Restart the development server — tools are read from config at runtime
+2. Check the tool is on a list's `mcp.customTools` (or registered by a plugin via `registerMcpTool`)
+3. Verify the input schema is valid (Zod schema or plain JSON Schema object)
 4. Check handler function returns correct format
 
 ## Example Project
@@ -581,7 +578,7 @@ See the complete working example at `examples/mcp-demo/` in the repository:
 - Full configuration with custom tools
 - OAuth setup with Better Auth
 - Access control patterns
-- Testing scripts
+- A `create-user.ts` script for seeding a test user
 
 ## Next Steps
 

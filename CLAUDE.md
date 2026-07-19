@@ -18,10 +18,14 @@ OpenSaas Stack is a Next.js-based stack for building admin-heavy applications wi
 This is a pnpm monorepo with:
 
 - `packages/core`: Core stack (config system, access control, generators)
-- `packages/cli`: CLI tools (generators via bin scripts)
+- `packages/cli`: CLI tools (generators, migration, MCP server via bin scripts)
 - `packages/ui`: Admin UI components (composable React components)
 - `packages/auth`: Better-auth integration (authentication & sessions)
-- `packages/mcp`: **DEPRECATED** - MCP functionality moved to core and auth packages
+- `packages/create-opensaas-app`: Project scaffolding (`npm create opensaas-app`)
+- `packages/rag`: RAG plugin (embeddings + semantic search)
+- `packages/storage`: File/image fields + local storage provider
+- `packages/storage-s3`: S3-compatible storage provider
+- `packages/storage-vercel`: Vercel Blob storage provider
 - `packages/tiptap`: Rich text editor integration (third-party field example)
 - `examples/blog`: Basic blog example
 - `examples/custom-field`: Custom field types demonstration
@@ -29,6 +33,13 @@ This is a pnpm monorepo with:
 - `examples/auth-demo`: Authentication integration
 - `examples/mcp-demo`: MCP server integration
 - `examples/tiptap-demo`: Tiptap rich text editor integration
+- `examples/file-upload-demo`: File/image fields with storage providers
+- `examples/json-demo`: JSON field usage
+- `examples/plain-css-theming`: Admin UI theming without Tailwind
+- `examples/rag-ollama-demo`: Semantic search with local Ollama embeddings
+- `examples/rag-openai-chatbot`: RAG chatbot with OpenAI embeddings
+- `examples/starter`: Minimal starter (template for create-opensaas-app)
+- `examples/starter-auth`: Starter with auth (template for create-opensaas-app)
 - `specs/`: Design documents and specifications
 
 ## Common Commands
@@ -563,11 +574,11 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 
 **How it works:**
 
-1. Enable MCP in config with `mcp: { enabled: true, auth: { type: 'better-auth', loginPage: '/sign-in' } }`
-2. Core runtime generates CRUD tools for each list (query, create, update, delete)
-3. Auth adapter provides session from Better-auth OAuth flow with AI assistants
+1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`)
+2. Core runtime derives CRUD tools for each list (query, create, update, delete) at request time
+3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [mcp({ loginPage: '/sign-in' })] })`) and the `createBetterAuthMcpAdapter` session provider
 4. All tools respect existing access control rules
-5. Custom tools can be added per-list for specialized operations
+5. Custom tools can be added per-list via `mcp.customTools` (Zod or JSON Schema inputSchema); plugins can register global tools via `registerMcpTool`
 
 **Migration Note:** The `@opensaas/stack-mcp` package is deprecated. Use `@opensaas/stack-core/mcp` for MCP handlers and `@opensaas/stack-auth/mcp` for Better-auth integration.
 

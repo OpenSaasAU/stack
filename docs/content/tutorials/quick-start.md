@@ -68,7 +68,7 @@ pnpm add -D prisma
 Create `opensaas.config.ts` in your project root:
 
 ```typescript
-import { config, list } from '@opensaas/stack-core/config'
+import { config, list } from '@opensaas/stack-core'
 import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
@@ -121,6 +121,7 @@ pnpm generate
 This creates:
 
 - `prisma/schema.prisma` - Database schema
+- `prisma.config.ts` - Prisma CLI configuration (datasource URL for db push/migrations)
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
