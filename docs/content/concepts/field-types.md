@@ -1,6 +1,6 @@
 # Field Types
 
-OpenSaaS Stack provides a comprehensive set of field types for building your schema. Each field type includes validation, access control, and UI configuration options.
+Stack provides a comprehensive set of field types for building your schema. Each field type includes validation, access control, and UI configuration options.
 
 ## Core Field Types
 

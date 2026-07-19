@@ -1,10 +1,10 @@
 # Access Control
 
-OpenSaaS Stack's primary innovation is its automatic access control engine that secures all database operations without boilerplate code.
+The access-control engine is why Stack exists. Application code — yours or your AI agent's — never talks to the database directly; it talks to a secured context, and the engine applies your access rules to **every** query, create, update, and delete. Security stops being a property of each handler someone remembered to write and becomes a property of the framework: the secure path is the only path.
 
 ## Overview
 
-Access control in OpenSaaS Stack works by intercepting all Prisma operations through a context wrapper. Every database query goes through access control checks before returning results.
+Every operation goes through the context wrapper, and every context operation passes access control before anything is returned.
 
 ```typescript
 // Instead of using Prisma directly
@@ -14,7 +14,19 @@ const posts = await prisma.post.findMany()
 const posts = await context.db.post.findMany()
 ```
 
+Two defaults set the tone:
+
+- **Deny by default.** A list with no access rules isn't open — it's inaccessible. Nothing ships readable by accident.
+- **Silent failure.** A denied operation returns `null` (single record) or `[]` (many), indistinguishable from "not found" — so callers can't probe for records they aren't allowed to see.
+
 ## How It Works
+
+Writes check operation-level access, filter writable fields, then persist. Reads are a **two-phase** pipeline:
+
+1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database.
+2. **Field Visibility** (post-query): on the returned rows, fields the session can't read are removed, `resolveOutput` hooks run, and virtual fields are computed.
+
+In order:
 
 1. **Define access rules** in your `opensaas.config.ts`
 2. **Operations go through context** wrapper: `context.db.post.update()`
@@ -89,6 +101,10 @@ fields: {
 }
 ```
 
+{% callout type="warning" %}
+**Field-level rules are boolean-only.** An operation-level rule may return a Prisma filter to scope rows; a field-level rule decides allow/deny for one field (using `session` and, where available, the fetched `item`). Returning a filter from a field rule does not scope anything — don't reuse filter-returning helpers on fields.
+{% /callout %}
+
 ## Access Functions
 
 Access functions receive a context object with:
@@ -145,7 +161,7 @@ query: ({ session }) => ({
 
 ## Silent Failures
 
-OpenSaaS Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist.
+Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist.
 
 ```typescript
 const post = await context.db.post.findUnique({ where: { id: '123' } })

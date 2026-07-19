@@ -1,6 +1,6 @@
 # @opensaas/stack-ui
 
-Composable React UI components for building admin interfaces with OpenSaas Stack. Built on top of shadcn/ui primitives with full TypeScript support and multiple levels of abstraction.
+Composable React UI components for building admin interfaces with Stack. Built on top of shadcn/ui primitives with full TypeScript support and multiple levels of abstraction.
 
 ## Overview
 

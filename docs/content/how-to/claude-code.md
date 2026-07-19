@@ -1,10 +1,10 @@
 # Claude Code Plugin
 
-Use AI-assisted development with OpenSaaS Stack. Describe what you want to build and let Claude guide you through systematic feature implementation.
+Use AI-assisted development with Stack. Describe what you want to build and let Claude guide you through systematic feature implementation.
 
 ## Overview
 
-The OpenSaaS Stack Claude Code plugin enables **feature-driven development**:
+The Stack Claude Code plugin enables **feature-driven development**:
 
 **Traditional approach:**
 
@@ -21,7 +21,7 @@ The OpenSaaS Stack Claude Code plugin enables **feature-driven development**:
 ### Commands
 
 - `/opensaas-features` - List all available feature wizards
-- `/opensaas-docs` - Search OpenSaaS Stack documentation
+- `/opensaas-docs` - Search Stack documentation
 
 ### Agent
 
@@ -75,7 +75,7 @@ Install the plugin:
 /plugin install opensaas-stack@OpenSaasAU/stack
 ```
 
-### For OpenSaaS Stack Contributors
+### For Stack Contributors
 
 The plugin is automatically available when you trust the repository folder in Claude Code.
 

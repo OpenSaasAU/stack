@@ -1,6 +1,6 @@
 # Core Package
 
-The `@opensaas/stack-core` package is the foundation of OpenSaaS Stack, providing the config system, access control engine, and code generators.
+The `@opensaas/stack-core` package is the foundation of Stack, providing the config system, access control engine, and code generators.
 
 ## Installation
 

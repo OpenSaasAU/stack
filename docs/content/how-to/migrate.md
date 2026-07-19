@@ -1,6 +1,6 @@
 # Migration Guide
 
-This guide covers how to migrate your existing Prisma, Next.js, or KeystoneJS projects to OpenSaaS Stack using AI-powered tools.
+This guide covers how to migrate your existing Prisma, Next.js, or KeystoneJS projects to Stack using AI-powered tools.
 
 {% callout type="info" %}
 Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & Fragments](/docs/concepts/queries).
@@ -8,7 +8,7 @@ Migrating specifically from KeystoneJS? Start with the canonical [Migrating from
 
 ## Introduction
 
-OpenSaaS Stack provides an intelligent migration system that helps you transition existing projects with minimal manual work. The migration assistant:
+Stack provides an intelligent migration system that helps you transition existing projects with minimal manual work. The migration assistant:
 
 - **Analyzes** your current schema and project structure
 - **Guides** you through an interactive wizard
@@ -40,7 +40,7 @@ This command will:
 ### What You'll See
 
 ```
-🚀 OpenSaaS Stack Migration
+🚀 Stack Migration
 
 ✔ Detected: prisma, nextjs
 ✔ Found 8 models
@@ -62,7 +62,7 @@ This command will:
 🤖 Next Steps:
 
    1. Open this project in Claude Code
-   2. Ask: "Help me migrate to OpenSaaS Stack"
+   2. Ask: "Help me migrate to Stack"
    3. Follow the interactive wizard
 
 📚 Documentation: https://stack.opensaas.au/guides/migration
@@ -75,7 +75,7 @@ After running the migration command, open your project in Claude Code:
 1. **Start the conversation:**
 
    ```
-   Help me migrate to OpenSaaS Stack
+   Help me migrate to Stack
    ```
 
 2. **Answer the wizard questions:**
@@ -868,7 +868,7 @@ export async function getPosts() {
 
 ## Migrating context.graphql.run
 
-If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. OpenSaaS Stack has no GraphQL layer — instead it provides **fragment-based query utilities** (`defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`) that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
+If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. Stack has no GraphQL layer — instead it provides **fragment-based query utilities** (`defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`) that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
 
 {% callout type="info" %}
 The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, gql.tada typed documents, and fragment → `include` / `select` with null-on-access-denied) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & Fragments](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
@@ -876,7 +876,7 @@ The full set of `context.graphql.run` → `context.db.*` recipes — including t
 
 ### Quick reference
 
-| Keystone                                             | OpenSaaS Stack                                                     |
+| Keystone                                             | Stack                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
@@ -892,7 +892,7 @@ const { posts } = await context.graphql.run({
   query: `query { posts(where: { published: true }) { id title } }`,
 })
 
-// After (OpenSaaS Stack) — pass the fragment directly to context.db
+// After (Stack) — pass the fragment directly to context.db
 import type { Post } from '.prisma/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
@@ -1071,7 +1071,7 @@ git reset --hard pre-opensaas-migration
 
 ### Documentation
 
-- [OpenSaaS Stack Docs](https://stack.opensaas.au/)
+- [Stack Docs](https://stack.opensaas.au/)
 - [Access Control Guide](https://stack.opensaas.au/docs/concepts/access-control)
 - [Field Types Reference](https://stack.opensaas.au/docs/concepts/field-types)
 - [Authentication Guide](https://stack.opensaas.au/docs/how-to/authentication)
@@ -1220,7 +1220,7 @@ export default config({
 
 ## Summary
 
-The OpenSaaS Stack migration system provides:
+The Stack migration system provides:
 
 ✅ **Automated detection** of Prisma, KeystoneJS, Next.js projects
 ✅ **AI-guided wizard** through Claude Code integration

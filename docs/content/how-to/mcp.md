@@ -1,10 +1,10 @@
 # MCP Setup Guide
 
-Learn how to integrate the Model Context Protocol (MCP) with OpenSaaS Stack to enable AI assistants like Claude to interact with your application's data.
+Learn how to integrate the Model Context Protocol (MCP) with Stack to enable AI assistants like Claude to interact with your application's data.
 
 ## Overview
 
-The MCP integration in OpenSaaS Stack provides:
+The MCP integration in Stack provides:
 
 - **Automatic CRUD Tools** - Read, create, update, delete operations for all lists
 - **Custom Tools** - Add specialized operations for your business logic
@@ -16,7 +16,7 @@ The MCP integration in OpenSaaS Stack provides:
 
 Before setting up MCP, you need:
 
-1. A working OpenSaaS Stack application
+1. A working Stack application
 2. Better Auth configured (see [Authentication Guide](/docs/how-to/authentication))
 3. Claude Desktop or another MCP client
 

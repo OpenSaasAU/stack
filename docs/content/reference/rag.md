@@ -1,10 +1,10 @@
 # RAG Package
 
-RAG (Retrieval-Augmented Generation) and AI embeddings integration for OpenSaas Stack. Turn your application into a knowledge base with semantic search capabilities powered by vector embeddings.
+RAG (Retrieval-Augmented Generation) and AI embeddings integration for Stack. Turn your application into a knowledge base with semantic search capabilities powered by vector embeddings.
 
 ## Overview
 
-The `@opensaas/stack-rag` package adds powerful semantic search and RAG capabilities to your OpenSaas Stack application with minimal configuration. It supports multiple embedding providers (OpenAI, Ollama), flexible storage backends (pgvector, SQLite VSS, JSON), and integrates seamlessly with the stack's access control system.
+The `@opensaas/stack-rag` package adds powerful semantic search and RAG capabilities to your Stack application with minimal configuration. It supports multiple embedding providers (OpenAI, Ollama), flexible storage backends (pgvector, SQLite VSS, JSON), and integrates seamlessly with the stack's access control system.
 
 **Key Features:**
 
@@ -30,7 +30,7 @@ pnpm add openai  # For OpenAI embeddings
 
 ## Quick Start
 
-Here's the fastest way to add semantic search to your OpenSaas Stack app:
+Here's the fastest way to add semantic search to your Stack app:
 
 ```typescript
 // opensaas.config.ts
@@ -447,7 +447,7 @@ contentEmbedding: embedding({
 
 **Plugin and configuration:**
 
-- `ragPlugin(config)` - RAG plugin for OpenSaas Stack
+- `ragPlugin(config)` - RAG plugin for Stack
 - `openaiEmbeddings(config)` - OpenAI embedding provider helper
 - `ollamaEmbeddings(config)` - Ollama embedding provider helper
 - `pgvectorStorage(config)` - pgvector storage helper

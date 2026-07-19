@@ -1,6 +1,6 @@
 # Custom Field Components
 
-OpenSaas Stack provides a flexible system for creating custom field components that integrate seamlessly with the admin UI. This guide covers how to create and register custom fields using two different approaches.
+Stack provides a flexible system for creating custom field components that integrate seamlessly with the admin UI. This guide covers how to create and register custom fields using two different approaches.
 
 ## Overview
 

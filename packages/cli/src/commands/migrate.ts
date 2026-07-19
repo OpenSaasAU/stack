@@ -20,7 +20,7 @@ interface MigrateOptions {
  * The CLI points migrators at this page rather than embedding the guide text,
  * so the binary stays small and the docs stay the single source of truth.
  */
-export const MIGRATION_GUIDE_URL = 'https://stack.opensaas.au/docs/guides/migrating-from-keystone'
+export const MIGRATION_GUIDE_URL = 'https://stack.opensaas.au/docs/how-to/migrate-from-keystone'
 
 /**
  * Claude Code marketplace + plugin identifiers used to install the

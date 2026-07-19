@@ -1,6 +1,6 @@
 # Queries & Fragments
 
-OpenSaaS Stack has **no GraphQL layer**. Instead of `context.graphql.run()`, it provides first-class, type-safe query utilities that give you the same benefits KeystoneJS users relied on — fragment reuse, composability, and inferred result types — without GraphQL at runtime.
+Stack has **no GraphQL layer**. Instead of `context.graphql.run()`, it provides first-class, type-safe query utilities that give you the same benefits KeystoneJS users relied on — fragment reuse, composability, and inferred result types — without GraphQL at runtime.
 
 The building blocks are:
 
@@ -170,7 +170,7 @@ const posts = await context.db.post.findMany({
 
 ## Coming from `context.graphql.run`?
 
-| Keystone                                             | OpenSaaS Stack                                                     |
+| Keystone                                             | Stack                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |

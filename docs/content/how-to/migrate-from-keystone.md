@@ -1,6 +1,6 @@
 # Migrating from KeystoneJS
 
-This is the **canonical, single source of truth** for migrating a KeystoneJS 6 project to OpenSaaS Stack. It is written for both human developers and migration agents. KeystoneJS and OpenSaaS Stack share a config-first philosophy, Keystone-compliant hooks, and the same access-control shape, so most concepts map across directly — and the generator is deliberately tuned for **Schema parity** so an existing database migrates without destructive changes.
+This is the **canonical, single source of truth** for migrating a KeystoneJS 6 project to Stack. It is written for both human developers and migration agents. KeystoneJS and Stack share a config-first philosophy, Keystone-compliant hooks, and the same access-control shape, so most concepts map across directly — and the generator is deliberately tuned for **Schema parity** so an existing database migrates without destructive changes.
 
 {% callout type="info" %}
 This page consolidates the full Keystone migration story. The general, multi-source ([Prisma / Next.js / Keystone](/docs/how-to/migrate)) AI-assisted walkthrough lives in the [Migration Guide](/docs/how-to/migrate); the detailed image/file and auth-adoption recipes are linked (not duplicated) from here so there is one place each fact is maintained.
@@ -8,7 +8,7 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 
 ## Overview of differences
 
-| Concern                 | KeystoneJS 6                       | OpenSaaS Stack                                                       |
+| Concern                 | KeystoneJS 6                       | Stack                                                       |
 | ----------------------- | ---------------------------------- | -------------------------------------------------------------------- |
 | Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                     |
 | Database                | Prisma (managed by Keystone)       | Prisma 7 with driver adapters                                        |
@@ -68,7 +68,7 @@ export const lists = {
 }
 ```
 
-### OpenSaaS Stack (`opensaas.config.ts`)
+### Stack (`opensaas.config.ts`)
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
@@ -125,7 +125,7 @@ export default config({
 
 Most Keystone field builders have a same-named OpenSaaS equivalent. The validation and UI options carry across with the same names.
 
-| Keystone field   | OpenSaaS Stack field                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Keystone field   | Stack field                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across.                                                                                                                                                                                                                                                                                                                                                                                                |
 | `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -258,9 +258,9 @@ For any advanced Prisma feature the config API doesn't expose, use `db.extendPri
 
 ## 4. Access control
 
-Access control functions share the same shape between Keystone and OpenSaaS Stack — operation-level booleans/filters and filter-based scoping all carry across.
+Access control functions share the same shape between Keystone and Stack — operation-level booleans/filters and filter-based scoping all carry across.
 
-| Keystone access                                                | OpenSaaS Stack                                                  |
+| Keystone access                                                | Stack                                                  |
 | -------------------------------------------------------------- | --------------------------------------------------------------- |
 | `access.operation.{query,create,update,delete}`                | Same — `access: { operation: { … } }`                           |
 | `access.filter.{query,update,delete}` returning a `where`      | Operation function returning a Prisma `where` filter            |
@@ -278,7 +278,7 @@ access: {
   },
 }
 
-// OpenSaaS Stack — boolean and filter forms are both supported
+// Stack — boolean and filter forms are both supported
 access: {
   operation: {
     query: ({ session }) => !!session,
@@ -295,11 +295,11 @@ Access-controlled operations **fail silently**: a denied read returns `null` (si
 
 ## 5. Replacing `context.graphql.run` with `context.db.*` + fragments
 
-This is the largest API change. OpenSaaS Stack has **no GraphQL layer** ([ADR-0005](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0005-no-graphql-layer-migrate-via-fragments.md)). It provides first-class TypeScript utilities — `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf` — that give you fragment reuse, composability, and inferred result types **without** GraphQL or a codegen step. Everything still runs through `context.db`, so access control is enforced automatically.
+This is the largest API change. Stack has **no GraphQL layer** ([ADR-0005](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0005-no-graphql-layer-migrate-via-fragments.md)). It provides first-class TypeScript utilities — `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf` — that give you fragment reuse, composability, and inferred result types **without** GraphQL or a codegen step. Everything still runs through `context.db`, so access control is enforced automatically.
 
 ### Concept mapping
 
-| Keystone                                             | OpenSaaS Stack                                                     |
+| Keystone                                             | Stack                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
@@ -318,7 +318,7 @@ const { posts } = await context.graphql.run({
   query: `query { posts(where: { published: true }) { id title author { id name } } }`,
 })
 
-// After (OpenSaaS Stack)
+// After (Stack)
 import type { Post, User } from '.prisma/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
@@ -395,9 +395,9 @@ Per-field `db.relationName` overrides the global `joinTableNaming`. If both side
 
 ## 7. Hook migration
 
-Most hooks map directly by name. The Keystone hooks API is honoured; the only addition is `resolveOutput` (transforming read values). The **timing semantics** are worth understanding: OpenSaaS Stack runs list-level and field-level hooks in a single defined pipeline.
+Most hooks map directly by name. The Keystone hooks API is honoured; the only addition is `resolveOutput` (transforming read values). The **timing semantics** are worth understanding: Stack runs list-level and field-level hooks in a single defined pipeline.
 
-| Keystone hook     | OpenSaaS Stack equivalent                            |
+| Keystone hook     | Stack equivalent                            |
 | ----------------- | ---------------------------------------------------- |
 | `resolveInput`    | `resolveInput` (list + field level)                  |
 | `validateInput`   | `validate` (or `validateInput` for backwards compat) |
@@ -436,7 +436,7 @@ hooks: {
   },
 }
 
-// OpenSaaS Stack — preferred name (validateInput still works as an alias)
+// Stack — preferred name (validateInput still works as an alias)
 hooks: {
   validate: ({ resolvedData, addValidationError }) => {
     if (!resolvedData.title) addValidationError('Title is required')
@@ -450,7 +450,7 @@ Hook arguments are Keystone-compliant: `inputData`, `resolvedData`, `item` (the 
 
 ## 8. Image and file fields
 
-Keystone stores image metadata across **7 columns** per field and file metadata across **3 columns**. OpenSaaS Stack's `image()` / `file()` fields (from `@opensaas/stack-storage/fields`) default to a single `Json?` column for greenfield projects, **but** they ship a **non-destructive multi-column parity mode** that maps directly onto the existing Keystone columns in place — no data migration, no dropped columns, no re-upload of existing assets ([ADR-0006](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0006-image-file-migration-prefers-multi-column-parity.md)).
+Keystone stores image metadata across **7 columns** per field and file metadata across **3 columns**. Stack's `image()` / `file()` fields (from `@opensaas/stack-storage/fields`) default to a single `Json?` column for greenfield projects, **but** they ship a **non-destructive multi-column parity mode** that maps directly onto the existing Keystone columns in place — no data migration, no dropped columns, no re-upload of existing assets ([ADR-0006](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0006-image-file-migration-prefers-multi-column-parity.md)).
 
 The recommended path is multi-column mode via `db.columns: 'keystone'`:
 
@@ -483,7 +483,7 @@ const { withAuth } = createAuth({
   secretField: 'password',
 })
 
-// OpenSaaS Stack
+// Stack
 import { authPlugin } from '@opensaas/stack-auth'
 export default config({
   plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
@@ -552,7 +552,7 @@ Custom Keystone admin views map onto the [composable UI](/docs/how-to/composabil
 
 ## 11. Side-by-side coexistence (configurable output paths)
 
-During the cut-over you often want OpenSaaS Stack to run **alongside** the existing Keystone app without clobbering its `prisma/` directory or generated files. Relocate the generator's output with the `output` block:
+During the cut-over you often want Stack to run **alongside** the existing Keystone app without clobbering its `prisma/` directory or generated files. Relocate the generator's output with the `output` block:
 
 ```typescript
 export default config({

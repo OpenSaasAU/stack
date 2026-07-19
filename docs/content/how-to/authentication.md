@@ -1,10 +1,10 @@
 # Authentication Guide
 
-This guide covers everything you need to implement authentication in your OpenSaaS Stack application using Better-auth integration.
+This guide covers everything you need to implement authentication in your Stack application using Better-auth integration.
 
 ## Introduction
 
-OpenSaaS Stack provides seamless authentication through the `@opensaas/stack-auth` package, which integrates [Better-auth](https://better-auth.com) with the stack's access control system. You get:
+Stack provides seamless authentication through the `@opensaas/stack-auth` package, which integrates [Better-auth](https://better-auth.com) with the stack's access control system. You get:
 
 - **Email/password authentication** out of the box
 - **OAuth/social login** (GitHub, Google, Discord, Twitter)
@@ -281,7 +281,7 @@ export default function ForgotPasswordPage() {
 
 ## Protected Routes
 
-OpenSaaS Stack doesn't use Next.js middleware for authentication. Instead, protect routes at the page/component level by checking the session.
+Stack doesn't use Next.js middleware for authentication. Instead, protect routes at the page/component level by checking the session.
 
 ### Protecting Admin Pages
 
@@ -922,7 +922,7 @@ Verification link: http://localhost:3000/api/auth/verify-email?token=abc123def45
 If you are migrating a project that **already runs better-auth** — its tables
 exist, hold live data, and you don't want a destructive auth migration — the
 plugin can adopt those tables instead of recreating them. This is the common
-case when migrating an established app to OpenSaaS Stack.
+case when migrating an established app to Stack.
 
 ### App `User` vs the Auth identity
 
@@ -1592,4 +1592,4 @@ authPlugin({
 - **Working Example**: Check out the [auth-demo example](https://github.com/OpenSaasAU/stack/tree/main/examples/auth-demo)
 - **Better Auth Docs**: Explore [Better-auth documentation](https://better-auth.com) for advanced features
 
-You now have everything you need to implement secure authentication in your OpenSaaS Stack application!
+You now have everything you need to implement secure authentication in your Stack application!

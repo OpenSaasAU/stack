@@ -121,8 +121,8 @@ const userEmail = context.session?.email // ✅ Type: string
 ## Learn More
 
 - [Documentation](https://stack.opensaas.au/docs)
-- [Better-auth Integration](https://stack.opensaas.au/docs/guides/authentication)
-- [Access Control](https://stack.opensaas.au/docs/core-concepts/access-control)
+- [Better-auth Integration](https://stack.opensaas.au/docs/how-to/authentication)
+- [Access Control](https://stack.opensaas.au/docs/concepts/access-control)
 
 ## Need Help?
 

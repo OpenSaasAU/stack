@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide walks you through deploying your OpenSaas Stack application to production using Vercel and Neon PostgreSQL.
+This guide walks you through deploying your Stack application to production using Vercel and Neon PostgreSQL.
 
 Locally you develop on SQLite with `prisma db push` for a zero-setup loop. Production runs on **PostgreSQL** with versioned **`prisma migrate`** migrations — these are deliberately two different workflows (see [ADR-0003](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0003-deployment-uses-postgres-and-prisma-migrate.md)). This guide covers the one-time switch and the production loop.
 
@@ -10,7 +10,7 @@ Before deploying, make sure you have:
 
 - A [Vercel account](https://vercel.com/signup) (free tier works)
 - A [Neon account](https://neon.tech) (free tier includes 10GB storage)
-- Your OpenSaas Stack application working locally
+- Your Stack application working locally
 - Git repository (GitHub, GitLab, or Bitbucket)
 
 ## Overview
@@ -28,7 +28,7 @@ The deployment process involves:
 
 ## How database connections flow
 
-OpenSaas Stack uses Prisma 7, which requires a **driver adapter** at runtime. There are two distinct places a database URL is consumed, and on serverless Postgres they intentionally point at different connection strings:
+Stack uses Prisma 7, which requires a **driver adapter** at runtime. There are two distinct places a database URL is consumed, and on serverless Postgres they intentionally point at different connection strings:
 
 - **The running app** connects through a driver adapter built in your `prismaClientConstructor` (in `opensaas.config.ts`). On serverless platforms like Vercel this must use the **pooled** `DATABASE_URL` to avoid exhausting connection limits.
 - **The Prisma CLI** (migrations, `db push`, Studio) reads the datasource from the generated `prisma.config.ts`. That file prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so migrations run over a **direct** (non-pooled) connection.
@@ -703,7 +703,7 @@ Before going live:
 
 If you're stuck:
 
-1. Check [OpenSaas Stack GitHub Issues](https://github.com/OpenSaasAU/stack/issues)
+1. Check [Stack GitHub Issues](https://github.com/OpenSaasAU/stack/issues)
 2. Search [Vercel Docs](https://vercel.com/docs)
 3. Check [Neon Docs](https://neon.tech/docs)
 
@@ -740,7 +740,7 @@ git push origin main
 
 ### Using Different Database Providers
 
-While this guide focuses on Neon, OpenSaas Stack works with any PostgreSQL provider. The pattern is the same: set `provider: 'postgresql'`, build a `PrismaPg` (or provider-specific) adapter in `prismaClientConstructor` with the pooled `DATABASE_URL`, and point `DIRECT_DATABASE_URL` at the direct connection.
+While this guide focuses on Neon, Stack works with any PostgreSQL provider. The pattern is the same: set `provider: 'postgresql'`, build a `PrismaPg` (or provider-specific) adapter in `prismaClientConstructor` with the pooled `DATABASE_URL`, and point `DIRECT_DATABASE_URL` at the direct connection.
 
 **Supabase:**
 
@@ -773,7 +773,7 @@ Now that your app is deployed:
 
 ## Summary
 
-You've successfully deployed your OpenSaas Stack application! Here's what you accomplished:
+You've successfully deployed your Stack application! Here's what you accomplished:
 
 - Created a production PostgreSQL database on Neon
 - Switched your config to the PostgreSQL driver adapter (pooled `DATABASE_URL`)

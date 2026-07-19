@@ -1,6 +1,6 @@
 # Quick Start
 
-Get up and running with OpenSaaS Stack in 5 minutes. Deploy to production in 30 minutes.
+Get up and running with Stack in 5 minutes. Deploy to production in 30 minutes.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ npm create opensaas-app@latest my-app --with-ai
 
 This creates a complete Next.js project with:
 
-- OpenSaaS Stack pre-configured
+- Stack pre-configured
 - User & Post models with relationships
 - Admin UI at `/admin`
 - All necessary dependencies
@@ -47,7 +47,7 @@ This creates a complete Next.js project with:
 
 ### Option 2: Manual Setup
 
-Add OpenSaaS Stack to an existing Next.js project:
+Add Stack to an existing Next.js project:
 
 #### 1. Create a New Project (if needed)
 
@@ -56,7 +56,7 @@ npx create-next-app@latest my-app
 cd my-app
 ```
 
-#### 2. Install OpenSaaS Stack
+#### 2. Install Stack
 
 ```bash
 pnpm add @opensaas/stack-core @prisma/adapter-better-sqlite3
@@ -213,7 +213,7 @@ Now that you have a basic setup, explore these topics:
 
 ## AI-Assisted Development
 
-OpenSaaS Stack includes a Claude Code plugin for feature-driven development. Instead of manually configuring infrastructure, describe what you want to build and let Claude guide you through implementation.
+Stack includes a Claude Code plugin for feature-driven development. Instead of manually configuring infrastructure, describe what you want to build and let Claude guide you through implementation.
 
 **Features:**
 

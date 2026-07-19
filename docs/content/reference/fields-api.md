@@ -1,6 +1,6 @@
 # Field Types API Reference
 
-Complete API reference for all built-in field types in OpenSaaS Stack. For usage examples and guides, see the [Field Types guide](/docs/concepts/field-types).
+Complete API reference for all built-in field types in Stack. For usage examples and guides, see the [Field Types guide](/docs/concepts/field-types).
 
 ## Core Field Types
 

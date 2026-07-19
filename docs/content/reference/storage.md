@@ -1,6 +1,6 @@
 # Storage Package
 
-File and image upload field types with pluggable storage providers for OpenSaas Stack.
+File and image upload field types with pluggable storage providers for Stack.
 
 ## Overview
 

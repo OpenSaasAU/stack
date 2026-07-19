@@ -1,10 +1,10 @@
 # Context API Reference
 
-Complete API reference for the OpenSaaS Stack context system. The context provides access-controlled database operations with automatic security, hooks, and validation.
+Complete API reference for the Stack context system. The context provides access-controlled database operations with automatic security, hooks, and validation.
 
 ## Overview
 
-The context is the runtime interface for all database operations in OpenSaaS Stack. It wraps your Prisma client with:
+The context is the runtime interface for all database operations in Stack. It wraps your Prisma client with:
 
 - **Access control** - Automatic enforcement of access rules
 - **Hooks execution** - Data transformation and side effects
@@ -751,7 +751,7 @@ export async function deletePostAsAdmin(id: string) {
 
 ## Silent Failures
 
-OpenSaaS Stack uses silent failures to prevent information leakage about the existence of records.
+Stack uses silent failures to prevent information leakage about the existence of records.
 
 ### Why Silent Failures?
 

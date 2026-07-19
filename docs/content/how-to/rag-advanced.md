@@ -6,7 +6,7 @@ This guide covers advanced RAG patterns, custom implementations, performance opt
 
 ### How Automatic Embedding Generation Works
 
-The RAG plugin uses the OpenSaas Stack hooks system to automatically generate embeddings when content changes.
+The RAG plugin uses the Stack hooks system to automatically generate embeddings when content changes.
 
 #### Plugin Initialization
 
@@ -1313,6 +1313,6 @@ See [Performance Optimization](#performance-optimization) section above.
 
 - **[RAG Package Reference](/docs/reference/rag)** - Complete API documentation
 - **[RAG Setup Guide](/docs/how-to/rag)** - Database configuration and getting started
-- **[OpenSaas Stack Examples](https://github.com/OpenSaasAU/stack/tree/main/examples)** - Production-ready examples
+- **[Stack Examples](https://github.com/OpenSaasAU/stack/tree/main/examples)** - Production-ready examples
 
-You now have the knowledge to build advanced RAG implementations with OpenSaas Stack!
+You now have the knowledge to build advanced RAG implementations with Stack!

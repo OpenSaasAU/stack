@@ -1,6 +1,6 @@
 # Tiptap Rich Text Editor
 
-The `@opensaas/stack-tiptap` package provides a rich text editing field for OpenSaas Stack using the popular [Tiptap](https://tiptap.dev) editor. This package demonstrates how third-party field packages can extend the stack without modifying the core.
+The `@opensaas/stack-tiptap` package provides a rich text editing field for Stack using the popular [Tiptap](https://tiptap.dev) editor. This package demonstrates how third-party field packages can extend the stack without modifying the core.
 
 ## Overview
 

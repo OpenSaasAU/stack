@@ -1,6 +1,6 @@
 # Writing Plugins
 
-OpenSaaS Stack's plugin system allows you to extend functionality by adding lists, transforming configs, registering custom tools, and more. This guide covers everything you need to create powerful, reusable plugins.
+Stack's plugin system allows you to extend functionality by adding lists, transforming configs, registering custom tools, and more. This guide covers everything you need to create powerful, reusable plugins.
 
 ## Overview
 
@@ -576,7 +576,7 @@ Document your plugin thoroughly:
 
 ````typescript
 /**
- * Audit Plugin for OpenSaaS Stack
+ * Audit Plugin for Stack
  *
  * Automatically logs all database operations to an AuditLog list.
  *

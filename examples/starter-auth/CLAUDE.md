@@ -50,4 +50,4 @@ For guided, wizard-style feature building, install the OpenSaaS Stack Claude Cod
 /plugin install opensaas-stack@opensaas-stack-marketplace
 ```
 
-This project already registers the OpenSaaS MCP server in `.claude/settings.json`, so the `opensaas_*` tools are available here. Learn more: https://stack.opensaas.au/docs/guides/claude-code
+This project already registers the OpenSaaS MCP server in `.claude/settings.json`, so the `opensaas_*` tools are available here. Learn more: https://stack.opensaas.au/docs/how-to/claude-code

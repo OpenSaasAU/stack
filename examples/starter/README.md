@@ -129,14 +129,14 @@ pnpm db:push
 
 ## Deploy to Production
 
-Ready to deploy? Check out the [Deployment Guide](https://stack.opensaas.au/docs/guides/deployment) for step-by-step instructions on deploying to Vercel + Neon.
+Ready to deploy? Check out the [Deployment Guide](https://stack.opensaas.au/docs/how-to/deploy) for step-by-step instructions on deploying to Vercel + Neon.
 
 ## Learn More
 
 - [Documentation](https://stack.opensaas.au/docs)
-- [Access Control](https://stack.opensaas.au/docs/core-concepts/access-control)
-- [Field Types](https://stack.opensaas.au/docs/core-concepts/field-types)
-- [Hooks](https://stack.opensaas.au/docs/core-concepts/hooks)
+- [Access Control](https://stack.opensaas.au/docs/concepts/access-control)
+- [Field Types](https://stack.opensaas.au/docs/concepts/field-types)
+- [Hooks](https://stack.opensaas.au/docs/concepts/hooks)
 
 ## Need Help?
 

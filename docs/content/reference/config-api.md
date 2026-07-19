@@ -1,12 +1,12 @@
 # Config API Reference
 
-Complete API reference for the OpenSaaS Stack configuration system. For basic usage and examples, see the [Config System guide](/docs/concepts/config).
+Complete API reference for the Stack configuration system. For basic usage and examples, see the [Config System guide](/docs/concepts/config).
 
 ## Core Functions
 
 ### `config()`
 
-Creates and validates an OpenSaaS Stack configuration. Executes plugins if provided.
+Creates and validates an Stack configuration. Executes plugins if provided.
 
 ```typescript
 import { config } from '@opensaas/stack-core'
@@ -58,7 +58,7 @@ User: list({
 
 ### `OpenSaasConfig`
 
-The root configuration object for your OpenSaaS Stack application.
+The root configuration object for your Stack application.
 
 ```typescript
 export default config({

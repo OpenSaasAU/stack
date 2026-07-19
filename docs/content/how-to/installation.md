@@ -1,6 +1,6 @@
-# Getting Started
+# Installation
 
-This guide walks you through building your first app with OpenSaaS Stack — from an empty folder to a running admin UI you can extend with Claude Code. It takes about five minutes.
+Set up a Stack project — from an empty folder to a running admin UI you can extend with Claude Code. It takes about five minutes. (New to Stack? The [Quick Start](/docs/tutorials/quick-start) tutorial is the gentler on-ramp.)
 
 ## Prerequisites
 
@@ -106,6 +106,6 @@ for adapter examples.
 - **[Hooks](/docs/concepts/hooks)** — data transformation and side effects
 
 {% callout type="info" %}
-Contributing to OpenSaaS Stack itself? The monorepo setup (building packages,
+Contributing to Stack itself? The monorepo setup (building packages,
 running tests, changesets) lives in `CONTRIBUTING.md` in the repository.
 {% /callout %}

@@ -1,10 +1,10 @@
 # Storage Setup Guide
 
-This guide walks you through setting up file and image uploads in your OpenSaas Stack application using various storage providers.
+This guide walks you through setting up file and image uploads in your Stack application using various storage providers.
 
 ## Prerequisites
 
-- An OpenSaas Stack project (see [Quick Start](/docs/tutorials/quick-start))
+- An Stack project (see [Quick Start](/docs/tutorials/quick-start))
 - Node.js 18+ installed
 - Basic understanding of Next.js App Router
 

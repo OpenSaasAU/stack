@@ -1,12 +1,12 @@
 # RAG Setup & Integration Guide
 
-This guide covers everything you need to set up RAG (Retrieval-Augmented Generation) in your OpenSaas Stack application, from database configuration to building production-ready knowledge bases.
+This guide covers everything you need to set up RAG (Retrieval-Augmented Generation) in your Stack application, from database configuration to building production-ready knowledge bases.
 
 ## Prerequisites
 
 Before adding RAG to your application, ensure you have:
 
-- **OpenSaas Stack** installed and configured
+- **Stack** installed and configured
 - **Node.js 18+** and pnpm
 - **Database** (PostgreSQL, SQLite, or any Prisma-supported database)
 - **OpenAI API key** (for OpenAI embeddings) OR **Ollama** installed (for local embeddings)
@@ -721,7 +721,7 @@ import { sudo } from '@opensaas/stack-core/context'
 const articles = [
   {
     title: 'Getting Started Guide',
-    content: 'OpenSaas Stack is a config-first framework for building admin-heavy applications...',
+    content: 'Stack is a config-first framework for building admin-heavy applications...',
     category: 'product',
   },
   {
@@ -916,4 +916,4 @@ Can't reach database server
 - **[RAG Advanced Patterns](/docs/how-to/rag-advanced)** - Custom providers, performance tuning, and advanced use cases
 - **[Example: RAG OpenAI Chatbot](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-openai-chatbot)** - Production-ready chatbot implementation
 
-You now have everything you need to implement RAG in your OpenSaas Stack application!
+You now have everything you need to implement RAG in your Stack application!

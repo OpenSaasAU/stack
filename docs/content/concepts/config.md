@@ -1,6 +1,6 @@
 # Config System
 
-The config system is the heart of OpenSaaS Stack. Define your entire schema, access control, and behavior in one place.
+The config system is the heart of Stack. Define your entire schema, access control, and behavior in one place.
 
 ## Basic Config
 

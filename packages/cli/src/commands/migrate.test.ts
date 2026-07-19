@@ -27,7 +27,7 @@ describe('migrate command discoverability', () => {
   describe('canonical pointers', () => {
     it('points at the published Keystone migration guide', () => {
       expect(MIGRATION_GUIDE_URL).toBe(
-        'https://stack.opensaas.au/docs/guides/migrating-from-keystone',
+        'https://stack.opensaas.au/docs/how-to/migrate-from-keystone',
       )
     })
 

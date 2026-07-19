@@ -233,7 +233,7 @@ better-auth user, e.g. `AuthUser`). It does not assume that list is your app's
 own domain `User` — when the keys differ, your `User` is never extended or
 overwritten. **Linking your domain `User` to the Auth identity is your app's
 concern** (declare a `relationship({ ref: 'AuthUser' })` on your `User`). See the
-[Authentication guide](https://stack.opensaas.au/docs/guides/authentication) for
+[Authentication guide](https://stack.opensaas.au/docs/how-to/authentication) for
 the full migrator walkthrough and a Schema-parity (clean-diff) check.
 
 ## UI Components
