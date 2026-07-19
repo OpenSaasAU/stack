@@ -38,9 +38,7 @@ export default async function DocPage({ params }: DocPageProps) {
   }
 
   return (
-    <DocLayout slug={slug} title={doc.title}>
-      {Markdoc.renderers.react(content, React, { components })}
-    </DocLayout>
+    <DocLayout slug={slug}>{Markdoc.renderers.react(content, React, { components })}</DocLayout>
   )
 }
 
