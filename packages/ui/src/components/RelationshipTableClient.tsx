@@ -132,29 +132,37 @@ export function RelationshipTableClient({
 
         <TableFooter>
           <TableRow data-slot="relationship-table-footer">
-            {columns.map((column, index) => {
-              const numeric = isNumericField(columnFieldType(column))
-              const isSummed = sumColumnSet.has(column)
-              return (
-                <TableCell key={column} className={cn(numeric && 'text-right')}>
-                  {index === 0 && (
-                    <span className="text-sm text-muted-foreground">
-                      {count} {count === 1 ? 'row' : 'rows'}
-                    </span>
-                  )}
-                  {isSummed && (
-                    <span className={cn('font-medium', index === 0 && 'ml-2')}>
-                      <CellRenderer
-                        value={sums[column]}
-                        field={fields[column] ?? { type: 'text' }}
-                        fieldName={column}
-                        basePath={basePath}
-                      />
-                    </span>
-                  )}
-                </TableCell>
-              )
-            })}
+            {columns.length === 0 ? (
+              // No columns (related list curates to nothing but the back-reference):
+              // still always show the row count, mirroring the empty-body colSpan.
+              <TableCell colSpan={1} className="text-sm text-muted-foreground">
+                {count} {count === 1 ? 'row' : 'rows'}
+              </TableCell>
+            ) : (
+              columns.map((column, index) => {
+                const numeric = isNumericField(columnFieldType(column))
+                const isSummed = sumColumnSet.has(column)
+                return (
+                  <TableCell key={column} className={cn(numeric && 'text-right')}>
+                    {index === 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        {count} {count === 1 ? 'row' : 'rows'}
+                      </span>
+                    )}
+                    {isSummed && (
+                      <span className={cn('font-medium', index === 0 && 'ml-2')}>
+                        <CellRenderer
+                          value={sums[column]}
+                          field={fields[column] ?? { type: 'text' }}
+                          fieldName={column}
+                          basePath={basePath}
+                        />
+                      </span>
+                    )}
+                  </TableCell>
+                )
+              })
+            )}
           </TableRow>
         </TableFooter>
       </Table>
