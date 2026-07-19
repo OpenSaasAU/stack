@@ -116,15 +116,7 @@ const SCREENSHOTS = [
   },
 ]
 
-function SectionHeading({
-  kicker,
-  title,
-  lede,
-}: {
-  kicker: string
-  title: string
-  lede?: string
-}) {
+function SectionHeading({ kicker, title, lede }: { kicker: string; title: string; lede?: string }) {
   return (
     <div className="max-w-2xl mb-10">
       <p className="text-sm font-mono uppercase tracking-widest text-emerald-400 mb-3">{kicker}</p>
@@ -289,12 +281,17 @@ export default function HomePage() {
             {HOW_IT_WORKS.map((step, index) => {
               const Icon = step.icon
               return (
-                <div key={step.title} className="p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40">
+                <div
+                  key={step.title}
+                  className="p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40"
+                >
                   <div className="flex items-center justify-between mb-4">
                     <div className="h-10 w-10 rounded-lg bg-emerald-400/10 flex items-center justify-center">
                       <Icon className="h-5 w-5 text-emerald-400" />
                     </div>
-                    <span className="text-3xl font-bold text-zinc-800 select-none">{index + 1}</span>
+                    <span className="text-3xl font-bold text-zinc-800 select-none">
+                      {index + 1}
+                    </span>
                   </div>
                   <h3 className="text-lg font-semibold text-zinc-100 mb-1">{step.title}</h3>
                   <p className="text-sm text-zinc-400 leading-relaxed">{step.body}</p>
@@ -369,8 +366,8 @@ export default function HomePage() {
               <Bot className="h-5 w-5 text-emerald-400 mb-4" />
               <h3 className="text-lg font-semibold text-zinc-100 mb-2">A Claude Code plugin</h3>
               <p className="text-sm text-zinc-400 leading-relaxed">
-                Install the Stack plugin and describe features in plain language — the agent scaffolds
-                lists, access rules, and UI within the framework&apos;s conventions.
+                Install the Stack plugin and describe features in plain language — the agent
+                scaffolds lists, access rules, and UI within the framework&apos;s conventions.
               </p>
             </div>
           </div>

@@ -876,7 +876,7 @@ The full set of `context.graphql.run` → `context.db.*` recipes — including t
 
 ### Quick reference
 
-| Keystone                                             | Stack                                                     |
+| Keystone                                             | Stack                                                              |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |

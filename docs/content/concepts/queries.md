@@ -170,7 +170,7 @@ const posts = await context.db.post.findMany({
 
 ## Coming from `context.graphql.run`?
 
-| Keystone                                             | Stack                                                     |
+| Keystone                                             | Stack                                                              |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |

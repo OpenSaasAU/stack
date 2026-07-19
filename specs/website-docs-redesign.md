@@ -4,20 +4,20 @@ Design spec for the public site (`docs/` app, deployed at https://stack.opensaas
 
 ## Decisions (settled)
 
-| Decision      | Outcome                                                                                                                                  |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Core story    | **Guardrails story**: AI agents ship fast but can't be trusted with security; Stack makes the secure path the only path.                  |
-| Audience      | Developers already building with AI coding agents. Technical copy from sentence one.                                                      |
-| Naming        | **"Stack"** in copy and wordmark, "by OpenSaas" attribution. Packages/org keep full names.                                                |
-| Site shape    | One **Narrative landing** page; everything else lives in docs.                                                                            |
-| Proof devices | **Session switcher** (interactive, precomputed, honestly labeled) + real admin UI screenshots.                                            |
-| Visual        | Dark-first dev aesthetic on the landing; docs fully readable in light and dark. Tailwind stays.                                           |
-| Docs IA       | Full **Diátaxis** restructure: Tutorials / How-to / Concepts / Reference. Old URLs get permanent redirects (ADR-0019).                    |
+| Decision      | Outcome                                                                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core story    | **Guardrails story**: AI agents ship fast but can't be trusted with security; Stack makes the secure path the only path.                       |
+| Audience      | Developers already building with AI coding agents. Technical copy from sentence one.                                                           |
+| Naming        | **"Stack"** in copy and wordmark, "by OpenSaas" attribution. Packages/org keep full names.                                                     |
+| Site shape    | One **Narrative landing** page; everything else lives in docs.                                                                                 |
+| Proof devices | **Session switcher** (interactive, precomputed, honestly labeled) + real admin UI screenshots.                                                 |
+| Visual        | Dark-first dev aesthetic on the landing; docs fully readable in light and dark. Tailwind stays.                                                |
+| Docs IA       | Full **Diátaxis** restructure: Tutorials / How-to / Concepts / Reference. Old URLs get permanent redirects (ADR-0019).                         |
 | Tutorial      | **Flagship tutorial**: build a small real app by describing features to Claude Code, anchored by **Checkpoints** (canonical config snapshots). |
-| Packages      | Per-package pages live under Reference; conceptual/setup material redistributed to Concepts/How-to.                                       |
-| Agent naming  | Generic pain ("AI coding agents"), Claude Code named as the first-class workflow and the tutorial's agent.                                |
-| Beta          | Understated badge + one honest "pin versions for production" line in the get-started section. No banner.                                  |
-| Keystone      | One slim "Coming from Keystone?" strip near the end of the landing narrative, linking to the migration how-to.                            |
+| Packages      | Per-package pages live under Reference; conceptual/setup material redistributed to Concepts/How-to.                                            |
+| Agent naming  | Generic pain ("AI coding agents"), Claude Code named as the first-class workflow and the tutorial's agent.                                     |
+| Beta          | Understated badge + one honest "pin versions for production" line in the get-started section. No banner.                                       |
+| Keystone      | One slim "Coming from Keystone?" strip near the end of the landing narrative, linking to the migration how-to.                                 |
 
 ## Narrative landing (`docs/app/page.tsx`)
 
@@ -42,41 +42,41 @@ One scroll, dark-first, in this order:
 
 New top-level: `/docs` (landing) · Tutorials · How-to guides · Concepts · Reference. `lib/navigation.ts` mirrors this. All old URLs → permanent redirects in `docs/next.config.js`.
 
-| Old                                  | New                                 |
-| ------------------------------------ | ----------------------------------- |
-| /docs/quick-start                    | /docs/tutorials/quick-start         |
-| /docs/getting-started                | /docs/how-to/installation           |
+| Old                                  | New                                                             |
+| ------------------------------------ | --------------------------------------------------------------- |
+| /docs/quick-start                    | /docs/tutorials/quick-start                                     |
+| /docs/getting-started                | /docs/how-to/installation                                       |
 | —                                    | /docs/tutorials/build-with-claude-code (new, Flagship tutorial) |
-| /docs/core-concepts/access-control   | /docs/concepts/access-control       |
-| /docs/core-concepts/field-types      | /docs/concepts/field-types          |
-| /docs/core-concepts/fields           | /docs/concepts/fields               |
-| /docs/core-concepts/queries          | /docs/concepts/queries              |
-| /docs/core-concepts/hooks            | /docs/concepts/hooks                |
-| /docs/core-concepts/generators       | /docs/concepts/generators           |
-| /docs/core-concepts/config           | /docs/concepts/config               |
-| /docs/guides/migrating-from-keystone | /docs/how-to/migrate-from-keystone  |
-| /docs/guides/migration               | /docs/how-to/migrate                |
-| /docs/guides/claude-code             | /docs/how-to/claude-code            |
-| /docs/guides/custom-fields           | /docs/how-to/custom-fields          |
-| /docs/guides/theming                 | /docs/how-to/theming                |
-| /docs/guides/theme-presets           | /docs/how-to/theme-presets          |
-| /docs/guides/storage-setup           | /docs/how-to/storage                |
-| /docs/guides/composability           | /docs/how-to/composability          |
-| /docs/guides/authentication          | /docs/how-to/authentication         |
-| /docs/guides/plugins                 | /docs/how-to/write-a-plugin         |
-| /docs/guides/mcp-setup               | /docs/how-to/mcp                    |
-| /docs/guides/rag-setup               | /docs/how-to/rag                    |
-| /docs/guides/rag-advanced            | /docs/how-to/rag-advanced           |
-| /docs/guides/deployment              | /docs/how-to/deploy                 |
-| /docs/packages/core                  | /docs/reference/core                |
-| /docs/packages/auth                  | /docs/reference/auth                |
-| /docs/packages/rag                   | /docs/reference/rag                 |
-| /docs/packages/storage               | /docs/reference/storage             |
-| /docs/packages/ui                    | /docs/reference/ui                  |
-| /docs/packages/tiptap                | /docs/reference/tiptap              |
-| /docs/api-reference/config           | /docs/reference/config-api          |
-| /docs/api-reference/fields           | /docs/reference/fields-api          |
-| /docs/api-reference/context          | /docs/reference/context-api         |
+| /docs/core-concepts/access-control   | /docs/concepts/access-control                                   |
+| /docs/core-concepts/field-types      | /docs/concepts/field-types                                      |
+| /docs/core-concepts/fields           | /docs/concepts/fields                                           |
+| /docs/core-concepts/queries          | /docs/concepts/queries                                          |
+| /docs/core-concepts/hooks            | /docs/concepts/hooks                                            |
+| /docs/core-concepts/generators       | /docs/concepts/generators                                       |
+| /docs/core-concepts/config           | /docs/concepts/config                                           |
+| /docs/guides/migrating-from-keystone | /docs/how-to/migrate-from-keystone                              |
+| /docs/guides/migration               | /docs/how-to/migrate                                            |
+| /docs/guides/claude-code             | /docs/how-to/claude-code                                        |
+| /docs/guides/custom-fields           | /docs/how-to/custom-fields                                      |
+| /docs/guides/theming                 | /docs/how-to/theming                                            |
+| /docs/guides/theme-presets           | /docs/how-to/theme-presets                                      |
+| /docs/guides/storage-setup           | /docs/how-to/storage                                            |
+| /docs/guides/composability           | /docs/how-to/composability                                      |
+| /docs/guides/authentication          | /docs/how-to/authentication                                     |
+| /docs/guides/plugins                 | /docs/how-to/write-a-plugin                                     |
+| /docs/guides/mcp-setup               | /docs/how-to/mcp                                                |
+| /docs/guides/rag-setup               | /docs/how-to/rag                                                |
+| /docs/guides/rag-advanced            | /docs/how-to/rag-advanced                                       |
+| /docs/guides/deployment              | /docs/how-to/deploy                                             |
+| /docs/packages/core                  | /docs/reference/core                                            |
+| /docs/packages/auth                  | /docs/reference/auth                                            |
+| /docs/packages/rag                   | /docs/reference/rag                                             |
+| /docs/packages/storage               | /docs/reference/storage                                         |
+| /docs/packages/ui                    | /docs/reference/ui                                              |
+| /docs/packages/tiptap                | /docs/reference/tiptap                                          |
+| /docs/api-reference/config           | /docs/reference/config-api                                      |
+| /docs/api-reference/fields           | /docs/reference/fields-api                                      |
+| /docs/api-reference/context          | /docs/reference/context-api                                     |
 
 How-to nav grouping: **Set up** (installation, claude-code) · **Build** (custom-fields, composability, theming, theme-presets, write-a-plugin) · **Integrate** (authentication, storage, mcp, rag, rag-advanced) · **Migrate** (migrate-from-keystone, migrate) · **Deploy** (deploy).
 
@@ -86,7 +86,7 @@ Internal links: update root `README.md`, package READMEs, and cross-links inside
 
 ## Flagship tutorial (outline)
 
-`/docs/tutorials/build-with-claude-code` — *Build a team blog with Stack and Claude Code.*
+`/docs/tutorials/build-with-claude-code` — _Build a team blog with Stack and Claude Code._
 
 1. Scaffold (`npm create opensaas-app@latest team-blog`), open in Claude Code.
 2. Describe the posts feature (drafts/published, authors) — **Checkpoint 1**: canonical config.

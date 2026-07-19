@@ -8,7 +8,7 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 
 ## Overview of differences
 
-| Concern                 | KeystoneJS 6                       | Stack                                                       |
+| Concern                 | KeystoneJS 6                       | Stack                                                                |
 | ----------------------- | ---------------------------------- | -------------------------------------------------------------------- |
 | Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                     |
 | Database                | Prisma (managed by Keystone)       | Prisma 7 with driver adapters                                        |
@@ -125,7 +125,7 @@ export default config({
 
 Most Keystone field builders have a same-named OpenSaaS equivalent. The validation and UI options carry across with the same names.
 
-| Keystone field   | Stack field                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Keystone field   | Stack field                                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across.                                                                                                                                                                                                                                                                                                                                                                                                |
 | `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -142,7 +142,7 @@ Most Keystone field builders have a same-named OpenSaaS equivalent. The validati
 | `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/reference/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/reference/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 {% callout type="info" %}
 For the complete option reference on every built-in field, see [Field Types](/docs/concepts/field-types). To build a field type that has no built-in equivalent, see [Custom Fields](/docs/how-to/custom-fields).
@@ -260,7 +260,7 @@ For any advanced Prisma feature the config API doesn't expose, use `db.extendPri
 
 Access control functions share the same shape between Keystone and Stack — operation-level booleans/filters and filter-based scoping all carry across.
 
-| Keystone access                                                | Stack                                                  |
+| Keystone access                                                | Stack                                                           |
 | -------------------------------------------------------------- | --------------------------------------------------------------- |
 | `access.operation.{query,create,update,delete}`                | Same — `access: { operation: { … } }`                           |
 | `access.filter.{query,update,delete}` returning a `where`      | Operation function returning a Prisma `where` filter            |
@@ -299,7 +299,7 @@ This is the largest API change. Stack has **no GraphQL layer** ([ADR-0005](https
 
 ### Concept mapping
 
-| Keystone                                             | Stack                                                     |
+| Keystone                                             | Stack                                                              |
 | ---------------------------------------------------- | ------------------------------------------------------------------ |
 | GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
 | `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
@@ -397,7 +397,7 @@ Per-field `db.relationName` overrides the global `joinTableNaming`. If both side
 
 Most hooks map directly by name. The Keystone hooks API is honoured; the only addition is `resolveOutput` (transforming read values). The **timing semantics** are worth understanding: Stack runs list-level and field-level hooks in a single defined pipeline.
 
-| Keystone hook     | Stack equivalent                            |
+| Keystone hook     | Stack equivalent                                     |
 | ----------------- | ---------------------------------------------------- |
 | `resolveInput`    | `resolveInput` (list + field level)                  |
 | `validateInput`   | `validate` (or `validateInput` for backwards compat) |
