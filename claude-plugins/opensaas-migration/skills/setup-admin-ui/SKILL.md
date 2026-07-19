@@ -100,7 +100,8 @@ import { getSession } from '@/lib/auth'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
-  const context = await getContext({ session: await getSession() })
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
   return await context.serverAction(props)
 }
 
@@ -162,7 +163,7 @@ Next steps:
 2. Run `pnpm dev` to start the dev server
 3. Visit http://localhost:3000{adminPath} to access the admin UI
 
-Docs: https://stack.opensaas.au/admin-ui
+Docs: https://stack.opensaas.au/docs/reference/ui
 ```
 
 ## Notes
@@ -171,4 +172,4 @@ Docs: https://stack.opensaas.au/admin-ui
 - The `basePath` prop must match exactly the URL path where the admin is mounted.
 - The `serverAction` wrapper function is required — it provides the server action bridge between the client-side admin UI components and the database context.
 - If the user is using a custom `getSession` approach (not from `@opensaas/stack-auth`), the auth template still works — just update the import path and the session shape passed to `getContext`.
-- If Tailwind CSS is not configured in the project, mention that `@opensaas/stack-ui` uses Tailwind for styling and link to the docs for setup: https://stack.opensaas.au/admin-ui#tailwind
+- If Tailwind CSS is not configured in the project, mention that `@opensaas/stack-ui` uses Tailwind for styling and link to the docs for setup: https://stack.opensaas.au/docs/reference/ui

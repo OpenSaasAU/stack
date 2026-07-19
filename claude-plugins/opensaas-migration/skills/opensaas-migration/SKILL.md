@@ -121,11 +121,11 @@ operation: {
   delete: ({ session }) => session?.role === 'admin',
 }
 
-// Filter-based access
+// Filter-based access — return the Prisma filter DIRECTLY (no `where` wrapper);
+// the engine merges it into the query's where clause
 operation: {
-  query: ({ session }) => ({
-    where: { authorId: { equals: session?.userId } }
-  }),
+  query: ({ session }) =>
+    session ? { authorId: { equals: session.userId } } : false,
 }
 ```
 
@@ -139,6 +139,8 @@ operation: {
 | `Int`       | `integer()`                    |
 | `Boolean`   | `checkbox()`                   |
 | `DateTime`  | `timestamp()`                  |
+| `Decimal`   | `decimal()`                    |
+| `Json`      | `json()`                       |
 | `Enum`      | `select({ options: [...] })`   |
 | `Relation`  | `relationship({ ref: '...' })` |
 
@@ -153,6 +155,9 @@ operation: {
 | `select`         | `select()`                                                                 |
 | `relationship`   | `relationship()`                                                           |
 | `password`       | `password()`                                                               |
+| `decimal`        | `decimal()`                                                                |
+| `calendarDay`    | `calendarDay()`                                                            |
+| `json`           | `json()`                                                                   |
 | `virtual`        | `virtual()` — **requires changes** (no GraphQL, use `hooks.resolveOutput`) |
 
 ### 6. Database Configuration
@@ -292,7 +297,7 @@ export default config({
     Post: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        content: text(), // Note: OpenSaaS text() doesn't have ui.displayMode
+        content: text({ ui: { displayMode: 'textarea' } }), // ui.displayMode carries over from Keystone
         author: relationship({ ref: 'User.posts' }),
         publishedAt: timestamp(),
       },
@@ -423,7 +428,7 @@ const { posts } = await context.graphql.run({
 })
 
 // OpenSaaS Stack — defineFragment + context.db (no codegen, no GraphQL)
-import type { User, Post } from '.prisma/client'
+import type { User, Post } from '@/.opensaas/prisma-client/client'
 import { defineFragment, type ResultOf } from '@opensaas/stack-core'
 
 const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
@@ -552,5 +557,5 @@ The agent will create a detailed GitHub issue with reproduction steps and propos
 
 - [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
 - [Migration Guide](https://stack.opensaas.au/docs/how-to/migrate-from-keystone)
-- [Access Control Guide](https://stack.opensaas.au/core-concepts/access-control)
-- [Field Types](https://stack.opensaas.au/core-concepts/field-types)
+- [Access Control Guide](https://stack.opensaas.au/docs/concepts/access-control)
+- [Field Types](https://stack.opensaas.au/docs/concepts/field-types)

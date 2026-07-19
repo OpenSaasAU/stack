@@ -33,11 +33,17 @@ function installMCPServer(): Promise<void> {
       if (code === 0) {
         console.log('\n✅ OpenSaaS Stack MCP server installed successfully!')
         console.log('\n📖 Available tools:')
+        console.log('  Feature wizards:')
         console.log('  - opensaas_implement_feature')
-        console.log('  - opensaas_feature_docs')
-        console.log('  - opensaas_list_features')
-        console.log('  - opensaas_suggest_features')
+        console.log('  - opensaas_answer_feature / opensaas_answer_followup')
+        console.log('  - opensaas_list_features / opensaas_suggest_features')
         console.log('  - opensaas_validate_feature')
+        console.log('  Documentation:')
+        console.log('  - opensaas_feature_docs / opensaas_get_example')
+        console.log('  Migration:')
+        console.log('  - opensaas_start_migration / opensaas_answer_migration')
+        console.log('  - opensaas_introspect_prisma / opensaas_introspect_keystone')
+        console.log('  - opensaas_search_migration_docs')
         console.log('\n🚀 Restart Claude Code to use the MCP tools.')
         resolve()
       } else {
@@ -82,7 +88,8 @@ function uninstallMCPServer(): Promise<void> {
 }
 
 function startMCPServer(): void {
-  console.log('🚀 Starting OpenSaaS Stack MCP server...\n')
+  // stdout carries the MCP stdio JSON-RPC stream — status output must go to stderr
+  console.error('🚀 Starting OpenSaaS Stack MCP server...\n')
 
   const serverPath = getServerPath()
 

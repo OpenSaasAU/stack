@@ -51,11 +51,10 @@ export function createBetterAuthMcpAdapter(auth: BetterAuthInstance): McpSession
  * ```typescript
  * import { withMcpAuth } from '@opensaas/stack-auth/mcp'
  * import { auth } from '@/lib/auth'
- * import { createMcpServer } from '@/.opensaas/mcp/server'
  *
  * const handler = withMcpAuth(auth, async (req, session) => {
- *   const server = createMcpServer(session)
- *   return server.handleRequest(req)
+ *   // session.userId is authenticated — handle the MCP request
+ *   return new Response(JSON.stringify({ ok: true }))
  * })
  *
  * export { handler as GET, handler as POST, handler as DELETE }

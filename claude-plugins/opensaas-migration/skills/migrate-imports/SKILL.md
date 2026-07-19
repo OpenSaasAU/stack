@@ -15,10 +15,12 @@ $ARGUMENTS
 | ---------------------------------------- | ------------------------------------------ |
 | `@keystone-6/core`                       | `@opensaas/stack-core`                     |
 | `@keystone-6/core/fields`                | `@opensaas/stack-core/fields`              |
-| `@keystone-6/auth`                       | `@opensaas/stack-auth`                     |
+| `@keystone-6/auth`                       | `@opensaas/stack-auth` (see note)          |
 | `@keystone-6/fields-document`            | `@opensaas/stack-tiptap/fields` (see note) |
 | `.keystone/types` or `'.keystone/types'` | `@opensaas/stack-core`                     |
 | `@keystone-6/core/session`               | Remove entirely (handled by authPlugin)    |
+
+**Note on `@keystone-6/auth`**: This is NOT a pure find-and-replace. Keystone's `createAuth`/`withAuth` have no equivalent export on `@opensaas/stack-auth` — replace the whole pattern with `authPlugin(...)` in the config's `plugins` array. (The stack's `createAuth` on `@opensaas/stack-auth/server` is a different function — it builds the Better-auth server instance for `lib/auth.ts`.)
 
 **Note on `@keystone-6/fields-document`**: Replace with `@opensaas/stack-tiptap/fields` and change `document()` → `richText()`. If document field migration is complex, note it for the user and leave a `// TODO: migrate document field` comment.
 
@@ -32,7 +34,10 @@ import type { Lists } from '.keystone/types'
 
 // After
 import type { AccessControl } from '@opensaas/stack-core'
-// KeystoneContext and Lists are no longer needed — use context from getContext()
+import type { Lists } from '@/.opensaas/lists'
+// KeystoneContext is no longer needed — use the context from getContext().
+// Keystone's `Lists` types have a direct successor: the generated
+// `@/.opensaas/lists` namespace, used as list<Lists.Post.TypeInfo>({ ... }).
 ```
 
 ## Config File Rename

@@ -72,9 +72,9 @@ In the admin page (`app/admin/[[...admin]]/page.tsx` or similar):
 'use client'
 
 import { registerFieldComponent } from '@opensaas/stack-ui'
-import { RichTextFieldComponent } from '@opensaas/stack-tiptap'
+import { TiptapField } from '@opensaas/stack-tiptap'
 
-registerFieldComponent('richText', RichTextFieldComponent)
+registerFieldComponent('richText', TiptapField)
 ```
 
 Then import it in the admin page as a side effect:
