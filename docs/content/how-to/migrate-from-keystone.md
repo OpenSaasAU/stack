@@ -3,7 +3,7 @@
 This is the **canonical, single source of truth** for migrating a KeystoneJS 6 project to OpenSaaS Stack. It is written for both human developers and migration agents. KeystoneJS and OpenSaaS Stack share a config-first philosophy, Keystone-compliant hooks, and the same access-control shape, so most concepts map across directly — and the generator is deliberately tuned for **Schema parity** so an existing database migrates without destructive changes.
 
 {% callout type="info" %}
-This page consolidates the full Keystone migration story. The general, multi-source ([Prisma / Next.js / Keystone](/docs/guides/migration)) AI-assisted walkthrough lives in the [Migration Guide](/docs/guides/migration); the detailed image/file and auth-adoption recipes are linked (not duplicated) from here so there is one place each fact is maintained.
+This page consolidates the full Keystone migration story. The general, multi-source ([Prisma / Next.js / Keystone](/docs/how-to/migrate)) AI-assisted walkthrough lives in the [Migration Guide](/docs/how-to/migrate); the detailed image/file and auth-adoption recipes are linked (not duplicated) from here so there is one place each fact is maintained.
 {% /callout %}
 
 ## Overview of differences
@@ -142,10 +142,10 @@ Most Keystone field builders have a same-named OpenSaaS equivalent. The validati
 | `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/packages/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/reference/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 {% callout type="info" %}
-For the complete option reference on every built-in field, see [Field Types](/docs/core-concepts/field-types). To build a field type that has no built-in equivalent, see [Custom Fields](/docs/guides/custom-fields).
+For the complete option reference on every built-in field, see [Field Types](/docs/concepts/field-types). To build a field type that has no built-in equivalent, see [Custom Fields](/docs/how-to/custom-fields).
 {% /callout %}
 
 ---
@@ -252,7 +252,7 @@ npx prisma migrate diff \
 npx prisma db push
 ```
 
-For any advanced Prisma feature the config API doesn't expose, use `db.extendPrismaSchema` (global) or a relationship field's `db.extendPrismaSchema` (per-field) — see [Generators](/docs/core-concepts/generators).
+For any advanced Prisma feature the config API doesn't expose, use `db.extendPrismaSchema` (global) or a relationship field's `db.extendPrismaSchema` (per-field) — see [Generators](/docs/concepts/generators).
 
 ---
 
@@ -289,7 +289,7 @@ access: {
 }
 ```
 
-Access-controlled operations **fail silently**: a denied read returns `null` (single) or `[]` (list), and a denied write returns `null` — they never throw. Keep your null-guards. See [Access Control](/docs/core-concepts/access-control) for the full model.
+Access-controlled operations **fail silently**: a denied read returns `null` (single) or `[]` (list), and a denied write returns `null` — they never throw. Keep your null-guards. See [Access Control](/docs/concepts/access-control) for the full model.
 
 ---
 
@@ -339,7 +339,7 @@ const posts = await context.db.post.findMany({
 // posts: PostData[]
 ```
 
-See [Queries & Fragments](/docs/core-concepts/queries) for the complete reference on `defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`, nested `RelationSelector` filtering, and fragment factories for runtime variables.
+See [Queries & Fragments](/docs/concepts/queries) for the complete reference on `defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`, nested `RelationSelector` filtering, and fragment factories for runtime variables.
 
 ### The four hard parts — the `migrate-context-calls` skill
 
@@ -389,7 +389,7 @@ tags: relationship({
 })
 ```
 
-Per-field `db.relationName` overrides the global `joinTableNaming`. If both sides set it, they must match. See [Generators](/docs/core-concepts/generators) for the full naming model.
+Per-field `db.relationName` overrides the global `joinTableNaming`. If both sides set it, they must match. See [Generators](/docs/concepts/generators) for the full naming model.
 
 ---
 
@@ -444,7 +444,7 @@ hooks: {
 }
 ```
 
-Hook arguments are Keystone-compliant: `inputData`, `resolvedData`, `item` (the existing record on update/delete), `originalItem` (in `afterOperation`), `operation`, `listKey`, and `context`. Field-level hooks additionally receive `fieldKey`. See [Hooks System](/docs/core-concepts/hooks) for the complete argument reference and the `originalItem` comparison pattern.
+Hook arguments are Keystone-compliant: `inputData`, `resolvedData`, `item` (the existing record on update/delete), `originalItem` (in `afterOperation`), `operation`, `listKey`, and `context`. Field-level hooks additionally receive `fieldKey`. See [Hooks System](/docs/concepts/hooks) for the complete argument reference and the `originalItem` comparison pattern.
 
 ---
 
@@ -466,13 +466,13 @@ Teacher: list({
 })
 ```
 
-The full recipe — overriding individual column names, the destructive single-`Json?` consolidation alternative (with backup steps and SQL for Postgres/MySQL/SQLite), storage providers (local, S3, Vercel Blob), and the no-re-upload guarantee — is the dedicated [Keystone Image & File Field Migration guide](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-image-migration.md). For configuring storage providers generally, see [Storage Setup](/docs/guides/storage-setup) and the [Storage package](/docs/packages/storage).
+The full recipe — overriding individual column names, the destructive single-`Json?` consolidation alternative (with backup steps and SQL for Postgres/MySQL/SQLite), storage providers (local, S3, Vercel Blob), and the no-re-upload guarantee — is the dedicated [Keystone Image & File Field Migration guide](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-image-migration.md). For configuring storage providers generally, see [Storage Setup](/docs/how-to/storage) and the [Storage package](/docs/reference/storage).
 
 ---
 
 ## 9. Authentication
 
-Replace `@keystone-6/auth` with the [auth plugin](/docs/guides/authentication) (`@opensaas/stack-auth`, built on Better Auth). The config shape changes but the concepts are the same.
+Replace `@keystone-6/auth` with the [auth plugin](/docs/how-to/authentication) (`@opensaas/stack-auth`, built on Better Auth). The config shape changes but the concepts are the same.
 
 ```typescript
 // Keystone
@@ -497,7 +497,7 @@ The auth plugin auto-injects the **Auth lists** (User, Session, Account, Verific
 
 If you are migrating a project that **already has live Better Auth tables** (typically in a separate `auth` schema, with an app `User` that is distinct from the auth identity), do **not** recreate them. Adopt the live tables in place with the `adoptBetterAuthTables()` recipe — it models them for runtime and types with **no destructive auth migration** and keeps your domain `User` separate from the Auth identity ([ADR-0007](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0007-auth-plugin-mirrors-better-auth-and-adopts-existing-tables.md)).
 
-The full recipe (defaults, customising schema/model names/column renames, and how to link your app `User` to the Auth identity) is in [Adopting an Existing Better Auth Installation](/docs/guides/authentication#adopting-an-existing-better-auth-installation).
+The full recipe (defaults, customising schema/model names/column renames, and how to link your app `User` to the Auth identity) is in [Adopting an Existing Better Auth Installation](/docs/how-to/authentication#adopting-an-existing-better-auth-installation).
 
 ---
 
@@ -546,7 +546,7 @@ export default async function AdminPage() {
 }
 ```
 
-Custom Keystone admin views map onto the [composable UI](/docs/guides/composability) and [custom field components](/docs/guides/custom-fields).
+Custom Keystone admin views map onto the [composable UI](/docs/how-to/composability) and [custom field components](/docs/how-to/custom-fields).
 
 ---
 
@@ -611,11 +611,11 @@ The `opensaas-migration` Claude Code plugin ships the migration skills — inclu
 
 ## Where to go next
 
-- **[Migration Guide](/docs/guides/migration)** — the general AI-assisted walkthrough (Prisma / Next.js / Keystone sources).
-- **[Queries & Fragments](/docs/core-concepts/queries)** — the `context.graphql.run` replacement in full.
-- **[Field Types](/docs/core-concepts/field-types)** — every built-in field's options.
-- **[Access Control](/docs/core-concepts/access-control)** and **[Hooks System](/docs/core-concepts/hooks)** — the patterns shared with Keystone.
-- **[Authentication](/docs/guides/authentication)** — the auth plugin and Better Auth adoption.
-- **[Generators](/docs/core-concepts/generators)** — schema generation, parity knobs, and `extendPrismaSchema`.
+- **[Migration Guide](/docs/how-to/migrate)** — the general AI-assisted walkthrough (Prisma / Next.js / Keystone sources).
+- **[Queries & Fragments](/docs/concepts/queries)** — the `context.graphql.run` replacement in full.
+- **[Field Types](/docs/concepts/field-types)** — every built-in field's options.
+- **[Access Control](/docs/concepts/access-control)** and **[Hooks System](/docs/concepts/hooks)** — the patterns shared with Keystone.
+- **[Authentication](/docs/how-to/authentication)** — the auth plugin and Better Auth adoption.
+- **[Generators](/docs/concepts/generators)** — schema generation, parity knobs, and `extendPrismaSchema`.
 
 For the original design notes behind this guide, see the [Keystone migration design notes](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-migration.md).

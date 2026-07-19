@@ -6,151 +6,184 @@ export interface NavItem {
 
 export const navigation: NavItem[] = [
   {
-    title: 'Getting Started',
+    title: 'Overview',
+    href: '/docs',
+  },
+  {
+    title: 'Tutorials',
     items: [
       {
         title: 'Quick Start',
-        href: '/docs/quick-start',
+        href: '/docs/tutorials/quick-start',
       },
       {
-        title: 'Installation',
-        href: '/docs/getting-started',
+        title: 'Build with Claude Code',
+        href: '/docs/tutorials/build-with-claude-code',
       },
     ],
   },
   {
-    title: 'Core Concepts',
+    title: 'How-to Guides',
+    items: [
+      {
+        title: 'Set up',
+        items: [
+          {
+            title: 'Installation',
+            href: '/docs/how-to/installation',
+          },
+          {
+            title: 'Claude Code Workflow',
+            href: '/docs/how-to/claude-code',
+          },
+        ],
+      },
+      {
+        title: 'Build',
+        items: [
+          {
+            title: 'Custom Fields',
+            href: '/docs/how-to/custom-fields',
+          },
+          {
+            title: 'Composability',
+            href: '/docs/how-to/composability',
+          },
+          {
+            title: 'Theming',
+            href: '/docs/how-to/theming',
+          },
+          {
+            title: 'Theme Presets',
+            href: '/docs/how-to/theme-presets',
+          },
+          {
+            title: 'Write a Plugin',
+            href: '/docs/how-to/write-a-plugin',
+          },
+        ],
+      },
+      {
+        title: 'Integrate',
+        items: [
+          {
+            title: 'Authentication',
+            href: '/docs/how-to/authentication',
+          },
+          {
+            title: 'File & Image Storage',
+            href: '/docs/how-to/storage',
+          },
+          {
+            title: 'MCP Server',
+            href: '/docs/how-to/mcp',
+          },
+          {
+            title: 'RAG',
+            href: '/docs/how-to/rag',
+          },
+          {
+            title: 'RAG Advanced',
+            href: '/docs/how-to/rag-advanced',
+          },
+        ],
+      },
+      {
+        title: 'Migrate',
+        items: [
+          {
+            title: 'From Keystone',
+            href: '/docs/how-to/migrate-from-keystone',
+          },
+          {
+            title: 'From Other Sources',
+            href: '/docs/how-to/migrate',
+          },
+        ],
+      },
+      {
+        title: 'Deploy',
+        items: [
+          {
+            title: 'Deploy to Production',
+            href: '/docs/how-to/deploy',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Concepts',
     items: [
       {
         title: 'Access Control',
-        href: '/docs/core-concepts/access-control',
-      },
-      {
-        title: 'Field Types',
-        href: '/docs/core-concepts/field-types',
-      },
-      {
-        title: 'Queries & Fragments',
-        href: '/docs/core-concepts/queries',
-      },
-      {
-        title: 'Hooks System',
-        href: '/docs/core-concepts/hooks',
-      },
-      {
-        title: 'Generators',
-        href: '/docs/core-concepts/generators',
+        href: '/docs/concepts/access-control',
       },
       {
         title: 'Config System',
-        href: '/docs/core-concepts/config',
+        href: '/docs/concepts/config',
+      },
+      {
+        title: 'Field Types',
+        href: '/docs/concepts/field-types',
+      },
+      {
+        title: 'Queries & Fragments',
+        href: '/docs/concepts/queries',
+      },
+      {
+        title: 'Hooks System',
+        href: '/docs/concepts/hooks',
+      },
+      {
+        title: 'Generators',
+        href: '/docs/concepts/generators',
       },
     ],
   },
   {
-    title: 'Packages',
+    title: 'Reference',
     items: [
       {
-        title: 'Core',
-        href: '/docs/packages/core',
+        title: 'Config API',
+        href: '/docs/reference/config-api',
       },
       {
-        title: 'Auth',
-        href: '/docs/packages/auth',
+        title: 'Fields API',
+        href: '/docs/reference/fields-api',
       },
       {
-        title: 'RAG',
-        href: '/docs/packages/rag',
+        title: 'Context API',
+        href: '/docs/reference/context-api',
       },
       {
-        title: 'Storage',
-        href: '/docs/packages/storage',
-      },
-      {
-        title: 'UI',
-        href: '/docs/packages/ui',
-      },
-      {
-        title: 'Tiptap',
-        href: '/docs/packages/tiptap',
-      },
-    ],
-  },
-  {
-    title: 'Guides',
-    items: [
-      {
-        title: 'Migrating from Keystone',
-        href: '/docs/guides/migrating-from-keystone',
-      },
-      {
-        title: 'Migration Guide (all sources)',
-        href: '/docs/guides/migration',
-      },
-      {
-        title: 'Claude Code Plugin',
-        href: '/docs/guides/claude-code',
-      },
-      {
-        title: 'Custom Fields',
-        href: '/docs/guides/custom-fields',
-      },
-      {
-        title: 'Theming',
-        href: '/docs/guides/theming',
-      },
-      {
-        title: 'Theme Presets',
-        href: '/docs/guides/theme-presets',
-      },
-      {
-        title: 'Storage Setup',
-        href: '/docs/guides/storage-setup',
-      },
-      {
-        title: 'Composability',
-        href: '/docs/guides/composability',
-      },
-      {
-        title: 'Authentication',
-        href: '/docs/guides/authentication',
-      },
-      {
-        title: 'Writing Plugins',
-        href: '/docs/guides/plugins',
-      },
-      {
-        title: 'MCP Setup',
-        href: '/docs/guides/mcp-setup',
-      },
-      {
-        title: 'RAG Setup',
-        href: '/docs/guides/rag-setup',
-      },
-      {
-        title: 'RAG Advanced',
-        href: '/docs/guides/rag-advanced',
-      },
-      {
-        title: 'Deployment',
-        href: '/docs/guides/deployment',
-      },
-    ],
-  },
-  {
-    title: 'API Reference',
-    items: [
-      {
-        title: 'Config',
-        href: '/docs/api-reference/config',
-      },
-      {
-        title: 'Fields',
-        href: '/docs/api-reference/fields',
-      },
-      {
-        title: 'Context',
-        href: '/docs/api-reference/context',
+        title: 'Packages',
+        items: [
+          {
+            title: 'stack-core',
+            href: '/docs/reference/core',
+          },
+          {
+            title: 'stack-auth',
+            href: '/docs/reference/auth',
+          },
+          {
+            title: 'stack-rag',
+            href: '/docs/reference/rag',
+          },
+          {
+            title: 'stack-storage',
+            href: '/docs/reference/storage',
+          },
+          {
+            title: 'stack-ui',
+            href: '/docs/reference/ui',
+          },
+          {
+            title: 'stack-tiptap',
+            href: '/docs/reference/tiptap',
+          },
+        ],
       },
     ],
   },

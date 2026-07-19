@@ -1,6 +1,6 @@
 # Field Types API Reference
 
-Complete API reference for all built-in field types in OpenSaaS Stack. For usage examples and guides, see the [Field Types guide](/docs/core-concepts/field-types).
+Complete API reference for all built-in field types in OpenSaaS Stack. For usage examples and guides, see the [Field Types guide](/docs/concepts/field-types).
 
 ## Core Field Types
 
@@ -1545,7 +1545,7 @@ internalNotes: text({
 })
 ```
 
-**See:** [Access Control guide](/docs/core-concepts/access-control) for details
+**See:** [Access Control guide](/docs/concepts/access-control) for details
 
 ---
 
@@ -1696,7 +1696,7 @@ thumbnail: text({
 })
 ```
 
-**See:** [Hooks guide](/docs/core-concepts/hooks) for execution order and patterns
+**See:** [Hooks guide](/docs/concepts/hooks) for execution order and patterns
 
 ---
 
@@ -1740,7 +1740,7 @@ slug: text({
 })
 ```
 
-**See:** [Custom Fields guide](/docs/guides/custom-fields) for creating custom components
+**See:** [Custom Fields guide](/docs/how-to/custom-fields) for creating custom components
 
 ---
 
@@ -1956,7 +1956,7 @@ export function email(options?: Omit<EmailField, 'type'>): EmailField {
 3. Use field-level hooks for data transformation
 4. Field types are self-contained (no switch statements in core)
 
-**See:** [Custom Fields guide](/docs/guides/custom-fields) for complete tutorial
+**See:** [Custom Fields guide](/docs/how-to/custom-fields) for complete tutorial
 
 ---
 
@@ -1976,7 +1976,7 @@ content: richText({
 })
 ```
 
-**See:** [Tiptap package documentation](/docs/packages/tiptap)
+**See:** [Tiptap package documentation](/docs/reference/tiptap)
 
 ---
 
@@ -2003,7 +2003,7 @@ document: file({
 })
 ```
 
-**See:** [Storage package documentation](/docs/packages/storage)
+**See:** [Storage package documentation](/docs/reference/storage)
 
 ---
 
@@ -2126,8 +2126,8 @@ email: text({
 
 ## Next Steps
 
-- **[Field Types Guide](/docs/core-concepts/field-types)** - Usage examples and patterns
-- **[Hooks System](/docs/core-concepts/hooks)** - Field-level data transformation
-- **[Access Control](/docs/core-concepts/access-control)** - Field-level security
-- **[Custom Fields Guide](/docs/guides/custom-fields)** - Create custom field types
-- **[Config API](/docs/api-reference/config)** - Complete configuration reference
+- **[Field Types Guide](/docs/concepts/field-types)** - Usage examples and patterns
+- **[Hooks System](/docs/concepts/hooks)** - Field-level data transformation
+- **[Access Control](/docs/concepts/access-control)** - Field-level security
+- **[Custom Fields Guide](/docs/how-to/custom-fields)** - Create custom field types
+- **[Config API](/docs/reference/config-api)** - Complete configuration reference

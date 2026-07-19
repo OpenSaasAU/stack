@@ -338,6 +338,6 @@ resolveInput: ({ resolvedData }) => {
 
 ## Next Steps
 
-- **[Access Control](/docs/core-concepts/access-control)** - Secure your data
-- **[Field Types](/docs/core-concepts/field-types)** - Available field types
-- **[Custom Fields](/docs/guides/custom-fields)** - Create custom field types
+- **[Access Control](/docs/concepts/access-control)** - Secure your data
+- **[Field Types](/docs/concepts/field-types)** - Available field types
+- **[Custom Fields](/docs/how-to/custom-fields)** - Create custom field types

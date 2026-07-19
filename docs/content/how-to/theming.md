@@ -13,7 +13,7 @@ variables, so they can never drift apart:
 
 This guide covers the token vocabulary, `ThemeConfig`, dark mode, and the
 component customization ladder. For a visual tour of the built-in starting
-points, see the [Theme Presets gallery](/docs/guides/theme-presets).
+points, see the [Theme Presets gallery](/docs/how-to/theme-presets).
 
 {% callout type="info" %}
 The token names, the `data-slot` names, and the `ThemeConfig` shape are the
@@ -428,11 +428,11 @@ below.
 When you need genuinely different structure, build the page yourself from the
 same exported components the prebuilt admin uses — `@opensaas/stack-ui/standalone`,
 `@opensaas/stack-ui/fields`, and `@opensaas/stack-ui/primitives`. See the
-[Composability guide](/docs/guides/composability).
+[Composability guide](/docs/how-to/composability).
 
 To replace a single field's editor, use the existing field-component registry
 (`registerFieldComponent`, `ui.component`, `ui.fieldType`) — see
-[Custom Fields](/docs/guides/custom-fields). Custom widgets slot into forms
+[Custom Fields](/docs/how-to/custom-fields). Custom widgets slot into forms
 without forking them.
 
 ### Not supported: swapping primitives inside `AdminUI`
@@ -508,7 +508,7 @@ These names are the stable, plain-CSS-targetable contract. Composite
 
 ## See also
 
-- [Theme Presets gallery](/docs/guides/theme-presets) — `modern` / `classic` / `neon` in light and dark
-- [Composability guide](/docs/guides/composability) — building pages from the same components
-- [Custom Fields](/docs/guides/custom-fields) — the field-component registry
-- [UI package reference](/docs/packages/ui) — full component and export list
+- [Theme Presets gallery](/docs/how-to/theme-presets) — `modern` / `classic` / `neon` in light and dark
+- [Composability guide](/docs/how-to/composability) — building pages from the same components
+- [Custom Fields](/docs/how-to/custom-fields) — the field-component registry
+- [UI package reference](/docs/reference/ui) — full component and export list

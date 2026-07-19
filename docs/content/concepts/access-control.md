@@ -400,6 +400,6 @@ expect(post).toBe(null)
 
 ## Next Steps
 
-- **[Hooks System](/docs/core-concepts/hooks)** - Add data transformation
-- **[Field Types](/docs/core-concepts/field-types)** - Explore field options
-- **[Context API](/docs/api-reference/context)** - Full context reference
+- **[Hooks System](/docs/concepts/hooks)** - Add data transformation
+- **[Field Types](/docs/concepts/field-types)** - Explore field options
+- **[Context API](/docs/reference/context-api)** - Full context reference

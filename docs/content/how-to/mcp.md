@@ -17,7 +17,7 @@ The MCP integration in OpenSaaS Stack provides:
 Before setting up MCP, you need:
 
 1. A working OpenSaaS Stack application
-2. Better Auth configured (see [Authentication Guide](/docs/guides/authentication))
+2. Better Auth configured (see [Authentication Guide](/docs/how-to/authentication))
 3. Claude Desktop or another MCP client
 
 ## Installation
@@ -585,8 +585,8 @@ See the complete working example at `examples/mcp-demo/` in the repository:
 
 ## Next Steps
 
-- [Authentication Guide](/docs/guides/authentication) - Setup Better Auth
-- [Access Control](/docs/core-concepts/access-control) - Secure your data
-- [Hooks System](/docs/core-concepts/hooks) - Add business logic
+- [Authentication Guide](/docs/how-to/authentication) - Setup Better Auth
+- [Access Control](/docs/concepts/access-control) - Secure your data
+- [Hooks System](/docs/concepts/hooks) - Add business logic
 - [Better Auth MCP Plugin](https://www.better-auth.com/docs/plugins/mcp) - OAuth details
 - [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification

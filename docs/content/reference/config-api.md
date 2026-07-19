@@ -1,6 +1,6 @@
 # Config API Reference
 
-Complete API reference for the OpenSaaS Stack configuration system. For basic usage and examples, see the [Config System guide](/docs/core-concepts/config).
+Complete API reference for the OpenSaaS Stack configuration system. For basic usage and examples, see the [Config System guide](/docs/concepts/config).
 
 ## Core Functions
 
@@ -323,7 +323,7 @@ Field definitions for this list. Keys are field names (camelCase recommended).
 
 **Type:** `Record<string, FieldConfig>`
 
-**See:** [Field Types guide](/docs/core-concepts/field-types) for available field types
+**See:** [Field Types guide](/docs/concepts/field-types) for available field types
 
 ##### `access`
 
@@ -331,7 +331,7 @@ Access control rules for this list.
 
 **Type:** `{ operation?: OperationAccess }`
 
-**See:** [Access Control guide](/docs/core-concepts/access-control)
+**See:** [Access Control guide](/docs/concepts/access-control)
 
 ##### `hooks`
 
@@ -339,7 +339,7 @@ List-level hooks for data transformation and side effects.
 
 **Type:** [`Hooks`](#hooks)
 
-**See:** [Hooks guide](/docs/core-concepts/hooks)
+**See:** [Hooks guide](/docs/concepts/hooks)
 
 ##### `mcp`
 
@@ -1439,7 +1439,7 @@ type StorageUtils = {
 
 ## Next Steps
 
-- **[Field Types](/docs/core-concepts/field-types)** - Detailed field type reference
-- **[Access Control](/docs/core-concepts/access-control)** - Access control patterns
-- **[Hooks](/docs/core-concepts/hooks)** - Hook execution and examples
-- **[Plugins](/docs/guides/plugins)** - Creating custom plugins
+- **[Field Types](/docs/concepts/field-types)** - Detailed field type reference
+- **[Access Control](/docs/concepts/access-control)** - Access control patterns
+- **[Hooks](/docs/concepts/hooks)** - Hook execution and examples
+- **[Plugins](/docs/how-to/write-a-plugin)** - Creating custom plugins

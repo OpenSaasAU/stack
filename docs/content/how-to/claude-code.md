@@ -184,7 +184,7 @@ Claude will fetch current documentation with code examples.
 
 ## Next Steps
 
-- [Quick Start](/docs/quick-start) - Set up your first OpenSaaS project
-- [MCP Setup](/docs/guides/mcp-setup) - Configure MCP for your deployed app
-- [Access Control](/docs/core-concepts/access-control) - Understand security patterns
-- [Authentication](/docs/guides/authentication) - Detailed auth configuration
+- [Quick Start](/docs/tutorials/quick-start) - Set up your first OpenSaaS project
+- [MCP Setup](/docs/how-to/mcp) - Configure MCP for your deployed app
+- [Access Control](/docs/concepts/access-control) - Understand security patterns
+- [Authentication](/docs/how-to/authentication) - Detailed auth configuration

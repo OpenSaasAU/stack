@@ -9,7 +9,7 @@ import { Callout } from '@/components/Callout'
 
 interface DocPageProps {
   params: Promise<{
-    slug?: string[]
+    slug: string[]
   }>
 }
 
@@ -19,8 +19,7 @@ export async function generateStaticParams() {
 }
 
 export default async function DocPage({ params }: DocPageProps) {
-  const resolvedParams = await params
-  const slug = resolvedParams.slug || ['quick-start']
+  const { slug } = await params
 
   const doc = getDocBySlug(slug)
 
@@ -46,8 +45,7 @@ export default async function DocPage({ params }: DocPageProps) {
 }
 
 export async function generateMetadata({ params }: DocPageProps) {
-  const resolvedParams = await params
-  const slug = resolvedParams.slug || ['quick-start']
+  const { slug } = await params
   const doc = getDocBySlug(slug)
 
   if (!doc) {
@@ -57,7 +55,7 @@ export async function generateMetadata({ params }: DocPageProps) {
   }
 
   return {
-    title: `${doc.title} | OpenSaaS Stack`,
-    description: `Documentation for ${doc.title}`,
+    title: doc.title,
+    description: `Stack documentation: ${doc.title}`,
   }
 }

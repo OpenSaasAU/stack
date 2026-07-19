@@ -8,10 +8,10 @@ The building blocks are:
 - **`runQuery` / `runQueryOne`** — standalone helpers that execute a fragment against a list.
 - **`ResultOf`** — a type utility that infers the exact result shape from a fragment (no codegen step).
 
-All fragment queries run through `context.db` under the hood, so your [access control](/docs/core-concepts/access-control) rules are always enforced.
+All fragment queries run through `context.db` under the hood, so your [access control](/docs/concepts/access-control) rules are always enforced.
 
 {% callout type="info" %}
-Migrating from Keystone? See the [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) guide and the [`context.graphql.run` quick reference](/docs/guides/migration#migrating-contextgraphqlrun) for a side-by-side translation table.
+Migrating from Keystone? See the [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide and the [`context.graphql.run` quick reference](/docs/how-to/migrate#migrating-contextgraphqlrun) for a side-by-side translation table.
 {% /callout %}
 
 ## `defineFragment`
@@ -94,7 +94,7 @@ if (!post) return notFound()
 ```
 
 {% callout type="warning" %}
-`context.db` reads do **not** honour Prisma's `select` argument. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` to `findUnique`/`findMany` is a no-op: it logs a runtime warning and the full, access-filtered record is still returned (field-level visibility is always enforced by [access control](/docs/core-concepts/access-control), regardless of `select`).
+`context.db` reads do **not** honour Prisma's `select` argument. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` to `findUnique`/`findMany` is a no-op: it logs a runtime warning and the full, access-filtered record is still returned (field-level visibility is always enforced by [access control](/docs/concepts/access-control), regardless of `select`).
 {% /callout %}
 
 ### Via `runQuery` / `runQueryOne` (standalone helpers)
@@ -179,4 +179,4 @@ const posts = await context.db.post.findMany({
 | Standalone GraphQL client call                       | `runQuery(context, listKey, fragment, args)` / `runQueryOne(...)`  |
 | Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
 
-For the complete set of migration recipes (deeply nested fragments, many-to-many, reuse across parents), see [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) and the [Migrating context.graphql.run](/docs/guides/migration#migrating-contextgraphqlrun) section of the Migration Guide.
+For the complete set of migration recipes (deeply nested fragments, many-to-many, reuse across parents), see [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) and the [Migrating context.graphql.run](/docs/how-to/migrate#migrating-contextgraphqlrun) section of the Migration Guide.

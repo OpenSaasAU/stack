@@ -1311,8 +1311,8 @@ See [Performance Optimization](#performance-optimization) section above.
 
 ## Next Steps
 
-- **[RAG Package Reference](/docs/packages/rag)** - Complete API documentation
-- **[RAG Setup Guide](/docs/guides/rag-setup)** - Database configuration and getting started
+- **[RAG Package Reference](/docs/reference/rag)** - Complete API documentation
+- **[RAG Setup Guide](/docs/how-to/rag)** - Database configuration and getting started
 - **[OpenSaas Stack Examples](https://github.com/OpenSaasAU/stack/tree/main/examples)** - Production-ready examples
 
 You now have the knowledge to build advanced RAG implementations with OpenSaas Stack!

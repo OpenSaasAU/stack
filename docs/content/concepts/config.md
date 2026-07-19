@@ -105,7 +105,7 @@ fields: {
 }
 ```
 
-See [Field Types](/docs/core-concepts/field-types) for all available types.
+See [Field Types](/docs/concepts/field-types) for all available types.
 
 ### Access Control
 
@@ -122,7 +122,7 @@ access: {
 }
 ```
 
-See [Access Control](/docs/core-concepts/access-control) for details.
+See [Access Control](/docs/concepts/access-control) for details.
 
 ### Hooks
 
@@ -139,10 +139,10 @@ hooks: {
 }
 ```
 
-See [Hooks](/docs/core-concepts/hooks) for details.
+See [Hooks](/docs/concepts/hooks) for details.
 
 ## Next Steps
 
-- **[Field Types](/docs/core-concepts/field-types)** - Available field types
-- **[Access Control](/docs/core-concepts/access-control)** - Secure your data
-- **[Hooks](/docs/core-concepts/hooks)** - Data transformation
+- **[Field Types](/docs/concepts/field-types)** - Available field types
+- **[Access Control](/docs/concepts/access-control)** - Secure your data
+- **[Hooks](/docs/concepts/hooks)** - Data transformation

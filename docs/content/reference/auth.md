@@ -474,7 +474,7 @@ export default config({
 
 The MCP plugin automatically converts its schema to OpenSaaS lists and enables OAuth authentication for AI assistants.
 
-See [MCP Integration Guide](/docs/guides/mcp) for more details.
+See [MCP Integration Guide](/docs/how-to/mcp) for more details.
 
 ## Examples
 
@@ -483,6 +483,6 @@ See [MCP Integration Guide](/docs/guides/mcp) for more details.
 
 ## Further Reading
 
-- [Authentication Guide](/docs/guides/authentication) - Comprehensive authentication guide
-- [Access Control Guide](/docs/guides/access-control) - Using sessions in access control
+- [Authentication Guide](/docs/how-to/authentication) - Comprehensive authentication guide
+- [Access Control Guide](/docs/concepts/access-control) - Using sessions in access control
 - [Better Auth Documentation](https://better-auth.com) - Official Better Auth docs

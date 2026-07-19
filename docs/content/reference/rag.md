@@ -706,9 +706,9 @@ console.log(`Failed: ${result.stats.failed}`)
 
 ## Next Steps
 
-- **[RAG Setup Guide](/docs/guides/rag-setup)** - Comprehensive setup instructions, database configuration, and example walkthroughs
-- **[RAG Advanced Patterns](/docs/guides/rag-advanced)** - Architecture deep dive, custom providers, performance optimization, and advanced use cases
-- **[MCP Integration Guide](/docs/guides/mcp)** - Model Context Protocol integration with semantic search tools
+- **[RAG Setup Guide](/docs/how-to/rag)** - Comprehensive setup instructions, database configuration, and example walkthroughs
+- **[RAG Advanced Patterns](/docs/how-to/rag-advanced)** - Architecture deep dive, custom providers, performance optimization, and advanced use cases
+- **[MCP Integration Guide](/docs/how-to/mcp)** - Model Context Protocol integration with semantic search tools
 
 ## Further Reading
 

@@ -497,7 +497,7 @@ export function PostDetailPage({ post }) {
 
 All components share a single set of theme tokens (CSS custom properties like `--color-primary`, `--radius`, and `--shadow-md`). You restyle everything at once either from config via `ui.theme` in `opensaas.config.ts` or by overriding the `--color-*` tokens in your own stylesheet, and dark mode is driven by a `data-theme` attribute on `<html>`.
 
-See the [Theming guide](/docs/guides/theming) for the full token vocabulary, `ThemeConfig`, dark mode, and the component customization ladder, and the [Theme Presets gallery](/docs/guides/theme-presets) for the built-in `modern` / `classic` / `neon` starting points.
+See the [Theming guide](/docs/how-to/theming) for the full token vocabulary, `ThemeConfig`, dark mode, and the component customization ladder, and the [Theme Presets gallery](/docs/how-to/theme-presets) for the built-in `modern` / `classic` / `neon` starting points.
 
 ## Accessibility
 
@@ -511,7 +511,7 @@ All primitives are built with Radix UI, providing:
 
 ## Next Steps
 
-- See the [API Reference](/docs/api-reference) for complete prop documentation
+- See the [API Reference](/docs/reference/config-api) for complete prop documentation
 - Explore the composable dashboard example for working code
 - Read the Custom Field Guide for extending field types
 - Check out the [GitHub repository](https://github.com/OpenSaasAU/stack) for more examples

@@ -93,10 +93,10 @@ export default config({
 })
 ```
 
-See the [Plugins Guide](/docs/guides/plugins) for creating custom plugins.
+See the [Plugins Guide](/docs/how-to/write-a-plugin) for creating custom plugins.
 
 ## Learn More
 
-- **[Quick Start](/docs/quick-start)** - Get started in 5 minutes
-- **[Config System](/docs/core-concepts/config)** - Config options
-- **[Field Types](/docs/core-concepts/field-types)** - Available fields
+- **[Quick Start](/docs/tutorials/quick-start)** - Get started in 5 minutes
+- **[Config System](/docs/concepts/config)** - Config options
+- **[Field Types](/docs/concepts/field-types)** - Available fields

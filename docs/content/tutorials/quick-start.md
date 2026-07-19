@@ -186,7 +186,7 @@ export default async function HomePage() {
 
 Ready to deploy your app? Follow our comprehensive deployment guide:
 
-**[Deploy to Vercel + Neon →](/docs/guides/deployment)**
+**[Deploy to Vercel + Neon →](/docs/how-to/deploy)**
 
 The deployment process takes ~10-15 minutes and includes:
 
@@ -199,13 +199,13 @@ The deployment process takes ~10-15 minutes and includes:
 
 Now that you have a basic setup, explore these topics:
 
-- **[Deployment Guide](/docs/guides/deployment)** - Deploy your app to production
-- **[Access Control](/docs/core-concepts/access-control)** - Learn how to secure your data
-- **[Field Types](/docs/core-concepts/field-types)** - Explore all available field types
-- **[Hooks](/docs/core-concepts/hooks)** - Add data transformation and side effects
-- **[Admin UI](/docs/packages/ui)** - Add a complete admin interface
-- **[Authentication](/docs/guides/authentication)** - Add user authentication with Better-auth
-- **[RAG Integration](/docs/packages/rag)** - Add semantic search and AI embeddings to your app
+- **[Deployment Guide](/docs/how-to/deploy)** - Deploy your app to production
+- **[Access Control](/docs/concepts/access-control)** - Learn how to secure your data
+- **[Field Types](/docs/concepts/field-types)** - Explore all available field types
+- **[Hooks](/docs/concepts/hooks)** - Add data transformation and side effects
+- **[Admin UI](/docs/reference/ui)** - Add a complete admin interface
+- **[Authentication](/docs/how-to/authentication)** - Add user authentication with Better-auth
+- **[RAG Integration](/docs/reference/rag)** - Add semantic search and AI embeddings to your app
 
 {% callout type="info" %}
 **Tip**: The access control engine automatically secures all database operations. No record is returned without passing access checks.
@@ -221,7 +221,7 @@ OpenSaaS Stack includes a Claude Code plugin for feature-driven development. Ins
 - Documentation search via `/opensaas-docs`
 - Specialized agent that understands OpenSaaS patterns
 
-**[Claude Code Plugin Guide →](/docs/guides/claude-code)**
+**[Claude Code Plugin Guide →](/docs/how-to/claude-code)**
 
 ## Common Issues
 

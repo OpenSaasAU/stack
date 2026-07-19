@@ -4,7 +4,7 @@ This guide walks you through setting up file and image uploads in your OpenSaas 
 
 ## Prerequisites
 
-- An OpenSaas Stack project (see [Quick Start](/docs/quick-start))
+- An OpenSaas Stack project (see [Quick Start](/docs/tutorials/quick-start))
 - Node.js 18+ installed
 - Basic understanding of Next.js App Router
 
@@ -819,7 +819,7 @@ await fetch('/api/upload', {
 
 ## Next Steps
 
-- [Storage Package Reference](/docs/packages/storage) - Detailed API documentation
-- [Custom Fields Guide](/docs/guides/custom-fields) - Create custom field types
-- [Hooks System](/docs/core-concepts/hooks) - Add custom behavior to uploads
-- [Access Control](/docs/core-concepts/access-control) - Secure file uploads
+- [Storage Package Reference](/docs/reference/storage) - Detailed API documentation
+- [Custom Fields Guide](/docs/how-to/custom-fields) - Create custom field types
+- [Hooks System](/docs/concepts/hooks) - Add custom behavior to uploads
+- [Access Control](/docs/concepts/access-control) - Secure file uploads

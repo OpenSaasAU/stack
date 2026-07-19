@@ -607,9 +607,9 @@ Dark mode is driven by a `data-theme` attribute on `<html>` (with a `ThemeToggle
 and `ThemeScript` for user control), and component design is customizable through
 a tokens → `classNames` → `data-slot` → composition ladder.
 
-See the [Theming guide](/docs/guides/theming) for the full token vocabulary,
+See the [Theming guide](/docs/how-to/theming) for the full token vocabulary,
 override paths, dark mode, and the customization ladder, and the
-[Theme Presets gallery](/docs/guides/theme-presets) for `modern` / `classic` /
+[Theme Presets gallery](/docs/how-to/theme-presets) for `modern` / `classic` /
 `neon` in light and dark.
 
 ## Type Safety

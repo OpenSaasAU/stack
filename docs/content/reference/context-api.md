@@ -983,8 +983,8 @@ try {
 
 ## Next Steps
 
-- **[Config API](/docs/api-reference/config)** - Configuration options
-- **[Field Types API](/docs/api-reference/fields)** - Field configuration
-- **[Access Control](/docs/core-concepts/access-control)** - Security patterns
-- **[Hooks](/docs/core-concepts/hooks)** - Data transformation
-- **[Generators](/docs/core-concepts/generators)** - Code generation
+- **[Config API](/docs/reference/config-api)** - Configuration options
+- **[Field Types API](/docs/reference/fields-api)** - Field configuration
+- **[Access Control](/docs/concepts/access-control)** - Security patterns
+- **[Hooks](/docs/concepts/hooks)** - Data transformation
+- **[Generators](/docs/concepts/generators)** - Code generation

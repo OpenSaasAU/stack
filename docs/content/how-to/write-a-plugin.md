@@ -750,13 +750,13 @@ my-plugin/
 ## Next Steps
 
 - Explore the [auth plugin source](https://github.com/OpenSaasAU/stack/tree/main/packages/auth) for a complete example
-- Read about [hooks system](/docs/core-concepts/hooks) for data transformation patterns
-- Learn about [MCP setup](/docs/guides/mcp-setup) for AI assistant integration
-- Check the [Plugin API reference](/docs/api-reference/config#plugin) for all available methods
+- Read about [hooks system](/docs/concepts/hooks) for data transformation patterns
+- Learn about [MCP setup](/docs/how-to/mcp) for AI assistant integration
+- Check the [Plugin API reference](/docs/reference/config-api#plugin) for all available methods
 
 ## Related Documentation
 
-- [Config System](/docs/core-concepts/config) - Understanding the config architecture
-- [Access Control](/docs/core-concepts/access-control) - Securing plugin-added lists
-- [Custom Fields](/docs/guides/custom-fields) - Creating custom field types
-- [Authentication](/docs/guides/authentication) - Auth plugin usage guide
+- [Config System](/docs/concepts/config) - Understanding the config architecture
+- [Access Control](/docs/concepts/access-control) - Securing plugin-added lists
+- [Custom Fields](/docs/how-to/custom-fields) - Creating custom field types
+- [Authentication](/docs/how-to/authentication) - Auth plugin usage guide

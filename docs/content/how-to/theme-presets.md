@@ -17,7 +17,7 @@ export default config({
 ```
 
 For everything about tokens, overrides, dark mode, and the customization ladder,
-see the [Theming guide](/docs/guides/theming).
+see the [Theming guide](/docs/how-to/theming).
 
 {% callout type="info" %}
 Preset names survived the theming rework, but their values were re-curated. A
@@ -84,5 +84,5 @@ ui: {
 }
 ```
 
-See the [Theming guide](/docs/guides/theming) for the full token vocabulary and
+See the [Theming guide](/docs/how-to/theming) for the full token vocabulary and
 override paths.

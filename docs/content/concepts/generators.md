@@ -232,5 +232,5 @@ const post: Lists['Post'] = await context.db.post.findUnique({
 
 ## Next Steps
 
-- **[Config System](/docs/core-concepts/config)** - Learn about config options
-- **[Field Types](/docs/core-concepts/field-types)** - Available field types
+- **[Config System](/docs/concepts/config)** - Learn about config options
+- **[Field Types](/docs/concepts/field-types)** - Available field types

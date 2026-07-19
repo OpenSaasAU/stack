@@ -552,9 +552,9 @@ function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps })
 ### Learn More
 
 - View the [complete custom-field example](https://github.com/OpenSaasAU/stack/tree/main/examples/custom-field) on GitHub
-- Explore [composability patterns](/docs/guides/composability) for building custom dashboards
+- Explore [composability patterns](/docs/how-to/composability) for building custom dashboards
 - Check out the [@opensaas/stack-tiptap](https://github.com/OpenSaasAU/stack/tree/main/packages/tiptap) package for a real-world example
-- Read about [field types and validation](/docs/guides/fields) in the core documentation
+- Read about [field types and validation](/docs/concepts/field-types) in the core documentation
 
 ## Troubleshooting
 

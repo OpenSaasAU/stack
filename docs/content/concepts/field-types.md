@@ -646,7 +646,7 @@ fields: {
 }
 ```
 
-See the [Tiptap package documentation](/docs/packages/tiptap) for more details.
+See the [Tiptap package documentation](/docs/reference/tiptap) for more details.
 
 ### Image Field
 
@@ -665,7 +665,7 @@ fields: {
 }
 ```
 
-See the [Storage package documentation](/docs/packages/storage) for more details.
+See the [Storage package documentation](/docs/reference/storage) for more details.
 
 ## Common Field Options
 
@@ -836,7 +836,7 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
 }
 ```
 
-See the [Custom Fields guide](/docs/guides/custom-fields) for a complete tutorial.
+See the [Custom Fields guide](/docs/how-to/custom-fields) for a complete tutorial.
 
 ## Field Validation
 
@@ -955,6 +955,6 @@ authorId: text()
 
 ## Next Steps
 
-- **[Hooks System](/docs/core-concepts/hooks)** - Transform field data
-- **[Custom Fields Guide](/docs/guides/custom-fields)** - Create custom field types
-- **[API Reference](/docs/api-reference/fields)** - Complete field API
+- **[Hooks System](/docs/concepts/hooks)** - Transform field data
+- **[Custom Fields Guide](/docs/how-to/custom-fields)** - Create custom field types
+- **[API Reference](/docs/reference/fields-api)** - Complete field API

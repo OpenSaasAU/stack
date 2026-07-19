@@ -1054,7 +1054,7 @@ The auth plugin automatically creates these lists in your database:
 
 ### Access control: closed by default
 
-Per [ADR-0013](/docs/adr/0013-access-control-belongs-to-the-application-not-plugins),
+Per [ADR-0013](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0013-access-control-belongs-to-the-application-not-plugins.md),
 access control belongs to the application, not the plugin. The four Auth
 lists (User/Session/Account/Verification) ship with **no** operation-level
 access — with nothing configured, `context.db` reads/writes against them
@@ -1587,8 +1587,8 @@ authPlugin({
 
 ## Next Steps
 
-- **Package Reference**: See the [Auth Package docs](/docs/packages/auth) for detailed API reference
-- **Access Control Guide**: Learn more in the [Access Control Guide](/docs/guides/access-control)
+- **Package Reference**: See the [Auth Package docs](/docs/reference/auth) for detailed API reference
+- **Access Control Guide**: Learn more in the [Access Control Guide](/docs/concepts/access-control)
 - **Working Example**: Check out the [auth-demo example](https://github.com/OpenSaasAU/stack/tree/main/examples/auth-demo)
 - **Better Auth Docs**: Explore [Better-auth documentation](https://better-auth.com) for advanced features
 

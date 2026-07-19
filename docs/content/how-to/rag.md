@@ -912,8 +912,8 @@ Can't reach database server
 
 ## Next Steps
 
-- **[RAG Package Reference](/docs/packages/rag)** - Complete API documentation
-- **[RAG Advanced Patterns](/docs/guides/rag-advanced)** - Custom providers, performance tuning, and advanced use cases
+- **[RAG Package Reference](/docs/reference/rag)** - Complete API documentation
+- **[RAG Advanced Patterns](/docs/how-to/rag-advanced)** - Custom providers, performance tuning, and advanced use cases
 - **[Example: RAG OpenAI Chatbot](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-openai-chatbot)** - Production-ready chatbot implementation
 
 You now have everything you need to implement RAG in your OpenSaas Stack application!

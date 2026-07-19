@@ -37,7 +37,7 @@ Visit:
 
 ## 3. Build features with Claude Code
 
-Your project ships ready for [Claude Code](/docs/guides/claude-code): a project
+Your project ships ready for [Claude Code](/docs/how-to/claude-code): a project
 `CLAUDE.md` describing the framework's patterns, plus MCP tooling. Open the
 project in Claude Code and describe what you want to build:
 
@@ -94,16 +94,16 @@ Use `pnpm db:studio` to browse and edit data in Prisma Studio.
 The starter uses SQLite for zero-setup local development. To move to Postgres,
 set `DATABASE_URL` in `.env`, change `provider` to `'postgresql'` in
 `opensaas.config.ts`, swap the adapter to `@prisma/adapter-pg`, then re-run
-`pnpm generate && pnpm db:push`. See the [Config System](/docs/core-concepts/config)
+`pnpm generate && pnpm db:push`. See the [Config System](/docs/concepts/config)
 for adapter examples.
 
 ## Next steps
 
-- **[Quick Start](/docs/quick-start)** — the condensed version, plus manual setup for an existing Next.js app
-- **[Building with Claude Code](/docs/guides/claude-code)** — the AI-assisted workflow in depth
-- **[Access Control](/docs/core-concepts/access-control)** — how the engine secures every operation
-- **[Field Types](/docs/core-concepts/field-types)** — all available fields
-- **[Hooks](/docs/core-concepts/hooks)** — data transformation and side effects
+- **[Quick Start](/docs/tutorials/quick-start)** — the condensed version, plus manual setup for an existing Next.js app
+- **[Building with Claude Code](/docs/how-to/claude-code)** — the AI-assisted workflow in depth
+- **[Access Control](/docs/concepts/access-control)** — how the engine secures every operation
+- **[Field Types](/docs/concepts/field-types)** — all available fields
+- **[Hooks](/docs/concepts/hooks)** — data transformation and side effects
 
 {% callout type="info" %}
 Contributing to OpenSaaS Stack itself? The monorepo setup (building packages,

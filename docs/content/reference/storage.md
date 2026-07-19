@@ -557,6 +557,6 @@ export default config({
 
 ## Next Steps
 
-- [Storage Setup Guide](/docs/guides/storage-setup) - Detailed setup instructions for all storage providers
-- [Custom Fields Guide](/docs/guides/custom-fields) - Learn about creating custom field types
-- [Hooks System](/docs/core-concepts/hooks) - Add custom behavior to file uploads
+- [Storage Setup Guide](/docs/how-to/storage) - Detailed setup instructions for all storage providers
+- [Custom Fields Guide](/docs/how-to/custom-fields) - Learn about creating custom field types
+- [Hooks System](/docs/concepts/hooks) - Add custom behavior to file uploads

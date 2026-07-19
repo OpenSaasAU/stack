@@ -3,7 +3,7 @@
 This guide covers how to migrate your existing Prisma, Next.js, or KeystoneJS projects to OpenSaaS Stack using AI-powered tools.
 
 {% callout type="info" %}
-Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & Fragments](/docs/core-concepts/queries).
+Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & Fragments](/docs/concepts/queries).
 {% /callout %}
 
 ## Introduction
@@ -123,7 +123,7 @@ pnpm add @opensaas/stack-auth better-auth
 Adopt the existing tables with the `adoptBetterAuthTables()` recipe so the
 generated Auth lists diff clean against your live database — no destructive auth
 migration — and keep your domain `User` separate from the auth identity. See
-[Adopting an Existing better-auth Installation](/docs/guides/authentication#adopting-an-existing-better-auth-installation).
+[Adopting an Existing better-auth Installation](/docs/how-to/authentication#adopting-an-existing-better-auth-installation).
 {% /callout %}
 
 ### 3. Create Configuration
@@ -419,7 +419,7 @@ The migration system automatically maps field types:
 
 ### KeystoneJS → OpenSaaS
 
-Keystone field builders map onto same-named OpenSaaS builders (`text()` → `text()`, `select()` → `select()`, and so on). For the **complete** mapping — including `float()` / `decimal()`, `image()` / `file()`, `document()`, and the `relationship()` `ref`-format differences — see the field-type table in the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone#2-field-type-mapping) guide.
+Keystone field builders map onto same-named OpenSaaS builders (`text()` → `text()`, `select()` → `select()`, and so on). For the **complete** mapping — including `float()` / `decimal()`, `image()` / `file()`, `document()`, and the `relationship()` `ref`-format differences — see the field-type table in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#2-field-type-mapping) guide.
 
 ## Claude Code Integration
 
@@ -871,7 +871,7 @@ export async function getPosts() {
 If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. OpenSaaS Stack has no GraphQL layer — instead it provides **fragment-based query utilities** (`defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`) that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
 
 {% callout type="info" %}
-The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, gql.tada typed documents, and fragment → `include` / `select` with null-on-access-denied) — lives in the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & Fragments](/docs/core-concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
+The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, gql.tada typed documents, and fragment → `include` / `select` with null-on-access-denied) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & Fragments](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
 {% /callout %}
 
 ### Quick reference
@@ -1009,7 +1009,7 @@ const posts = await context.db.post.findMany({
 })
 ```
 
-All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/core-concepts/queries). For the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/guides/migrating-from-keystone) guide.
+All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/concepts/queries). For the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide.
 
 ## Best Practices
 
@@ -1072,9 +1072,9 @@ git reset --hard pre-opensaas-migration
 ### Documentation
 
 - [OpenSaaS Stack Docs](https://stack.opensaas.au/)
-- [Access Control Guide](https://stack.opensaas.au/docs/core-concepts/access-control)
-- [Field Types Reference](https://stack.opensaas.au/docs/core-concepts/field-types)
-- [Authentication Guide](https://stack.opensaas.au/docs/guides/authentication)
+- [Access Control Guide](https://stack.opensaas.au/docs/concepts/access-control)
+- [Field Types Reference](https://stack.opensaas.au/docs/concepts/field-types)
+- [Authentication Guide](https://stack.opensaas.au/docs/how-to/authentication)
 
 ### Community
 
@@ -1233,4 +1233,4 @@ The OpenSaaS Stack migration system provides:
 
 **Time to migrate:** 10-15 minutes with AI, 30-60 minutes manually
 
-**Next:** [Authentication Guide](/docs/guides/authentication) or [Access Control](/docs/core-concepts/access-control)
+**Next:** [Authentication Guide](/docs/how-to/authentication) or [Access Control](/docs/concepts/access-control)

@@ -768,8 +768,8 @@ Now that your app is deployed:
 
 - [Configure a custom domain](https://vercel.com/docs/custom-domains)
 - [Add team members](https://vercel.com/docs/teams-and-accounts)
-- Review the [Authentication guide](/docs/guides/authentication) for production auth details
-- Revisit [Access Control](/docs/core-concepts/access-control) to harden your rules
+- Review the [Authentication guide](/docs/how-to/authentication) for production auth details
+- Revisit [Access Control](/docs/concepts/access-control) to harden your rules
 
 ## Summary
 
