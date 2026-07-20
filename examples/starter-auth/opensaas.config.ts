@@ -197,6 +197,15 @@ export default config({
           delete: isAuthor,
         },
       },
+      // Chrome polish opt-ins (issue #735). `navCount` shows an access-scoped
+      // record count next to the Post nav item; `avatar` renders the label
+      // column (`title`) with a deterministic initials bubble ahead of the
+      // emphasized title. The User list is left default (no count, text-only
+      // label) so the e2e can contrast opted-in chrome against the default.
+      ui: {
+        navCount: true,
+        avatar: true,
+      },
       hooks: {
         // Auto-set publishedAt when status changes to published
         // Auto-set author on create if not provided

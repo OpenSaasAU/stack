@@ -1,6 +1,7 @@
 // Primitive components from shadcn/ui
 export { Button, buttonVariants, type ButtonProps } from './button.js'
 export { Badge, badgeVariants, type BadgeProps } from './badge.js'
+export { Avatar, type AvatarProps } from './avatar.js'
 export { Input, type InputProps } from './input.js'
 export { Textarea, type TextareaProps } from './textarea.js'
 export { Label } from './label.js'

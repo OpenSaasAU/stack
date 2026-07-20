@@ -12,6 +12,7 @@ import {
   getListKeyFromUrl,
   getUrlKey,
   OpenSaasConfig,
+  resolveNavCounts,
 } from '@opensaas/stack-core'
 import { compileTheme } from '../lib/theme.js'
 
@@ -36,7 +37,7 @@ export interface AdminUIProps {
  * - [list, 'create'] → ItemForm (create)
  * - [list, id] → ItemForm (edit)
  */
-export function AdminUI({
+export async function AdminUI({
   context,
   config,
   params = [],
@@ -168,6 +169,12 @@ export function AdminUI({
   // Generate theme styles if custom theme is configured
   const themeStyles = config.ui?.theme ? compileTheme(config.ui.theme) : null
 
+  // Access-scoped nav counts for opted-in lists (issue #735). Runs zero queries
+  // when no list sets `ui.navCount`, so existing apps pay nothing; each count is
+  // fetched through the secured `context.db`, reflecting only what this session
+  // may see.
+  const navCounts = await resolveNavCounts(context, config)
+
   return (
     <>
       {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
@@ -178,6 +185,7 @@ export function AdminUI({
           basePath={basePath}
           currentPath={currentPath}
           onSignOut={onSignOut}
+          navCounts={navCounts}
         />
         <main className="flex-1 overflow-y-auto">
           <React.Suspense fallback={fallback}>{content}</React.Suspense>

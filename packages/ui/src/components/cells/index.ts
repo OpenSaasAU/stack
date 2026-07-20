@@ -5,6 +5,7 @@ export { CheckboxCell } from './CheckboxCell.js'
 export { SelectCell } from './SelectCell.js'
 export { TimestampCell } from './TimestampCell.js'
 export { RelationshipCell } from './RelationshipCell.js'
+export { AvatarLabelCell } from './AvatarLabelCell.js'
 export { CellRenderer } from './CellRenderer.js'
 
 // Registry for custom / third-party Cell components

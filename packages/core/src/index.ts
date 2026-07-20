@@ -48,6 +48,10 @@ export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'
 // relationship cells, dropdown options, and page headings.
 export { getLabelFieldName, getItemLabel } from './config/label.js'
 
+// Access-scoped nav counts — resolves per-list record counts (opt-in via
+// `ui.navCount`) through the secured context for the admin chrome (issue #735).
+export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-count.js'
+
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
 
