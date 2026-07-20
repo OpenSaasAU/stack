@@ -964,6 +964,27 @@ export type RelationshipItemViewConfig = {
    */
   columns?: string[]
   /**
+   * The maximum number of related rows to fetch and render in this
+   * Relationship table (issue #752). The item view fetches related rows
+   * through the secured context bounded by this `take`, so a record with many
+   * related rows never loads/renders every one on edit-page open. The totals
+   * footer still shows the full access-scoped total ("showing N of M").
+   *
+   * When omitted, a sensible default cap applies (the UI's
+   * `DEFAULT_ITEM_VIEW_TAKE`). Must be a positive integer; non-positive or
+   * non-integer values fall back to the default.
+   *
+   * @example
+   * ```typescript
+   * sessions: relationship({
+   *   ref: 'Session.user',
+   *   many: true,
+   *   ui: { itemView: { take: 5 } },
+   * })
+   * ```
+   */
+  take?: number
+  /**
    * The numeric columns whose values are summed in the Relationship table's
    * totals footer. The row count is always shown; sums appear only for the
    * columns listed here, each formatted by that column's Cell.

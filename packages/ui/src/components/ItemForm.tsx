@@ -10,6 +10,7 @@ import {
   type AccessContext,
   type FieldConfig,
   type ListConfig,
+  buildRelationshipCountSelect,
   getDbKey,
   getUrlKey,
   OpenSaasConfig,
@@ -31,19 +32,26 @@ export interface ItemFormProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
 type AnyListConfig = ListConfig<any>
 
+/** A single relation entry in the item-view include (bounded to-many, or bare). */
+type ItemViewIncludeEntry = boolean | { take?: number; include?: Record<string, boolean> }
+
 /**
  * Build the `include` object for an item-view fetch that derives Relationship
  * tables. To-one / details relationships are included one level deep; each
  * to-many Relationship table is included with a nested include of its own
- * relationship columns, so their Cells can resolve labels — all through the
- * secured context, so only access-visible rows and fields come back.
+ * relationship columns (so their Cells can resolve labels) AND a `take` that
+ * BOUNDS the related-row fetch (issue #752) to the section's cap — all through
+ * the secured context, so only access-visible rows and fields come back. The
+ * bound is per-relationship (`ui.itemView.take`, default `DEFAULT_ITEM_VIEW_TAKE`);
+ * the full access-scoped total for the footer is fetched separately via `_count`
+ * (see {@link ItemViewLayoutView}), never by fetching every row.
  */
-function buildItemViewInclude(
+export function buildItemViewInclude(
   listConfig: AnyListConfig,
   config: OpenSaasConfig,
   layout: ItemViewLayout,
-): Record<string, boolean | { include: Record<string, boolean> }> {
-  const include: Record<string, boolean | { include: Record<string, boolean> }> = {}
+): Record<string, ItemViewIncludeEntry> {
+  const include: Record<string, ItemViewIncludeEntry> = {}
 
   for (const fieldName of layout.detailsFields) {
     if (listConfig.fields[fieldName]?.type === 'relationship') {
@@ -56,10 +64,13 @@ function buildItemViewInclude(
     const relationshipColumns = section.columns.filter(
       (column) => relatedListConfig?.fields[column]?.type === 'relationship',
     )
-    include[section.fieldName] =
-      relationshipColumns.length > 0
-        ? { include: Object.fromEntries(relationshipColumns.map((column) => [column, true])) }
-        : true
+    // Always carry the row bound; add a nested include only when the table has
+    // relationship columns whose Cells need the related record to label.
+    const entry: { take: number; include?: Record<string, boolean> } = { take: section.take }
+    if (relationshipColumns.length > 0) {
+      entry.include = Object.fromEntries(relationshipColumns.map((column) => [column, true]))
+    }
+    include[section.fieldName] = entry
   }
 
   return include
@@ -68,6 +79,28 @@ function buildItemViewInclude(
 /** The related rows for a section, or `[]` when absent/denied. */
 function sectionRows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
+}
+
+/**
+ * Read the access-scoped total (M) for a Relationship-table section off the
+ * parent record's filtered `_count` payload (issue #752). The `_count` is built
+ * by {@link buildRelationshipCountSelect}, which folds each related list's own
+ * `query` access into the count's `where` and OMITS a fully-denied related list
+ * entirely — so a denied list has no key here and reads as `fallback` (the
+ * bounded rows length, which is itself 0 for a denied list), never leaking a
+ * true total. When the value is present it is the authoritative access-scoped
+ * total (always ≥ the bounded row count).
+ */
+export function readAccessScopedTotal(
+  countPayload: unknown,
+  fieldName: string,
+  fallback: number,
+): number {
+  if (countPayload && typeof countPayload === 'object') {
+    const value = (countPayload as Record<string, unknown>)[fieldName]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return fallback
 }
 
 /**
@@ -99,9 +132,21 @@ async function ItemViewLayoutView({
   const urlKey = getUrlKey(listKey)
 
   // One secured read: details relationships one level deep, each Relationship
-  // table nested-included so its cells resolve. Access control on the include
-  // means only access-visible rows/fields are returned.
-  const include = buildItemViewInclude(listConfig, config, layout)
+  // table nested-included (bounded by `take`, issue #752) so its cells resolve.
+  // Access control on the include means only access-visible rows/fields are
+  // returned. The full access-scoped total for each table's "showing N of M"
+  // footer comes from a filtered `_count` in the SAME read — folding each
+  // related list's own `query` access into the count so a denied related list
+  // never leaks a true total (mirrors the list view's #732 count columns).
+  const include: Record<string, unknown> = { ...buildItemViewInclude(listConfig, config, layout) }
+  const countSelect = await buildRelationshipCountSelect(
+    listConfig,
+    { session: context.session, context },
+    config,
+  )
+  if (countSelect) {
+    include._count = { select: countSelect }
+  }
   let itemData: Record<string, unknown> | null = null
   try {
     const delegate = context.db[getDbKey(listKey)]
@@ -176,19 +221,27 @@ async function ItemViewLayoutView({
     </Card>
   )
 
-  const tables = layout.sections.map((section) => (
-    <RelationshipTable
-      key={section.fieldName}
-      config={config}
-      section={section}
-      rows={sectionRows(itemData?.[section.fieldName])}
-      basePath={basePath}
-      context={context}
-      parentListKey={listKey}
-      parentId={itemId}
-      serverAction={serverAction}
-    />
-  ))
+  const countPayload = itemData?._count
+  const tables = layout.sections.map((section) => {
+    const rows = sectionRows(itemData?.[section.fieldName])
+    return (
+      <RelationshipTable
+        key={section.fieldName}
+        config={config}
+        section={section}
+        rows={rows}
+        // M for "showing N of M": the access-scoped total from `_count`, falling
+        // back to the bounded row count when the related list is denied (0) or
+        // uncounted — never a leak of a denied list's true total.
+        total={readAccessScopedTotal(countPayload, section.fieldName, rows.length)}
+        basePath={basePath}
+        context={context}
+        parentListKey={listKey}
+        parentId={itemId}
+        serverAction={serverAction}
+      />
+    )
+  })
 
   return (
     <div className="p-8">

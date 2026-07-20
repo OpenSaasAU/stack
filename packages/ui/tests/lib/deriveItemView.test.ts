@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
+import { deriveItemViewLayout, DEFAULT_ITEM_VIEW_TAKE } from '../../src/lib/deriveItemView.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 
 /**
@@ -106,6 +106,69 @@ describe('deriveItemViewLayout', () => {
 
     const [section] = deriveItemViewLayout(config, 'User').sections
     expect(section.columns).toEqual(['title'])
+  })
+
+  it('bounds the row fetch by the default take when none is configured (issue #752)', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          posts: { type: 'relationship', ref: 'Post.author', many: true },
+        },
+      },
+      Post: {
+        fields: { title: { type: 'text' }, author: { type: 'relationship', ref: 'User.posts' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.take).toBe(DEFAULT_ITEM_VIEW_TAKE)
+  })
+
+  it('honours a per-relationship take override', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          posts: {
+            type: 'relationship',
+            ref: 'Post.author',
+            many: true,
+            ui: { itemView: { take: 5 } },
+          },
+        },
+      },
+      Post: {
+        fields: { title: { type: 'text' }, author: { type: 'relationship', ref: 'User.posts' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.take).toBe(5)
+  })
+
+  it('falls back to the default take for a non-positive or non-integer override', () => {
+    const makeUser = (take: number): OpenSaasConfig =>
+      makeConfig({
+        User: {
+          fields: {
+            posts: {
+              type: 'relationship',
+              ref: 'Post.author',
+              many: true,
+              // A malformed take (zero, negative, fractional, NaN) must never
+              // disable the bound — it falls back to the default.
+              ui: { itemView: { take } },
+            },
+          },
+        },
+        Post: {
+          fields: { title: { type: 'text' }, author: { type: 'relationship', ref: 'User.posts' } },
+        },
+      })
+
+    for (const bad of [0, -3, 2.5, Number.NaN]) {
+      const [section] = deriveItemViewLayout(makeUser(bad), 'User').sections
+      expect(section.take).toBe(DEFAULT_ITEM_VIEW_TAKE)
+    }
   })
 
   it('reads summed columns from config (footer opt-in)', () => {

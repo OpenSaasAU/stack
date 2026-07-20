@@ -26,10 +26,18 @@ export interface RelationshipTableProps {
   section: RelationshipTableSection
   /**
    * The parent record's related rows for this relationship, already fetched and
-   * access-filtered through the secured context (`context.db` include). Only
-   * access-visible rows/fields are present here.
+   * access-filtered through the secured context (`context.db` include) and
+   * BOUNDED by the section's `take` (issue #752). Only access-visible rows/fields
+   * are present here, and at most `section.take` of them.
    */
   rows: Array<Record<string, unknown>>
+  /**
+   * The full access-scoped total of related rows (M in "showing N of M", issue
+   * #752): the count the secured context reports through a filtered `_count`,
+   * folding the related list's own `query` access in — always ≥ `rows.length`,
+   * and 0 (never a leaked true total) for a denied related list.
+   */
+  total: number
   basePath: string
   /**
    * The access-scoped context, used to evaluate the related list's operation
@@ -240,6 +248,7 @@ export async function RelationshipTable({
   config,
   section,
   rows,
+  total,
   basePath,
   context,
   parentListKey,
@@ -312,6 +321,7 @@ export async function RelationshipTable({
       fields={fields}
       rows={serializedRows}
       count={rows.length}
+      total={total}
       sumColumns={section.sumColumns}
       sums={sums}
       removeMode={removeMode}
