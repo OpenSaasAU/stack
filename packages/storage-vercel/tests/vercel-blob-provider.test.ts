@@ -2,11 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { VercelBlobStorageProvider, vercelBlobStorage } from '../src/index.js'
 import type { VercelBlobStorageConfig } from '../src/index.js'
 
+// Mirrors @vercel/blob's real BlobNotFoundError shape (extends BlobError)
+const { BlobNotFoundError } = vi.hoisted(() => {
+  class BlobNotFoundError extends Error {
+    constructor() {
+      super('The requested blob does not exist')
+      this.name = 'BlobNotFoundError'
+    }
+  }
+  return { BlobNotFoundError }
+})
+
 // Mock Vercel Blob SDK
 vi.mock('@vercel/blob', () => ({
   put: vi.fn(),
   del: vi.fn(),
   head: vi.fn(),
+  BlobNotFoundError,
 }))
 
 // Mock crypto for deterministic filename testing
@@ -360,17 +372,29 @@ describe('VercelBlobStorageProvider', () => {
       expect(head).toHaveBeenCalledWith('documents/report.pdf', { token: 'test-token' })
     })
 
-    it('should throw error when file not found (head returns null)', async () => {
+    it('should throw a descriptive error when file not found (head rejects with BlobNotFoundError)', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-      head.mockResolvedValueOnce(null)
+      head.mockRejectedValueOnce(new BlobNotFoundError())
 
       await expect(provider.download('nonexistent.txt')).rejects.toThrow(
         'File not found: nonexistent.txt',
       )
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('should propagate non-not-found errors from head', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+      head.mockRejectedValueOnce(new Error('Network error'))
+
+      await expect(provider.download('test.txt')).rejects.toThrow('Network error')
       expect(fetch).not.toHaveBeenCalled()
     })
 
@@ -410,24 +434,17 @@ describe('VercelBlobStorageProvider', () => {
   })
 
   describe('delete', () => {
-    it('should delete file successfully', async () => {
+    it('should delete file successfully by pathname, without a head() round-trip', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
 
-      head.mockResolvedValueOnce({
-        url: 'https://blob.vercel-storage.com/test.txt',
-        pathname: 'test.txt',
-        size: 100,
-        uploadedAt: new Date(),
-      })
-
       await provider.delete('test.txt')
 
-      expect(head).toHaveBeenCalledWith('test.txt', { token: 'test-token' })
-      expect(del).toHaveBeenCalledWith('https://blob.vercel-storage.com/test.txt', {
+      expect(head).not.toHaveBeenCalled()
+      expect(del).toHaveBeenCalledWith('test.txt', {
         token: 'test-token',
       })
     })
@@ -440,46 +457,28 @@ describe('VercelBlobStorageProvider', () => {
       }
       const provider = new VercelBlobStorageProvider(config)
 
-      head.mockResolvedValueOnce({
-        url: 'https://blob.vercel-storage.com/temp/old-file.txt',
-        pathname: 'temp/old-file.txt',
-        size: 100,
-        uploadedAt: new Date(),
-      })
-
       await provider.delete('old-file.txt')
 
-      expect(head).toHaveBeenCalledWith('temp/old-file.txt', { token: 'test-token' })
+      expect(del).toHaveBeenCalledWith('temp/old-file.txt', { token: 'test-token' })
     })
 
-    it('should handle file not found gracefully', async () => {
+    it('should resolve without error when deleting a nonexistent pathname (idempotent)', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-      head.mockResolvedValueOnce(null)
+      del.mockRejectedValueOnce(new BlobNotFoundError())
 
-      // Should not throw error
-      await provider.delete('nonexistent.txt')
-
-      expect(head).toHaveBeenCalledWith('nonexistent.txt', { token: 'test-token' })
-      expect(del).not.toHaveBeenCalled()
+      await expect(provider.delete('nonexistent.txt')).resolves.toBeUndefined()
     })
 
-    it('should handle deletion errors', async () => {
+    it('should propagate non-not-found deletion errors', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-
-      head.mockResolvedValueOnce({
-        url: 'https://blob.vercel-storage.com/test.txt',
-        pathname: 'test.txt',
-        size: 100,
-        uploadedAt: new Date(),
-      })
 
       del.mockRejectedValueOnce(new Error('Deletion failed'))
 

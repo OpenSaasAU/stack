@@ -76,7 +76,13 @@ export class LocalStorageProvider implements StorageProvider {
 
   async delete(filename: string): Promise<void> {
     const filePath = path.join(this.config.uploadDir, filename)
-    await fs.unlink(filePath)
+    try {
+      await fs.unlink(filePath)
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ENOENT') {
+        throw error
+      }
+    }
   }
 
   getUrl(filename: string): string {
