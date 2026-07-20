@@ -25,6 +25,14 @@ export type ServerActionProps =
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
   | { listKey: string; action: 'bulkDelete'; ids: string[] }
+  // Custom list-specific Bulk action (issue #736). `key` names an action
+  // declared in the list's `ui.listView.bulkActions`; the client only ever
+  // sends this serialisable `{ key, ids }` — the server-side `handler`
+  // (never serialised) is looked up by `key` and run with the rebuilt secured
+  // context over `ids`. Returns a distinct `{ bulkAction, message? }` shape so
+  // a redirect-on-`success` wrapper never hijacks it (same rationale as
+  // `bulkDelete`).
+  | { listKey: string; action: 'bulkAction'; key: string; ids: string[] }
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control + hooks apply (never
   // the parent's). `mode: 'disconnect'` unlinks the row non-destructively by
@@ -459,6 +467,11 @@ export function getContext<
     // distinct-shape rationale, so an in-place create never triggers a
     // redirect-on-success wrapper.
     | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
+    // Custom Bulk action (issue #736) reports `bulkAction` with the handler's
+    // optional `message` (success) or an `error` (not found / denied / threw) —
+    // again a distinct shape from single-op `success`.
+    | { bulkAction: true; message?: string }
+    | { bulkAction: false; error: string }
   > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
@@ -492,6 +505,48 @@ export function getContext<
         }
       }
       return { deleted, total: props.ids.length }
+    }
+
+    // Custom Bulk action (issue #736). Look the declared action up by `key` and
+    // run its server-side `handler` over the selected ids with THIS secured
+    // context — the handler does its own row-by-row work through `context.db`,
+    // so per-id access control and hooks apply and denials stay Silent. The
+    // `hasAccess` visibility gate (if any) is re-checked here so a hidden action
+    // can never be invoked by a hand-crafted request; the client only ever sends
+    // the serialisable `{ key, ids }`, never the handler itself.
+    if (props.action === 'bulkAction') {
+      const bulkActions = listConfig.ui?.listView?.bulkActions ?? []
+      const action = bulkActions.find((a) => a.key === props.key)
+      if (!action) {
+        return {
+          bulkAction: false,
+          error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
+        }
+      }
+      if (action.hasAccess) {
+        const allowed = await action.hasAccess({
+          session: context.session,
+          context,
+          listKey: props.listKey,
+        })
+        if (!allowed) {
+          return { bulkAction: false, error: 'Access denied' }
+        }
+      }
+      try {
+        const result = await action.handler({
+          listKey: props.listKey,
+          ids: props.ids,
+          context,
+        })
+        return { bulkAction: true, message: result?.message }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          return { bulkAction: false, error: error.message }
+        }
+        const dbError = parsePrismaError(error, listConfig)
+        return { bulkAction: false, error: dbError.message }
+      }
     }
 
     // Relationship-table row removal (ADR-0018, #739). Runs on the RELATED row

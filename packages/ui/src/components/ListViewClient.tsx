@@ -20,6 +20,7 @@ import { CellRenderer } from './cells/CellRenderer.js'
 import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
+import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
@@ -41,6 +42,26 @@ function parseBulkDeleteResult(
     if (typeof deleted === 'number' && typeof total === 'number') return { deleted, total }
   }
   return { deleted: 0, total: attempted }
+}
+
+/**
+ * Read the outcome message a custom Bulk action server action returns (issue
+ * #736). A successful run yields `{ bulkAction: true, message? }`; a failure
+ * yields `{ bulkAction: false, error }`. Either way we surface a single status
+ * line — the handler's own `message`, its `error`, or a generic completion note
+ * — without leaking which selected rows the secured handler was denied.
+ */
+function parseBulkActionResult(result: unknown, label: string): string {
+  if (typeof result === 'object' && result !== null && 'bulkAction' in result) {
+    const value = result as { bulkAction: unknown; message?: unknown; error?: unknown }
+    if (value.bulkAction === true) {
+      return typeof value.message === 'string' && value.message.length > 0
+        ? value.message
+        : `${label} complete`
+    }
+    if (typeof value.error === 'string' && value.error.length > 0) return value.error
+  }
+  return `${label} complete`
 }
 
 export interface ListViewClientProps {
@@ -96,6 +117,14 @@ export interface ListViewClientProps {
    * cell override on that field still wins.
    */
   avatarColumn?: string
+  /**
+   * Serialisable metadata for the list's custom Bulk actions (issue #736), in
+   * declaration order. Carries only `key`/`label`/`variant`/`destructive` — the
+   * server-side handlers never cross the boundary. `ListView` filters this to
+   * the actions the session may see (each action's `hasAccess`) before passing
+   * it here. When non-empty, row selection is enabled even if delete is denied.
+   */
+  bulkActions?: SerializedBulkAction[]
 }
 
 /**
@@ -120,6 +149,7 @@ export function ListViewClient({
   serverAction,
   canDelete = false,
   avatarColumn,
+  bulkActions = [],
 }: ListViewClientProps) {
   const router = useRouter()
   const sortBy = initialSort?.field ?? null
@@ -134,11 +164,17 @@ export function ListViewClient({
   const filterKey = initialSearch ?? ''
   const selection = useRowSelection(listKey, filterKey)
 
-  // Selection is offered only when a Bulk action exists. Today that is the
-  // built-in Delete (gated by static delete access); #736 will widen this to
-  // `canDelete || hasCustomBulkActions`.
-  const selectionEnabled = canDelete
+  // Selection is offered when ANY Bulk action exists: the built-in Delete
+  // (gated by static delete access) OR one or more custom Bulk actions declared
+  // for this list (issue #736). Widening the gate to `canDelete ||
+  // hasCustomBulkActions` means a list with only custom actions still turns
+  // selection on even when delete is denied.
+  const hasCustomBulkActions = bulkActions.length > 0
+  const selectionEnabled = canDelete || hasCustomBulkActions
   const canBulkDelete = canDelete && !!serverAction
+  // Custom actions dispatch through the same generic server action; without it
+  // they cannot run, so they are only rendered when it is wired.
+  const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
   // The "N of M deleted" report must outlive the table refresh: `router.refresh()`
   // remounts this client component (the async ListView re-suspends), so the
@@ -243,6 +279,25 @@ export function ListViewClient({
     router.push(buildPaginationUrl(1))
   }
 
+  // Run a custom Bulk action (issue #736). Mirrors the bulk-delete flow: one
+  // secured server round-trip dispatched by `key` over the selected ids, an
+  // outcome status line persisted so it survives the table refresh, selection
+  // cleared, then a reset to page 1 of the current filter. The handler runs
+  // server-side through the secured context — per-id denials are absorbed there,
+  // never leaked here.
+  const handleBulkAction = async (key: string) => {
+    if (!serverAction) return
+    const ids = [...selection.selectedIds]
+    const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
+
+    const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
+    setBulkStatus(parseBulkActionResult(result, label))
+    selection.clear()
+
+    router.refresh()
+    router.push(buildPaginationUrl(1))
+  }
+
   /**
    * The serialised field config for a column. Prefer the explicit `fields`
    * prop; otherwise synthesise a minimal config from `fieldTypes` (and the
@@ -315,6 +370,16 @@ export function ListViewClient({
           onClear={selection.clear}
           onDelete={canBulkDelete ? handleBulkDelete : undefined}
           itemName={formatFieldName(listKey).toLowerCase()}
+          actions={
+            canRunBulkActions ? (
+              <BulkActions
+                actions={bulkActions}
+                onRun={handleBulkAction}
+                count={selection.selectedCount}
+                itemName={formatFieldName(listKey).toLowerCase()}
+              />
+            ) : undefined
+          }
         />
       )}
 
