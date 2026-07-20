@@ -469,7 +469,7 @@ export class CustomStorageProvider implements StorageProvider {
   }
 
   async delete(filename: string): Promise<void> {
-    // Your delete logic
+    // Your delete logic — must be idempotent (see below)
   }
 
   getUrl(filename: string): string {
@@ -481,6 +481,22 @@ export class CustomStorageProvider implements StorageProvider {
   }
 }
 ```
+
+### `delete()` is idempotent
+
+`StorageProvider.delete()` must resolve without error when the given filename
+doesn't exist in the backing store — treat a missing file as an already-deleted
+file, not a failure. Only propagate errors that aren't about existence
+(permissions, network failures, etc.). This lets callers (e.g.
+`cleanupOnDelete`/`cleanupOnReplace` field hooks) delete unconditionally
+without first checking whether the file is still there.
+
+The built-in providers follow this contract:
+
+- **Local**: `delete()` swallows `ENOENT` (file already gone); other
+  filesystem errors still propagate.
+- **Vercel Blob**: `delete()` swallows `BlobNotFoundError`; other SDK errors
+  still propagate.
 
 ## Common Patterns
 

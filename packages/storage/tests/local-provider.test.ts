@@ -304,6 +304,21 @@ describe('LocalStorageProvider', () => {
 
       await expect(provider.delete('protected.txt')).rejects.toThrow('Permission denied')
     })
+
+    it('should resolve without error when deleting a nonexistent file (idempotent)', async () => {
+      const config: LocalStorageConfig = {
+        type: 'local',
+        uploadDir: './uploads',
+        serveUrl: '/uploads',
+      }
+      const provider = new LocalStorageProvider(config)
+      const enoent = Object.assign(new Error('ENOENT: no such file or directory'), {
+        code: 'ENOENT',
+      })
+      fs.unlink.mockRejectedValueOnce(enoent)
+
+      await expect(provider.delete('nonexistent.txt')).resolves.toBeUndefined()
+    })
   })
 
   describe('getUrl', () => {

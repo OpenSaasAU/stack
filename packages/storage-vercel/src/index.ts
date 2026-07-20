@@ -1,4 +1,12 @@
-import { put, del, head, get, issueSignedToken, presignUrl, PutCommandOptions } from '@vercel/blob'
+import {
+  put,
+  del,
+  get,
+  issueSignedToken,
+  presignUrl,
+  BlobNotFoundError,
+  PutCommandOptions,
+} from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
@@ -131,15 +139,14 @@ export class VercelBlobStorageProvider implements StorageProvider {
   async delete(filename: string): Promise<void> {
     const pathname = this.getFullPath(filename)
 
-    // Get the URL first
-    const metadata = await head(pathname, {
-      token: this.config.token,
-    })
-
-    if (metadata) {
-      await del(metadata.url, {
+    try {
+      await del(pathname, {
         token: this.config.token,
       })
+    } catch (error) {
+      if (!(error instanceof BlobNotFoundError)) {
+        throw error
+      }
     }
   }
 

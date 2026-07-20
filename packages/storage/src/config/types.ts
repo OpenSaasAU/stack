@@ -24,7 +24,11 @@ export interface StorageProvider {
   download(filename: string): Promise<Buffer>
 
   /**
-   * Deletes a file from the storage provider
+   * Deletes a file from the storage provider.
+   *
+   * Idempotent: deleting a filename that doesn't exist in the backing store
+   * resolves without error. Only non-not-found errors (permissions, network,
+   * etc.) should reject.
    * @param filename - Filename to delete
    */
   delete(filename: string): Promise<void>
