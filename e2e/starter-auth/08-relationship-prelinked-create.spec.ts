@@ -17,11 +17,17 @@ import { signUp, generateTestUser } from '../utils/auth.js'
  * fields are enforced.
  */
 
-async function openCurrentUserEditPage(page: Page, email: string) {
-  await page.goto('/admin/user')
-  await page.waitForLoadState('networkidle')
-  await page.locator('tr', { hasText: email }).locator('a:has-text("Edit")').click()
+async function openCurrentUserEditPage(page: Page, _email: string) {
+  // Navigate directly by the session user's id rather than hunting the row in
+  // the paginated `/admin/user` list (capped at 50 rows): once the suite has
+  // signed up enough users the newest is off page 1 and unfindable.
+  const res = await page.request.get('/api/auth/get-session')
+  const body = (await res.json().catch(() => null)) as { user?: { id?: string } } | null
+  const userId = body?.user?.id
+  expect(userId, 'current user id resolved from session').toBeTruthy()
+  await page.goto(`/admin/user/${userId}`)
   await page.waitForURL(/\/admin\/user\/[^/]+$/, { timeout: 10000 })
+  await page.waitForLoadState('networkidle')
 }
 
 function tableByHeading(page: Page, name: string) {

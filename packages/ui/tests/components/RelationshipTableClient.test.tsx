@@ -209,4 +209,32 @@ describe('RelationshipTableClient', () => {
     })
     expect(mockRefresh).toHaveBeenCalled()
   })
+
+  // ---- Inline cell edit wiring (issue #737) ----
+
+  it('renders no edit affordance when editableColumns is empty (fully read-only)', () => {
+    render(<RelationshipTableClient {...baseProps()} />)
+    expect(document.querySelector('[data-slot="relationship-table-cell-edit-trigger"]')).toBeNull()
+  })
+
+  it('editing an editable cell enters edit mode instead of navigating the row', async () => {
+    render(<RelationshipTableClient {...baseProps()} editableColumns={['title']} />)
+    const user = userEvent.setup()
+
+    // The title cell is now an edit trigger (its accessible name is the value).
+    await user.click(screen.getAllByRole('button', { name: 'First' })[0])
+
+    // Edit mode: an input appears; the row did NOT navigate.
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('clicking a non-editable cell still navigates the row', async () => {
+    render(<RelationshipTableClient {...baseProps()} editableColumns={['title']} />)
+    const user = userEvent.setup()
+
+    // viewCount is not editable → read-only; the click bubbles to the row.
+    await user.click(screen.getByText('5', { exact: true }))
+    expect(mockPush).toHaveBeenCalledWith('/admin/post/p1')
+  })
 })

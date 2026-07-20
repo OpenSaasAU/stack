@@ -471,6 +471,116 @@ describe('getContext', () => {
       })
     })
 
+    describe('updateRelated (relationship-table inline cell edit)', () => {
+      it('updates a single field on the related row through the secured context', async () => {
+        mockPrisma.post.findUnique.mockResolvedValue({
+          id: 'p1',
+          title: 'Old',
+          content: 'c',
+          authorId: 'u1',
+        })
+        mockPrisma.post.update.mockResolvedValue({
+          id: 'p1',
+          title: 'New',
+          content: 'c',
+          authorId: 'u1',
+        })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'updateRelated',
+          id: 'p1',
+          field: 'title',
+          value: 'New',
+        })
+
+        // The edit is an UPDATE on the RELATED list, one field only. The distinct
+        // `{ updated }` shape avoids a redirect-on-success wrapper.
+        expect(mockPrisma.post.update).toHaveBeenCalled()
+        const updateArg = mockPrisma.post.update.mock.calls[0][0]
+        expect(updateArg.where).toEqual({ id: 'p1' })
+        expect(updateArg.data.title).toBe('New')
+        expect(mockPrisma.post.delete).not.toHaveBeenCalled()
+        expect(result).toEqual({ updated: true })
+      })
+
+      it('returns a generic error (Silent failure) when the update is access-denied', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            Post: {
+              ...config.lists.Post,
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => false, // no update access → inline edit denied
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(deniedConfig, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'updateRelated',
+          id: 'p1',
+          field: 'title',
+          value: 'New',
+        })
+
+        // Denied: reported as not updated with a generic reason (no denied-vs-absent leak).
+        expect(result).toEqual({ updated: false, error: 'Access denied or operation failed' })
+      })
+
+      it('surfaces a validation error so the cell can revert with a reason', async () => {
+        const validationConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            Post: {
+              ...config.lists.Post,
+              hooks: {
+                validateInput: async (args) => {
+                  if (args.operation === 'delete') return
+                  const { resolvedData, addValidationError } = args
+                  if (resolvedData.title === 'spam') {
+                    addValidationError('Title cannot contain the word "spam"')
+                  }
+                },
+              },
+            },
+          },
+        }
+        mockPrisma.post.findUnique.mockResolvedValue({
+          id: 'p1',
+          title: 'Old',
+          content: 'c',
+          authorId: 'u1',
+        })
+
+        const context = await getContext(validationConfig, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'updateRelated',
+          id: 'p1',
+          field: 'title',
+          value: 'spam',
+        })
+
+        // A validation error becomes { updated: false } with the reason; the write
+        // never reaches the database.
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(result).toMatchObject({ updated: false })
+        const failure = result as { updated: boolean; error?: string }
+        expect(failure.error).toContain('spam')
+      })
+    })
+
     describe('createRelated (relationship-table pre-linked create)', () => {
       it('creates a row on the related list with the to-one back-reference preset to the parent', async () => {
         const created = { id: 'p1', title: 'New', content: 'c', authorId: 'u1' }

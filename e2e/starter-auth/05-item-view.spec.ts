@@ -85,7 +85,13 @@ test.describe('Item view layout', () => {
     await expect(sessions.locator('[data-slot="relationship-table-empty"]')).toBeVisible()
   })
 
-  test('clicking a Relationship-table row navigates to the related record', async ({ page }) => {
+  test('clicking an editable relationship-table cell edits in place instead of navigating', async ({
+    page,
+  }) => {
+    // Inline cell edit (#737) supersedes row-click navigation on EDITABLE cells:
+    // a Post's columns are all editable for its author, so clicking one opens the
+    // inline editor and the item view stays put (main list tables keep
+    // click-to-navigate; this is Relationship-table-only).
     const testUser = generateTestUser()
     await signUp(page, testUser)
     await createPost(page, { title: 'Nav Post', slug: 'nav-post', viewCount: 1 })
@@ -95,9 +101,16 @@ test.describe('Item view layout', () => {
     await page.locator('tr', { hasText: testUser.email }).locator('a:has-text("Edit")').click()
     await page.waitForURL(/\/admin\/user\/[^/]+$/, { timeout: 10000 })
 
-    await page.locator('[data-slot="relationship-table-row"]', { hasText: 'Nav Post' }).click()
-    await page.waitForURL(/\/admin\/post\/[^/]+$/, { timeout: 10000 })
-    await expect(page.locator('input[name="title"]')).toHaveValue('Nav Post')
+    const posts = page.locator('[data-slot="relationship-table"]', {
+      has: page.getByRole('heading', { name: 'Posts', exact: true }),
+    })
+    await posts
+      .locator('[data-slot="relationship-table-cell-edit-trigger"]', { hasText: 'Nav Post' })
+      .click()
+
+    // The inline editor opens and the URL is unchanged (no navigation).
+    await expect(posts.locator('[data-slot="relationship-table-cell-editor"] input')).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/user\/[^/]+$/)
   })
 
   test('a list with no to-many relationship renders a single details card', async ({ page }) => {

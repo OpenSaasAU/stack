@@ -1,4 +1,5 @@
-import type { AccessContext, OperationAccess, Session } from '@opensaas/stack-core'
+import type { AccessContext, FieldAccess, OperationAccess, Session } from '@opensaas/stack-core'
+import { checkFieldAccess } from '@opensaas/stack-core/internal'
 
 /**
  * The names of the operation-level access checks we evaluate in the UI.
@@ -49,5 +50,38 @@ export async function isOperationPotentiallyAllowed(
   } catch {
     // A throwing access function is treated as denied — never widen access on error.
     return false
+  }
+}
+
+/**
+ * Decide whether a Relationship-table cell may show an inline-edit affordance
+ * for its field, evaluating the field's UPDATE-time field-level access (#737).
+ *
+ * Delegates to the core engine's canonical `checkFieldAccess` (the single
+ * field-access evaluator — the UI never re-implements it). A field with no
+ * `update` access rule is writable (matches the engine's allow-by-default);
+ * a rule that returns `false` for this session is NOT writable, so the cell
+ * renders read-only with no affordance.
+ *
+ * Only a STATIC deny hides the affordance. Field access that depends on the
+ * `item` (which we intentionally do not pass here, since the affordance is
+ * decided per column, not per row) throws when it dereferences the missing
+ * item — that is treated as "potentially writable" so the affordance shows and
+ * any row-level (filter-scoped) denial surfaces at commit as a revert, never a
+ * denied-vs-absent leak.
+ */
+export async function isFieldPotentiallyWritable(
+  fieldAccess: FieldAccess | undefined,
+  args: { session: Session | null; context: AccessContext<unknown> },
+): Promise<boolean> {
+  try {
+    return await checkFieldAccess(fieldAccess, 'update', {
+      session: args.session,
+      context: args.context,
+    })
+  } catch {
+    // Item-dependent field access can't be decided statically — keep the
+    // affordance; the secured commit re-checks per row and reverts on denial.
+    return true
   }
 }
