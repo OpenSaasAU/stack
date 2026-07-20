@@ -199,4 +199,71 @@ describe('resolveRelationshipCountFilters', () => {
     )
     expect(resolved).toEqual({ AND: [{ name: { contains: 'ada' } }, { id: { in: ['u2'] } }] })
   })
+
+  it('reads with only the filtered `_count` include — no over-fetching `select` projection', async () => {
+    const config = makeConfig()
+    const findMany = vi.fn((_args: unknown) =>
+      Promise.resolve([{ id: 'u2', _count: { posts: 7 } }]),
+    )
+    await resolveRelationshipCountFilters(
+      marker('gt', 5),
+      config.lists.User,
+      'User',
+      { session: null, context: makeContext(findMany) },
+      config,
+    )
+    // The secured read is issued with the access-scoped `_count` include and NO
+    // `select` — the secured findMany does not honour `select`, so forcing one
+    // would be an ignored no-op. Access-scoping lives entirely in `_count.where`.
+    expect(findMany).toHaveBeenCalledTimes(1)
+    const callArg = findMany.mock.calls[0][0]
+    expect(callArg).not.toHaveProperty('select')
+    expect(callArg).toEqual({
+      include: { _count: { select: { posts: { where: { status: { equals: 'published' } } } } } },
+    })
+  })
+
+  it('preserves a sibling condition co-present in the same member as the marker', async () => {
+    const config = makeConfig()
+    const findMany = vi.fn(async () => [{ id: 'u2', _count: { posts: 7 } }])
+    // A single AND-member carrying BOTH a scalar condition and the count marker.
+    // The marker resolution must keep the co-present sibling, not replace the
+    // member wholesale (guards against a future filter-engine change that merges
+    // conditions into one member).
+    const where = {
+      AND: [
+        {
+          name: { contains: 'ada' },
+          posts: { [RELATIONSHIP_COUNT_FILTER_KEY]: { operator: 'gt', value: 5 } },
+        },
+      ],
+    }
+    const resolved = await resolveRelationshipCountFilters(
+      where,
+      config.lists.User,
+      'User',
+      { session: null, context: makeContext(findMany) },
+      config,
+    )
+    expect(resolved).toEqual({ name: { contains: 'ada' }, id: { in: ['u2'] } })
+  })
+
+  it('ANDs the resolved id constraint with a co-present sibling id condition (no silent drop)', async () => {
+    const config = makeConfig()
+    const findMany = vi.fn(async () => [{ id: 'u2', _count: { posts: 7 } }])
+    // Contrived: a member carrying its own `id` condition alongside the marker.
+    // Spreading would let one `id` overwrite the other; instead both are ANDed.
+    const where = {
+      id: { in: ['u1', 'u2'] },
+      posts: { [RELATIONSHIP_COUNT_FILTER_KEY]: { operator: 'gt', value: 5 } },
+    }
+    const resolved = await resolveRelationshipCountFilters(
+      where,
+      config.lists.User,
+      'User',
+      { session: null, context: makeContext(findMany) },
+      config,
+    )
+    expect(resolved).toEqual({ AND: [{ id: { in: ['u1', 'u2'] } }, { id: { in: ['u2'] } }] })
+  })
 })

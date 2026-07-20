@@ -191,6 +191,17 @@ async function resolveOneCountFilter(
   if (!delegate) return {}
 
   const countSelect = entry.kind === 'scoped' ? { where: entry.where } : true
+  // This over-fetches the parent's scalar columns — it reads only `id` + `_count`
+  // per row yet materialises every scalar. It is left un-narrowed on purpose: the
+  // secured `context.db` `findMany` does NOT honour Prisma `select` (it
+  // warns-and-ignores it and returns the full access-filtered record — see
+  // `warnIfSelectIgnored` in context/index.ts and the "Narrowing Reads" note in
+  // packages/core/CLAUDE.md). The only supported narrowing is `include`/fragment
+  // `query`, neither of which can drop scalar columns. So adding
+  // `select: { id: true, _count: {...} }` here would be a silent no-op that also
+  // trips the ignore-warning, not a real projection. The count stays access-scoped
+  // via the filtered `_count` include below regardless; trimming the projection
+  // would first require the read pipeline to honour `select`.
   const rows = await delegate.findMany({
     include: { _count: { select: { [fieldName]: countSelect } } },
   })
@@ -206,6 +217,22 @@ async function resolveOneCountFilter(
     }
   }
   return { id: { in: matchingIds } }
+}
+
+/**
+ * Merge a marker member's non-marker sibling conditions with the resolved
+ * `{ id: { in } }` fragment. With no siblings (the guaranteed case today) this is
+ * just the resolved fragment. When a sibling shares the resolved `id` key — a
+ * contrived case that cannot arise under the current one-condition-per-member
+ * invariant — both are ANDed so neither condition is silently lost.
+ */
+function mergeResolvedMember(
+  siblings: Record<string, unknown>,
+  resolved: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Object.keys(siblings).length === 0) return resolved
+  const collides = Object.keys(resolved).some((key) => key in siblings)
+  return collides ? { AND: [siblings, resolved] } : { ...siblings, ...resolved }
 }
 
 /**
@@ -253,9 +280,24 @@ export async function resolveRelationshipCountFilters(
       resolvedMembers.push(member)
       continue
     }
-    resolvedMembers.push(
-      await resolveOneCountFilter(listConfig, listKey, found.field, found.marker, args, config),
+    const resolved = await resolveOneCountFilter(
+      listConfig,
+      listKey,
+      found.field,
+      found.marker,
+      args,
+      config,
     )
+    // Preserve any sibling conditions co-present on this member rather than
+    // replacing it wholesale with the resolved `{ id: { in } }`. The filter engine
+    // currently guarantees each AND-member (and the no-AND single object) carries
+    // exactly one field condition, so `siblings` is empty today and this equals the
+    // previous wholesale replacement — but if a future engine change ever merged
+    // multiple conditions into one member, spreading keeps the marker's siblings
+    // from being silently dropped.
+    const siblings: Record<string, unknown> = { ...member }
+    delete siblings[found.field]
+    resolvedMembers.push(mergeResolvedMember(siblings, resolved))
   }
 
   // Drop no-op members (a fully-denied related list where 0 satisfies the
