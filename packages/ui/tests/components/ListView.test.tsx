@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
-import { text, relationship, select } from '@opensaas/stack-core/fields'
+import { text, relationship, select, virtual } from '@opensaas/stack-core/fields'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
@@ -117,11 +117,14 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     expect(props.items[0].author).toEqual({ id: 'user-1', label: 'ada@example.com' })
   })
 
-  it('resolves a many relationship to an array of { id, label } pairs', async () => {
+  it('resolves a to-many relationship to its access-visible count (issue #732)', async () => {
     const config: OpenSaasConfig = {
       db: { provider: 'sqlite', url: 'file:./test.db' },
       lists: {
-        Tag: list({ fields: { name: text() } }),
+        Tag: list({
+          fields: { name: text() },
+          access: { operation: { query: () => true } },
+        }),
         Post: list({
           fields: {
             title: text(),
@@ -131,29 +134,24 @@ describe('ListView relationship label resolution (shared label seam)', () => {
       },
     }
 
+    // The list view fetches a to-many column as a filtered `_count`, not the
+    // related rows — the resolved column value is that count, and the raw
+    // `_count` payload is dropped before crossing to the client.
+    const findMany = vi.fn(async () => [{ id: '1', title: 'Post 1', _count: { tags: 2 } }])
     const context = makeContext({
-      post: {
-        findMany: vi.fn(async () => [
-          {
-            id: '1',
-            title: 'Post 1',
-            tags: [
-              { id: 'tag-1', name: 'JavaScript' },
-              { id: 'tag-2', name: 'TypeScript' },
-            ],
-          },
-        ]),
-        count: vi.fn(async () => 1),
-      },
+      post: { findMany, count: vi.fn(async () => 1) },
     })
 
     const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
     const props = findListViewClientProps(tree)
 
-    expect(props.items[0].tags).toEqual([
-      { id: 'tag-1', label: 'JavaScript' },
-      { id: 'tag-2', label: 'TypeScript' },
-    ])
+    expect(props.items[0].tags).toBe(2)
+    expect(props.items[0]._count).toBeUndefined()
+
+    // The to-many relationship was requested as an access-scoped `_count`
+    // select, never as a row-fetching include.
+    const call = findMany.mock.calls[0]?.[0] as { include?: Record<string, unknown> }
+    expect(call.include).toEqual({ _count: { select: { tags: true } } })
   })
 
   it('falls back to id when the related row is missing the label field (e.g. stripped by access control)', async () => {
@@ -272,5 +270,99 @@ describe('ListView server-side filtering (filter engine, secured context)', () =
     await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }))
+  })
+})
+
+describe('ListView to-many relationship count sort & filter (issue #732)', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'sqlite', url: 'file:./test.db' },
+    lists: {
+      User: list({
+        fields: {
+          name: text(),
+          fullName: virtual({
+            type: 'string',
+            hooks: { resolveOutput: ({ item }) => String(item.name ?? '') },
+          }),
+          posts: relationship({ ref: 'Post.author', many: true }),
+        },
+        access: { operation: { query: () => true } },
+      }),
+      Post: list({
+        fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
+        access: { operation: { query: () => true } },
+      }),
+    },
+  }
+
+  it('sorts a to-many column by its relation _count', async () => {
+    const findMany = vi.fn(async () => [])
+    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'User',
+      basePath: '/admin',
+      sort: { field: 'posts', direction: 'desc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { posts: { _count: 'desc' } } }),
+    )
+  })
+
+  it('sorts a scalar column by its own value', async () => {
+    const findMany = vi.fn(async () => [])
+    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'User',
+      basePath: '/admin',
+      sort: { field: 'name', direction: 'asc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { name: 'asc' } }))
+  })
+
+  it('ignores a sort on a virtual field (no orderBy, never reaches Prisma)', async () => {
+    const findMany = vi.fn(async () => [])
+    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'User',
+      basePath: '/admin',
+      sort: { field: 'fullName', direction: 'asc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: undefined }))
+  })
+
+  it('resolves a count filter (posts:>5) to an access-scoped id constraint', async () => {
+    const rows = [
+      { id: 'u1', _count: { posts: 7 } },
+      { id: 'u2', _count: { posts: 2 } },
+    ]
+    const findMany = vi.fn(async () => rows)
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ user: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'User',
+      basePath: '/admin',
+      search: 'posts:>5',
+    })
+
+    // The main query (and its count) is narrowed to the users whose
+    // access-visible post count exceeds 5 — only u1.
+    const mainCall = findMany.mock.calls.at(-1)?.[0] as { where?: unknown }
+    expect(mainCall.where).toEqual({ id: { in: ['u1'] } })
+    expect(count).toHaveBeenCalledWith({ where: { id: { in: ['u1'] } } })
   })
 })

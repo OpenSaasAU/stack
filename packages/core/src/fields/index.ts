@@ -19,6 +19,7 @@ import { hashPassword, isHashedPassword, HashedPassword } from '../utils/passwor
 import { formatPrismaDefault } from './format-prisma-default.js'
 import { getLabelFieldName } from '../config/label.js'
 import type { FilterOperator, FilterSpec } from '../filter/types.js'
+import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 
 /**
  * Operators shared by numeric/date fields: plain equality plus the four
@@ -1459,11 +1460,17 @@ export function relationship<
     config: OpenSaasConfig,
   ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
 
-  // Relationships filter by the related Item's label — `author:"Ada Lovelace"`
-  // becomes a nested `contains` on the target list's Label field (`is` for a
-  // to-one, `some` for a to-many). The mapper stays pure: it emits a Prisma
-  // nested filter, no DB lookup. Suggestions point the client at the target
-  // list so it can use the existing access-controlled label lookup.
+  // Relationships filter differently by cardinality (issue #732):
+  //  • to-one filters by the related Item's label — `author:"Ada Lovelace"`
+  //    becomes a nested `is` `contains` on the target list's Label field.
+  //  • to-many filters by the access-visible related COUNT with numeric
+  //    comparisons — `orders:>5`. Prisma cannot compare a relation count in a
+  //    `where`, so the mapper emits a structured count marker
+  //    (RELATIONSHIP_COUNT_FILTER_KEY) that `resolveRelationshipCountFilters`
+  //    later turns into an access-scoped `{ id: { in } }`.
+  // The mapper stays pure in both cases (no DB lookup). Suggestions point a
+  // to-one at the target list's label lookup; a to-many exposes no value source
+  // (a numeric compare, like an integer field).
   field.getFilterSpec = (
     _fieldName: string,
     _listKey: string,
@@ -1473,21 +1480,35 @@ export function relationship<
     const relatedListConfig = config.lists[targetList]
     if (!relatedListConfig) return undefined
 
+    if (field.many === true) {
+      return {
+        operators: COMPARISON_OPERATORS,
+        toCondition: (operator, value) => {
+          const trimmed = value.trim()
+          // A non-integer count comparison can't be interpreted → degrade to
+          // free text (matching the integer field's behaviour).
+          if (!/^-?\d+$/.test(trimmed)) return null
+          return {
+            [_fieldName]: { [RELATIONSHIP_COUNT_FILTER_KEY]: { operator, value: Number(trimmed) } },
+          }
+        },
+        suggestions: { valueSource: { kind: 'none' } },
+      }
+    }
+
     const labelField = getLabelFieldName(relatedListConfig)
     const labelFieldConfig = relatedListConfig.fields[labelField]
     // A virtual label field has no queryable column, so `contains` can't run
     // against it — the relationship is then not filterable.
     if (labelFieldConfig?.virtual === true) return undefined
 
-    const many = field.many === true
     return {
       operators: ['eq'],
       toCondition: (operator, value) => {
         if (operator !== 'eq') return null
-        const inner = { [labelField]: { contains: value } }
-        return many ? { [_fieldName]: { some: inner } } : { [_fieldName]: { is: inner } }
+        return { [_fieldName]: { is: { [labelField]: { contains: value } } } }
       },
-      suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many } },
+      suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many: false } },
     }
   }
 
