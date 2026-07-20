@@ -6,9 +6,10 @@ import {
   type FieldConfig,
   type ListConfig,
 } from '@opensaas/stack-core'
-import { formatFieldName } from '../lib/utils.js'
+import { formatFieldName, formatListName } from '../lib/utils.js'
 import { serializeFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
+import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import type { ServerActionInput } from '../server/types.js'
 import { RelationshipTableClient, type RemoveMode } from './RelationshipTableClient.js'
@@ -67,6 +68,61 @@ async function resolveRemoveMode(
   // and the related list's update access is not hard-denied.
   if (!section.disconnectable) return null
   return (await isOperationPotentiallyAllowed(access, 'update', args)) ? 'disconnect' : null
+}
+
+/** The serialisable props the pre-linked create drawer needs, or `null` to hide it. */
+interface CreateFormData {
+  fields: Record<string, SerializableFieldConfig>
+  relationshipData: Record<string, Array<{ id: string; label: string }>>
+}
+
+/**
+ * Prepare the pre-linked create drawer (#738) for this table, or `null` when it
+ * should not be offered.
+ *
+ * Gating (ADR-0018): the "+ Add" is shown only when
+ * - a back-reference field exists to preset the link (list-only refs have none,
+ *   so cannot be pre-linked and are excluded — mirroring #739's disconnect), and
+ * - the RELATED list's own `create` access is not statically denied. A hard deny
+ *   (no create rule, or `create` returns `false`) hides the control — no
+ *   affordance for what will always fail. A filter/function result is
+ *   "potentially allowed", so the control shows and a row-level denial surfaces
+ *   at commit time as a Silent failure (generic reason, no denied-vs-absent leak).
+ *
+ * The create form is the related list's fields with the back-reference removed —
+ * it is preset + hidden, set on the server from the parent id — so the drawer
+ * still enforces the related list's full validation and required fields (issue
+ * #738's reason for a drawer over an inline draft row).
+ */
+async function resolveCreateForm(
+  section: RelationshipTableSection,
+  relatedListConfig: AnyListConfig | undefined,
+  config: OpenSaasConfig,
+  context: AccessContext<unknown>,
+): Promise<CreateFormData | null> {
+  if (!section.backReferenceField || !relatedListConfig) return null
+
+  const allowed = await isOperationPotentiallyAllowed(
+    relatedListConfig.access?.operation,
+    'create',
+    { session: context.session, context },
+  )
+  if (!allowed) return null
+
+  const formFields: Record<string, FieldConfig> = {}
+  for (const [key, field] of Object.entries(relatedListConfig.fields)) {
+    if (key === section.backReferenceField) continue
+    formFields[key] = field
+  }
+  const formListConfig: AnyListConfig = { ...relatedListConfig, fields: formFields }
+
+  const { serializableFields, relationshipData } = await prepareItemForm(
+    context,
+    config,
+    formListConfig,
+    {},
+  )
+  return { fields: serializableFields, relationshipData }
 }
 
 /**
@@ -143,6 +199,10 @@ export async function RelationshipTable({
   // related list's own operation access (never the parent's).
   const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
 
+  // The pre-linked create drawer (#738), gated on the related list's own create
+  // access (never the parent's) and the presence of a back-reference to preset.
+  const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
+
   // The related list config for each relationship column, keyed by column, so
   // its values can be label-resolved via that column's OWN target list (a
   // `Post.author` column resolves against User, not Post).
@@ -202,6 +262,10 @@ export async function RelationshipTable({
       parentId={parentId}
       parentListKey={parentListKey}
       serverAction={serverAction}
+      canCreate={createForm !== null}
+      createFields={createForm?.fields}
+      createRelationshipData={createForm?.relationshipData}
+      relatedListTitle={formatListName(section.relatedListKey)}
     />
   )
 }

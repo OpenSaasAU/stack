@@ -42,6 +42,21 @@ export type ServerActionProps =
       field?: string
       parentId?: string
     }
+  // Relationship-table pre-linked create (issue #738). `listKey` targets the
+  // RELATED list, so the related list's own create access control + hooks apply
+  // (never the parent's) — the same ADR-0018 boundary as `removeRelated`. The
+  // back-reference to the parent is set on the SERVER from `field`/`parentId`
+  // (never trusted from `data`), so the new row is linked to exactly the parent
+  // being edited. It returns a distinct `{ created }` shape (never a single-op
+  // `success`) so a UI wrapper that redirects on `success` — the item-form
+  // pattern — does not hijack an in-place create.
+  | {
+      listKey: string
+      action: 'createRelated'
+      data: Record<string, unknown>
+      field?: string
+      parentId?: string
+    }
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -439,6 +454,11 @@ export function getContext<
     // rather than `success` — same distinct-shape rationale as `bulkDelete`, so
     // an in-place removal never triggers a redirect-on-success wrapper.
     | { removed: boolean; error?: string }
+    // Relationship-table pre-linked create reports `created` (with the new row's
+    // id, or an error + fieldErrors for the drawer) rather than `success` — same
+    // distinct-shape rationale, so an in-place create never triggers a
+    // redirect-on-success wrapper.
+    | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
   > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
@@ -513,6 +533,47 @@ export function getContext<
         }
         const dbError = parsePrismaError(error, listConfig)
         return { removed: false, error: dbError.message }
+      }
+    }
+
+    // Relationship-table pre-linked create (ADR-0018, #738). Creates a row on
+    // the RELATED list through the secured context, so the related list's create
+    // access + hooks (and field-level access) apply — never the parent's. The
+    // back-reference to the parent is set here from `field`/`parentId` (a to-one
+    // back-ref connects a single parent; a to-many back-ref, e.g. many-to-many,
+    // connects the parent by id), so the client can never re-target the link.
+    // Honours Silent failure: an access-denied create returns `null`, surfaced
+    // as `{ created: false }` with a generic reason (no denied-vs-absent leak).
+    if (props.action === 'createRelated') {
+      try {
+        const data: Record<string, unknown> = { ...props.data }
+        if (props.field && props.parentId) {
+          const backRefField = listConfig.fields[props.field]
+          const backRefIsMany =
+            !!backRefField && 'many' in backRefField && backRefField.many === true
+          data[props.field] = backRefIsMany
+            ? { connect: [{ id: props.parentId }] }
+            : { connect: { id: props.parentId } }
+        }
+        const result = await model.create({ data })
+        if (result === null || result === undefined) {
+          return { created: false, error: 'Access denied or operation failed' }
+        }
+        const id =
+          typeof result === 'object' && result !== null && 'id' in result
+            ? String((result as { id: unknown }).id)
+            : undefined
+        return { created: true, id }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          return { created: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = parsePrismaError(error, listConfig)
+        return {
+          created: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
       }
     }
 
