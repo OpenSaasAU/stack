@@ -10,6 +10,7 @@
 // ───────────────────────────────────────────────────────────────
 
 export { parseFilterQuery } from './parse.js'
+export { serializeFilterQuery } from './serialize.js'
 export { buildFilterWhere } from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 export type {

@@ -7,6 +7,7 @@ export { ThemeToggle } from './components/ThemeToggle.js'
 export { ThemeScript } from './components/ThemeScript.js'
 export { ListView } from './components/ListView.js'
 export { ListViewClient } from './components/ListViewClient.js'
+export { FilterBuilder } from './components/FilterBuilder.js'
 export { RowSelectionBar } from './components/RowSelectionBar.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
@@ -75,6 +76,7 @@ export type { UserMenuProps } from './components/UserMenu.js'
 export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
 export type { ListViewClientProps } from './components/ListViewClient.js'
+export type { FilterBuilderProps, FilterBuilderClassNames } from './components/FilterBuilder.js'
 export type {
   RowSelectionBarProps,
   RowSelectionBarClassNames,
@@ -152,6 +154,10 @@ export {
   getPageCheckboxState,
 } from './lib/useRowSelection.js'
 export type { RowSelection } from './lib/useRowSelection.js'
+
+// Filter builder state helpers (UI state <-> `?search=` query round-trip)
+export { queryToState, stateToQuery } from './lib/filterBuilderState.js'
+export type { FilterRow, FilterBuilderState } from './lib/filterBuilderState.js'
 
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'

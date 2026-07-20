@@ -13,6 +13,7 @@ const mockPush = vi.fn()
 const mockRefresh = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
+  usePathname: () => '/admin/post',
 }))
 
 // next/link renders an anchor; happy-dom can render it directly.

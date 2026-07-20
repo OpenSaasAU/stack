@@ -10,6 +10,7 @@ import {
   type AccessContext,
   type AccessControl,
   buildListFilterWhere,
+  collectFilterSuggestions,
   getDbKey,
   getItemLabel,
   getUrlKey,
@@ -201,6 +202,14 @@ export async function ListView({
   // Serialize items for client component (convert Dates, etc to JSON-safe format)
   const serializedItems = JSON.parse(JSON.stringify(itemsWithResolvedLabels))
 
+  // Collect each filterable field's serializable Filter spec metadata (fields,
+  // operators, enumerated values / relationship label search) to drive the
+  // Filter builder's pickers. This carries no functions, so it crosses the
+  // server/client boundary; it mirrors the same specs the server-side
+  // `buildListFilterWhere` above uses, so the builder can only produce queries
+  // the engine understands.
+  const filterSuggestions = collectFilterSuggestions(listConfig, listKey, config)
+
   return (
     <div className="p-8">
       <PageHeader
@@ -236,6 +245,7 @@ export async function ListView({
         pageSize={pageSize}
         total={total || 0}
         search={search}
+        filterSuggestions={filterSuggestions}
         serverAction={serverAction}
         canDelete={canDeleteList(listConfig.access?.operation?.delete)}
       />
