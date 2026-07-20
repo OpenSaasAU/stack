@@ -564,7 +564,15 @@ export function getContext<
           return { bulkAction: false, error: error.message }
         }
         const dbError = parsePrismaError(error, listConfig)
-        return { bulkAction: false, error: dbError.message }
+        // A recognised Prisma error carries a user-safe, translated message.
+        if (dbError instanceof DatabaseError) {
+          return { bulkAction: false, error: dbError.message }
+        }
+        // Anything else is an unexpected handler bug whose raw `.message` could
+        // leak internal detail to the client — log it server-side and return a
+        // generic client-facing message instead.
+        console.error(`Bulk action "${props.key}" on list "${props.listKey}" failed:`, error)
+        return { bulkAction: false, error: 'Action failed' }
       }
     }
 

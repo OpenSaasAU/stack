@@ -94,6 +94,9 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
  * - relationship columns (relationship editing is out of scope here — they render
  *   as `{ id, label }` and stay read-only),
  * - virtual/computed fields (not stored; nothing to write),
+ * - json columns (their draft is a fresh object reference, so the no-op
+ *   `draft === displayValue` guard never holds and an unchanged cell would waste
+ *   a round-trip; they also need a proper structured editor — out of scope here),
  * - password fields and system columns (`id`/`createdAt`/`updatedAt`),
  * - any field whose UPDATE field-access is statically denied.
  *
@@ -102,7 +105,7 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
  * commit as a revert (never a denied-vs-absent leak). All evaluation is on the
  * related list's own access — never the parent's.
  */
-async function resolveEditableColumns(
+export async function resolveEditableColumns(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
   context: AccessContext<unknown>,
@@ -123,6 +126,7 @@ async function resolveEditableColumns(
     if (!field) continue
     if (field.type === 'relationship') continue
     if (field.type === 'password') continue
+    if (field.type === 'json') continue
     if ('virtual' in field && field.virtual) continue
     if (await isFieldPotentiallyWritable(field.access, { session: context.session, context })) {
       editable.push(column)
