@@ -50,6 +50,20 @@ export type ServerActionProps =
       field?: string
       parentId?: string
     }
+  // Relationship-table inline cell edit (issue #737). `listKey`/`id` target the
+  // RELATED row and `field`/`value` a single scalar field on it, so the update
+  // runs through the related list's OWN operation- and field-level access +
+  // hooks/validation (never the parent's) — the same ADR-0018 boundary as
+  // `removeRelated`. It returns a distinct `{ updated }` shape (never a
+  // single-op `success`) so a UI wrapper that redirects on `success` — the
+  // item-form pattern — cannot hijack an in-place cell edit.
+  | {
+      listKey: string
+      action: 'updateRelated'
+      id: string
+      field: string
+      value: unknown
+    }
   // Relationship-table pre-linked create (issue #738). `listKey` targets the
   // RELATED list, so the related list's own create access control + hooks apply
   // (never the parent's) — the same ADR-0018 boundary as `removeRelated`. The
@@ -472,6 +486,11 @@ export function getContext<
     // again a distinct shape from single-op `success`.
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
+    // Relationship-table inline cell edit reports `updated` (with an optional
+    // reason + fieldErrors for the edited cell) rather than `success` — same
+    // distinct-shape rationale, so an in-place cell edit never triggers a
+    // redirect-on-success wrapper.
+    | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
@@ -626,6 +645,36 @@ export function getContext<
         const dbError = parsePrismaError(error, listConfig)
         return {
           created: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
+    // Relationship-table inline cell edit (ADR-0018, #737). Updates ONE scalar
+    // field on the RELATED row through the secured context, so the related list's
+    // operation- and field-level update access plus its hooks/validation apply —
+    // never the parent's. Honours Silent failure: an access-denied update returns
+    // `null`, surfaced as `{ updated: false }` with a generic reason (no
+    // denied-vs-absent leak); a validation/db error surfaces its message and
+    // fieldErrors so the cell can revert with a reason and show an inline error.
+    if (props.action === 'updateRelated') {
+      try {
+        const result = await model.update({
+          where: { id: props.id },
+          data: { [props.field]: props.value },
+        })
+        if (result === null || result === undefined) {
+          return { updated: false, error: 'Access denied or operation failed' }
+        }
+        return { updated: true }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = parsePrismaError(error, listConfig)
+        return {
+          updated: false,
           error: dbError.message,
           fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
         }

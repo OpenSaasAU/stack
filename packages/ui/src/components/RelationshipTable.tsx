@@ -8,7 +8,10 @@ import {
 } from '@opensaas/stack-core'
 import { formatFieldName, formatListName } from '../lib/utils.js'
 import { serializeFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
-import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
+import {
+  isOperationPotentiallyAllowed,
+  isFieldPotentiallyWritable,
+} from '../lib/operationAccess.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -68,6 +71,56 @@ async function resolveRemoveMode(
   // and the related list's update access is not hard-denied.
   if (!section.disconnectable) return null
   return (await isOperationPotentiallyAllowed(access, 'update', args)) ? 'disconnect' : null
+}
+
+/** Columns never inline-editable regardless of access (system + write-excluded). */
+const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
+
+/**
+ * The subset of columns whose cells may be inline-edited (issue #737, ADR-0018).
+ *
+ * Gating mirrors #738/#739: the RELATED list's own operation-level update access
+ * is the table gate — a hard deny yields no editable cells, so a fully
+ * update-denied table stays read-only. Each column is then editable only when it
+ * is a writable scalar field of the related list, EXCLUDING:
+ * - relationship columns (relationship editing is out of scope here — they render
+ *   as `{ id, label }` and stay read-only),
+ * - virtual/computed fields (not stored; nothing to write),
+ * - password fields and system columns (`id`/`createdAt`/`updatedAt`),
+ * - any field whose UPDATE field-access is statically denied.
+ *
+ * A field-access rule that returns a filter or depends on the row is treated as
+ * "potentially writable": the affordance shows and a row-level denial surfaces at
+ * commit as a revert (never a denied-vs-absent leak). All evaluation is on the
+ * related list's own access — never the parent's.
+ */
+async function resolveEditableColumns(
+  section: RelationshipTableSection,
+  relatedListConfig: AnyListConfig | undefined,
+  context: AccessContext<unknown>,
+): Promise<string[]> {
+  if (!relatedListConfig) return []
+
+  const tableUpdatable = await isOperationPotentiallyAllowed(
+    relatedListConfig.access?.operation,
+    'update',
+    { session: context.session, context },
+  )
+  if (!tableUpdatable) return []
+
+  const editable: string[] = []
+  for (const column of section.columns) {
+    if (NON_EDITABLE_COLUMNS.has(column)) continue
+    const field = relatedListConfig.fields[column]
+    if (!field) continue
+    if (field.type === 'relationship') continue
+    if (field.type === 'password') continue
+    if ('virtual' in field && field.virtual) continue
+    if (await isFieldPotentiallyWritable(field.access, { session: context.session, context })) {
+      editable.push(column)
+    }
+  }
+  return editable
 }
 
 /** The serialisable props the pre-linked create drawer needs, or `null` to hide it. */
@@ -171,16 +224,17 @@ function toNumber(value: unknown): number | null {
 }
 
 /**
- * Read-only Relationship table (issue #734) — a section of the item view
- * showing a to-many relationship's related rows. Server Component: it resolves
- * columns, cells (via the shared serialise path), and the totals footer sums
- * from rows already fetched through the secured context, then hands minimal,
- * serialisable props to {@link RelationshipTableClient}.
+ * Relationship table (issue #734) — a section of the item view showing a
+ * to-many relationship's related rows. Server Component: it resolves columns,
+ * cells (via the shared serialise path), the totals footer sums, and the
+ * per-row/per-cell affordances (removal #739, create drawer #738, inline cell
+ * edit #737) from rows already fetched through the secured context, then hands
+ * minimal, serialisable props to {@link RelationshipTableClient}.
  *
- * Read-only in this ticket: rows navigate to the related record on click.
- * Inline cell edit (#737), the pre-linked create drawer (#738), and row removal
- * (#739) extend the named Slots left in the client component — no edit/add/
- * remove affordances are rendered here.
+ * Inline cell edit (#737): {@link resolveEditableColumns} decides — from the
+ * RELATED list's own operation- and field-level update access — which columns
+ * may be edited in place; that set is passed as `editableColumns`. Every commit
+ * runs on the related list through the secured context, never the parent's.
  */
 export async function RelationshipTable({
   config,
@@ -202,6 +256,10 @@ export async function RelationshipTable({
   // The pre-linked create drawer (#738), gated on the related list's own create
   // access (never the parent's) and the presence of a back-reference to preset.
   const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
+
+  // Which columns may be inline-edited (#737), gated on the related list's own
+  // operation- and field-level update access (never the parent's).
+  const editableColumns = await resolveEditableColumns(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so
   // its values can be label-resolved via that column's OWN target list (a
@@ -266,6 +324,7 @@ export async function RelationshipTable({
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}
       relatedListTitle={formatListName(section.relatedListKey)}
+      editableColumns={editableColumns}
     />
   )
 }

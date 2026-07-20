@@ -16,6 +16,7 @@ import { Card } from '../primitives/card.js'
 import { Button } from '../primitives/button.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { CellRenderer } from './cells/CellRenderer.js'
+import { RelationshipTableCell } from './RelationshipTableCell.js'
 import { RelationshipCreateDrawer } from './RelationshipCreateDrawer.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -77,6 +78,15 @@ export interface RelationshipTableClientProps {
   createRelationshipData?: Record<string, Array<{ id: string; label: string }>>
   /** Display name of the related list, used for the "+ Add" button + drawer heading. */
   relatedListTitle?: string
+  /**
+   * Columns whose cells are inline-editable for this session (issue #737),
+   * decided server-side from the related list's operation- and field-level
+   * update access. A column absent here renders a read-only Cell (and its row
+   * click still navigates); a listed column renders an editable cell that
+   * commits a single-field update through the secured context. Defaults to none
+   * (fully read-only), preserving the #734 behaviour.
+   */
+  editableColumns?: string[]
 }
 
 /** Read the `{ removed, error? }` outcome a row-removal server action returns. */
@@ -93,10 +103,17 @@ function readRemoveOutcome(result: unknown): { ok: boolean; error?: string } {
 }
 
 /**
- * Read-only Relationship table (issue #734) plus row removal (issue #739),
- * client half. Renders related rows as a table whose cells come from the cell
- * registry (`CellRenderer`), so badges/formatting match the related list's own
- * page. Rows navigate to the related record on click.
+ * Relationship table (issue #734) with row removal (issue #739) and inline cell
+ * edit (issue #737), client half. Renders related rows as a table whose cells
+ * come from the cell registry (`CellRenderer`), so badges/formatting match the
+ * related list's own page. Rows navigate to the related record on click, except
+ * on an editable cell, which edits in place.
+ *
+ * Inline cell edit (ADR-0018): columns listed in `editableColumns` render an
+ * editable cell ({@link RelationshipTableCell}) that commits a single-field
+ * update on the RELATED row through the secured context (subject to that list's
+ * access + hooks, never the parent's), optimistically with revert-on-failure.
+ * Every other column stays read-only.
  *
  * Row removal (ADR-0018): when `removeMode` is set, each row gains a trailing ✕.
  * `'disconnect'` unlinks the row (an update on the related list, nulling the
@@ -134,9 +151,11 @@ export function RelationshipTableClient({
   createFields,
   createRelationshipData,
   relatedListTitle,
+  editableColumns,
 }: RelationshipTableClientProps) {
   const router = useRouter()
   const sumColumnSet = React.useMemo(() => new Set(sumColumns), [sumColumns])
+  const editableColumnSet = React.useMemo(() => new Set(editableColumns ?? []), [editableColumns])
 
   // Rows optimistically hidden after a successful removal (until the refresh
   // re-fetch settles), per-row failure reasons, the in-flight row, and the row
@@ -270,21 +289,31 @@ export function RelationshipTableClient({
                   className="cursor-pointer"
                   onClick={() => router.push(`${basePath}/${relatedUrlKey}/${rowId}`)}
                 >
-                  {columns.map((column) => (
-                    <TableCell
-                      key={column}
-                      data-slot="relationship-table-cell"
-                      className={cn(isNumericField(columnFieldType(column)) && 'text-right')}
-                    >
-                      {/* Read-only Cell; inline cell edit (#737) wraps this. */}
-                      <CellRenderer
-                        value={row[column]}
-                        field={fields[column] ?? { type: 'text' }}
-                        fieldName={column}
-                        basePath={basePath}
-                      />
-                    </TableCell>
-                  ))}
+                  {columns.map((column) => {
+                    const numeric = isNumericField(columnFieldType(column))
+                    return (
+                      <TableCell
+                        key={column}
+                        data-slot="relationship-table-cell"
+                        className={cn(numeric && 'text-right')}
+                      >
+                        {/* Inline cell edit (#737): editable columns commit a
+                            single-field update through the secured context; the
+                            rest render a read-only Cell (and the row navigates). */}
+                        <RelationshipTableCell
+                          rowId={rowId}
+                          column={column}
+                          value={row[column]}
+                          field={fields[column] ?? { type: 'text' }}
+                          basePath={basePath}
+                          numeric={numeric}
+                          editable={editableColumnSet.has(column)}
+                          relatedListKey={relatedListKey}
+                          serverAction={serverAction}
+                        />
+                      </TableCell>
+                    )
+                  })}
                   {showRemove && (
                     <TableCell className="text-right align-top">
                       <Button
