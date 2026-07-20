@@ -120,25 +120,33 @@ export async function buildIncludeWithAccessControl(
  * (fetch with no extra constraints) or an object that scopes the fetch with a
  * `where` filter and/or a nested `include`.
  */
-type IncludeEntry = boolean | { where?: PrismaFilter; include?: IncludeObject }
+type IncludeEntry = boolean | { where?: PrismaFilter; include?: IncludeObject; take?: number }
 type IncludeObject = Record<string, IncludeEntry>
 
 /** The structured (object) form of a relation include entry. */
-type IncludeEntryObject = { where?: PrismaFilter; include?: IncludeObject }
+type IncludeEntryObject = { where?: PrismaFilter; include?: IncludeObject; take?: number }
 
 /**
  * Narrow an unknown include value to the structured object form (vs bare `true`
  * or any other primitive). Caller-supplied includes arrive untyped at the
  * runtime boundary, so we validate the shape here rather than casting.
+ *
+ * A numeric `take` on a to-many relation include (a caller-supplied row bound,
+ * issue #752) is carried through: it only ever NARROWS the fetched rows and can
+ * never widen past the access `where`, so preserving it is access-neutral. The
+ * access-controlled include never sets `take` itself — it originates solely
+ * from the caller — so `mergeIncludeWithAccessControl` re-attaches it below.
  */
 function asEntryObject(value: unknown): IncludeEntryObject | null {
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>
     const where = obj.where
     const include = obj.include
+    const take = obj.take
     const entry: IncludeEntryObject = {}
     if (where && typeof where === 'object') entry.where = where as PrismaFilter
     if (include && typeof include === 'object') entry.include = include as IncludeObject
+    if (typeof take === 'number') entry.take = take
     return entry
   }
   return null
@@ -260,11 +268,14 @@ export function mergeIncludeWithAccessControl(
       mergedNested = accessEntry.include
     }
 
-    const entry: { where?: PrismaFilter; include?: Record<string, unknown> } = {}
+    const entry: { where?: PrismaFilter; include?: Record<string, unknown>; take?: number } = {}
     if (mergedWhere) entry.where = mergedWhere
     if (mergedNested && Object.keys(mergedNested).length > 0) entry.include = mergedNested
+    // Preserve a caller-supplied row bound on the relation (issue #752). It only
+    // narrows, never widens, so it rides on top of the access `where`/include.
+    if (callerEntry?.take !== undefined) entry.take = callerEntry.take
 
-    // A bare-`true` relation with no access filter and no nested include stays `true`.
+    // A bare-`true` relation with no access filter, nested include, or row bound stays `true`.
     merged[relationName] = Object.keys(entry).length > 0 ? entry : true
   }
 

@@ -59,9 +59,26 @@ describe('RelationshipTableClient', () => {
 
     const footer = document.querySelector('[data-slot="relationship-table-footer"]')
     expect(footer).not.toBeNull()
-    // Count always shown; summed column rendered through its Cell (5 + 10 = 15).
-    expect(footer).toHaveTextContent('2 rows')
+    // Count always shown (N of M, unbounded here → 2 of 2); summed column
+    // rendered through its Cell (5 + 10 = 15).
+    expect(footer).toHaveTextContent('Showing 2 of 2 rows')
     expect(footer).toHaveTextContent('15')
+  })
+
+  it('shows "showing N of M" when the fetch is bounded below the access-scoped total', () => {
+    // Bounded fetch (issue #752): 2 rows rendered, 42 total access-scoped rows.
+    render(<RelationshipTableClient {...baseProps()} total={42} />)
+
+    const footer = document.querySelector('[data-slot="relationship-table-footer"]')
+    // N is the rendered count (always shown), M the full access-scoped total.
+    expect(footer).toHaveTextContent('Showing 2 of 42 rows')
+  })
+
+  it('falls back to the row count for M when no total is provided (row count always shown)', () => {
+    render(<RelationshipTableClient {...baseProps()} total={undefined} />)
+
+    const footer = document.querySelector('[data-slot="relationship-table-footer"]')
+    expect(footer).toHaveTextContent('Showing 2 of 2 rows')
   })
 
   it('navigates to the related record when a row is clicked', async () => {
@@ -77,7 +94,7 @@ describe('RelationshipTableClient', () => {
 
     expect(screen.getByText(/no related posts/i)).toBeInTheDocument()
     const footer = document.querySelector('[data-slot="relationship-table-footer"]')
-    expect(footer).toHaveTextContent('0 rows')
+    expect(footer).toHaveTextContent('Showing 0 of 0 rows')
   })
 
   it('still shows the row count when there are zero columns (only the back-reference curated away)', () => {
@@ -89,13 +106,14 @@ describe('RelationshipTableClient', () => {
         sumColumns={[]}
         sums={{}}
         count={3}
+        total={12}
       />,
     )
 
     const footer = document.querySelector('[data-slot="relationship-table-footer"]')
     expect(footer).not.toBeNull()
-    // The always-shown count must survive the zero-column footer.
-    expect(within(footer as HTMLElement).getByText('3 rows')).toBeInTheDocument()
+    // The always-shown N-of-M count must survive the zero-column footer path.
+    expect(within(footer as HTMLElement).getByText('Showing 3 of 12 rows')).toBeInTheDocument()
   })
 
   // ---- Row removal (issue #739) ----

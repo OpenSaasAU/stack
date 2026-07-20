@@ -12,6 +12,17 @@ import type { FieldConfig, ListConfig, OpenSaasConfig } from '@opensaas/stack-co
 export type ItemViewArrangement = 'single' | 'split' | 'stacked'
 
 /**
+ * The default maximum number of related rows a Relationship table fetches and
+ * renders (issue #752). The item view is a bounded preview — a record with many
+ * related rows must not load/render every one on edit-page open — so each
+ * to-many relationship is fetched with a `take` capped here unless the field's
+ * `ui.itemView.take` overrides it. The totals footer still reports the full
+ * access-scoped total ("showing N of M"), and the related list's own (paginated)
+ * page remains the way to browse past the cap.
+ */
+export const DEFAULT_ITEM_VIEW_TAKE = 10
+
+/**
  * One derived Relationship-table section — a to-many relationship on the record
  * being edited, rendered read-only as a table of related rows.
  */
@@ -30,6 +41,13 @@ export interface RelationshipTableSection {
   backReferenceField?: string
   /** The related-list columns to show, in order (curation minus back-reference). */
   columns: string[]
+  /**
+   * The maximum number of related rows to fetch and render for this table
+   * (issue #752): the field's `ui.itemView.take` when it is a positive integer,
+   * else {@link DEFAULT_ITEM_VIEW_TAKE}. The totals footer still shows the full
+   * access-scoped total.
+   */
+  take: number
   /** Numeric columns to sum in the totals footer (explicit opt-in only). */
   sumColumns: string[]
   /**
@@ -76,6 +94,18 @@ function readStringArray(value: unknown): string[] | undefined {
 }
 
 /**
+ * Read a positive-integer row bound (`ui.itemView.take`) from an unknown config
+ * value, falling back to {@link DEFAULT_ITEM_VIEW_TAKE} for anything that is not
+ * a positive integer (missing, zero, negative, fractional, or non-numeric) so a
+ * malformed override can never disable the bound.
+ */
+function readPositiveInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : DEFAULT_ITEM_VIEW_TAKE
+}
+
+/**
  * Read a to-many relationship's item-view overrides off its serialisable `ui`
  * config without casting: `ui.itemView` is `unknown` (index-signature) so each
  * property is narrowed at runtime.
@@ -84,20 +114,22 @@ function readRelationshipItemView(field: FieldConfig): {
   displayMode: 'table' | 'picker'
   columns?: string[]
   sum?: string[]
+  take: number
   removeAction: 'disconnect' | 'delete' | 'none'
 } {
   const raw: unknown = field.ui ? field.ui.itemView : undefined
   if (typeof raw !== 'object' || raw === null) {
-    return { displayMode: 'table', removeAction: 'disconnect' }
+    return { displayMode: 'table', take: DEFAULT_ITEM_VIEW_TAKE, removeAction: 'disconnect' }
   }
   const displayMode = 'displayMode' in raw && raw.displayMode === 'picker' ? 'picker' : 'table'
   const columns = 'columns' in raw ? readStringArray(raw.columns) : undefined
   const sum = 'sum' in raw ? readStringArray(raw.sum) : undefined
+  const take = 'take' in raw ? readPositiveInteger(raw.take) : DEFAULT_ITEM_VIEW_TAKE
   const removeAction =
     'removeAction' in raw && (raw.removeAction === 'delete' || raw.removeAction === 'none')
       ? raw.removeAction
       : 'disconnect'
-  return { displayMode, columns, sum, removeAction }
+  return { displayMode, columns, sum, take, removeAction }
 }
 
 /**
@@ -199,6 +231,7 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
         relatedListKey,
         backReferenceField,
         columns: overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField),
+        take: overrides.take,
         sumColumns: overrides.sum ?? [],
         removeAction: overrides.removeAction,
         disconnectable: isDisconnectable(relatedListConfig, backReferenceField),
