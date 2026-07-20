@@ -338,6 +338,151 @@ describe('getContext', () => {
       })
     })
 
+    describe('createRelated (relationship-table pre-linked create)', () => {
+      it('creates a row on the related list with the to-one back-reference preset to the parent', async () => {
+        const created = { id: 'p1', title: 'New', content: 'c', authorId: 'u1' }
+        mockPrisma.post.create.mockResolvedValue(created)
+        // The connect target must be reachable (the related list's read access).
+        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          data: { title: 'New', content: 'c' },
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // The back-reference is set on the SERVER (a to-one back-ref connects a
+        // single parent), so the new row links to exactly the parent being edited.
+        expect(mockPrisma.post.create).toHaveBeenCalled()
+        const createArg = mockPrisma.post.create.mock.calls[0][0]
+        expect(createArg.data.title).toBe('New')
+        expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
+        // Distinct `{ created }` shape (never a single-op `success`).
+        expect(result).toEqual({ created: true, id: 'p1' })
+      })
+
+      it('connects a to-many back-reference by parent id (many-to-many)', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const m2mPrisma: any = {
+          lesson: {
+            findUnique: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
+          },
+          teacher: {
+            findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
+            update: vi.fn(),
+            delete: vi.fn(),
+            create: vi.fn(),
+          },
+        }
+        const m2mConfig: OpenSaasConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Lesson: {
+              fields: {
+                title: { type: 'text' },
+                teachers: { type: 'relationship', ref: 'Teacher.lessons', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+            Teacher: {
+              fields: {
+                name: { type: 'text' },
+                lessons: { type: 'relationship', ref: 'Lesson.teachers', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
+        await context.serverAction({
+          listKey: 'Lesson',
+          action: 'createRelated',
+          data: { title: 'L' },
+          field: 'teachers',
+          parentId: 't1',
+        })
+
+        const createArg = m2mPrisma.lesson.create.mock.calls[0][0]
+        // A to-many back-reference connects the parent by id.
+        expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
+      })
+
+      it('returns a generic error (Silent failure) when the create is access-denied', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            Post: {
+              ...config.lists.Post,
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => false, // no create access → create denied
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(deniedConfig, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          data: { title: 'New' },
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // Denied: reported as not created with a generic reason (no leak). The
+        // create is never attempted at the Prisma layer.
+        expect(result).toEqual({ created: false, error: 'Access denied or operation failed' })
+        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+      })
+
+      it('surfaces field errors from the create (e.g. a unique constraint) in the drawer shape', async () => {
+        mockPrisma.post.create.mockRejectedValue({ code: 'P2002', meta: { target: ['title'] } })
+        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          data: { title: 'Dup' },
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // Parsed to a distinct { created: false } with per-field errors the drawer
+        // renders — never a single-op `success` envelope.
+        expect(result).toMatchObject({ created: false })
+        const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+        expect(created.fieldErrors?.title).toBeDefined()
+      })
+    })
+
     describe('relationshipOptions', () => {
       it('returns { id, label }[] for the related list, unfiltered/unincluded', async () => {
         mockPrisma.user.findMany.mockResolvedValue([

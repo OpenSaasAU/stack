@@ -16,6 +16,7 @@ import { Card } from '../primitives/card.js'
 import { Button } from '../primitives/button.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { CellRenderer } from './cells/CellRenderer.js'
+import { RelationshipCreateDrawer } from './RelationshipCreateDrawer.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
 
@@ -59,6 +60,23 @@ export interface RelationshipTableClientProps {
   parentListKey: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * Whether the pre-linked create drawer's "+ Add" is offered (issue #738):
+   * `true` only when the session may create on the related list AND a
+   * back-reference exists to preset the link (gated server-side). `false` hides
+   * the control entirely.
+   */
+  canCreate?: boolean
+  /**
+   * Serialised field configs for the create drawer's form (the related list's
+   * fields with the back-reference removed — it is preset + hidden). Required
+   * when `canCreate` is `true`.
+   */
+  createFields?: Record<string, SerializableFieldConfig>
+  /** Relationship options for the create form's own relationship fields, if any. */
+  createRelationshipData?: Record<string, Array<{ id: string; label: string }>>
+  /** Display name of the related list, used for the "+ Add" button + drawer heading. */
+  relatedListTitle?: string
 }
 
 /** Read the `{ removed, error? }` outcome a row-removal server action returns. */
@@ -112,6 +130,10 @@ export function RelationshipTableClient({
   backReferenceField,
   parentId,
   serverAction,
+  canCreate = false,
+  createFields,
+  createRelationshipData,
+  relatedListTitle,
 }: RelationshipTableClientProps) {
   const router = useRouter()
   const sumColumnSet = React.useMemo(() => new Set(sumColumns), [sumColumns])
@@ -191,7 +213,20 @@ export function RelationshipTableClient({
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <h2 className="font-heading text-lg font-semibold">{title}</h2>
         {/* Seam: the pre-linked create drawer's "+ Add" control (#738) mounts here. */}
-        <div data-slot="relationship-table-toolbar" className="flex items-center gap-2" />
+        <div data-slot="relationship-table-toolbar" className="flex items-center gap-2">
+          {canCreate && createFields && (
+            <RelationshipCreateDrawer
+              relatedListKey={relatedListKey}
+              title={relatedListTitle ?? title}
+              fields={createFields}
+              relationshipData={createRelationshipData}
+              backReferenceField={backReferenceField}
+              parentId={parentId}
+              basePath={basePath}
+              serverAction={serverAction}
+            />
+          )}
+        </div>
       </div>
 
       <Table>

@@ -158,6 +158,34 @@ describe('RelationshipTableClient', () => {
     expect(mockRefresh).not.toHaveBeenCalled()
   })
 
+  // ---- Pre-linked create drawer (issue #738) ----
+
+  it('renders no "+ Add" control when create is not allowed (default)', () => {
+    render(<RelationshipTableClient {...baseProps()} />)
+    expect(document.querySelector('[data-slot="relationship-table-add"]')).toBeNull()
+  })
+
+  it('mounts the pre-linked create "+ Add" on the toolbar seam when create is allowed', () => {
+    render(
+      <RelationshipTableClient
+        {...baseProps()}
+        canCreate
+        createFields={{ title: { type: 'text', validation: { isRequired: true } } }}
+        relatedListTitle="Post"
+      />,
+    )
+    const toolbar = document.querySelector('[data-slot="relationship-table-toolbar"]')
+    expect(toolbar).not.toBeNull()
+    expect(
+      within(toolbar as HTMLElement).getByRole('button', { name: /add post/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not render "+ Add" when create is allowed but no fields were prepared', () => {
+    render(<RelationshipTableClient {...baseProps()} canCreate relatedListTitle="Post" />)
+    expect(document.querySelector('[data-slot="relationship-table-add"]')).toBeNull()
+  })
+
   it('confirms before deleting when removeAction is delete', async () => {
     const serverAction = vi.fn(async () => ({ removed: true }))
     render(
