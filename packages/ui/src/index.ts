@@ -7,6 +7,7 @@ export { ThemeToggle } from './components/ThemeToggle.js'
 export { ThemeScript } from './components/ThemeScript.js'
 export { ListView } from './components/ListView.js'
 export { ListViewClient } from './components/ListViewClient.js'
+export { RowSelectionBar } from './components/RowSelectionBar.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
 export { SingletonView } from './components/SingletonView.js'
@@ -72,6 +73,10 @@ export type { UserMenuProps } from './components/UserMenu.js'
 export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
 export type { ListViewClientProps } from './components/ListViewClient.js'
+export type {
+  RowSelectionBarProps,
+  RowSelectionBarClassNames,
+} from './components/RowSelectionBar.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
 export type { SingletonViewProps } from './components/SingletonView.js'
@@ -127,6 +132,14 @@ export {
 // Relationship-options read primitive (re-exported from @opensaas/stack-core)
 export { getRelationshipOptions } from './lib/getRelationshipOptions.js'
 export type { RelationshipOption, RelationshipOptionsArgs } from './lib/getRelationshipOptions.js'
+
+// Row selection (list-table Bulk actions)
+export {
+  useRowSelection,
+  isPageFullySelected,
+  getPageCheckboxState,
+} from './lib/useRowSelection.js'
+export type { RowSelection } from './lib/useRowSelection.js'
 
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'

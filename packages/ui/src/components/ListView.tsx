@@ -5,14 +5,31 @@ import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
+import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
+  type AccessControl,
   buildListFilterWhere,
   getDbKey,
   getItemLabel,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
+
+/**
+ * Whether the list's delete access is NOT statically false (issue #733).
+ *
+ * "Statically false" means we can prove no session can ever delete without
+ * running a session-dependent function: delete access is absent (deny by
+ * default) or the literal boolean `false`. A function — or `true` — can't be
+ * evaluated up front, so Delete is offered and per-row Silent failure absorbs
+ * any denials into the "N of M deleted" report.
+ */
+function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boolean {
+  if (deleteAccess === undefined) return false
+  if (typeof deleteAccess === 'boolean') return deleteAccess
+  return true
+}
 
 /**
  * Resolve a fetched relationship value (the full related record, or `null`)
@@ -58,6 +75,12 @@ export interface ListViewProps {
    * Takes precedence over `initialSort`.
    */
   sort?: ListViewSort
+  /**
+   * The generic server action (rebuilds the session context server-side).
+   * Threaded to the client table for the built-in Bulk action Delete. When
+   * omitted, no bulk delete is offered.
+   */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
 }
 
 /**
@@ -75,6 +98,7 @@ export async function ListView({
   search,
   initialSort,
   sort,
+  serverAction,
 }: ListViewProps) {
   const key = getDbKey(listKey)
   const urlKey = getUrlKey(listKey)
@@ -212,6 +236,8 @@ export async function ListView({
         pageSize={pageSize}
         total={total || 0}
         search={search}
+        serverAction={serverAction}
+        canDelete={canDeleteList(listConfig.access?.operation?.delete)}
       />
     </div>
   )

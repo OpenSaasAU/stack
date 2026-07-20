@@ -338,7 +338,8 @@ describe('ListViewClient', () => {
       const prevButton = screen.getByRole('button', { name: /previous/i })
       await user.click(prevButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/post?page=1')
+      // A non-default pageSize is echoed into nav URLs so it survives paging.
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?page=1&pageSize=10')
     })
 
     it('should navigate to next page when Next clicked', async () => {
@@ -348,7 +349,7 @@ describe('ListViewClient', () => {
       const nextButton = screen.getByRole('button', { name: /next/i })
       await user.click(nextButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/post?page=2')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?page=2&pageSize=10')
     })
 
     it('should preserve search in pagination URLs', async () => {
@@ -358,7 +359,7 @@ describe('ListViewClient', () => {
       const nextButton = screen.getByRole('button', { name: /next/i })
       await user.click(nextButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=2')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=2&pageSize=10')
     })
 
     it('should preserve sort in pagination URLs', async () => {
@@ -376,7 +377,7 @@ describe('ListViewClient', () => {
       const nextButton = screen.getByRole('button', { name: /next/i })
       await user.click(nextButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=2')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=2&pageSize=10')
     })
   })
 
