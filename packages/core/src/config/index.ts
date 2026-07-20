@@ -150,6 +150,8 @@ export type {
   UIConfig,
   ListUIConfig,
   ListViewUIConfig,
+  ItemViewUIConfig,
+  RelationshipItemViewConfig,
   ThemeConfig,
   ThemePreset,
   ThemeColors,

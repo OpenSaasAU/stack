@@ -17,6 +17,7 @@ model Post {
   internalNotes String?
   status        String    @default("draft")
   publishedAt   DateTime?
+  viewCount     Int?      @default(0)
   authorId      String?   @map("author")
   author        User?     @relation(fields: [authorId], references: [id])
 
@@ -43,11 +44,9 @@ model Session {
   ipAddress String?
   userAgent String?
   userId    String?   @map("user")
-  user      User?     @relation(fields: [userId], references: [id])
+  user      User?     @relation(onDelete: Cascade, fields: [userId], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @default(now()) @updatedAt
-
-  @@index([userId])
 }
 
 model Account {
@@ -62,11 +61,9 @@ model Account {
   idToken               String?
   password              String?
   userId                String?   @map("user")
-  user                  User?     @relation(fields: [userId], references: [id])
+  user                  User?     @relation(onDelete: Cascade, fields: [userId], references: [id])
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @default(now()) @updatedAt
-
-  @@index([userId])
 }
 
 model Verification {

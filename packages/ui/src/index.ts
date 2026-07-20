@@ -10,6 +10,8 @@ export { ListViewClient } from './components/ListViewClient.js'
 export { RowSelectionBar } from './components/RowSelectionBar.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
+export { RelationshipTable } from './components/RelationshipTable.js'
+export { RelationshipTableClient } from './components/RelationshipTableClient.js'
 export { SingletonView } from './components/SingletonView.js'
 export { ConfirmDialog } from './components/ConfirmDialog.js'
 export { LoadingSpinner } from './components/LoadingSpinner.js'
@@ -79,6 +81,16 @@ export type {
 } from './components/RowSelectionBar.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
+export type { RelationshipTableProps } from './components/RelationshipTable.js'
+export type { RelationshipTableClientProps } from './components/RelationshipTableClient.js'
+
+// Item-view layout derivation (shape → details card + Relationship tables)
+export { deriveItemViewLayout } from './lib/deriveItemView.js'
+export type {
+  ItemViewLayout,
+  ItemViewArrangement,
+  RelationshipTableSection,
+} from './lib/deriveItemView.js'
 export type { SingletonViewProps } from './components/SingletonView.js'
 export type { ConfirmDialogProps } from './components/ConfirmDialog.js'
 export type { LoadingSpinnerProps } from './components/LoadingSpinner.js'

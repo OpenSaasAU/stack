@@ -929,6 +929,57 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
   }
 }
 
+/**
+ * Item-view configuration for a single to-many relationship field — the
+ * per-relationship overrides for the admin item view's Relationship table
+ * (issue #734). All values are plain, serialisable data so they can cross the
+ * server→client boundary via the existing field-config serialisation.
+ */
+export type RelationshipItemViewConfig = {
+  /**
+   * How this to-many relationship is presented on the owning record's item
+   * view:
+   * - `'table'` (default): a read-only Relationship table of related rows.
+   * - `'picker'`: demote it back to the compact relationship picker inside the
+   *   details card (the pre-#734 behaviour).
+   *
+   * @default 'table'
+   */
+  displayMode?: 'table' | 'picker'
+  /**
+   * The related list's fields to show as Relationship-table columns, in order.
+   *
+   * When omitted, the columns default to the related list's own column
+   * curation (`ui.listView.initialColumns`, else all non-system fields) minus
+   * the back-reference field that points at the parent record.
+   *
+   * @example
+   * ```typescript
+   * posts: relationship({
+   *   ref: 'Post.author',
+   *   many: true,
+   *   ui: { itemView: { columns: ['title', 'status'] } },
+   * })
+   * ```
+   */
+  columns?: string[]
+  /**
+   * The numeric columns whose values are summed in the Relationship table's
+   * totals footer. The row count is always shown; sums appear only for the
+   * columns listed here, each formatted by that column's Cell.
+   *
+   * @example
+   * ```typescript
+   * lineItems: relationship({
+   *   ref: 'LineItem.order',
+   *   many: true,
+   *   ui: { itemView: { sum: ['amount'] } },
+   * })
+   * ```
+   */
+  sum?: string[]
+}
+
 export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
   BaseFieldConfig<TTypeInfo> & {
     type: 'relationship'
@@ -1055,6 +1106,13 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     }
     ui?: {
       displayMode?: 'select' | 'cards'
+      /**
+       * Item-view (Relationship table) overrides for this to-many relationship
+       * — columns, summed columns, and demotion to the compact picker (issue
+       * #734). Ignored for single (`many: false`) relationships, which always
+       * render inside the details card.
+       */
+      itemView?: RelationshipItemViewConfig
     }
     /**
      * Get the complete Prisma schema contribution for this relationship field.
@@ -1781,6 +1839,13 @@ export type ListUIConfig = {
    */
   listView?: ListViewUIConfig
   /**
+   * Item-view (record edit page) configuration for this list — controls the
+   * placement/order of the shape-derived Relationship-table sections (issue
+   * #734). When omitted, sections appear in field-declaration order and the
+   * layout is derived purely from the number of to-many relationships.
+   */
+  itemView?: ItemViewUIConfig
+  /**
    * The field used to represent a row as a single label — in relationship
    * cells, dropdown options, and page headings. Must reference a declared,
    * non-relationship field on this list.
@@ -1794,6 +1859,30 @@ export type ListUIConfig = {
    * ```
    */
   labelField?: string
+}
+
+/**
+ * Item-view (record edit page) configuration, mirroring the `ui.listView`
+ * shape but for the shape-derived item layout (issue #734).
+ *
+ * The layout itself — single card / two-column split / stacked — is derived
+ * from the number of to-many relationships rendered as Relationship tables and
+ * needs no configuration. This block only reorders those sections; the
+ * per-relationship column/sum/picker overrides live on the relationship field
+ * (`ui.itemView`, see {@link RelationshipItemViewConfig}).
+ */
+export type ItemViewUIConfig = {
+  /**
+   * The order of the Relationship-table sections, by their to-many
+   * relationship field name. Listed fields come first in this order; any
+   * to-many relationship not listed keeps its declaration order after them.
+   *
+   * @example
+   * ```typescript
+   * ui: { itemView: { order: ['orders', 'reviews'] } }
+   * ```
+   */
+  order?: string[]
 }
 
 /**
