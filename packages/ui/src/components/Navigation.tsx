@@ -3,6 +3,7 @@ import Link from 'next/link.js'
 import { LayoutDashboard, List, Settings } from 'lucide-react'
 import { cn, formatListName } from '../lib/utils.js'
 import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { Badge } from '../primitives/badge.js'
 import { UserMenu } from './UserMenu.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
@@ -12,6 +13,14 @@ export interface NavigationProps {
   basePath?: string
   currentPath?: string
   onSignOut?: () => Promise<void>
+  /**
+   * Access-scoped record counts to show next to opted-in list nav items (issue
+   * #735), keyed by list key. Resolved upstream (by `AdminUI` via
+   * `resolveNavCounts`) so this presentational chrome stays synchronous. Only
+   * lists present in this map show a count; a list that didn't opt in — or whose
+   * query access is statically denied — is simply absent and renders no badge.
+   */
+  navCounts?: Record<string, number>
 }
 
 /**
@@ -24,11 +33,18 @@ function NavLink({
   href,
   active,
   icon,
+  count,
   children,
 }: {
   href: string
   active: boolean
   icon: React.ReactNode
+  /**
+   * Optional access-scoped record count shown as a trailing badge (issue #735).
+   * `undefined` renders no badge; `0` renders a "0" badge (the list opted in and
+   * the session can see none — distinct from a list that didn't opt in).
+   */
+  count?: number
   children: React.ReactNode
 }) {
   return (
@@ -54,6 +70,15 @@ function NavLink({
         {icon}
       </span>
       <span className="truncate">{children}</span>
+      {count !== undefined && (
+        <Badge
+          data-slot="nav-count"
+          variant={active ? 'outline' : 'secondary'}
+          className="ml-auto tabular-nums"
+        >
+          {count}
+        </Badge>
+      )}
     </Link>
   )
 }
@@ -68,6 +93,7 @@ export function Navigation({
   basePath = '/admin',
   currentPath = '',
   onSignOut,
+  navCounts,
 }: NavigationProps) {
   const allLists = Object.keys(config.lists || {})
   // Split lists into standard lists (under "Lists") and singletons (under
@@ -114,6 +140,7 @@ export function Navigation({
                     href={`${basePath}/${urlKey}`}
                     active={currentPath.startsWith(`/${urlKey}`)}
                     icon={<List className="h-4 w-4" />}
+                    count={navCounts?.[listKey]}
                   >
                     {formatListName(listKey)}
                   </NavLink>

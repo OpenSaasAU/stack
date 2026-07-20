@@ -33,6 +33,11 @@ export { EmptyState } from './components/EmptyState.js'
 export { Badge, badgeVariants } from './primitives/badge.js'
 export type { BadgeProps } from './primitives/badge.js'
 
+// Initials avatar primitive + its deterministic helpers (issue #735)
+export { Avatar } from './primitives/avatar.js'
+export type { AvatarProps } from './primitives/avatar.js'
+export { getInitials, getAvatarTone, AVATAR_TONES } from './lib/avatar.js'
+
 // Field components
 export {
   TextField,
@@ -62,6 +67,7 @@ export {
   SelectCell,
   TimestampCell,
   RelationshipCell,
+  AvatarLabelCell,
   CellRenderer,
   cellComponentRegistry,
   registerCellComponent,

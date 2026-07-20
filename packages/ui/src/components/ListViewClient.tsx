@@ -18,6 +18,7 @@ import { Checkbox } from '../primitives/checkbox.js'
 import { EmptyState } from './EmptyState.js'
 import { CellRenderer } from './cells/CellRenderer.js'
 import { FilterBuilder } from './FilterBuilder.js'
+import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
@@ -88,6 +89,13 @@ export interface ListViewClientProps {
    * absorbed by Silent failure into the "N of M deleted" report.
    */
   canDelete?: boolean
+  /**
+   * The label column to render with an initials-avatar Cell (issue #735). Set by
+   * `ListView` to the list's resolved label field when the list opts in via
+   * `ui.avatar`; omitted otherwise (text-only label, the default). A per-field
+   * cell override on that field still wins.
+   */
+  avatarColumn?: string
 }
 
 /**
@@ -111,6 +119,7 @@ export function ListViewClient({
   filterSuggestions = [],
   serverAction,
   canDelete = false,
+  avatarColumn,
 }: ListViewClientProps) {
   const router = useRouter()
   const sortBy = initialSort?.field ?? null
@@ -248,6 +257,33 @@ export function ListViewClient({
     }
   }
 
+  /**
+   * Render one body cell. The label column of an avatar-opted-in list
+   * (`avatarColumn`) renders through {@link AvatarLabelCell} — unless that
+   * field declares a per-field cell override (`ui.cell`), which still wins and
+   * flows through the normal {@link CellRenderer} resolution chain.
+   *
+   * Only `ui.cell` (the explicit per-field override) suppresses the avatar; a
+   * `ui.fieldType` type-registry hint does NOT. This is deliberate: `ui.avatar`
+   * is a list-level opt-in specifically for the label column, so it outranks a
+   * type-level registry default the same way `ui.cell` outranks `ui.fieldType`
+   * in the cell chain. A project that wants a custom cell on the label column
+   * instead of the avatar sets `ui.cell` on that field.
+   */
+  const renderCell = (column: string, item: Record<string, unknown>) => {
+    const field = columnField(column)
+    const cellProps = {
+      value: item[column],
+      field,
+      fieldName: column,
+      basePath,
+    }
+    if (column === avatarColumn && !field.ui?.cell) {
+      return <AvatarLabelCell {...cellProps} />
+    }
+    return <CellRenderer {...cellProps} />
+  }
+
   return (
     <div className="space-y-4">
       {/* Filter builder (issue #731) — constructs the `?search=` filter query the
@@ -382,12 +418,7 @@ export function ListViewClient({
                         key={column}
                         className={cn(isNumericField(fieldTypes[column]) && 'text-right')}
                       >
-                        <CellRenderer
-                          value={item[column]}
-                          field={columnField(column)}
-                          fieldName={column}
-                          basePath={basePath}
-                        />
+                        {renderCell(column, item)}
                       </TableCell>
                     ))}
                     <TableCell className="text-right">

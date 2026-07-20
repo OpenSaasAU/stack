@@ -1874,6 +1874,32 @@ export type ListUIConfig = {
    * ```
    */
   labelField?: string
+  /**
+   * Opt this list into an access-scoped record count next to its Admin chrome
+   * nav item (issue #735). Default `false` — no count query runs for lists that
+   * don't opt in. The count is fetched through the secured context, so it only
+   * ever reflects what the current session may see; a list whose query access
+   * is statically denied renders no count rather than a misleading zero.
+   *
+   * @example
+   * ```typescript
+   * ui: { navCount: true }
+   * ```
+   */
+  navCount?: boolean
+  /**
+   * Opt this list's label column into an initials-avatar Cell (issue #735) — an
+   * initials bubble whose text and colour derive deterministically from the row,
+   * rendered ahead of the emphasized {@link getItemLabel Item label}. Default
+   * `false` (text-only label). A per-field cell override (`ui.cell`) on the
+   * label field still wins.
+   *
+   * @example
+   * ```typescript
+   * ui: { avatar: true }
+   * ```
+   */
+  avatar?: boolean
 }
 
 /**

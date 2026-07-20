@@ -13,6 +13,7 @@ import {
   collectFilterSuggestions,
   getDbKey,
   getItemLabel,
+  getLabelFieldName,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -210,6 +211,13 @@ export async function ListView({
   // the engine understands.
   const filterSuggestions = collectFilterSuggestions(listConfig, listKey, config)
 
+  // When the list opts into avatars (issue #735), the label column renders with
+  // an initials bubble ahead of the emphasized Item label. The label column is
+  // resolved through the shared label seam (`getLabelFieldName`), so it can
+  // never drift from the field the Item label is read off. A per-field cell
+  // override on that field still wins — the client routes to the override first.
+  const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
+
   return (
     <div className="p-8">
       <PageHeader
@@ -248,6 +256,7 @@ export async function ListView({
         filterSuggestions={filterSuggestions}
         serverAction={serverAction}
         canDelete={canDeleteList(listConfig.access?.operation?.delete)}
+        avatarColumn={avatarColumn}
       />
     </div>
   )
