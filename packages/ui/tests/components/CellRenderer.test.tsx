@@ -55,6 +55,26 @@ describe('CellRenderer resolution priority', () => {
     expect(badge).toHaveAttribute('data-slot', 'cell-select')
   })
 
+  it('per-field override wins for a to-many relationship count column too (issue #732)', () => {
+    const field: SerializableFieldConfig = {
+      type: 'relationship',
+      ref: 'Post.author',
+      many: true,
+      ui: { cell: OverrideCell },
+    }
+    // Without the override this would render the default count Cell; the
+    // per-field override still takes precedence.
+    render(<CellRenderer value={7} field={field} fieldName="posts" />)
+    expect(screen.getByText('override:7')).toBeInTheDocument()
+  })
+
+  it('a to-many relationship with no override renders the default count Cell', () => {
+    const field: SerializableFieldConfig = { type: 'relationship', ref: 'Post.author', many: true }
+    const { container } = render(<CellRenderer value={3} field={field} fieldName="posts" />)
+    const cell = container.querySelector('[data-slot="cell-relationship-count"]')
+    expect(cell).toHaveTextContent('3')
+  })
+
   it('4. unknown / third-party types without a registered Cell fall back to plain text', () => {
     const field: SerializableFieldConfig = { type: 'someUnregisteredThirdPartyType' }
     render(<CellRenderer value="raw value" field={field} fieldName="f" />)

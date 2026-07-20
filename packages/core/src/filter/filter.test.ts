@@ -344,6 +344,48 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
   })
 })
 
+describe('to-many relationship Filter spec (count comparisons — issue #732)', () => {
+  function countConfig(): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        User: list({
+          fields: {
+            name: text(),
+            posts: relationship({ ref: 'Post.author', many: true }),
+          },
+        }),
+        Post: list({
+          fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
+        }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+      } as any,
+    } as OpenSaasConfig
+  }
+
+  it('supports numeric comparisons and emits a count marker (not a label filter)', () => {
+    const config = countConfig()
+    const spec = config.lists.User.fields.posts.getFilterSpec!('posts', 'User', config)!
+    expect(spec.operators).toEqual(['eq', 'gt', 'gte', 'lt', 'lte'])
+    expect(spec.toCondition('gt', '5')).toEqual({
+      posts: { _countFilter: { operator: 'gt', value: 5 } },
+    })
+    expect(spec.toCondition('eq', '0')).toEqual({
+      posts: { _countFilter: { operator: 'eq', value: 0 } },
+    })
+    // A non-integer count degrades to free text (like an integer field).
+    expect(spec.toCondition('gt', 'lots')).toBeNull()
+    // No enumerated value source — a count is a plain numeric compare.
+    expect(spec.suggestions.valueSource).toEqual({ kind: 'none' })
+  })
+
+  it('end-to-end: buildListFilterWhere carries a count marker for `posts:>5`', () => {
+    const config = countConfig()
+    const where = buildListFilterWhere('posts:>5', config.lists.User, 'User', config)
+    expect(where).toEqual({ posts: { _countFilter: { operator: 'gt', value: 5 } } })
+  })
+})
+
 describe('collectFilterSuggestions', () => {
   it('returns serializable, function-free suggestion metadata', () => {
     const config = makeConfig()
