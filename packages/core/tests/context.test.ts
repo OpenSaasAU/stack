@@ -671,6 +671,137 @@ describe('getContext', () => {
         expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
       })
 
+      // Security-critical invariant (#758): the server sets the back-reference by
+      // spreading client `data` and THEN overwriting `data[field]` from the
+      // trusted `parentId`, so a HOSTILE client-supplied `data[field]` can never
+      // re-target the link to a different parent. These lock that overwrite for
+      // both the to-one and the to-many back-reference shapes.
+      it('overwrites a hostile client-supplied to-one back-reference with the trusted parentId', async () => {
+        const created = { id: 'p1', title: 'New', authorId: 'u1' }
+        mockPrisma.post.create.mockResolvedValue(created)
+        // The connect target must be reachable (the related list's read access).
+        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          // Hostile: the client tries to re-target the link to a different parent
+          // by supplying the back-reference field itself.
+          data: { title: 'New', author: 'evil-id' },
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // The server OVERWRITES the spread-in hostile value with a connect to the
+        // trusted parentId — the evil id never reaches the secured create.
+        const createArg = mockPrisma.post.create.mock.calls[0][0]
+        expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
+        expect(createArg.data.author).not.toBe('evil-id')
+      })
+
+      it('overwrites a hostile client-supplied to-many back-reference with the trusted parentId', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const m2mPrisma: any = {
+          lesson: {
+            findUnique: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
+          },
+          teacher: {
+            findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
+            update: vi.fn(),
+            delete: vi.fn(),
+            create: vi.fn(),
+          },
+        }
+        const m2mConfig: OpenSaasConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Lesson: {
+              fields: {
+                title: { type: 'text' },
+                teachers: { type: 'relationship', ref: 'Teacher.lessons', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+            Teacher: {
+              fields: {
+                name: { type: 'text' },
+                lessons: { type: 'relationship', ref: 'Lesson.teachers', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
+        await context.serverAction({
+          listKey: 'Lesson',
+          action: 'createRelated',
+          // Hostile: the client tries to connect a different teacher.
+          data: { title: 'L', teachers: { connect: [{ id: 'evil-id' }] } },
+          field: 'teachers',
+          parentId: 't1',
+        })
+
+        // The to-many back-reference is overwritten to connect exactly the trusted
+        // parent by id — the hostile connect is discarded.
+        const createArg = m2mPrisma.lesson.create.mock.calls[0][0]
+        expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
+      })
+
+      // Defensive guard (#758): malformed direct calls (unreachable from the
+      // drawer, which always sends a valid relationship back-reference plus both
+      // field and parentId) are rejected rather than degrading to an unguarded
+      // create.
+      it('rejects a malformed call supplying only one of field/parentId (defensive guard)', async () => {
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          data: { title: 'New', author: 'evil-id' },
+          field: 'author',
+          // parentId omitted — a lone back-reference field is malformed.
+        })
+
+        expect(result).toEqual({
+          created: false,
+          error: 'createRelated requires both field and parentId, or neither',
+        })
+        // The unguarded create is never attempted.
+        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+      })
+
+      it('rejects a back-reference that does not name a relationship field (defensive guard)', async () => {
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'createRelated',
+          data: { title: 'New' },
+          field: 'title', // a scalar field, not a relationship
+          parentId: 'u1',
+        })
+
+        expect(result).toMatchObject({ created: false })
+        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+      })
+
       it('returns a generic error (Silent failure) when the create is access-denied', async () => {
         const deniedConfig: OpenSaasConfig = {
           ...config,
