@@ -469,6 +469,41 @@ describe('getContext', () => {
         // The handler never ran.
         expect(mockPrisma.post.update).not.toHaveBeenCalled()
       })
+
+      it('returns a generic message (not the internal text) and logs when the handler throws a plain Error', async () => {
+        // An unexpected, non-Prisma, non-known-error bug inside the handler must
+        // not surface its internal message to the client (#761).
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const context = await getContext(
+            configWithPublishAction({
+              handler: async () => {
+                throw new Error('secret internal detail: connection string leaked')
+              },
+            }),
+            mockPrisma,
+            { userId: 'u1' },
+          )
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'bulkAction',
+            key: 'publish',
+            ids: ['p1', 'p2'],
+          })
+
+          // Client sees the generic fallback — never the internal message.
+          expect(result).toEqual({ bulkAction: false, error: 'Action failed' })
+          if ('error' in result) {
+            expect(result.error).not.toContain('secret internal detail')
+          }
+          // The real error is logged server-side for the operator.
+          expect(consoleError).toHaveBeenCalled()
+          const loggedArgs = consoleError.mock.calls[0]
+          expect(loggedArgs.some((arg) => arg instanceof Error)).toBe(true)
+        } finally {
+          consoleError.mockRestore()
+        }
+      })
     })
 
     describe('updateRelated (relationship-table inline cell edit)', () => {
