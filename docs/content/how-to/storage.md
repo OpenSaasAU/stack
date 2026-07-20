@@ -368,6 +368,28 @@ export default config({
 })
 ```
 
+#### Alternative: Vercel OIDC authentication (no static token)
+
+If your Vercel project has OIDC federation enabled, you can skip the static
+`BLOB_READ_WRITE_TOKEN` entirely. Pass the blob store id (or set the
+`BLOB_STORE_ID` environment variable) and the SDK exchanges the deployment's
+`VERCEL_OIDC_TOKEN` for blob credentials automatically:
+
+```typescript
+storage: {
+  uploads: vercelBlobStorage({
+    storeId: process.env.BLOB_STORE_ID, // or omit and just set BLOB_STORE_ID
+    pathPrefix: 'uploads',
+  }),
+}
+```
+
+Credential precedence (resolved by the `@vercel/blob` SDK on every call): an
+explicit `token` wins; otherwise OIDC (`VERCEL_OIDC_TOKEN` or `oidcToken`, plus
+`storeId` or `BLOB_STORE_ID`); otherwise the `BLOB_READ_WRITE_TOKEN`
+environment variable. If none are available, the SDK throws a descriptive
+error on the first storage operation. Requires `@vercel/blob` 2.4.1 or later.
+
 ### 5. Register the Vercel Blob Provider
 
 The Vercel Blob provider must be registered before it can be used. Add this to your `instrumentation.ts`:
