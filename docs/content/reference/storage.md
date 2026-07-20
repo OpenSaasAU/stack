@@ -236,6 +236,18 @@ storage: {
 
 **Best for:** Vercel deployments, automatic CDN distribution, simplified setup.
 
+Set `public: false` to upload private blobs instead of public ones. Private blobs are not fetchable via their plain URL — `download()` and `getSignedUrl()` read them through `@vercel/blob`'s authorized read path instead:
+
+```typescript
+storage: {
+  documents: vercelBlobStorage({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    pathPrefix: 'documents',
+    public: false,
+  }),
+}
+```
+
 ## Image Transformations
 
 Automatically generate multiple image variants with different sizes and formats:
@@ -553,7 +565,7 @@ export default config({
 - **MIME type validation** - Prevents file type spoofing
 - **File size limits** - Prevents DoS attacks
 - **Access control** - Implement in upload routes
-- **Signed URLs** - For private S3 files (optional)
+- **Signed URLs** - For private S3 or Vercel Blob files (optional)
 
 ## Next Steps
 

@@ -1,4 +1,4 @@
-import { put, del, head, PutCommandOptions } from '@vercel/blob'
+import { put, del, head, get, issueSignedToken, presignUrl, PutCommandOptions } from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
@@ -62,6 +62,15 @@ export class VercelBlobStorageProvider implements StorageProvider {
     return filename
   }
 
+  /**
+   * Resolves the blob access level for this provider instance.
+   * `public` is a provider-wide config setting, so every blob uploaded
+   * (and later read) through this instance uses the same access level.
+   */
+  private getAccess(): 'public' | 'private' {
+    return this.config.public !== false ? 'public' : 'private'
+  }
+
   async upload(
     file: Buffer | Uint8Array,
     filename: string,
@@ -75,13 +84,9 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
     // Upload to Vercel Blob
     const uploadOptions: PutCommandOptions = {
-      access: 'public',
+      access: this.getAccess(),
       token: this.config.token,
       contentType: options?.contentType,
-    }
-
-    if (this.config.public !== false) {
-      uploadOptions.access = 'public'
     }
 
     if (this.config.cacheControlMaxAge) {
@@ -106,23 +111,20 @@ export class VercelBlobStorageProvider implements StorageProvider {
   async download(filename: string): Promise<Buffer> {
     const pathname = this.getFullPath(filename)
 
-    // Get blob metadata to retrieve URL
-    const metadata = await head(pathname, {
+    // Fetch the blob content through the SDK's authorized read path. This
+    // works for both public and private blobs (private blobs cannot be
+    // read via a plain `fetch(url)`, since the request needs a bearer
+    // token) and resolves `null` for a missing blob instead of throwing.
+    const result = await get(pathname, {
+      access: this.getAccess(),
       token: this.config.token,
     })
 
-    if (!metadata) {
+    if (!result) {
       throw new Error(`File not found: ${filename}`)
     }
 
-    // Fetch the file content
-    const response = await fetch(metadata.url)
-
-    if (!response.ok) {
-      throw new Error(`Failed to download file: ${response.statusText}`)
-    }
-
-    const arrayBuffer = await response.arrayBuffer()
+    const arrayBuffer = await new Response(result.stream).arrayBuffer()
     return Buffer.from(arrayBuffer)
   }
 
@@ -146,6 +148,33 @@ export class VercelBlobStorageProvider implements StorageProvider {
     // This method is less useful for Vercel Blob, but we provide a pathname
     const pathname = this.getFullPath(filename)
     return `https://blob.vercel-storage.com/${pathname}`
+  }
+
+  async getSignedUrl(filename: string, expiresIn: number = 3600): Promise<string> {
+    const pathname = this.getFullPath(filename)
+    const validUntil = Date.now() + expiresIn * 1000
+
+    const signedToken = await issueSignedToken({
+      pathname,
+      operations: ['get'],
+      validUntil,
+      token: this.config.token,
+    })
+
+    const { presignedUrl } = await presignUrl(
+      {
+        delegationToken: signedToken.delegationToken,
+        clientSigningToken: signedToken.clientSigningToken,
+      },
+      {
+        operation: 'get',
+        pathname,
+        validUntil,
+        access: this.getAccess(),
+      },
+    )
+
+    return presignedUrl
   }
 }
 

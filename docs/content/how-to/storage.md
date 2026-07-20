@@ -400,6 +400,22 @@ vercel --prod
 
 Files are automatically distributed via Vercel's global CDN.
 
+### 8. Private Files (Optional)
+
+Set `public: false` to upload private blobs instead. Private blobs are not fetchable via their plain URL — every read (`download()`, `getSignedUrl()`) goes through the SDK's authorized read path instead:
+
+```typescript
+storage: {
+  documents: vercelBlobStorage({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    pathPrefix: 'documents',
+    public: false,
+  }),
+}
+```
+
+Serve private files through an authenticated route using the same [Private File Access](#private-file-access) pattern described below, or generate a time-limited signed URL with `getSignedUrl()` — see [Signed URLs for Private Vercel Blob Files](#signed-urls-for-private-vercel-blob-files).
+
 ## S3-Compatible Services
 
 The S3 provider works with S3-compatible services like Backblaze B2, MinIO, and DigitalOcean Spaces.
@@ -625,6 +641,31 @@ const provider = createStorageProvider(config, 'documents')
 const signedUrl = await provider.getSignedUrl('filename.pdf', 3600)
 
 // Use in your app
+return { downloadUrl: signedUrl }
+```
+
+### Signed URLs for Private Vercel Blob Files
+
+The Vercel Blob provider supports the same `getSignedUrl()` call for private blobs. It issues a short-lived, pathname-scoped delegation via `@vercel/blob`'s signed-URL API and returns a URL that expires after `expiresIn` seconds (default `3600`):
+
+```typescript
+storage: {
+  documents: vercelBlobStorage({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    pathPrefix: 'documents',
+    public: false,
+  }),
+}
+```
+
+```typescript
+import { createStorageProvider } from '@opensaas/stack-storage/runtime'
+
+const provider = createStorageProvider(config, 'documents')
+
+// Generate URL valid for 1 hour
+const signedUrl = await provider.getSignedUrl('filename.pdf', 3600)
+
 return { downloadUrl: signedUrl }
 ```
 
