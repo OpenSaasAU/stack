@@ -13,17 +13,17 @@ import {
   TableHeader,
   TableRow,
 } from '../primitives/table.js'
-import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
-import { Card } from '../primitives/card.js'
 import { Checkbox } from '../primitives/checkbox.js'
 import { EmptyState } from './EmptyState.js'
 import { CellRenderer } from './cells/CellRenderer.js'
+import { FilterBuilder } from './FilterBuilder.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
+import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 
 /**
  * Read the `{ deleted, total }` count a bulk-delete server action returns. The
@@ -68,6 +68,13 @@ export interface ListViewClientProps {
   total: number
   search?: string
   /**
+   * Serializable per-field filter metadata (from the core engine's
+   * `collectFilterSuggestions`) that drives the Filter builder's field /
+   * operator / value pickers. Carries no functions, so it is safe to pass to
+   * this client component. When empty, the builder shows only free-text search.
+   */
+  filterSuggestions?: FilterFieldSuggestion[]
+  /**
    * The generic server action (rebuilds the session context server-side). Used
    * by the built-in Bulk action Delete to remove each selected row through the
    * secured context. When omitted, no bulk delete is offered.
@@ -101,13 +108,13 @@ export function ListViewClient({
   pageSize,
   total,
   search: initialSearch,
+  filterSuggestions = [],
   serverAction,
   canDelete = false,
 }: ListViewClientProps) {
   const router = useRouter()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
-  const [searchInput, setSearchInput] = React.useState(initialSearch || '')
 
   // Row selection (issue #733). The selection is keyed on the ACTIVE FILTER
   // STATE: the `search` param is the filter engine's URL filter query (#730 —
@@ -172,25 +179,19 @@ export function ListViewClient({
     router.push(`${basePath}/${urlKey}?${withPageSize(params).toString()}`)
   }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
+  // Apply a Filter builder query: write it into the `?search=` URL param the
+  // filter engine consumes, preserving the active sort/pageSize and resetting to
+  // page 1. An empty query drops the param entirely (clears the filter).
+  const applyQuery = (query: string) => {
     const params = new URLSearchParams()
-    if (searchInput.trim()) {
-      params.set('search', searchInput.trim())
+    const trimmed = query.trim()
+    if (trimmed) {
+      params.set('search', trimmed)
     }
     if (sortBy) {
       params.set('sort', `${sortBy}:${sortOrder}`)
     }
-    params.set('page', '1') // Reset to page 1 on new search
-    router.push(`${basePath}/${urlKey}?${withPageSize(params).toString()}`)
-  }
-
-  const handleClearSearch = () => {
-    setSearchInput('')
-    const params = new URLSearchParams()
-    if (sortBy) {
-      params.set('sort', `${sortBy}:${sortOrder}`)
-    }
+    params.set('page', '1') // Reset to page 1 on a new filter.
     const qs = withPageSize(params).toString()
     router.push(`${basePath}/${urlKey}${qs ? `?${qs}` : ''}`)
   }
@@ -249,30 +250,15 @@ export function ListViewClient({
 
   return (
     <div className="space-y-4">
-      {/* Search Bar */}
-      <Card className="p-4">
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <div className="flex-1 relative">
-            <Input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search..."
-              className="pr-10"
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <Button type="submit">Search</Button>
-        </form>
-      </Card>
+      {/* Filter builder (issue #731) — constructs the `?search=` filter query the
+          engine consumes. Keyed on the active query so it remounts (and re-reads
+          the URL) whenever the applied filter changes. */}
+      <FilterBuilder
+        key={initialSearch ?? ''}
+        suggestions={filterSuggestions}
+        defaultValue={initialSearch ?? ''}
+        onApply={applyQuery}
+      />
 
       {/* Bulk-action result ("N of M deleted"). Lives here (always mounted) so
           it survives the selection clearing after a delete. */}
@@ -351,7 +337,7 @@ export function ListViewClient({
                       title="No matches found"
                       description={`Nothing matched “${initialSearch}”. Try a different search term.`}
                       actions={
-                        <Button variant="outline" size="sm" onClick={handleClearSearch}>
+                        <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
                           Clear search
                         </Button>
                       }

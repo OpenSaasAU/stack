@@ -9,6 +9,7 @@ vi.mock('next/navigation.js', () => ({
   useRouter: () => ({
     push: mockPush,
   }),
+  usePathname: () => '/admin/post',
 }))
 
 describe('ListViewClient', () => {
@@ -208,57 +209,52 @@ describe('ListViewClient', () => {
     })
   })
 
-  describe('search', () => {
+  // The search UI is now the Filter builder (#731): a free-text box plus an
+  // Apply/Clear affordance that writes the `?search=` filter query. These tests
+  // pass no `filterSuggestions`, so only the free-text box is shown.
+  describe('search (Filter builder free-text)', () => {
     it('should render search input', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument()
+      expect(screen.getByLabelText('Search')).toBeInTheDocument()
     })
 
     it('should update search input value', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
+      const searchInput = screen.getByLabelText('Search')
       await user.type(searchInput, 'test')
 
       expect(searchInput).toHaveValue('test')
     })
 
-    it('should navigate with search query when search submitted', async () => {
+    it('should navigate with search query when Apply clicked', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
-      await user.type(searchInput, 'test')
-
-      const searchButton = screen.getByRole('button', { name: /search/i })
-      await user.click(searchButton)
+      await user.type(screen.getByLabelText('Search'), 'test')
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=1')
     })
 
-    it('should show clear button when search has value', async () => {
+    it('should show a Clear button when search has value', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
-      await user.type(searchInput, 'test')
+      await user.type(screen.getByLabelText('Search'), 'test')
 
-      expect(screen.getByText('✕')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
     })
 
-    it('should clear search when clear button clicked', async () => {
+    it('should clear search when Clear clicked (resets to page 1)', async () => {
       const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} />)
+      render(<ListViewClient {...defaultProps} search="existing" />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
-      await user.type(searchInput, 'test')
+      await user.click(screen.getByRole('button', { name: 'Clear' }))
 
-      const clearButton = screen.getByText('✕')
-      await user.click(clearButton)
-
-      expect(mockPush).toHaveBeenCalledWith('/admin/post')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?page=1')
     })
 
     it('should preserve active sort when search is cleared', async () => {
@@ -271,21 +267,17 @@ describe('ListViewClient', () => {
         />,
       )
 
-      const clearButton = screen.getByText('✕')
-      await user.click(clearButton)
+      await user.click(screen.getByRole('button', { name: 'Clear' }))
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc')
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=1')
     })
 
     it('should reset to page 1 when new search submitted', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} page={3} />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
-      await user.type(searchInput, 'test')
-
-      const searchButton = screen.getByRole('button', { name: /search/i })
-      await user.click(searchButton)
+      await user.type(screen.getByLabelText('Search'), 'test')
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=1')
     })
@@ -293,8 +285,7 @@ describe('ListViewClient', () => {
     it('should preserve initial search value', () => {
       render(<ListViewClient {...defaultProps} search="existing" />)
 
-      const searchInput = screen.getByPlaceholderText('Search...')
-      expect(searchInput).toHaveValue('existing')
+      expect(screen.getByLabelText('Search')).toHaveValue('existing')
     })
   })
 

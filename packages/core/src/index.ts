@@ -80,6 +80,7 @@ export type { RelationshipOption, RelationshipOptionsArgs } from './query/relati
 // context, so the filter can only ever narrow visibility.
 export {
   parseFilterQuery,
+  serializeFilterQuery,
   buildFilterWhere,
   collectFilterSpecs,
   buildListFilterWhere,
