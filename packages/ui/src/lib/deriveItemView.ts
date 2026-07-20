@@ -32,6 +32,19 @@ export interface RelationshipTableSection {
   columns: string[]
   /** Numeric columns to sum in the totals footer (explicit opt-in only). */
   sumColumns: string[]
+  /**
+   * The configured row-removal semantics (ADR-0018, issue #739), defaulting to
+   * the non-destructive `'disconnect'`. `'delete'` truly deletes the related
+   * row (confirmed); `'none'` hides the control.
+   */
+  removeAction: 'disconnect' | 'delete' | 'none'
+  /**
+   * Whether disconnect is statically possible for this relationship: there is a
+   * back-reference field on the related list AND it is not a required foreign
+   * key (`db.isNullable: false`). When `false`, a `'disconnect'` removeAction
+   * has no control (a required FK cannot be nulled); `'delete'` is unaffected.
+   */
+  disconnectable: boolean
 }
 
 /**
@@ -71,15 +84,39 @@ function readRelationshipItemView(field: FieldConfig): {
   displayMode: 'table' | 'picker'
   columns?: string[]
   sum?: string[]
+  removeAction: 'disconnect' | 'delete' | 'none'
 } {
   const raw: unknown = field.ui ? field.ui.itemView : undefined
   if (typeof raw !== 'object' || raw === null) {
-    return { displayMode: 'table' }
+    return { displayMode: 'table', removeAction: 'disconnect' }
   }
   const displayMode = 'displayMode' in raw && raw.displayMode === 'picker' ? 'picker' : 'table'
   const columns = 'columns' in raw ? readStringArray(raw.columns) : undefined
   const sum = 'sum' in raw ? readStringArray(raw.sum) : undefined
-  return { displayMode, columns, sum }
+  const removeAction =
+    'removeAction' in raw && (raw.removeAction === 'delete' || raw.removeAction === 'none')
+      ? raw.removeAction
+      : 'disconnect'
+  return { displayMode, columns, sum, removeAction }
+}
+
+/**
+ * Whether a to-many relationship's rows can be disconnected (ADR-0018): the
+ * related list must expose a back-reference field to unlink through, and that
+ * field must not be a required foreign key (`db.isNullable: false`), which the
+ * schema would make impossible to null. List-only refs (no back-reference)
+ * cannot be disconnected via the related list and are treated as not
+ * disconnectable.
+ */
+function isDisconnectable(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
+  relatedListConfig: ListConfig<any> | undefined,
+  backReferenceField: string | undefined,
+): boolean {
+  if (!relatedListConfig || !backReferenceField) return false
+  const backRefField = relatedListConfig.fields[backReferenceField]
+  if (!backRefField) return false
+  return backRefField.db?.isNullable !== false
 }
 
 /** Whether a field config is a to-many relationship. */
@@ -163,6 +200,8 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
         backReferenceField,
         columns: overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField),
         sumColumns: overrides.sum ?? [],
+        removeAction: overrides.removeAction,
+        disconnectable: isDisconnectable(relatedListConfig, backReferenceField),
       })
     } else {
       detailsFields.push(fieldName)

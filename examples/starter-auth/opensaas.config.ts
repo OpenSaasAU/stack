@@ -22,6 +22,14 @@ const isAuthor: AccessControl = ({ session }) => {
   }
 }
 
+// Check if the user owns a note (scopes rows to the signed-in owner)
+const isOwner: AccessControl = ({ session }) => {
+  if (!session) return false
+  return {
+    ownerId: { equals: session.userId },
+  }
+}
+
 /**
  * OpenSaas Configuration with Better-Auth
  */
@@ -72,6 +80,23 @@ export default config({
               itemView: {
                 columns: ['title', 'status', 'viewCount'],
                 sum: ['viewCount'],
+                // Default (non-destructive) row removal: the ✕ disconnects a
+                // post from this user (ADR-0018). The post itself survives and
+                // still appears on the Post list.
+                removeAction: 'disconnect',
+              },
+            },
+          }),
+          // A second to-many relationship that opts into destructive removal:
+          // notes are owned children, so the ✕ deletes the note (confirmed,
+          // gated on Note's delete access) rather than disconnecting it.
+          notes: relationship({
+            ref: 'Note.owner',
+            many: true,
+            ui: {
+              itemView: {
+                columns: ['body'],
+                removeAction: 'delete',
               },
             },
           }),
@@ -203,6 +228,35 @@ export default config({
           ) {
             addValidationError('Title cannot contain the word "spam"')
           }
+        },
+      },
+    }),
+
+    // A simple owned-child list used to demonstrate destructive row removal on
+    // the User item view's `notes` Relationship table (ADR-0018): removing a
+    // note there deletes it, because a note only belongs to its owner.
+    Note: list<Lists.Note.TypeInfo>({
+      fields: {
+        body: text({ validation: { isRequired: true }, ui: { displayMode: 'textarea' } }),
+        owner: relationship({ ref: 'User.notes' }),
+      },
+      access: {
+        operation: {
+          query: isOwner,
+          create: isSignedIn,
+          update: isOwner,
+          delete: isOwner,
+        },
+      },
+      hooks: {
+        // Auto-assign the note's owner to the signed-in user on create, so the
+        // admin create form only needs the note body.
+        resolveInput: async ({ operation, resolvedData, context }) => {
+          const data = { ...resolvedData }
+          if (operation === 'create' && !data.owner && context.session?.userId) {
+            data.owner = { connect: { id: context.session.userId } }
+          }
+          return data
         },
       },
     }),

@@ -1,14 +1,17 @@
 import {
   getItemLabel,
   getUrlKey,
+  type AccessContext,
   type OpenSaasConfig,
   type FieldConfig,
   type ListConfig,
 } from '@opensaas/stack-core'
 import { formatFieldName } from '../lib/utils.js'
 import { serializeFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
-import { RelationshipTableClient } from './RelationshipTableClient.js'
+import type { ServerActionInput } from '../server/types.js'
+import { RelationshipTableClient, type RemoveMode } from './RelationshipTableClient.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
 type AnyListConfig = ListConfig<any>
@@ -24,6 +27,46 @@ export interface RelationshipTableProps {
    */
   rows: Array<Record<string, unknown>>
   basePath: string
+  /**
+   * The access-scoped context, used to evaluate the related list's operation
+   * access so a removal control is only offered when the session may perform it.
+   */
+  context: AccessContext<unknown>
+  /** The list being edited (the parent record's list). */
+  parentListKey: string
+  /** The parent record's id — the disconnect target for many-to-many rows. */
+  parentId: string
+  /** Server action that runs removals through the secured context. */
+  serverAction: (input: ServerActionInput) => Promise<unknown>
+}
+
+/**
+ * Decide which removal control (if any) a row should show (ADR-0018, #739).
+ *
+ * The configured `removeAction` is the ceiling; operation-level access on the
+ * RELATED list is the gate. A hard deny (no update/delete access at all) hides
+ * the control — no affordance for what will always fail. A filter result is
+ * treated as "potentially allowed", so the control shows and a row-level denial
+ * surfaces at commit time as a Silent failure (row stays, reason shown).
+ */
+async function resolveRemoveMode(
+  section: RelationshipTableSection,
+  relatedListConfig: AnyListConfig | undefined,
+  context: AccessContext<unknown>,
+): Promise<RemoveMode> {
+  if (section.removeAction === 'none' || !relatedListConfig) return null
+
+  const access = relatedListConfig.access?.operation
+  const args = { session: context.session, context }
+
+  if (section.removeAction === 'delete') {
+    return (await isOperationPotentiallyAllowed(access, 'delete', args)) ? 'delete' : null
+  }
+
+  // Default: disconnect — only where the schema allows it (nullable back-ref FK)
+  // and the related list's update access is not hard-denied.
+  if (!section.disconnectable) return null
+  return (await isOperationPotentiallyAllowed(access, 'update', args)) ? 'disconnect' : null
 }
 
 /**
@@ -83,9 +126,22 @@ function toNumber(value: unknown): number | null {
  * (#739) extend the named Slots left in the client component — no edit/add/
  * remove affordances are rendered here.
  */
-export function RelationshipTable({ config, section, rows, basePath }: RelationshipTableProps) {
+export async function RelationshipTable({
+  config,
+  section,
+  rows,
+  basePath,
+  context,
+  parentListKey,
+  parentId,
+  serverAction,
+}: RelationshipTableProps) {
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
+
+  // Which removal control (if any) this table's rows may show, gated on the
+  // related list's own operation access (never the parent's).
+  const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so
   // its values can be label-resolved via that column's OWN target list (a
@@ -140,6 +196,12 @@ export function RelationshipTable({ config, section, rows, basePath }: Relations
       count={rows.length}
       sumColumns={section.sumColumns}
       sums={sums}
+      removeMode={removeMode}
+      relatedListKey={section.relatedListKey}
+      backReferenceField={section.backReferenceField}
+      parentId={parentId}
+      parentListKey={parentListKey}
+      serverAction={serverAction}
     />
   )
 }

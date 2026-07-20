@@ -978,6 +978,21 @@ export type RelationshipItemViewConfig = {
    * ```
    */
   sum?: string[]
+  /**
+   * How a row's ✕ control removes a related row from this table (ADR-0018).
+   *
+   * - `'disconnect'` (default): non-destructively unlinks the related row from
+   *   this record — the row itself is untouched and still appears on its own
+   *   list. Gated on the related list's update access. Hidden statically when
+   *   the schema makes disconnect impossible (a required foreign key on the
+   *   related side, i.e. the back-reference declares `db.isNullable: false`).
+   * - `'delete'`: opts into truly deleting the related row, behind a
+   *   confirmation, gated on the related list's delete access.
+   * - `'none'`: hides the removal control entirely.
+   *
+   * @default 'disconnect'
+   */
+  removeAction?: 'disconnect' | 'delete' | 'none'
 }
 
 export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =

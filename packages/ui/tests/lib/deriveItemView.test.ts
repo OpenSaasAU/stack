@@ -180,6 +180,105 @@ describe('deriveItemViewLayout', () => {
     expect(layout.sections.map((s) => s.fieldName)).toEqual(['comments', 'posts'])
   })
 
+  it('defaults row removal to disconnect and marks a nullable back-reference disconnectable', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          posts: { type: 'relationship', ref: 'Post.author', many: true },
+        },
+      },
+      Post: {
+        fields: {
+          title: { type: 'text' },
+          author: { type: 'relationship', ref: 'User.posts' }, // nullable FK
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.removeAction).toBe('disconnect')
+    expect(section.disconnectable).toBe(true)
+  })
+
+  it('reads a delete removeAction opt-in', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          notes: {
+            type: 'relationship',
+            ref: 'Note.owner',
+            many: true,
+            ui: { itemView: { removeAction: 'delete' } },
+          },
+        },
+      },
+      Note: {
+        fields: {
+          body: { type: 'text' },
+          owner: { type: 'relationship', ref: 'User.notes' },
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.removeAction).toBe('delete')
+  })
+
+  it('reads a none removeAction (hides the control)', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          posts: {
+            type: 'relationship',
+            ref: 'Post.author',
+            many: true,
+            ui: { itemView: { removeAction: 'none' } },
+          },
+        },
+      },
+      Post: {
+        fields: { title: { type: 'text' }, author: { type: 'relationship', ref: 'User.posts' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.removeAction).toBe('none')
+  })
+
+  it('marks a required-FK back-reference (db.isNullable:false) as not disconnectable', () => {
+    const config = makeConfig({
+      Order: {
+        fields: {
+          lineItems: { type: 'relationship', ref: 'LineItem.order', many: true },
+        },
+      },
+      LineItem: {
+        fields: {
+          amount: { type: 'integer' },
+          // A required foreign key on the related side — disconnect is
+          // statically impossible, so the default disconnect control is hidden.
+          order: { type: 'relationship', ref: 'Order.lineItems', db: { isNullable: false } },
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Order').sections
+    expect(section.removeAction).toBe('disconnect')
+    expect(section.disconnectable).toBe(false)
+  })
+
+  it('marks a list-only ref (no back-reference) as not disconnectable', () => {
+    const config = makeConfig({
+      Team: {
+        fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+      },
+      Member: { fields: { name: { type: 'text' } } },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.disconnectable).toBe(false)
+  })
+
   it('falls back to id when a related list has no curated columns', () => {
     const config = makeConfig({
       Team: {
