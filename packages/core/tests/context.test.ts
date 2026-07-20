@@ -338,6 +338,139 @@ describe('getContext', () => {
       })
     })
 
+    describe('bulkAction (custom list bulk actions, #736)', () => {
+      // A config whose Post list declares a custom bulk action that runs each
+      // selected id through the SECURED context (`context.db.post.update`), so
+      // access control + hooks apply per id.
+      function configWithPublishAction(
+        overrides?: Partial<import('../src/config/types.js').BulkAction>,
+      ): OpenSaasConfig {
+        return {
+          ...config,
+          lists: {
+            ...config.lists,
+            Post: {
+              ...config.lists.Post,
+              fields: {
+                ...config.lists.Post.fields,
+                status: { type: 'text' },
+              },
+              ui: {
+                listView: {
+                  bulkActions: [
+                    {
+                      key: 'publish',
+                      label: 'Publish',
+                      handler: async ({ ids, context }) => {
+                        let n = 0
+                        for (const id of ids) {
+                          const r = await context.db.post.update({
+                            where: { id },
+                            data: { status: 'published' },
+                          })
+                          if (r) n++
+                        }
+                        return { message: `Published ${n} of ${ids.length}` }
+                      },
+                      ...overrides,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }
+      }
+
+      it('runs the handler over the selected ids through the secured context', async () => {
+        mockPrisma.post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ id: where.id, title: 'T', content: 'c' }),
+        )
+        mockPrisma.post.update.mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ id: where.id, status: 'published' }),
+        )
+
+        const context = await getContext(configWithPublishAction(), mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'publish',
+          ids: ['p1', 'p2'],
+        })
+
+        // Each id went through the secured update delegate, not a raw call.
+        expect(mockPrisma.post.update).toHaveBeenCalledTimes(2)
+        expect(result).toEqual({ bulkAction: true, message: 'Published 2 of 2' })
+      })
+
+      it('absorbs a per-id Silent failure into the handler count (no leak)', async () => {
+        // Update access scopes writes to id p1 only → p2 is denied and returns
+        // null through the secured delegate. The handler simply does not count
+        // it; the outcome never reveals which id was denied.
+        const scopedConfig = configWithPublishAction()
+        scopedConfig.lists.Post.access = {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => ({ id: { equals: 'p1' } }),
+            delete: () => true,
+          },
+        }
+        // The access filter merges into the existence pre-check: only p1 is
+        // visible, so p2's update is denied (Silent failure → null) before it
+        // ever reaches the update delegate.
+        mockPrisma.post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+          where.id === 'p1'
+            ? Promise.resolve({ id: 'p1', title: 'T', content: 'c' })
+            : Promise.resolve(null),
+        )
+        // The filter-match re-check (mergeFilters) only ever runs for the row
+        // that passed the existence pre-check (p1), so returning it is enough.
+        mockPrisma.post.findFirst.mockResolvedValue({ id: 'p1', title: 'T', content: 'c' })
+        mockPrisma.post.update.mockResolvedValue({ id: 'p1', status: 'published' })
+
+        const context = await getContext(scopedConfig, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'publish',
+          ids: ['p1', 'p2'],
+        })
+
+        expect(result).toEqual({ bulkAction: true, message: 'Published 1 of 2' })
+      })
+
+      it('returns an error for an unknown action key', async () => {
+        const context = await getContext(configWithPublishAction(), mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'nope',
+          ids: ['p1'],
+        })
+
+        expect(result).toMatchObject({ bulkAction: false })
+      })
+
+      it('re-checks hasAccess server-side so a hidden action cannot be invoked', async () => {
+        const context = await getContext(
+          configWithPublishAction({ hasAccess: () => false }),
+          mockPrisma,
+          { userId: 'u1' },
+        )
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'publish',
+          ids: ['p1', 'p2'],
+        })
+
+        expect(result).toEqual({ bulkAction: false, error: 'Access denied' })
+        // The handler never ran.
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+      })
+    })
+
     describe('createRelated (relationship-table pre-linked create)', () => {
       it('creates a row on the related list with the to-one back-reference preset to the parent', async () => {
         const created = { id: 'p1', title: 'New', content: 'c', authorId: 'u1' }

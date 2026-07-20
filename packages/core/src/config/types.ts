@@ -1927,6 +1927,91 @@ export type ItemViewUIConfig = {
 }
 
 /**
+ * A button variant for a custom Bulk action, matching the admin UI's Button
+ * variants. Serializable — it crosses to the client selection bar as a plain
+ * string.
+ */
+export type BulkActionVariant =
+  'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+
+/**
+ * Arguments passed to a custom Bulk action's server-side `handler` (issue #736).
+ *
+ * The handler runs entirely server-side — it is NEVER serialized to the client —
+ * and must do all of its work through the SECURED `context` (never raw Prisma),
+ * so per-row access control still applies and a denied row is a Silent failure.
+ */
+export interface BulkActionContext {
+  /** The list the action was invoked on (PascalCase list key). */
+  listKey: string
+  /** The explicit set of selected row ids the admin chose. */
+  ids: string[]
+  /**
+   * The access-scoped context. All database work MUST go through `context.db`
+   * so the list's access control and hooks are enforced for every id.
+   */
+  context: import('../access/types.js').AccessContext
+}
+
+/**
+ * The outcome a Bulk action `handler` returns. The optional `message` is shown
+ * in the selection bar's status line once the action completes; returning
+ * nothing yields a generic completion message.
+ */
+export interface BulkActionResult {
+  /** Human-readable outcome shown to the admin (e.g. "Published 3 of 5"). */
+  message?: string
+}
+
+/**
+ * A list-specific custom Bulk action declared in `ui.listView.bulkActions`
+ * (issue #736). Rendered as a button in the list view's selection bar, in
+ * declaration order, alongside the built-in Delete.
+ *
+ * SERIALISATION BOUNDARY: only `key`, `label`, `variant` and `destructive`
+ * cross to the client (as plain data). `handler` and `hasAccess` are
+ * server-side functions and never leave the server — the client sends `key`
+ * back through the generic server action, which looks the handler up and runs
+ * it with the freshly-rebuilt secured context.
+ */
+export interface BulkAction {
+  /**
+   * Stable identifier the client echoes back to dispatch this action
+   * server-side. Must be unique within the list.
+   */
+  key: string
+  /** Button label shown in the selection bar. */
+  label: string
+  /** Button variant (defaults to `'outline'`). */
+  variant?: BulkActionVariant
+  /**
+   * When true, the admin is asked to confirm before the action runs, reusing
+   * the same confirmation affordance as the built-in Delete.
+   */
+  destructive?: boolean
+  /**
+   * Optional visibility gate, evaluated server-side against the session before
+   * the button is offered (user story 14 — "only see actions I may perform").
+   * Returning `false` hides the button.
+   *
+   * This ONLY controls visibility; the `handler` always runs through the
+   * secured context, so per-row access is enforced regardless. It is also
+   * re-checked server-side on dispatch, so a hidden action cannot be invoked.
+   */
+  hasAccess?: (args: {
+    session: import('../access/types.js').Session | null
+    context: import('../access/types.js').AccessContext
+    listKey: string
+  }) => boolean | Promise<boolean>
+  /**
+   * The server-side handler. Receives the selected ids and the secured
+   * `context`; do all work through `context.db`. Returns an optional
+   * `{ message }` shown in the selection bar when the action completes.
+   */
+  handler: (args: BulkActionContext) => BulkActionResult | void | Promise<BulkActionResult | void>
+}
+
+/**
  * Default list-view (table) configuration for a list, mirroring Keystone's
  * `ui.listView`.
  *
@@ -1962,6 +2047,39 @@ export type ListViewUIConfig = {
     /** The sort direction. */
     direction: 'asc' | 'desc'
   }
+  /**
+   * Custom list-specific Bulk actions shown in the list view's selection bar,
+   * in declaration order, alongside the built-in Delete (issue #736). Each
+   * action's `handler` runs server-side over the selected ids through the
+   * secured context; only serializable metadata (`key`/`label`/`variant`/
+   * `destructive`) crosses to the client.
+   *
+   * @example
+   * ```typescript
+   * ui: {
+   *   listView: {
+   *     bulkActions: [
+   *       {
+   *         key: 'publish',
+   *         label: 'Publish',
+   *         handler: async ({ ids, context }) => {
+   *           let n = 0
+   *           for (const id of ids) {
+   *             const r = await context.db.post.update({
+   *               where: { id },
+   *               data: { status: 'published' },
+   *             })
+   *             if (r) n++
+   *           }
+   *           return { message: `Published ${n} of ${ids.length}` }
+   *         },
+   *       },
+   *     ],
+   *   },
+   * }
+   * ```
+   */
+  bulkActions?: BulkAction[]
 }
 
 /**

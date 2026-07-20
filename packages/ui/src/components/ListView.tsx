@@ -1,6 +1,7 @@
 import Link from 'next/link.js'
 import { Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
+import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { PageHeader } from './PageHeader.js'
@@ -9,6 +10,7 @@ import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
   type AccessControl,
+  type BulkAction,
   buildListFilterWhere,
   collectFilterSuggestions,
   getDbKey,
@@ -31,6 +33,43 @@ function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boole
   if (deleteAccess === undefined) return false
   if (typeof deleteAccess === 'boolean') return deleteAccess
   return true
+}
+
+/**
+ * Resolve the custom Bulk actions (issue #736) an admin may see, into the
+ * serialisable metadata the client selection bar renders. Each action's
+ * server-side `hasAccess` gate (if any) is evaluated HERE against the live
+ * session/context — a denied action is dropped, so its button is never offered
+ * (user story 14). Only `key`/`label`/`variant`/`destructive` cross the
+ * boundary; `handler`/`hasAccess` stay on the server. The gate is also
+ * re-checked on dispatch, so hiding a button is a UX affordance, not the
+ * security boundary — the handler always runs through the secured context.
+ */
+async function resolveVisibleBulkActions(
+  actions: BulkAction[] | undefined,
+  context: AccessContext<unknown>,
+  listKey: string,
+): Promise<SerializedBulkAction[]> {
+  if (!actions || actions.length === 0) return []
+  const resolved = await Promise.all(
+    actions.map(async (action): Promise<SerializedBulkAction | null> => {
+      if (action.hasAccess) {
+        const allowed = await action.hasAccess({
+          session: context.session,
+          context,
+          listKey,
+        })
+        if (!allowed) return null
+      }
+      return {
+        key: action.key,
+        label: action.label,
+        ...(action.variant ? { variant: action.variant } : {}),
+        ...(action.destructive ? { destructive: action.destructive } : {}),
+      }
+    }),
+  )
+  return resolved.filter((a): a is SerializedBulkAction => a !== null)
 }
 
 /**
@@ -218,6 +257,16 @@ export async function ListView({
   // override on that field still wins — the client routes to the override first.
   const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
 
+  // Resolve the custom Bulk actions (issue #736) this session may see. The
+  // per-action `hasAccess` gate runs server-side against the live context here,
+  // so the client only ever receives serialisable metadata for actions it is
+  // allowed to invoke.
+  const bulkActions = await resolveVisibleBulkActions(
+    listConfig.ui?.listView?.bulkActions,
+    context,
+    listKey,
+  )
+
   return (
     <div className="p-8">
       <PageHeader
@@ -257,6 +306,7 @@ export async function ListView({
         serverAction={serverAction}
         canDelete={canDeleteList(listConfig.access?.operation?.delete)}
         avatarColumn={avatarColumn}
+        bulkActions={bulkActions}
       />
     </div>
   )

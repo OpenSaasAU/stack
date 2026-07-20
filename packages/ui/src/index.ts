@@ -9,6 +9,7 @@ export { ListView } from './components/ListView.js'
 export { ListViewClient } from './components/ListViewClient.js'
 export { FilterBuilder } from './components/FilterBuilder.js'
 export { RowSelectionBar } from './components/RowSelectionBar.js'
+export { BulkActions } from './components/BulkActions.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
 export { RelationshipTable } from './components/RelationshipTable.js'
@@ -88,6 +89,7 @@ export type {
   RowSelectionBarProps,
   RowSelectionBarClassNames,
 } from './components/RowSelectionBar.js'
+export type { BulkActionsProps, SerializedBulkAction } from './components/BulkActions.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
 export type { RelationshipTableProps } from './components/RelationshipTable.js'

@@ -21,6 +21,13 @@ export type {
   DatabaseConfig,
   FieldConfig,
   OperationAccess,
+  // Custom Bulk actions (issue #736) — declared per list in
+  // `ui.listView.bulkActions`; the handler runs server-side over the selected
+  // ids through the secured context.
+  BulkAction,
+  BulkActionContext,
+  BulkActionResult,
+  BulkActionVariant,
 } from './config/index.js'
 
 // Access control — the types a consumer writes against

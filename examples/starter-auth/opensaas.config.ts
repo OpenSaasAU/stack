@@ -205,6 +205,31 @@ export default config({
       ui: {
         navCount: true,
         avatar: true,
+        listView: {
+          // Custom Bulk action (issue #736): "Publish" sets the selected posts'
+          // status to published. The handler runs each id through the SECURED
+          // context (`context.db.post.update`), so `isAuthor` update access
+          // still applies per row — a post the signer doesn't own returns null
+          // (Silent failure) and is absorbed into the "N of M" count without
+          // revealing which rows were denied.
+          bulkActions: [
+            {
+              key: 'publish',
+              label: 'Publish',
+              handler: async ({ ids, context }) => {
+                let published = 0
+                for (const id of ids) {
+                  const updated = await context.db.post.update({
+                    where: { id },
+                    data: { status: 'published' },
+                  })
+                  if (updated) published++
+                }
+                return { message: `Published ${published} of ${ids.length}` }
+              },
+            },
+          ],
+        },
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
