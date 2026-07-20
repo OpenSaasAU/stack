@@ -41,10 +41,22 @@ export interface RelationshipTableClientProps {
   columns: string[]
   /** Serialised field config per column, driving Cell resolution. */
   fields: Record<string, SerializableFieldConfig>
-  /** Serialised, access-filtered related rows (relationship values pre-resolved). */
+  /**
+   * Serialised, access-filtered related rows (relationship values pre-resolved),
+   * BOUNDED by the section's `take` (issue #752) — at most `take` rows.
+   */
   rows: Array<Record<string, unknown>>
-  /** Total access-visible row count, always shown in the footer. */
+  /**
+   * The number of rows rendered (N in "showing N of M") — the bounded row count,
+   * always shown in the footer.
+   */
   count: number
+  /**
+   * The full access-scoped total of related rows (M in "showing N of M", issue
+   * #752). Defaults to `count` when absent, so the footer still shows the row
+   * count. Always ≥ `count`; 0 for a denied related list (never a leaked total).
+   */
+  total?: number
   /** Columns summed in the footer (explicit opt-in only). */
   sumColumns: string[]
   /** Per-column footer sum, rendered through that column's Cell. */
@@ -87,6 +99,17 @@ export interface RelationshipTableClientProps {
    * (fully read-only), preserving the #734 behaviour.
    */
   editableColumns?: string[]
+}
+
+/**
+ * The footer's "showing N of M" label (issue #752): N is the rendered
+ * (bounded) row count, M the full access-scoped total. When no total is
+ * supplied M falls back to N, so the row count is ALWAYS shown — a bounded
+ * table reads "Showing 10 of 42 rows", an unbounded one "Showing 3 of 3 rows".
+ */
+export function formatCountLabel(count: number, total: number | undefined): string {
+  const m = total ?? count
+  return `Showing ${count} of ${m} ${m === 1 ? 'row' : 'rows'}`
 }
 
 /** Read the `{ removed, error? }` outcome a row-removal server action returns. */
@@ -140,6 +163,7 @@ export function RelationshipTableClient({
   fields,
   rows,
   count,
+  total,
   sumColumns,
   sums,
   removeMode,
@@ -166,6 +190,7 @@ export function RelationshipTableClient({
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
 
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
+  const countLabel = formatCountLabel(count, total)
   const showRemove = removeMode !== null
   const removeVerb = removeMode === 'delete' ? 'Delete' : 'Disconnect'
   const totalColumns = columns.length + (showRemove ? 1 : 0)
@@ -357,7 +382,7 @@ export function RelationshipTableClient({
                 colSpan={Math.max(totalColumns, 1)}
                 className="text-sm text-muted-foreground"
               >
-                {count} {count === 1 ? 'row' : 'rows'}
+                {countLabel}
               </TableCell>
             ) : (
               <>
@@ -367,9 +392,7 @@ export function RelationshipTableClient({
                   return (
                     <TableCell key={column} className={cn(numeric && 'text-right')}>
                       {index === 0 && (
-                        <span className="text-sm text-muted-foreground">
-                          {count} {count === 1 ? 'row' : 'rows'}
-                        </span>
+                        <span className="text-sm text-muted-foreground">{countLabel}</span>
                       )}
                       {isSummed && (
                         <span className={cn('font-medium', index === 0 && 'ml-2')}>

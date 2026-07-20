@@ -69,6 +69,36 @@ export default config({
       // Extend User list with custom fields
       extendUserList: {
         fields: {
+          // Curate the auth-derived `accounts`/`sessions` Relationship tables on
+          // the User item view (issue #752). Their default columns come from the
+          // Account/Session lists' own curation, which surfaces credential
+          // columns (Account's `accessToken`/`refreshToken`/`idToken`, Session's
+          // `token`) as table headers by default. Field-level access still
+          // governs the VALUES, but the example should not model surfacing token
+          // columns at all — so we override the columns to non-sensitive fields
+          // and disable ad-hoc row removal (these are better-auth-managed). This
+          // re-declares the derived relationship with the same `ref`/`many`, so
+          // the generated schema is unchanged; only the item-view UI differs.
+          accounts: relationship({
+            ref: 'Account.user',
+            many: true,
+            ui: {
+              itemView: {
+                columns: ['providerId', 'accountId'],
+                removeAction: 'none',
+              },
+            },
+          }),
+          sessions: relationship({
+            ref: 'Session.user',
+            many: true,
+            ui: {
+              itemView: {
+                columns: ['ipAddress', 'userAgent', 'expiresAt'],
+                removeAction: 'none',
+              },
+            },
+          }),
           // Add a posts relationship. On the User item view this renders as a
           // read-only Relationship table (issue #734): its columns default to
           // Post's curation minus the `author` back-reference, and the totals

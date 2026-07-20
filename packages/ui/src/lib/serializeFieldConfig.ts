@@ -23,6 +23,12 @@ export type SerializableFieldConfig = {
   options?: Array<SelectOption>
   many?: boolean
   ref?: string
+  /**
+   * Whether the field is a virtual (computed, non-DB) field. Serialised so the
+   * client can omit sort affordances for virtual columns (issue #732) — virtual
+   * fields have no column to order by.
+   */
+  virtual?: boolean
   ui?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
@@ -78,6 +84,12 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   // Extract ref for relationship fields
   if ('ref' in fieldConfig && fieldConfig.ref !== undefined) {
     config.ref = fieldConfig.ref as string
+  }
+
+  // Extract the virtual flag so the client can suppress sort affordances for
+  // computed fields (issue #732).
+  if ('virtual' in fieldConfig && fieldConfig.virtual === true) {
+    config.virtual = true
   }
 
   return config

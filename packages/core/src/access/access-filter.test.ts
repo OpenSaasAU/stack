@@ -147,3 +147,82 @@ describe('mergeIncludeWithAccessControl — bare-true leaf on a cyclic graph', (
     expect(includeDepth(merged)).toBeLessThanOrEqual(3)
   })
 })
+
+/**
+ * A caller-supplied `take` on a to-many relation include must survive the
+ * access-controlled merge (issue #752). It only narrows the fetched rows and can
+ * never widen past the access `where`, so the merge re-attaches it on top of the
+ * per-relation access filter — powering the item view's bounded relationship
+ * tables without dropping row-level access.
+ */
+describe('mergeIncludeWithAccessControl — caller take on a to-many relation (issue #752)', () => {
+  // A one-list config whose `posts` to-many is query-scoped by an access filter.
+  function scopedConfig(): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite', url: 'file:./dev.db' },
+      lists: {
+        User: {
+          fields: { name: { type: 'text' } as FieldConfig, posts: rel('Post.author', true) },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: { title: { type: 'text' } as FieldConfig, author: rel('User.posts') },
+          // Scoped read access → the merge must fold this into the relation include.
+          access: { operation: { query: () => ({ published: { equals: true } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+  }
+
+  it('preserves the take and AND-combines it with the access where', async () => {
+    const config = scopedConfig()
+    const accessControlledInclude = await buildIncludeWithAccessControl(
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      ['User'],
+    )
+
+    const merged = mergeIncludeWithAccessControl(
+      { posts: { take: 10 } },
+      accessControlledInclude,
+      config.lists.User.fields,
+      config,
+    )
+
+    // The bound rides on top of the access filter — neither is dropped. The
+    // access-controlled include also auto-nests Post's `author` back-relation.
+    expect(merged).toEqual({
+      posts: {
+        where: { published: { equals: true } },
+        include: { author: true },
+        take: 10,
+      },
+    })
+  })
+
+  it('drops a take for a relation whose query access is denied', async () => {
+    const config = scopedConfig()
+    // Deny Post reads entirely.
+    config.lists.Post.access = { operation: { query: () => false } }
+    const accessControlledInclude = await buildIncludeWithAccessControl(
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      ['User'],
+    )
+
+    const merged = mergeIncludeWithAccessControl(
+      { posts: { take: 10 } },
+      accessControlledInclude,
+      config.lists.User.fields,
+      config,
+    )
+
+    // A denied relation is dropped wholesale — the take cannot resurrect it.
+    expect(merged).toEqual({})
+  })
+})

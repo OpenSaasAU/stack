@@ -33,12 +33,29 @@ function EmptyDash() {
 }
 
 /**
- * To-one relationship Cell — renders the related row's Item label, linked to
- * its edit page when the field's `ref` (and `basePath`) resolve a URL. Arrays
- * (to-many) render as comma-separated labels, preserving the list view's
- * long-standing behaviour. Slot: `cell-relationship`.
+ * Relationship Cell (issue #732):
+ *
+ * - **To-many** (`field.many`) renders the access-visible related COUNT — a
+ *   right-aligned tabular number the list view resolves via the secured query's
+ *   filtered `_count`, so it only ever counts rows the session may see. Slot:
+ *   `cell-relationship-count`.
+ * - **To-one** renders the related row's Item label, linked to its edit page
+ *   when the field's `ref` (and `basePath`) resolve a URL. Slot:
+ *   `cell-relationship`.
+ *
+ * A to-many value is normally the resolved count (a number); an array of
+ * resolved refs is tolerated as a fallback (its length is the count).
  */
 export function RelationshipCell({ value, field, basePath = '/admin' }: CellComponentProps) {
+  if (field.many === true) {
+    const count = typeof value === 'number' ? value : Array.isArray(value) ? value.length : 0
+    return (
+      <span data-slot="cell-relationship-count" className="tabular-nums">
+        {count}
+      </span>
+    )
+  }
+
   const relatedUrlKey = field.ref ? getUrlKey(field.ref.split('.')[0] ?? '') : undefined
 
   const renderRef = (ref: RelatedRef, key: React.Key) => {

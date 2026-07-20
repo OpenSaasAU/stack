@@ -863,6 +863,9 @@ importers:
 
   packages/auth:
     devDependencies:
+      '@opensaas/stack-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@opensaas/stack-core':
         specifier: workspace:*
         version: link:../core

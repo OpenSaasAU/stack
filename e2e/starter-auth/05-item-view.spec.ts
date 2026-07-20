@@ -72,9 +72,11 @@ test.describe('Item view layout', () => {
     await expect(table.getByText('View Post A')).toBeVisible()
     await expect(table.getByText('View Post B')).toBeVisible()
 
-    // Footer: row count always, plus the summed numeric column (5 + 10 = 15).
+    // Footer: "showing N of M" (issue #752) with M the access-scoped total —
+    // here the fetch is under the default cap, so N === M === 2 — plus the
+    // summed numeric column (5 + 10 = 15).
     const footer = table.locator('[data-slot="relationship-table-footer"]')
-    await expect(footer).toContainText('2 rows')
+    await expect(footer).toContainText('Showing 2 of 2 rows')
     await expect(footer).toContainText('15')
 
     // Rows show only access-visible data: the closed Session list (ADR-0013,
@@ -83,6 +85,24 @@ test.describe('Item view layout', () => {
       has: page.getByRole('heading', { name: 'Sessions', exact: true }),
     })
     await expect(sessions.locator('[data-slot="relationship-table-empty"]')).toBeVisible()
+    // Access-scoped M (issue #752): the denied Session list's total is 0, never
+    // a leaked true count of the user's sessions.
+    await expect(sessions.locator('[data-slot="relationship-table-footer"]')).toContainText(
+      'Showing 0 of 0 rows',
+    )
+
+    // Secondary note (issue #752): the example curates the auth Account/Session
+    // Relationship tables so credential/token columns are NOT surfaced by
+    // default. The Account table shows non-sensitive columns only.
+    const accounts = page.locator('[data-slot="relationship-table"]', {
+      has: page.getByRole('heading', { name: 'Accounts', exact: true }),
+    })
+    await expect(accounts.getByRole('columnheader', { name: 'Access Token' })).toHaveCount(0)
+    await expect(accounts.getByRole('columnheader', { name: 'Refresh Token' })).toHaveCount(0)
+    await expect(accounts.getByRole('columnheader', { name: 'Id Token' })).toHaveCount(0)
+    await expect(accounts.getByRole('columnheader', { name: 'Provider Id' })).toBeVisible()
+    // The Session table likewise omits its `token` column.
+    await expect(sessions.getByRole('columnheader', { name: 'Token', exact: true })).toHaveCount(0)
   })
 
   test('clicking an editable relationship-table cell edits in place instead of navigating', async ({

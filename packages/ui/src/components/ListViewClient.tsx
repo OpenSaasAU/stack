@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
-import { cn, formatFieldName, isNumericField } from '../lib/utils.js'
+import { cn, formatFieldName, isCountAlignedColumn, isSortableColumn } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -399,12 +399,26 @@ export function ListViewClient({
                 </TableHead>
               )}
               {displayColumns.map((column) => {
-                const numeric = isNumericField(fieldTypes[column])
+                const field = columnField(column)
+                const numeric = isCountAlignedColumn(field)
+                // Virtual and to-one relationship columns have no orderable
+                // column, so they expose no sort affordance (issue #732).
+                const sortable = isSortableColumn(field)
                 return (
                   <TableHead
                     key={column}
-                    className="cursor-pointer transition-colors hover:bg-muted/70"
-                    onClick={() => handleSort(column)}
+                    className={cn(
+                      'transition-colors',
+                      sortable && 'cursor-pointer hover:bg-muted/70',
+                    )}
+                    onClick={sortable ? () => handleSort(column) : undefined}
+                    aria-sort={
+                      sortable && sortBy === column
+                        ? sortOrder === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : undefined
+                    }
                   >
                     <div
                       className={cn(
@@ -413,7 +427,7 @@ export function ListViewClient({
                       )}
                     >
                       <span>{formatFieldName(column)}</span>
-                      {sortBy === column && (
+                      {sortable && sortBy === column && (
                         <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </div>
@@ -481,7 +495,7 @@ export function ListViewClient({
                     {displayColumns.map((column) => (
                       <TableCell
                         key={column}
-                        className={cn(isNumericField(fieldTypes[column]) && 'text-right')}
+                        className={cn(isCountAlignedColumn(columnField(column)) && 'text-right')}
                       >
                         {renderCell(column, item)}
                       </TableCell>

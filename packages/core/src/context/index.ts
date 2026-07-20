@@ -564,7 +564,15 @@ export function getContext<
           return { bulkAction: false, error: error.message }
         }
         const dbError = parsePrismaError(error, listConfig)
-        return { bulkAction: false, error: dbError.message }
+        // A recognised Prisma error carries a user-safe, translated message.
+        if (dbError instanceof DatabaseError) {
+          return { bulkAction: false, error: dbError.message }
+        }
+        // Anything else is an unexpected handler bug whose raw `.message` could
+        // leak internal detail to the client — log it server-side and return a
+        // generic client-facing message instead.
+        console.error(`Bulk action "${props.key}" on list "${props.listKey}" failed:`, error)
+        return { bulkAction: false, error: 'Action failed' }
       }
     }
 
@@ -620,11 +628,35 @@ export function getContext<
     // as `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
+        // Defensive guard (hardening; unreachable from the drawer, which always
+        // mounts on a valid back-reference and sends BOTH field and parentId).
+        // A lone field/parentId is a malformed direct call — reject it rather
+        // than silently skip back-reference injection and let a client-supplied
+        // data[field] slip through unguarded to the create.
+        if (!!props.field !== !!props.parentId) {
+          return {
+            created: false,
+            error: 'createRelated requires both field and parentId, or neither',
+          }
+        }
         const data: Record<string, unknown> = { ...props.data }
         if (props.field && props.parentId) {
           const backRefField = listConfig.fields[props.field]
-          const backRefIsMany =
-            !!backRefField && 'many' in backRefField && backRefField.many === true
+          // The back-reference must name a relationship field on this list; a
+          // non-relationship field would otherwise receive a nonsensical
+          // { connect } value. Also hardening — the drawer only ever passes a
+          // real relationship back-reference here.
+          if (!backRefField || backRefField.type !== 'relationship') {
+            return {
+              created: false,
+              error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+            }
+          }
+          const backRefIsMany = 'many' in backRefField && backRefField.many === true
+          // The back-reference is set on the SERVER from the trusted parentId,
+          // OVERWRITING any client-supplied data[field] spread in above, so a
+          // hostile client can never re-target the link (a to-many back-ref
+          // connects the parent by id).
           data[props.field] = backRefIsMany
             ? { connect: [{ id: props.parentId }] }
             : { connect: { id: props.parentId } }

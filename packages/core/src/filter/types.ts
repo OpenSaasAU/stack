@@ -59,6 +59,26 @@ export type FilterValueSource =
   | { kind: 'relationship'; listKey: string; many: boolean }
 
 /**
+ * Marker key a to-many relationship's Filter spec emits for a count comparison
+ * (`orders:>5`). Prisma cannot express a relation-count comparison in a `where`
+ * (there is no `{ orders: { _count: { gt: 5 } } }`), so the pure spec can only
+ * emit a structured marker; `resolveRelationshipCountFilters` later turns each
+ * marker into an access-scoped `{ id: { in | notIn } }` before the query runs.
+ * Kept here (the pure boundary) so the field builder and the resolver agree on
+ * the shape without depending on each other.
+ */
+export const RELATIONSHIP_COUNT_FILTER_KEY = '_countFilter' as const
+
+/**
+ * The payload a {@link RELATIONSHIP_COUNT_FILTER_KEY} marker carries: the
+ * numeric comparison to apply to a to-many relationship's access-visible count.
+ */
+export interface RelationshipCountFilterMarker {
+  operator: FilterOperator
+  value: number
+}
+
+/**
  * A field's self-declared filtering capability. Returned by the optional
  * `getFilterSpec` field-builder method.
  */

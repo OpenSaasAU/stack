@@ -96,6 +96,7 @@ export {
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
+  RELATIONSHIP_COUNT_FILTER_KEY,
 } from './filter/index.js'
 export type {
   FilterOperator,
@@ -104,4 +105,15 @@ export type {
   FilterSpec,
   FilterValueSource,
   FilterFieldSuggestion,
+  RelationshipCountFilterMarker,
 } from './filter/index.js'
+
+// Access-scoped to-many relationship counts for the admin list view (#732):
+// build the filtered `_count` select for count cells/sort, and resolve the
+// count Filter spec's markers into `{ id: { in } }` — all through the secured
+// context, so counts never include related rows the session cannot read.
+export {
+  buildRelationshipCountSelect,
+  resolveRelationshipCountFilters,
+  isToManyRelationshipField,
+} from './access/relationship-count.js'

@@ -12,13 +12,17 @@ import {
   type AccessControl,
   type BulkAction,
   buildListFilterWhere,
+  buildRelationshipCountSelect,
   collectFilterSuggestions,
   getDbKey,
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
+  isToManyRelationshipField,
   OpenSaasConfig,
+  resolveRelationshipCountFilters,
 } from '@opensaas/stack-core'
+import type { FieldConfig } from '@opensaas/stack-core'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -89,6 +93,29 @@ function toRelationshipLabel(
 }
 
 /**
+ * Whether a field can seed an `orderBy` for the list table (issue #732).
+ * Virtual fields have no column to order by, and a to-one relationship has no
+ * scalar to order by; a to-many relationship orders by its related `_count`, and
+ * every scalar column orders by its own value.
+ */
+function isSortableField(field: FieldConfig | undefined): boolean {
+  if (!field) return false
+  if (field.virtual === true) return false
+  if (field.type === 'relationship') return isToManyRelationshipField(field)
+  return true
+}
+
+/** Read a to-many relationship's access-scoped count off a fetched row's `_count`. */
+function readRelationshipCount(item: Record<string, unknown>, fieldName: string): number {
+  const counts = item._count
+  if (counts && typeof counts === 'object') {
+    const value = (counts as Record<string, unknown>)[fieldName]
+    if (typeof value === 'number') return value
+  }
+  return 0
+}
+
+/**
  * Default sort for the list table, mirroring Keystone's `ui.listView.initialSort`.
  * Plain serializable data so it can cross the server/client boundary.
  */
@@ -156,9 +183,11 @@ export async function ListView({
     )
   }
 
-  // URL sort takes precedence over config initialSort, but only if the field
-  // actually exists on the list — an unknown field would cause Prisma to throw.
-  const validatedSort = sort && sort.field in listConfig.fields ? sort : undefined
+  // URL sort takes precedence over config initialSort, but only if the field is
+  // actually sortable — an unknown field, a virtual field, or a to-one
+  // relationship has no orderable column and would make Prisma throw (issue
+  // #732).
+  const validatedSort = sort && isSortableField(listConfig.fields[sort.field]) ? sort : undefined
   const activeSort = validatedSort ?? initialSort
 
   // Fetch items using access-controlled context
@@ -178,21 +207,54 @@ export async function ListView({
     // hard-coded `type === 'text'` search here. The fragment is handed to the
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
-    const where =
+    const parsedWhere =
       search && search.trim()
         ? buildListFilterWhere(search, listConfig, listKey, config)
         : undefined
 
-    // Build include object for relationship fields
-    const include: Record<string, boolean> = {}
+    // Resolve any to-many relationship count-filter markers (`orders:>5`) into
+    // access-scoped `{ id: { in } }` fragments. Prisma cannot compare a relation
+    // count in a `where`, so the filter engine emits a marker the secured
+    // resolver turns into an id constraint — counting only rows the session may
+    // see (issue #732).
+    const where = await resolveRelationshipCountFilters(
+      parsedWhere,
+      listConfig,
+      listKey,
+      { session: context.session, context },
+      config,
+    )
+
+    // Build the include: to-one relationships fetch the related row (for its
+    // Item label), while to-many relationships fetch only an access-scoped
+    // COUNT via a filtered `_count` — never the related rows themselves. This
+    // both powers the count cell and avoids an unbounded per-row fetch of every
+    // related row (issue #732).
+    const include: Record<string, unknown> = {}
     Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
-      if ((field as { type: string }).type === 'relationship') {
+      if (field.type === 'relationship' && !isToManyRelationshipField(field)) {
         include[fieldName] = true
       }
     })
+    const countSelect = await buildRelationshipCountSelect(
+      listConfig,
+      { session: context.session, context },
+      config,
+    )
+    if (countSelect) {
+      include._count = { select: countSelect }
+    }
+
+    // A to-many relationship column sorts by its related `_count`; every other
+    // sortable column orders by its own value.
+    const orderBy = activeSort
+      ? isToManyRelationshipField(listConfig.fields[activeSort.field])
+        ? { [activeSort.field]: { _count: activeSort.direction } }
+        : { [activeSort.field]: activeSort.direction }
+      : undefined
+
     const delegate = dbContext[key]
     if (delegate?.findMany && delegate?.count) {
-      const orderBy = activeSort ? { [activeSort.field]: activeSort.direction } : undefined
       ;[items, total] = await Promise.all([
         delegate.findMany({
           where,
@@ -221,12 +283,20 @@ export async function ListView({
     }
   })
 
-  // Resolve each relationship value into { id, label } via the shared label
-  // seam before crossing the server/client boundary — ListConfig objects
-  // carry functions and can't be passed as props to the client component.
+  // Resolve each relationship value before crossing the server/client boundary
+  // (ListConfig objects carry functions and can't be passed as props):
+  //  • to-one → the related row's `{ id, label }` via the shared label seam.
+  //  • to-many → the access-visible related COUNT (a number) read off `_count`.
+  // The raw `_count` payload is dropped from the serialized item (issue #732).
   const itemsWithResolvedLabels = items.map((item) => {
     const resolved: Record<string, unknown> = { ...item }
+    delete resolved._count
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
+      const field = listConfig.fields[fieldName]
+      if (isToManyRelationshipField(field)) {
+        resolved[fieldName] = readRelationshipCount(item, fieldName)
+        continue
+      }
       const [relatedListKey] = ref.split('.')
       const relatedListConfig = config.lists[relatedListKey]
       const rawValue = item[fieldName]

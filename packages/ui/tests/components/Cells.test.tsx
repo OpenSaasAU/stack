@@ -114,6 +114,38 @@ describe('RelationshipCell', () => {
     render(<RelationshipCell value={null} field={field} fieldName="author" />)
     expect(screen.getByText('-')).toBeInTheDocument()
   })
+
+  it('renders a to-many relationship as its access-visible count (issue #732)', () => {
+    const manyField: SerializableFieldConfig = {
+      type: 'relationship',
+      ref: 'Post.author',
+      many: true,
+    }
+    const { container, rerender } = render(
+      <RelationshipCell value={4} field={manyField} fieldName="posts" />,
+    )
+    const cell = container.querySelector('[data-slot="cell-relationship-count"]')
+    expect(cell).toHaveTextContent('4')
+    // No related-label links are rendered for a count column.
+    expect(screen.queryByRole('link')).toBeNull()
+
+    // A zero count still renders (a closed related list shows 0, not a leak).
+    rerender(<RelationshipCell value={0} field={manyField} fieldName="posts" />)
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toHaveTextContent('0')
+
+    // Tolerates a resolved-refs array fallback by counting its length.
+    rerender(
+      <RelationshipCell
+        value={[
+          { id: 'a', label: 'A' },
+          { id: 'b', label: 'B' },
+        ]}
+        field={manyField}
+        fieldName="posts"
+      />,
+    )
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toHaveTextContent('2')
+  })
 })
 
 describe('TextCell', () => {
