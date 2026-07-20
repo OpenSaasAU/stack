@@ -25,6 +25,23 @@ export type ServerActionProps =
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
   | { listKey: string; action: 'bulkDelete'; ids: string[] }
+  // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
+  // RELATED row, so the related list's own access control + hooks apply (never
+  // the parent's). `mode: 'disconnect'` unlinks the row non-destructively by
+  // disconnecting its back-reference (`field`; `parentId` is the record being
+  // edited, needed only when that back-reference is to-many, e.g. a
+  // many-to-many join); `mode: 'delete'` truly deletes the row. Like
+  // `bulkDelete`, it returns a distinct `{ removed }` shape (never a
+  // single-op `success`) so a UI wrapper that redirects on `success` — the
+  // item-form pattern — does not hijack an in-place row removal.
+  | {
+      listKey: string
+      action: 'removeRelated'
+      mode: 'disconnect' | 'delete'
+      id: string
+      field?: string
+      parentId?: string
+    }
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -418,6 +435,10 @@ export function getContext<
     // single-item `success` (the item-form pattern) does not hijack a
     // list-level bulk operation.
     | { deleted: number; total: number }
+    // Relationship-table row removal reports `removed` (with an optional reason)
+    // rather than `success` — same distinct-shape rationale as `bulkDelete`, so
+    // an in-place removal never triggers a redirect-on-success wrapper.
+    | { removed: boolean; error?: string }
   > {
     const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
@@ -451,6 +472,48 @@ export function getContext<
         }
       }
       return { deleted, total: props.ids.length }
+    }
+
+    // Relationship-table row removal (ADR-0018, #739). Runs on the RELATED row
+    // through the secured context, so the related list's access + hooks apply.
+    // Honours Silent failure: an access-denied operation returns `null`, which
+    // becomes `{ removed: false }` with a generic reason — never leaking whether
+    // the row was denied or absent.
+    if (props.action === 'removeRelated') {
+      try {
+        let result: unknown = null
+        if (props.mode === 'delete') {
+          result = await model.delete({ where: { id: props.id } })
+        } else {
+          // Disconnect: an UPDATE on the related list nulling its back-reference,
+          // never a delete — the row itself survives. A to-one back-reference
+          // disconnects with `true`; a to-many back-reference (many-to-many)
+          // disconnects the specific parent by id.
+          if (!props.field) {
+            return { removed: false, error: 'Missing back-reference field for disconnect' }
+          }
+          const backRefField = listConfig.fields[props.field]
+          const backRefIsMany =
+            !!backRefField && 'many' in backRefField && backRefField.many === true
+          const disconnectValue = backRefIsMany
+            ? { disconnect: { id: props.parentId } }
+            : { disconnect: true }
+          result = await model.update({
+            where: { id: props.id },
+            data: { [props.field]: disconnectValue },
+          })
+        }
+        if (result === null || result === undefined) {
+          return { removed: false, error: 'Access denied or operation failed' }
+        }
+        return { removed: true }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          return { removed: false, error: error.message }
+        }
+        const dbError = parsePrismaError(error, listConfig)
+        return { removed: false, error: dbError.message }
+      }
     }
 
     try {

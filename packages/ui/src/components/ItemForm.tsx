@@ -183,6 +183,10 @@ async function ItemViewLayoutView({
       section={section}
       rows={sectionRows(itemData?.[section.fieldName])}
       basePath={basePath}
+      context={context}
+      parentListKey={listKey}
+      parentId={itemId}
+      serverAction={serverAction}
     />
   ))
 

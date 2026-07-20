@@ -202,6 +202,142 @@ describe('getContext', () => {
       })
     })
 
+    describe('removeRelated (relationship-table row removal)', () => {
+      it('unlinks a to-one back-reference via an update on the related list', async () => {
+        const existing = { id: 'p1', title: 'T', content: 'c', authorId: 'u1' }
+        mockPrisma.post.findUnique.mockResolvedValue(existing)
+        mockPrisma.post.update.mockResolvedValue({ id: 'p1', title: 'T', authorId: null })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'removeRelated',
+          mode: 'disconnect',
+          id: 'p1',
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // Disconnect is an UPDATE on the related list nulling the back-reference
+        // (a to-one back-ref disconnects with `true`), never a delete. The
+        // distinct `{ removed }` shape avoids a redirect-on-success wrapper.
+        expect(mockPrisma.post.update).toHaveBeenCalled()
+        const updateArg = mockPrisma.post.update.mock.calls[0][0]
+        expect(updateArg.where).toEqual({ id: 'p1' })
+        expect(updateArg.data.author).toEqual({ disconnect: true })
+        expect(mockPrisma.post.delete).not.toHaveBeenCalled()
+        expect(result).toEqual({ removed: true })
+      })
+
+      it('deletes the related row when mode is delete', async () => {
+        mockPrisma.post.findUnique.mockResolvedValue({ id: 'p1', title: 'T', authorId: 'u1' })
+        mockPrisma.post.delete.mockResolvedValue({ id: 'p1', title: 'T' })
+
+        const context = await getContext(config, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'removeRelated',
+          mode: 'delete',
+          id: 'p1',
+        })
+
+        expect(mockPrisma.post.delete).toHaveBeenCalled()
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(result).toEqual({ removed: true })
+      })
+
+      it('disconnects a to-many back-reference by parent id (many-to-many)', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const m2mPrisma: any = {
+          lesson: {
+            findUnique: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
+            update: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
+            delete: vi.fn(),
+          },
+        }
+        const m2mConfig: OpenSaasConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Lesson: {
+              fields: {
+                title: { type: 'text' },
+                teachers: { type: 'relationship', ref: 'Teacher.lessons', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+            Teacher: {
+              fields: {
+                name: { type: 'text' },
+                lessons: { type: 'relationship', ref: 'Lesson.teachers', many: true },
+              },
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => true,
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
+        await context.serverAction({
+          listKey: 'Lesson',
+          action: 'removeRelated',
+          mode: 'disconnect',
+          id: 'l1',
+          field: 'teachers',
+          parentId: 't1',
+        })
+
+        const updateArg = m2mPrisma.lesson.update.mock.calls[0][0]
+        // A to-many back-reference disconnects the specific parent by id.
+        expect(updateArg.data.teachers).toEqual({ disconnect: { id: 't1' } })
+      })
+
+      it('returns a generic error (Silent failure) when the update is access-denied', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...config,
+          lists: {
+            ...config.lists,
+            Post: {
+              ...config.lists.Post,
+              access: {
+                operation: {
+                  query: () => true,
+                  create: () => true,
+                  update: () => false, // no update access → disconnect denied
+                  delete: () => true,
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(deniedConfig, mockPrisma, { userId: 'u1' })
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'removeRelated',
+          mode: 'disconnect',
+          id: 'p1',
+          field: 'author',
+          parentId: 'u1',
+        })
+
+        // Denied: reported as not removed with a generic reason (no leak).
+        expect(result).toEqual({ removed: false, error: 'Access denied or operation failed' })
+      })
+    })
+
     describe('relationshipOptions', () => {
       it('returns { id, label }[] for the related list, unfiltered/unincluded', async () => {
         mockPrisma.user.findMany.mockResolvedValue([
