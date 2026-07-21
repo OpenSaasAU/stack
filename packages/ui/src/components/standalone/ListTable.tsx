@@ -1,10 +1,9 @@
 'use client'
 import * as React from 'react'
 import { useState } from 'react'
-import Link from 'next/link.js'
 import { Inbox } from 'lucide-react'
 import { cn, formatFieldName, isNumericField } from '../../lib/utils.js'
-import { getUrlKey } from '@opensaas/stack-core'
+import type { SelectOption } from '@opensaas/stack-core/fields'
 import {
   Table,
   TableBody,
@@ -15,6 +14,7 @@ import {
 } from '../../primitives/table.js'
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
+import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -48,41 +48,17 @@ export interface ListTableClassNames {
   empty?: string
 }
 
-/**
- * `ListTable` is a standalone component embedded by consumers with raw
- * Prisma-shaped items and no list config, so it can't resolve labels via the
- * shared label seam (`getItemLabel`) the way `ListView`/`ListViewClient` do.
- * This local fallback (name → title → label → id) is intentionally private
- * to this component so it can't drift against another copy elsewhere.
- */
-function getRelationshipDisplayValue(value: unknown): string {
-  if (!value || typeof value !== 'object') {
-    return '-'
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '-'
-    return value.map((item) => getRelationshipDisplayValue(item)).join(', ')
-  }
-
-  let displayValue: unknown
-  if ('name' in value) {
-    displayValue = value.name
-  } else if ('title' in value) {
-    displayValue = value.title
-  } else if ('label' in value) {
-    displayValue = value.label
-  } else if ('id' in value) {
-    displayValue = value.id
-  }
-
-  return displayValue ? String(displayValue) : '-'
-}
-
 export interface ListTableProps {
   items: Array<Record<string, unknown>>
   fieldTypes: Record<string, string>
   relationshipRefs?: Record<string, string>
+  /**
+   * Select options per column (issue #748) — lets a standalone `select` column
+   * resolve label mapping and `ui.variant` badge colour via `SelectCell`,
+   * matching `ListView`. Columns without an entry render the raw value in the
+   * neutral badge, same as before this option existed.
+   */
+  fieldOptions?: Record<string, Array<SelectOption>>
   basePath?: string
   columns?: string[]
   onRowClick?: (item: Record<string, unknown>) => void
@@ -116,6 +92,7 @@ export function ListTable({
   items,
   fieldTypes,
   relationshipRefs,
+  fieldOptions,
   basePath = '/admin',
   columns,
   onRowClick,
@@ -129,66 +106,19 @@ export function ListTable({
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
   /**
-   * Render a relationship field as a clickable link or links
+   * Build the serialised field config for one column so its value can be
+   * routed through the shared cell registry (`CellRenderer`), exactly the path
+   * `ListView` uses (issue #748). `many` is deliberately omitted: unlike
+   * `ListView`'s pre-resolved access-scoped `_count`, this standalone table
+   * only ever receives the raw relationship value, so `RelationshipCell`'s
+   * array-vs-single branching (not its `many`-driven count branch) is what
+   * renders the linked value(s).
    */
-  const renderRelationshipCell = (value: unknown, fieldName: string) => {
-    if (!relationshipRefs) {
-      return getRelationshipDisplayValue(value)
-    }
-
-    const ref = relationshipRefs[fieldName]
-    if (!ref) {
-      return getRelationshipDisplayValue(value)
-    }
-
-    // Parse ref to get related list name
-    const [relatedListKey] = ref.split('.')
-    const relatedUrlKey = getUrlKey(relatedListKey)
-
-    if (!value || typeof value !== 'object') {
-      return <span className="text-muted-foreground">-</span>
-    }
-
-    // Handle array of relationships (many: true)
-    if (Array.isArray(value)) {
-      if (value.length === 0) return <span className="text-muted-foreground">-</span>
-      return (
-        <span className="flex flex-wrap gap-1">
-          {value.map((item, idx) => {
-            if (!item || typeof item !== 'object') return null
-            const displayValue = getRelationshipDisplayValue(item)
-            const itemId = 'id' in item ? item.id : null
-            const key = itemId || idx
-            return (
-              <React.Fragment key={key}>
-                {idx > 0 && <span className="text-muted-foreground">, </span>}
-                <Link
-                  href={`${basePath}/${relatedUrlKey}/${itemId}`}
-                  className="text-primary hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {displayValue}
-                </Link>
-              </React.Fragment>
-            )
-          })}
-        </span>
-      )
-    }
-
-    // Handle single relationship
-    const itemId = 'id' in value ? value.id : null
-    const displayValue = getRelationshipDisplayValue(value)
-    return (
-      <Link
-        href={`${basePath}/${relatedUrlKey}/${itemId}`}
-        className="text-primary hover:underline"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {displayValue}
-      </Link>
-    )
-  }
+  const getFieldConfig = (fieldName: string): SerializableFieldConfig => ({
+    type: fieldTypes[fieldName],
+    ref: relationshipRefs?.[fieldName],
+    options: fieldOptions?.[fieldName],
+  })
 
   // Determine which columns to show
   const displayColumns =
@@ -285,16 +215,12 @@ export function ListTable({
                         classNames?.cell,
                       )}
                     >
-                      {fieldTypes[column] === 'relationship' ? (
-                        renderRelationshipCell(item[column], column)
-                      ) : (
-                        <CellRenderer
-                          value={item[column]}
-                          field={{ type: fieldTypes[column] }}
-                          fieldName={column}
-                          basePath={basePath}
-                        />
-                      )}
+                      <CellRenderer
+                        value={item[column]}
+                        field={getFieldConfig(column)}
+                        fieldName={column}
+                        basePath={basePath}
+                      />
                     </TableCell>
                   ))}
                   {renderActions && (

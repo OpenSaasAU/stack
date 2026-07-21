@@ -399,6 +399,46 @@ describe('ListTable', () => {
     })
   })
 
+  describe('select fields (issue #748)', () => {
+    it('renders a select column as a coloured badge using fieldOptions, matching ListView', () => {
+      const items = [
+        { id: '1', title: 'Post 1', status: 'published' },
+        { id: '2', title: 'Post 2', status: 'archived' },
+      ]
+
+      render(
+        <ListTable
+          items={items}
+          fieldTypes={{ title: 'text', status: 'select' }}
+          fieldOptions={{
+            status: [
+              { label: 'Published', value: 'published', ui: { variant: 'success' } },
+              { label: 'Archived', value: 'archived' },
+            ],
+          }}
+          columns={['title', 'status']}
+        />,
+      )
+
+      const publishedBadge = screen.getByText('Published')
+      expect(publishedBadge).toHaveAttribute('data-slot', 'cell-select')
+      expect(publishedBadge.className).toContain('text-success')
+
+      // No `ui.variant` on this option — falls back to the neutral badge.
+      const archivedBadge = screen.getByText('Archived')
+      expect(archivedBadge.className).toContain('bg-secondary')
+      expect(archivedBadge.className).not.toContain('text-success')
+    })
+
+    it('renders the raw value in a neutral badge when fieldOptions is not provided', () => {
+      render(<ListTable {...defaultProps} columns={['title', 'status']} />)
+
+      const badges = screen.getAllByText('published')
+      expect(badges[0]).toHaveAttribute('data-slot', 'cell-select')
+      expect(badges[0].className).toContain('bg-secondary')
+    })
+  })
+
   describe('column filtering', () => {
     it('should exclude password fields by default', () => {
       const items = [{ id: '1', username: 'john', password: 'secret123' }]
