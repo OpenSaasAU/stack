@@ -580,41 +580,145 @@ describe('VercelBlobStorageProvider', () => {
   })
 
   describe('getUrl', () => {
-    it('should return correct URL format', () => {
+    const VALID_TOKEN = 'vercel_blob_rw_STORE123_supersecretvalue'
+
+    it('should return the public-host URL derived from the token store ID', () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
-        token: 'test-token',
+        token: VALID_TOKEN,
       }
       const provider = new VercelBlobStorageProvider(config)
 
       const url = provider.getUrl('photo.jpg')
 
-      expect(url).toBe('https://blob.vercel-storage.com/photo.jpg')
+      expect(url).toBe('https://STORE123.public.blob.vercel-storage.com/photo.jpg')
+    })
+
+    it('should return the private-host URL when public is false', () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: VALID_TOKEN,
+        public: false,
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = provider.getUrl('secret.pdf')
+
+      expect(url).toBe('https://STORE123.private.blob.vercel-storage.com/secret.pdf')
     })
 
     it('should apply pathPrefix to URL', () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
-        token: 'test-token',
+        token: VALID_TOKEN,
         pathPrefix: 'images',
       }
       const provider = new VercelBlobStorageProvider(config)
 
       const url = provider.getUrl('photo.jpg')
 
-      expect(url).toBe('https://blob.vercel-storage.com/images/photo.jpg')
+      expect(url).toBe('https://STORE123.public.blob.vercel-storage.com/images/photo.jpg')
     })
 
     it('should handle filenames with special characters', () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
-        token: 'test-token',
+        token: VALID_TOKEN,
       }
       const provider = new VercelBlobStorageProvider(config)
 
       const url = provider.getUrl('my file (1).txt')
 
-      expect(url).toBe('https://blob.vercel-storage.com/my file (1).txt')
+      expect(url).toBe('https://STORE123.public.blob.vercel-storage.com/my file (1).txt')
+    })
+
+    it('should derive the store ID from an explicit storeId when using OIDC auth', () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        storeId: 'store_abc123',
+        oidcToken: 'oidc-token-789',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = provider.getUrl('photo.jpg')
+
+      expect(url).toBe('https://abc123.public.blob.vercel-storage.com/photo.jpg')
+    })
+
+    it('should derive the store ID from BLOB_STORE_ID env var', () => {
+      process.env.BLOB_STORE_ID = 'store_envstore'
+
+      const config: VercelBlobStorageConfig = { type: 'vercel-blob' }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = provider.getUrl('photo.jpg')
+
+      expect(url).toBe('https://envstore.public.blob.vercel-storage.com/photo.jpg')
+
+      delete process.env.BLOB_STORE_ID
+    })
+
+    it('should derive the store ID from BLOB_READ_WRITE_TOKEN env var', () => {
+      process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_ENVSTORE_secret'
+
+      const config: VercelBlobStorageConfig = { type: 'vercel-blob' }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = provider.getUrl('photo.jpg')
+
+      expect(url).toBe('https://ENVSTORE.public.blob.vercel-storage.com/photo.jpg')
+
+      delete process.env.BLOB_READ_WRITE_TOKEN
+    })
+
+    it('should prefer the explicit token over storeId when both are set', () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: VALID_TOKEN,
+        storeId: 'store_other',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = provider.getUrl('photo.jpg')
+
+      expect(url).toBe('https://STORE123.public.blob.vercel-storage.com/photo.jpg')
+    })
+
+    it('should throw a descriptive error when the token does not yield a store ID', () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'not-a-real-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      expect(() => provider.getUrl('photo.jpg')).toThrow(
+        /Cannot determine the Vercel Blob store ID/,
+      )
+    })
+
+    it('should throw a descriptive error when BLOB_READ_WRITE_TOKEN does not yield a store ID', () => {
+      process.env.BLOB_READ_WRITE_TOKEN = 'not-a-real-token'
+
+      const config: VercelBlobStorageConfig = { type: 'vercel-blob' }
+      const provider = new VercelBlobStorageProvider(config)
+
+      expect(() => provider.getUrl('photo.jpg')).toThrow(
+        /Cannot determine the Vercel Blob store ID/,
+      )
+
+      delete process.env.BLOB_READ_WRITE_TOKEN
+    })
+
+    it('should throw a descriptive error when no credentials are configured at all', () => {
+      delete process.env.BLOB_READ_WRITE_TOKEN
+      delete process.env.BLOB_STORE_ID
+
+      const config: VercelBlobStorageConfig = { type: 'vercel-blob' }
+      const provider = new VercelBlobStorageProvider(config)
+
+      expect(() => provider.getUrl('photo.jpg')).toThrow(
+        /Cannot determine the Vercel Blob store ID/,
+      )
     })
   })
 

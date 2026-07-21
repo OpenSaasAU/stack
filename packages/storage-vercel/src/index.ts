@@ -4,6 +4,24 @@ import { randomBytes } from 'node:crypto'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 /**
+ * Derives the store ID embedded in a Vercel Blob read-write token
+ * (`vercel_blob_rw_<storeId>_<secret>`), the same way `@vercel/blob` derives
+ * it internally to build blob URLs. This format is undocumented and not a
+ * stable public API — it's parity with the SDK's internal parsing, not a
+ * contract Vercel guarantees. Returns `''` if the token doesn't match the
+ * expected shape.
+ */
+function parseStoreIdFromToken(token: string): string {
+  const segments = token.split('_')
+  return segments.length >= 4 ? segments[3] : ''
+}
+
+/** Strips the `store_` prefix some store ID values are given with. */
+function normalizeStoreId(storeId: string): string {
+  return storeId.startsWith('store_') ? storeId.slice('store_'.length) : storeId
+}
+
+/**
  * Configuration for Vercel Blob storage
  */
 export interface VercelBlobStorageConfig {
@@ -96,6 +114,48 @@ export class VercelBlobStorageProvider implements StorageProvider {
     return this.config.public !== false ? 'public' : 'private'
   }
 
+  /**
+   * Resolves the Vercel Blob store ID used to construct blob URLs, mirroring
+   * the SDK's own credential precedence: an explicit read-write token wins
+   * (its embedded store ID is authoritative), otherwise an explicit/env store
+   * ID is used, otherwise the store ID is parsed from the env read-write
+   * token.
+   */
+  private resolveStoreId(): string {
+    const token = this.config.token ?? process.env.BLOB_READ_WRITE_TOKEN?.trim()
+    if (this.config.token) {
+      const storeId = parseStoreIdFromToken(this.config.token)
+      if (!storeId) {
+        throw new Error(
+          'Cannot determine the Vercel Blob store ID: the configured `token` does not match the ' +
+            'expected "vercel_blob_rw_<storeId>_<secret>" format. Pass `storeId` explicitly to construct blob URLs.',
+        )
+      }
+      return storeId
+    }
+
+    const storeId = this.config.storeId?.trim() || process.env.BLOB_STORE_ID?.trim()
+    if (storeId) {
+      return normalizeStoreId(storeId)
+    }
+
+    if (token) {
+      const parsedStoreId = parseStoreIdFromToken(token)
+      if (!parsedStoreId) {
+        throw new Error(
+          'Cannot determine the Vercel Blob store ID: BLOB_READ_WRITE_TOKEN does not match the ' +
+            'expected "vercel_blob_rw_<storeId>_<secret>" format. Pass `storeId` explicitly to construct blob URLs.',
+        )
+      }
+      return parsedStoreId
+    }
+
+    throw new Error(
+      'Cannot determine the Vercel Blob store ID: configure `token`, `storeId`, BLOB_STORE_ID, or ' +
+        'BLOB_READ_WRITE_TOKEN to construct blob URLs.',
+    )
+  }
+
   async upload(
     file: Buffer | Uint8Array,
     filename: string,
@@ -166,10 +226,9 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   getUrl(filename: string): string {
-    // For Vercel Blob, we need to have uploaded the file first to get the URL
-    // This method is less useful for Vercel Blob, but we provide a pathname
     const pathname = this.getFullPath(filename)
-    return `https://blob.vercel-storage.com/${pathname}`
+    const storeId = this.resolveStoreId()
+    return `https://${storeId}.${this.getAccess()}.blob.vercel-storage.com/${pathname}`
   }
 
   async getSignedUrl(filename: string, expiresIn: number = 3600): Promise<string> {
