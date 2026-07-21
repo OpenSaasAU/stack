@@ -1,6 +1,7 @@
 import { put, del, get, issueSignedToken, presignUrl, BlobNotFoundError } from '@vercel/blob'
 import type { PutCommandOptions } from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 /**
@@ -96,7 +97,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
       return originalFilename
     }
 
-    const ext = originalFilename.substring(originalFilename.lastIndexOf('.'))
+    const ext = path.extname(originalFilename)
     const uniqueId = randomBytes(16).toString('hex')
     const timestamp = Date.now()
     return `${timestamp}-${uniqueId}${ext}`
@@ -196,7 +197,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
       ...this.authOptions(),
     }
 
-    if (this.config.cacheControlMaxAge) {
+    if (this.config.cacheControlMaxAge !== undefined) {
       uploadOptions.cacheControlMaxAge = this.config.cacheControlMaxAge
     }
 

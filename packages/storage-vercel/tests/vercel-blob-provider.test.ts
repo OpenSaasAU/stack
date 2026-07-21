@@ -250,6 +250,23 @@ describe('VercelBlobStorageProvider', () => {
       expect(resultNoExt.filename).not.toMatch(/\./)
     })
 
+    it('should generate a clean filename with no trailing fragment for extension-less originals', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const result = await provider.upload(Buffer.from('test'), 'README')
+
+      expect(result.filename).toBe(`${MOCK_TIMESTAMP}-${'a'.repeat(32)}`)
+      expect(put).toHaveBeenCalledWith(
+        `${MOCK_TIMESTAMP}-${'a'.repeat(32)}`,
+        expect.any(Buffer),
+        expect.any(Object),
+      )
+    })
+
     it('should apply pathPrefix to uploaded files', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
@@ -343,6 +360,38 @@ describe('VercelBlobStorageProvider', () => {
           cacheControlMaxAge: 3600,
         }),
       )
+    })
+
+    it('should apply an explicit cacheControlMaxAge of 0', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+        cacheControlMaxAge: 0,
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.upload(Buffer.from('test'), 'test.txt')
+
+      expect(put).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Buffer),
+        expect.objectContaining({
+          cacheControlMaxAge: 0,
+        }),
+      )
+    })
+
+    it('should omit cacheControlMaxAge entirely when not configured', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.upload(Buffer.from('test'), 'test.txt')
+
+      const putOptions = put.mock.calls[0][2] as Record<string, unknown>
+      expect('cacheControlMaxAge' in putOptions).toBe(false)
     })
 
     it('should include custom metadata in result', async () => {
