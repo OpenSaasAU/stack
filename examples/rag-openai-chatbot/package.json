@@ -13,7 +13,7 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.11",
+    "@ai-sdk/openai": "^4.0.16",
     "@ai-sdk/react": "^4.0.23",
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
