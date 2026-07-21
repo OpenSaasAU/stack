@@ -264,6 +264,24 @@ storage: {
 }
 ```
 
+The Blob API rejects uploads to an existing pathname unless `allowOverwrite` is
+sent. With `generateUniqueFilenames: false` (stable filenames), `allowOverwrite`
+defaults to `true` since re-uploading to the same pathname is the expected
+replace workflow (e.g. a field configured with `cleanupOnReplace`). With
+generated filenames, collisions aren't expected, so it's left at the API's
+default of rejecting overwrites. Set `allowOverwrite` explicitly to override
+either default:
+
+```typescript
+storage: {
+  avatars: vercelBlobStorage({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    generateUniqueFilenames: false,
+    allowOverwrite: false, // restore reject-on-overwrite even with stable names
+  }),
+}
+```
+
 ## Image Transformations
 
 Automatically generate multiple image variants with different sizes and formats:
