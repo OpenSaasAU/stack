@@ -1,5 +1,441 @@
 # @opensaas/stack-ui
 
+## 0.31.0
+
+### Minor Changes
+
+- [#755](https://github.com/OpenSaasAU/stack/pull/755) [`9cd06dd`](https://github.com/OpenSaasAU/stack/commit/9cd06dddb45512966affc3a6b3455e97595c0de2) Thanks [@list({](https://github.com/list({)! - Admin chrome polish: opt-in nav counts and avatar label cells ([#735](https://github.com/OpenSaasAU/stack/issues/735))
+
+  Two per-list opt-ins for the admin UI, both off by default.
+
+  **Nav counts** — set `ui.navCount: true` on a list to show an access-scoped
+  record count next to its nav item. The count is fetched through the secured
+  context, so it only ever reflects what the current session may see; no count
+  query runs for lists that don't opt in, and a list whose query access is
+  statically denied renders no count rather than a misleading zero.
+
+  ```typescript
+  lists: {
+    Post: list({
+      fields: {
+        /* ... */
+      },
+      ui: { navCount: true },
+    }),
+  }
+  ```
+
+  **Avatar label cells** — set `ui.avatar: true` to render a list's label column
+  with a deterministic initials bubble ahead of the emphasized Item label. The
+  initials and colour derive from the row; the palette is Theme-token-derived (no
+  raw hex). A per-field cell override (`ui.cell`) on the label field still wins.
+
+  ```typescript
+  lists: {
+
+      fields: {
+        /* ... */
+      },
+      ui: { avatar: true },
+    }),
+  }
+  ```
+
+  New exports:
+
+  - `@opensaas/stack-core`: `resolveNavCounts`, `isListQueryStaticallyDenied`
+  - `@opensaas/stack-ui`: `Avatar` primitive, `AvatarLabelCell`, and the
+    `getInitials`, `getAvatarTone`, `AVATAR_TONES` helpers. New Slots:
+    `avatar`, `cell-avatar-label`, `nav-count`.
+
+- [#759](https://github.com/OpenSaasAU/stack/pull/759) [`b190813`](https://github.com/OpenSaasAU/stack/commit/b190813a4531bd01b3206845b2c531099e0a204a) Thanks [@borisno2](https://github.com/borisno2)! - Add custom Bulk actions from list config (admin list view)
+
+  A list can now declare list-specific Bulk actions under `ui.listView.bulkActions`. Each action's button renders in the list view's selection bar (in declaration order) alongside the built-in Delete. The action's server-side `handler` receives the selected ids and the secured context, so all its work runs through access control and hooks — a denied row is a Silent failure absorbed into the outcome, never leaked.
+
+  ```typescript
+  Post: list({
+    fields: { title: text(), status: select({ options: [/* ... */] }) },
+    ui: {
+      listView: {
+        bulkActions: [
+          {
+            key: 'publish',
+            label: 'Publish',
+            // Optional: `variant`, `destructive` (confirm first),
+            // `hasAccess` (server-side visibility gate).
+            handler: async ({ ids, context }) => {
+              let n = 0
+              for (const id of ids) {
+                const updated = await context.db.post.update({
+                  where: { id },
+                  data: { status: 'published' },
+                })
+                if (updated) n++
+              }
+              return { message: `Published ${n} of ${ids.length}` }
+            },
+          },
+        ],
+      },
+    },
+  })
+  ```
+
+  Only serialisable metadata (`key`/`label`/`variant`/`destructive`) crosses to the client; the `handler`/`hasAccess` functions stay on the server. Clicking the button sends the `key` and selected ids back through the generic server action, which looks the handler up and runs it with a freshly-rebuilt secured context. Selection is enabled for a list that has custom actions even when Delete is denied. CSV export is documented as a recipe using this surface rather than shipping as a built-in.
+
+- [#754](https://github.com/OpenSaasAU/stack/pull/754) [`f67cd79`](https://github.com/OpenSaasAU/stack/commit/f67cd798724712a90d7ada8f28202d3d6371693f) Thanks [@borisno2](https://github.com/borisno2)! - Add the Filter builder input UI for the admin list view ([#731](https://github.com/OpenSaasAU/stack/issues/731))
+
+  The admin list view now ships a `FilterBuilder` that constructs the `?search=`
+  filter query the filter engine already consumes (ADR-0017) — a free-text search
+  box plus structured field / operator / value rows. Available fields, operators,
+  and value suggestions are derived entirely from each field's self-contained
+  `getFilterSpec` (via the serializable `collectFilterSuggestions` metadata), so
+  there is no field-type `switch` and no functions cross the server/client
+  boundary. Applied filters flow through the same secured `context.db`, so
+  filtering can only ever narrow what a session may see.
+
+  `@opensaas/stack-core` gains `serializeFilterQuery(tokens)` — the exact inverse
+  of `parseFilterQuery` — so the builder produces the grammar the engine parses
+  with the quoting and operator-prefix rules kept next to the parser.
+
+  The `FilterBuilder` is composable (exported from `@opensaas/stack-ui` and
+  `@opensaas/stack-ui/standalone`) with theme-token styling and `data-slot` parts
+  for extension:
+
+  ```tsx
+  import { FilterBuilder } from '@opensaas/stack-ui/standalone'
+  import { collectFilterSuggestions } from '@opensaas/stack-core'
+
+  // Server component: collect serializable suggestion metadata for the list.
+  const suggestions = collectFilterSuggestions(listConfig, 'Post', config)
+
+  // Client: build and apply a `?search=` query.
+  <FilterBuilder
+    suggestions={suggestions}
+    defaultValue={search}
+    onApply={(query) => router.push(`/admin/post?search=${encodeURIComponent(query)}`)}
+  />
+  ```
+
+  The list view wires this in automatically; existing `?search=` URLs keep
+  working unchanged.
+
+- [#746](https://github.com/OpenSaasAU/stack/pull/746) [`dcb10e2`](https://github.com/OpenSaasAU/stack/commit/dcb10e27c28a8a8f9a5e625f550ac5c750436eb6) Thanks [@borisno2](https://github.com/borisno2)! - Add the admin UI filter engine: a Filter spec field-builder contract and URL-driven server-side list filtering (ADR-0017).
+
+  Fields now declare their filtering capability through a new optional `getFilterSpec` method — a peer of `getPrismaType`/`getTypeScriptType` on the field-builder contract. It reports the operators a field supports, a pure token→condition mapper, and serializable suggestion metadata. Core field types implement it (text contains + free text, integer/decimal/timestamp/calendarDay comparisons, select/checkbox equality against enumerated values, relationship by label lookup). A field without a spec — `password`, `json`, `virtual`, or any third-party field that hasn't adopted one — is simply not filterable, so the addition degrades gracefully everywhere.
+
+  The admin list view now parses the URL filter query (the list's `search` param) through the engine and merges the result into the access-controlled query via the secured context, so filtering runs server-side and can only ever narrow — never widen — what a session may see. This replaces the previous hard-coded `type === 'text'` search; free-text behavior is now driven by each text field's Filter spec.
+
+  Grammar (ADR-0017): implicit-AND tokens, quoted multi-word values, `>`/`>=`/`<`/`<=` comparisons on numeric/date fields, and bare words as free text. Unknown syntax degrades to free text, never errors.
+
+  Multi-word free-text UX shift (intentional, per ADR-0017): bare words now combine with AND, so `hello world` requires each word to match separately (not the literal substring `hello world`). To match a contiguous phrase, quote it: `"hello world"`. A pasted URL such as `http://x` is treated as a single free-text token and searched verbatim — the `http:` prefix is not parsed as a field.
+
+  New exports from `@opensaas/stack-core`:
+
+  ```typescript
+  import {
+    parseFilterQuery, // (query) => FilterToken[]  — pure
+    buildFilterWhere, // (tokens, specs) => where   — pure
+    collectFilterSpecs, // (listConfig, listKey, config) => specs
+    buildListFilterWhere, // (query, listConfig, listKey, config) => where
+    collectFilterSuggestions, // serializable autocomplete metadata
+  } from '@opensaas/stack-core'
+
+  // e.g. "status:Published views:>10 author:\"Ada Lovelace\" beta"
+  const where = buildListFilterWhere(query, listConfig, listKey, config)
+  const rows = await context.db.post.findMany({ where }) // ANDed with the access filter
+  ```
+
+  Third-party field authors can implement `FilterSpec` (exported from `@opensaas/stack-core/extend`) to make their field filterable.
+
+- [#760](https://github.com/OpenSaasAU/stack/pull/760) [`f8b6f02`](https://github.com/OpenSaasAU/stack/commit/f8b6f02c18322d0d04a7c3cc82e579d0ba9a2da9) Thanks [@borisno2](https://github.com/borisno2)! - Add inline cell editing to admin Relationship tables
+
+  Cells in a to-many Relationship table on the item view are now editable in place.
+  Click a cell to edit it, commit with Enter or blur, cancel with Escape. Each
+  commit is a single-field update on the **related** row through the secured
+  context, so the related list's own operation- and field-level update access plus
+  its hooks/validation apply — never the parent's. The update is optimistic and
+  reverts, with a visible reason, on a Silent failure (access denied / row gone) or
+  a validation error (inline field errors surface too). Committed values re-render
+  through the Cell registry, so select cells stay coloured badges.
+
+  A field the session cannot write — or a table whose related-list update access is
+  statically denied — renders read-only with no edit affordance; row-level
+  (filter-scoped) denials surface at commit as a revert. Non-editable cells keep
+  click-to-navigate; main list tables are unchanged (this is Relationship-table
+  only).
+
+  - `@opensaas/stack-core`: the generic server action gains a distinct
+    `updateRelated` result shape (`{ updated, error?, fieldErrors? }`), and
+    `checkFieldAccess` is exposed on `@opensaas/stack-core/internal` so the UI can
+    decide the edit affordance without a parallel field-access evaluator.
+  - `@opensaas/stack-ui`: `RelationshipTableClient` accepts `editableColumns`; the
+    editable cell reuses the field-component registry for its editor and the Cell
+    registry for its display (new Slots: `relationship-table-cell-display`,
+    `relationship-table-cell-editor`, `relationship-table-cell-edit-trigger`,
+    `relationship-table-cell-error`).
+
+- [#757](https://github.com/OpenSaasAU/stack/pull/757) [`c05701e`](https://github.com/OpenSaasAU/stack/commit/c05701e523815b8f411a6d39e57bbb9317dc2a9d) Thanks [@borisno2](https://github.com/borisno2)! - Add a pre-linked create drawer to read-only Relationship tables (issue [#738](https://github.com/OpenSaasAU/stack/issues/738))
+
+  The item view's read-only Relationship tables now offer a "+ Add" control that
+  opens a drawer hosting the related list's create form, with the back-reference to
+  the current record preset and hidden. On submit the new row is created through
+  the secured context already linked to the parent, then the drawer closes and the
+  table refreshes.
+
+  Create-and-link semantics (ADR-0018): the create runs on the RELATED list, so
+  the related list's own `create` access control, hooks, and field-level access
+  apply — never the parent's. The back-reference is set on the server from the
+  field/parent id (never trusted from the client payload). The "+ Add" is shown
+  only when a back-reference exists to preset the link and the related list's
+  `create` access is not statically denied; a filter/function-scoped denial
+  surfaces at commit time as a generic error (no denied-vs-absent leak).
+
+  New generic server action (`@opensaas/stack-core`):
+
+  ```ts
+  await context.serverAction({
+    listKey: 'Post', // the RELATED list
+    action: 'createRelated',
+    data: { title: 'Hello', slug: 'hello' },
+    field: 'author', // the back-reference field on Post
+    parentId: user.id, // the record being edited
+  })
+  // → { created: true, id } | { created: false, error?, fieldErrors? }
+  ```
+
+  The drawer (`RelationshipCreateDrawer` from `@opensaas/stack-ui`) mounts on the
+  existing `relationship-table-toolbar` seam and reuses the shared item-form engine
+  and field-component registry, so the related list's full validation and required
+  fields are enforced even when a required field is not one of the table's columns.
+
+- [#756](https://github.com/OpenSaasAU/stack/pull/756) [`8199238`](https://github.com/OpenSaasAU/stack/commit/81992382290f356071955f16efd14f7771045a16) Thanks [@list({](https://github.com/list({)! - Add relationship-table row removal to the admin item view (ADR-0018)
+
+  Each read-only Relationship table row now has a ✕ removal control. By default it
+  **disconnects** the related row from the current record (non-destructive — the
+  row survives and still appears on its own list), gated on the related list's
+  update access. A per-relationship opt-in truly deletes the related row (behind a
+  confirmation, gated on the related list's delete access), or hides the control
+  entirely. Where the schema makes disconnect impossible (a required foreign key on
+  the related side) the control is hidden unless delete is opted in. Removals run
+  through the secured context, so an access-denied removal is a Silent failure: the
+  row stays with a visible reason.
+
+  Configure per relationship via `ui.itemView.removeAction`:
+
+  ```typescript
+
+    fields: {
+      // Default: ✕ disconnects the post (it still exists).
+      posts: relationship({ ref: 'Post.author', many: true }),
+      // Opt in to destructive delete (confirmed).
+      notes: relationship({
+        ref: 'Note.owner',
+        many: true,
+        ui: { itemView: { removeAction: 'delete' } }, // 'disconnect' (default) | 'delete' | 'none'
+      }),
+    },
+  })
+  ```
+
+  `@opensaas/stack-core` adds a `removeRelated` server action (distinct
+  `{ removed }` result shape, like `bulkDelete`, so a redirect-on-success wrapper
+  never hijacks an in-place removal) and the `RelationshipItemViewConfig.removeAction`
+  option.
+
+- [#745](https://github.com/OpenSaasAU/stack/pull/745) [`4d99e91`](https://github.com/OpenSaasAU/stack/commit/4d99e910b61c6196564a7248abf3d32b1d6be883) Thanks [@borisno2](https://github.com/borisno2)! - Add a Cell registry with default cells for core field types
+
+  List tables now render every value through a **Cell** resolved by a
+  cell-component registry that mirrors the form-field registry's priority chain:
+  per-field override → custom type registry → field-type registry → plain-text
+  fallback. Each core field type ships a default Cell — text (plain), integer
+  (tabular figures), select (coloured Badge), timestamp (formatted date), checkbox
+  (mark), and to-one relationship (Item label link). Unknown/third-party types
+  without a registered Cell fall back to plain text.
+
+  Select options gain optional, additive per-option UI metadata mapping a value to
+  a badge variant. Existing options keep working unchanged; unmapped options render
+  the neutral badge.
+
+  ```typescript
+  // opensaas.config.ts — colour a status value in list-table cells
+  status: select({
+    options: [
+      { label: 'Draft', value: 'draft', ui: { variant: 'secondary' } },
+      { label: 'Published', value: 'published', ui: { variant: 'success' } },
+    ],
+  })
+  ```
+
+  Register a Cell for a custom/third-party field exactly as you register its form
+  component, or override a single field's Cell:
+
+  ```typescript
+  'use client'
+  import { registerCellComponent } from '@opensaas/stack-ui'
+  registerCellComponent('myField', MyCell)
+
+  // or per-field override (highest priority)
+  price: integer({ ui: { cell: CurrencyCell } })
+  ```
+
+- [#750](https://github.com/OpenSaasAU/stack/pull/750) [`047487a`](https://github.com/OpenSaasAU/stack/commit/047487adf502f10f7f6774ff52c38c70d465f533) Thanks [@borisno2](https://github.com/borisno2)! - Add row selection and a built-in Bulk action Delete to the admin list view
+
+  The list table now renders a selection checkbox column when the list's delete
+  access is not statically false. The header checkbox toggles the visible page,
+  per-row checkboxes accumulate an explicit id set across pages, and the selection
+  clears when the filter changes. A selection bar shows the count, a Clear action,
+  a named `data-slot="selection-actions"` seam for future custom bulk actions, and
+  — only when delete access allows — a Delete that confirms first, deletes each
+  selected row through the secured context honouring Silent failure, and reports
+  "N of M deleted" (partial access denials are visible without revealing which or
+  why).
+
+  The admin list view also honours an optional `?pageSize=` URL param, preserved
+  across sorting, searching and paging.
+
+  New exports: `RowSelectionBar` (with `RowSelectionBarProps` /
+  `RowSelectionBarClassNames`) and the `useRowSelection` hook plus the pure
+  `isPageFullySelected` / `getPageCheckboxState` helpers.
+
+  ```tsx
+  import { RowSelectionBar, useRowSelection } from '@opensaas/stack-ui'
+
+  const selection = useRowSelection('Post', filterKey)
+  <RowSelectionBar
+    count={selection.selectedCount}
+    onClear={selection.clear}
+    onDelete={async () => {
+      /* delete the selected ids through the secured context */
+    }}
+  />
+  ```
+
+- [#751](https://github.com/OpenSaasAU/stack/pull/751) [`20459b5`](https://github.com/OpenSaasAU/stack/commit/20459b5a7f8b2578342509442d36017cfa2f08f6) Thanks [@list({](https://github.com/list({)! - Derive the admin item view from the list shape, with read-only Relationship tables and a totals footer ([#734](https://github.com/OpenSaasAU/stack/issues/734))
+
+  A record's edit page now derives its layout from the list's shape. Scalar and
+  to-one fields stay in a details card (whole-form Save/Cancel, unchanged), and
+  each to-many relationship renders as a read-only **Relationship table**: one
+  to-many relationship gives a two-column split, none gives a single centered
+  card, several stack. Table columns default to the related list's own column
+  curation minus the back-reference to the parent, cells come from the cell
+  registry, and a totals footer always shows the row count plus sums for any
+  explicitly-configured numeric columns (each formatted by that column's Cell).
+  Rows are fetched through the secured context, so only access-visible data shows.
+  Rows are read-only here — a row click navigates to the related record.
+
+  `@opensaas/stack-core` gains additive item-view config (no breaking changes):
+
+  ```typescript
+  lists: {
+
+      fields: {
+        posts: relationship({
+          ref: 'Post.author',
+          many: true,
+          ui: {
+            itemView: {
+              // Override the Relationship table's columns…
+              columns: ['title', 'status', 'viewCount'],
+              // …and sum numeric columns in the totals footer.
+              sum: ['viewCount'],
+              // Or demote it back to the compact picker in the details card:
+              // displayMode: 'picker',
+            },
+          },
+        }),
+      },
+      // Reorder the Relationship-table sections:
+      ui: { itemView: { order: ['posts'] } },
+    }),
+  }
+  ```
+
+  New `@opensaas/stack-ui` exports: `RelationshipTable`, `RelationshipTableClient`,
+  and the pure `deriveItemViewLayout` helper (with `ItemViewLayout`,
+  `ItemViewArrangement`, `RelationshipTableSection`). The Relationship table ships
+  named Slots (`relationship-table`, `relationship-table-toolbar`,
+  `relationship-table-row`, `relationship-table-cell`, `relationship-table-footer`)
+  as extension seams for the follow-up inline-edit, create-drawer, and row-removal
+  work.
+
+- [#774](https://github.com/OpenSaasAU/stack/pull/774) [`62a1612`](https://github.com/OpenSaasAU/stack/commit/62a16127c7b6610a35fb239911eff3486de585be) Thanks [@borisno2](https://github.com/borisno2)! - Bound the admin item-view Relationship tables with a `take` and a "showing N of M" footer
+
+  The read-only Relationship tables on a record's edit page (issue [#734](https://github.com/OpenSaasAU/stack/issues/734)) previously
+  fetched every related row unbounded. They now fetch a bounded page of related rows
+  and surface the full access-scoped total in the footer.
+
+  - **Bounded fetch:** each to-many Relationship table fetches at most a default cap
+    of related rows (`DEFAULT_ITEM_VIEW_TAKE`, 10), overridable per relationship via
+    `ui.itemView.take`. Rows are still fetched through the secured context, so only
+    access-visible rows come back.
+  - **"Showing N of M" footer:** the totals footer now reads `Showing N of M rows`,
+    where N is the rendered (bounded) count and M is the full access-scoped total,
+    fetched via a filtered `_count` that folds the related list's own `query` access
+    in (mirroring the list view's count columns). A fully-denied related list reads
+    `Showing 0 of 0` and never leaks a true total. The row count is always shown,
+    including the zero-column footer path.
+
+  ```typescript
+  sessions: relationship({
+    ref: 'Session.user',
+    many: true,
+    // Cap this table at 5 rows; the footer still shows the full access-scoped total.
+    ui: { itemView: { take: 5 } },
+  })
+  ```
+
+  Core: `mergeIncludeWithAccessControl` now preserves a caller-supplied `take` on a
+  to-many relation include (it only narrows the fetch, never widening past the access
+  `where`), so the secured `findUnique`/`findMany` include can bound related-row reads.
+
+- [#764](https://github.com/OpenSaasAU/stack/pull/764) [`c210319`](https://github.com/OpenSaasAU/stack/commit/c210319c3b25ff74d832d3c2ec5d3253d5d8b832) Thanks [@list({](https://github.com/list({)! - Admin list view: to-many relationship columns render an access-visible count, sort by relation count, and filter by numeric count comparisons (issue [#732](https://github.com/OpenSaasAU/stack/issues/732)). Virtual fields render via their Cell but are excluded from sorting and filtering.
+
+  A to-many relationship used as a list column now shows the count of the related rows the session may see — fetched in the SAME query via a filtered Prisma `_count`, with the related list's `query` access folded into the count's `where`, so it never counts rows the session cannot read and issues no per-row query. Clicking the column header sorts by relation `_count`, and its Filter spec offers numeric comparisons on the count (`posts:>5`) in the filter builder and in shared URLs.
+
+  Because Prisma cannot compare a relation count in a `where`, a to-many relationship's Filter spec emits a structured count marker that is resolved to an access-scoped `{ id: { in } }` before the query runs, through the secured context.
+
+  New `@opensaas/stack-core` exports: `buildRelationshipCountSelect`, `resolveRelationshipCountFilters`, `isToManyRelationshipField`, and `RELATIONSHIP_COUNT_FILTER_KEY` (with the `RelationshipCountFilterMarker` type).
+
+  ```ts
+  // A to-many relationship column now shows an access-scoped count and is
+  // sortable / filterable by that count — zero config:
+
+    fields: {
+      name: text(),
+      posts: relationship({ ref: 'Post.author', many: true }),
+    },
+  })
+  // List view: the `posts` column renders the count; its header sorts by count;
+  // `posts:>5` filters by count in the builder and in a shared URL.
+  ```
+
+- [#788](https://github.com/OpenSaasAU/stack/pull/788) [`613902c`](https://github.com/OpenSaasAU/stack/commit/613902c13e092f29939618f87c6d3dfeac74a60d) Thanks [@borisno2](https://github.com/borisno2)! - Standalone `ListTable` now routes every cell through the shared cell registry (`CellRenderer`), matching `ListView`. The bespoke relationship renderer and `fieldTypes[column] === 'relationship'` branch are gone in favour of `RelationshipCell`, which already handles link navigation and `stopPropagation`.
+
+  A new optional `fieldOptions` prop lets `select` columns resolve label mapping and `ui.variant` badge colour, exactly like `ListView`:
+
+  ```tsx
+  <ListTable
+    items={posts}
+    fieldTypes={{ title: 'text', status: 'select' }}
+    fieldOptions={{
+      status: [
+        { label: 'Published', value: 'published', ui: { variant: 'success' } },
+        { label: 'Draft', value: 'draft' },
+      ],
+    }}
+    columns={['title', 'status']}
+  />
+  ```
+
+  Existing `ListTable` call sites keep working unchanged.
+
+### Patch Changes
+
+- [#780](https://github.com/OpenSaasAU/stack/pull/780) [`55d55e0`](https://github.com/OpenSaasAU/stack/commit/55d55e0a1ed9521b6e31283524d9194a9420059a) Thanks [@borisno2](https://github.com/borisno2)! - Fix a to-one relationship filter token (e.g. `author:Ada`) leaking related-list data by ANDing the related list's `query` access filter into the nested condition instead of running it unscoped.
+
+- [#775](https://github.com/OpenSaasAU/stack/pull/775) [`2fcb582`](https://github.com/OpenSaasAU/stack/commit/2fcb5820bc00d9d432265d1ba01404097e296e8e) Thanks [@borisno2](https://github.com/borisno2)! - Exclude json columns from relationship-table inline editing so an unchanged json cell no longer wastes a secured update round-trip
+
 ## 0.30.0
 
 ## 0.29.0

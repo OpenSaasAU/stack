@@ -1,5 +1,60 @@
 # @opensaas/stack-storage-vercel
 
+## 0.31.0
+
+### Minor Changes
+
+- [#777](https://github.com/OpenSaasAU/stack/pull/777) [`7098878`](https://github.com/OpenSaasAU/stack/commit/70988788afc311906d7541c23f68e3b04e472b63) Thanks [@borisno2](https://github.com/borisno2)! - Honour `public: false` with real private-blob support. Uploads now map `public: false` to `access: 'private'` (previously ignored); `download()` reads both public and private blobs through `@vercel/blob`'s authorized `get()` path instead of a plain `fetch(url)`, and rejects with a descriptive "File not found" error for a missing blob instead of an unrelated failure; a new `getSignedUrl(filename, expiresIn?)` returns a time-limited signed URL for serving private files through developer-controlled routes.
+
+  ```typescript
+  storage: {
+    documents: vercelBlobStorage({
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      public: false,
+    }),
+  }
+
+  const provider = createStorageProvider(config, 'documents')
+  const signedUrl = await provider.getSignedUrl('report.pdf', 3600)
+  ```
+
+  This also bumps the `@vercel/blob` dependency from `^2.3.1` to `^2.6.1`, which adds the `issueSignedToken`/`presignUrl` APIs `getSignedUrl()` relies on.
+
+- [#786](https://github.com/OpenSaasAU/stack/pull/786) [`7cd3eb4`](https://github.com/OpenSaasAU/stack/commit/7cd3eb49d0f9515a26984e096c1d3bc4b9dab530) Thanks [@borisno2](https://github.com/borisno2)! - Add `allowOverwrite` config option to `vercelBlobStorage`. The Vercel Blob API rejects uploads to an existing pathname unless this is sent, which made stable-filename replace workflows (`generateUniqueFilenames: false`, e.g. a field with `cleanupOnReplace`) throw "blob already exists". `allowOverwrite` now defaults to `true` when `generateUniqueFilenames` is `false`, and `false` otherwise; an explicit setting always wins.
+
+  ```typescript
+  vercelBlobStorage({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    generateUniqueFilenames: false,
+    allowOverwrite: false, // opt back into reject-on-overwrite with stable names
+  })
+  ```
+
+- [#778](https://github.com/OpenSaasAU/stack/pull/778) [`5f8fd73`](https://github.com/OpenSaasAU/stack/commit/5f8fd731d30d040438d4447c54052d97d0ec2f73) Thanks [@borisno2](https://github.com/borisno2)! - Add Vercel OIDC authentication support to the Vercel Blob storage provider
+
+  The provider no longer requires a static read-write token. New `storeId` and `oidcToken` config options enable Vercel OIDC auth — the `@vercel/blob` SDK exchanges the deployment's `VERCEL_OIDC_TOKEN` for blob credentials automatically:
+
+  ```typescript
+  storage: {
+    uploads: vercelBlobStorage({
+      storeId: process.env.BLOB_STORE_ID, // or omit and just set BLOB_STORE_ID
+      pathPrefix: 'uploads',
+    }),
+  }
+  ```
+
+  Credential precedence (resolved by the SDK on every call): explicit `token` → OIDC token (`oidcToken` or `VERCEL_OIDC_TOKEN`) plus store id (`storeId` or `BLOB_STORE_ID`) → `BLOB_READ_WRITE_TOKEN` environment variable.
+
+  The constructor no longer throws when no static token is configured — previously this blocked OIDC-authenticated deployments before the SDK's credential resolution could run. When no credentials are available at all, the SDK now throws a descriptive error on the first storage operation instead. Requires `@vercel/blob` 2.4.1+ (dependency floor bumped from 2.3.1).
+
+### Patch Changes
+
+- [#779](https://github.com/OpenSaasAU/stack/pull/779) [`4a1d9be`](https://github.com/OpenSaasAU/stack/commit/4a1d9be5aee15691e0d8a7c5b3d16c802e62bc84) Thanks [@borisno2](https://github.com/borisno2)! - Fix `getUrl()` returning a fabricated host that never resolves. It now derives the store ID from the configured token/store ID (the same way the SDK does internally) and embeds it along with the access mode, matching the real URL the SDK returns at upload time. A token that doesn't yield a store ID now throws a descriptive error instead of producing a silently wrong URL.
+
+- [#792](https://github.com/OpenSaasAU/stack/pull/792) [`fe1ed5c`](https://github.com/OpenSaasAU/stack/commit/fe1ed5cd2226ea59b2b0b15e4c5f89379c98df2e) Thanks [@borisno2](https://github.com/borisno2)! - Fix unique filename generation to use `path.extname` semantics (matching the local provider) so extension-less originals no longer get the whole name appended, and pass through an explicit `cacheControlMaxAge: 0` instead of dropping it.
+
+- [#776](https://github.com/OpenSaasAU/stack/pull/776) [`030d540`](https://github.com/OpenSaasAU/stack/commit/030d540cfb1fc4495da5177cda0bc1915c0cb354) Thanks [@borisno2](https://github.com/borisno2)! - Fix `delete()`/`download()` for `@vercel/blob` v2, which rejects `head()` with `BlobNotFoundError` for missing blobs instead of resolving `null`. `delete()` of a missing blob is now a no-op and no longer round-trips through `head()`.
+
 ## 0.30.0
 
 ## 0.29.0
