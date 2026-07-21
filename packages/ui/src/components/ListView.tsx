@@ -21,6 +21,7 @@ import {
   isToManyRelationshipField,
   OpenSaasConfig,
   resolveRelationshipCountFilters,
+  resolveRelationshipLabelFilters,
 } from '@opensaas/stack-core'
 import type { FieldConfig } from '@opensaas/stack-core'
 
@@ -217,10 +218,22 @@ export async function ListView({
     // count in a `where`, so the filter engine emits a marker the secured
     // resolver turns into an id constraint — counting only rows the session may
     // see (issue #732).
-    const where = await resolveRelationshipCountFilters(
+    const whereWithCountFilters = await resolveRelationshipCountFilters(
       parsedWhere,
       listConfig,
       listKey,
+      { session: context.session, context },
+      config,
+    )
+
+    // Fold the related list's `query` access into any to-one relationship
+    // label-filter conditions (`author:Ada`) so the nested `is` clause can
+    // only ever match rows the session may also see directly on the related
+    // list — never a way to distinguish parent rows by a related field the
+    // session cannot itself read (issue #749).
+    const where = await resolveRelationshipLabelFilters(
+      whereWithCountFilters,
+      listConfig,
       { session: context.session, context },
       config,
     )

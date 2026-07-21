@@ -117,3 +117,12 @@ export {
   resolveRelationshipCountFilters,
   isToManyRelationshipField,
 } from './access/relationship-count.js'
+
+// Access-scoped to-one relationship label filters for the admin list view
+// (#749): fold the related list's `query` access into a to-one relationship
+// Filter spec's nested `is` clause so a session can never use a relationship
+// filter token to distinguish rows by a related field it cannot itself read.
+export {
+  resolveRelationshipLabelFilters,
+  isToOneRelationshipField,
+} from './access/relationship-label-filter.js'
