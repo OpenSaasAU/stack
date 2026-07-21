@@ -1,4 +1,5 @@
-import { put, del, head, BlobNotFoundError, PutCommandOptions } from '@vercel/blob'
+import { put, del, head, BlobNotFoundError } from '@vercel/blob'
+import type { PutCommandOptions } from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
@@ -7,8 +8,22 @@ import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/sta
  */
 export interface VercelBlobStorageConfig {
   type: 'vercel-blob'
-  /** Vercel Blob token (can also be set via BLOB_READ_WRITE_TOKEN env var) */
+  /**
+   * Vercel Blob read-write token (can also be set via BLOB_READ_WRITE_TOKEN env var).
+   * Optional when using Vercel OIDC auth (`storeId`/`BLOB_STORE_ID`).
+   */
   token?: string
+  /**
+   * Blob store id for Vercel OIDC auth (overrides the BLOB_STORE_ID env var).
+   * When an OIDC token is available (VERCEL_OIDC_TOKEN or `oidcToken`) and a
+   * store id is set, no static read-write token is needed.
+   */
+  storeId?: string
+  /**
+   * Explicit Vercel OIDC token (overrides the VERCEL_OIDC_TOKEN env var).
+   * Requires `storeId` or BLOB_STORE_ID.
+   */
+  oidcToken?: string
   /** Whether to generate unique filenames (default: true) */
   generateUniqueFilenames?: boolean
   /** Path prefix for all uploaded files */
@@ -29,13 +44,23 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
   constructor(config: VercelBlobStorageConfig) {
     this.config = config
+    // Credential resolution is delegated to the @vercel/blob SDK at call time.
+    // Eagerly requiring a static token here would break Vercel OIDC auth, where
+    // no token/BLOB_READ_WRITE_TOKEN exists and the SDK resolves credentials
+    // from VERCEL_OIDC_TOKEN (or the request context) plus storeId/BLOB_STORE_ID.
+  }
 
-    // Validate token is available
-    if (!config.token && !process.env.BLOB_READ_WRITE_TOKEN) {
-      throw new Error(
-        'Vercel Blob token is required. Set config.token or BLOB_READ_WRITE_TOKEN environment variable.',
-      )
-    }
+  /**
+   * Credential options passed to every SDK call. The SDK's precedence is:
+   * explicit `token` → OIDC token + store id → BLOB_READ_WRITE_TOKEN env var;
+   * it throws a descriptive error when none of these are available.
+   */
+  private authOptions(): { token?: string; storeId?: string; oidcToken?: string } {
+    const auth: { token?: string; storeId?: string; oidcToken?: string } = {}
+    if (this.config.token) auth.token = this.config.token
+    if (this.config.storeId) auth.storeId = this.config.storeId
+    if (this.config.oidcToken) auth.oidcToken = this.config.oidcToken
+    return auth
   }
 
   /**
@@ -76,8 +101,8 @@ export class VercelBlobStorageProvider implements StorageProvider {
     // Upload to Vercel Blob
     const uploadOptions: PutCommandOptions = {
       access: 'public',
-      token: this.config.token,
       contentType: options?.contentType,
+      ...this.authOptions(),
     }
 
     if (this.config.public !== false) {
@@ -109,9 +134,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
     // Get blob metadata to retrieve URL
     let metadata
     try {
-      metadata = await head(pathname, {
-        token: this.config.token,
-      })
+      metadata = await head(pathname, this.authOptions())
     } catch (error) {
       if (error instanceof BlobNotFoundError) {
         throw new Error(`File not found: ${filename}`)
@@ -134,9 +157,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
     const pathname = this.getFullPath(filename)
 
     try {
-      await del(pathname, {
-        token: this.config.token,
-      })
+      await del(pathname, this.authOptions())
     } catch (error) {
       if (!(error instanceof BlobNotFoundError)) {
         throw error
@@ -157,10 +178,22 @@ export class VercelBlobStorageProvider implements StorageProvider {
  *
  * @example
  * ```typescript
+ * // Static read-write token
  * const config = config({
  *   storage: {
  *     avatars: vercelBlobStorage({
  *       token: process.env.BLOB_READ_WRITE_TOKEN,
+ *       pathPrefix: 'avatars',
+ *     }),
+ *   },
+ * })
+ *
+ * // Vercel OIDC auth — no static token; the SDK resolves credentials from
+ * // VERCEL_OIDC_TOKEN plus the store id (config.storeId or BLOB_STORE_ID env)
+ * const config = config({
+ *   storage: {
+ *     avatars: vercelBlobStorage({
+ *       storeId: process.env.BLOB_STORE_ID,
  *       pathPrefix: 'avatars',
  *     }),
  *   },

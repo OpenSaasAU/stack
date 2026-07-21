@@ -99,16 +99,29 @@ describe('VercelBlobStorageProvider', () => {
       delete process.env.BLOB_READ_WRITE_TOKEN
     })
 
-    it('should throw error when no token available', () => {
+    it('should not throw when no static token is configured (OIDC auth)', () => {
+      delete process.env.BLOB_READ_WRITE_TOKEN
+
+      // With Vercel OIDC auth there is no static token — the SDK resolves
+      // credentials at call time from VERCEL_OIDC_TOKEN + storeId/BLOB_STORE_ID.
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        storeId: 'store_abc123',
+      }
+
+      expect(() => new VercelBlobStorageProvider(config)).not.toThrow()
+    })
+
+    it('should not throw when no credentials are configured at all', () => {
       delete process.env.BLOB_READ_WRITE_TOKEN
 
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
       }
 
-      expect(() => new VercelBlobStorageProvider(config)).toThrow(
-        'Vercel Blob token is required. Set config.token or BLOB_READ_WRITE_TOKEN environment variable.',
-      )
+      // Credential resolution is delegated to the SDK, which throws its own
+      // descriptive error at call time if nothing is available.
+      expect(() => new VercelBlobStorageProvider(config)).not.toThrow()
     })
   })
 
@@ -315,6 +328,43 @@ describe('VercelBlobStorageProvider', () => {
       expect(result.metadata?.pathname).toBe('test-file.txt')
     })
 
+    it('should pass storeId and oidcToken through for OIDC auth', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        storeId: 'store_abc123',
+        oidcToken: 'oidc-token-789',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.upload(Buffer.from('test'), 'test.txt')
+
+      expect(put).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Buffer),
+        expect.objectContaining({
+          storeId: 'store_abc123',
+          oidcToken: 'oidc-token-789',
+        }),
+      )
+      const putOptions = put.mock.calls[0][2] as Record<string, unknown>
+      expect('token' in putOptions).toBe(false)
+    })
+
+    it('should omit undefined auth options so SDK env fallbacks apply', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.upload(Buffer.from('test'), 'test.txt')
+
+      const putOptions = put.mock.calls[0][2] as Record<string, unknown>
+      expect(putOptions.token).toBe('test-token')
+      expect('storeId' in putOptions).toBe(false)
+      expect('oidcToken' in putOptions).toBe(false)
+    })
+
     it('should handle upload errors', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
@@ -370,6 +420,18 @@ describe('VercelBlobStorageProvider', () => {
       await provider.download('report.pdf')
 
       expect(head).toHaveBeenCalledWith('documents/report.pdf', { token: 'test-token' })
+    })
+
+    it('should pass storeId through to head for OIDC auth', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        storeId: 'store_abc123',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.download('test.txt')
+
+      expect(head).toHaveBeenCalledWith('test.txt', { storeId: 'store_abc123' })
     })
 
     it('should throw a descriptive error when file not found (head rejects with BlobNotFoundError)', async () => {
@@ -460,6 +522,19 @@ describe('VercelBlobStorageProvider', () => {
       await provider.delete('old-file.txt')
 
       expect(del).toHaveBeenCalledWith('temp/old-file.txt', { token: 'test-token' })
+    })
+
+    it('should pass storeId through to del for OIDC auth', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        storeId: 'store_abc123',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.delete('test.txt')
+
+      expect(head).not.toHaveBeenCalled()
+      expect(del).toHaveBeenCalledWith('test.txt', { storeId: 'store_abc123' })
     })
 
     it('should resolve without error when deleting a nonexistent pathname (idempotent)', async () => {
@@ -559,6 +634,21 @@ describe('VercelBlobStorageProvider', () => {
       const config = vercelBlobStorage({ token: 'test-token' })
 
       expect(config.type).toBe('vercel-blob')
+    })
+
+    it('should pass through OIDC auth options', () => {
+      const config = vercelBlobStorage({
+        storeId: 'store_abc123',
+        oidcToken: 'oidc-token-789',
+      })
+
+      expect(config).toEqual({
+        type: 'vercel-blob',
+        generateUniqueFilenames: true,
+        public: true,
+        storeId: 'store_abc123',
+        oidcToken: 'oidc-token-789',
+      })
     })
   })
 })
