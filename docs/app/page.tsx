@@ -5,7 +5,6 @@ import {
   BookOpen,
   Bot,
   Braces,
-  Github,
   LayoutDashboard,
   ShieldCheck,
   Sparkles,
@@ -13,6 +12,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { CodeBlockServer } from '@/components/CodeBlockServer'
+import { GithubIcon } from '@/components/icons/GithubIcon'
 import { SessionSwitcher } from '@/components/landing/SessionSwitcher'
 
 const INSTALL_COMMAND = 'npm create opensaas-app@latest my-app'
@@ -157,7 +157,7 @@ export default function HomePage() {
               className="p-2 text-zinc-300 hover:text-zinc-50 transition-colors"
               aria-label="Stack on GitHub"
             >
-              <Github className="h-5 w-5" />
+              <GithubIcon className="h-5 w-5" />
             </a>
             <Link
               href="/docs/tutorials/quick-start"

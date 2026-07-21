@@ -1,6 +1,6 @@
 import React from 'react'
 import Link from 'next/link'
-import { Github } from 'lucide-react'
+import { GithubIcon } from './icons/GithubIcon'
 import { Sidebar } from './Sidebar'
 import { CopyMarkdownButton } from './CopyMarkdownButton'
 import { SearchModal } from './SearchModal'
@@ -45,7 +45,7 @@ export function DocLayout({ children, slug }: DocLayoutProps) {
                 rel="noopener noreferrer"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
               >
-                <Github className="h-4 w-4" />
+                <GithubIcon className="h-4 w-4" />
                 GitHub
               </a>
             </nav>
@@ -73,7 +73,7 @@ export function DocLayout({ children, slug }: DocLayoutProps) {
                   rel="noopener noreferrer"
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
                 >
-                  <Github className="h-4 w-4" />
+                  <GithubIcon className="h-4 w-4" />
                   Edit this page on GitHub
                 </a>
               </div>

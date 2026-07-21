@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Github, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
+import { GithubIcon } from './icons/GithubIcon'
 import { SidebarNav } from './Sidebar'
 
 /** Hamburger-triggered navigation drawer for viewports below `md`. */
@@ -52,7 +53,7 @@ export function MobileNav() {
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                <Github className="h-4 w-4" />
+                <GithubIcon className="h-4 w-4" />
                 GitHub
               </a>
             </div>
