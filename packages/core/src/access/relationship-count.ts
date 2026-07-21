@@ -220,13 +220,16 @@ async function resolveOneCountFilter(
 }
 
 /**
- * Merge a marker member's non-marker sibling conditions with the resolved
- * `{ id: { in } }` fragment. With no siblings (the guaranteed case today) this is
- * just the resolved fragment. When a sibling shares the resolved `id` key — a
- * contrived case that cannot arise under the current one-condition-per-member
- * invariant — both are ANDed so neither condition is silently lost.
+ * Merge a filter-member's non-resolved sibling conditions with a resolved
+ * access-scoped fragment (e.g. a count marker's `{ id: { in } }`, or a to-one
+ * label filter's access-scoped `is`). With no siblings (the guaranteed case
+ * today) this is just the resolved fragment. When a sibling shares a key with
+ * the resolved fragment — a contrived case that cannot arise under the current
+ * one-condition-per-member invariant — both are ANDed so neither condition is
+ * silently lost. Shared by both relationship resolvers in this module and in
+ * `relationship-label-filter.ts`.
  */
-function mergeResolvedMember(
+export function mergeResolvedMember(
   siblings: Record<string, unknown>,
   resolved: Record<string, unknown>,
 ): Record<string, unknown> {

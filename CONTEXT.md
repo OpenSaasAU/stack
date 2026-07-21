@@ -147,7 +147,7 @@ One parsed unit of a filter query — a field, an operator, and a value — disp
 _Avoid_: filter chip (the chip is the rendering, not the concept), predicate
 
 **Filter spec**:
-A field's self-declared filtering capability: which operators it supports, how a token maps to a query condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested.
+A field's self-declared filtering capability: which operators it supports, how a token maps to a query condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested. A relationship's Filter spec is pure (it cannot itself resolve access control), so its nested condition — a to-one's `is` label match or a to-many's count marker — is resolved into an access-scoped equivalent (the related list's `query` access ANDed in, or a never-match when denied) before the query runs, keeping the "never bypassed" guarantee true for nested relationship conditions too (issue #749).
 _Avoid_: filter config, operator list
 
 **Bulk action**:
