@@ -481,6 +481,15 @@ export async function executeFieldAfterTransactionHooks(
 /**
  * Execute field-level resolveInput hooks
  * Allows fields to transform their input values before database write
+ *
+ * NOTE (#789): multi-column fields (e.g. storage image()/file() in
+ * Keystone-parity mode) are NOT split here. This phase only resolves each
+ * field's value under its LOGICAL key, so that phases 2-3 (list/field
+ * `validate` → `validateFieldRules`) run against the same shape a
+ * single-column field would present — including an unrecognised/invalid value
+ * a field's `resolveInput` chose to pass through for validation to catch. The
+ * split into physical columns happens strictly AFTER validation passes; see
+ * {@link splitMultiColumnFields}.
  */
 export async function executeFieldResolveInputHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -497,69 +506,90 @@ export async function executeFieldResolveInputHooks(
   let result = { ...resolvedData }
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if field not in data
+    // Skip if field not in data, or if there's nothing to resolve
+    if (!(fieldKey in result)) continue
+    if (!fieldConfig.hooks?.resolveInput) continue
+
+    // Execute field hook
+    // Type assertion is safe here because hooks are typed correctly in field definitions
+    // and we're working with runtime values that match those types
+    const resolvedValue = await fieldConfig.hooks.resolveInput({
+      listKey,
+      fieldKey,
+      operation,
+      inputData,
+      item,
+      resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
+      context,
+    } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
+
+    // Create new object with updated field to avoid mutating the passed reference
+    result = { ...result, [fieldKey]: resolvedValue }
+  }
+
+  return result
+}
+
+/**
+ * Split multi-column fields' resolved LOGICAL values into their physical
+ * per-part columns (e.g. storage image()/file() in Keystone-parity mode — see
+ * ADR-0006).
+ *
+ * Runs AFTER `validateFieldRules` has passed (#789): a multi-column field's
+ * `getZodSchema` gets a genuine chance to reject an unrecognised/invalid
+ * logical value BEFORE it is split into `null`/`undefined` physical columns
+ * and silently written. Previously this split ran inline inside
+ * `executeFieldResolveInputHooks` (Phase 1.5, BEFORE validation), which let an
+ * unrecognised value bypass validation entirely.
+ *
+ * Preserves the field-level write-access gate exactly as before: the raw
+ * per-part column keys are not declared in `fieldConfigs`, so
+ * `filterWritableFields`'s undeclared-key reject cannot enforce this field's
+ * own write access — enforce it HERE, using the canonical field-access
+ * evaluator with the same arguments the write pipeline uses. A denied field
+ * drops its logical key and contributes NONE of its per-part columns (sudo
+ * bypasses via `checkFieldAccess`).
+ */
+export async function splitMultiColumnFields(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputData: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvedData: Record<string, any>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update',
+  context: AccessContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item?: any,
+): Promise<Record<string, unknown>> {
+  let result = { ...resolvedData }
+
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    if (!fieldConfig.splitColumns) continue
     if (!(fieldKey in result)) continue
 
-    // A field's resolveInput produces its resolved value; for most fields that
-    // value is stored back under the same key. Multi-column fields additionally
-    // split that value across their physical columns below.
-    let resolvedValue: unknown = result[fieldKey]
+    const resolvedValue = result[fieldKey]
 
-    if (fieldConfig.hooks?.resolveInput) {
-      // Execute field hook
-      // Type assertion is safe here because hooks are typed correctly in field definitions
-      // and we're working with runtime values that match those types
-      resolvedValue = await fieldConfig.hooks.resolveInput({
-        listKey,
-        fieldKey,
-        operation,
-        inputData,
-        item,
-        resolvedData: { ...result }, // Pass a copy to avoid mutation affecting recorded args
-        context,
-      } as Parameters<typeof fieldConfig.hooks.resolveInput>[0])
-    } else if (!fieldConfig.splitColumns) {
-      // No resolveInput and not a multi-column field — nothing to do.
+    const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
+      session: context.session,
+      item,
+      context,
+      inputData,
+    })
+
+    // Drop the logical key (it is not a real column) regardless of outcome —
+    // a denied field must not leave its logical key behind either.
+    const next = { ...result }
+    delete next[fieldKey]
+    result = next
+
+    if (!canWrite) {
+      // Denied: write none of its per-part columns — exactly as
+      // filterWritableFields drops a denied single-column field.
       continue
     }
 
-    if (fieldConfig.splitColumns) {
-      // Multi-column field (e.g. storage image()/file() in Keystone-parity
-      // mode): replace the single logical key with its per-part columns so the
-      // write payload targets the live columns instead of a single one.
-      //
-      // The split removes the logical key from the payload BEFORE the
-      // canonical writable-field filter (`filterWritableFields`) runs, and the
-      // raw per-part column keys are not in `fieldConfigs` — so that later
-      // filter cannot enforce this field's own write access. Enforce it HERE,
-      // using the canonical field-access evaluator with the SAME arguments the
-      // write pipeline uses. A single-column field denied by `update`/`create`
-      // is simply omitted from the write; a denied multi-column field must
-      // likewise contribute NONE of its per-part columns. (sudo bypasses via
-      // `checkFieldAccess`.)
-      const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
-        session: context.session,
-        item,
-        context,
-        inputData,
-      })
-      if (!canWrite) {
-        // Denied: drop the logical key and write none of its columns — exactly
-        // as filterWritableFields drops a denied single-column field.
-        const next = { ...result }
-        delete next[fieldKey]
-        result = next
-        continue
-      }
-      const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
-      // Drop the logical key (it is not a real column) and merge the columns.
-      const next = { ...result, ...columns }
-      delete next[fieldKey]
-      result = next
-    } else {
-      // Create new object with updated field to avoid mutating the passed reference
-      result = { ...result, [fieldKey]: resolvedValue }
-    }
+    const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
+    result = { ...result, ...columns }
   }
 
   return result

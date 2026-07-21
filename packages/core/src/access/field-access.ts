@@ -128,12 +128,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
   // declared field. These columns are injected into the write payload by the
-  // field's `splitColumns` AFTER resolveInput and are intentionally NOT declared
-  // as their own entries in `fieldConfigs`, so without this map they would trip
-  // the #564 undeclared-key reject below.
+  // field's `splitColumns`, AFTER validation (#789), and are intentionally NOT
+  // declared as their own entries in `fieldConfigs`, so without this map they
+  // would trip the #564 undeclared-key reject below.
   //
   // SECURITY (#568): a raw column must NOT be blanket-passed through. The hooks
-  // layer (`executeFieldResolveInputHooks`) only gates the owning field when the
+  // layer (`splitMultiColumnFields`) only gates the owning field when the
   // LOGICAL key (e.g. `media`) is present, because it iterates declared fields,
   // not data keys. A non-sudo caller who supplies the raw columns DIRECTLY
   // (`data: { media_url, media_size }`) never produces that logical key, so that
@@ -184,8 +184,8 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // they must NOT be blanket-passed through either: gate each one by its
     // OWNING field's write access (see the SECURITY note where the map is built).
     // This is the real gate for callers who supply the raw columns directly,
-    // because the logical-key gate in `executeFieldResolveInputHooks` never fires
-    // for them. Denied (non-sudo) throws — same fail-loud behaviour as a denied
+    // because the logical-key gate in `splitMultiColumnFields` never fires for
+    // them. Denied (non-sudo) throws — same fail-loud behaviour as a denied
     // declared field (#568); allowed (or sudo, via `checkFieldAccess`) passes
     // through, preserving the legitimate multi-column write path.
     const splitColumnOwner = splitColumnOwners.get(fieldName)

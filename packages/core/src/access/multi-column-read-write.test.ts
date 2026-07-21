@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
-import { executeFieldResolveInputHooks } from '../hooks/index.js'
+import { executeFieldResolveInputHooks, splitMultiColumnFields } from '../hooks/index.js'
 import type { FieldConfig } from '../config/types.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
@@ -10,6 +10,13 @@ import type { AccessContext, FieldAccess } from './types.js'
  * field-agnostic: they assert that ANY field implementing
  * getColumnNames/assembleColumns/splitColumns is assembled on read (raw columns
  * stripped) and split on write.
+ *
+ * The write side is split across two phases (#789): `executeFieldResolveInputHooks`
+ * (Phase 1.5) resolves the field's value under its LOGICAL key only — no split —
+ * so that validation (Phase 2-3, not exercised by these field-agnostic unit
+ * tests; see the Hook Pipeline / Write Pipeline test suites) runs against the
+ * logical value first. `splitMultiColumnFields` (Phase 4) then replaces the
+ * logical key with its physical per-part columns, AFTER validation has passed.
  */
 
 // A minimal multi-column field: two physical columns `m_url` and `m_size`
@@ -113,10 +120,10 @@ describe('multi-column read assembly (filterReadableFields)', () => {
   })
 })
 
-describe('multi-column write split (executeFieldResolveInputHooks)', () => {
+describe('multi-column resolveInput (executeFieldResolveInputHooks) does NOT split (#789)', () => {
   const fields = { media: multiColumnField() }
 
-  it('splits the logical value into per-part columns and removes the logical key', async () => {
+  it('resolves the field under its LOGICAL key and leaves it unsplit', async () => {
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
     const result = await executeFieldResolveInputHooks(
       inputData,
@@ -126,12 +133,17 @@ describe('multi-column write split (executeFieldResolveInputHooks)', () => {
       makeContext(),
       'Post',
     )
-    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
-    expect('media' in result).toBe(false)
+    // Still under the logical key — no split, no per-part columns yet.
+    expect(result).toEqual({ media: { url: 'https://x/y.jpg', size: 99 } })
+    expect('m_url' in result).toBe(false)
+    expect('m_size' in result).toBe(false)
   })
 
-  it('splitting null clears all per-part columns', async () => {
-    const inputData = { media: null }
+  it('passes an unrecognised value through unsplit, under the logical key', async () => {
+    // The field's own resolveInput fallback (see fixture: "unknown → return as
+    // is and let validation catch it") must be able to hand this value to
+    // validation BEFORE any split happens.
+    const inputData = { media: 'not-a-valid-shape' }
     const result = await executeFieldResolveInputHooks(
       inputData,
       { ...inputData },
@@ -140,10 +152,10 @@ describe('multi-column write split (executeFieldResolveInputHooks)', () => {
       makeContext(),
       'Post',
     )
-    expect(result).toEqual({ m_url: null, m_size: null })
+    expect(result).toEqual({ media: 'not-a-valid-shape' })
   })
 
-  it('does not touch the columns when the logical field is absent from the write', async () => {
+  it('does not touch the field when it is absent from the write', async () => {
     const inputData = { title: 'no media in payload' }
     const result = await executeFieldResolveInputHooks(
       inputData,
@@ -155,6 +167,49 @@ describe('multi-column write split (executeFieldResolveInputHooks)', () => {
       'Post',
     )
     expect(result).toEqual({ title: 'no media in payload' })
+    expect('media' in result).toBe(false)
+  })
+})
+
+describe('multi-column write split (splitMultiColumnFields, AFTER validation — #789)', () => {
+  const fields = { media: multiColumnField() }
+
+  it('splits the logical value into per-part columns and removes the logical key', async () => {
+    const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      fields,
+      'create',
+      makeContext(),
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
+    expect('media' in result).toBe(false)
+  })
+
+  it('splitting null clears all per-part columns', async () => {
+    const inputData = { media: null }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      fields,
+      'update',
+      makeContext(),
+    )
+    expect(result).toEqual({ m_url: null, m_size: null })
+  })
+
+  it('does not touch the columns when the logical field is absent from the write', async () => {
+    const inputData = { title: 'no media in payload' }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
+      { ...fields, title: { type: 'text' } as any },
+      'update',
+      makeContext(),
+    )
+    expect(result).toEqual({ title: 'no media in payload' })
     expect('m_url' in result).toBe(false)
   })
 })
@@ -163,13 +218,12 @@ describe('multi-column write split respects field-level write access', () => {
   it('does NOT write any per-part columns when update access is denied', async () => {
     const fields = { media: multiColumnField({ update: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'update',
       makeContext(),
-      'Post',
     )
     // The logical key is dropped (it is not a real column) AND none of its
     // per-part columns are written — identical to how filterWritableFields
@@ -183,13 +237,12 @@ describe('multi-column write split respects field-level write access', () => {
   it('does NOT write any per-part columns when create access is denied', async () => {
     const fields = { media: multiColumnField({ create: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'create',
       makeContext(),
-      'Post',
     )
     expect(result).toEqual({})
     expect('m_url' in result).toBe(false)
@@ -198,13 +251,12 @@ describe('multi-column write split respects field-level write access', () => {
   it('still splits/writes the columns when write access is granted', async () => {
     const fields = { media: multiColumnField({ update: () => true, create: () => true }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'update',
       makeContext(),
-      'Post',
     )
     expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
     expect('media' in result).toBe(false)
@@ -214,13 +266,12 @@ describe('multi-column write split respects field-level write access', () => {
     // A field that denies `update` must still be writable on `create`.
     const fields = { media: multiColumnField({ update: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'create',
       makeContext(),
-      'Post',
     )
     expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })
@@ -228,13 +279,12 @@ describe('multi-column write split respects field-level write access', () => {
   it('sudo bypasses the field-access gate and still splits', async () => {
     const fields = { media: multiColumnField({ update: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'update',
       makeContext({ isSudo: true }),
-      'Post',
     )
     expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })
@@ -242,13 +292,12 @@ describe('multi-column write split respects field-level write access', () => {
   it('a multi-column field WITHOUT field-level access splits exactly as before', async () => {
     const fields = { media: multiColumnField() }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await executeFieldResolveInputHooks(
+    const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
       fields,
       'update',
       makeContext(),
-      'Post',
     )
     expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })

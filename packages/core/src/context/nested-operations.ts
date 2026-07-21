@@ -12,6 +12,7 @@ import {
   executeFieldAfterOperationHooks,
   executeFieldValidateHooks,
   validateFieldRules,
+  splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -305,6 +306,16 @@ async function processNestedCreate(
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors)
       }
+
+      // 5.5 Split multi-column fields into physical columns (#789). Only
+      // reached once the logical value has passed validation above.
+      resolvedData = await splitMultiColumnFields(
+        item,
+        resolvedData,
+        relatedListConfig.fields,
+        'create',
+        context,
+      )
 
       // 6. Filter writable fields
       const filtered = await filterWritableFields(
@@ -644,6 +655,17 @@ async function processNestedUpdate(
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors)
       }
+
+      // Split multi-column fields into physical columns (#789). Only reached
+      // once the logical value has passed validation above.
+      resolvedData = await splitMultiColumnFields(
+        updateData,
+        resolvedData,
+        relatedListConfig.fields,
+        'update',
+        context,
+        originalItem,
+      )
 
       // Filter writable fields
       const filtered = await filterWritableFields(
