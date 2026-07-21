@@ -44,6 +44,13 @@ export interface VercelBlobStorageConfig {
   oidcToken?: string
   /** Whether to generate unique filenames (default: true) */
   generateUniqueFilenames?: boolean
+  /**
+   * Whether to allow overwriting an existing blob at the same pathname.
+   * The Blob API rejects overwrites unless this is sent. Defaults to `true`
+   * when `generateUniqueFilenames` is `false` (stable filenames imply replace
+   * semantics), and `false` otherwise. An explicit setting always wins.
+   */
+  allowOverwrite?: boolean
   /** Path prefix for all uploaded files */
   pathPrefix?: string
   /** Whether files should be publicly accessible (default: true) */
@@ -103,6 +110,21 @@ export class VercelBlobStorageProvider implements StorageProvider {
       return `${this.config.pathPrefix}/${filename}`
     }
     return filename
+  }
+
+  /**
+   * Resolves whether uploads may overwrite an existing blob at the same
+   * pathname. An explicit `allowOverwrite` always wins; otherwise stable
+   * filenames (`generateUniqueFilenames: false`) imply replace semantics and
+   * default to `true`. With generated filenames collisions aren't expected,
+   * so the key is left unset and the Blob API's own reject-by-default
+   * behavior applies.
+   */
+  private resolveAllowOverwrite(): boolean | undefined {
+    if (this.config.allowOverwrite !== undefined) {
+      return this.config.allowOverwrite
+    }
+    return this.config.generateUniqueFilenames === false ? true : undefined
   }
 
   /**
@@ -176,6 +198,11 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
     if (this.config.cacheControlMaxAge) {
       uploadOptions.cacheControlMaxAge = this.config.cacheControlMaxAge
+    }
+
+    const allowOverwrite = this.resolveAllowOverwrite()
+    if (allowOverwrite !== undefined) {
+      uploadOptions.allowOverwrite = allowOverwrite
     }
 
     const blob = await put(pathname, buffer, uploadOptions)

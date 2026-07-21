@@ -411,6 +411,86 @@ describe('VercelBlobStorageProvider', () => {
         'Upload failed',
       )
     })
+
+    describe('allowOverwrite', () => {
+      it('should not send allowOverwrite by default with unique filenames (real API defaults to reject)', async () => {
+        const config: VercelBlobStorageConfig = {
+          type: 'vercel-blob',
+          token: 'test-token',
+        }
+        const provider = new VercelBlobStorageProvider(config)
+
+        await provider.upload(Buffer.from('test'), 'test.txt')
+
+        const putOptions = put.mock.calls[0][2] as Record<string, unknown>
+        expect('allowOverwrite' in putOptions).toBe(false)
+      })
+
+      it('should default allowOverwrite to true when generateUniqueFilenames is false', async () => {
+        const config: VercelBlobStorageConfig = {
+          type: 'vercel-blob',
+          token: 'test-token',
+          generateUniqueFilenames: false,
+        }
+        const provider = new VercelBlobStorageProvider(config)
+
+        await provider.upload(Buffer.from('test'), 'stable-name.txt')
+
+        expect(put).toHaveBeenCalledWith(
+          'stable-name.txt',
+          expect.any(Buffer),
+          expect.objectContaining({ allowOverwrite: true }),
+        )
+      })
+
+      it('should let an explicit allowOverwrite: false win even with stable filenames', async () => {
+        const config: VercelBlobStorageConfig = {
+          type: 'vercel-blob',
+          token: 'test-token',
+          generateUniqueFilenames: false,
+          allowOverwrite: false,
+        }
+        const provider = new VercelBlobStorageProvider(config)
+
+        await provider.upload(Buffer.from('test'), 'stable-name.txt')
+
+        expect(put).toHaveBeenCalledWith(
+          'stable-name.txt',
+          expect.any(Buffer),
+          expect.objectContaining({ allowOverwrite: false }),
+        )
+      })
+
+      it('should let an explicit allowOverwrite: true win with generated filenames', async () => {
+        const config: VercelBlobStorageConfig = {
+          type: 'vercel-blob',
+          token: 'test-token',
+          allowOverwrite: true,
+        }
+        const provider = new VercelBlobStorageProvider(config)
+
+        await provider.upload(Buffer.from('test'), 'test.txt')
+
+        expect(put).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Buffer),
+          expect.objectContaining({ allowOverwrite: true }),
+        )
+      })
+
+      it('should reject an upload to an existing pathname when allowOverwrite resolves to false (real API behavior)', async () => {
+        const config: VercelBlobStorageConfig = {
+          type: 'vercel-blob',
+          token: 'test-token',
+        }
+        const provider = new VercelBlobStorageProvider(config)
+        put.mockRejectedValueOnce(new Error('This blob already exists, use `allowOverwrite`'))
+
+        await expect(provider.upload(Buffer.from('test'), 'test.txt')).rejects.toThrow(
+          /already exists/,
+        )
+      })
+    })
   })
 
   describe('download', () => {

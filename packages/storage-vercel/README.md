@@ -45,10 +45,22 @@ vercelBlobStorage({
   // Optional - Storage options
   pathPrefix?: string               // Prefix for all files (e.g., 'avatars/')
   generateUniqueFilenames?: boolean // Generate unique filenames (default: true)
+  allowOverwrite?: boolean          // Allow overwriting an existing blob at the same pathname
+                                    // (default: true when generateUniqueFilenames is false, false otherwise)
   public?: boolean                  // Make files publicly accessible (default: true)
   cacheControl?: string             // Cache control header (default: 'public, max-age=31536000, immutable')
 })
 ```
+
+### Overwriting existing files
+
+The Vercel Blob API rejects uploads to an existing pathname unless `allowOverwrite`
+is sent. With `generateUniqueFilenames: false` (stable filenames), the provider
+defaults `allowOverwrite` to `true` since re-uploading to the same pathname is
+the expected replace workflow (e.g. a field configured with `cleanupOnReplace`).
+With generated filenames, collisions aren't expected, so it's left at the API's
+default of rejecting overwrites. Set `allowOverwrite` explicitly to override
+either default.
 
 ## Authentication
 
