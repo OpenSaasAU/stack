@@ -134,7 +134,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
       return storeId
     }
 
-    const storeId = this.config.storeId ?? process.env.BLOB_STORE_ID?.trim()
+    const storeId = this.config.storeId?.trim() || process.env.BLOB_STORE_ID?.trim()
     if (storeId) {
       return normalizeStoreId(storeId)
     }
