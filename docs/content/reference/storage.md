@@ -234,6 +234,22 @@ storage: {
 }
 ```
 
+With Vercel OIDC federation enabled, no static token is needed — pass the blob
+store id instead (or set the `BLOB_STORE_ID` environment variable):
+
+```typescript
+storage: {
+  images: vercelBlobStorage({
+    storeId: process.env.BLOB_STORE_ID, // OIDC auth via VERCEL_OIDC_TOKEN
+    pathPrefix: 'images',
+  }),
+}
+```
+
+Auth options: `token` (static read-write token; wins when set), `storeId` and
+`oidcToken` (OIDC auth; override `BLOB_STORE_ID` / `VERCEL_OIDC_TOKEN`). When
+none are set, the SDK falls back to `BLOB_READ_WRITE_TOKEN`.
+
 **Best for:** Vercel deployments, automatic CDN distribution, simplified setup.
 
 Set `public: false` to upload private blobs instead of public ones. Private blobs are not fetchable via their plain URL — `download()` and `getSignedUrl()` read them through `@vercel/blob`'s authorized read path instead:

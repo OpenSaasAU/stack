@@ -37,8 +37,10 @@ export default config({
 
 ```typescript
 vercelBlobStorage({
-  // Optional - Authentication
-  token?: string                    // Vercel Blob token (or use BLOB_READ_WRITE_TOKEN env var)
+  // Optional - Authentication (see "Authentication" below)
+  token?: string                    // Static read-write token (or use BLOB_READ_WRITE_TOKEN env var)
+  storeId?: string                  // Blob store id for Vercel OIDC auth (or use BLOB_STORE_ID env var)
+  oidcToken?: string                // Explicit OIDC token (or use VERCEL_OIDC_TOKEN env var)
 
   // Optional - Storage options
   pathPrefix?: string               // Prefix for all files (e.g., 'avatars/')
@@ -48,7 +50,21 @@ vercelBlobStorage({
 })
 ```
 
+## Authentication
+
+Credentials are resolved by the `@vercel/blob` SDK on every call, in this order:
+
+1. An explicit `token` (static read-write token)
+2. Vercel OIDC: an OIDC token (`oidcToken` or `VERCEL_OIDC_TOKEN`) plus a store
+   id (`storeId` or `BLOB_STORE_ID`)
+3. The `BLOB_READ_WRITE_TOKEN` environment variable
+
+If none are available, the SDK throws a descriptive error on the first storage
+operation. OIDC auth requires `@vercel/blob` 2.4.1 or later.
+
 ## Setup
+
+### Option A: Static read-write token
 
 1. Create a Vercel Blob store in your Vercel project dashboard
 
@@ -59,6 +75,31 @@ vercelBlobStorage({
 ```env
 BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 ```
+
+### Option B: Vercel OIDC (no static token)
+
+1. Create a Vercel Blob store in your Vercel project dashboard
+
+2. Enable OIDC federation for your Vercel project
+
+3. Provide the blob store id — either set the environment variable:
+
+```env
+BLOB_STORE_ID=store_...
+```
+
+or pass it in config:
+
+```typescript
+avatars: vercelBlobStorage({
+  storeId: process.env.BLOB_STORE_ID,
+  pathPrefix: 'avatars',
+})
+```
+
+On Vercel, the deployment's `VERCEL_OIDC_TOKEN` is exchanged for blob
+credentials automatically — no long-lived token to manage. For local
+development, `vercel env pull` provides a short-lived OIDC token.
 
 ## Examples
 
@@ -79,6 +120,15 @@ avatars: vercelBlobStorage({
   token: process.env.BLOB_READ_WRITE_TOKEN,
   pathPrefix: 'avatars',
   public: true,
+})
+```
+
+### Vercel OIDC (No Static Token)
+
+```typescript
+avatars: vercelBlobStorage({
+  storeId: process.env.BLOB_STORE_ID,
+  pathPrefix: 'avatars',
 })
 ```
 
@@ -128,17 +178,21 @@ Vercel Blob URLs are stable and won't change once uploaded, making them safe to 
 
 ## Environment Variables
 
-Required environment variable:
+One of the following authentication setups is required:
 
 ```env
+# Static token auth
 BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
+
+# OR OIDC auth (VERCEL_OIDC_TOKEN is provided by Vercel automatically)
+BLOB_STORE_ID=store_...
 ```
 
 ## Deployment
 
 When deploying to Vercel:
 
-1. The `BLOB_READ_WRITE_TOKEN` is automatically available in the Vercel environment
+1. The `BLOB_READ_WRITE_TOKEN` (static token auth) or `VERCEL_OIDC_TOKEN` (OIDC auth) is automatically available in the Vercel environment
 2. No additional configuration needed
 3. Files are stored in Vercel's blob storage
 4. Global CDN distribution is automatic
