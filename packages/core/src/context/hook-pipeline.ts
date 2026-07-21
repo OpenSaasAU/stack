@@ -6,6 +6,7 @@ import {
   executeFieldResolveInputHooks,
   executeFieldValidateHooks,
   validateFieldRules,
+  splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
 import { applyCreateDefaults } from './apply-defaults.js'
@@ -66,12 +67,17 @@ export interface HookPipeline {
  *     → list `validate`
  *     → field `validate`
  *     → built-in field rules (`validateFieldRules`)
+ *     → split multi-column fields (`splitMultiColumnFields`)
  *
  * Contract preserved exactly:
  *   - `resolvedData` starts as `inputData` and is threaded through each phase;
  *   - validate hooks report failures via `addValidationError` → THROW
  *     `ValidationError` (never silent);
  *   - built-in field rule failures THROW `ValidationError`;
+ *   - a multi-column field (e.g. storage image()/file() in Keystone-parity
+ *     mode) is validated under its LOGICAL key BEFORE it is split into
+ *     physical columns (#789) — an unrecognised value throws instead of being
+ *     silently split into null/undefined columns;
  *   - on success returns the transformed `resolvedData`.
  */
 async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResult> {
@@ -159,6 +165,19 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   if (validation.errors.length > 0) {
     throw new ValidationError(validation.errors, validation.fieldErrors)
   }
+
+  // ── Phase 4: split multi-column fields into physical columns ──────────────
+  // Only reached once the logical value has passed validation (#789). Replaces
+  // each multi-column field's logical key with its per-part columns, gated by
+  // the field's own write access (see `splitMultiColumnFields`).
+  resolvedData = await splitMultiColumnFields(
+    inputData,
+    resolvedData,
+    listConfig.fields,
+    operation,
+    context,
+    item,
+  )
 
   return { resolvedData }
 }
