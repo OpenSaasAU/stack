@@ -18,6 +18,9 @@ vi.mock('@vercel/blob', () => ({
   put: vi.fn(),
   del: vi.fn(),
   head: vi.fn(),
+  get: vi.fn(),
+  issueSignedToken: vi.fn(),
+  presignUrl: vi.fn(),
   BlobNotFoundError,
 }))
 
@@ -32,14 +35,22 @@ vi.mock('node:crypto', () => ({
 const MOCK_TIMESTAMP = 1234567890000
 vi.spyOn(Date, 'now').mockReturnValue(MOCK_TIMESTAMP)
 
-// Mock global fetch for download tests
-global.fetch = vi.fn()
+function createReadableStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    },
+  })
+}
 
 describe('VercelBlobStorageProvider', () => {
   let put: ReturnType<typeof vi.fn>
   let del: ReturnType<typeof vi.fn>
   let head: ReturnType<typeof vi.fn>
-  let fetch: ReturnType<typeof vi.fn>
+  let get: ReturnType<typeof vi.fn>
+  let issueSignedToken: ReturnType<typeof vi.fn>
+  let presignUrl: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -49,7 +60,9 @@ describe('VercelBlobStorageProvider', () => {
     put = vercelBlob.put as ReturnType<typeof vi.fn>
     del = vercelBlob.del as ReturnType<typeof vi.fn>
     head = vercelBlob.head as ReturnType<typeof vi.fn>
-    fetch = global.fetch as ReturnType<typeof vi.fn>
+    get = vercelBlob.get as ReturnType<typeof vi.fn>
+    issueSignedToken = vercelBlob.issueSignedToken as ReturnType<typeof vi.fn>
+    presignUrl = vercelBlob.presignUrl as ReturnType<typeof vi.fn>
 
     // Default mock implementations
     put.mockResolvedValue({
@@ -66,10 +79,31 @@ describe('VercelBlobStorageProvider', () => {
       uploadedAt: new Date(),
     })
 
-    fetch.mockResolvedValue({
-      ok: true,
-      statusText: 'OK',
-      arrayBuffer: async () => new ArrayBuffer(100),
+    get.mockResolvedValue({
+      statusCode: 200,
+      stream: createReadableStream(new Uint8Array([1, 2, 3, 4, 5])),
+      headers: new Headers(),
+      blob: {
+        url: 'https://blob.vercel-storage.com/test-file.txt',
+        downloadUrl: 'https://blob.vercel-storage.com/test-file.txt?download=1',
+        pathname: 'test-file.txt',
+        contentDisposition: '',
+        cacheControl: '',
+        uploadedAt: new Date(),
+        etag: 'etag',
+        contentType: 'text/plain',
+        size: 5,
+      },
+    })
+
+    issueSignedToken.mockResolvedValue({
+      delegationToken: 'delegation-token',
+      clientSigningToken: 'client-signing-token',
+      validUntil: MOCK_TIMESTAMP + 3600_000,
+    })
+
+    presignUrl.mockResolvedValue({
+      presignedUrl: 'https://blob.vercel-storage.com/test-file.txt?signature=abc',
     })
   })
 
@@ -273,7 +307,7 @@ describe('VercelBlobStorageProvider', () => {
       )
     })
 
-    it('should respect config.public setting', async () => {
+    it('should set access to private when config.public is false', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
@@ -287,7 +321,7 @@ describe('VercelBlobStorageProvider', () => {
         expect.any(String),
         expect.any(Buffer),
         expect.objectContaining({
-          access: 'public', // Still public because config.public is false, not explicitly set to private
+          access: 'private',
         }),
       )
     })
@@ -380,33 +414,50 @@ describe('VercelBlobStorageProvider', () => {
   })
 
   describe('download', () => {
-    it('should download file successfully and convert to Buffer', async () => {
+    it('should download a public file successfully and convert to Buffer', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-      const mockArrayBuffer = new Uint8Array([1, 2, 3, 4, 5]).buffer
 
-      head.mockResolvedValueOnce({
-        url: 'https://blob.vercel-storage.com/test.txt',
-        pathname: 'test.txt',
-        size: 5,
-        uploadedAt: new Date(),
-      })
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        statusText: 'OK',
-        arrayBuffer: async () => mockArrayBuffer,
+      get.mockResolvedValueOnce({
+        statusCode: 200,
+        stream: createReadableStream(new Uint8Array([1, 2, 3, 4, 5])),
+        headers: new Headers(),
+        blob: {
+          url: 'https://blob.vercel-storage.com/test.txt',
+          downloadUrl: 'https://blob.vercel-storage.com/test.txt?download=1',
+          pathname: 'test.txt',
+          contentDisposition: '',
+          cacheControl: '',
+          uploadedAt: new Date(),
+          etag: 'etag',
+          contentType: 'text/plain',
+          size: 5,
+        },
       })
 
       const result = await provider.download('test.txt')
 
-      expect(head).toHaveBeenCalledWith('test.txt', { token: 'test-token' })
-      expect(fetch).toHaveBeenCalledWith('https://blob.vercel-storage.com/test.txt')
+      expect(get).toHaveBeenCalledWith('test.txt', { access: 'public', token: 'test-token' })
       expect(result).toBeInstanceOf(Buffer)
       expect(result.length).toBe(5)
+      expect(Array.from(result)).toEqual([1, 2, 3, 4, 5])
+    })
+
+    it('should download a private file using private access', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+        public: false,
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const result = await provider.download('secret.pdf')
+
+      expect(get).toHaveBeenCalledWith('secret.pdf', { access: 'private', token: 'test-token' })
+      expect(result).toBeInstanceOf(Buffer)
     })
 
     it('should apply pathPrefix when downloading', async () => {
@@ -419,10 +470,13 @@ describe('VercelBlobStorageProvider', () => {
 
       await provider.download('report.pdf')
 
-      expect(head).toHaveBeenCalledWith('documents/report.pdf', { token: 'test-token' })
+      expect(get).toHaveBeenCalledWith('documents/report.pdf', {
+        access: 'public',
+        token: 'test-token',
+      })
     })
 
-    it('should pass storeId through to head for OIDC auth', async () => {
+    it('should pass storeId through to get for OIDC auth', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         storeId: 'store_abc123',
@@ -431,67 +485,31 @@ describe('VercelBlobStorageProvider', () => {
 
       await provider.download('test.txt')
 
-      expect(head).toHaveBeenCalledWith('test.txt', { storeId: 'store_abc123' })
+      expect(get).toHaveBeenCalledWith('test.txt', { access: 'public', storeId: 'store_abc123' })
     })
 
-    it('should throw a descriptive error when file not found (head rejects with BlobNotFoundError)', async () => {
+    it('should throw a descriptive error when the file is not found (get resolves null)', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-      head.mockRejectedValueOnce(new BlobNotFoundError())
+      get.mockResolvedValueOnce(null)
 
       await expect(provider.download('nonexistent.txt')).rejects.toThrow(
         'File not found: nonexistent.txt',
       )
-      expect(fetch).not.toHaveBeenCalled()
     })
 
-    it('should propagate non-not-found errors from head', async () => {
+    it('should propagate non-not-found errors from get', async () => {
       const config: VercelBlobStorageConfig = {
         type: 'vercel-blob',
         token: 'test-token',
       }
       const provider = new VercelBlobStorageProvider(config)
-      head.mockRejectedValueOnce(new Error('Network error'))
+      get.mockRejectedValueOnce(new Error('Network error'))
 
       await expect(provider.download('test.txt')).rejects.toThrow('Network error')
-      expect(fetch).not.toHaveBeenCalled()
-    })
-
-    it('should throw error when fetch fails', async () => {
-      const config: VercelBlobStorageConfig = {
-        type: 'vercel-blob',
-        token: 'test-token',
-      }
-      const provider = new VercelBlobStorageProvider(config)
-
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        statusText: 'Internal Server Error',
-      })
-
-      await expect(provider.download('test.txt')).rejects.toThrow(
-        'Failed to download file: Internal Server Error',
-      )
-    })
-
-    it('should handle non-200 fetch responses', async () => {
-      const config: VercelBlobStorageConfig = {
-        type: 'vercel-blob',
-        token: 'test-token',
-      }
-      const provider = new VercelBlobStorageProvider(config)
-
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        statusText: 'Not Found',
-      })
-
-      await expect(provider.download('missing.txt')).rejects.toThrow(
-        'Failed to download file: Not Found',
-      )
     })
   })
 
@@ -597,6 +615,87 @@ describe('VercelBlobStorageProvider', () => {
       const url = provider.getUrl('my file (1).txt')
 
       expect(url).toBe('https://blob.vercel-storage.com/my file (1).txt')
+    })
+  })
+
+  describe('getSignedUrl', () => {
+    it('should issue a signed token and return a presigned URL for a private file', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+        public: false,
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      const url = await provider.getSignedUrl('secret.pdf', 1800)
+
+      expect(issueSignedToken).toHaveBeenCalledWith({
+        pathname: 'secret.pdf',
+        operations: ['get'],
+        validUntil: MOCK_TIMESTAMP + 1800_000,
+        token: 'test-token',
+      })
+      expect(presignUrl).toHaveBeenCalledWith(
+        {
+          delegationToken: 'delegation-token',
+          clientSigningToken: 'client-signing-token',
+        },
+        {
+          operation: 'get',
+          pathname: 'secret.pdf',
+          validUntil: MOCK_TIMESTAMP + 1800_000,
+          access: 'private',
+        },
+      )
+      expect(url).toBe('https://blob.vercel-storage.com/test-file.txt?signature=abc')
+    })
+
+    it('should default to a 1 hour expiry', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.getSignedUrl('report.pdf')
+
+      expect(issueSignedToken).toHaveBeenCalledWith(
+        expect.objectContaining({ validUntil: MOCK_TIMESTAMP + 3600_000 }),
+      )
+    })
+
+    it('should use public access for a public file', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.getSignedUrl('photo.jpg')
+
+      expect(presignUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ access: 'public' }),
+      )
+    })
+
+    it('should apply pathPrefix to the signed pathname', async () => {
+      const config: VercelBlobStorageConfig = {
+        type: 'vercel-blob',
+        token: 'test-token',
+        pathPrefix: 'documents',
+      }
+      const provider = new VercelBlobStorageProvider(config)
+
+      await provider.getSignedUrl('report.pdf')
+
+      expect(issueSignedToken).toHaveBeenCalledWith(
+        expect.objectContaining({ pathname: 'documents/report.pdf' }),
+      )
+      expect(presignUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ pathname: 'documents/report.pdf' }),
+      )
     })
   })
 

@@ -141,6 +141,8 @@ documents: vercelBlobStorage({
 })
 ```
 
+Private blobs aren't fetchable via their plain URL — `provider.download(filename)` and `provider.getSignedUrl(filename, expiresIn)` read them through `@vercel/blob`'s authorized read path instead, so serve them through a developer-controlled route (or a signed URL) rather than linking `url`/`metadata.downloadUrl` directly. See the [storage docs](https://stack.opensaas.au/how-to/storage#private-file-access) for the serving pattern.
+
 ### Custom Cache Control
 
 ```typescript
