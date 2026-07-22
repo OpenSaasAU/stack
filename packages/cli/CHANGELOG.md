@@ -1,5 +1,12 @@
 # @opensaas/stack-cli
 
+## 0.31.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.31.1
+
 ## 0.31.0
 
 ### Patch Changes
