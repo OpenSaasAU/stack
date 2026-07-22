@@ -132,7 +132,7 @@ export function buildDetailsItemData(
  * read-only Relationship table. The arrangement follows from the number of
  * tables — one → two-column split, several → stacked.
  */
-export async function ItemViewLayoutView({
+async function ItemViewLayoutView({
   context,
   config,
   listConfig,
