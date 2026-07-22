@@ -1,5 +1,11 @@
 # @opensaas/stack-tiptap
 
+## 0.31.0
+
+### Patch Changes
+
+- [#781](https://github.com/OpenSaasAU/stack/pull/781) [`db7079a`](https://github.com/OpenSaasAU/stack/commit/db7079a0f379cf395174a33422e1cacda1fc075c) Thanks [@borisno2](https://github.com/borisno2)! - Bump `@tiptap/pm` and `@tiptap/extension-placeholder` to `^3.28.0` to match `@tiptap/starter-kit`, fixing a TypeScript build failure caused by duplicate `@tiptap/pm` versions in the dependency tree.
+
 ## 0.30.0
 
 ## 0.29.0

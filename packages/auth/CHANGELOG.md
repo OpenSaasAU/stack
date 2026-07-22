@@ -1,5 +1,11 @@
 # @opensaas/stack-auth
 
+## 0.31.0
+
+### Patch Changes
+
+- [#772](https://github.com/OpenSaasAU/stack/pull/772) [`be5772b`](https://github.com/OpenSaasAU/stack/commit/be5772be231d5be6a77d80c4f7eff5adc15da2fa) Thanks [@borisno2](https://github.com/borisno2)! - Add a regression test locking the generated Session/Account user FK shape (no `@@index([userId])`, `onDelete: Cascade`) so future drift from better-auth parity is caught.
+
 ## 0.30.0
 
 ### Patch Changes

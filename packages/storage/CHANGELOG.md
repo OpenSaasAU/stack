@@ -1,5 +1,13 @@
 # @opensaas/stack-storage
 
+## 0.31.0
+
+### Patch Changes
+
+- [#795](https://github.com/OpenSaasAU/stack/pull/795) [`0e603b9`](https://github.com/OpenSaasAU/stack/commit/0e603b92fd93611c3e7e614c4bc213d1eae1f926) Thanks [@borisno2](https://github.com/borisno2)! - Add integration-style tests proving image()/file() reject unrecognised write value shapes end-to-end in both `db.columns: 'keystone'` (multi-column) and default single-column (JSON) modes, pinning the [#789](https://github.com/OpenSaasAU/stack/issues/789) fix as a regression guard.
+
+- [#776](https://github.com/OpenSaasAU/stack/pull/776) [`030d540`](https://github.com/OpenSaasAU/stack/commit/030d540cfb1fc4495da5177cda0bc1915c0cb354) Thanks [@borisno2](https://github.com/borisno2)! - `StorageProvider.delete()` is now documented as idempotent; the local provider swallows `ENOENT` on delete instead of throwing.
+
 ## 0.30.0
 
 ## 0.29.0
