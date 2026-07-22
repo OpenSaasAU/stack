@@ -104,6 +104,28 @@ export function readAccessScopedTotal(
 }
 
 /**
+ * Strip a fetched item-view record down to the details-card fields (issue
+ * #797): every Relationship-table section's field (rendered separately as a
+ * read-only table) AND the synthetic `_count` payload the fetch adds
+ * alongside the real fields (for {@link readAccessScopedTotal}'s "showing N of
+ * M" footer). Neither belongs in the details form's data — `_count` in
+ * particular is not a field of the list, so if it survived into the submit
+ * payload the server would reject the whole update.
+ */
+export function buildDetailsItemData(
+  itemData: Record<string, unknown>,
+  layout: ItemViewLayout,
+): Record<string, unknown> {
+  const detailsItemData: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(itemData)) {
+    if (key !== '_count' && !layout.sections.some((section) => section.fieldName === key)) {
+      detailsItemData[key] = value
+    }
+  }
+  return detailsItemData
+}
+
+/**
  * Edit-mode item view whose layout is DERIVED from the list shape (issue #734):
  * scalar/to-one fields (and picker-demoted relationships) in a details card
  * with the existing whole-form Save/Cancel, and each to-many relationship as a
@@ -191,12 +213,7 @@ async function ItemViewLayoutView({
     ...listConfig,
     fields: Object.fromEntries(detailsFieldEntries),
   }
-  const detailsItemData: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(itemData)) {
-    if (!layout.sections.some((section) => section.fieldName === key)) {
-      detailsItemData[key] = value
-    }
-  }
+  const detailsItemData = buildDetailsItemData(itemData, layout)
 
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
