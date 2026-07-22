@@ -1,5 +1,7 @@
 # @opensaas/stack-auth
 
+## 0.31.1
+
 ## 0.31.0
 
 ### Patch Changes

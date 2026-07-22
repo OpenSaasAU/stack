@@ -1,5 +1,7 @@
 # @opensaas/stack-storage-vercel
 
+## 0.31.1
+
 ## 0.31.0
 
 ### Minor Changes

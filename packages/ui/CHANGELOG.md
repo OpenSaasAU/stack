@@ -1,5 +1,11 @@
 # @opensaas/stack-ui
 
+## 0.31.1
+
+### Patch Changes
+
+- [#798](https://github.com/OpenSaasAU/stack/pull/798) [`35bdbf3`](https://github.com/OpenSaasAU/stack/commit/35bdbf31c6ce2e303c9cd9ee2920dc473b718513) Thanks [@borisno2](https://github.com/borisno2)! - Fix Save failing on the edit page for any list with a `many: true` relationship table: strip the synthetic `_count` payload before it reaches the details form data, and harden `transformItemFormData` to drop any submitted key with no matching field.
+
 ## 0.31.0
 
 ### Minor Changes
