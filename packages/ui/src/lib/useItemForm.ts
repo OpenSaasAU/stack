@@ -18,6 +18,8 @@ const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']
  * it testable without rendering a component.
  *
  * Behaviour (the superset applied by all forms):
+ * - Keys with no corresponding entry in `fields` are dropped (defense-in-depth:
+ *   guards against a non-field key like `_count` reaching the submit payload).
  * - Relationship fields are converted to Prisma `connect` shape (single or many).
  *   Empty single relationships and empty many-arrays are omitted.
  * - Password fields whose value is an `{ isSet }` sentinel (an unchanged password
@@ -33,13 +35,16 @@ export function transformItemFormData(
 
   for (const [fieldName, value] of Object.entries(formData)) {
     const fieldConfig = fields[fieldName]
+    if (!fieldConfig) {
+      continue
+    }
 
     // Skip password fields carrying an { isSet } sentinel (unchanged password).
     if (typeof value === 'object' && value !== null && 'isSet' in value) {
       continue
     }
 
-    if (fieldConfig?.type === 'relationship') {
+    if (fieldConfig.type === 'relationship') {
       if (fieldConfig.many) {
         if (Array.isArray(value) && value.length > 0) {
           transformed[fieldName] = { connect: value.map((id: string) => ({ id })) }

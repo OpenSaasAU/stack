@@ -53,6 +53,13 @@ describe('transformItemFormData', () => {
     expect(transformItemFormData(fields, { password: 'secret' })).toEqual({ password: 'secret' })
   })
 
+  it('drops a key with no corresponding field config (e.g. a synthetic `_count`)', () => {
+    const fields = { title: text() }
+    expect(transformItemFormData(fields, { title: 'Hi', _count: { comments: 3 } })).toEqual({
+      title: 'Hi',
+    })
+  })
+
   it('handles a mixed payload end-to-end', () => {
     const fields = {
       title: text(),
