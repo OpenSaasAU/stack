@@ -77,17 +77,30 @@ export const POST = auth.handler
 export { GET, POST } from '@/lib/auth'
 ```
 
-### 5. Create Auth Client
+### 5. Create Auth Server Actions
+
+The pre-built forms submit through app-owned server actions (calling better-auth's
+server API directly) instead of a browser client. `createAuth` auto-adds better-auth's
+`nextCookies` plugin, so the session cookie set inside these actions persists.
 
 ```typescript
-// lib/auth-client.ts
-'use client'
+// lib/actions/auth.ts
+'use server'
 
-import { createClient } from '@opensaas/stack-auth/client'
+import { headers } from 'next/headers'
+import { auth } from '@/lib/auth'
+import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
-export const authClient = createClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-})
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({ body: input, headers: await headers() })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Sign in failed' }
+  }
+}
+// ...and signUpAction / requestPasswordResetAction / resetPasswordAction — see
+// examples/starter-auth/lib/actions/auth.ts for the full set.
 ```
 
 ### 6. Add Sign In Page
@@ -95,12 +108,12 @@ export const authClient = createClient({
 ```typescript
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction } from '@/lib/actions/auth'
 
 export default function SignInPage() {
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <SignInForm authClient={authClient} redirectTo="/admin" />
+      <SignInForm signInAction={signInAction} redirectTo="/admin" />
     </div>
   )
 }
@@ -238,14 +251,18 @@ the full migrator walkthrough and a Schema-parity (clean-diff) check.
 
 ## UI Components
 
+Each form takes app-owned server action props (defined in `lib/actions/auth.ts`),
+not an `authClient`. See ADR-0020 and `examples/starter-auth`.
+
 ### SignInForm
 
 ```typescript
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction, signInSocialAction } from '@/lib/actions/auth'
 
 <SignInForm
-  authClient={authClient}
+  signInAction={signInAction}
+  signInSocialAction={signInSocialAction}
   redirectTo="/dashboard"
   showSocialProviders={true}
   socialProviders={['github', 'google']}
@@ -258,10 +275,10 @@ import { authClient } from '@/lib/auth-client'
 
 ```typescript
 import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction } from '@/lib/actions/auth'
 
 <SignUpForm
-  authClient={authClient}
+  signUpAction={signUpAction}
   redirectTo="/dashboard"
   requirePasswordConfirmation={true}
   onSuccess={() => console.log('Account created!')}
@@ -272,12 +289,29 @@ import { authClient } from '@/lib/auth-client'
 
 ```typescript
 import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
 
 <ForgotPasswordForm
-  authClient={authClient}
+  requestPasswordResetAction={requestPasswordResetAction}
   onSuccess={() => console.log('Reset email sent!')}
 />
+```
+
+### ResetPasswordForm
+
+```typescript
+// app/reset-password/page.tsx
+import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
+import { resetPasswordAction } from '@/lib/actions/auth'
+
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+  return <ResetPasswordForm resetPasswordAction={resetPasswordAction} token={token ?? ''} />
+}
 ```
 
 ## Auto-Generated Lists
@@ -404,7 +438,19 @@ access: {
 
 ## Client-Side Hooks
 
-Use better-auth hooks in your React components:
+The auth forms no longer need a browser client (they use server actions). To read the
+session on the client, create a client yourself with `createClient` and use its hooks:
+
+```typescript
+// lib/auth-client.ts
+'use client'
+
+import { createClient } from '@opensaas/stack-auth/client'
+
+export const authClient = createClient({
+  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+})
+```
 
 ```typescript
 'use client'
