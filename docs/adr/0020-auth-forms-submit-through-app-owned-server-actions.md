@@ -50,7 +50,9 @@ in as props, **one prop per concern** (`signInAction`, `signUpAction`,
 
 ## Consequences
 
-- Breaking change to `@opensaas/stack-auth/ui` (major). The CLI feature-generator and
+- Breaking change to `@opensaas/stack-auth/ui`'s form props (`authClient` → per-concern
+  action props). Released as a **minor** bump: the packages are pre-1.0 (0.x), where a
+  minor may carry breaking changes by semver convention. The CLI feature-generator and
   all three auth examples (`starter-auth`, `auth-demo`, `mcp-demo`) are updated in the
   same change, since a green build and a correct scaffolder require it.
 - This ADR also folds in the previously-missing `reset-password` page and
