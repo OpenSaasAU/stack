@@ -38,11 +38,13 @@ Auto-generated lists:
 
 ### UI (`src/ui/index.ts`)
 
-Pre-built forms (client components):
+Pre-built forms (client components). Each takes **server action** props (not an
+`authClient`) — see "Auth forms submit through server actions" below and ADR-0020:
 
 - `SignInForm` - Email/password + OAuth sign in
 - `SignUpForm` - Create account with password confirmation
 - `ForgotPasswordForm` - Request password reset email
+- `ResetPasswordForm` - Set a new password from a reset-email token
 
 ### Plugins (`src/plugins/index.ts`)
 
@@ -334,17 +336,46 @@ export default config({
 })
 
 // 2. Server (lib/auth.ts)
-export const auth = createAuth(config)
+export const auth = createAuth(config, rawOpensaasContext)
 
 // 3. Route (app/api/auth/[...all]/route.ts)
 export { GET, POST } from '@/lib/auth'
 
-// 4. Client (lib/auth-client.ts)
-export const authClient = createClient({ baseURL: process.env.NEXT_PUBLIC_APP_URL })
+// 4. Server actions (lib/actions/auth.ts) — the forms submit through these
+'use server'
+import { auth } from '@/lib/auth'
+import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({ body: input, headers: await headers() })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Sign in failed' }
+  }
+}
 
 // 5. UI (app/sign-in/page.tsx)
-<SignInForm authClient={authClient} redirectTo="/admin" />
+<SignInForm signInAction={signInAction} redirectTo="/admin" />
 ```
+
+### Auth forms submit through server actions
+
+The pre-built forms take app-owned `'use server'` action props instead of a browser
+`authClient`, so the auth network surface stays server-side (no `/api/auth/*` call from
+the browser). `createAuth` auto-adds better-auth's `nextCookies` plugin (as the last
+plugin) so a session cookie set inside a server action persists. The action props are:
+
+- `SignInForm`: `signInAction`, optional `signInSocialAction`
+- `SignUpForm`: `signUpAction`, optional `signInSocialAction`
+- `ForgotPasswordForm`: `requestPasswordResetAction`
+- `ResetPasswordForm`: `resetPasswordAction` + a `token` prop (the page reads it from
+  `searchParams.token`)
+
+Email actions return `AuthActionResult` and the form redirects client-side; social
+sign-in redirects server-side to the provider. The package exports the contract types
+(`AuthActionResult`, `SignInInput`, `SignUpInput`, `RequestPasswordResetInput`,
+`ResetPasswordInput`, and the action aliases). `createClient` is unchanged for
+client-side session reading (`useSession`). See ADR-0020 and `examples/starter-auth`.
 
 ### Access Control with Session
 
@@ -376,8 +407,12 @@ authPlugin({
   }
 })
 
-// UI
-<SignInForm socialProviders={['github', 'google']} />
+// UI — pass the redirecting social action to enable the provider buttons
+<SignInForm
+  signInAction={signInAction}
+  signInSocialAction={signInSocialAction}
+  socialProviders={['github', 'google']}
+/>
 ```
 
 ## Type Safety

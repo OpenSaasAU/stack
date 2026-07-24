@@ -1,14 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
-import type { createAuthClient } from 'better-auth/react'
+import { cleanAuthErrorMessage } from '../lib/clean-error-message.js'
+import type { RequestPasswordResetAction } from '../types.js'
 
 export type ForgotPasswordFormProps = {
   /**
-   * Better-auth client instance
-   * Created with createAuthClient from better-auth/react
+   * Server action that requests a password-reset email.
+   * Define it in your app (`'use server'`) against your own auth instance.
    */
-  authClient: ReturnType<typeof createAuthClient>
+  requestPasswordResetAction: RequestPasswordResetAction
   /**
    * Custom CSS class for the form container
    */
@@ -27,18 +28,21 @@ export type ForgotPasswordFormProps = {
  * Forgot password form component
  * Allows users to request a password reset email
  *
+ * Submits through an app-owned server action rather than calling the auth API
+ * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
+ *
  * @example
  * ```typescript
  * import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
- * import { authClient } from '@/lib/auth-client'
+ * import { requestPasswordResetAction } from '@/lib/actions/auth'
  *
  * export default function ForgotPasswordPage() {
- *   return <ForgotPasswordForm authClient={authClient} />
+ *   return <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
  * }
  * ```
  */
 export function ForgotPasswordForm({
-  authClient,
+  requestPasswordResetAction,
   className = '',
   onSuccess,
   onError,
@@ -55,19 +59,19 @@ export function ForgotPasswordForm({
     setLoading(true)
 
     try {
-      const result = await authClient.requestPasswordReset({
-        email,
-        redirectTo: '/reset-password',
-      })
+      const result = await requestPasswordResetAction({ email })
 
-      if (result.error) {
-        throw new Error(result.error.message)
+      if (!result.success) {
+        throw new Error(cleanAuthErrorMessage(result.error, 'Failed to send reset email'))
       }
 
       setSuccess(true)
       onSuccess?.()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to send reset email'
+      const message = cleanAuthErrorMessage(
+        err instanceof Error ? err.message : undefined,
+        'Failed to send reset email',
+      )
       setError(message)
       onError?.(err instanceof Error ? err : new Error(message))
     } finally {

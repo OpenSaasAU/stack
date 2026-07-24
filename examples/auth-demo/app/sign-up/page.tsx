@@ -1,5 +1,5 @@
 import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction } from '@/lib/actions/auth'
 import Link from 'next/link'
 
 export default function SignUpPage() {
@@ -13,7 +13,7 @@ export default function SignUpPage() {
 
         <div className="bg-gray-600 rounded-lg shadow-md p-8">
           <SignUpForm
-            authClient={authClient}
+            signUpAction={signUpAction}
             redirectTo="/admin"
             showSocialProviders={false}
             requirePasswordConfirmation={true}

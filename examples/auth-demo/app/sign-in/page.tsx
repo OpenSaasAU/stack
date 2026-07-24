@@ -1,5 +1,5 @@
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction } from '@/lib/actions/auth'
 import Link from 'next/link'
 
 export default function SignInPage() {
@@ -12,7 +12,7 @@ export default function SignInPage() {
         </div>
 
         <div className="bg-gray-500 rounded-lg shadow-md p-8">
-          <SignInForm authClient={authClient} redirectTo="/admin" showSocialProviders={false} />
+          <SignInForm signInAction={signInAction} redirectTo="/admin" showSocialProviders={false} />
 
           <div className="mt-6 text-center text-sm">
             <Link href="/forgot-password" className="text-blue-600 hover:underline">

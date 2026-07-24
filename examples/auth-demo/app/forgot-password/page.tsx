@@ -1,5 +1,5 @@
 import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
 import Link from 'next/link'
 
 export default function ForgotPasswordPage() {
@@ -12,7 +12,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-8">
-          <ForgotPasswordForm authClient={authClient} />
+          <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
 
           <div className="mt-6 text-center text-sm">
             <Link href="/sign-in" className="text-blue-600 hover:underline">

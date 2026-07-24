@@ -204,18 +204,102 @@ export const POST = auth.handler`,
       content: `export { GET, POST } from '@/lib/auth'`,
     })
 
-    // Auth client
+    // Auth server actions. The forms submit through these app-owned
+    // 'use server' actions (calling auth.api.* directly) instead of the
+    // browser calling /api/auth/*. createAuth auto-adds better-auth's
+    // nextCookies plugin, so the session cookie set inside these actions
+    // persists. See ADR-0020 and the "Auth action" contract.
+    const authActionTypeImports = ['AuthActionResult', 'SignInInput']
+    if (hasPassword) {
+      authActionTypeImports.push('SignUpInput', 'RequestPasswordResetInput', 'ResetPasswordInput')
+    }
+
+    const socialActionSnippet = hasOAuth
+      ? `
+
+// OAuth navigates away from the app, so this action performs a server-side
+// redirect to the provider (rather than returning a result to the form).
+export async function signInSocialAction(provider: string): Promise<void> {
+  const response = await auth.api.signInSocial({
+    body: { provider, callbackURL: '/admin' },
+    headers: await headers(),
+  })
+  if (response && 'url' in response && response.url) {
+    redirect(response.url)
+  }
+}`
+      : ''
+
+    const passwordActionSnippets = hasPassword
+      ? `
+
+export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signUpEmail({
+      body: { name: input.name, email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign up failed') }
+  }
+}
+
+export async function requestPasswordResetAction(
+  input: RequestPasswordResetInput,
+): Promise<AuthActionResult> {
+  try {
+    await auth.api.requestPasswordReset({
+      body: { email: input.email, redirectTo: '/reset-password' },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
+  }
+}
+
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.resetPassword({
+      body: { newPassword: input.password, token: input.token },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to reset password') }
+  }
+}`
+      : ''
+
     files.push({
-      path: 'lib/auth-client.ts',
+      path: 'lib/actions/auth.ts',
       language: 'typescript',
-      description: 'Client-side Better-auth instance for React components',
-      content: `'use client'
+      description: 'App-owned server actions the auth forms submit through',
+      content: `'use server'
 
-import { createClient } from '@opensaas/stack-auth/client'
+import { headers } from 'next/headers'
+${hasOAuth ? "import { redirect } from 'next/navigation'\n" : ''}import { auth } from '@/lib/auth'
+import type {
+  ${authActionTypeImports.join(',\n  ')},
+} from '@opensaas/stack-auth/ui'
 
-export const authClient = createClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-})`,
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({
+      body: { email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign in failed') }
+  }
+}${passwordActionSnippets}${socialActionSnippet}
+`,
     })
 
     // Sign-in page
@@ -224,7 +308,7 @@ export const authClient = createClient({
       language: 'tsx',
       description: 'Sign-in page using the pre-built SignInForm',
       content: `import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction${hasOAuth ? ', signInSocialAction' : ''} } from '@/lib/actions/auth'
 import Link from 'next/link'
 
 export default function SignInPage() {
@@ -233,15 +317,20 @@ export default function SignInPage() {
       <div className="w-full max-w-md">
         <h1 className="text-2xl font-bold mb-6">Sign In</h1>
         <SignInForm
-          authClient={authClient}
-          redirectTo="/admin"
+          signInAction={signInAction}
+          ${hasOAuth ? 'signInSocialAction={signInSocialAction}\n          ' : ''}redirectTo="/admin"
           showSocialProviders={${hasOAuth}}
         />
         ${
           hasPassword
-            ? `<div className="mt-4 text-center text-sm">
-          Don&apos;t have an account?{' '}
-          <Link href="/sign-up" className="underline">Sign up</Link>
+            ? `<div className="mt-4 text-center text-sm space-y-2">
+          <div>
+            <Link href="/forgot-password" className="underline">Forgot your password?</Link>
+          </div>
+          <div>
+            Don&apos;t have an account?{' '}
+            <Link href="/sign-up" className="underline">Sign up</Link>
+          </div>
         </div>`
             : ''
         }
@@ -258,14 +347,67 @@ export default function SignInPage() {
         language: 'tsx',
         description: 'Sign-up page using the pre-built SignUpForm',
         content: `import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction${hasOAuth ? ', signInSocialAction' : ''} } from '@/lib/actions/auth'
 
 export default function SignUpPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <h1 className="text-2xl font-bold mb-6">Create Account</h1>
-        <SignUpForm authClient={authClient} redirectTo="/admin" />
+        <SignUpForm
+          signUpAction={signUpAction}
+          ${hasOAuth ? 'signInSocialAction={signInSocialAction}\n          ' : ''}redirectTo="/admin"
+          showSocialProviders={${hasOAuth}}
+        />
+      </div>
+    </div>
+  )
+}`,
+      })
+
+      // Forgot-password page
+      files.push({
+        path: 'app/forgot-password/page.tsx',
+        language: 'tsx',
+        description: 'Forgot-password page using the pre-built ForgotPasswordForm',
+        content: `import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
+import Link from 'next/link'
+
+export default function ForgotPasswordPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <h1 className="text-2xl font-bold mb-6">Forgot Password</h1>
+        <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
+        <div className="mt-4 text-center text-sm">
+          <Link href="/sign-in" className="underline">Back to sign in</Link>
+        </div>
+      </div>
+    </div>
+  )
+}`,
+      })
+
+      // Reset-password page (target of the reset email link)
+      files.push({
+        path: 'app/reset-password/page.tsx',
+        language: 'tsx',
+        description: 'Reset-password page using the pre-built ResetPasswordForm',
+        content: `import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
+import { resetPasswordAction } from '@/lib/actions/auth'
+
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <h1 className="text-2xl font-bold mb-6">Reset Password</h1>
+        <ResetPasswordForm resetPasswordAction={resetPasswordAction} token={token ?? ''} />
       </div>
     </div>
   )

@@ -2,22 +2,27 @@
 
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation.js'
-import type { createAuthClient } from 'better-auth/react'
+import { cleanAuthErrorMessage } from '../lib/clean-error-message.js'
+import type { SignInAction, SignInSocialAction } from '../types.js'
 
 export type SignInFormProps = {
   /**
-   * Better-auth client instance
-   * Created with createAuthClient from better-auth/react
-   * Pass your client from lib/auth-client.ts
+   * Server action that signs a user in with email + password.
+   * Define it in your app (`'use server'`) against your own auth instance.
    */
-  authClient: ReturnType<typeof createAuthClient>
+  signInAction: SignInAction
+  /**
+   * Server action that starts an OAuth sign-in and redirects to the provider.
+   * Required to render the social provider buttons; omit to hide them.
+   */
+  signInSocialAction?: SignInSocialAction
   /**
    * URL to redirect to after successful sign in
    * @default '/'
    */
   redirectTo?: string
   /**
-   * Show OAuth provider buttons
+   * Show OAuth provider buttons (requires `signInSocialAction`)
    * @default true
    */
   showSocialProviders?: boolean
@@ -44,18 +49,28 @@ export type SignInFormProps = {
  * Sign in form component
  * Provides email/password sign in and OAuth provider buttons
  *
+ * Submits through app-owned server actions rather than calling the auth API
+ * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
+ *
  * @example
  * ```typescript
  * import { SignInForm } from '@opensaas/stack-auth/ui'
- * import { authClient } from '@/lib/auth-client'
+ * import { signInAction, signInSocialAction } from '@/lib/actions/auth'
  *
  * export default function SignInPage() {
- *   return <SignInForm authClient={authClient} redirectTo="/admin" />
+ *   return (
+ *     <SignInForm
+ *       signInAction={signInAction}
+ *       signInSocialAction={signInSocialAction}
+ *       redirectTo="/admin"
+ *     />
+ *   )
  * }
  * ```
  */
 export function SignInForm({
-  authClient,
+  signInAction,
+  signInSocialAction,
   redirectTo = '/',
   showSocialProviders = true,
   socialProviders = ['github', 'google'],
@@ -75,14 +90,10 @@ export function SignInForm({
     setLoading(true)
 
     try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-        callbackURL: redirectTo,
-      })
+      const result = await signInAction({ email, password })
 
-      if (result.error) {
-        throw new Error(result.error.message)
+      if (!result.success) {
+        throw new Error(cleanAuthErrorMessage(result.error, 'Sign in failed'))
       }
 
       // If onSuccess is provided, call it. Otherwise, automatically redirect
@@ -92,7 +103,10 @@ export function SignInForm({
         router.push(redirectTo)
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign in failed'
+      const message = cleanAuthErrorMessage(
+        err instanceof Error ? err.message : undefined,
+        'Sign in failed',
+      )
       setError(message)
       onError?.(err instanceof Error ? err : new Error(message))
     } finally {
@@ -101,24 +115,27 @@ export function SignInForm({
   }
 
   const handleSocialSignIn = async (provider: string) => {
+    if (!signInSocialAction) return
     setError('')
     setLoading(true)
 
     try {
-      await authClient.signIn.social({
-        provider,
-        callbackURL: redirectTo,
-      })
-      // Social sign-in handles its own redirect via OAuth flow
-      // Only call onSuccess if provided
+      // The action performs a server-side redirect to the provider, so on
+      // success control does not return here.
+      await signInSocialAction(provider)
       onSuccess?.()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign in failed'
+      const message = cleanAuthErrorMessage(
+        err instanceof Error ? err.message : undefined,
+        'Sign in failed',
+      )
       setError(message)
       onError?.(err instanceof Error ? err : new Error(message))
       setLoading(false)
     }
   }
+
+  const canShowSocial = showSocialProviders && socialProviders.length > 0 && !!signInSocialAction
 
   return (
     <div className={`w-full max-w-md mx-auto p-6 ${className}`}>
@@ -170,7 +187,7 @@ export function SignInForm({
         </button>
       </form>
 
-      {showSocialProviders && socialProviders.length > 0 && (
+      {canShowSocial && (
         <>
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">

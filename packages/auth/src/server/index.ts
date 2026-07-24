@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
+import { nextCookies } from 'better-auth/next-js'
 import type { BetterAuthOptions } from 'better-auth'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
@@ -130,8 +131,13 @@ export function createAuth(
               }
             : undefined,
 
-          // Pass through any additional Better Auth plugins
-          plugins: authConfig.betterAuthPlugins || [],
+          // Pass through any additional Better Auth plugins, then append
+          // nextCookies LAST so it can write the Set-Cookie headers produced by
+          // any auth.api.* call made inside a Next.js server action into Next's
+          // cookie store. This is what makes the server-action auth forms (which
+          // call auth.api.signInEmail/signUpEmail/etc. server-side) actually
+          // persist a session. It must be the final plugin in the array.
+          plugins: [...(authConfig.betterAuthPlugins || []), nextCookies()],
         }
 
         authInstance = betterAuth(betterAuthConfig)
