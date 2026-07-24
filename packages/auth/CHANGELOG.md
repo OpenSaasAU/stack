@@ -1,5 +1,57 @@
 # @opensaas/stack-auth
 
+## 0.32.0
+
+### Minor Changes
+
+- [#813](https://github.com/OpenSaasAU/stack/pull/813) [`5a6198c`](https://github.com/OpenSaasAU/stack/commit/5a6198c9489641e4b1ad542a3181c15e750f7d85) Thanks [@borisno2](https://github.com/borisno2)! - Auth forms now submit through app-owned server actions instead of the browser `authClient`
+
+  The pre-built auth forms (`SignInForm`, `SignUpForm`, `ForgotPasswordForm`, and the new
+  `ResetPasswordForm`) no longer take an `authClient` prop that calls `/api/auth/*` from the
+  browser. Instead each form takes **server action** props — `'use server'` functions the app
+  defines against its own `auth` instance. This keeps the auth network surface server-side and
+  matches the app's existing `lib/actions/*` convention. `createAuth` now auto-adds
+  better-auth's `nextCookies` plugin, so the session cookie set inside a server action persists.
+  See ADR-0020.
+
+  The package exports the action contract types (`AuthActionResult`, `SignInInput`,
+  `SignUpInput`, `RequestPasswordResetInput`, `ResetPasswordInput`, and the action aliases).
+  `createClient` is unchanged for client-side session reading (`useSession`).
+
+  Migration — define the actions in your app and pass them to the forms:
+
+  ```typescript
+  // lib/actions/auth.ts
+  'use server'
+  import { headers } from 'next/headers'
+  import { auth } from '@/lib/auth'
+  import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
+
+  export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+    try {
+      await auth.api.signInEmail({
+        body: { email: input.email, password: input.password },
+        headers: await headers(),
+      })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Sign in failed' }
+    }
+  }
+  ```
+
+  ```tsx
+  // Before
+  <SignInForm authClient={authClient} redirectTo="/admin" />
+
+  // After
+  <SignInForm signInAction={signInAction} redirectTo="/admin" />
+  ```
+
+  Social sign-in becomes a redirecting server action passed as `signInSocialAction`. The CLI
+  feature-generator now scaffolds `lib/actions/auth.ts` and a `reset-password` page, and no
+  longer emits `lib/auth-client.ts`.
+
 ## 0.31.1
 
 ## 0.31.0
