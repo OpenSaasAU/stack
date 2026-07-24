@@ -72,6 +72,10 @@ _Avoid_: auth tables, auth models, auth schema
 The better-auth-owned record of who a session belongs to (the better-auth user). Separate from, and not assumed to be, the application's own domain User; an app links the two itself when it needs to.
 _Avoid_: auth user, principal, account
 
+**Auth action**:
+An app-owned `'use server'` function that runs an authentication mutation (sign in, sign up, request/perform password reset, social sign-in) by calling better-auth's server API directly against the app's own auth instance. The pre-built auth forms invoke Auth actions passed as props — one prop per concern — instead of the browser calling the `/api/auth/*` endpoints; the auth instance therefore never leaves the server, and the package owns only the form components and the actions' contract types, never the actions themselves.
+_Avoid_: auth handler, form action, authClient call
+
 ### Storage
 
 **Storage provider**:
