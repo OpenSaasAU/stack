@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   IMAGE_COLUMN_PARTS,
   FILE_COLUMN_PARTS,
+  DEFAULT_FILE_COLUMN_PARTS,
   keystoneImageColumnMap,
   keystoneFileColumnMap,
   resolveImageColumnMap,
@@ -36,6 +37,8 @@ describe('multi-column mapper', () => {
         filename: 'doc_filename',
         filesize: 'doc_filesize',
         url: 'doc_url',
+        pathname: 'doc_pathname',
+        contentType: 'doc_contentType',
       })
     })
 
@@ -78,9 +81,24 @@ describe('multi-column mapper', () => {
       expect(byName.image_contentType).toBe('String')
     })
 
-    it('emits three file columns with @map names', () => {
+    it('emits three file columns by default (no regression)', () => {
       const descriptors = fileColumnDescriptors(keystoneFileColumnMap('doc'))
       expect(descriptors.map((d) => d.map)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
+    })
+
+    it('opts into pathname/contentType extras via an explicit parts list', () => {
+      const map = keystoneFileColumnMap('doc')
+      const descriptors = fileColumnDescriptors(map, FILE_COLUMN_PARTS)
+      expect(descriptors.map((d) => d.map)).toEqual([
+        'doc_filename',
+        'doc_filesize',
+        'doc_url',
+        'doc_pathname',
+        'doc_contentType',
+      ])
+      const byName = Object.fromEntries(descriptors.map((d) => [d.map, d.type]))
+      expect(byName.doc_pathname).toBe('String')
+      expect(byName.doc_contentType).toBe('String')
     })
 
     it('lists column names for read stripping', () => {
@@ -90,8 +108,13 @@ describe('multi-column mapper', () => {
         'doc_filesize',
         'doc_url',
       ])
+      expect(fileColumnNames(keystoneFileColumnMap('doc'), ['pathname', 'contentType'])).toEqual([
+        'doc_pathname',
+        'doc_contentType',
+      ])
       expect(IMAGE_COLUMN_PARTS).toHaveLength(7)
-      expect(FILE_COLUMN_PARTS).toHaveLength(3)
+      expect(FILE_COLUMN_PARTS).toHaveLength(5)
+      expect(DEFAULT_FILE_COLUMN_PARTS).toEqual(['filename', 'filesize', 'url'])
     })
   })
 
@@ -259,6 +282,128 @@ describe('multi-column mapper', () => {
         doc_filesize: null,
         doc_url: null,
       })
+    })
+
+    it('does not read/write pathname/contentType columns when not opted in', () => {
+      const row = {
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+        doc_pathname: 'blobs/report.pdf',
+        doc_contentType: 'application/pdf',
+      }
+      const meta = assembleFileMetadata(row, map, 'documents')
+      expect(meta?.metadata).toBeUndefined()
+      expect(splitFileMetadata(meta, map)).toEqual({
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+      })
+    })
+  })
+
+  describe('file pathname/contentType extras (opt-in)', () => {
+    const map = keystoneFileColumnMap('doc')
+    const parts = FILE_COLUMN_PARTS
+
+    it('assembles pathname/contentType columns into metadata.metadata', () => {
+      const row = {
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+        doc_pathname: 'blobs/report.pdf',
+        doc_contentType: 'application/pdf',
+      }
+      const meta = assembleFileMetadata(row, map, 'documents', parts)
+      expect(meta).toEqual({
+        filename: 'report.pdf',
+        originalFilename: 'report.pdf',
+        url: 'https://cdn/report.pdf',
+        mimeType: 'application/octet-stream',
+        size: 4096,
+        uploadedAt: '',
+        storageProvider: 'documents',
+        metadata: { pathname: 'blobs/report.pdf', contentType: 'application/pdf' },
+      })
+    })
+
+    it('round-trips columns → metadata → columns with the extras included', () => {
+      const row = {
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+        doc_pathname: 'blobs/report.pdf',
+        doc_contentType: 'application/pdf',
+      }
+      const meta = assembleFileMetadata(row, map, 'documents', parts)
+      expect(splitFileMetadata(meta, map, parts)).toEqual(row)
+    })
+
+    it('assembles with only one extra present (contentType absent from metadata)', () => {
+      const meta = assembleFileMetadata(
+        {
+          doc_filename: 'report.pdf',
+          doc_filesize: 4096,
+          doc_url: 'https://cdn/report.pdf',
+          doc_pathname: 'blobs/report.pdf',
+        },
+        map,
+        'documents',
+        parts,
+      )
+      expect(meta?.metadata).toEqual({ pathname: 'blobs/report.pdf' })
+    })
+
+    it('assembles with neither extra present — no metadata bag at all', () => {
+      const meta = assembleFileMetadata(
+        { doc_filename: 'report.pdf', doc_filesize: 4096, doc_url: 'https://cdn/report.pdf' },
+        map,
+        'documents',
+        parts,
+      )
+      expect(meta?.metadata).toBeUndefined()
+    })
+
+    it('splits a FileMetadata without the extras into null columns (clearing them)', () => {
+      const meta = assembleFileMetadata(
+        { doc_filename: 'report.pdf', doc_filesize: 4096, doc_url: 'https://cdn/report.pdf' },
+        map,
+        'documents',
+      )
+      expect(splitFileMetadata(meta, map, parts)).toEqual({
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+        doc_pathname: null,
+        doc_contentType: null,
+      })
+    })
+
+    it('splits null metadata into all-null columns including the extras', () => {
+      expect(splitFileMetadata(null, map, parts)).toEqual({
+        doc_filename: null,
+        doc_filesize: null,
+        doc_url: null,
+        doc_pathname: null,
+        doc_contentType: null,
+      })
+    })
+
+    it('honours per-part @map overrides for the extras', () => {
+      const custom = resolveFileColumnMap('doc', { pathname: 'doc_blob_path' })
+      const row = {
+        doc_filename: 'report.pdf',
+        doc_filesize: 4096,
+        doc_url: 'https://cdn/report.pdf',
+        doc_blob_path: 'blobs/report.pdf',
+        doc_contentType: 'application/pdf',
+      }
+      const meta = assembleFileMetadata(row, custom, 'documents', parts)
+      expect(meta?.metadata).toEqual({
+        pathname: 'blobs/report.pdf',
+        contentType: 'application/pdf',
+      })
+      expect(splitFileMetadata(meta, custom, parts)).toEqual(row)
     })
   })
 

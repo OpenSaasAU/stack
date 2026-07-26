@@ -10,6 +10,7 @@ import type { FileValidationOptions } from '../utils/upload.js'
 import {
   assembleFileMetadata,
   assembleImageMetadata,
+  DEFAULT_FILE_COLUMN_PARTS,
   fileColumnDescriptors,
   fileColumnNames,
   imageColumnDescriptors,
@@ -19,6 +20,7 @@ import {
   splitFileMetadata,
   splitImageMetadata,
   type FileColumnMap,
+  type FileColumnPart,
   type ImageColumnMap,
 } from '../utils/multi-column.js'
 
@@ -61,8 +63,15 @@ export interface FileDbConfig {
    * Enable multi-column mode by setting `'keystone'`. Per-part column-name
    * overrides may be supplied; any omitted part falls back to the Keystone
    * default `<field>_<part>`.
+   *
+   * By default only `filename`/`filesize`/`url` are emitted. Pass `parts` to
+   * additionally opt into the `pathname`/`contentType` Keystone-parity
+   * extras (e.g. `parts: FILE_COLUMN_PARTS` for all five, or a custom subset)
+   * — see {@link FILE_COLUMN_PARTS} / {@link DEFAULT_FILE_COLUMN_PARTS}.
    */
-  columns?: 'keystone' | { mode: 'keystone'; map?: Partial<FileColumnMap> }
+  columns?:
+    | 'keystone'
+    | { mode: 'keystone'; map?: Partial<FileColumnMap>; parts?: readonly FileColumnPart[] }
 }
 
 /** Whether a field-level `db.columns` option requests multi-column mode. */
@@ -79,6 +88,11 @@ function imageColumnOverrides(
 
 function fileColumnOverrides(columns: FileDbConfig['columns']): Partial<FileColumnMap> | undefined {
   return typeof columns === 'object' ? columns.map : undefined
+}
+
+/** The file parts a field-level `db.columns` option opts into (defaults to the base three). */
+function fileColumnPartsFor(columns: FileDbConfig['columns']): readonly FileColumnPart[] {
+  return typeof columns === 'object' && columns.parts ? columns.parts : DEFAULT_FILE_COLUMN_PARTS
 }
 
 /**
@@ -206,6 +220,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
   const multiColumn = isMultiColumn(options.db?.columns)
   const columnMapFor = (fieldName: string): FileColumnMap =>
     resolveFileColumnMap(fieldName, fileColumnOverrides(options.db?.columns))
+  const fileParts: readonly FileColumnPart[] = fileColumnPartsFor(options.db?.columns)
 
   const fieldConfig: FileFieldConfig<TTypeInfo> = {
     type: 'file',
@@ -338,7 +353,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
   if (multiColumn) {
     fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
       const map = columnMapFor(fieldName)
-      return fileColumnDescriptors(map).map((col) => ({
+      return fileColumnDescriptors(map, fileParts).map((col) => ({
         name: col.name,
         type: col.type,
         modifiers: '?',
@@ -346,11 +361,11 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
       }))
     }
     fieldConfig.getColumnNames = (fieldName: string): string[] =>
-      fileColumnNames(columnMapFor(fieldName))
+      fileColumnNames(columnMapFor(fieldName), fileParts)
     fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
-      assembleFileMetadata(row, columnMapFor(fieldName), fieldConfig.storage)
+      assembleFileMetadata(row, columnMapFor(fieldName), fieldConfig.storage, fileParts)
     fieldConfig.splitColumns = (fieldName: string, value: unknown): Record<string, unknown> =>
-      splitFileMetadata((value ?? null) as FileMetadata | null, columnMapFor(fieldName))
+      splitFileMetadata((value ?? null) as FileMetadata | null, columnMapFor(fieldName), fileParts)
   }
 
   return fieldConfig

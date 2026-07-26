@@ -22,9 +22,14 @@ export type ImageColumnPart =
   'url' | 'width' | 'height' | 'filesize' | 'contentType' | 'contentDisposition' | 'pathname'
 
 /**
- * The logical "parts" of a Keystone file field.
+ * The logical "parts" of a Keystone file field. `pathname` and `contentType`
+ * are optional Keystone-parity extras (mirroring the equivalent `image()`
+ * parts) for projects whose legacy `file` field emits extra columns — e.g. a
+ * content-sniffed MIME type distinct from the public `url`, or a storage
+ * provider's blob pathname. They are not emitted unless explicitly opted into
+ * (see {@link DEFAULT_FILE_COLUMN_PARTS}).
  */
-export type FileColumnPart = 'filename' | 'filesize' | 'url'
+export type FileColumnPart = 'filename' | 'filesize' | 'url' | 'pathname' | 'contentType'
 
 /** Ordered list of image parts, matching Keystone's column layout. */
 export const IMAGE_COLUMN_PARTS: readonly ImageColumnPart[] = [
@@ -37,8 +42,27 @@ export const IMAGE_COLUMN_PARTS: readonly ImageColumnPart[] = [
   'pathname',
 ] as const
 
-/** Ordered list of file parts, matching Keystone's column layout. */
-export const FILE_COLUMN_PARTS: readonly FileColumnPart[] = ['filename', 'filesize', 'url'] as const
+/** Ordered list of every file part multi-column mode can emit. */
+export const FILE_COLUMN_PARTS: readonly FileColumnPart[] = [
+  'filename',
+  'filesize',
+  'url',
+  'pathname',
+  'contentType',
+] as const
+
+/**
+ * The file parts emitted by default (unchanged since multi-column mode was
+ * introduced). `pathname` and `contentType` are additive-only extras — a
+ * field must explicitly opt into them via `db.columns.parts` to emit those
+ * columns, so existing multi-column `file()` configs keep their exact
+ * three-column shape.
+ */
+export const DEFAULT_FILE_COLUMN_PARTS: readonly FileColumnPart[] = [
+  'filename',
+  'filesize',
+  'url',
+] as const
 
 /** The Prisma scalar type each image part is stored as. */
 const IMAGE_PART_PRISMA_TYPE: Record<ImageColumnPart, 'String' | 'Int'> = {
@@ -56,6 +80,8 @@ const FILE_PART_PRISMA_TYPE: Record<FileColumnPart, 'String' | 'Int'> = {
   filename: 'String',
   filesize: 'Int',
   url: 'String',
+  pathname: 'String',
+  contentType: 'String',
 }
 
 /**
@@ -107,6 +133,8 @@ export function keystoneFileColumnMap(fieldName: string): FileColumnMap {
     filename: `${fieldName}_filename`,
     filesize: `${fieldName}_filesize`,
     url: `${fieldName}_url`,
+    pathname: `${fieldName}_pathname`,
+    contentType: `${fieldName}_contentType`,
   }
 }
 
@@ -160,9 +188,15 @@ export function imageColumnDescriptors(map: ImageColumnMap): MultiColumnDescript
 
 /**
  * Describe the physical columns a file field emits in multi-column mode.
+ * `parts` defaults to {@link DEFAULT_FILE_COLUMN_PARTS} — pass
+ * {@link FILE_COLUMN_PARTS} (or a custom subset) to opt into the
+ * `pathname`/`contentType` Keystone-parity extras.
  */
-export function fileColumnDescriptors(map: FileColumnMap): MultiColumnDescriptor[] {
-  return FILE_COLUMN_PARTS.map((part) => ({
+export function fileColumnDescriptors(
+  map: FileColumnMap,
+  parts: readonly FileColumnPart[] = DEFAULT_FILE_COLUMN_PARTS,
+): MultiColumnDescriptor[] {
+  return parts.map((part) => ({
     name: filePartFieldName(map, part),
     type: FILE_PART_PRISMA_TYPE[part],
     map: map[part],
@@ -174,9 +208,16 @@ export function imageColumnNames(map: ImageColumnMap): string[] {
   return IMAGE_COLUMN_PARTS.map((part) => imagePartFieldName(map, part))
 }
 
-/** The physical column field names a file field owns (for read stripping). */
-export function fileColumnNames(map: FileColumnMap): string[] {
-  return FILE_COLUMN_PARTS.map((part) => filePartFieldName(map, part))
+/**
+ * The physical column field names a file field owns (for read stripping).
+ * `parts` defaults to {@link DEFAULT_FILE_COLUMN_PARTS}, matching
+ * {@link fileColumnDescriptors}.
+ */
+export function fileColumnNames(
+  map: FileColumnMap,
+  parts: readonly FileColumnPart[] = DEFAULT_FILE_COLUMN_PARTS,
+): string[] {
+  return parts.map((part) => filePartFieldName(map, part))
 }
 
 /** Coerce an unknown column value to a string, or `null` when absent/empty. */
@@ -289,11 +330,20 @@ export function splitImageMetadata(
 /**
  * Assemble the per-part file columns from a database row into a
  * {@link FileMetadata}. Returns `null` when no file is present.
+ *
+ * `parts` defaults to {@link DEFAULT_FILE_COLUMN_PARTS}. When the optional
+ * `pathname`/`contentType` extras are included, their column values are
+ * preserved via `metadata.metadata.pathname` / `metadata.metadata.contentType`
+ * — mirroring how {@link assembleImageMetadata} round-trips
+ * `contentDisposition` — since neither is a native top-level `FileMetadata`
+ * field (unlike `image()`, `file()`'s `mimeType` is not sourced from a
+ * multi-column part).
  */
 export function assembleFileMetadata(
   row: Record<string, unknown>,
   map: FileColumnMap,
   storageProvider: string,
+  parts: readonly FileColumnPart[] = DEFAULT_FILE_COLUMN_PARTS,
 ): FileMetadata | null {
   const url = asString(row[map.url])
   const filename = asString(row[map.filename])
@@ -305,7 +355,7 @@ export function assembleFileMetadata(
 
   const resolvedFilename = filename ?? url ?? ''
 
-  return {
+  const metadata: FileMetadata = {
     filename: resolvedFilename,
     originalFilename: resolvedFilename,
     url: url ?? '',
@@ -314,27 +364,65 @@ export function assembleFileMetadata(
     uploadedAt: '',
     storageProvider,
   }
+
+  const extra: Record<string, string> = {}
+  if (parts.includes('pathname')) {
+    const pathname = asString(row[map.pathname])
+    if (pathname !== null) extra.pathname = pathname
+  }
+  if (parts.includes('contentType')) {
+    const contentType = asString(row[map.contentType])
+    if (contentType !== null) extra.contentType = contentType
+  }
+  if (Object.keys(extra).length > 0) {
+    metadata.metadata = extra
+  }
+
+  return metadata
 }
 
 /**
  * Split a {@link FileMetadata} (or `null`) back into the per-part file columns
  * for writing. A `null`/`undefined` metadata clears every column.
+ *
+ * `parts` defaults to {@link DEFAULT_FILE_COLUMN_PARTS}. When the optional
+ * `pathname`/`contentType` extras are included, their values are read from
+ * `metadata.metadata.pathname` / `metadata.metadata.contentType` (falling
+ * back to `null`, clearing the column, when absent).
  */
 export function splitFileMetadata(
   metadata: FileMetadata | null | undefined,
   map: FileColumnMap,
+  parts: readonly FileColumnPart[] = DEFAULT_FILE_COLUMN_PARTS,
 ): Record<string, string | number | null> {
+  const columns: Record<string, string | number | null> = {
+    [map.filename]: null,
+    [map.filesize]: null,
+    [map.url]: null,
+  }
+  if (parts.includes('pathname')) columns[map.pathname] = null
+  if (parts.includes('contentType')) columns[map.contentType] = null
+
   if (metadata === null || metadata === undefined) {
-    return {
-      [map.filename]: null,
-      [map.filesize]: null,
-      [map.url]: null,
-    }
+    return columns
   }
 
-  return {
-    [map.filename]: metadata.filename ?? null,
-    [map.filesize]: metadata.size ?? null,
-    [map.url]: metadata.url ?? null,
+  columns[map.filename] = metadata.filename ?? null
+  columns[map.filesize] = metadata.size ?? null
+  columns[map.url] = metadata.url ?? null
+
+  if (parts.includes('pathname')) {
+    columns[map.pathname] =
+      metadata.metadata && typeof metadata.metadata.pathname === 'string'
+        ? metadata.metadata.pathname
+        : null
   }
+  if (parts.includes('contentType')) {
+    columns[map.contentType] =
+      metadata.metadata && typeof metadata.metadata.contentType === 'string'
+        ? metadata.metadata.contentType
+        : null
+  }
+
+  return columns
 }
