@@ -71,29 +71,32 @@ export async function prepareItemForm(
   // fetch that always unions the item's currently-selected id(s) so their
   // label renders even outside the window.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    const fieldConfigAny = fieldConfig as { type: string; ref?: string; many?: boolean }
-    if (fieldConfigAny.type === 'relationship') {
-      const ref = fieldConfigAny.ref
-      if (ref) {
-        // Parse ref format: "ListName.fieldName"
-        const relatedListName = ref.split('.')[0]
+  const relationshipFields = Object.entries(listConfig.fields).filter(
+    ([, fieldConfig]) => (fieldConfig as { type: string }).type === 'relationship',
+  ) as Array<[string, { type: string; ref?: string; many?: boolean }]>
 
-        if (config.lists[relatedListName]) {
-          try {
-            relationshipData[fieldName] = await getRelationshipOptions(
-              context,
-              config,
-              relatedListName,
-              { selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many) },
-            )
-          } catch (error) {
-            console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
-            relationshipData[fieldName] = []
-          }
-        }
+  const relationshipResults = await Promise.all(
+    relationshipFields.map(async ([fieldName, fieldConfigAny]) => {
+      const ref = fieldConfigAny.ref
+      if (!ref) return null
+      // Parse ref format: "ListName.fieldName"
+      const relatedListName = ref.split('.')[0]
+      if (!config.lists[relatedListName]) return null
+
+      try {
+        const options = await getRelationshipOptions(context, config, relatedListName, {
+          selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many),
+        })
+        return [fieldName, options] as const
+      } catch (error) {
+        console.error(`Failed to fetch relationship items for ${fieldName}:`, error)
+        return [fieldName, []] as const
       }
-    }
+    }),
+  )
+
+  for (const result of relationshipResults) {
+    if (result) relationshipData[result[0]] = [...result[1]]
   }
 
   // Serialize field configs to remove non-serializable properties

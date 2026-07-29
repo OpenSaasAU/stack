@@ -125,6 +125,45 @@ describe('prepareItemForm', () => {
     expect(selectedIdCall.where).toEqual({ id: { in: ['t9'] } })
   })
 
+  it('fetches relationship options for multiple fields concurrently, not serially', async () => {
+    // Neither findMany ever resolves in this test. If the fetches are kicked
+    // off serially (an `await` inside a `for` loop), `tagFindMany` is never
+    // even invoked until `authorFindMany`'s promise resolves — which it
+    // never does here — so `tagCalled` would stay `false` forever. Fetching
+    // concurrently invokes both before either resolves.
+    let authorCalled = false
+    let tagCalled = false
+    let resolveAuthor!: (value: Array<Record<string, unknown>>) => void
+    let resolveTag!: (value: Array<Record<string, unknown>>) => void
+
+    const authorFindMany = vi.fn(() => {
+      authorCalled = true
+      return new Promise<Array<Record<string, unknown>>>((resolve) => {
+        resolveAuthor = resolve
+      })
+    })
+    const tagFindMany = vi.fn(() => {
+      tagCalled = true
+      return new Promise<Array<Record<string, unknown>>>((resolve) => {
+        resolveTag = resolve
+      })
+    })
+    const context = makeContext({
+      author: { findMany: authorFindMany, findFirst: vi.fn() },
+      tag: { findMany: tagFindMany, findFirst: vi.fn() },
+    })
+    const config = makeConfig()
+
+    const promise = prepareItemForm(context, config, config.lists.Post, {})
+
+    expect(authorCalled).toBe(true)
+    expect(tagCalled).toBe(true)
+
+    resolveAuthor([])
+    resolveTag([])
+    await promise
+  })
+
   it('passes no selectedIds when the relationship is empty (create mode)', async () => {
     const authorFindMany = vi.fn(async () => [])
     const context = makeContext({
