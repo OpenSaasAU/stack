@@ -142,6 +142,14 @@ _Avoid_: CSS hook, part, element selector
 The persistent shell the admin UI wraps around list and item content — navigation, page headers, user menu, dashboard framing.
 _Avoid_: layout, shell, frame
 
+**Chrome slot**:
+The seam through which a host application supplies its own Admin chrome, replacing the built-in sidebar wholesale while the admin keeps ownership of routing, the page shell, and content rendering. Supplied at the mount site, never through config — host navigation is the host's routing, not shared schema, and config cannot carry React icons (ADR-0021).
+_Avoid_: custom nav, chrome override, sidebar prop
+
+**Nav item**:
+One entry in the Admin chrome's sidebar. Built-in items are derived from the config's lists and singletons; host-supplied items are contributed through the Chrome slot's children region and render with the same active state, icon slot, count badge, and Slot contract as built-in ones.
+_Avoid_: nav link (that's the component), menu entry, sidebar item
+
 **Filter builder**:
 The list view's single query input that turns a typed query into scoped, server-executed filtering. Filter state lives in the URL, so a filtered view is shareable and survives refresh; filtering always runs through the secured context so access control is never bypassed.
 _Avoid_: search bar (that's the free-text subset), query builder
