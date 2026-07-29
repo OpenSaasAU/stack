@@ -12,6 +12,7 @@ export { RelationshipManager } from './RelationshipManager.js'
 export { FieldRenderer } from './FieldRenderer.js'
 export { FileField } from './FileField.js'
 export { ImageField } from './ImageField.js'
+export { VirtualField } from './VirtualField.js'
 
 // Shared field shell primitives (consistent label / help / error rhythm)
 export {
@@ -44,4 +45,5 @@ export type {
 export type { FieldRendererProps } from './FieldRenderer.js'
 export type { FileFieldProps } from './FileField.js'
 export type { ImageFieldProps } from './ImageField.js'
+export type { VirtualFieldProps } from './VirtualField.js'
 export type { FieldComponent, FieldComponentProps } from './registry.js'

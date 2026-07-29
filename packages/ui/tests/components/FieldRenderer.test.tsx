@@ -45,3 +45,83 @@ describe('FieldRenderer helpText wiring', () => {
     expect(findHelp(container)).toBeNull()
   })
 })
+
+/**
+ * A `virtual` field is computed and unwritable. Before issue #821 there was no
+ * registry entry for `virtual`, so `FieldRenderer` fell through to the
+ * "Unsupported field type" placeholder in both read and edit mode, and the
+ * edit form offered an (unusable) editable control for it.
+ */
+describe('FieldRenderer virtual fields', () => {
+  const fieldConfig: SerializableFieldConfig = {
+    type: 'virtual',
+    label: 'Full Name',
+    virtual: true,
+  }
+
+  it('renders the resolved value and label in read mode without the unsupported-type placeholder', () => {
+    render(
+      <FieldRenderer
+        fieldName="fullName"
+        fieldConfig={fieldConfig}
+        value="Ada Lovelace"
+        onChange={vi.fn()}
+        mode="read"
+      />,
+    )
+
+    expect(screen.getByText('Full Name')).toBeInTheDocument()
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByText(/Unsupported field type/)).not.toBeInTheDocument()
+  })
+
+  it('does not warn about a missing registered component', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    render(
+      <FieldRenderer
+        fieldName="fullName"
+        fieldConfig={fieldConfig}
+        value="Ada Lovelace"
+        onChange={vi.fn()}
+        mode="read"
+      />,
+    )
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('renders read-only (no editable input) even when asked for edit mode', () => {
+    render(
+      <FieldRenderer
+        fieldName="fullName"
+        fieldConfig={fieldConfig}
+        value="Ada Lovelace"
+        onChange={vi.fn()}
+        mode="edit"
+      />,
+    )
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('lets a per-field ui.component override still take priority over the default virtual renderer', () => {
+    function CustomVirtual({ value }: { value: unknown }) {
+      return <div data-testid="custom-virtual">custom: {String(value)}</div>
+    }
+
+    render(
+      <FieldRenderer
+        fieldName="fullName"
+        fieldConfig={{ ...fieldConfig, ui: { component: CustomVirtual } }}
+        value="Ada Lovelace"
+        onChange={vi.fn()}
+        mode="read"
+      />,
+    )
+
+    expect(screen.getByTestId('custom-virtual')).toHaveTextContent('custom: Ada Lovelace')
+  })
+})

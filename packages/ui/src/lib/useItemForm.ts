@@ -39,6 +39,15 @@ export function transformItemFormData(
       continue
     }
 
+    // Virtual fields are computed and never writable. Core already strips
+    // them before they reach Prisma, so this is defence-in-depth: a virtual
+    // field's value can reach `formData` via `initialData` (the server's
+    // resolved value for the item being edited) even though no editable
+    // control ever calls `onChange` for it.
+    if (fieldConfig.virtual) {
+      continue
+    }
+
     // Skip password fields carrying an { isSet } sentinel (unchanged password).
     if (typeof value === 'object' && value !== null && 'isSet' in value) {
       continue
@@ -86,12 +95,23 @@ export function transformInitialData<TData extends Record<string, unknown>>(
 
 /**
  * Drop system fields (id, createdAt, updatedAt) from a field-config map,
- * returning the editable entries in declaration order.
+ * returning the fields an item form should render, in declaration order.
+ *
+ * On `create` there is no item yet, so a virtual (computed) field has nothing
+ * to show — it's dropped entirely. On `update` a virtual field is kept so the
+ * form can display its resolved value read-only; `FieldRenderer` forces
+ * read-only presentation for any field config flagged `virtual`, so it never
+ * becomes an editable control (issue #821).
  */
 export function getEditableFields(
   fields: Record<string, SerializableFieldConfig>,
+  mode: ItemFormAction = 'update',
 ): Array<[string, SerializableFieldConfig]> {
-  return Object.entries(fields).filter(([key]) => !SYSTEM_FIELDS.includes(key))
+  return Object.entries(fields).filter(([key, fieldConfig]) => {
+    if (SYSTEM_FIELDS.includes(key)) return false
+    if (mode === 'create' && fieldConfig.virtual) return false
+    return true
+  })
 }
 
 /**
@@ -190,7 +210,7 @@ export function useItemForm({
     errors,
     generalError,
     isPending,
-    editableFields: getEditableFields(fields),
+    editableFields: getEditableFields(fields, mode),
     handleFieldChange,
     handleSubmit,
     setGeneralError,
