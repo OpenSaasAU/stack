@@ -37,8 +37,14 @@ test.describe('To-many relationship count columns', () => {
   }
 
   async function createPosts(page: Page, count: number, prefix: string) {
+    // Derive the slug from the per-attempt test user (its email is already
+    // unique per attempt, including Playwright retries — see generateTestUser),
+    // not just the fixed `prefix`. Post.slug is globally unique, so a retry
+    // that reused the first attempt's slugs would collide with rows the first
+    // attempt already wrote and end up asserting against its own empty state.
+    const uniquePrefix = `${prefix}-${user.email.split('@')[0]}`
     for (let i = 0; i < count; i++) {
-      await createPost(page, { title: `${prefix} ${i}`, slug: `${prefix}-${i}` })
+      await createPost(page, { title: `${prefix} ${i}`, slug: `${uniquePrefix}-${i}` })
     }
   }
 
