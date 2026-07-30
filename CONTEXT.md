@@ -15,7 +15,7 @@ A check that gates whether a session may read or write a single field, returning
 _Avoid_: column access, property access
 
 **Access Filter** (pre-query phase):
-The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see.
+The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
