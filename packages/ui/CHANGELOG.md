@@ -1,5 +1,29 @@
 # @opensaas/stack-ui
 
+## 0.33.0
+
+### Minor Changes
+
+- [#829](https://github.com/OpenSaasAU/stack/pull/829) [`7158905`](https://github.com/OpenSaasAU/stack/commit/71589058b6079f896e8c9cebca62727161493da5) Thanks [@borisno2](https://github.com/borisno2)! - Add an admin chrome slot for host-supplied navigation (ADR-0021, issue [#823](https://github.com/OpenSaasAU/stack/issues/823)).
+
+  `AdminUI` now accepts a `navigation` prop that replaces the built-in sidebar wholesale (skipping nav-count resolution), and a `navItems` prop that adds one or more links to the built-in sidebar's new children region:
+
+  ```tsx
+  // Add a link to the built-in sidebar
+  <AdminUI {...props} navItems={[{ label: 'Back to App', href: '/' }]} />
+
+  // Or replace the sidebar entirely
+  <AdminUI {...props} navigation={<MyOwnSidebar />} />
+  ```
+
+  `NavLink` is now exported from `@opensaas/stack-ui` (with `active` and `icon` optional) so host-supplied entries render identically to built-in ones, and `deriveCurrentPath` is exported to derive the same `currentPath` `AdminUI` computes internally, for host-owned chrome that needs it.
+
+### Patch Changes
+
+- [#828](https://github.com/OpenSaasAU/stack/pull/828) [`ec5dc88`](https://github.com/OpenSaasAU/stack/commit/ec5dc8892bc6c6805545339ae6aefd273190a77d) Thanks [@borisno2](https://github.com/borisno2)! - Fix virtual fields rendering "Unsupported field type: virtual" in the Admin UI item view — they now display their resolved value read-only, and are never offered as an editable control or included in create/update payloads.
+
+- [#827](https://github.com/OpenSaasAU/stack/pull/827) [`c79c556`](https://github.com/OpenSaasAU/stack/commit/c79c556198821e1a7288008e68c47cfe514fe0f2) Thanks [@borisno2](https://github.com/borisno2)! - Fix the admin item form fetching relationship options serially (N sequential round-trips before first paint). Fetches now run concurrently via `Promise.all`.
+
 ## 0.32.0
 
 ## 0.31.1
