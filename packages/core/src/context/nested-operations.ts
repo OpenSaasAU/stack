@@ -17,7 +17,6 @@ import {
 } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { applyCreateDefaults } from './apply-defaults.js'
-import { NESTED_WRITE_MAX_DEPTH } from './depth-limits.js'
 
 /**
  * Nested writes (#569 / ADR-0010).
@@ -1313,14 +1312,9 @@ export async function processNestedOperations(
   // finding) so item-/inputData-dependent field-access rules cannot diverge between
   // Phase 5 and the connect site. `undefined` is tolerated (defaults to `{}`).
   parentInputData: Record<string, unknown> | undefined = undefined,
-  depth: number = 0,
 ): Promise<NestedOpsResult> {
   const afterTasks: AfterTask[] = []
   const includeFields = new Set<string>()
-
-  if (depth >= NESTED_WRITE_MAX_DEPTH) {
-    return { data, afterTasks, includeFields }
-  }
 
   const processed: Record<string, unknown> = {}
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
+import { enumerateInvolvedLists } from '../src/context/transaction-boundary.js'
 
 /**
  * #590 / ADR-0010: transaction-boundary hooks (`beforeTransaction` /
@@ -17,12 +18,13 @@ import { text, relationship } from '../src/fields/index.js'
  * that sudo does not affect these hooks.
  */
 
-function createTxPrisma() {
+function createTxPrisma(extraTables: string[] = []) {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
     post: new Map(),
     user: new Map(),
     comment: new Map(),
   }
+  for (const table of extraTables) tables[table] = new Map()
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
 
@@ -111,6 +113,7 @@ function createTxPrisma() {
     user: makeModel('user'),
     comment: makeModel('comment'),
   }
+  for (const table of extraTables) client[table] = makeModel(table)
 
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
     const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
@@ -461,5 +464,247 @@ describe('#590 transaction-boundary hooks', () => {
     expect(created).toBeNull()
     expect(before).not.toHaveBeenCalled()
     expect(after).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * #835: `enumerateInvolvedLists`'s walk used to stop at a fixed depth cap
+ * (`MAX_DEPTH = 5`), so lists reachable only past it never entered the
+ * involved-list set and their transaction-boundary hooks silently never fired.
+ * The fix replaces the depth cap with a saturation bound computed from the
+ * CONFIG's relationship graph reachable from the top-level list: the walk
+ * stops once every (list, operation) pair it could ever find has been
+ * recorded, regardless of how deep the payload nests.
+ */
+describe('#835 enumerateInvolvedLists — saturation-bound enumeration walk', () => {
+  function chainConfigLists(length: number) {
+    const lists: Record<string, ReturnType<typeof list>> = {}
+    for (let i = 1; i <= length; i++) {
+      const name = `L${i}`
+      const fields: Record<string, ReturnType<typeof text> | ReturnType<typeof relationship>> = {
+        name: text(),
+      }
+      if (i < length) {
+        fields[`l${i + 1}`] = relationship({ ref: `L${i + 1}` })
+      }
+      lists[name] = list({ fields })
+    }
+    return lists
+  }
+
+  function chainInputData(length: number): Record<string, unknown> {
+    let payload: Record<string, unknown> = { name: `r${length}` }
+    for (let i = length - 1; i >= 1; i--) {
+      payload = { name: `r${i}`, [`l${i + 1}`]: { create: payload } }
+    }
+    return payload
+  }
+
+  it('enumerates every list in an 8-list chain, deeper than the old fixed depth cap of 5', async () => {
+    const resolvedConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: chainConfigLists(8),
+    })
+
+    const involved = enumerateInvolvedLists({
+      listName: 'L1',
+      listConfig: resolvedConfig.lists.L1,
+      operation: 'create',
+      inputData: chainInputData(8),
+      topLevelOriginalItem: undefined,
+      config: resolvedConfig,
+    })
+
+    expect(involved.map((i) => i.listKey)).toEqual(['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'])
+    expect(involved.map((i) => i.operation)).toEqual(Array(8).fill('create'))
+    // The top-level list is first and is the only one marked isTopLevel.
+    expect(involved[0].isTopLevel).toBe(true)
+    expect(involved.slice(1).every((i) => !i.isTopLevel)).toBe(true)
+  })
+
+  it('dedupes by (list, operation) when a list is nested many times in one payload', async () => {
+    const resolvedConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Parent: list({
+          fields: { name: text(), children: relationship({ ref: 'Child', many: true }) },
+        }),
+        Child: list({ fields: { name: text() } }),
+      },
+    })
+
+    const involved = enumerateInvolvedLists({
+      listName: 'Parent',
+      listConfig: resolvedConfig.lists.Parent,
+      operation: 'create',
+      inputData: {
+        name: 'p',
+        children: { create: [{ name: 'c1' }, { name: 'c2' }, { name: 'c3' }] },
+      },
+      topLevelOriginalItem: undefined,
+      config: resolvedConfig,
+    })
+
+    // Three nested Child creates collapse into a single involvement — the
+    // hooks are a per-LIST compensation bracket, not per-record.
+    expect(involved.map((i) => `${i.listKey}:${i.operation}`)).toEqual([
+      'Parent:create',
+      'Child:create',
+    ])
+  })
+
+  it('stops descending once every reachable (list, operation) pair is recorded, without inspecting payload past that point', async () => {
+    // Node self-references, so the reachable closure from Node is just
+    // {Node} — the saturation bound is 1 list * 3 operations = 3 pairs.
+    // Extra1/Extra2 are unrelated lists in the same config: if the bound were
+    // ever computed from the WHOLE config instead of the graph reachable
+    // from the write's own top-level list, the bound would be inflated to 9
+    // and this test's trap (below) would fire.
+    const resolvedConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Node: list({
+          fields: {
+            name: text(),
+            childrenA: relationship({ ref: 'Node', many: true }),
+            childrenB: relationship({ ref: 'Node', many: true }),
+          },
+        }),
+        Extra1: list({ fields: { name: text() } }),
+        Extra2: list({ fields: { name: text() } }),
+      },
+    })
+
+    // A payload entry that must NEVER be walked once the walk has saturated —
+    // reading its `childrenA` property throws, so any attempt to descend
+    // into it fails the test with a thrown error instead of relying on timing.
+    const trap: Record<string, unknown> = { name: 'trap' }
+    Object.defineProperty(trap, 'childrenA', {
+      enumerable: true,
+      get(): never {
+        throw new Error('walkNested must not descend past the saturation bound')
+      },
+    })
+
+    const involved = enumerateInvolvedLists({
+      listName: 'Node',
+      listConfig: resolvedConfig.lists.Node,
+      operation: 'create',
+      inputData: {
+        name: 'root',
+        // Completes the saturation bound: seed (Node:create) + Node:update +
+        // Node:delete = 3 pairs = the full reachable closure for Node.
+        childrenA: {
+          update: [{ where: { id: 'u1' }, data: { name: 'updated' } }],
+          delete: [{ id: 'd1' }],
+        },
+        // Processed after childrenA (insertion order) — by the time the walk
+        // reaches it, the bound is already saturated, so `trap` must never
+        // be descended into.
+        childrenB: { create: [trap] },
+      },
+      topLevelOriginalItem: undefined,
+      config: resolvedConfig,
+    })
+
+    expect(involved.map((i) => `${i.listKey}:${i.operation}`)).toEqual([
+      'Node:create',
+      'Node:update',
+      'Node:delete',
+    ])
+  })
+})
+
+/**
+ * #835 integration: the enumeration fix must not change the (separately
+ * verified, and unrelated) fact that nested writes stay access-checked at
+ * every depth — `processNestedOperations`'s own depth guard was already dead
+ * code before this fix (neither recursive call site nor the Write Pipeline
+ * ever passed a depth), so nested access control was never gated by depth and
+ * remains that way.
+ */
+describe('#835 deep nested writes remain access-checked at every depth', () => {
+  function chainLists(length: number, denyCreateAt?: number) {
+    const lists: Record<string, ReturnType<typeof list>> = {}
+    for (let i = 1; i <= length; i++) {
+      const name = `L${i}`
+      const fields: Record<string, ReturnType<typeof text> | ReturnType<typeof relationship>> = {
+        name: text(),
+      }
+      if (i < length) {
+        fields[`l${i + 1}`] = relationship({ ref: `L${i + 1}` })
+      }
+      lists[name] = list({
+        fields,
+        access: {
+          operation: {
+            query: () => true,
+            create: () => denyCreateAt !== i,
+            update: () => true,
+          },
+        },
+      })
+    }
+    return lists
+  }
+
+  function chainInputData(length: number): Record<string, unknown> {
+    let payload: Record<string, unknown> = { name: `r${length}` }
+    for (let i = length - 1; i >= 1; i--) {
+      payload = { name: `r${i}`, [`l${i + 1}`]: { create: payload } }
+    }
+    return payload
+  }
+
+  it('throws when a nested create 6 levels deep is denied, even though 6 is past the old enumeration depth cap', async () => {
+    const tables = Array.from({ length: 8 }, (_, i) => `l${i + 1}`)
+    const mock = createTxPrisma(tables)
+
+    const testConfig = config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: chainLists(8, 6),
+    })
+
+    const context = getContext(await testConfig, mock.client, { userId: '1' })
+
+    await expect(context.db.l1.create({ data: chainInputData(8) })).rejects.toThrow(
+      /access denied/i,
+    )
+
+    // Nothing was persisted — the whole write was aborted by the denial.
+    for (const table of tables) {
+      expect(mock.tables[table].size).toBe(0)
+    }
+  })
+
+  it('fires beforeTransaction/afterTransaction for every list in an 8-list chain, including the deepest', async () => {
+    const tables = Array.from({ length: 8 }, (_, i) => `l${i + 1}`)
+    const mock = createTxPrisma(tables)
+
+    const fired: string[] = []
+    const lists = chainLists(8)
+    for (const [name, listConfig] of Object.entries(lists)) {
+      listConfig.hooks = {
+        beforeTransaction: () => {
+          fired.push(`before:${name}`)
+        },
+        afterTransaction: () => {
+          fired.push(`after:${name}`)
+        },
+      }
+    }
+
+    const testConfig = config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists,
+    })
+
+    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    await context.db.l1.create({ data: chainInputData(8) })
+
+    for (let i = 1; i <= 8; i++) {
+      expect(fired).toContain(`before:L${i}`)
+      expect(fired).toContain(`after:L${i}`)
+    }
   })
 })

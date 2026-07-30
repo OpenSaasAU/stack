@@ -9,7 +9,6 @@ import {
   type TransactionOutcome,
 } from '../hooks/index.js'
 import type { WriteOperation } from './write-pipeline.js'
-import { NESTED_WRITE_MAX_DEPTH } from './depth-limits.js'
 
 /**
  * Transaction-boundary hooks (#590 / ADR-0010).
@@ -65,8 +64,47 @@ const NESTED_OP_OPERATIONS: ReadonlyArray<{ kind: string; operation: WriteOperat
   { kind: 'connectOrCreate', operation: 'create' },
 ]
 
+/** Distinct dedupe-key operations `NESTED_OP_OPERATIONS` can produce (create/update/delete). */
+const DISTINCT_OPERATION_COUNT = new Set(NESTED_OP_OPERATIONS.map((o) => o.operation)).size
+
 function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
   return fieldConfig?.type === 'relationship'
+}
+
+/**
+ * The number of distinct (listKey, operation) involvement pairs the walk
+ * could ever record starting from `startListName` — computed from the
+ * CONFIG's relationship graph (not the payload), so it bounds the walk by
+ * what the schema can reach rather than by an arbitrary depth.
+ *
+ * Used as the saturation bound: once `walkNested` has recorded this many
+ * pairs, no further pair can be new, so it stops descending. This replaces
+ * the old depth cap as the cost bound (#835) — a payload nesting the config's
+ * lists more deeply than any previous cap no longer loses their
+ * transaction-boundary hooks, while a payload that repeats the same few
+ * lists still terminates promptly instead of walking every entry.
+ */
+function countReachableInvolvementPairs(
+  startListName: string,
+  startListConfig: ListConfig<any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  config: OpenSaasConfig,
+): number {
+  const visited = new Set<string>([startListName])
+  const queue: Array<ListConfig<any>> = [startListConfig] // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    for (const fieldConfig of Object.values(current.fields)) {
+      if (!isRelationshipField(fieldConfig)) continue
+      const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
+      const related = getRelatedListConfig(relationshipField.ref, config)
+      if (!related || visited.has(related.listName)) continue
+      visited.add(related.listName)
+      queue.push(related.listConfig)
+    }
+  }
+
+  return visited.size * DISTINCT_OPERATION_COUNT
 }
 
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
@@ -115,9 +153,11 @@ function walkNested(
   config: OpenSaasConfig,
   out: InvolvedList[],
   seen: Set<string>,
-  depth: number,
+  maxPairs: number,
 ): void {
-  if (!data || depth >= NESTED_WRITE_MAX_DEPTH) return
+  // Every reachable pair is already recorded — no further recursion can add
+  // anything new, so stop instead of re-walking the rest of the payload.
+  if (!data || seen.size >= maxPairs) return
 
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
@@ -148,10 +188,12 @@ function walkNested(
         })
       }
 
+      if (seen.size >= maxPairs) return
+
       // Recurse into each nested entry's own relationship payload.
       for (const entry of entries) {
         const childData = nestedInputData(kind, entry)
-        walkNested(childData, relatedListConfig.fields, config, out, seen, depth + 1)
+        walkNested(childData, relatedListConfig.fields, config, out, seen, maxPairs)
       }
     }
   }
@@ -185,9 +227,10 @@ export function enumerateInvolvedLists(args: {
     },
   ]
   const seen = new Set<string>([`${listName}:${operation}`])
+  const maxPairs = countReachableInvolvementPairs(listName, listConfig, config)
 
   // Delete has no nested payload to walk (inputData is undefined).
-  walkNested(inputData, listConfig.fields, config, out, seen, 0)
+  walkNested(inputData, listConfig.fields, config, out, seen, maxPairs)
 
   return out
 }
