@@ -1,7 +1,7 @@
 // Main components
 export { AdminUI } from './components/AdminUI.js'
 export { Dashboard } from './components/Dashboard.js'
-export { Navigation } from './components/Navigation.js'
+export { Navigation, NavLink } from './components/Navigation.js'
 export { UserMenu } from './components/UserMenu.js'
 export { ThemeToggle } from './components/ThemeToggle.js'
 export { ThemeScript } from './components/ThemeScript.js'
@@ -79,7 +79,7 @@ export type { CellComponent, CellComponentProps } from './components/cells/index
 // Types
 export type { AdminUIProps } from './components/AdminUI.js'
 export type { DashboardProps } from './components/Dashboard.js'
-export type { NavigationProps } from './components/Navigation.js'
+export type { NavigationProps, NavLinkProps } from './components/Navigation.js'
 export type { UserMenuProps } from './components/UserMenu.js'
 export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
@@ -95,6 +95,9 @@ export type { ItemFormClientProps } from './components/ItemFormClient.js'
 export type { RelationshipTableProps } from './components/RelationshipTable.js'
 export type { RelationshipTableClientProps } from './components/RelationshipTableClient.js'
 export type { RelationshipCreateDrawerProps } from './components/RelationshipCreateDrawer.js'
+
+// Admin `currentPath` derivation (route params → nav active-state path; ADR-0021)
+export { deriveCurrentPath } from './lib/currentPath.js'
 
 // Item-view layout derivation (shape → details card + Relationship tables)
 export { deriveItemViewLayout } from './lib/deriveItemView.js'

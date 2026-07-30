@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { redirect } from 'next/navigation.js'
-import { Navigation } from './Navigation.js'
+import { Navigation, NavLink } from './Navigation.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
@@ -15,6 +15,7 @@ import {
   resolveNavCounts,
 } from '@opensaas/stack-core'
 import { compileTheme } from '../lib/theme.js'
+import { deriveCurrentPath } from '../lib/currentPath.js'
 
 export interface AdminUIProps {
   context: AccessContext<unknown>
@@ -25,6 +26,22 @@ export interface AdminUIProps {
   // Server action can return any shape depending on the list item type
   serverAction: (input: ServerActionInput) => Promise<unknown>
   onSignOut?: () => Promise<void>
+  /**
+   * Replaces the built-in sidebar wholesale (ADR-0021, the "chrome slot").
+   * `AdminUI` keeps routing, the shell, and theme compilation; it skips
+   * `resolveNavCounts` when this is supplied, since host-owned chrome resolves
+   * its own access-scoped counts. Takes precedence over `navItems` — if both
+   * are supplied, `navigation` renders and `navItems` is ignored with a
+   * development-only warning.
+   */
+  navigation?: React.ReactNode
+  /**
+   * Sugar over the built-in `Navigation`'s children region: one host-supplied
+   * nav link per entry, rendered after the Lists and Settings groups and
+   * above the footer. Ignored (with a dev-only warning) when `navigation` is
+   * also supplied.
+   */
+  navItems?: Array<{ label: string; href: string; icon?: React.ReactNode }>
 }
 
 /**
@@ -45,7 +62,15 @@ export async function AdminUI({
   basePath = '/admin',
   serverAction,
   onSignOut,
+  navigation,
+  navItems,
 }: AdminUIProps) {
+  if (process.env.NODE_ENV !== 'production' && navigation && navItems) {
+    console.warn(
+      'AdminUI: both `navigation` and `navItems` were supplied. `navigation` takes precedence and `navItems` is ignored.',
+    )
+  }
+
   // Parse route from params
   const [urlSegment, action] = params
 
@@ -53,7 +78,7 @@ export async function AdminUI({
   const listKey = urlSegment ? getListKeyFromUrl(urlSegment) : undefined
 
   // Determine current path for navigation highlighting
-  const currentPath = params.length > 0 ? `/${params.join('/')}` : ''
+  const currentPath = deriveCurrentPath(params)
 
   // Route to appropriate component
   let content: React.ReactNode
@@ -172,21 +197,32 @@ export async function AdminUI({
   // Access-scoped nav counts for opted-in lists (issue #735). Runs zero queries
   // when no list sets `ui.navCount`, so existing apps pay nothing; each count is
   // fetched through the secured `context.db`, reflecting only what this session
-  // may see.
-  const navCounts = await resolveNavCounts(context, config)
+  // may see. Skipped entirely when the chrome slot is supplied (ADR-0021) —
+  // host-owned chrome resolves its own counts, so this avoids paying twice.
+  const navCounts = navigation ? undefined : await resolveNavCounts(context, config)
+
+  const sidebar = navigation ?? (
+    <Navigation
+      context={context}
+      config={config}
+      basePath={basePath}
+      currentPath={currentPath}
+      onSignOut={onSignOut}
+      navCounts={navCounts}
+    >
+      {navItems?.map((item) => (
+        <NavLink key={item.href} href={item.href} icon={item.icon}>
+          {item.label}
+        </NavLink>
+      ))}
+    </Navigation>
+  )
 
   return (
     <>
       {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
       <div className="flex min-h-screen bg-background">
-        <Navigation
-          context={context}
-          config={config}
-          basePath={basePath}
-          currentPath={currentPath}
-          onSignOut={onSignOut}
-          navCounts={navCounts}
-        />
+        {sidebar}
         <main className="flex-1 overflow-y-auto">
           <React.Suspense fallback={fallback}>{content}</React.Suspense>
         </main>
