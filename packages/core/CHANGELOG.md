@@ -1,5 +1,31 @@
 # @opensaas/stack-core
 
+## 0.33.0
+
+### Minor Changes
+
+- [#838](https://github.com/OpenSaasAU/stack/pull/838) [`0caf680`](https://github.com/OpenSaasAU/stack/commit/0caf68007e41b69f1a5d5f74fb15df2548a559dc) Thanks [@borisno2](https://github.com/borisno2)! - **Behavior change:** reads that previously returned deeply-nested relation data unscoped now throw instead. A caller-supplied `include` nested past the Access Filter's read-include depth cap (`READ_INCLUDE_MAX_DEPTH`, 5) used to fail OPEN — the relation was fetched with no row filter and its fields were never access-checked or `resolveOutput`-processed. It now fails CLOSED: the read throws a new `AccessScopeDepthExceededError` (exported from `@opensaas/stack-core`) naming the list, relation field, and depth reached, instead of returning unscoped data.
+
+  ```typescript
+  import { AccessScopeDepthExceededError } from '@opensaas/stack-core'
+
+  try {
+    await context.db.post.findMany({
+      include: { author: { include: {/* … nested past the depth cap */} } },
+    })
+  } catch (err) {
+    if (err instanceof AccessScopeDepthExceededError) {
+      // err.listKey / err.fieldKey / err.depth — restructure into shallower reads.
+    }
+  }
+  ```
+
+  An ordinary read with no caller `include`, or one within the depth limit, is unaffected — the auto-include still stops silently at the cap, matching prior behavior. A read issued from inside a `resolveOutput`/virtual-field hook now also row-scopes its immediate relations (previously it skipped scoping entirely at that point). Field-level read access and `resolveOutput` hooks are now applied at every nesting depth on the returned rows, with no independent cap of their own. See ADR-0022 and issue [#830](https://github.com/OpenSaasAU/stack/issues/830).
+
+### Patch Changes
+
+- [#839](https://github.com/OpenSaasAU/stack/pull/839) [`1a3f51d`](https://github.com/OpenSaasAU/stack/commit/1a3f51d5837d6e5244ccf04c3d14c41c264701c3) Thanks [@borisno2](https://github.com/borisno2)! - Fix `beforeTransaction`/`afterTransaction` hooks not firing for lists reachable only past the involved-list enumeration's old fixed depth cap. These hooks now fire for every list a write touches regardless of nesting depth, so compensation logic that previously never ran will start running — that was a bug, not a contract.
+
 ## 0.32.0
 
 ## 0.31.1
