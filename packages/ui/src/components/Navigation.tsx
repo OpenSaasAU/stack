@@ -21,24 +21,28 @@ export interface NavigationProps {
    * query access is statically denied — is simply absent and renders no badge.
    */
   navCounts?: Record<string, number>
+  /**
+   * Host-supplied navigation entries (ADR-0021), rendered in a dedicated
+   * region after the Lists and Settings groups and above the footer. Absent
+   * children leaves this output unchanged — existing markup is untouched.
+   */
+  children?: React.ReactNode
 }
 
-/**
- * A single sidebar navigation link. Active links use a solid brand fill and
- * carry `aria-current="page"` (the accessible, testable active-state signal);
- * gradients are deliberately NOT used here — the spec limits them to a few
- * signature moments, so active nav is a quiet solid fill, not a glow.
- */
-function NavLink({
-  href,
-  active,
-  icon,
-  count,
-  children,
-}: {
+export interface NavLinkProps {
   href: string
-  active: boolean
-  icon: React.ReactNode
+  /**
+   * Whether this link represents the current route. Defaults to `false` —
+   * the correct default for a link leaving the mount (e.g. a host-supplied
+   * entry pointing back to the surrounding application).
+   */
+  active?: boolean
+  /**
+   * Optional icon rendered in a fixed-size box. The box is reserved even when
+   * no icon is supplied, so icon-less entries stay label-aligned with
+   * built-in entries that do have one.
+   */
+  icon?: React.ReactNode
   /**
    * Optional access-scoped record count shown as a trailing badge (issue #735).
    * `undefined` renders no badge; `0` renders a "0" badge (the list opted in and
@@ -46,7 +50,18 @@ function NavLink({
    */
   count?: number
   children: React.ReactNode
-}) {
+}
+
+/**
+ * A single sidebar navigation link. Active links use a solid brand fill and
+ * carry `aria-current="page"` (the accessible, testable active-state signal);
+ * gradients are deliberately NOT used here — the spec limits them to a few
+ * signature moments, so active nav is a quiet solid fill, not a glow.
+ *
+ * Public (ADR-0021): host-supplied nav entries import this so they render
+ * identically to built-in ones, including the `data-slot="nav-link"` handle.
+ */
+export function NavLink({ href, active = false, icon, count, children }: NavLinkProps) {
   return (
     <Link
       href={href}
@@ -94,6 +109,7 @@ export function Navigation({
   currentPath = '',
   onSignOut,
   navCounts,
+  children,
 }: NavigationProps) {
   const allLists = Object.keys(config.lists || {})
   // Split lists into standard lists (under "Lists") and singletons (under
@@ -171,6 +187,8 @@ export function Navigation({
               })}
             </>
           )}
+
+          {children}
         </div>
       </div>
 

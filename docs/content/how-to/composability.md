@@ -346,6 +346,28 @@ This provides:
 - Field-level access control
 - Relationship handling
 
+### Linking back to a host app: the chrome slot
+
+Mounting `AdminUI` at a sub-path inside a larger app (incremental adoption,
+alongside a bespoke top-level admin) needs a way for its sidebar to link back
+out. Two props cover this without reopening "swap the components inside
+AdminUI" — chrome may be replaced wholesale at the mount site, but components
+_inside_ the built-in chrome still can't be individually swapped:
+
+```tsx
+// The one-line path: add a link to the built-in sidebar
+<AdminUI {...props} navItems={[{ label: 'Back to App', href: '/' }]} />
+
+// The full-control path: supply your own sidebar entirely
+<AdminUI {...props} navigation={<MyOwnSidebar />} />
+```
+
+`navigation` replaces the sidebar wholesale (and skips the built-in nav-count
+resolution, since your own chrome resolves its own counts); `navItems` adds
+entries to the built-in one. See the [UI reference](/docs/reference/ui#admin-chrome-slot-and-navitems)
+for the full API, including the public `NavLink` component and the
+`deriveCurrentPath` helper for computing active state in your own chrome.
+
 ## Real-World Use Cases
 
 ### Use Case 1: Multi-Step Wizard

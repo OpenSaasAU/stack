@@ -141,6 +141,8 @@ export default async function AdminPage() {
 - `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
 - `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
+- `navigation?` - Replaces the built-in sidebar wholesale (see [Admin chrome slot](#admin-chrome-slot-and-navitems) below)
+- `navItems?` - Adds host-supplied links to the built-in sidebar (see below); ignored when `navigation` is also supplied
 
 **Features:**
 
@@ -150,6 +152,66 @@ export default async function AdminPage() {
 - List views with search and sorting
 - Create and edit forms
 - Delete confirmations
+
+### Admin chrome slot and `navItems`
+
+When `AdminUI` is mounted at a sub-path alongside a host application's own
+navigation, the built-in sidebar has no link back out. Two props address this
+(ADR-0021):
+
+**`navItems`** — the smallest change, for adding one or more links to the
+built-in sidebar. Each item renders as a `NavLink` after the Lists and
+Settings groups, above the footer:
+
+```tsx
+<AdminUI
+  context={context}
+  config={config}
+  serverAction={serverAction}
+  navItems={[{ label: 'Back to App', href: '/', icon: <HomeIcon className="h-4 w-4" /> }]}
+/>
+```
+
+**`navigation`** — replaces the sidebar wholesale with any React node, for
+hosts building their own chrome entirely. `AdminUI` still owns routing, the
+per-route Suspense skeletons, and theme compilation; the supplied node owns
+its own width/height like the built-in sidebar does. When `navigation` is
+supplied, `AdminUI` skips `resolveNavCounts` — host-owned chrome resolves its
+own access-scoped counts (it's already exported for this):
+
+```tsx
+import { NavLink, resolveNavCounts } from '@opensaas/stack-ui'
+import { deriveCurrentPath } from '@opensaas/stack-ui'
+
+const currentPath = deriveCurrentPath(params.admin)
+const navCounts = await resolveNavCounts(context, config)
+
+<AdminUI
+  context={context}
+  config={config}
+  serverAction={serverAction}
+  navigation={
+    <nav className="w-64 border-r p-4">
+      <NavLink href="/" icon={<HomeIcon className="h-4 w-4" />}>Back to App</NavLink>
+      <NavLink href="/admin/post" active={currentPath.startsWith('/post')} count={navCounts.Post}>
+        Posts
+      </NavLink>
+    </nav>
+  }
+/>
+```
+
+If both `navigation` and `navItems` are supplied, `navigation` wins and
+`navItems` is ignored, with a development-only console warning.
+
+`NavLink` (importable from `@opensaas/stack-ui`) is the same component the
+built-in sidebar uses, so host-supplied entries render identically — same
+active-state fill, icon box, count badge, and `data-slot="nav-link"` handle.
+Both `active` (default `false`) and `icon` are optional.
+
+`deriveCurrentPath(params)` derives the `currentPath` string `AdminUI` computes
+internally from the route params array, so host-owned chrome that needs it for
+active-state highlighting doesn't have to re-derive the rule.
 
 ### Dashboard
 
