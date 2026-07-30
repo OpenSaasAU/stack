@@ -66,11 +66,11 @@ importers:
   docs:
     dependencies:
       '@markdoc/markdoc':
-        specifier: ^0.5.7
-        version: 0.5.7(@types/react@19.2.14)(react@19.2.4)
+        specifier: ^0.5.8
+        version: 0.5.8(@types/react@19.2.14)(react@19.2.4)
       '@markdoc/next.js':
         specifier: ^0.5.0
-        version: 0.5.0(@markdoc/markdoc@0.5.7(@types/react@19.2.14)(react@19.2.4))(next@16.2.10(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
+        version: 0.5.0(@markdoc/markdoc@0.5.8(@types/react@19.2.14)(react@19.2.4))(next@16.2.10(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
       '@opensaas/stack-rag':
         specifier: workspace:*
         version: link:../packages/rag
@@ -2512,8 +2512,8 @@ packages:
     resolution: {integrity: sha512-0FOIepYR4ugPYaHwK7hDeHDkfPOBVvayt9QpvRbi2LT/h2b0GaE/gM9Gag7fsnyYyNaTZ2IGyOuVg07IYepvYQ==}
     engines: {node: '>=20.0.0'}
 
-  '@markdoc/markdoc@0.5.7':
-    resolution: {integrity: sha512-NxreNThm7foFgMMQD6zgk7rKkcFMmdC8J5r+Zn4FKoN75F5YjvwdihwF11VhrBfL3CXnD4+YG1VYwvBL+igzvw==}
+  '@markdoc/markdoc@0.5.8':
+    resolution: {integrity: sha512-U0II9ix5O96VWZXurdsw9uxwPFTurWcQyeNVTH5P7Q6kuIfTzjEy7IPJMTTmFefK7V6nRzIARi5+G6kTjuFeCQ==}
     engines: {node: '>=14.7.0'}
     peerDependencies:
       '@types/react': '*'
@@ -3960,9 +3960,6 @@ packages:
 
   '@types/linkify-it@3.0.5':
     resolution: {integrity: sha512-yg6E+u0/+Zjva+buc3EIb+29XEg4wltq7cSmd4Uc2EE/1nUVmxyzpX6gUXD0V8jIrG0r7YeOGVIbYRkxeooCtw==}
-
-  '@types/linkify-it@5.0.0':
-    resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==}
 
   '@types/lodash@4.17.24':
     resolution: {integrity: sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==}
@@ -9117,16 +9114,16 @@ snapshots:
       js-yaml: 4.3.0
       tinyglobby: 0.2.17
 
-  '@markdoc/markdoc@0.5.7(@types/react@19.2.14)(react@19.2.4)':
+  '@markdoc/markdoc@0.5.8(@types/react@19.2.14)(react@19.2.4)':
     optionalDependencies:
       '@types/linkify-it': 3.0.5
       '@types/markdown-it': 12.2.3
       '@types/react': 19.2.14
       react: 19.2.4
 
-  '@markdoc/next.js@0.5.0(@markdoc/markdoc@0.5.7(@types/react@19.2.14)(react@19.2.4))(next@16.2.10(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)':
+  '@markdoc/next.js@0.5.0(@markdoc/markdoc@0.5.8(@types/react@19.2.14)(react@19.2.4))(next@16.2.10(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)':
     dependencies:
-      '@markdoc/markdoc': 0.5.7(@types/react@19.2.14)(react@19.2.4)
+      '@markdoc/markdoc': 0.5.8(@types/react@19.2.14)(react@19.2.4)
       js-yaml: 4.1.1
       next: 16.2.10(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react: 19.2.4
@@ -10470,14 +10467,11 @@ snapshots:
   '@types/linkify-it@3.0.5':
     optional: true
 
-  '@types/linkify-it@5.0.0':
-    optional: true
-
   '@types/lodash@4.17.24': {}
 
   '@types/markdown-it@12.2.3':
     dependencies:
-      '@types/linkify-it': 5.0.0
+      '@types/linkify-it': 3.0.5
       '@types/mdurl': 2.0.0
     optional: true
 
