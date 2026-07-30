@@ -1,0 +1,22 @@
+# Access control fails closed when it cannot scope a read
+
+Both halves of the two-phase read stopped at a depth cap and **failed open**: past the cap a caller-supplied `include` was neither row-scoped nor field-filtered, so a relation returned every row of the related list with read-denied columns intact — silently, and discontinuously (correct at one nesting level, unfiltered one hop deeper). We decided that an engine that cannot compute a scope must **deny**, never pass through: a caller include deeper than the Access Filter can scope throws a dedicated error, and the Field Visibility phase drops its depth cap entirely so everything fetched is field-filtered by construction.
+
+The overloaded signal was the root cause. `buildIncludeWithAccessControl` returned `undefined` for three unrelated outcomes — "inside a `resolveOutput` context", "at the depth cap", and "this list has no relationships" — and `mergeIncludeWithAccessControl` treated all three as "nothing to merge against, pass the caller's include through". Passthrough is right for the third and wrong for the second. That distinction now lives in the type system as a discriminated result (`scoped` / `nothing-to-scope` / `depth-exceeded`) rather than in a comment.
+
+## Considered Options
+
+- **Drop the relation silently at the boundary**: consistent with Silent failure, and never turns a working page into a crash. Rejected as the default because Silent failure exists to avoid leaking row _existence_ to end users, which is not what happens here — a caller include the engine cannot scope is a programming error, and silently returning less data than asked for trades a silent leak for a silent hole.
+- **Keep the passthrough but make it observable** (warn or flag the result): the reporter's fallback if compatibility demanded it. Rejected — a warning does not stop the leak, and the release is a security fix.
+- **Remove the read-path cap entirely**, letting the cycle guard bound the walk: tempting, since the guard (not the cap) is what actually prevents infinite recursion — the `// Prevent infinite recursion` comment predates it. Rejected because the cap still bounds include _cost_ on wide schemas; it is a performance limit, and it is now honest about being one.
+- **A single shared `MAX_DEPTH`** across the four sites that declare one: rejected. Read-include nesting and nested-**write** payload depth are different quantities with no reason to move together. Two named constants, each documenting its own security implication.
+- **Reuse `ValidationError`** for the throw: rejected — this is not a validation failure of user input, and conflating them means handlers written for bad form data would swallow a security-relevant limit.
+
+## Consequences
+
+- **This is a behaviour change, not only a fix.** Reads that previously returned deeply-nested data now throw. That is intended: the data they returned was unscoped. Released versions (≤ 0.32.0) are affected.
+- The auto-include stopping at the cap stays **silent** — nothing unscoped is returned there, the relation is simply not fetched. Only a caller-supplied include that exceeds the cap throws, because only the caller can be told it asked for something the engine cannot honour.
+- The `resolveOutput`/virtual-field guard is narrowed from "compute no include" to "do not expand": relations read inside a hook are still scoped with their `where`, they are just not recursively auto-included. Loop prevention is unaffected — scoping adds a filter, not an include — and this closes the same fail-open at the first hop, where it was far more reachable than the depth cap.
+- Field Visibility no longer has a depth cap. It walks a materialized, finite, acyclic result tree whose depth is already bounded by the include the pre-query phase permitted, so the two phases can no longer disagree about how deep they filter. This is the mechanism by which "scoped rows with unfiltered fields" becomes impossible rather than merely aligned.
+- ADR-0001 stands unchanged. It records why the two phases cannot be merged; it was silent on what either phase does when it cannot compute a result. That silence is what this record fills.
+- The write path has the same shape of fail-open — `processNestedOperations` returns caller data unprocessed past its cap, and the Write Pipeline persists it — tracked separately rather than folded in here, so a verified read-path security fix is not held up by an unverified write-path change.
