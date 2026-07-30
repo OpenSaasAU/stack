@@ -7,6 +7,7 @@ import {
   buildIncludeWithAccessControl,
   mergeIncludeWithAccessControl,
   stripVirtualFieldsFromInclude,
+  toPrismaInclude,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -994,15 +995,19 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       // MERGE (not replace) a caller-supplied include with the access-controlled
       // include: the caller selects WHICH relations to fetch, access control
       // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
-      // caller include) still uses the access-controlled include directly.
+      // caller include) still uses the access-controlled include directly. A
+      // caller include naming a relation past the depth the engine can scope
+      // throws `AccessScopeDepthExceededError` (issue #830) rather than being
+      // returned unscoped.
       include = args.include
         ? mergeIncludeWithAccessControl(
             args.include,
             accessControlledInclude,
             listConfig.fields,
             config,
+            listName,
           )
-        : accessControlledInclude
+        : toPrismaInclude(accessControlledInclude)
     }
 
     // Virtual fields have no database column. Whichever path produced
@@ -1128,15 +1133,19 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       // MERGE (not replace) a caller-supplied include with the access-controlled
       // include: the caller selects WHICH relations to fetch, access control
       // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
-      // caller include) still uses the access-controlled include directly.
+      // caller include) still uses the access-controlled include directly. A
+      // caller include naming a relation past the depth the engine can scope
+      // throws `AccessScopeDepthExceededError` (issue #830) rather than being
+      // returned unscoped.
       include = args?.include
         ? mergeIncludeWithAccessControl(
             args.include,
             accessControlledInclude,
             listConfig.fields,
             config,
+            listName,
           )
-        : accessControlledInclude
+        : toPrismaInclude(accessControlledInclude)
     }
 
     // Virtual fields have no database column. Whichever path produced
@@ -1445,7 +1454,7 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Try to find the record
     const item = await model.findFirst({
       where,
-      include: accessControlledInclude,
+      include: toPrismaInclude(accessControlledInclude),
     })
 
     // If record exists, return it

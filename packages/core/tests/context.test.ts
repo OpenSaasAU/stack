@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { defineFragment } from '../src/query/index.js'
 import { virtual } from '../src/fields/index.js'
+import { AccessScopeDepthExceededError } from '../src/access/index.js'
+import { READ_INCLUDE_MAX_DEPTH } from '../src/access/depth-limits.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
 describe('getContext', () => {
@@ -1425,20 +1427,19 @@ describe('getContext', () => {
         expect(call.include).toEqual({ posts: true })
       })
 
-      // Regression: when buildIncludeWithAccessControl returns `undefined` (a
-      // NON-denial outcome), the caller include must PASS THROUGH unchanged
-      // rather than every declared relation being silently dropped. The original
-      // #566 merge treated `undefined` as "all relations denied" (fail-closed
-      // data loss). `undefined` is returned in three non-denial cases:
-      //   1. inside a resolveOutput hook / virtual-field context,
-      //   2. at MAX_DEPTH,
-      //   3. when a list has no relationships.
-      describe('passes caller include through when no access include is computed', () => {
+      // Regression for issue #830: a read issued from inside a `resolveOutput`
+      // hook used to lose relation row scoping ENTIRELY — `buildIncludeWithAccessControl`
+      // returned a whole-object `undefined` for the inner read (any
+      // `_resolveOutputCounter.depth > 0`), which `mergeIncludeWithAccessControl`
+      // treated as "nothing to merge against" and passed the caller's include
+      // through completely unscoped. The fix scopes each immediate relation with
+      // its own access `where` while still not auto-EXPANDING into that
+      // relation's own nested relations (preserving the original loop-prevention
+      // — see the self-referential coverage in `access-filter.test.ts`).
+      describe('scopes (without expanding) a caller include used inside a resolveOutput hook (#830)', () => {
         // Build an Author config with a virtual field whose resolveOutput issues a
         // read WITH an explicit include. While that hook runs,
-        // _resolveOutputCounter.depth > 0, so buildIncludeWithAccessControl
-        // returns undefined for the inner read — exercising the
-        // `accessControlledInclude === undefined` passthrough path.
+        // _resolveOutputCounter.depth > 0.
         function configWithResolveOutputProbe(
           callerInclude: Record<string, unknown>,
           capture: (include: unknown) => void,
@@ -1467,7 +1468,7 @@ describe('getContext', () => {
           }
         }
 
-        it('findUnique inside a resolveOutput hook keeps the caller include (not dropped)', async () => {
+        it('findUnique inside a resolveOutput hook row-scopes the relation instead of dropping the where', async () => {
           let innerIncludeSeen: unknown
           const hookConfig = configWithResolveOutputProbe({ post: true }, (include) => {
             innerIncludeSeen = include
@@ -1479,12 +1480,12 @@ describe('getContext', () => {
           const context = await getContext(hookConfig, relPrisma, null)
           await context.db.author.findUnique({ where: { id: 'a1' } })
 
-          // The caller include `{ post: true }` survives: the declared `post`
-          // relation is NOT dropped despite the access include being undefined here.
-          expect(innerIncludeSeen).toEqual({ post: true })
+          // `post` is still fetched (not dropped) but now carries Post's own
+          // query-access `where` — it is no longer a bare, unscoped `true`.
+          expect(innerIncludeSeen).toEqual({ post: { where: { status: { equals: 'published' } } } })
         })
 
-        it('findMany inside a resolveOutput hook passes a NESTED caller include through whole', async () => {
+        it('findMany inside a resolveOutput hook scopes the relation but does not auto-expand its nested include', async () => {
           let innerIncludeSeen: unknown
           const hookConfig = configWithResolveOutputProbe(
             { post: { include: { author: true } } },
@@ -1499,15 +1500,96 @@ describe('getContext', () => {
           const context = await getContext(hookConfig, relPrisma, null)
           await context.db.author.findMany()
 
-          // The whole nested caller include passes through untouched (no access
-          // include exists to merge against in resolveOutput context).
-          expect(innerIncludeSeen).toEqual({ post: { include: { author: true } } })
+          // The caller's own nested selection (`post.include.author`) is honoured
+          // as-is (access control does not auto-descend further here), while
+          // `post` itself picks up its access `where`.
+          expect(innerIncludeSeen).toEqual({
+            post: { where: { status: { equals: 'published' } }, include: { author: true } },
+          })
+        })
+      })
+
+      // Regression for issue #830: a caller `include` nested deeper than the
+      // Access Filter can scope used to be returned unscoped rather than
+      // denied. This exercises the fix end-to-end through `context.db`,
+      // matching the reproduction in the issue: a chain of lists deep enough
+      // to cross `READ_INCLUDE_MAX_DEPTH`, read as a non-privileged session.
+      describe('fail-closed at the read-include depth cap through context.db (#830)', () => {
+        function chainListConfig(count: number): OpenSaasConfig['lists'] {
+          const lists: OpenSaasConfig['lists'] = {}
+          for (let i = 0; i < count; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+            const fields: Record<string, any> = { name: { type: 'text' } }
+            if (i < count - 1) fields.next = { type: 'relationship', ref: `C${i + 1}.prev` }
+            if (i > 0) fields.prev = { type: 'relationship', ref: `C${i - 1}.next` }
+            lists[`C${i}`] = {
+              fields,
+              access: {
+                operation: { query: () => (i === 0 ? true : { ownerId: { equals: `C${i}` } }) },
+              },
+            }
+          }
+          return lists
+        }
+
+        // A caller include selecting `next` `hops` more times, ending bare.
+        function nestedCallerInclude(hops: number): Record<string, unknown> {
+          if (hops <= 0) return true as unknown as Record<string, unknown>
+          return { include: { next: nestedCallerInclude(hops - 1) } }
+        }
+
+        it('throws AccessScopeDepthExceededError for a caller include one hop past the cap', async () => {
+          const chainLength = READ_INCLUDE_MAX_DEPTH + 2
+          const chainConfig: OpenSaasConfig = {
+            db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+            lists: chainListConfig(chainLength),
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const chainPrisma: any = {}
+          for (let i = 0; i < chainLength; i++) {
+            chainPrisma[`c${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
+          }
+
+          const context = await getContext(chainConfig, chainPrisma, null)
+
+          await expect(
+            context.db.c0.findMany({
+              include: { next: nestedCallerInclude(READ_INCLUDE_MAX_DEPTH) },
+            }),
+          ).rejects.toThrow(AccessScopeDepthExceededError)
+
+          // The database is never even queried — the denial happens before the
+          // Prisma call, not as a post-hoc filter on returned data.
+          expect(chainPrisma.c0.findMany).not.toHaveBeenCalled()
         })
 
-        // The MAX_DEPTH and no-relationships cases also make
-        // buildIncludeWithAccessControl return undefined; they flow through the
-        // identical `accessControlledInclude === undefined` branch verified above,
-        // so the resolveOutput probe covers all three non-denial cases.
+        it('still returns correctly row-scoped data for the same include one hop shallower', async () => {
+          const chainLength = READ_INCLUDE_MAX_DEPTH + 1
+          const chainConfig: OpenSaasConfig = {
+            db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+            lists: chainListConfig(chainLength),
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const chainPrisma: any = {}
+          for (let i = 0; i < chainLength; i++) {
+            chainPrisma[`c${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
+          }
+          chainPrisma.c0.findMany.mockResolvedValue([])
+
+          const context = await getContext(chainConfig, chainPrisma, null)
+
+          await context.db.c0.findMany({
+            include: { next: nestedCallerInclude(READ_INCLUDE_MAX_DEPTH - 1) },
+          })
+
+          // Walk the built include down to the last list — it must carry that
+          // list's own access `where`, proving row scoping, not just "no throw".
+          let entry = chainPrisma.c0.findMany.mock.calls[0][0].include.next
+          for (let i = 1; i < READ_INCLUDE_MAX_DEPTH; i++) {
+            entry = entry.include.next
+          }
+          expect(entry.where).toEqual({ ownerId: { equals: `C${READ_INCLUDE_MAX_DEPTH}` } })
+        })
       })
 
       // Regression for #628: a virtual field named in `include` used to be

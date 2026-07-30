@@ -1,6 +1,8 @@
 import type { Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from './engine.js'
+import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
+import { AccessScopeDepthExceededError } from './errors.js'
 
 /**
  * Access Filter — phase 1 of the two-phase read (pre-query).
@@ -18,9 +20,83 @@ import { checkAccess, getRelatedListConfig } from './engine.js'
  * glossary in `CONTEXT.md`.
  */
 
+/** A single relation entry in a Prisma `include` object (see below). */
+type IncludeEntry = boolean | { where?: PrismaFilter; include?: IncludeObject; take?: number }
+type IncludeObject = Record<string, IncludeEntry>
+
 /**
- * Build Prisma include object with access control filters
- * This allows us to filter relationships at the database level instead of in memory
+ * The result of trying to compute an access-controlled include for a list's
+ * fields. `buildIncludeWithAccessControl` used to collapse three unrelated
+ * outcomes into a single overloaded `undefined`: "inside a resolveOutput
+ * context", "hit the depth cap", and "no relationships to scope" all looked
+ * identical to callers, which is what let a depth-capped relation pass
+ * through unscoped (issue #830). This discriminated result keeps them
+ * distinguishable all the way to `mergeIncludeWithAccessControl`, which is the
+ * only place that knows whether a caller actually asked for the part that
+ * couldn't be scoped.
+ *
+ * - `scoped`: relationships were found and (to the extent depth allows)
+ *   access-controlled; `include` is the resulting tree.
+ * - `nothing-to-scope`: the list genuinely has no relationships to scope, OR
+ *   we are inside a resolveOutput/virtual-field context and deliberately did
+ *   not descend into a relation's own nested relations. Passing the caller's
+ *   include through unchanged here is correct, not a leak.
+ * - `depth-exceeded`: we could not evaluate this level at all because it sits
+ *   at or past `READ_INCLUDE_MAX_DEPTH`. This is a denial: a caller `include`
+ *   that reaches here must be rejected, not passed through.
+ */
+export type AccessIncludeResult =
+  | { kind: 'scoped'; include: RichIncludeObject }
+  | { kind: 'nothing-to-scope' }
+  | { kind: 'depth-exceeded' }
+
+/** A relation entry in the rich, provenance-carrying tree `buildIncludeWithAccessControl` builds internally. */
+type RichIncludeEntry = { where?: PrismaFilter; nested: AccessIncludeResult }
+type RichIncludeObject = Record<string, RichIncludeEntry>
+
+/**
+ * Collapse a rich, provenance-carrying include entry down to the plain
+ * Prisma-shaped form. A `nested` result that is `depth-exceeded` or
+ * `nothing-to-scope` contributes no `include` key — this is the AUTO-include
+ * silently stopping, which is correct when no caller asked for anything past
+ * this point (see `AccessIncludeResult` doc comment).
+ */
+function toPrismaEntry(entry: RichIncludeEntry): IncludeEntry {
+  const result: { where?: PrismaFilter; include?: IncludeObject } = {}
+  if (entry.where) result.where = entry.where
+  if (entry.nested.kind === 'scoped') {
+    const nestedInclude = toPrismaInclude(entry.nested)
+    if (nestedInclude && Object.keys(nestedInclude).length > 0) {
+      result.include = nestedInclude
+    }
+  }
+  return Object.keys(result).length > 0 ? result : true
+}
+
+/**
+ * Collapse an `AccessIncludeResult` to the plain Prisma `include` shape used
+ * when there is no caller-supplied include to merge against (the direct
+ * auto-include path). `nothing-to-scope` and `depth-exceeded` both become
+ * `undefined` here — at this call site nothing was explicitly requested past
+ * either boundary, so there is nothing to deny.
+ */
+export function toPrismaInclude(result: AccessIncludeResult): IncludeObject | undefined {
+  if (result.kind !== 'scoped') return undefined
+  const out: IncludeObject = {}
+  for (const [key, entry] of Object.entries(result.include)) {
+    out[key] = toPrismaEntry(entry)
+  }
+  return out
+}
+
+/**
+ * Build the access-controlled include for a list's fields.
+ *
+ * This allows us to filter relationships at the database level instead of in
+ * memory. Returns an {@link AccessIncludeResult} rather than a plain include
+ * object so that `mergeIncludeWithAccessControl` can tell a genuine "nothing
+ * to scope" apart from "the engine hit its depth cap" (see that type's doc
+ * comment and ADR-0022).
  */
 export async function buildIncludeWithAccessControl(
   fieldConfigs: Record<string, FieldConfig>,
@@ -34,23 +110,22 @@ export async function buildIncludeWithAccessControl(
   // relationship cycles (A → B → … → A) and stop the auto-include from
   // re-descending them. Seed it with the root list name at the call site.
   visitedLists: readonly string[] = [],
-) {
-  const MAX_DEPTH = 5
-  if (depth >= MAX_DEPTH) {
-    return undefined
+): Promise<AccessIncludeResult> {
+  if (depth >= READ_INCLUDE_MAX_DEPTH) {
+    return { kind: 'depth-exceeded' }
   }
 
-  // Skip auto-including relationships when inside a resolveOutput hook
-  // This prevents infinite loops when hooks make DB queries that include
-  // relationships back to the same entity (e.g., User virtual field queries Posts
-  // which includes author back to User, triggering the virtual field again)
-  if (args.context._resolveOutputCounter.depth > 0) {
-    return undefined
-  }
+  // Inside a resolveOutput/virtual-field context we still scope each immediate
+  // relation (its own access `where`), but do not auto-expand INTO its nested
+  // relations — no recursive call is made, so a self-referential relation
+  // terminates after one level regardless of cycles. This prevents the
+  // infinite loops the original passthrough guarded against (hooks making DB
+  // queries that include relationships back to the same entity), while still
+  // row-scoping the relation itself rather than skipping scoping altogether
+  // (issue #830's second trigger).
+  const insideResolveOutput = args.context._resolveOutputCounter.depth > 0
 
-  type IncludeEntry = boolean | { where?: PrismaFilter; include?: Record<string, IncludeEntry> }
-
-  const include: Record<string, IncludeEntry> = {}
+  const include: RichIncludeObject = {}
   let hasRelationships = false
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
@@ -71,13 +146,7 @@ export async function buildIncludeWithAccessControl(
           continue
         }
 
-        // Build the include entry
-        const includeEntry: Record<string, unknown> = {}
-
-        // If access returns a filter, add it to the where clause
-        if (typeof accessResult === 'object') {
-          includeEntry.where = accessResult
-        }
+        const where = typeof accessResult === 'object' ? accessResult : undefined
 
         // Cycle guard: if the related list already appears on the path from the
         // root, DO NOT auto-include its relationships again. On a cyclic
@@ -90,38 +159,25 @@ export async function buildIncludeWithAccessControl(
         // genuine single-level fetch, not a re-expansion of the full auto-include.
         // The relation itself is still included (as a FLAT fetch of its own
         // columns); only its onward relationships are pruned at the back-edge.
+        let nested: AccessIncludeResult = { kind: 'nothing-to-scope' }
         const relatedListName = relatedConfig.listName
-        if (!visitedLists.includes(relatedListName)) {
-          // Recursively build nested includes
-          const nestedInclude = await buildIncludeWithAccessControl(
+        if (!insideResolveOutput && !visitedLists.includes(relatedListName)) {
+          nested = await buildIncludeWithAccessControl(
             relatedConfig.listConfig.fields,
             args,
             config,
             depth + 1,
             [...visitedLists, relatedListName],
           )
-
-          if (nestedInclude && Object.keys(nestedInclude).length > 0) {
-            includeEntry.include = nestedInclude
-          }
         }
 
-        // Add to include object
-        include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
+        include[fieldName] = { where, nested }
       }
     }
   }
 
-  return hasRelationships ? include : undefined
+  return hasRelationships ? { kind: 'scoped', include } : { kind: 'nothing-to-scope' }
 }
-
-/**
- * A single relation entry in a Prisma `include` object: either a bare `true`
- * (fetch with no extra constraints) or an object that scopes the fetch with a
- * `where` filter and/or a nested `include`.
- */
-type IncludeEntry = boolean | { where?: PrismaFilter; include?: IncludeObject; take?: number }
-type IncludeObject = Record<string, IncludeEntry>
 
 /** The structured (object) form of a relation include entry. */
 type IncludeEntryObject = { where?: PrismaFilter; include?: IncludeObject; take?: number }
@@ -193,38 +249,46 @@ function andWhere(
  * - If the caller names a key that is NOT a config-declared relationship, it is
  *   passed through unchanged (access control does not govern it).
  *
- * The access-controlled include is recursive to `MAX_DEPTH` (see
- * `buildIncludeWithAccessControl`); beyond that depth no auto-include exists, so
- * deeper caller selections pass through unscoped — consistent with the existing
- * auto-include behaviour.
+ * `accessControlledInclude` is the {@link AccessIncludeResult} for THIS level:
+ * - `nothing-to-scope` → nothing to merge against (the list has no
+ *   relationships, or we're inside a resolveOutput context where the caller
+ *   include is irrelevant to begin with). Pass the caller's include through
+ *   unchanged — this is a non-denial outcome, not "every relation denied".
+ * - `depth-exceeded` → the engine could not compute a scope for THIS level at
+ *   all because it sits at or past `READ_INCLUDE_MAX_DEPTH`. If the caller
+ *   named anything here, that is exactly the case that used to pass through
+ *   unscoped (issue #830): throw `AccessScopeDepthExceededError` instead. An
+ *   empty caller include at this level (nothing further requested) is not an
+ *   error — there's simply nothing to do.
+ * - `scoped` → the normal per-relation merge below: a declared relationship
+ *   ABSENT from the access include was denied (drop it); one PRESENT is used
+ *   as the base, AND-combining `where`s and recursing into nested includes.
  *
- * `accessControlledInclude` being `undefined` is NOT "every relation denied". It
- * means no access-controlled include was computed at all — a non-denial outcome
- * that `buildIncludeWithAccessControl` returns when inside a `resolveOutput`/
- * virtual-field context, at `MAX_DEPTH`, or when the list has no relationships.
- * In every one of those cases there is nothing to merge against, so the caller's
- * `include` is passed through unchanged (matching the prior `args.include || …`
- * fallback). This is distinct from an `undefined` ENTRY inside a defined access
- * include, which DOES mean the relation was denied and must be dropped (see the
- * per-relation loop below). Only the whole-object `undefined` is a passthrough.
+ * `listKey` and `depth` are carried only to build a useful
+ * `AccessScopeDepthExceededError` message; they do not affect merge behaviour.
  */
 export function mergeIncludeWithAccessControl(
   callerInclude: Record<string, unknown>,
-  accessControlledInclude: Record<string, unknown> | undefined,
+  accessControlledInclude: AccessIncludeResult,
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaasConfig,
+  listKey: string,
+  depth: number = 0,
 ): Record<string, unknown> {
-  // No access-controlled include was computed (resolveOutput/virtual context,
-  // MAX_DEPTH, or a list with no relationships) → nothing to scope against, so
-  // pass the caller's include through unchanged. Dropping relations here would be
-  // fail-closed data loss, not a denial. Denied relations are dropped only when a
-  // defined access include OMITS them (handled per-relation below).
-  if (accessControlledInclude === undefined) {
+  if (accessControlledInclude.kind === 'nothing-to-scope') {
     return callerInclude
   }
 
+  if (accessControlledInclude.kind === 'depth-exceeded') {
+    const [firstRelationName] = Object.keys(callerInclude)
+    if (firstRelationName !== undefined) {
+      throw new AccessScopeDepthExceededError(listKey, firstRelationName, depth)
+    }
+    return {}
+  }
+
   const merged: Record<string, unknown> = {}
-  const accessInclude = accessControlledInclude
+  const accessInclude = accessControlledInclude.include
 
   for (const [relationName, callerValue] of Object.entries(callerInclude)) {
     const fieldConfig = fieldConfigs[relationName]
@@ -237,36 +301,41 @@ export function mergeIncludeWithAccessControl(
       continue
     }
 
-    const accessValue = accessInclude[relationName]
+    const accessEntry = accessInclude[relationName]
 
     // Declared relationship absent from the access include → query access denied → drop it.
-    if (accessValue === undefined) {
+    if (accessEntry === undefined) {
       continue
     }
 
-    const accessEntry = asEntryObject(accessValue)
     const callerEntry = asEntryObject(callerValue)
 
     // Resolve the related list's field configs so nested includes merge recursively.
     const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
     const relatedFields = relatedConfig?.listConfig.fields
 
-    const mergedWhere = andWhere(accessEntry?.where, callerEntry?.where)
+    const mergedWhere = andWhere(accessEntry.where, callerEntry?.where)
 
     let mergedNested: Record<string, unknown> | undefined
-    if (callerEntry?.include && relatedFields) {
-      // Recurse: scope the caller's nested selection against the nested access include.
+    if (callerEntry?.include && relatedFields && relatedConfig) {
+      // Recurse: scope the caller's nested selection against the nested access
+      // result. If that result is 'depth-exceeded', the recursive call itself
+      // throws — the caller named something the engine cannot scope.
       mergedNested = mergeIncludeWithAccessControl(
         callerEntry.include,
-        accessEntry?.include,
+        accessEntry.nested,
         relatedFields,
         config,
+        relatedConfig.listName,
+        depth + 1,
       )
-    } else if (accessEntry?.include) {
+    } else if (accessEntry.nested.kind === 'scoped') {
       // Caller selected the relation bare (no nested include); keep the
       // access-controlled nested include so deeper relations stay filtered.
-      mergedNested = accessEntry.include
+      mergedNested = toPrismaInclude(accessEntry.nested)
     }
+    // If the caller's entry has no nested include, a 'depth-exceeded' nested
+    // result is silent here too — nothing was asked for past this point.
 
     const entry: { where?: PrismaFilter; include?: Record<string, unknown>; take?: number } = {}
     if (mergedWhere) entry.where = mergedWhere

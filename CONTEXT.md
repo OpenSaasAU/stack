@@ -15,7 +15,7 @@ A check that gates whether a session may read or write a single field, returning
 _Avoid_: column access, property access
 
 **Access Filter** (pre-query phase):
-The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see.
+The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. Bounded to a fixed nesting depth (`READ_INCLUDE_MAX_DEPTH`); a caller-supplied `include` naming a relation past that depth cannot be scoped and is a **denial** (throws `AccessScopeDepthExceededError`), distinct from **nothing to scope** (a list with no relationships, or a `resolveOutput`/virtual-field context where nested relations are deliberately not auto-expanded) — the latter passes the caller's include through unchanged because there was never anything to deny. See ADR-0022.
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):

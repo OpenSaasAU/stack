@@ -116,7 +116,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   listKey?: string,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
-  const MAX_DEPTH = 5 // Prevent infinite recursion
 
   // Multi-column fields (e.g. storage image()/file() in Keystone-parity mode)
   // back several physical columns rather than one. Before the per-field pass,
@@ -153,14 +152,22 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // Handle relationship fields - recursively filter fields within related items
     // Note: Access control filtering is now done at database level via buildIncludeWithAccessControl
     // This only handles field-level access (hiding sensitive fields)
+    //
+    // Deliberately uncapped: the row/relation scoping in access-filter.ts bounds
+    // what gets FETCHED (a caller include past its depth cap is now a denial,
+    // not a passthrough — see ADR-0022), so by the time a result reaches this
+    // function it is already a finite, acyclic tree whose depth was decided at
+    // the pre-query phase. Capping recursion again here independently of that
+    // cap used to let a relation be scoped correctly at the DB level while
+    // still returning with unfiltered fields past this function's own,
+    // separately-tracked limit (issue #830).
     if (
       config &&
       fieldConfig?.type === 'relationship' &&
       'ref' in fieldConfig &&
       fieldConfig.ref &&
       value !== null &&
-      value !== undefined &&
-      depth < MAX_DEPTH
+      value !== undefined
     ) {
       // Gate the relationship on read access before recursing.
       const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {

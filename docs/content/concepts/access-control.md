@@ -182,6 +182,27 @@ if (!post) {
 - Simpler application code
 - Better security by default
 
+## Nested `include` depth limit
+
+The Access Filter — the pass that scopes relation `include`s before the database is queried — only auto-scopes relationships up to a fixed nesting depth (`READ_INCLUDE_MAX_DEPTH`, currently 5 hops from the list you queried). This is a deliberate exception to the [Silent Failures](#silent-failures) convention above: if a caller-supplied `include` names a relation nested **past** that depth, the engine cannot prove the read is row- and field-scoped, so instead of returning it anyway (which would silently bypass access control) it throws `AccessScopeDepthExceededError`:
+
+```typescript
+import { AccessScopeDepthExceededError } from '@opensaas/stack-core'
+
+try {
+  await context.db.post.findMany({
+    include: { author: { include: {/* … nested 5+ levels deep */} } },
+  })
+} catch (err) {
+  if (err instanceof AccessScopeDepthExceededError) {
+    // err.listKey / err.fieldKey / err.depth identify where the include went too deep.
+    // Restructure the query into separate, shallower reads instead.
+  }
+}
+```
+
+This only affects a caller-supplied `include` that explicitly reaches past the cap. An ordinary read with no `include` — or one that stays within the limit — is unaffected: the cap never turns a normal, shallow read into an error, and a schema deeper than the cap is still perfectly readable one hop at a time. See ADR-0022 for the full rationale.
+
 ## System Fields
 
 Fields `id`, `createdAt`, `updatedAt` are automatically:

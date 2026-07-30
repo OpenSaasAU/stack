@@ -9,6 +9,7 @@ import {
   type TransactionOutcome,
 } from '../hooks/index.js'
 import type { WriteOperation } from './write-pipeline.js'
+import { NESTED_WRITE_MAX_DEPTH } from './depth-limits.js'
 
 /**
  * Transaction-boundary hooks (#590 / ADR-0010).
@@ -54,9 +55,6 @@ export interface InvolvedList {
   /** The existing row for the TOP-LEVEL update/delete target; `undefined` otherwise. */
   originalItem: Record<string, unknown> | undefined
 }
-
-/** Max nesting depth walked when enumerating involved lists (matches nested-operations). */
-const MAX_DEPTH = 5
 
 /** Nested-op kinds whose payloads imply an involved list + operation. */
 const NESTED_OP_OPERATIONS: ReadonlyArray<{ kind: string; operation: WriteOperation }> = [
@@ -119,7 +117,7 @@ function walkNested(
   seen: Set<string>,
   depth: number,
 ): void {
-  if (!data || depth >= MAX_DEPTH) return
+  if (!data || depth >= NESTED_WRITE_MAX_DEPTH) return
 
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
