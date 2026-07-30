@@ -62,6 +62,12 @@ export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-coun
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
 
+// Thrown by a read when a caller-supplied `include` names a relation nested
+// deeper than the Access Filter can scope (see ADR-0022). Distinct from
+// `ValidationError` — this is the engine refusing to return unscoped data, not
+// a user-input validation failure.
+export { AccessScopeDepthExceededError } from './access/index.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
 // getPrismaRelation for relationships) so a misimplemented field fails early

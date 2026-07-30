@@ -17,6 +17,7 @@ import {
 } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { applyCreateDefaults } from './apply-defaults.js'
+import { NESTED_WRITE_MAX_DEPTH } from './depth-limits.js'
 
 /**
  * Nested writes (#569 / ADR-0010).
@@ -1314,12 +1315,10 @@ export async function processNestedOperations(
   parentInputData: Record<string, unknown> | undefined = undefined,
   depth: number = 0,
 ): Promise<NestedOpsResult> {
-  const MAX_DEPTH = 5
-
   const afterTasks: AfterTask[] = []
   const includeFields = new Set<string>()
 
-  if (depth >= MAX_DEPTH) {
+  if (depth >= NESTED_WRITE_MAX_DEPTH) {
     return { data, afterTasks, includeFields }
   }
 

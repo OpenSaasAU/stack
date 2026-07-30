@@ -319,9 +319,10 @@ describe('Relationship Access Control', () => {
         }
 
         // Test that buildIncludeWithAccessControl creates the right where clause
-        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
+        const { buildIncludeWithAccessControl, toPrismaInclude } =
+          await import('../src/access/index.js')
 
-        const include = await buildIncludeWithAccessControl(
+        const result = await buildIncludeWithAccessControl(
           config.lists.User.fields,
           {
             session: null,
@@ -329,6 +330,7 @@ describe('Relationship Access Control', () => {
           },
           config,
         )
+        const include = toPrismaInclude(result)
 
         // Should include posts with a where filter
         expect(include).toBeDefined()
@@ -486,9 +488,10 @@ describe('Relationship Access Control', () => {
         }
 
         // Test that buildIncludeWithAccessControl creates session-based where clause
-        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
+        const { buildIncludeWithAccessControl, toPrismaInclude } =
+          await import('../src/access/index.js')
 
-        const include = await buildIncludeWithAccessControl(
+        const result = await buildIncludeWithAccessControl(
           config.lists.User.fields,
           {
             session: { userId: '1' },
@@ -496,6 +499,7 @@ describe('Relationship Access Control', () => {
           },
           config,
         )
+        const include = toPrismaInclude(result)
 
         // Should include posts with session-based where filter
         expect(include).toBeDefined()
@@ -505,75 +509,85 @@ describe('Relationship Access Control', () => {
       })
     })
 
-    describe('depth limiting', () => {
-      it('should prevent infinite recursion with depth limit', async () => {
+    describe('no depth cap on an acyclic chain (issue #830)', () => {
+      /**
+       * `filterReadableFields` used to stop recursing into relationships past
+       * `MAX_DEPTH` (5), so a nested row past that depth was returned with its
+       * field-level `read` access never evaluated and its `resolveOutput` hooks
+       * never run — even though the row-scoping half of the pipeline
+       * (`buildIncludeWithAccessControl`) may have correctly scoped it. The fix
+       * removes this cap: by the time a result reaches this function it is
+       * already a finite, ACYCLIC tree bounded by whatever the (now fail-closed)
+       * pre-query phase permitted, so there is no infinite-recursion risk left
+       * to guard against. This test builds an 8-level-deep chain — deeper than
+       * the old cap — with a read-denied field and a resolveOutput hook on the
+       * deepest list, and asserts both are applied at every level.
+       */
+      it('applies field-level read access and resolveOutput at depth 6+', async () => {
+        const allowQuery = () => true
+        const chainLength = 8
+        const lists: OpenSaasConfig['lists'] = {}
+        for (let i = 0; i < chainLength; i++) {
+          const isLast = i === chainLength - 1
+          lists[`L${i}`] = {
+            fields: {
+              name: { type: 'text' },
+              ...(isLast
+                ? {
+                    secret: {
+                      type: 'text',
+                      access: { read: () => false },
+                    },
+                    label: {
+                      type: 'text',
+                      hooks: {
+                        resolveOutput: ({ value }: { value: unknown }) => `resolved:${value}`,
+                      },
+                    },
+                  }
+                : {}),
+              ...(i < chainLength - 1
+                ? { next: { type: 'relationship', ref: `L${i + 1}.prev` } }
+                : {}),
+              ...(i > 0 ? { prev: { type: 'relationship', ref: `L${i - 1}.next` } } : {}),
+            },
+            access: { operation: { query: allowQuery } },
+          }
+        }
         const config: OpenSaasConfig = {
-          db: {
-            provider: 'postgresql',
-            url: 'postgresql://localhost:5432/test',
-          },
-          lists: {
-            User: {
-              fields: {
-                name: { type: 'text' },
-                posts: {
-                  type: 'relationship',
-                  ref: 'Post.author',
-                  many: true,
-                },
-              },
-              access: {
-                operation: {
-                  query: () => true,
-                },
-              },
-            },
-            Post: {
-              fields: {
-                title: { type: 'text' },
-                author: {
-                  type: 'relationship',
-                  ref: 'User.posts',
-                },
-              },
-              access: {
-                operation: {
-                  query: () => true,
-                },
-              },
-            },
-          },
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists,
         }
 
-        // Create circular reference structure
-        const user = {
-          id: '1',
-          name: 'John Doe',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          posts: [] as any[],
+        // Build a genuinely acyclic, materialized nested object — exactly what
+        // Prisma would return for this include shape (a fresh object per level,
+        // no shared/back references).
+        let deepest: Record<string, unknown> = {
+          id: `${chainLength - 1}`,
+          name: `L${chainLength - 1}`,
+          secret: 'TOP-SECRET',
+          label: 'raw-value',
         }
-
-        const post = {
-          id: '1',
-          title: 'Test Post',
-          author: user,
+        for (let i = chainLength - 2; i >= 0; i--) {
+          deepest = { id: `${i}`, name: `L${i}`, next: deepest }
         }
-
-        user.posts = [post]
 
         const result = await filterReadableFields(
-          user,
-          config.lists.User.fields,
-          {
-            session: null,
-            context: mockContext,
-          },
+          deepest,
+          config.lists.L0.fields,
+          { session: null, context: mockContext },
           config,
         )
 
-        // Should not throw stack overflow error
-        expect(result).toBeDefined()
-        expect(result.posts).toBeDefined()
+        // Walk down to the deepest level in the filtered result.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let current: any = result
+        for (let i = 0; i < chainLength - 1; i++) {
+          current = current.next
+        }
+
+        expect(current.secret).toBeUndefined() // read-denied field stripped
+        expect(current.label).toBe('resolved:raw-value') // resolveOutput ran
       })
     })
 
