@@ -166,5 +166,11 @@ export function FieldRenderer(props: FieldRendererProps) {
     )
   }
 
-  return <FieldRendererInner {...props} Component={Component} />
+  // A virtual field is computed and never writable — force read-only
+  // presentation regardless of the requested mode (issue #821). This is a
+  // display-only guard: it never skips rendering (unlike id/createdAt/
+  // updatedAt above), it just never offers an editable input.
+  const effectiveMode = fieldConfig.virtual ? 'read' : mode
+
+  return <FieldRendererInner {...props} mode={effectiveMode} Component={Component} />
 }

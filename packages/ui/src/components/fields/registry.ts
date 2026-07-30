@@ -9,6 +9,7 @@ import { RelationshipField } from './RelationshipField.js'
 import { JsonField } from './JsonField.js'
 import { FileField } from './FileField.js'
 import { ImageField } from './ImageField.js'
+import { VirtualField } from './VirtualField.js'
 
 /**
  * Base props that all field components must accept
@@ -51,6 +52,7 @@ export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
   json: JsonField,
   file: FileField,
   image: ImageField,
+  virtual: VirtualField,
 }
 
 /**

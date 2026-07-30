@@ -10,6 +10,7 @@ const text = (): SerializableFieldConfig => ({ type: 'text' })
 const singleRel = (): SerializableFieldConfig => ({ type: 'relationship', many: false })
 const manyRel = (): SerializableFieldConfig => ({ type: 'relationship', many: true })
 const password = (): SerializableFieldConfig => ({ type: 'password' })
+const virtual = (): SerializableFieldConfig => ({ type: 'virtual', virtual: true })
 
 describe('transformItemFormData', () => {
   it('passes scalar fields through unchanged', () => {
@@ -56,6 +57,13 @@ describe('transformItemFormData', () => {
   it('drops a key with no corresponding field config (e.g. a synthetic `_count`)', () => {
     const fields = { title: text() }
     expect(transformItemFormData(fields, { title: 'Hi', _count: { comments: 3 } })).toEqual({
+      title: 'Hi',
+    })
+  })
+
+  it('drops a virtual field key even when a value for it is present (defence-in-depth)', () => {
+    const fields = { title: text(), fullName: virtual() }
+    expect(transformItemFormData(fields, { title: 'Hi', fullName: 'Ada Lovelace' })).toEqual({
       title: 'Hi',
     })
   })
@@ -110,5 +118,20 @@ describe('getEditableFields', () => {
       updatedAt: text(),
     }
     expect(getEditableFields(fields).map(([k]) => k)).toEqual(['title', 'body'])
+  })
+
+  it('keeps virtual fields by default (update mode) so they render read-only', () => {
+    const fields = { title: text(), fullName: virtual() }
+    expect(getEditableFields(fields).map(([k]) => k)).toEqual(['title', 'fullName'])
+  })
+
+  it('keeps virtual fields for update mode explicitly', () => {
+    const fields = { title: text(), fullName: virtual() }
+    expect(getEditableFields(fields, 'update').map(([k]) => k)).toEqual(['title', 'fullName'])
+  })
+
+  it('drops virtual fields for create mode — there is no item yet to compute a value from', () => {
+    const fields = { title: text(), fullName: virtual() }
+    expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title'])
   })
 })
