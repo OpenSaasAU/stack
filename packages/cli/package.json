@@ -55,7 +55,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opensaas/stack-core": "workspace:*",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "chalk": "^5.6.2",
+    "chalk": "^6.0.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
     "fs-extra": "^11.4.0",
