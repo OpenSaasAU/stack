@@ -15,7 +15,7 @@ function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessCon
     storage: {} as unknown,
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   } as AccessContext<unknown>
 }
 

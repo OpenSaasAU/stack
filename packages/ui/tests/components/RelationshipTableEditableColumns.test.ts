@@ -14,7 +14,7 @@ function makeContext(): AccessContext<unknown> {
     storage: {},
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
   return context as unknown as AccessContext<unknown>
 }

@@ -297,9 +297,10 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
  * construction, so the request-time `context.db` is bound to the ORIGINAL
  * client. We rebuild the delegates against `tx` via {@link buildDbDelegate},
  * reusing the request context's `session`, `storage`, `plugins`, `_isSudo`, and
- * the shared `_resolveOutputCounter` reference (so resolveOutput depth tracking
- * is preserved). Plugin runtimes are NOT re-executed; the existing
- * `plugins` object is reused as-is.
+ * the current `_resolveOutputChain` value (carried through unchanged, so a
+ * write issued from inside a `resolveOutput` hook keeps that hook's chain).
+ * Plugin runtimes are NOT re-executed; the existing `plugins` object is
+ * reused as-is.
  */
 function bindContextToTransaction<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
@@ -313,7 +314,7 @@ function bindContextToTransaction<TPrisma extends PrismaClientLike>(
     storage: context.storage,
     plugins: context.plugins,
     _isSudo: context._isSudo,
-    _resolveOutputCounter: context._resolveOutputCounter,
+    _resolveOutputChain: context._resolveOutputChain,
   }
   // Rebuild the db delegate against `tx`, pointing back at `txContext` so hooks
   // reached through it also see the transactional context.

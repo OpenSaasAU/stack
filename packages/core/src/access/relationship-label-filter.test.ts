@@ -46,7 +46,7 @@ function makeContext(): AccessContext {
   return {
     session: null,
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
     db: {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any

@@ -88,7 +88,7 @@ function makeContext(opts?: { isSudo?: boolean }): AccessContext {
     storage: {} as any,
     plugins: {},
     _isSudo: opts?.isSudo ?? false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
 }
 

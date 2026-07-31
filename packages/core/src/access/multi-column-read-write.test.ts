@@ -52,7 +52,7 @@ function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
   return {
     session: null,
     _isSudo: overrides.isSudo ?? false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any
 }

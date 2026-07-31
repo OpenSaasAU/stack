@@ -38,7 +38,7 @@ const context = {
   storage: {},
   plugins: {},
   _isSudo: false,
-  _resolveOutputCounter: { depth: 0 },
+  _resolveOutputChain: [],
 } as unknown as AccessContext<unknown>
 
 describe('Navigation active state', () => {
