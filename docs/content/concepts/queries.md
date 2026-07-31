@@ -97,6 +97,10 @@ if (!post) return notFound()
 `context.db` reads do **not** honour Prisma's `select` argument. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` to `findUnique`/`findMany` is a no-op: it logs a runtime warning and the full, access-filtered record is still returned (field-level visibility is always enforced by [access control](/docs/concepts/access-control), regardless of `select`).
 {% /callout %}
 
+{% callout type="info" %}
+A `context.db` read with **no** `include` and **no** fragment `query` returns the row's own columns and virtual fields only — never relations, matching Prisma's own default. `post.author` is `undefined` on a bare `findUnique`/`findMany` unless you name it via `include` or a fragment. This also applies to a `virtual` field's `resolveOutput` hook issuing its own bare `context.db` read — it won't see relations either, so read through `context.db` for what you need or pass an `include`.
+{% /callout %}
+
 ### Via `runQuery` / `runQueryOne` (standalone helpers)
 
 When you don't have direct access to `context.db` (for example inside a hook or a shared utility), use the standalone helpers. They take the `context`, the PascalCase list key, the fragment, and query args:

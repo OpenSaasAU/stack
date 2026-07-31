@@ -247,6 +247,10 @@ Reads run no `afterOperation` (list or field):
 
 `context.db` reads (`findUnique`, `findMany`) do **not** apply Prisma's `select` semantics. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` is a visible no-op: the op logs a one-time `console.warn` and still returns the full, access-filtered record. Field-level visibility is always enforced by access control regardless of `select`, so there is no leak — only a correctness/perf footgun the warning surfaces.
 
+### A Bare Read Fetches Scalars, Not Relations (ADR-0024)
+
+A read with no `include` and no fragment `query` returns the row's own columns plus its virtual fields — **never relations** — matching Prisma's own default. `findUnique`, `findMany`, and a singleton's `get()` all follow this rule uniformly, under sudo and under a session alike. Relations are fetched only when a caller names them via `include` or a fragment `query`, at which point the existing merge-with-access-control path (`mergeIncludeWithAccessControl`) applies exactly as before (#566/#830 unaffected). Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`. A `resolveOutput` hook that issues its own bare `context.db` read is subject to the same rule — reading `item.<relation>` inside such a hook silently returns `undefined` unless the hook's own read names that relation. See `docs/adr/0024-a-read-with-no-include-fetches-scalars-not-relations.md`.
+
 ### Context Type Safety
 
 Context uses generic typing to preserve Prisma types:
