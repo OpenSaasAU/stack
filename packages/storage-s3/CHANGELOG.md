@@ -1,5 +1,7 @@
 # @opensaas/stack-storage-s3
 
+## 0.34.0
+
 ## 0.33.0
 
 ## 0.32.0
