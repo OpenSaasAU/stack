@@ -26,7 +26,9 @@ This also fixes a related bug where a plain top-level read running concurrently 
 
 ```ts
 // Before
-_resolveOutputCounter: { depth: 0 }
+_resolveOutputCounter: {
+  depth: 0
+}
 // After
 _resolveOutputChain: []
 ```
