@@ -7,7 +7,6 @@ import {
   buildIncludeWithAccessControl,
   mergeIncludeWithAccessControl,
   stripVirtualFieldsFromInclude,
-  toPrismaInclude,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -978,8 +977,13 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       // Sudo bypasses access control entirely — the caller's include is trusted
       // and used as-is (matching the prior behaviour); no per-relation filtering.
       include = args.include
-    } else {
-      // Build include with access control filters
+    } else if (args.include) {
+      // Caller named relations to fetch — build the access-controlled include
+      // and MERGE (not replace) it with the caller's: the caller selects WHICH
+      // relations to fetch, access control decides WHETHER and WITH WHAT
+      // filter (#566). A caller include naming a relation past the depth the
+      // engine can scope throws `AccessScopeDepthExceededError` (issue #830)
+      // rather than being returned unscoped.
       const accessControlledInclude = await buildIncludeWithAccessControl(
         listConfig.fields,
         {
@@ -992,22 +996,19 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         // to it (self-referential or longer) stops re-descending.
         [listName],
       )
-      // MERGE (not replace) a caller-supplied include with the access-controlled
-      // include: the caller selects WHICH relations to fetch, access control
-      // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
-      // caller include) still uses the access-controlled include directly. A
-      // caller include naming a relation past the depth the engine can scope
-      // throws `AccessScopeDepthExceededError` (issue #830) rather than being
-      // returned unscoped.
-      include = args.include
-        ? mergeIncludeWithAccessControl(
-            args.include,
-            accessControlledInclude,
-            listConfig.fields,
-            config,
-            listName,
-          )
-        : toPrismaInclude(accessControlledInclude)
+      include = mergeIncludeWithAccessControl(
+        args.include,
+        accessControlledInclude,
+        listConfig.fields,
+        config,
+        listName,
+      )
+    } else {
+      // A bare read (no caller `include`) fetches the row's own columns only,
+      // matching Prisma's semantics for the same call (ADR-0024). Relations
+      // are fetched only when a caller names them. This also means no related
+      // list's operation-level `query` access is evaluated on a bare read.
+      include = undefined
     }
 
     // Virtual fields have no database column. Whichever path produced
@@ -1116,8 +1117,13 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       // Sudo bypasses access control entirely — the caller's include is trusted
       // and used as-is (matching the prior behaviour); no per-relation filtering.
       include = args?.include
-    } else {
-      // Build include with access control filters
+    } else if (args?.include) {
+      // Caller named relations to fetch — build the access-controlled include
+      // and MERGE (not replace) it with the caller's: the caller selects WHICH
+      // relations to fetch, access control decides WHETHER and WITH WHAT
+      // filter (#566). A caller include naming a relation past the depth the
+      // engine can scope throws `AccessScopeDepthExceededError` (issue #830)
+      // rather than being returned unscoped.
       const accessControlledInclude = await buildIncludeWithAccessControl(
         listConfig.fields,
         {
@@ -1130,22 +1136,19 @@ function createFindMany<TPrisma extends PrismaClientLike>(
         // to it (self-referential or longer) stops re-descending.
         [listName],
       )
-      // MERGE (not replace) a caller-supplied include with the access-controlled
-      // include: the caller selects WHICH relations to fetch, access control
-      // decides WHETHER and WITH WHAT filter (#566). A bare auto-include (no
-      // caller include) still uses the access-controlled include directly. A
-      // caller include naming a relation past the depth the engine can scope
-      // throws `AccessScopeDepthExceededError` (issue #830) rather than being
-      // returned unscoped.
-      include = args?.include
-        ? mergeIncludeWithAccessControl(
-            args.include,
-            accessControlledInclude,
-            listConfig.fields,
-            config,
-            listName,
-          )
-        : toPrismaInclude(accessControlledInclude)
+      include = mergeIncludeWithAccessControl(
+        args.include,
+        accessControlledInclude,
+        listConfig.fields,
+        config,
+        listName,
+      )
+    } else {
+      // A bare read (no caller `include`) fetches each row's own columns only,
+      // matching Prisma's semantics for the same call (ADR-0024). Relations
+      // are fetched only when a caller names them. This also means no related
+      // list's operation-level `query` access is evaluated on a bare read.
+      include = undefined
     }
 
     // Virtual fields have no database column. Whichever path produced
@@ -1412,7 +1415,16 @@ function createGet<TPrisma extends PrismaClientLike>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createFn: any,
 ) {
-  return async () => {
+  return async (args?: {
+    include?: Record<string, unknown>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query?: any
+    // `select` is not honoured — accepted only so the no-op can be made visible.
+    select?: Record<string, unknown>
+  }) => {
+    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
+    warnIfSelectIgnored(args, listName, 'get')
+
     // First try to find the existing record
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1437,24 +1449,54 @@ function createGet<TPrisma extends PrismaClientLike>(
       }
     }
 
-    // Build include with access control filters
-    const accessControlledInclude = await buildIncludeWithAccessControl(
-      listConfig.fields,
-      {
-        session: context.session,
-        context,
-      },
-      config,
-      0,
-      // Seed the cycle guard with the root list so a relationship cycle back
-      // to it (self-referential or longer) stops re-descending.
-      [listName],
-    )
+    // When a query fragment is provided, build the include from the fragment
+    // instead of the access-controlled include. Access control still runs via
+    // filterReadableFields; the fragment then narrows to only the requested fields.
+    const fragment = isFragment(args?.query) ? args.query : null
+    let include: Record<string, unknown> | undefined
+
+    if (fragment) {
+      include = buildInclude(fragment._fields) ?? undefined
+    } else if (context._isSudo) {
+      // Sudo bypasses access control entirely — the caller's include is trusted
+      // and used as-is; no per-relation filtering.
+      include = args?.include
+    } else if (args?.include) {
+      // Caller named relations to fetch — build the access-controlled include
+      // and MERGE (not replace) it with the caller's, exactly like the other
+      // read ops (#566/#830).
+      const accessControlledInclude = await buildIncludeWithAccessControl(
+        listConfig.fields,
+        {
+          session: context.session,
+          context,
+        },
+        config,
+        0,
+        // Seed the cycle guard with the root list so a relationship cycle back
+        // to it (self-referential or longer) stops re-descending.
+        [listName],
+      )
+      include = mergeIncludeWithAccessControl(
+        args.include,
+        accessControlledInclude,
+        listConfig.fields,
+        config,
+        listName,
+      )
+    } else {
+      // A bare read (no caller `include`) fetches the row's own columns only,
+      // matching Prisma's semantics for the same call (ADR-0024).
+      include = undefined
+    }
+
+    // Virtual fields have no database column and must never reach Prisma (#628).
+    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Try to find the record
     const item = await model.findFirst({
       where,
-      include: toPrismaInclude(accessControlledInclude),
+      include,
     })
 
     // If record exists, return it
@@ -1471,6 +1513,10 @@ function createGet<TPrisma extends PrismaClientLike>(
         0,
         listName,
       )
+      // When a fragment is provided, pick only the requested fields from the result
+      if (fragment) {
+        return pickFields(filtered, fragment._fields)
+      }
       return filtered
     }
 

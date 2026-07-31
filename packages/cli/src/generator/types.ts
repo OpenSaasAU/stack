@@ -909,6 +909,34 @@ export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'se
 }
 
 /**
+ * Generate custom GetArgs type for a singleton list's `get()` method — the same
+ * include/query narrowing as FindUniqueArgs, minus `where` (a singleton has no
+ * unique selector; there is exactly one row).
+ */
+function generateGetArgsType(listName: string, fields: Record<string, FieldConfig>): string {
+  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
+
+  if (hasRelationships) {
+    return `/**
+ * Custom Args for ${listName}.get() with virtual field support in nested relationships
+ */
+export type ${listName}GetArgs = {
+  select?: ${listName}Select | null
+  include?: ${listName}Include | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
+}`
+  } else {
+    return `/**
+ * Custom Args for ${listName}.get() with virtual field support
+ */
+export type ${listName}GetArgs = {
+  select?: ${listName}Select | null
+  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
+}`
+  }
+}
+
+/**
  * Generate custom CreateArgs type that uses our extended Select/Include
  */
 function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
@@ -1133,9 +1161,12 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
     lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
 
-    // get - only for singleton lists
+    // get - only for singleton lists; accepts the same include/query narrowing
+    // as findUnique (minus `where` — a singleton has exactly one row).
     if (isSingleton) {
-      lines.push(`    get: () => Promise<${listName}GetPayload<{}> | null>`)
+      lines.push(`    get: <T extends ${listName}GetArgs>(`)
+      lines.push(`      args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
+      lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
     }
 
     lines.push(`  }`)
@@ -1323,6 +1354,10 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push('')
     lines.push(generateFindFirstArgsType(listName, listConfig.fields))
     lines.push('')
+    if (listConfig.isSingleton) {
+      lines.push(generateGetArgsType(listName, listConfig.fields))
+      lines.push('')
+    }
     lines.push(generateCreateArgsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateUpdateArgsType(listName, listConfig.fields))

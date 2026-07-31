@@ -316,6 +316,10 @@ export async function getContext(session: Session = null) {
 
 All database operations are access-controlled and execute hooks in the correct order.
 
+{% callout type="warning" %}
+A read with no `include` (and no fragment `query`) returns the row's own columns plus its virtual fields — **never relations**, matching Prisma's own semantics for the same call. Name a relation explicitly via `include` (or a fragment `query`, see [Queries & Fragments](/docs/concepts/queries)) to fetch it. Foreign-key columns (e.g. `authorId`) are always returned, so a relation stays reachable by id without an `include`.
+{% /callout %}
+
 ### `findUnique()`
 
 Find a single record by unique field (typically ID).

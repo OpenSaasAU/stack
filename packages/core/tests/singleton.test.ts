@@ -205,6 +205,89 @@ describe('Singleton Lists', () => {
     })
   })
 
+  describe('get() with a caller include (#848, ADR-0024)', () => {
+    // A singleton read gains the same caller-`include` handling as findUnique
+    // and findMany: bare fetches scalars only, and a caller include is merged
+    // with the access-controlled include (row-scoped per relation).
+    it("a bare get() sends no include and does not evaluate the related list's query access", async () => {
+      const homeAuthorQuerySpy = vi.fn(() => true)
+      const relConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+        lists: {
+          HomePage: {
+            fields: {
+              title: { type: 'text' },
+              featuredAuthor: { type: 'relationship', ref: 'Author' },
+            },
+            access: { operation: { query: () => true, create: () => true } },
+            isSingleton: true,
+          },
+          Author: {
+            fields: { name: { type: 'text' } },
+            access: { operation: { query: homeAuthorQuerySpy } },
+          },
+        },
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const relPrisma: any = {
+        homePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+        author: { findFirst: vi.fn(), findMany: vi.fn() },
+      }
+      relPrisma.homePage.findFirst.mockResolvedValue({
+        id: 1,
+        title: 'Home',
+        featuredAuthorId: 'a1',
+      })
+
+      const context = getContext(relConfig, relPrisma, null)
+      const result = await context.db.homePage.get()
+
+      expect(relPrisma.homePage.findFirst).toHaveBeenCalledWith({ where: {}, include: undefined })
+      expect(homeAuthorQuerySpy).not.toHaveBeenCalled()
+      expect(result).toEqual({ id: 1, title: 'Home', featuredAuthorId: 'a1' })
+      expect(result).not.toHaveProperty('featuredAuthor')
+    })
+
+    it('a caller include on get() is merged with the access-controlled include, row-scoped like any other read', async () => {
+      const homeAuthorQuerySpy = vi.fn(() => ({ published: { equals: true } }))
+      const relConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+        lists: {
+          HomePage: {
+            fields: {
+              title: { type: 'text' },
+              featuredAuthor: { type: 'relationship', ref: 'Author' },
+            },
+            access: { operation: { query: () => true, create: () => true } },
+            isSingleton: true,
+          },
+          Author: {
+            fields: { name: { type: 'text' } },
+            access: { operation: { query: homeAuthorQuerySpy } },
+          },
+        },
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const relPrisma: any = {
+        homePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+        author: { findFirst: vi.fn(), findMany: vi.fn() },
+      }
+      relPrisma.homePage.findFirst.mockResolvedValue({
+        id: 1,
+        title: 'Home',
+        featuredAuthorId: 'a1',
+        featuredAuthor: { id: 'a1', name: 'Ann' },
+      })
+
+      const context = getContext(relConfig, relPrisma, null)
+      const result = await context.db.homePage.get({ include: { featuredAuthor: true } })
+
+      const call = relPrisma.homePage.findFirst.mock.calls[0][0]
+      expect(call.include.featuredAuthor).toEqual({ where: { published: { equals: true } } })
+      expect(result?.featuredAuthor).toEqual({ id: 'a1', name: 'Ann' })
+    })
+  })
+
   describe('delete operation', () => {
     it('should block delete on singleton lists', async () => {
       mockPrisma.settings.findUnique.mockResolvedValue({

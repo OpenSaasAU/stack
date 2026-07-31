@@ -397,8 +397,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
+      // A caller-supplied `include` is required to fetch `posts` at all — a
+      // bare read returns scalars only (ADR-0024) — so name it explicitly to
+      // exercise the per-relation access `where` merge.
       await context.db.user.findUnique({
         where: { id: '1' },
+        include: { posts: true },
       })
 
       // Verify findFirst was called with access filter
@@ -469,8 +473,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
+      // `author` must be named explicitly — a bare read returns scalars only
+      // (ADR-0024).
       const result = await context.db.post.findUnique({
         where: { id: '1' },
+        include: { author: true },
       })
 
       // Email should be filtered out
@@ -522,8 +529,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
+      // `author` must be named explicitly to exercise the access-denied drop —
+      // a bare read never requests it at all (ADR-0024).
       await context.db.post.findUnique({
         where: { id: '1' },
+        include: { author: true },
       })
 
       // Verify include does NOT include author (access denied)

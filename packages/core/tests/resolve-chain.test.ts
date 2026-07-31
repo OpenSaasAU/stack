@@ -136,9 +136,12 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     )
   })
 
-  it("reproduces the reporter's 3-list cyclic schema (User → Account → Student) within a bounded query budget", async () => {
+  it("no longer reproduces the reporter's 3-list cyclic schema (User → Account → Student) on a bare hook-issued read (#848, ADR-0024)", async () => {
     // Sketch matches the issue's minimal reproduction: User.name reads
-    // Account, whose Student rows' own virtual field reads Account again.
+    // Account, whose Student rows' own virtual field reads Account again. The
+    // hook's read is BARE (no `include`), so under ADR-0024 it fetches
+    // Account's own columns only — `students` is never fetched, the walk into
+    // `Student.label` never happens, and the cycle cannot form.
     const config: OpenSaasConfig = {
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
       lists: {
@@ -191,33 +194,42 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prisma: any = { user: makeModel(), account: makeModel(), student: makeModel() }
     prisma.user.findMany.mockResolvedValue([{ id: 'u1' }])
-    // Account rows returned to a hook-issued read embed their (row-scoped,
-    // one-level) relations directly — deliberately WITHOUT `user`, so the
-    // walk goes through `students` → `Student.label`, matching the trace in
-    // the issue rather than short-circuiting through the `user` back-edge.
-    prisma.account.findMany.mockResolvedValue([
-      { id: 'a1', firstName: 'Ann', students: [{ id: 's1', accountId: 'a1' }] },
-    ])
+    // Mirrors real Prisma semantics: a relation key is only present on the
+    // returned row when the caller actually asked for it via `include`. The
+    // hook's read never does, so `students` (and `user`) never appear here —
+    // that is the mechanism that breaks the cycle under ADR-0024.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prisma.account.findMany.mockImplementation((args: any = {}) => {
+      const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
+      if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
+      if (args.include?.user) row.user = { id: 'u1' }
+      return Promise.resolve([row])
+    })
     // `context.db.<list>.findUnique` is implemented via the Prisma model's
     // `findFirst` (see `createFindUnique` in `context/index.ts`), not its
     // `findUnique` — mock the method actually called.
-    prisma.account.findFirst.mockResolvedValue({
-      id: 'a1',
-      firstName: 'Ann',
-      students: [{ id: 's1', accountId: 'a1' }],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prisma.account.findFirst.mockImplementation((args: any = {}) => {
+      const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
+      if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
+      if (args.include?.user) row.user = { id: 'u1' }
+      return Promise.resolve(row)
     })
 
     const context = await getContext(config, prisma, null)
 
-    // Must settle (not hang), and must not have driven an unbounded number of
-    // queries before doing so — this is the actual OOM mechanism from #844.
-    await expect(context.db.user.findMany({})).rejects.toThrow(ResolveOutputCycleError)
+    // Must settle (not hang or throw) — the bare hook-issued read never
+    // fetches `students`, so `Student.label` never fires and there is no
+    // cycle to detect.
+    const result = await context.db.user.findMany({})
+    expect(result).toEqual([{ id: 'u1', name: 'Ann' }])
 
+    // Only the two reads the hook actually issues — no unbounded recursion.
     const totalCalls =
       prisma.user.findMany.mock.calls.length +
       prisma.account.findMany.mock.calls.length +
       prisma.account.findFirst.mock.calls.length
-    expect(totalCalls).toBeLessThan(20)
+    expect(totalCalls).toBe(2)
   })
 })
 
@@ -319,7 +331,7 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     expect(observedLengths.sort()).toEqual([1, 1, 1])
   })
 
-  it('an unrelated top-level read in flight alongside a hook still gets its full nested auto-include', async () => {
+  it('an unrelated top-level read in flight alongside a hook still gets its full explicit include scoped', async () => {
     let releaseSlowHook: () => void = () => {}
 
     const config: OpenSaasConfig = {
@@ -377,16 +389,21 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     // While the slow hook is still in flight, issue a plain top-level read
-    // that has nothing to do with it.
-    const fastPromise = context.db.fast.findMany({})
+    // that has nothing to do with it. A bare read fetches scalars only
+    // (ADR-0024), so name `child` explicitly — a caller include naming a
+    // relation BARE (`true`, no nested include of its own) still picks up the
+    // access-controlled include for whatever lies beneath it.
+    const fastPromise = context.db.fast.findMany({ include: { child: true } })
 
     await fastPromise
     releaseSlowHook()
     await slowPromise
 
-    // The unrelated read's auto-include must still descend two levels deep
-    // (child → grandchild), not collapse to a bare `{ child: true }` because
-    // it happened to run while a totally different read's hook was active.
+    // The unrelated read's access-controlled scoping must still descend two
+    // levels deep (child → grandchild), not collapse to a bare `{ child: true }`
+    // because it happened to run while a totally different read's hook was
+    // active — `insideResolveOutput` must stay scoped to the hook's OWN
+    // derived context, never leak into a concurrently-running, unrelated one.
     expect(prisma.fast.findMany.mock.calls[0][0].include).toEqual({
       child: { include: { grandchild: true } },
     })
