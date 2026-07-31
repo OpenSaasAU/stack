@@ -50,10 +50,14 @@ function cyclicConfig(): OpenSaasConfig {
 }
 
 function makeContext(resolveOutputDepth = 0): AccessContext {
+  const chain = Array.from({ length: resolveOutputDepth }, (_, i) => ({
+    listKey: 'TestHook',
+    fieldKey: `hook${i}`,
+  }))
   return {
     session: null,
     _isSudo: false,
-    _resolveOutputCounter: { depth: resolveOutputDepth },
+    _resolveOutputChain: chain,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any
 }

@@ -34,7 +34,7 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unk
     storage: {},
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
   // Cast: this is a stub for pipeline tests, not a full Prisma-backed context.
   return context as unknown as AccessContext<unknown>

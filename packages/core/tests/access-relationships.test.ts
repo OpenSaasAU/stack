@@ -23,7 +23,7 @@ describe('Relationship Access Control', () => {
     },
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
 
   describe('getRelatedListConfig', () => {

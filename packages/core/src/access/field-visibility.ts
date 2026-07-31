@@ -2,6 +2,15 @@ import type { Session, AccessContext } from './types.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import { getRelatedListConfig } from './engine.js'
 import { checkFieldAccess } from './field-access.js'
+import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
+import { ResolveOutputCycleError } from './errors.js'
+// NOTE: `context/index.ts` imports `filterReadableFields` from this module
+// (via the `access/index.ts` barrel) — this is an intentional cyclic
+// dependency, the same shape and for the same reason as the one documented in
+// `context/write-pipeline.ts`. `buildDbDelegate` is only INVOKED when a
+// `resolveOutput` hook actually runs (never during module evaluation), so by
+// the time it runs the export is fully initialised.
+import { buildDbDelegate } from '../context/index.js'
 
 /**
  * Field Visibility — phase 2 of the two-phase read (post-query).
@@ -37,6 +46,44 @@ type FieldVisibilityArgs = {
 }
 
 /**
+ * Derive the context passed to a single `resolveOutput` hook invocation: a
+ * NEW context object whose `_resolveOutputChain` extends the caller's chain
+ * with this hook's own `(list, field)` link. The chain is never mutated in
+ * place — this is what lets concurrent hook invocations (e.g. sibling rows in
+ * a to-many relation, filtered via `Promise.all`) each see their own chain
+ * rather than racing on one shared value (ADR-0023).
+ *
+ * A plain `{ ...context, _resolveOutputChain }` spread is not enough on its
+ * own: `context.db`'s operations capture their `context` at construction
+ * (see `populateDbDelegate`), so a hook that calls `context.db.x.findMany(…)`
+ * would otherwise reach the ORIGINAL closures — bound to the ORIGINAL
+ * context — and its read would silently fall back to the un-extended chain,
+ * defeating the cycle guard entirely. Rebuilding `db` via `buildDbDelegate`
+ * against the derived context is what makes a hook-issued read's own nested
+ * hooks actually observe the extended chain.
+ *
+ * `config` is required to rebuild `db`; callers that cannot supply one (e.g. a
+ * narrow unit test exercising field access in isolation) still get a correct
+ * chain for THIS hook's own cycle/cap check, but a read that hook issues
+ * would not carry the chain any further — those callers are not exercising
+ * the read pipeline, so there is nothing for it to reach.
+ */
+function deriveResolveOutputContext(
+  context: AccessContext & { _isSudo?: boolean },
+  link: { listKey: string; fieldKey: string },
+  config: OpenSaasConfig | undefined,
+): AccessContext & { _isSudo?: boolean } {
+  const derived: AccessContext & { _isSudo?: boolean } = {
+    ...context,
+    _resolveOutputChain: [...context._resolveOutputChain, link],
+  }
+  if (config) {
+    derived.db = buildDbDelegate(config, context.prisma, derived)
+  }
+  return derived
+}
+
+/**
  * The core Field Visibility step for a single field: check read access and, if
  * granted, produce the output value by running any `resolveOutput` hook.
  *
@@ -58,8 +105,9 @@ async function resolveReadableFieldValue(params: {
   hookItem: Record<string, unknown>
   listKey: string | undefined
   args: FieldVisibilityArgs
+  config: OpenSaasConfig | undefined
 }): Promise<{ readable: false } | { readable: true; value: unknown }> {
-  const { fieldConfig, fieldName, value, accessItem, hookItem, listKey, args } = params
+  const { fieldConfig, fieldName, value, accessItem, hookItem, listKey, args, config } = params
 
   // Check field access (checkFieldAccess already handles sudo mode)
   const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
@@ -76,25 +124,44 @@ async function resolveReadableFieldValue(params: {
     // Cast to runtime type for generic execution
     // At runtime, the hook will receive the correct value type for the field
     const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
-    // Increment depth counter to prevent infinite loops from hooks making DB queries
-    // that include relationships back to the same entity
-    args.context._resolveOutputCounter.depth++
-    try {
-      // Use Promise.resolve() to handle both sync and async hooks
-      const resolved = await Promise.resolve(
-        hook({
-          value,
-          operation: 'query',
-          fieldName,
-          listKey,
-          item: hookItem,
-          context: args.context,
-        }),
-      )
-      return { readable: true, value: resolved }
-    } finally {
-      args.context._resolveOutputCounter.depth--
+    const link = { listKey, fieldKey: fieldName }
+    const chain = args.context._resolveOutputChain
+
+    // Cycle guard: a hook that would re-enter a (list, field) pair already on
+    // its own chain cannot terminate — refuse loudly rather than recurse
+    // until the process runs out of memory (issue #844, ADR-0023).
+    const alreadyOnChain = chain.some(
+      (entry) => entry.listKey === link.listKey && entry.fieldKey === link.fieldKey,
+    )
+    if (alreadyOnChain) {
+      throw new ResolveOutputCycleError([...chain, link])
     }
+
+    // Cost cap: a chain this long is refused only as a cost limit, never a
+    // correctness one — an acyclic chain that works today can legitimately
+    // reach this. Omit the field and warn instead of throwing.
+    if (chain.length >= RESOLVE_CHAIN_MAX_LENGTH) {
+      const path = [...chain, link].map((entry) => `${entry.listKey}.${entry.fieldKey}`).join(' → ')
+      console.warn(
+        `resolveOutput: omitting "${listKey}.${fieldName}" — its resolve chain exceeded ` +
+          `RESOLVE_CHAIN_MAX_LENGTH (${RESOLVE_CHAIN_MAX_LENGTH}): ${path}. This is a cost limit, ` +
+          `not an access denial.`,
+      )
+      return { readable: false }
+    }
+
+    // Use Promise.resolve() to handle both sync and async hooks
+    const resolved = await Promise.resolve(
+      hook({
+        value,
+        operation: 'query',
+        fieldName,
+        listKey,
+        item: hookItem,
+        context: deriveResolveOutputContext(args.context, link, config),
+      }),
+    )
+    return { readable: true, value: resolved }
   }
 
   return { readable: true, value }
@@ -227,6 +294,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       hookItem: workingItem,
       listKey,
       args,
+      config,
     })
 
     if (result.readable) {
@@ -265,6 +333,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       hookItem: filtered,
       listKey,
       args,
+      config,
     })
 
     if (result.readable) {

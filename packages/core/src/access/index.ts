@@ -33,3 +33,5 @@ export type { AccessIncludeResult } from './access-filter.js'
 export { filterReadableFields } from './field-visibility.js'
 // Thrown when a caller include reaches past the depth the Access Filter can scope.
 export { AccessScopeDepthExceededError } from './errors.js'
+// Thrown when a resolveOutput hook's own resolve chain cycles back into itself.
+export { ResolveOutputCycleError } from './errors.js'

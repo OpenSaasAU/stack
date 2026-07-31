@@ -43,7 +43,7 @@ function makeContext(counts: Record<string, number>): {
     storage: {},
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   } as unknown as AccessContext
   return { context, spies }
 }
@@ -168,7 +168,7 @@ describe('resolveNavCounts', () => {
       storage: {},
       plugins: {},
       _isSudo: false,
-      _resolveOutputCounter: { depth: 0 },
+      _resolveOutputChain: [],
     } as unknown as AccessContext
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

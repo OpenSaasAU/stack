@@ -117,13 +117,18 @@ export async function buildIncludeWithAccessControl(
 
   // Inside a resolveOutput/virtual-field context we still scope each immediate
   // relation (its own access `where`), but do not auto-expand INTO its nested
-  // relations — no recursive call is made, so a self-referential relation
-  // terminates after one level regardless of cycles. This prevents the
-  // infinite loops the original passthrough guarded against (hooks making DB
-  // queries that include relationships back to the same entity), while still
-  // row-scoping the relation itself rather than skipping scoping altogether
-  // (issue #830's second trigger).
-  const insideResolveOutput = args.context._resolveOutputCounter.depth > 0
+  // relations — this keeps a single hook-issued read's include from growing
+  // depth-first. Correction (ADR-0023): this does NOT by itself terminate a
+  // cycle, despite what an earlier version of this comment claimed. A
+  // self-referential relation read from inside a hook is a NEW top-level
+  // read, invisible to this function's own recursion — the loop runs through
+  // the hook↔read boundary, not through repeated calls to
+  // `buildIncludeWithAccessControl`. Loop termination is the resolve chain's
+  // job: `field-visibility.ts`'s `resolveReadableFieldValue` refuses to
+  // re-enter a `(list, field)` pair already on the chain. What this check
+  // still does correctly is row-scope the immediate relation rather than
+  // skipping scoping altogether (issue #830's second trigger).
+  const insideResolveOutput = args.context._resolveOutputChain.length > 0
 
   const include: RichIncludeObject = {}
   let hasRelationships = false

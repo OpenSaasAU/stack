@@ -37,7 +37,7 @@ function makeContext(): AccessContext {
     storage: {} as any,
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
 }
 

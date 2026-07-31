@@ -434,7 +434,7 @@ export function getContext<
     // client, otherwise start empty and populate via plugin runtimes below.
     plugins: _sharedPlugins ?? {},
     _isSudo,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
 
   // Create access-controlled operations for each list, populating `db` in place.

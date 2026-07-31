@@ -35,7 +35,7 @@ function makeContext(delegates: Record<string, DelegateStub> = {}): AccessContex
     storage: {},
     plugins: {},
     _isSudo: false,
-    _resolveOutputCounter: { depth: 0 },
+    _resolveOutputChain: [],
   }
   return context as unknown as AccessContext<unknown>
 }

@@ -290,12 +290,19 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
   plugins: Record<string, unknown>
   _isSudo: boolean
   /**
-   * Internal mutable counter to track resolveOutput hook depth.
-   * When depth > 0, we skip auto-including relationships to prevent infinite loops
-   * when hooks make database queries that include relationships back to the original entity.
-   * We use a mutable object so that spreading the context preserves the reference.
+   * The resolve chain: the ordered sequence of `resolveOutput` hook
+   * `(listKey, fieldKey)` pairs a read has entered on the way to here. A
+   * top-level read starts with an empty chain. Each hook invocation is given
+   * a NEW context whose chain extends this one by its own pair — the chain is
+   * never mutated in place, so concurrent hook invocations (e.g. sibling rows
+   * in a to-many relation processed via `Promise.all`) never observe each
+   * other's chain. A hook that would re-enter a pair already on its own chain
+   * is refused (`ResolveOutputCycleError`) rather than left to recurse
+   * forever; a chain longer than `RESOLVE_CHAIN_MAX_LENGTH` is a separate,
+   * non-fatal cost limit. See ADR-0023 and the "Resolve chain" glossary entry
+   * in CONTEXT.md.
    */
-  _resolveOutputCounter: { depth: number }
+  _resolveOutputChain: readonly { listKey: string; fieldKey: string }[]
 }
 
 /**

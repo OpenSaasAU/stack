@@ -68,6 +68,11 @@ export { ValidationError } from './hooks/index.js'
 // a user-input validation failure.
 export { AccessScopeDepthExceededError } from './access/index.js'
 
+// Thrown by a `resolveOutput` hook whose own read cycles back into a
+// `(list, field)` pair already on its resolve chain (see ADR-0023). Distinct
+// from `ValidationError` for the same reason as `AccessScopeDepthExceededError`.
+export { ResolveOutputCycleError } from './access/index.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
 // getPrismaRelation for relationships) so a misimplemented field fails early

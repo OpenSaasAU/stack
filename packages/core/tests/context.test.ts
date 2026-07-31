@@ -1430,7 +1430,7 @@ describe('getContext', () => {
       // Regression for issue #830: a read issued from inside a `resolveOutput`
       // hook used to lose relation row scoping ENTIRELY — `buildIncludeWithAccessControl`
       // returned a whole-object `undefined` for the inner read (any
-      // `_resolveOutputCounter.depth > 0`), which `mergeIncludeWithAccessControl`
+      // `_resolveOutputChain.length > 0`), which `mergeIncludeWithAccessControl`
       // treated as "nothing to merge against" and passed the caller's include
       // through completely unscoped. The fix scopes each immediate relation with
       // its own access `where` while still not auto-EXPANDING into that
@@ -1439,7 +1439,7 @@ describe('getContext', () => {
       describe('scopes (without expanding) a caller include used inside a resolveOutput hook (#830)', () => {
         // Build an Author config with a virtual field whose resolveOutput issues a
         // read WITH an explicit include. While that hook runs,
-        // _resolveOutputCounter.depth > 0.
+        // _resolveOutputChain.length > 0.
         function configWithResolveOutputProbe(
           callerInclude: Record<string, unknown>,
           capture: (include: unknown) => void,

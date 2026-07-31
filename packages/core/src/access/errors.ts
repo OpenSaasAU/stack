@@ -30,3 +30,33 @@ export class AccessScopeDepthExceededError extends Error {
     this.depth = depth
   }
 }
+
+/**
+ * Thrown when a `resolveOutput` hook re-enters a `(list, field)` pair already
+ * on its own resolve chain — a hook whose own read (directly or transitively)
+ * comes back around to itself. Deliberately distinct from `ValidationError`
+ * (same reasoning as `AccessScopeDepthExceededError`): this is not bad user
+ * input, it is the engine refusing to run a hook chain that cannot terminate.
+ *
+ * This is a loud failure, not a Silent one, on purpose: a repeated pair never
+ * terminated before this guard existed, so no working application can depend
+ * on the old (hanging) behaviour, and staying silent here would return
+ * `undefined` for a field with nothing in the logs to explain why. Contrast
+ * with exceeding `RESOLVE_CHAIN_MAX_LENGTH`, which can happen on a chain that
+ * would otherwise terminate correctly and therefore only warns. See ADR-0023.
+ */
+export class ResolveOutputCycleError extends Error {
+  public chain: readonly { listKey: string; fieldKey: string }[]
+
+  constructor(chain: readonly { listKey: string; fieldKey: string }[]) {
+    const path = chain.map((link) => `${link.listKey}.${link.fieldKey}`).join(' → ')
+    super(
+      `resolveOutput cycle detected: ${path}. A hook that re-enters a (list, field) pair ` +
+        `already on its own resolve chain cannot terminate, so the read is refused rather than ` +
+        `left to recurse until the process runs out of memory. Restructure the hooks so the read ` +
+        `does not loop back into itself.`,
+    )
+    this.name = 'ResolveOutputCycleError'
+    this.chain = chain
+  }
+}
