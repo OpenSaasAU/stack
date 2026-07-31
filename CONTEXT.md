@@ -19,8 +19,12 @@ The first pass of a read, run before the database is hit. Uses operation-level a
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
-The second pass of a read, run on the returned rows. Removes fields the session cannot read, runs `resolveOutput` hooks, and computes virtual fields.
+The second pass of a read, run on the returned rows. Removes fields the session cannot read, runs `resolveOutput` hooks, and computes virtual fields. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
 _Avoid_: result filter, output filter, field stripper
+
+**Resolve chain**:
+The sequence of `resolveOutput` hooks a read has entered on the way to a value — a hook that issues its own read extends the chain with that read's hooks. A top-level read starts an empty chain, and each hook's chain is its own: two hooks running concurrently never see each other's. A chain may not repeat a (list, field) pair, because a hook that re-enters itself cannot terminate; that is refused loudly. Chain length is bounded separately, as a cost limit only.
+_Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recursion depth
 
 **Silent failure**:
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
