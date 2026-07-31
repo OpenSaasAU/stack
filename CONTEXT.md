@@ -15,7 +15,7 @@ A check that gates whether a session may read or write a single field, returning
 _Avoid_: column access, property access
 
 **Access Filter** (pre-query phase):
-The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
+The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. It scopes the relations a read asked for; it does not choose them (see Bare read). Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
@@ -25,6 +25,10 @@ _Avoid_: result filter, output filter, field stripper
 **Resolve chain**:
 The sequence of `resolveOutput` hooks a read has entered on the way to a value — a hook that issues its own read extends the chain with that read's hooks. A top-level read starts an empty chain, and each hook's chain is its own: two hooks running concurrently never see each other's. A chain may not repeat a (list, field) pair, because a hook that re-enters itself cannot terminate; that is refused loudly. Chain length is bounded separately, as a cost limit only.
 _Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recursion depth
+
+**Bare read**:
+A read that names no relations — no `include`, no fragment `query`. It returns the row's own columns and its virtual fields, never its relations, matching what the underlying ORM does with the same call (ADR-0024). The rule holds for every read: single, many, and singleton, whether or not access control is being bypassed. Related data is always something a read asks for, so a call site's shape is readable from the call site.
+_Avoid_: auto-include, default include, unqualified read
 
 **Silent failure**:
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
