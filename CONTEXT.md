@@ -30,6 +30,10 @@ _Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recu
 A read that names no relations — no `include`, no fragment `query`. It returns the row's own columns and its virtual fields, never its relations, matching what the underlying ORM does with the same call (ADR-0024). The rule holds for every read: single, many, and singleton, whether or not access control is being bypassed. Related data is always something a read asks for, so a call site's shape is readable from the call site.
 _Avoid_: auto-include, default include, unqualified read
 
+**One hop**:
+The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further (ADR-0026). This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it.
+_Avoid_: deep include, nested expansion, relation tree
+
 **Declared dependency**:
 A relation a computed field names as an input it cannot compute without. The read fetches it for the field's benefit wherever that field is computed, and does not return it — a declared dependency never widens what a caller receives, so a call site's shape stays readable from the call site (see Bare read). Declaring it is what earns the data: a computed field that reaches for a relation it did not declare finds nothing there.
 _Avoid_: auto-include, eager load, field dependency, prefetch
