@@ -640,7 +640,8 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
    *   When true, non-null text columns without an explicit defaultValue emit
    *   `@default("")` to match Keystone 6's implicit empty-string text default.
-   * @returns Prisma type string, optional modifiers, and optional enum values
+   * @returns Prisma type string, optional modifiers, optional enum values, and
+   *   an optional block-level index request
    */
   getPrismaType?: (
     fieldName: string,
@@ -655,6 +656,26 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      * The enum name is the value of `type`.
      */
     enumValues?: string[]
+    /**
+     * If set, this field requires a block-level index on the owning model:
+     * `@@index([fieldName])` for `true`, `@@unique([fieldName])` for
+     * `'unique'`. `false` and `undefined` both mean "no index".
+     *
+     * Prisma has no field-level `@index` attribute — a non-unique index can
+     * ONLY be expressed as the model-level `@@index([...])` — so a field that
+     * wants one has to ask for it out-of-line rather than appending to
+     * {@link modifiers}. (A unique index has both forms available; the
+     * built-in scalars keep emitting the inline `@unique` modifier for that
+     * case, so this channel carries only what cannot be written inline.)
+     *
+     * Same shape as {@link PrismaRelationResult.foreignKeyIndex}, which is how
+     * relationship fields have always emitted their foreign-key indexes. The
+     * generator handles both through one emit pass, so the field stays the
+     * authority on whether it can be indexed by name at all — a multi-column
+     * field (see {@link getPrismaColumns}) has no single column matching its
+     * field name and can decline, or name a real column of its own.
+     */
+    index?: boolean | 'unique'
   }
   /**
    * Get TypeScript type information for type generation

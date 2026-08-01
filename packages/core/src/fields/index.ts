@@ -144,11 +144,11 @@ export function text<
         modifiers += ` @default(${defaultLiteral})`
       }
 
-      // Unique/index modifiers
+      // Unique modifier. A non-unique index has no field-level form in Prisma,
+      // so it is requested out-of-line via `index` below and emitted by the
+      // generator as `@@index([...])` on the model.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
-      } else if (options?.isIndexed === true) {
-        modifiers += ' @index'
       }
 
       // Map modifier
@@ -159,6 +159,7 @@ export function text<
       return {
         type: 'String',
         modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {
@@ -402,16 +403,17 @@ export function decimal<
         modifiers += ` @map("${db.map}")`
       }
 
-      // Unique/index modifiers
+      // Unique modifier. A non-unique index has no field-level form in Prisma,
+      // so it is requested out-of-line via `index` below and emitted by the
+      // generator as `@@index([...])` on the model.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
-      } else if (options?.isIndexed === true) {
-        modifiers += ' @index'
       }
 
       return {
         type: 'Decimal',
         modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {
@@ -747,16 +749,17 @@ export function calendarDay<
         modifiers += ` @map("${db.map}")`
       }
 
-      // Unique/index modifiers
+      // Unique modifier. A non-unique index has no field-level form in Prisma,
+      // so it is requested out-of-line via `index` below and emitted by the
+      // generator as `@@index([...])` on the model.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
-      } else if (options?.isIndexed === true) {
-        modifiers += ' @index'
       }
 
       return {
         type: 'DateTime',
         modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {

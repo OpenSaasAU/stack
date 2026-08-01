@@ -42,5 +42,6 @@ model Post {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt
 
+  @@index([title])
   @@index([authorId])
 }

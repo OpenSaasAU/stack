@@ -103,12 +103,16 @@ describe('Field Types', () => {
         expect(prismaType.modifiers).toContain('@unique')
       })
 
-      test('includes @index modifier', () => {
+      test('requests a block-level index rather than an inline modifier', () => {
         const field = text({ isIndexed: true })
         const prismaType = field.getPrismaType('slug')
 
         expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('@index')
+        // Prisma has no field-level `@index` attribute — emitting one produces a
+        // schema Prisma refuses to parse. A non-unique index is requested
+        // out-of-line and lands as `@@index([slug])` on the model.
+        expect(prismaType.index).toBe(true)
+        expect(prismaType.modifiers ?? '').not.toContain('@index')
       })
 
       test('db.isNullable: true makes optional field explicitly nullable', () => {
