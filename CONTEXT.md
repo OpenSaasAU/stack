@@ -30,6 +30,14 @@ _Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recu
 A read that names no relations — no `include`, no fragment `query`. It returns the row's own columns and its virtual fields, never its relations, matching what the underlying ORM does with the same call (ADR-0024). The rule holds for every read: single, many, and singleton, whether or not access control is being bypassed. Related data is always something a read asks for, so a call site's shape is readable from the call site.
 _Avoid_: auto-include, default include, unqualified read
 
+**Declared dependency**:
+A relation a computed field names as an input it cannot compute without. The read fetches it for the field's benefit wherever that field is computed, and does not return it — a declared dependency never widens what a caller receives, so a call site's shape stays readable from the call site (see Bare read). Declaring it is what earns the data: a computed field that reaches for a relation it did not declare finds nothing there.
+_Avoid_: auto-include, eager load, field dependency, prefetch
+
+**Session-relative value**:
+A computed field's value reflects exactly the rows the reading session may see, never more. A total over a relation the Access Filter scoped is a projection of the visible rows, not a fact about the underlying row — computing the true figure would leak the values of rows the session was denied. A field that genuinely needs the unscoped view has to ask for it explicitly, through a privileged read inside its own hook.
+_Avoid_: filtered total, partial value, true value
+
 **Silent failure**:
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
 _Avoid_: access error, permission error
