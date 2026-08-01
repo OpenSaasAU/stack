@@ -413,6 +413,50 @@ console.log(user.fullName) // "John Doe" — computed via resolveOutput on every
 - Can optionally provide `resolveInput` for write side effects
 - Useful for derived values, computed properties, and external API sync
 
+### Declaring Relation Dependencies (`needs`, ADR-0025)
+
+Since ADR-0024, a bare read (no caller `include`) returns a row's own columns
+only — never its relations. A virtual field whose `resolveOutput` reads a
+relation off `item` (`item.lineItems`, `item.posts.length`, …) would
+otherwise silently compute over `undefined` whenever the caller didn't happen
+to include that relation. `needs` is the fix: declare the immediate
+relations a field's hook cannot compute without, and the read fetches
+exactly those — wherever that field is computed, at the root of a read and
+at every nested level alike.
+
+```typescript
+Order: list({
+  fields: {
+    lineItems: relationship({ ref: 'LineItem.order', many: true }),
+    total: virtual({
+      type: 'number',
+      needs: ['lineItems'], // fetched for this hook, even on a bare read
+      hooks: {
+        resolveOutput: ({ item }) =>
+          item.lineItems.reduce((sum, li) => sum + li.price * li.quantity, 0),
+      },
+    }),
+  },
+})
+
+// The caller never asked for lineItems, and never receives it:
+const order = await context.db.order.findMany()
+order[0].total // computed correctly
+order[0].lineItems // undefined — `needs` is private plumbing, not an implicit `include`
+```
+
+**Key characteristics:**
+
+- Available on every field type (via `BaseFieldConfig`), not only `virtual()` — any field whose `resolveOutput` reads a relation can declare it.
+- Names **immediate relations only** — no dotted paths. A dependency of a dependency is pulled in by the next list's own `needs` declaration, not by a path grammar.
+- **Never widens what the caller receives.** A declared relation is stripped from the result unless the caller named it too, for both `include` reads and fragment `query` reads alike.
+- **Scoped by the Access Filter like any other relation a read asks for — never a bypass.** A dependency the session cannot query (operation-level `query` access) is not fetched; a dependency a relationship field denies field-level `read` on does not reach the hook; a dependency the Access Filter scopes with a filter yields only the visible rows.
+- **Session-relative, with no escape.** The field always computes, on whatever its session can see — a field declaring two dependencies and granted access to one still produces a value from that one. A total over a scoped relation is a projection of the visible rows, not a fact about the underlying row. Computing the "true" figure is not something a declared dependency can do, because that would leak the values of rows the session was denied. **A field that genuinely needs the unscoped view must issue a privileged read inside its own hook (`context.sudo()`) and explicitly own that decision** — `needs` does not provide an escape hatch from access control.
+- **A declaration closure that can't fit is refused, not silently truncated.** Declarations fold in recursively (a related list's own `needs` are satisfied too, wherever it's reached), so a long chain can exceed the read-include depth cap. A chain that cannot fit from any starting point fails `pnpm generate`; a caller-triggered overflow hits the ordinary runtime depth denial.
+- **Typed as a plain `string[]`, not compile-checked against the list's relation names.** `BaseFieldConfig` is the contextual type every field builder's return value is checked against — including non-generic third-party fields (`richText(): RichTextField`, with no `TTypeInfo` parameter of its own, the documented third-party field pattern). Narrowing `needs`'s type per-list would make it disagree with the type a fixed, unparameterized field config presents, breaking assignability for every such field regardless of whether it uses `needs` at all. Instead, `pnpm generate` (`validateNeedsDeclarations`) rejects a `needs` entry that isn't an immediate relationship field on the same list, naming the field and the bad entry.
+
+See `docs/adr/0025-a-computed-field-declares-the-relations-it-needs.md` and the "Declared dependency" / "Session-relative value" glossary entries in `CONTEXT.md`.
+
 ## Type Safety
 
 All types are strongly typed with TypeScript:

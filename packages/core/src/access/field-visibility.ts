@@ -4,6 +4,8 @@ import { getRelatedListConfig } from './engine.js'
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
+import type { DeclaredOnlyTree } from './declared-dependencies.js'
+import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -181,6 +183,12 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   config?: OpenSaasConfig,
   depth: number = 0,
   listKey?: string,
+  // Relation keys added purely to satisfy a field's `needs` (ADR-0025) at
+  // THIS level, and the same tree for each nested relation reached via a
+  // caller-named branch. Stripped from `filtered` right before it is
+  // returned — after resolveOutput has had a chance to read them — so a
+  // declared dependency never widens what the caller receives.
+  declaredOnly: DeclaredOnlyTree = emptyDeclaredOnlyTree(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -247,6 +255,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       }
 
       const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
+      // The declared-only tree for whatever THIS relation's own list computes,
+      // e.g. a field on the related list that declares its own `needs`. Falls
+      // back to an empty tree when this relation isn't declaration-related at
+      // all — the common case.
+      const nestedDeclaredOnly = declaredOnly.nested[fieldName] ?? emptyDeclaredOnlyTree()
 
       if (relatedConfig) {
         // For many relationships (arrays) - recursively filter fields in each item
@@ -261,6 +274,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 config,
                 depth + 1,
                 relatedConfig.listName,
+                nestedDeclaredOnly,
               ),
             ),
           )
@@ -275,6 +289,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
             config,
             depth + 1,
             relatedConfig.listName,
+            nestedDeclaredOnly,
           )
         }
       } else {
@@ -339,6 +354,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     if (result.readable) {
       filtered[fieldName] = result.value
     }
+  }
+
+  // Strip relations that were fetched ONLY to satisfy a `needs` declaration
+  // (ADR-0025), now that every resolveOutput hook at this level — including
+  // virtual fields, which read the assembled `filtered` object above — has
+  // had the chance to see them. A declared dependency is private plumbing,
+  // not an implicit `include`: it never widens what the caller receives.
+  for (const key of declaredOnly.keys) {
+    delete filtered[key]
   }
 
   return filtered as Partial<T>

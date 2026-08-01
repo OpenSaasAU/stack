@@ -7,11 +7,14 @@ import {
   buildIncludeWithAccessControl,
   mergeIncludeWithAccessControl,
   stripVirtualFieldsFromInclude,
+  foldDeclaredDependencies,
 } from '../access/index.js'
+import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
 import { buildInclude, pickFields, isFragment } from '../query/index.js'
+import type { FieldSelection } from '../query/index.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -911,6 +914,62 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
 }
 
 /**
+ * Resolve the `include` (and declared-dependency provenance) a read should
+ * use, preserving each existing path's exact shape — fragment / sudo /
+ * caller include / bare (ADR-0024) — while folding declared dependencies
+ * (`needs`, ADR-0025) into whichever of those the read is already using.
+ *
+ * A fragment's own `include` and a sudo caller's `include` are folded and
+ * used as-is, matching their existing (unmerged) treatment. A non-sudo
+ * caller include is folded and then merged through the same
+ * access-scoping pipeline as before. A bare read stays on the exact
+ * ADR-0024 path — `include: undefined`, no related `query` access
+ * evaluated — unless folding actually added something, which only happens
+ * when a field on this list declares `needs`.
+ */
+async function resolveReadInclude(
+  callerInclude: Record<string, unknown> | undefined,
+  fragmentFields: FieldSelection<unknown> | undefined,
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  context: AccessContext & { _isSudo?: boolean },
+  config: OpenSaasConfig,
+): Promise<{ include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree }> {
+  if (fragmentFields !== undefined) {
+    const fragmentInclude = buildInclude(fragmentFields) ?? undefined
+    return foldDeclaredDependencies(fragmentInclude, listConfig.fields, config)
+  }
+
+  if (context._isSudo) {
+    return foldDeclaredDependencies(callerInclude, listConfig.fields, config)
+  }
+
+  const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config)
+  if (!folded.include) {
+    return folded
+  }
+
+  const accessControlledInclude = await buildIncludeWithAccessControl(
+    listConfig.fields,
+    { session: context.session, context },
+    config,
+    0,
+    // Seed the cycle guard with the root list so a relationship cycle back
+    // to it (self-referential or longer) stops re-descending.
+    [listName],
+  )
+  const include = mergeIncludeWithAccessControl(
+    folded.include,
+    accessControlledInclude,
+    listConfig.fields,
+    config,
+    listName,
+  )
+  return { include, declaredOnly: folded.declaredOnly }
+}
+
+/**
  * Create findUnique operation with access control
  */
 function createFindUnique<TPrisma extends PrismaClientLike>(
@@ -969,47 +1028,18 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // instead of the access-controlled include. Access control still runs via
     // filterReadableFields; the fragment then narrows to only the requested fields.
     const fragment = isFragment(args.query) ? args.query : null
-    let include: Record<string, unknown> | undefined
 
-    if (fragment) {
-      include = buildInclude(fragment._fields) ?? undefined
-    } else if (context._isSudo) {
-      // Sudo bypasses access control entirely — the caller's include is trusted
-      // and used as-is (matching the prior behaviour); no per-relation filtering.
-      include = args.include
-    } else if (args.include) {
-      // Caller named relations to fetch — build the access-controlled include
-      // and MERGE (not replace) it with the caller's: the caller selects WHICH
-      // relations to fetch, access control decides WHETHER and WITH WHAT
-      // filter (#566). A caller include naming a relation past the depth the
-      // engine can scope throws `AccessScopeDepthExceededError` (issue #830)
-      // rather than being returned unscoped.
-      const accessControlledInclude = await buildIncludeWithAccessControl(
-        listConfig.fields,
-        {
-          session: context.session,
-          context,
-        },
-        config,
-        0,
-        // Seed the cycle guard with the root list so a relationship cycle back
-        // to it (self-referential or longer) stops re-descending.
-        [listName],
-      )
-      include = mergeIncludeWithAccessControl(
-        args.include,
-        accessControlledInclude,
-        listConfig.fields,
-        config,
-        listName,
-      )
-    } else {
-      // A bare read (no caller `include`) fetches the row's own columns only,
-      // matching Prisma's semantics for the same call (ADR-0024). Relations
-      // are fetched only when a caller names them. This also means no related
-      // list's operation-level `query` access is evaluated on a bare read.
-      include = undefined
-    }
+    // Resolve `include`, folding any declared dependencies (`needs`,
+    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
+    // already produces — see `resolveReadInclude`'s doc comment.
+    let { include, declaredOnly } = await resolveReadInclude(
+      args.include,
+      fragment ? fragment._fields : undefined,
+      listName,
+      listConfig,
+      context,
+      config,
+    )
 
     // Virtual fields have no database column. Whichever path produced
     // `include` (fragment, access-controlled merge, or sudo passthrough), a
@@ -1043,6 +1073,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       config,
       0,
       listName,
+      declaredOnly,
     )
 
     // When a fragment is provided, pick only the requested fields from the result
@@ -1110,46 +1141,18 @@ function createFindMany<TPrisma extends PrismaClientLike>(
 
     // When a query fragment is provided, build include from fragment fields
     const fragment = isFragment(args?.query) ? args.query : null
-    let include: Record<string, unknown> | undefined
-    if (fragment) {
-      include = buildInclude(fragment._fields) ?? undefined
-    } else if (context._isSudo) {
-      // Sudo bypasses access control entirely — the caller's include is trusted
-      // and used as-is (matching the prior behaviour); no per-relation filtering.
-      include = args?.include
-    } else if (args?.include) {
-      // Caller named relations to fetch — build the access-controlled include
-      // and MERGE (not replace) it with the caller's: the caller selects WHICH
-      // relations to fetch, access control decides WHETHER and WITH WHAT
-      // filter (#566). A caller include naming a relation past the depth the
-      // engine can scope throws `AccessScopeDepthExceededError` (issue #830)
-      // rather than being returned unscoped.
-      const accessControlledInclude = await buildIncludeWithAccessControl(
-        listConfig.fields,
-        {
-          session: context.session,
-          context,
-        },
-        config,
-        0,
-        // Seed the cycle guard with the root list so a relationship cycle back
-        // to it (self-referential or longer) stops re-descending.
-        [listName],
-      )
-      include = mergeIncludeWithAccessControl(
-        args.include,
-        accessControlledInclude,
-        listConfig.fields,
-        config,
-        listName,
-      )
-    } else {
-      // A bare read (no caller `include`) fetches each row's own columns only,
-      // matching Prisma's semantics for the same call (ADR-0024). Relations
-      // are fetched only when a caller names them. This also means no related
-      // list's operation-level `query` access is evaluated on a bare read.
-      include = undefined
-    }
+
+    // Resolve `include`, folding any declared dependencies (`needs`,
+    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
+    // already produces — see `resolveReadInclude`'s doc comment.
+    let { include, declaredOnly } = await resolveReadInclude(
+      args?.include,
+      fragment ? fragment._fields : undefined,
+      listName,
+      listConfig,
+      context,
+      config,
+    )
 
     // Virtual fields have no database column. Whichever path produced
     // `include` (fragment, access-controlled merge, or sudo passthrough), a
@@ -1184,6 +1187,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           config,
           0,
           listName,
+          declaredOnly,
         ),
       ),
     )
@@ -1453,42 +1457,18 @@ function createGet<TPrisma extends PrismaClientLike>(
     // instead of the access-controlled include. Access control still runs via
     // filterReadableFields; the fragment then narrows to only the requested fields.
     const fragment = isFragment(args?.query) ? args.query : null
-    let include: Record<string, unknown> | undefined
 
-    if (fragment) {
-      include = buildInclude(fragment._fields) ?? undefined
-    } else if (context._isSudo) {
-      // Sudo bypasses access control entirely — the caller's include is trusted
-      // and used as-is; no per-relation filtering.
-      include = args?.include
-    } else if (args?.include) {
-      // Caller named relations to fetch — build the access-controlled include
-      // and MERGE (not replace) it with the caller's, exactly like the other
-      // read ops (#566/#830).
-      const accessControlledInclude = await buildIncludeWithAccessControl(
-        listConfig.fields,
-        {
-          session: context.session,
-          context,
-        },
-        config,
-        0,
-        // Seed the cycle guard with the root list so a relationship cycle back
-        // to it (self-referential or longer) stops re-descending.
-        [listName],
-      )
-      include = mergeIncludeWithAccessControl(
-        args.include,
-        accessControlledInclude,
-        listConfig.fields,
-        config,
-        listName,
-      )
-    } else {
-      // A bare read (no caller `include`) fetches the row's own columns only,
-      // matching Prisma's semantics for the same call (ADR-0024).
-      include = undefined
-    }
+    // Resolve `include`, folding any declared dependencies (`needs`,
+    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
+    // already produces — see `resolveReadInclude`'s doc comment.
+    let { include, declaredOnly } = await resolveReadInclude(
+      args?.include,
+      fragment ? fragment._fields : undefined,
+      listName,
+      listConfig,
+      context,
+      config,
+    )
 
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
@@ -1512,6 +1492,7 @@ function createGet<TPrisma extends PrismaClientLike>(
         config,
         0,
         listName,
+        declaredOnly,
       )
       // When a fragment is provided, pick only the requested fields from the result
       if (fragment) {

@@ -16,8 +16,13 @@ import {
   buildNodeBundle,
   formatNodeBuildDiagnostics,
 } from '../generator/index.js'
-import { OpenSaasConfig, validateConfigFields } from '@opensaas/stack-core'
-import type { FieldConfigValidationError } from '@opensaas/stack-core'
+import {
+  OpenSaasConfig,
+  validateConfigFields,
+  validateNeedsDeclarations,
+  validateNeedsClosureDepth,
+} from '@opensaas/stack-core'
+import type { FieldConfigValidationError, NeedsClosureError } from '@opensaas/stack-core'
 
 /**
  * Format field self-containment errors into a friendly, multi-line message.
@@ -39,6 +44,17 @@ export function formatFieldValidationErrors(errors: FieldConfigValidationError[]
     'getZodSchema (or getPrismaRelation for relationships) so the generator can',
     'produce schema and types without inspecting field internals.',
   ].join('\n')
+}
+
+/**
+ * Format `needs` declaration errors (ADR-0025) into a friendly, multi-line
+ * message — an invalid relation name, a cyclic declaration chain, or a
+ * closure too deep to ever be scoped, each naming the offending field.
+ */
+export function formatNeedsClosureErrors(errors: NeedsClosureError[]): string {
+  const lines = errors.map((error) => `  • ${error.message}`)
+
+  return [`${errors.length} field(s) declare an unsatisfiable \`needs\`:`, ...lines].join('\n')
 }
 
 export async function generateCommand() {
@@ -105,6 +121,19 @@ export async function generateCommand() {
       process.exit(1)
     }
     validationSpinner.succeed(chalk.green('Field configuration valid'))
+
+    // Validate `needs` declarations (ADR-0025) up front too: an invalid
+    // relation name, a cyclic declaration chain, or a closure deeper than
+    // the read-include depth cap can ever scope (from any starting point)
+    // must fail generation rather than silently truncate at runtime.
+    const needsSpinner = ora('Validating declared dependencies...').start()
+    const needsErrors = [...validateNeedsDeclarations(config), ...validateNeedsClosureDepth(config)]
+    if (needsErrors.length > 0) {
+      needsSpinner.fail(chalk.red('Declared dependencies invalid'))
+      console.error(chalk.red('\n❌ Error:'), formatNeedsClosureErrors(needsErrors))
+      process.exit(1)
+    }
+    needsSpinner.succeed(chalk.green('Declared dependencies valid'))
 
     // Generate Prisma schema, types, and context
     // Captured here so the (optional) Node build step, which runs after

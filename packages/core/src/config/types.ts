@@ -755,6 +755,49 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param value - The resolved logical value (metadata, or `null` to clear)
    */
   splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
+  /**
+   * Declares the immediate sibling relations this field's `resolveOutput`
+   * hook cannot compute without (ADR-0025 — the "Declared dependency" glossary
+   * entry in `CONTEXT.md`). The read fetches each declared relation wherever
+   * this field is computed — at the root of a read and at every nested level
+   * alike — and scopes it through the Access Filter exactly like a
+   * caller-named relation: a dependency a session cannot query is not
+   * fetched, and the hook sees nothing in its place.
+   *
+   * A declared dependency is private plumbing, not an implicit `include`: it
+   * is stripped from the result unless the caller named it too, so declaring
+   * or removing one changes this field's implementation, never the shape of
+   * every read of the list.
+   *
+   * Names immediate relations only — no dotted paths. Reach beyond one hop
+   * comes from the recursive fold: a dependency's own list declares its own
+   * dependencies.
+   *
+   * Typed as a plain `string[]`, not narrowed to this list's own relation
+   * keys: `BaseFieldConfig` is the contextual type EVERY field builder's
+   * return type is checked against, including non-generic third-party ones
+   * (`richText(): RichTextField`, with no `TTypeInfo` parameter of its own —
+   * the documented third-party field pattern). Narrowing `needs` per-list
+   * would make `needs`'s type on a fixed, unparameterized third-party field
+   * config disagree with the narrower type this list's own slot expects,
+   * breaking assignability for every such field regardless of whether it
+   * uses `needs` at all. A misspelled or non-relation entry is instead
+   * caught by `pnpm generate` (`validateNeedsDeclarations`), which has no
+   * such constraint.
+   *
+   * @example
+   * ```typescript
+   * lineItems: relationship({ ref: 'LineItem.order', many: true }),
+   * total: virtual({
+   *   type: 'number',
+   *   needs: ['lineItems'],
+   *   hooks: {
+   *     resolveOutput: ({ item }) => item.lineItems.reduce((sum, li) => sum + li.price, 0),
+   *   },
+   * }),
+   * ```
+   */
+  needs?: string[]
 }
 
 /**
