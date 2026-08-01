@@ -423,4 +423,78 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     expect(validateNeedsDeclarations(testConfig)).toEqual([])
     expect(validateNeedsClosureDepth(testConfig)).toEqual([])
   })
+
+  it('handles the edges of closure resolution without crashing: a fieldless list, an unresolvable ref, a needs entry naming a non-relationship field, one naming a field that does not exist at all, and two needs entries with different depths', async () => {
+    const { validateNeedsDeclarations, validateNeedsClosureDepth } =
+      await import('../src/validation/needs-closure.js')
+
+    // Raw config objects (not the `list()` builder) so a list can legitimately
+    // have no `fields` key at all — both validators must skip it rather than
+    // crash on `listConfig.fields`.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const edgeConfig: any = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        // No `fields` at all.
+        Empty: {},
+        Tag: { fields: { name: { type: 'text' } } },
+        LineItem: {
+          fields: {
+            order: { type: 'relationship', ref: 'Order.lineItems' },
+            price: { type: 'text' },
+          },
+        },
+        Dangling: {
+          fields: {
+            // Resolves to a real list that has no fields (closure bottoms out at 0).
+            target: { type: 'relationship', ref: 'Empty.field' },
+            // Does not resolve to any list at all.
+            dangling: { type: 'relationship', ref: 'DoesNotExist.field' },
+            computed: {
+              type: 'virtual',
+              needs: ['target', 'dangling'],
+              hooks: { resolveOutput: () => 'x' },
+            },
+          },
+        },
+        Order: {
+          fields: {
+            lineItems: { type: 'relationship', ref: 'LineItem.order' },
+            tag: { type: 'relationship', ref: 'Tag' },
+            price: { type: 'text' },
+            // Both dependencies resolve to a 0-deep closure — the second
+            // does not exceed the first's recorded depth.
+            multi: {
+              type: 'virtual',
+              needs: ['tag', 'lineItems'],
+              hooks: { resolveOutput: () => 'x' },
+            },
+            // Names a real, non-relationship field.
+            usesNonRelation: {
+              type: 'virtual',
+              needs: ['price'],
+              hooks: { resolveOutput: () => 'x' },
+            },
+            // Names a field that does not exist on this list at all.
+            typo: {
+              type: 'virtual',
+              needs: ['nonexistentField'],
+              hooks: { resolveOutput: () => 'x' },
+            },
+          },
+        },
+      },
+    }
+
+    expect(() => validateNeedsDeclarations(edgeConfig)).not.toThrow()
+    expect(() => validateNeedsClosureDepth(edgeConfig)).not.toThrow()
+
+    const declErrors = validateNeedsDeclarations(edgeConfig)
+    expect(declErrors.some((e) => e.fieldKey === 'usesNonRelation')).toBe(true)
+    const typoError = declErrors.find((e) => e.fieldKey === 'typo')
+    expect(typoError?.message).toContain('has no field named')
+
+    // None of this forms a cycle or an over-deep closure.
+    expect(validateNeedsClosureDepth(edgeConfig)).toEqual([])
+  })
 })
