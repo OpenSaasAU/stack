@@ -3,8 +3,12 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
-import { validateConfigFields } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
+import {
+  validateConfigFields,
+  validateNeedsDeclarations,
+  validateNeedsClosureDepth,
+} from '@opensaas/stack-core'
+import { text, relationship, virtual } from '@opensaas/stack-core/fields'
 import {
   writePrismaSchema,
   writePrismaConfig,
@@ -15,7 +19,7 @@ import {
   writePrismaExtensions,
   resolveOutputPaths,
 } from '../generator/index.js'
-import { formatFieldValidationErrors } from './generate.js'
+import { formatFieldValidationErrors, formatNeedsClosureErrors } from './generate.js'
 
 // Mock ora module
 vi.mock('ora', () => ({
@@ -583,6 +587,112 @@ describe('Generate Command Integration', () => {
       expect(message).toContain('2 field(s)')
       expect(message).toContain('Post.title')
       expect(message).toContain('User.name')
+    })
+  })
+
+  describe('Declared dependency (`needs`, ADR-0025) validation', () => {
+    it('passes a compliant config with no errors', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          LineItem: {
+            fields: {
+              price: text(),
+              order: relationship({ ref: 'Order.lineItems' }),
+            },
+          },
+          Order: {
+            fields: {
+              lineItems: relationship({ ref: 'LineItem.order', many: true }),
+              total: virtual({
+                type: 'number',
+                needs: ['lineItems'],
+                hooks: { resolveOutput: () => 0 },
+              }),
+            },
+          },
+        },
+      }
+
+      expect(validateNeedsDeclarations(config)).toEqual([])
+      expect(validateNeedsClosureDepth(config)).toEqual([])
+    })
+
+    it('reports a `needs` entry naming a non-relationship field', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              badField: virtual({
+                type: 'string',
+                needs: ['title'],
+                hooks: { resolveOutput: () => 'x' },
+              }),
+            },
+          },
+        },
+      }
+
+      const errors = validateNeedsDeclarations(config)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatchObject({
+        listKey: 'Post',
+        fieldKey: 'badField',
+        reason: 'invalid-relation',
+      })
+
+      const message = formatNeedsClosureErrors(errors)
+      expect(message).toContain('Post.badField')
+      expect(message).toContain('not a relationship field')
+    })
+
+    it('reports a cyclic needs declaration closure', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: {
+          A: {
+            fields: {
+              b: relationship({ ref: 'B.a' }),
+              computed: virtual({
+                type: 'string',
+                needs: ['b'],
+                hooks: { resolveOutput: () => 'x' },
+              }),
+            },
+          },
+          B: {
+            fields: {
+              a: relationship({ ref: 'A.b' }),
+              computed: virtual({
+                type: 'string',
+                needs: ['a'],
+                hooks: { resolveOutput: () => 'x' },
+              }),
+            },
+          },
+        },
+      }
+
+      const errors = validateNeedsClosureDepth(config)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors[0].reason).toBe('cycle')
+
+      const message = formatNeedsClosureErrors(errors)
+      expect(message).toContain('never terminates')
     })
   })
 })

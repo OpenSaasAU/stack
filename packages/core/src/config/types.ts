@@ -755,6 +755,37 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * @param value - The resolved logical value (metadata, or `null` to clear)
    */
   splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
+  /**
+   * Declares the immediate sibling relations this field's `resolveOutput`
+   * hook cannot compute without (ADR-0025 — the "Declared dependency" glossary
+   * entry in `CONTEXT.md`). The read fetches each declared relation wherever
+   * this field is computed — at the root of a read and at every nested level
+   * alike — and scopes it through the Access Filter exactly like a
+   * caller-named relation: a dependency a session cannot query is not
+   * fetched, and the hook sees nothing in its place.
+   *
+   * A declared dependency is private plumbing, not an implicit `include`: it
+   * is stripped from the result unless the caller named it too, so declaring
+   * or removing one changes this field's implementation, never the shape of
+   * every read of the list.
+   *
+   * Names immediate relations only — no dotted paths. Reach beyond one hop
+   * comes from the recursive fold: a dependency's own list declares its own
+   * dependencies.
+   *
+   * @example
+   * ```typescript
+   * lineItems: relationship({ ref: 'LineItem.order', many: true }),
+   * total: virtual({
+   *   type: 'number',
+   *   needs: ['lineItems'],
+   *   hooks: {
+   *     resolveOutput: ({ item }) => item.lineItems.reduce((sum, li) => sum + li.price, 0),
+   *   },
+   * }),
+   * ```
+   */
+  needs?: RelationshipFieldKeys<TTypeInfo['fields']>[]
 }
 
 /**
@@ -1349,6 +1380,21 @@ export type GetFieldConfig<
   TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
   TFieldKey extends FieldKeys<TFields>,
 > = TFields[TFieldKey]
+
+/**
+ * Field names that are declared relationships — the valid vocabulary for a
+ * {@link BaseFieldConfig.needs} declaration (ADR-0025). Narrows `FieldKeys`
+ * down to keys whose config carries `type: 'relationship'`, so declaring a
+ * non-relation field or a misspelled name is a compile error rather than a
+ * silently-inert string.
+ *
+ * @example
+ * RelationshipFieldKeys<{ title: TextField, author: RelationshipField }> => 'author'
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
+export type RelationshipFieldKeys<TFields extends Record<string, any>> = {
+  [K in FieldKeys<TFields>]: TFields[K] extends { type: 'relationship' } ? K : never
+}[FieldKeys<TFields>]
 
 /**
  * Get value type for a specific field

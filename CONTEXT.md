@@ -38,6 +38,10 @@ _Avoid_: deep include, nested expansion, relation tree
 A relation a computed field names as an input it cannot compute without. The read fetches it for the field's benefit wherever that field is computed, and does not return it — a declared dependency never widens what a caller receives, so a call site's shape stays readable from the call site (see Bare read). Declaring it is what earns the data: a computed field that reaches for a relation it did not declare finds nothing there.
 _Avoid_: auto-include, eager load, field dependency, prefetch
 
+**Declaration closure**:
+The full set of relations a field's Declared dependency chain requires once it is followed recursively — a dependency's own list may declare its own dependencies, and theirs, and so on. Computed at generation time from every starting list, independent of how any caller shapes a read: a closure that cannot fit within the read-include depth cap from its own list as root is refused at generation, since no caller could ever do better by starting elsewhere. A closure that cycles (list A needs list B, which needs list A) is refused the same way, both at generation time and, defensively, at runtime by reusing the relationship-graph cycle guard rather than a bespoke one.
+_Avoid_: dependency graph, needs chain, include tree
+
 **Session-relative value**:
 A computed field's value reflects exactly the rows the reading session may see, never more — down to and including none of them. A total over a relation the Access Filter scoped is a projection of the visible rows, not a fact about the underlying row; computing the true figure would leak the values of rows the session was denied. A field always computes, on whatever its session can see, so one that declares two dependencies and is granted one still produces a value; reconciling that with what the field means is the field author's job. A field that genuinely needs the unscoped view has to ask for it explicitly, through a privileged read inside its own hook.
 _Avoid_: filtered total, partial value, true value
