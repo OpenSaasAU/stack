@@ -35,7 +35,7 @@ A relation a computed field names as an input it cannot compute without. The rea
 _Avoid_: auto-include, eager load, field dependency, prefetch
 
 **Session-relative value**:
-A computed field's value reflects exactly the rows the reading session may see, never more. A total over a relation the Access Filter scoped is a projection of the visible rows, not a fact about the underlying row — computing the true figure would leak the values of rows the session was denied. A field that genuinely needs the unscoped view has to ask for it explicitly, through a privileged read inside its own hook.
+A computed field's value reflects exactly the rows the reading session may see, never more — down to and including none of them. A total over a relation the Access Filter scoped is a projection of the visible rows, not a fact about the underlying row; computing the true figure would leak the values of rows the session was denied. A field always computes, on whatever its session can see, so one that declares two dependencies and is granted one still produces a value; reconciling that with what the field means is the field author's job. A field that genuinely needs the unscoped view has to ask for it explicitly, through a privileged read inside its own hook.
 _Avoid_: filtered total, partial value, true value
 
 **Silent failure**:
