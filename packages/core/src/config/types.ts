@@ -773,6 +773,18 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * comes from the recursive fold: a dependency's own list declares its own
    * dependencies.
    *
+   * Typed as a plain `string[]`, not narrowed to this list's own relation
+   * keys: `BaseFieldConfig` is the contextual type EVERY field builder's
+   * return type is checked against, including non-generic third-party ones
+   * (`richText(): RichTextField`, with no `TTypeInfo` parameter of its own —
+   * the documented third-party field pattern). Narrowing `needs` per-list
+   * would make `needs`'s type on a fixed, unparameterized third-party field
+   * config disagree with the narrower type this list's own slot expects,
+   * breaking assignability for every such field regardless of whether it
+   * uses `needs` at all. A misspelled or non-relation entry is instead
+   * caught by `pnpm generate` (`validateNeedsDeclarations`), which has no
+   * such constraint.
+   *
    * @example
    * ```typescript
    * lineItems: relationship({ ref: 'LineItem.order', many: true }),
@@ -785,7 +797,7 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * }),
    * ```
    */
-  needs?: RelationshipFieldKeys<TTypeInfo['fields']>[]
+  needs?: string[]
 }
 
 /**
@@ -1380,21 +1392,6 @@ export type GetFieldConfig<
   TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
   TFieldKey extends FieldKeys<TFields>,
 > = TFields[TFieldKey]
-
-/**
- * Field names that are declared relationships — the valid vocabulary for a
- * {@link BaseFieldConfig.needs} declaration (ADR-0025). Narrows `FieldKeys`
- * down to keys whose config carries `type: 'relationship'`, so declaring a
- * non-relation field or a misspelled name is a compile error rather than a
- * silently-inert string.
- *
- * @example
- * RelationshipFieldKeys<{ title: TextField, author: RelationshipField }> => 'author'
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
-export type RelationshipFieldKeys<TFields extends Record<string, any>> = {
-  [K in FieldKeys<TFields>]: TFields[K] extends { type: 'relationship' } ? K : never
-}[FieldKeys<TFields>]
 
 /**
  * Get value type for a specific field
