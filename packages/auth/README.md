@@ -165,6 +165,14 @@ authPlugin({
     enabled: true,
     minPasswordLength: 8,
     requireConfirmation: true, // UI-only — pass to <SignUpForm>/<ResetPasswordForm> directly
+    // Passed straight through to better-auth's own `emailAndPassword.sendResetPassword`
+    sendResetPassword: async ({ user, url }) => {
+      await yourEmailService.send({
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
   },
 
   // Email verification
@@ -172,6 +180,14 @@ authPlugin({
     enabled: true,
     sendOnSignUp: true,
     tokenExpiration: 86400, // 24 hours in seconds
+    // Passed straight through to better-auth's own `emailVerification.sendVerificationEmail`
+    sendVerificationEmail: async ({ user, url }) => {
+      await yourEmailService.send({
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
   },
 
   // Password reset
@@ -207,17 +223,6 @@ authPlugin({
       role: text({ defaultValue: 'user' }),
       company: text(),
     },
-  },
-
-  // Custom email sending function — receives the raw better-auth data, so
-  // you choose the subject/body yourself
-  sendEmail: async ({ type, user, url }) => {
-    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-    await yourEmailService.send({
-      to: user.email,
-      subject,
-      html: `<a href="${url}">${subject}</a>`,
-    })
   },
 })
 ```

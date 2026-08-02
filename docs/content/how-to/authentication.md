@@ -826,12 +826,22 @@ Configure email flows for verification and password reset.
 
 ### Email Configuration
 
+`sendResetPassword`/`sendVerificationEmail` are forwarded straight through to better-auth's own `emailAndPassword`/`emailVerification` options — no stack wrapping. Each receives exactly what better-auth passes (`user`, `url`, `token`), so you build the subject line and body yourself:
+
 ```typescript
 authPlugin({
   emailVerification: {
     enabled: true,
     sendOnSignUp: true, // Send verification email on sign-up
     tokenExpiration: 86400, // 24 hours
+    sendVerificationEmail: async ({ user, url }) => {
+      await resend.emails.send({
+        from: 'noreply@yourapp.com',
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
   },
 
   passwordReset: {
@@ -839,17 +849,16 @@ authPlugin({
     tokenExpiration: 3600, // 1 hour
   },
 
-  // Custom email sending function — receives the raw better-auth data
-  // (type/user/url/token); build the subject and body yourself
-  sendEmail: async ({ type, user, url }) => {
-    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-    // Use your email service
-    await resend.emails.send({
-      from: 'noreply@yourapp.com',
-      to: user.email,
-      subject,
-      html: `<a href="${url}">${subject}</a>`,
-    })
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await resend.emails.send({
+        from: 'noreply@yourapp.com',
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
   },
 })
 ```
@@ -862,14 +871,27 @@ import { Resend } from 'resend'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 authPlugin({
-  sendEmail: async ({ type, user, url }) => {
-    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-    await resend.emails.send({
-      from: 'onboarding@resend.dev',
-      to: user.email,
-      subject,
-      html: `<a href="${url}">${subject}</a>`,
-    })
+  emailVerification: {
+    enabled: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
+  },
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
   },
 })
 ```
@@ -882,21 +904,34 @@ import sgMail from '@sendgrid/mail'
 sgMail.setApiKey(process.env.SENDGRID_API_KEY!)
 
 authPlugin({
-  sendEmail: async ({ type, user, url }) => {
-    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-    await sgMail.send({
-      from: 'noreply@yourapp.com',
-      to: user.email,
-      subject,
-      html: `<a href="${url}">${subject}</a>`,
-    })
+  emailVerification: {
+    enabled: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sgMail.send({
+        from: 'noreply@yourapp.com',
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
+  },
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sgMail.send({
+        from: 'noreply@yourapp.com',
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
   },
 })
 ```
 
 ### Development Mode
 
-If no `sendEmail` function is provided, emails are logged to the console in development:
+If no `sendVerificationEmail`/`sendResetPassword` callback is provided, emails are logged to the console in development:
 
 ```
 📧 Email would be sent to: user@example.com
@@ -1557,7 +1592,7 @@ Check your OAuth app configuration:
 
 ### Email Verification Not Sending
 
-1. Check if `sendEmail` function is configured
+1. Check if `emailVerification.sendVerificationEmail` (or `emailAndPassword.sendResetPassword` for password reset) is configured
 2. In development, check console for email logs
 3. Verify email provider API keys are set
 

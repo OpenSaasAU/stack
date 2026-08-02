@@ -23,8 +23,18 @@ const { createAuth, getSessionFromAuth } = await import('../src/server/index.js'
 
 function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): NormalizedAuthConfig {
   return {
-    emailAndPassword: { enabled: true, minPasswordLength: 8, requireConfirmation: true },
-    emailVerification: { enabled: false, sendOnSignUp: true, tokenExpiration: 86400 },
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 8,
+      requireConfirmation: true,
+      sendResetPassword: vi.fn(async () => {}),
+    },
+    emailVerification: {
+      enabled: false,
+      sendOnSignUp: true,
+      tokenExpiration: 86400,
+      sendVerificationEmail: vi.fn(async () => {}),
+    },
     passwordReset: { enabled: false, tokenExpiration: 3600 },
     socialProviders: {},
     session: { expiresIn: 604800, updateAge: 86400 },
@@ -37,7 +47,6 @@ function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): Normaliz
     sessionFields: ['userId', 'email', 'name'],
     extendUserList: {},
     access: {},
-    sendEmail: vi.fn(async () => {}),
     betterAuthPlugins: [],
     rateLimit: undefined,
     ...overrides,
@@ -77,7 +86,12 @@ describe('createAuth', () => {
   it('forwards emailAndPassword.minPasswordLength', async () => {
     const config = await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: true, minPasswordLength: 12, requireConfirmation: true },
+        emailAndPassword: {
+          enabled: true,
+          minPasswordLength: 12,
+          requireConfirmation: true,
+          sendResetPassword: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -87,7 +101,12 @@ describe('createAuth', () => {
   it('omits emailAndPassword entirely when disabled', async () => {
     const config = await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: false, minPasswordLength: 8, requireConfirmation: true },
+        emailAndPassword: {
+          enabled: false,
+          minPasswordLength: 8,
+          requireConfirmation: true,
+          sendResetPassword: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -97,7 +116,12 @@ describe('createAuth', () => {
   it('forwards emailVerification.sendOnSignUp and tokenExpiration when enabled', async () => {
     const config = await buildBetterAuthConfig(
       makeAuthConfig({
-        emailVerification: { enabled: true, sendOnSignUp: false, tokenExpiration: 1234 },
+        emailVerification: {
+          enabled: true,
+          sendOnSignUp: false,
+          tokenExpiration: 1234,
+          sendVerificationEmail: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -110,69 +134,52 @@ describe('createAuth', () => {
   it('omits emailVerification entirely when disabled', async () => {
     const config = await buildBetterAuthConfig(
       makeAuthConfig({
-        emailVerification: { enabled: false, sendOnSignUp: true, tokenExpiration: 86400 },
+        emailVerification: {
+          enabled: false,
+          sendOnSignUp: true,
+          tokenExpiration: 86400,
+          sendVerificationEmail: vi.fn(async () => {}),
+        },
       }),
     )
 
     expect(config.emailVerification).toBeUndefined()
   })
 
-  it('wires sendVerificationEmail through to the configured sendEmail callback', async () => {
-    const sendEmail = vi.fn(async () => {})
-    await buildBetterAuthConfig(
+  it('forwards the configured sendVerificationEmail callback straight through, unwrapped', async () => {
+    const sendVerificationEmail = vi.fn(async () => {})
+    const config = await buildBetterAuthConfig(
       makeAuthConfig({
-        emailVerification: { enabled: true, sendOnSignUp: true, tokenExpiration: 86400 },
-        sendEmail,
+        emailVerification: {
+          enabled: true,
+          sendOnSignUp: true,
+          tokenExpiration: 86400,
+          sendVerificationEmail,
+        },
       }),
     )
 
-    const config = betterAuthMock.mock.calls[0][0] as BetterAuthOptions
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising the callback shape
-    await (config.emailVerification as any).sendVerificationEmail({
-      user: { email: 'a@b.com' },
-      url: 'http://example.com/verify',
-      token: 'verify-token',
-    })
-
-    expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'verification',
-        user: { email: 'a@b.com' },
-        url: 'http://example.com/verify',
-        token: 'verify-token',
-      }),
-    )
+    expect(config.emailVerification?.sendVerificationEmail).toBe(sendVerificationEmail)
   })
 
-  it('forwards passwordReset.tokenExpiration and wires sendResetPassword when enabled', async () => {
-    const sendEmail = vi.fn(async () => {})
-    await buildBetterAuthConfig(
+  it('forwards passwordReset.tokenExpiration and the configured sendResetPassword callback straight through, unwrapped', async () => {
+    const sendResetPassword = vi.fn(async () => {})
+    const config = await buildBetterAuthConfig(
       makeAuthConfig({
         passwordReset: { enabled: true, tokenExpiration: 4321 },
-        sendEmail,
+        emailAndPassword: {
+          enabled: true,
+          minPasswordLength: 8,
+          requireConfirmation: true,
+          sendResetPassword,
+        },
       }),
     )
 
-    const config = betterAuthMock.mock.calls[0][0] as BetterAuthOptions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
     const emailAndPassword = config.emailAndPassword as any
     expect(emailAndPassword.resetPasswordTokenExpiresIn).toBe(4321)
-    expect(typeof emailAndPassword.sendResetPassword).toBe('function')
-
-    await emailAndPassword.sendResetPassword({
-      user: { email: 'reset@example.com' },
-      url: 'http://example.com/reset',
-      token: 'reset-token',
-    })
-
-    expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'reset-password',
-        user: { email: 'reset@example.com' },
-        url: 'http://example.com/reset',
-        token: 'reset-token',
-      }),
-    )
+    expect(emailAndPassword.sendResetPassword).toBe(sendResetPassword)
   })
 
   it('does not add sendResetPassword when passwordReset is disabled', async () => {
@@ -210,7 +217,12 @@ describe('createAuth', () => {
 
     await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: true, minPasswordLength: 8, requireConfirmation: false },
+        emailAndPassword: {
+          enabled: true,
+          minPasswordLength: 8,
+          requireConfirmation: false,
+          sendResetPassword: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -223,7 +235,12 @@ describe('createAuth', () => {
 
     await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: true, minPasswordLength: 8, requireConfirmation: true },
+        emailAndPassword: {
+          enabled: true,
+          minPasswordLength: 8,
+          requireConfirmation: true,
+          sendResetPassword: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -236,7 +253,12 @@ describe('createAuth', () => {
 
     await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: false, minPasswordLength: 8, requireConfirmation: false },
+        emailAndPassword: {
+          enabled: false,
+          minPasswordLength: 8,
+          requireConfirmation: false,
+          sendResetPassword: vi.fn(async () => {}),
+        },
       }),
     )
 
@@ -249,7 +271,12 @@ describe('createAuth', () => {
 
     await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: false, minPasswordLength: 8, requireConfirmation: true },
+        emailAndPassword: {
+          enabled: false,
+          minPasswordLength: 8,
+          requireConfirmation: true,
+          sendResetPassword: vi.fn(async () => {}),
+        },
         passwordReset: { enabled: true, tokenExpiration: 3600 },
       }),
     )
@@ -263,7 +290,12 @@ describe('createAuth', () => {
 
     await buildBetterAuthConfig(
       makeAuthConfig({
-        emailAndPassword: { enabled: true, minPasswordLength: 8, requireConfirmation: true },
+        emailAndPassword: {
+          enabled: true,
+          minPasswordLength: 8,
+          requireConfirmation: true,
+          sendResetPassword: vi.fn(async () => {}),
+        },
         passwordReset: { enabled: true, tokenExpiration: 3600 },
       }),
     )

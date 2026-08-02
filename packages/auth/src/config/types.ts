@@ -3,18 +3,15 @@ import type { User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
 /**
- * Raw data for an email-verification or password-reset email, passed through
- * unmodified from better-auth's own `sendVerificationEmail`/`sendResetPassword`
- * callbacks. The stack does not pick a subject line or render a body for
- * you — `type` lets you choose a template/copy, and `user`/`url`/`token` are
- * exactly what better-auth provides.
+ * better-auth's own callback shape for `sendVerificationEmail`/
+ * `sendResetPassword` — `data` is exactly what better-auth passes (no stack
+ * abstraction layered on top), and `request` is the raw request that
+ * triggered it.
  */
-export type SendEmailParams = {
-  type: 'verification' | 'reset-password'
-  user: User
-  url: string
-  token: string
-}
+export type SendAuthEmail = (
+  data: { user: User; url: string; token: string },
+  request?: Request,
+) => Promise<void>
 
 /**
  * OAuth provider configuration
@@ -59,6 +56,24 @@ export type EmailPasswordConfig = {
    * @default true
    */
   requireConfirmation?: boolean
+  /**
+   * Send a password reset email. Passed straight through to better-auth's own
+   * `emailAndPassword.sendResetPassword` — the stack does not wrap or
+   * reshape it. If not provided, reset emails are logged to console instead
+   * of sent.
+   *
+   * @example
+   * ```typescript
+   * sendResetPassword: async ({ user, url }) => {
+   *   await resend.emails.send({
+   *     to: user.email,
+   *     subject: 'Reset your password',
+   *     html: `<a href="${url}">Reset your password</a>`,
+   *   })
+   * }
+   * ```
+   */
+  sendResetPassword?: SendAuthEmail
 }
 
 /**
@@ -76,6 +91,24 @@ export type EmailVerificationConfig = {
    * @default 86400 (24 hours)
    */
   tokenExpiration?: number
+  /**
+   * Send a verification email. Passed straight through to better-auth's own
+   * `emailVerification.sendVerificationEmail` — the stack does not wrap or
+   * reshape it. If not provided, verification emails are logged to console
+   * instead of sent.
+   *
+   * @example
+   * ```typescript
+   * sendVerificationEmail: async ({ user, url }) => {
+   *   await resend.emails.send({
+   *     to: user.email,
+   *     subject: 'Verify your email',
+   *     html: `<a href="${url}">Verify your email</a>`,
+   *   })
+   * }
+   * ```
+   */
+  sendVerificationEmail?: SendAuthEmail
 }
 
 /**
@@ -327,26 +360,6 @@ export type AuthConfig = {
    * narrower, User-specific override.
    */
   access?: AuthAccessConfig
-
-  /**
-   * Custom email sending function for verification and password reset.
-   * Receives the raw better-auth callback data — build your own subject line
-   * and body from `type`/`user`/`url`. If not provided, emails are logged to
-   * console instead of sent.
-   *
-   * @example
-   * ```typescript
-   * sendEmail: async ({ type, user, url }) => {
-   *   const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-   *   await resend.emails.send({
-   *     to: user.email,
-   *     subject,
-   *     html: `<a href="${url}">${subject}</a>`,
-   *   })
-   * }
-   * ```
-   */
-  sendEmail?: (params: SendEmailParams) => Promise<void>
 
   /**
    * Additional Better Auth plugins to enable

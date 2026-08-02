@@ -2,16 +2,36 @@
 '@opensaas/stack-auth': minor
 ---
 
-`createAuth()` now forwards `AuthConfig` options it previously normalized but silently dropped: `emailAndPassword.minPasswordLength`, `passwordReset.enabled`/`tokenExpiration` (wired to better-auth's `sendResetPassword`), and `emailVerification.enabled`/`sendOnSignUp`/`tokenExpiration` (wired to `sendVerificationEmail`). `sendEmail` is now actually invoked by these callbacks instead of being normalized and never called — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled.
+`createAuth()` now forwards `AuthConfig` options it previously normalized but silently dropped: `emailAndPassword.minPasswordLength`, `passwordReset.enabled`/`tokenExpiration` (wired to better-auth's `sendResetPassword`), and `emailVerification.enabled`/`sendOnSignUp`/`tokenExpiration` (wired to `sendVerificationEmail`).
 
-`sendEmail`'s signature changes from `(params: { to: string; subject: string; html: string }) => Promise<void>` to `(params: { type: 'verification' | 'reset-password'; user: User; url: string; token: string }) => Promise<void>` — rather than the stack picking a subject line and rendering a canned HTML body, it now passes through better-auth's raw callback data so the app builds its own copy/template:
+The stack does not wrap these email callbacks in any way — `emailAndPassword.sendResetPassword` and `emailVerification.sendVerificationEmail` are better-auth's own option shape, forwarded straight through, so an app configures them exactly as it would when calling `betterAuth()` directly:
 
 ```typescript
-sendEmail: async ({ type, user, url }) => {
-  const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
-  await resend.emails.send({ to: user.email, subject, html: `<a href="${url}">${subject}</a>` })
-}
+authPlugin({
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await resend.emails.send({
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
+  },
+  emailVerification: {
+    enabled: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await resend.emails.send({
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
+  },
+})
 ```
+
+If not provided, reset/verification emails are logged to console instead of sent — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled and these callbacks are configured.
 
 Two related fixes, both changing existing behavior:
 
