@@ -1,5 +1,58 @@
 # @opensaas/stack-core
 
+## 0.37.0
+
+### Minor Changes
+
+- [#868](https://github.com/OpenSaasAU/stack/pull/868) [`6bf9dcb`](https://github.com/OpenSaasAU/stack/commit/6bf9dcb1b8d030d57371b6b4a4f55462eb8ab2eb) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.indexes` to `ListConfig` for model-level composite `@@unique`/`@@index` constraints spanning two or more of a list's own fields — the multi-column case single-field `isIndexed` can't reach.
+
+  Entries name OpenSaaS field names, not raw database columns; the generator resolves a scalar field to its own name and a relationship field to its foreign key column:
+
+  ```typescript
+  Audition: list({
+    fields: {
+      student: relationship({ ref: 'Student.auditions' }),
+      production: relationship({ ref: 'Production.auditions' }),
+    },
+    db: {
+      // One audition per student per production — a DB-level backstop a
+      // hook's existence check alone can't provide against concurrent writes.
+      indexes: [{ fields: ['student', 'production'], unique: true }],
+    },
+  })
+  // Generates: @@unique([studentId, productionId])
+
+  AuthVerification: list({
+    fields: { identifier: text(), createdAt: timestamp() },
+    db: {
+      indexes: [
+        {
+          fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+          name: 'AuthVerification_identifier_createdAt_idx', // adopts an existing constraint name via Prisma's `map:`
+        },
+      ],
+    },
+  })
+  // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+  ```
+
+  An entry naming an unknown field, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry, and the bad field, rather than being silently dropped or emitted as invalid Prisma. A config with no `db.indexes` generates byte-for-byte identical output to before this change.
+
+- [#870](https://github.com/OpenSaasAU/stack/pull/870) [`7b6189f`](https://github.com/OpenSaasAU/stack/commit/7b6189fa60119a45082ba62dd71d915d93de529c) Thanks [@relationship({](https://github.com/relationship({)! - A relationship field's foreign key can now be declared non-nullable via `db.isNullable: false` — the generated FK column and its relation field lose their `?` together. Omitting the option leaves every existing relationship unchanged (still nullable by default).
+
+  ```typescript
+
+    ref: 'User.sessions',
+    db: { isNullable: false },
+  })
+  // Generates: userId String  (was String?)
+  //            user   User    @relation(...)  (was User?)
+  ```
+
+  `@opensaas/stack-auth`'s derived Auth lists now use this to match better-auth's own Prisma schema: `Session.expiresAt`, `Verification.expiresAt`, and the `Session.user`/`Account.user` foreign keys generate as required instead of nullable.
+
+  **Migration note:** this changes the generated schema for existing greenfield apps. Running `opensaas generate` followed by `prisma db push`/`prisma migrate dev` will produce a migration that adds `NOT NULL` to `Session.expiresAt`, `Verification.expiresAt`, `Session.userId`, and `Account.userId`. Since better-auth's own adapter always writes these columns, no existing row should violate the new constraint — but back up production data before applying, as with any schema migration.
+
 ## 0.36.0
 
 ### Minor Changes
