@@ -185,12 +185,15 @@ describe('createAuth', () => {
     expect(config.session?.updateAge).toBe(3600)
   })
 
-  it('maps session.updateAge false to 0', async () => {
+  it('sets disableSessionRefresh instead of updateAge: 0 when updateAge is false', async () => {
     const config = await buildBetterAuthConfig(
       makeAuthConfig({ session: { expiresIn: 604800, updateAge: false } }),
     )
 
-    expect(config.session?.updateAge).toBe(0)
+    // better-auth treats `updateAge: 0` as "refresh on every request", not
+    // "never refresh" — disabling refresh requires the separate flag.
+    expect(config.session?.disableSessionRefresh).toBe(true)
+    expect(config.session?.updateAge).toBeUndefined()
   })
 
   it('warns when requireConfirmation is set to false since it has no server-side effect', async () => {
@@ -216,6 +219,47 @@ describe('createAuth', () => {
     )
 
     expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('does not warn about requireConfirmation when emailAndPassword is disabled', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await buildBetterAuthConfig(
+      makeAuthConfig({
+        emailAndPassword: { enabled: false, minPasswordLength: 8, requireConfirmation: false },
+      }),
+    )
+
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('requireConfirmation'))
+    warnSpy.mockRestore()
+  })
+
+  it('warns when passwordReset is enabled but emailAndPassword is disabled', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await buildBetterAuthConfig(
+      makeAuthConfig({
+        emailAndPassword: { enabled: false, minPasswordLength: 8, requireConfirmation: true },
+        passwordReset: { enabled: true, tokenExpiration: 3600 },
+      }),
+    )
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('passwordReset'))
+    warnSpy.mockRestore()
+  })
+
+  it('does not warn about passwordReset when emailAndPassword is enabled', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await buildBetterAuthConfig(
+      makeAuthConfig({
+        emailAndPassword: { enabled: true, minPasswordLength: 8, requireConfirmation: true },
+        passwordReset: { enabled: true, tokenExpiration: 3600 },
+      }),
+    )
+
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('passwordReset'))
     warnSpy.mockRestore()
   })
 })

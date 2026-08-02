@@ -100,11 +100,24 @@ export function createAuth(
         // concern the pre-built forms already take as their own
         // `requirePasswordConfirmation` prop. Warn rather than silently drop it,
         // since setting it here looks like it should do something.
-        if (authConfig.emailAndPassword.requireConfirmation !== true) {
+        if (
+          authConfig.emailAndPassword.enabled &&
+          authConfig.emailAndPassword.requireConfirmation !== true
+        ) {
           console.warn(
             '[@opensaas/stack-auth] `emailAndPassword.requireConfirmation` has no effect here — ' +
               'createAuth() has no better-auth option to forward it to. Pass ' +
               '`requirePasswordConfirmation` directly to <SignUpForm> / <ResetPasswordForm> instead.',
+          )
+        }
+
+        // `passwordReset` is wired through better-auth's `emailAndPassword` config
+        // (there's no password to reset without a password-based account), so it
+        // silently has no effect if email/password auth itself isn't enabled.
+        if (authConfig.passwordReset.enabled && !authConfig.emailAndPassword.enabled) {
+          console.warn(
+            '[@opensaas/stack-auth] `passwordReset.enabled` has no effect here — ' +
+              '`emailAndPassword.enabled` is false, so there is no password-based account to reset.',
           )
         }
 
@@ -119,7 +132,12 @@ export function createAuth(
           session: {
             ...toBetterAuthModelOptions(authConfig.models.session),
             expiresIn: authConfig.session.expiresIn || 604800,
-            updateAge: authConfig.session.updateAge === false ? 0 : authConfig.session.updateAge,
+            // better-auth treats `updateAge: 0` as "refresh on every request", not
+            // "never refresh" — disabling refresh entirely requires its separate
+            // `disableSessionRefresh` flag regardless of `updateAge`.
+            ...(authConfig.session.updateAge === false
+              ? { disableSessionRefresh: true }
+              : { updateAge: authConfig.session.updateAge }),
           },
           account: toBetterAuthModelOptions(authConfig.models.account),
           verification: toBetterAuthModelOptions(authConfig.models.verification),
