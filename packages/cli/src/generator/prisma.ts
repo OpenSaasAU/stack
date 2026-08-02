@@ -84,6 +84,28 @@ function getFieldModifiers(
 }
 
 /**
+ * Get the block-level index a field asks for, if any.
+ *
+ * Prisma has no field-level `@index` attribute, so a non-unique index cannot
+ * ride along in the field's modifiers — the field requests it out-of-line and
+ * the generator emits `@@index([...])` on the model, exactly as it already does
+ * for relationship foreign keys via `getPrismaRelation`.
+ */
+function getFieldIndex(
+  fieldName: string,
+  field: FieldConfig,
+  provider?: string,
+  listName?: string,
+  keystoneCompat?: boolean,
+): boolean | 'unique' | undefined {
+  if (field.getPrismaType) {
+    return field.getPrismaType(fieldName, provider, listName, keystoneCompat).index
+  }
+
+  return undefined
+}
+
+/**
  * Generate Prisma schema from OpenSaas config
  *
  * @param prismaClientOutput - Module specifier for the patched Prisma client's
@@ -234,6 +256,9 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     // Track relationship field names (in declaration order) for later processing
     const relationshipFieldNames: string[] = []
 
+    // Block-level indexes requested by scalar fields (see getFieldIndex)
+    const scalarIndexes: { field: string; indexType: boolean | 'unique' }[] = []
+
     // Add regular fields
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       // Skip virtual fields - they don't create database columns
@@ -295,6 +320,17 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       const nullPart = modStr.startsWith('?') ? '?' : ''
       const attrPart = modStr.startsWith('?') ? modStr.slice(1).trimStart() : modStr
       lines.push(`  ${paddedName} ${prismaType}${nullPart}${attrPart ? ' ' + attrPart : ''}`)
+
+      const index = getFieldIndex(
+        fieldName,
+        fieldConfig,
+        config.db.provider,
+        listName,
+        keystoneCompat,
+      )
+      if (index !== undefined && index !== false) {
+        scalarIndexes.push({ field: fieldName, indexType: index })
+      }
     }
 
     // Add relationship fields (lines + foreign key indexes) from the precomputed results
@@ -324,6 +360,17 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     }
     if (timestamps.updatedAt) {
       lines.push('  updatedAt DateTime @default(now()) @updatedAt')
+    }
+
+    // Add block-level indexes for scalar fields. Emitted before the foreign-key
+    // indexes so the order follows field declaration order (scalars are written
+    // above relationships in the model).
+    for (const index of scalarIndexes) {
+      if (index.indexType === 'unique') {
+        lines.push(`  @@unique([${index.field}])`)
+      } else if (index.indexType === true) {
+        lines.push(`  @@index([${index.field}])`)
+      }
     }
 
     // Add indexes for foreign key fields

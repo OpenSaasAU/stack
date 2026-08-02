@@ -10,6 +10,8 @@ import {
   timestamp,
   select,
   json,
+  decimal,
+  calendarDay,
 } from '@opensaas/stack-core/fields'
 
 describe('Prisma Schema Generator', () => {
@@ -995,6 +997,98 @@ describe('Prisma Schema Generator', () => {
       // Should not have index
       expect(schema).not.toContain('@@index([authorId])')
       expect(schema).not.toContain('@@unique([authorId])')
+    })
+
+    // Prisma has no field-level `@index` attribute — `@id`, `@unique`,
+    // `@default`, `@map`, `@relation`, `@updatedAt` and `@ignore` are the whole
+    // field-level set. A non-unique index exists ONLY as the model-level
+    // `@@index([...])`, so emitting an inline `@index` produces a schema Prisma
+    // refuses to parse ("Attribute not known: @index").
+    it('should generate @@index for a scalar field with isIndexed: true', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text({ isIndexed: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@index([title])')
+      // The index must NOT ride along on the field line.
+      expect(schema).not.toMatch(/\s@index\b/)
+    })
+
+    it('should generate @@index for every scalar type that accepts isIndexed', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          Reading: {
+            fields: {
+              label: text({ isIndexed: true }),
+              amount: decimal({ isIndexed: true }),
+              takenOn: calendarDay({ isIndexed: true }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@index([label])')
+      expect(schema).toContain('@@index([amount])')
+      expect(schema).toContain('@@index([takenOn])')
+      expect(schema).not.toMatch(/\s@index\b/)
+    })
+
+    it('should keep isIndexed: "unique" as an inline @unique on scalar fields', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              email: text({ isIndexed: 'unique' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      // A unique index has a valid field-level form, so it stays inline —
+      // unchanged from every schema this generator has ever produced.
+      expect(schema).toMatch(/email\s+String\??\s+@unique/)
+      expect(schema).not.toContain('@@unique([email])')
+    })
+
+    it('should not generate an index for a scalar without isIndexed', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).not.toContain('@@index([title])')
+      expect(schema).not.toContain('@@unique([title])')
     })
 
     it('should generate @@map for a list-level db.map', () => {
