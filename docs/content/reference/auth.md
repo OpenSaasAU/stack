@@ -217,13 +217,14 @@ authPlugin({
 
 ### `sendEmail`
 
-Provide a custom email sending function for verification and password reset emails:
+Provide a custom email sending function for verification and password reset emails. It receives the raw data better-auth generates — a `type` discriminator plus the `user`, `url`, and `token` — so you build the subject line and body yourself:
 
 ```typescript
 authPlugin({
-  sendEmail: async ({ to, subject, html }) => {
+  sendEmail: async ({ type, user, url }) => {
+    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
     // Use your email service (SendGrid, Resend, etc.)
-    await emailService.send({ to, subject, html })
+    await emailService.send({ to: user.email, subject, html: `<a href="${url}">${subject}</a>` })
   },
 })
 ```

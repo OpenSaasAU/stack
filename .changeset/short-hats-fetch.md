@@ -4,6 +4,15 @@
 
 `createAuth()` now forwards `AuthConfig` options it previously normalized but silently dropped: `emailAndPassword.minPasswordLength`, `passwordReset.enabled`/`tokenExpiration` (wired to better-auth's `sendResetPassword`), and `emailVerification.enabled`/`sendOnSignUp`/`tokenExpiration` (wired to `sendVerificationEmail`). `sendEmail` is now actually invoked by these callbacks instead of being normalized and never called — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled.
 
+`sendEmail`'s signature changes from `(params: { to: string; subject: string; html: string }) => Promise<void>` to `(params: { type: 'verification' | 'reset-password'; user: User; url: string; token: string }) => Promise<void>` — rather than the stack picking a subject line and rendering a canned HTML body, it now passes through better-auth's raw callback data so the app builds its own copy/template:
+
+```typescript
+sendEmail: async ({ type, user, url }) => {
+  const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
+  await resend.emails.send({ to: user.email, subject, html: `<a href="${url}">${subject}</a>` })
+}
+```
+
 Two related fixes, both changing existing behavior:
 
 - `session.updateAge` is retyped from `boolean` to `number | false` — the number of seconds between session refreshes, passed straight through to better-auth's own `session.updateAge` instead of being computed as `expiresIn / 10`. The default changes from `true` to `86400` (1 day), matching better-auth's own default. Update any `updateAge: true` config to a duration in seconds (e.g. `86400`). `updateAge: false` now correctly maps to better-auth's `disableSessionRefresh: true` (previously it mapped to `updateAge: 0`, which better-auth treats as "refresh on every request" — the opposite of disabling refresh).

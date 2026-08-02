@@ -1,5 +1,20 @@
 import type { ListConfig } from '@opensaas/stack-core'
+import type { User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
+
+/**
+ * Raw data for an email-verification or password-reset email, passed through
+ * unmodified from better-auth's own `sendVerificationEmail`/`sendResetPassword`
+ * callbacks. The stack does not pick a subject line or render a body for
+ * you — `type` lets you choose a template/copy, and `user`/`url`/`token` are
+ * exactly what better-auth provides.
+ */
+export type SendEmailParams = {
+  type: 'verification' | 'reset-password'
+  user: User
+  url: string
+  token: string
+}
 
 /**
  * OAuth provider configuration
@@ -314,17 +329,24 @@ export type AuthConfig = {
   access?: AuthAccessConfig
 
   /**
-   * Custom email sending function for verification and password reset
-   * If not provided, emails will be logged to console
+   * Custom email sending function for verification and password reset.
+   * Receives the raw better-auth callback data — build your own subject line
+   * and body from `type`/`user`/`url`. If not provided, emails are logged to
+   * console instead of sent.
    *
    * @example
    * ```typescript
-   * sendEmail: async ({ to, subject, html }) => {
-   *   await resend.emails.send({ to, subject, html })
+   * sendEmail: async ({ type, user, url }) => {
+   *   const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
+   *   await resend.emails.send({
+   *     to: user.email,
+   *     subject,
+   *     html: `<a href="${url}">${subject}</a>`,
+   *   })
    * }
    * ```
    */
-  sendEmail?: (params: { to: string; subject: string; html: string }) => Promise<void>
+  sendEmail?: (params: SendEmailParams) => Promise<void>
 
   /**
    * Additional Better Auth plugins to enable

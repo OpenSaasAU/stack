@@ -4,24 +4,25 @@ import { nextCookies } from 'better-auth/next-js'
 import type { BetterAuthOptions, User } from 'better-auth'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
-import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
+import type {
+  NormalizedAuthConfig,
+  NormalizedAuthModelConfig,
+  SendEmailParams,
+} from '../config/types.js'
 
 /**
  * Build the better-auth `sendVerificationEmail`/`sendResetPassword` callback
- * from the normalized `sendEmail` config, rendering a minimal HTML body
- * around the link better-auth provides.
+ * from the normalized `sendEmail` config. The stack does not pick a subject
+ * line or render a body — it passes better-auth's raw `user`/`url`/`token`
+ * straight through, tagged with `type` so the app's `sendEmail` can choose
+ * its own copy/template.
  */
 function toSendEmailCallback(
   sendEmail: NormalizedAuthConfig['sendEmail'],
-  subject: string,
-  bodyText: string,
+  type: SendEmailParams['type'],
 ) {
-  return async ({ user, url }: { user: User; url: string }) => {
-    await sendEmail({
-      to: user.email,
-      subject,
-      html: `<p>${bodyText}</p><p><a href="${url}">${url}</a></p>`,
-    })
+  return async ({ user, url, token }: { user: User; url: string; token: string }) => {
+    await sendEmail({ type, user, url, token })
   }
 }
 
@@ -152,8 +153,7 @@ export function createAuth(
                   ? {
                       sendResetPassword: toSendEmailCallback(
                         authConfig.sendEmail,
-                        'Reset your password',
-                        'Click the link below to reset your password:',
+                        'reset-password',
                       ),
                       resetPasswordTokenExpiresIn: authConfig.passwordReset.tokenExpiration,
                     }
@@ -165,11 +165,7 @@ export function createAuth(
           // e.g. a social-provider account whose email isn't yet verified)
           emailVerification: authConfig.emailVerification.enabled
             ? {
-                sendVerificationEmail: toSendEmailCallback(
-                  authConfig.sendEmail,
-                  'Verify your email address',
-                  'Click the link below to verify your email address:',
-                ),
+                sendVerificationEmail: toSendEmailCallback(authConfig.sendEmail, 'verification'),
                 sendOnSignUp: authConfig.emailVerification.sendOnSignUp,
                 expiresIn: authConfig.emailVerification.tokenExpiration,
               }

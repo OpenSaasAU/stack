@@ -839,14 +839,16 @@ authPlugin({
     tokenExpiration: 3600, // 1 hour
   },
 
-  // Custom email sending function
-  sendEmail: async ({ to, subject, html }) => {
+  // Custom email sending function — receives the raw better-auth data
+  // (type/user/url/token); build the subject and body yourself
+  sendEmail: async ({ type, user, url }) => {
+    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
     // Use your email service
     await resend.emails.send({
       from: 'noreply@yourapp.com',
-      to,
+      to: user.email,
       subject,
-      html,
+      html: `<a href="${url}">${subject}</a>`,
     })
   },
 })
@@ -860,12 +862,13 @@ import { Resend } from 'resend'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 authPlugin({
-  sendEmail: async ({ to, subject, html }) => {
+  sendEmail: async ({ type, user, url }) => {
+    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
     await resend.emails.send({
       from: 'onboarding@resend.dev',
-      to,
+      to: user.email,
       subject,
-      html,
+      html: `<a href="${url}">${subject}</a>`,
     })
   },
 })
@@ -879,12 +882,13 @@ import sgMail from '@sendgrid/mail'
 sgMail.setApiKey(process.env.SENDGRID_API_KEY!)
 
 authPlugin({
-  sendEmail: async ({ to, subject, html }) => {
+  sendEmail: async ({ type, user, url }) => {
+    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
     await sgMail.send({
       from: 'noreply@yourapp.com',
-      to,
+      to: user.email,
       subject,
-      html,
+      html: `<a href="${url}">${subject}</a>`,
     })
   },
 })

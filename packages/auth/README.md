@@ -209,9 +209,15 @@ authPlugin({
     },
   },
 
-  // Custom email sending function
-  sendEmail: async ({ to, subject, html }) => {
-    await yourEmailService.send({ to, subject, html })
+  // Custom email sending function — receives the raw better-auth data, so
+  // you choose the subject/body yourself
+  sendEmail: async ({ type, user, url }) => {
+    const subject = type === 'verification' ? 'Verify your email' : 'Reset your password'
+    await yourEmailService.send({
+      to: user.email,
+      subject,
+      html: `<a href="${url}">${subject}</a>`,
+    })
   },
 })
 ```

@@ -131,12 +131,15 @@ describe('createAuth', () => {
     await (config.emailVerification as any).sendVerificationEmail({
       user: { email: 'a@b.com' },
       url: 'http://example.com/verify',
+      token: 'verify-token',
     })
 
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: 'a@b.com',
-        subject: 'Verify your email address',
+        type: 'verification',
+        user: { email: 'a@b.com' },
+        url: 'http://example.com/verify',
+        token: 'verify-token',
       }),
     )
   })
@@ -159,10 +162,16 @@ describe('createAuth', () => {
     await emailAndPassword.sendResetPassword({
       user: { email: 'reset@example.com' },
       url: 'http://example.com/reset',
+      token: 'reset-token',
     })
 
     expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'reset@example.com', subject: 'Reset your password' }),
+      expect.objectContaining({
+        type: 'reset-password',
+        user: { email: 'reset@example.com' },
+        url: 'http://example.com/reset',
+        token: 'reset-token',
+      }),
     )
   })
 

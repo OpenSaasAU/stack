@@ -116,11 +116,11 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     access: config.access || {},
     sendEmail:
       config.sendEmail ||
-      (async ({ to, subject, html }) => {
+      (async ({ type, user, url }) => {
         console.log('[Auth] Email not sent (no sendEmail configured):')
-        console.log(`To: ${to}`)
-        console.log(`Subject: ${subject}`)
-        console.log(`Body: ${html}`)
+        console.log(`Type: ${type}`)
+        console.log(`To: ${user.email}`)
+        console.log(`URL: ${url}`)
       }),
     betterAuthPlugins: config.betterAuthPlugins || [],
     rateLimit: config.rateLimit,
