@@ -99,6 +99,8 @@ if (!post) return notFound()
 
 {% callout type="info" %}
 A `context.db` read with **no** `include` and **no** fragment `query` returns the row's own columns and virtual fields only — never relations, matching Prisma's own default. `post.author` is `undefined` on a bare `findUnique`/`findMany` unless you name it via `include` or a fragment. This also applies to a `virtual` field's `resolveOutput` hook issuing its own bare `context.db` read — it won't see relations either, so read through `context.db` for what you need or pass an `include`.
+
+The same rule holds one hop at a time inside an `include`: naming a relation fetches that relation's own columns and stops. `include: { author: true }` returns `author`'s scalar fields, not `author`'s own relations — reaching further means nesting further: `include: { author: { include: { organization: true } } }`.
 {% /callout %}
 
 ### Via `runQuery` / `runQueryOne` (standalone helpers)

@@ -23,7 +23,7 @@ export interface RelationshipOptionsArgs {
  * editor — the read primitive behind the `relationshipOptions` serverAction
  * op. Selects only `id` and the resolved label field (via
  * {@link getLabelFieldName}), so the fragment carries no relation keys and
- * `buildIncludeWithAccessControl`'s depth-5 auto-include never runs.
+ * `buildAccessScopedInclude` never has anything to scope.
  *
  * Operation-level `query` access on `relatedListKey` still applies — a denied
  * list resolves to `[]` (via the underlying access-controlled `findMany`).

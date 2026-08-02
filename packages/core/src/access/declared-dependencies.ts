@@ -8,10 +8,9 @@ import { getRelatedListConfig } from './engine.js'
  * A field's `needs` declares immediate sibling relations its `resolveOutput`
  * hook cannot compute without. This module folds those relations into
  * whatever `include` a read is already building (caller-supplied, fragment-
- * derived, or none at all) BEFORE it reaches the existing access-scoping
- * pipeline (`buildIncludeWithAccessControl` / `mergeIncludeWithAccessControl`
- * in `access-filter.ts`) — a declared relation is scoped exactly like a
- * caller-named one, never a bypass.
+ * derived, or none at all) BEFORE it reaches the access-scoping pipeline
+ * (`buildAccessScopedInclude` in `access-filter.ts`) — a declared relation is
+ * scoped exactly like a caller-named one, never a bypass.
  *
  * The fold also tracks provenance: which relation keys, at which nesting
  * level, were added ONLY to satisfy a declaration (as opposed to being named
@@ -19,25 +18,32 @@ import { getRelatedListConfig } from './engine.js'
  * from the result after `resolveOutput` hooks have had a chance to read them
  * — a declared dependency is private plumbing, not an implicit `include`.
  *
- * Reach beyond one hop: a relation added here to satisfy a declaration is
- * added BARE (`true`), never with an explicit nested include of its own.
- * `buildIncludeWithAccessControl` already auto-expands a bare relation's own
- * readable-relationship subtree to `READ_INCLUDE_MAX_DEPTH` (pre-ADR-0026),
- * so a chain of declarations rides that existing expansion for free — the
- * related list's own declared needs are already present among what gets
- * auto-included beneath it. This is also why a declaration-driven cycle
- * (e.g. `Order.total` needs `lineItems`, `LineItem.orderRef` needs `order`)
- * can't recurse without bound here: it flows through
- * `buildIncludeWithAccessControl`'s existing `visitedLists` cycle guard
- * rather than through any recursion of this module's own (see ADR-0026's
- * note that this guard's remaining job, after that ADR lands, is defending
- * exactly this fold).
+ * **Every relation this module reaches is folded recursively**, whether it
+ * was added purely to satisfy a declaration or is already present for another
+ * reason (caller/fragment-named, bare or not). Since ADR-0026 removed the
+ * auto-expansion that used to carry a chain of declarations "for free" —
+ * naming a relation now fetches its own columns and stops — a field computed
+ * one hop down would otherwise lose its own declared dependencies the moment
+ * its list is reached any way OTHER than an explicit nested caller `include`.
+ * Declarations fold in "at every level a field is computed" (ADR-0025), not
+ * only where the caller happened to write one out.
  *
- * This module only recurses into EXPLICIT nested includes the caller wrote
- * (narrowing what's fetched below a relation) — those cut off the free
- * auto-expansion, so a nested list's own declared needs must be folded in
- * explicitly. An explicit caller include is always a finite literal, so this
- * recursion terminates on its own without a separate depth/cycle guard.
+ * A branch added purely by this fold (`declaredOnly.keys`) is stripped
+ * wholesale by `filterReadableFields` regardless of what's nested inside it,
+ * so its own nested declared-only keys need no individual tracking — only a
+ * branch present for another reason (caller/fragment-named) needs the
+ * fine-grained `declaredOnly.nested` tracking, so a declaration folded
+ * beneath IT can be stripped without removing the caller's own data.
+ *
+ * **Cycle guard, re-pointed (ADR-0026).** A caller-supplied `include` is
+ * always a finite literal and cannot cycle. Recursively following declared
+ * dependencies across lists CAN — list A declaring `needs` on a relation to
+ * list B, whose own field declares `needs` back to A — so `visitedLists`
+ * carries the list names already on this fold's own path and stops rather
+ * than recursing without bound. `pnpm generate`'s `validateNeedsClosureDepth`
+ * (`needs-closure.ts`) is the primary backstop — a cyclic `needs` closure
+ * fails generation and should never reach this code at runtime — this guard
+ * is defense in depth, not the mechanism relied on for correctness.
  */
 
 /** Which relation keys, at which nesting level, exist only to satisfy a `needs` declaration. */
@@ -67,6 +73,15 @@ function isRelationshipFieldConfig(
   )
 }
 
+/** The explicit nested `include` on an include entry, if the entry is a structured object naming one. */
+function getExplicitInclude(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && 'include' in value) {
+    const include = (value as { include?: unknown }).include
+    return include && typeof include === 'object' ? (include as Record<string, unknown>) : undefined
+  }
+  return undefined
+}
+
 /**
  * The deduped set of relation names declared via `needs` by fields on this
  * list that have a `resolveOutput` hook. A `needs` entry on a field without
@@ -86,17 +101,24 @@ export function getDeclaredRelationNames(fieldConfigs: Record<string, FieldConfi
 
 /**
  * Fold this list's declared dependencies into `rawInclude`, recursing into
- * any EXPLICIT nested include the caller wrote so a related list's own
- * declared needs are satisfied too (see module doc comment).
+ * EVERY relation reached from here — whether it was just added to satisfy a
+ * declaration or was already present for another reason — so that list's own
+ * declared dependencies are satisfied too, wherever it's reached (see module
+ * doc comment).
  *
  * Returns `rawInclude` itself (same reference) when there is nothing to
  * fold, so a list with no `needs` fields and no caller include stays on the
  * exact bare-read path (ADR-0024) — untouched, not merely equivalent.
+ *
+ * `listKey` seeds the cycle guard at the root of a read; recursive calls
+ * extend it with each related list reached along THIS fold's own path.
  */
 export function foldDeclaredDependencies(
   rawInclude: Record<string, unknown> | undefined,
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaasConfig,
+  listKey: string,
+  visitedLists: readonly string[] = [listKey],
 ): { include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree } {
   const declaredNames = getDeclaredRelationNames(fieldConfigs)
 
@@ -117,21 +139,34 @@ export function foldDeclaredDependencies(
   for (const [key, value] of Object.entries(merged)) {
     const fieldConfig = fieldConfigs[key]
     if (!isRelationshipFieldConfig(fieldConfig)) continue
-    // A whole branch we just added is bare `true` — its own subtree auto-expands
-    // (see module doc comment), so there is no explicit nested include to recurse into.
-    if (declaredOnly.keys.has(key)) continue
-
-    const entry = value as { include?: Record<string, unknown> } | boolean
-    if (!entry || typeof entry !== 'object' || !entry.include) continue
 
     const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
     if (!relatedConfig) continue
+    // Defensive cycle guard (see module doc comment) — a chain of `needs`
+    // that revisits a list already on this path stops here rather than
+    // recursing without bound. The value at `key` is left exactly as-is.
+    if (visitedLists.includes(relatedConfig.listName)) continue
 
-    const nested = foldDeclaredDependencies(entry.include, relatedConfig.listConfig.fields, config)
-    if (nested.include !== entry.include) {
-      merged[key] = { ...entry, include: nested.include }
+    const explicitNested = getExplicitInclude(value)
+    const nested = foldDeclaredDependencies(
+      explicitNested,
+      relatedConfig.listConfig.fields,
+      config,
+      relatedConfig.listName,
+      [...visitedLists, relatedConfig.listName],
+    )
+
+    if (nested.include) {
+      merged[key] = {
+        ...(typeof value === 'object' && value ? value : {}),
+        include: nested.include,
+      }
     }
-    if (!isDeclaredOnlyTreeEmpty(nested.declaredOnly)) {
+
+    // A whole branch added purely by the fold above is stripped wholesale by
+    // field-visibility regardless of what's nested inside it, so it needs no
+    // individual nested-key tracking of its own.
+    if (!declaredOnly.keys.has(key) && !isDeclaredOnlyTreeEmpty(nested.declaredOnly)) {
       declaredOnly.nested[key] = nested.declaredOnly
     }
   }

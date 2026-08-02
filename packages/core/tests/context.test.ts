@@ -1427,6 +1427,33 @@ describe('getContext', () => {
         expect(call.include).toEqual({ posts: true })
       })
 
+      // Core new guarantee introduced by #852 / ADR-0026: naming one relation
+      // no longer walks (and access-checks) every other relationship of the
+      // list. Before this fix, `include: { posts: true }` would ALSO evaluate
+      // `Secret`'s query access (and, one hop further, `Comment`'s) even
+      // though the caller never named `secrets` — wasted access calls the
+      // caller never asked to pay for. Asserted directly on the access
+      // function, not just on the resulting include shape.
+      it('does not invoke query access on a relation the caller did not name (#852)', async () => {
+        const postQuerySpy = vi.fn(() => ({ status: { equals: 'published' } }))
+        const secretQuerySpy = vi.fn(() => false)
+        const spiedConfig: OpenSaasConfig = {
+          ...relConfig,
+          lists: {
+            ...relConfig.lists,
+            Post: { ...relConfig.lists.Post, access: { operation: { query: postQuerySpy } } },
+            Secret: { ...relConfig.lists.Secret, access: { operation: { query: secretQuerySpy } } },
+          },
+        }
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+
+        const context = await getContext(spiedConfig, relPrisma, null)
+        await context.db.author.findMany({ include: { posts: true } })
+
+        expect(postQuerySpy).toHaveBeenCalledTimes(1)
+        expect(secretQuerySpy).not.toHaveBeenCalled()
+      })
+
       // Regression for issue #830: a read issued from inside a `resolveOutput`
       // hook used to lose relation row scoping ENTIRELY — `buildIncludeWithAccessControl`
       // returned a whole-object `undefined` for the inner read (any

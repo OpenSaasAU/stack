@@ -294,11 +294,14 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(result).toHaveProperty('title')
   })
 
-  it('a declaration cycle across two lists terminates via the existing relationship-graph cycle guard (ADR-0026 note)', async () => {
+  it("a declaration cycle across two lists terminates via the declaration fold's own cycle guard (ADR-0026 note)", async () => {
     // Order.total needs lineItems; LineItem.orderTitle needs order — a
-    // two-list declaration cycle. This must not hang or crash: it rides the
-    // SAME `visitedLists` cycle guard `buildIncludeWithAccessControl` already
-    // uses for the relationship graph, not a separate mechanism.
+    // two-list declaration cycle. This must not hang or crash: it rides
+    // `foldDeclaredDependencies`'s own `visitedLists` cycle guard — the same
+    // list-name-path mechanism the pre-ADR-0026 relationship-graph auto-walk
+    // used, re-pointed at the declaration fold now that nothing walks the
+    // relationship graph unprompted (defense in depth; the primary backstop
+    // is `validateNeedsClosureDepth` at generate time, see needs-closure.ts).
     const testConfig = await buildTestConfig({ withDeclarationCycle: true })
     const mockPrisma = createMockPrisma()
     mockPrisma.order.findMany.mockResolvedValue([

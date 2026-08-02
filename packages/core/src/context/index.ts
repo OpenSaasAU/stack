@@ -4,8 +4,7 @@ import {
   checkAccess,
   mergeFilters,
   filterReadableFields,
-  buildIncludeWithAccessControl,
-  mergeIncludeWithAccessControl,
+  buildAccessScopedInclude,
   stripVirtualFieldsFromInclude,
   foldDeclaredDependencies,
 } from '../access/index.js'
@@ -921,11 +920,12 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
  *
  * A fragment's own `include` and a sudo caller's `include` are folded and
  * used as-is, matching their existing (unmerged) treatment. A non-sudo
- * caller include is folded and then merged through the same
- * access-scoping pipeline as before. A bare read stays on the exact
- * ADR-0024 path — `include: undefined`, no related `query` access
- * evaluated — unless folding actually added something, which only happens
- * when a field on this list declares `needs`.
+ * caller include is folded and then scoped by `buildAccessScopedInclude`
+ * (ADR-0026) — caller-directed, so a relation named nowhere in the folded
+ * tree never has its list's `query` access evaluated at all. A bare read
+ * stays on the exact ADR-0024 path — `include: undefined`, no related
+ * `query` access evaluated — unless folding actually added something, which
+ * only happens when a field on this list declares `needs`.
  */
 async function resolveReadInclude(
   callerInclude: Record<string, unknown> | undefined,
@@ -938,31 +938,22 @@ async function resolveReadInclude(
 ): Promise<{ include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree }> {
   if (fragmentFields !== undefined) {
     const fragmentInclude = buildInclude(fragmentFields) ?? undefined
-    return foldDeclaredDependencies(fragmentInclude, listConfig.fields, config)
+    return foldDeclaredDependencies(fragmentInclude, listConfig.fields, config, listName)
   }
 
   if (context._isSudo) {
-    return foldDeclaredDependencies(callerInclude, listConfig.fields, config)
+    return foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
   }
 
-  const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config)
+  const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
   if (!folded.include) {
     return folded
   }
 
-  const accessControlledInclude = await buildIncludeWithAccessControl(
+  const include = await buildAccessScopedInclude(
+    folded.include,
     listConfig.fields,
     { session: context.session, context },
-    config,
-    0,
-    // Seed the cycle guard with the root list so a relationship cycle back
-    // to it (self-referential or longer) stops re-descending.
-    [listName],
-  )
-  const include = mergeIncludeWithAccessControl(
-    folded.include,
-    accessControlledInclude,
-    listConfig.fields,
     config,
     listName,
   )
