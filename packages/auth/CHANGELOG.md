@@ -1,5 +1,114 @@
 # @opensaas/stack-auth
 
+## 0.37.0
+
+### Minor Changes
+
+- [#872](https://github.com/OpenSaasAU/stack/pull/872) [`17acf04`](https://github.com/OpenSaasAU/stack/commit/17acf046b494da184c2b77434a7b4d3400ca32f2) Thanks [@borisno2](https://github.com/borisno2)! - `createAuth()` now forwards `AuthConfig` options it previously normalized but silently dropped: `emailAndPassword.minPasswordLength`, `passwordReset.enabled`/`tokenExpiration` (wired to better-auth's `sendResetPassword`), and `emailVerification.enabled`/`sendOnSignUp`/`tokenExpiration` (wired to `sendVerificationEmail`).
+
+  The stack does not wrap these email callbacks in any way — `emailAndPassword.sendResetPassword` and `emailVerification.sendVerificationEmail` are better-auth's own option shape, forwarded straight through, so an app configures them exactly as it would when calling `betterAuth()` directly:
+
+  ```typescript
+  authPlugin({
+    emailAndPassword: {
+      enabled: true,
+      sendResetPassword: async ({ user, url }) => {
+        await resend.emails.send({
+          to: user.email,
+          subject: 'Reset your password',
+          html: `<a href="${url}">Reset your password</a>`,
+        })
+      },
+    },
+    emailVerification: {
+      enabled: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        await resend.emails.send({
+          to: user.email,
+          subject: 'Verify your email',
+          html: `<a href="${url}">Verify your email</a>`,
+        })
+      },
+    },
+  })
+  ```
+
+  If not provided, reset/verification emails are logged to console instead of sent — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled and these callbacks are configured.
+
+  Two related fixes, both changing existing behavior:
+
+  - `session.updateAge` is retyped from `boolean` to `number | false` — the number of seconds between session refreshes, passed straight through to better-auth's own `session.updateAge` instead of being computed as `expiresIn / 10`. The default changes from `true` to `86400` (1 day), matching better-auth's own default. Update any `updateAge: true` config to a duration in seconds (e.g. `86400`). `updateAge: false` now correctly maps to better-auth's `disableSessionRefresh: true` (previously it mapped to `updateAge: 0`, which better-auth treats as "refresh on every request" — the opposite of disabling refresh).
+  - `getSessionFromAuth(auth, sessionFields, headers)` gains a required third `headers: Headers` parameter. Previously it always called `auth.api.getSession({ headers: new Headers() })`, an empty header set that could never resolve a session cookie, so the function always returned `null`. Callers must now pass the request's real headers (e.g. Next.js `await headers()`).
+
+  Setting `emailAndPassword.requireConfirmation` (while `emailAndPassword.enabled` is true) now logs a `console.warn` — it has no better-auth server-side equivalent (it's a UI-only "confirm password" concern). Pass `requirePasswordConfirmation` directly to `<SignUpForm>`/`<ResetPasswordForm>` instead. Similarly, `passwordReset.enabled` now warns if `emailAndPassword.enabled` is false, since password reset has no effect without a password-based account.
+
+- [#871](https://github.com/OpenSaasAU/stack/pull/871) [`06375ca`](https://github.com/OpenSaasAU/stack/commit/06375cad571677e92bfe84c35ff55240f3546a1f) Thanks [@{](https://github.com/{)! - Add a per-model `tableName` option, independent of `modelName`, so a renamed Auth list key can still adopt a differently-named live table — most commonly better-auth's own default lowercase table names (`user`, `session`, `account`, `verification`).
+
+  ```typescript
+  authPlugin({
+   modelName: 'AuthUser', tableName: 'user' },
+    session: { modelName: 'AuthSession', tableName: 'session' },
+  })
+  ```
+
+  `adoptBetterAuthTables()` gains matching `useBetterAuthTableNames` and `tableNames` options:
+
+  ```typescript
+  adoptBetterAuthTables({ useBetterAuthTableNames: true })
+  // or explicitly:
+  adoptBetterAuthTables({ tableNames: { user: 'user', session: 'session' } })
+  ```
+
+  With no `tableName` set, behaviour is unchanged: the table name still follows `modelName` when it differs from the better-auth default, otherwise no `@@map` is emitted.
+
+- [#874](https://github.com/OpenSaasAU/stack/pull/874) [`7ef9dbc`](https://github.com/OpenSaasAU/stack/commit/7ef9dbc2f94cc4e7ab831ecafb3ef65159a3c55e) Thanks [@borisno2](https://github.com/borisno2)! - Add a `betterAuthOptions` escape hatch on `AuthConfig` for better-auth options the stack doesn't model, plus an exported `buildBetterAuthOptions()` builder for apps that still need to hand-wire their own `betterAuth()` instance.
+
+  `betterAuthOptions` is deep-merged onto the options `createAuth()` builds, applied last — a plain-object value merges recursively alongside sibling keys the stack already set (e.g. `session: { cookieCache }` doesn't clobber `session.expiresIn`), and wins on any genuine key collision:
+
+  ```typescript
+  authPlugin({
+    betterAuthOptions: {
+      databaseHooks: { user: { create: { after: syncDomainUser } } },
+      session: { cookieCache: { enabled: true, maxAge: 300 } },
+      verification: { storeIdentifier: 'hashed' },
+      baseURL: process.env.BETTER_AUTH_URL,
+    },
+  })
+  ```
+
+  `database`, `plugins`, and `additionalFields` under `user`/`session`/`account`/`verification` are rejected — they already have dedicated seams (`db` config, `betterAuthPlugins`), or have schema consequences a passthrough can't also apply to the generated Prisma schema.
+
+  `buildBetterAuthOptions(config, context)` returns the exact same options object `createAuth()` uses, for apps that need a resolved `betterAuth()` instance rather than `createAuth()`'s lazy proxy:
+
+  ```typescript
+  import { betterAuth } from 'better-auth'
+  import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
+
+  export const auth = betterAuth({
+    ...(await buildBetterAuthOptions(config, rawOpensaasContext)),
+    databaseHooks: { user: { create: { after: syncDomainUser } } },
+  })
+  ```
+
+- [#870](https://github.com/OpenSaasAU/stack/pull/870) [`7b6189f`](https://github.com/OpenSaasAU/stack/commit/7b6189fa60119a45082ba62dd71d915d93de529c) Thanks [@relationship({](https://github.com/relationship({)! - A relationship field's foreign key can now be declared non-nullable via `db.isNullable: false` — the generated FK column and its relation field lose their `?` together. Omitting the option leaves every existing relationship unchanged (still nullable by default).
+
+  ```typescript
+
+    ref: 'User.sessions',
+    db: { isNullable: false },
+  })
+  // Generates: userId String  (was String?)
+  //            user   User    @relation(...)  (was User?)
+  ```
+
+  `@opensaas/stack-auth`'s derived Auth lists now use this to match better-auth's own Prisma schema: `Session.expiresAt`, `Verification.expiresAt`, and the `Session.user`/`Account.user` foreign keys generate as required instead of nullable.
+
+  **Migration note:** this changes the generated schema for existing greenfield apps. Running `opensaas generate` followed by `prisma db push`/`prisma migrate dev` will produce a migration that adds `NOT NULL` to `Session.expiresAt`, `Verification.expiresAt`, `Session.userId`, and `Account.userId`. Since better-auth's own adapter always writes these columns, no existing row should violate the new constraint — but back up production data before applying, as with any schema migration.
+
+### Patch Changes
+
+- [#867](https://github.com/OpenSaasAU/stack/pull/867) [`43b4d17`](https://github.com/OpenSaasAU/stack/commit/43b4d1738340f05b1cf8bec3315927b3004816dd) Thanks [@borisno2](https://github.com/borisno2)! - Fix a better-auth plugin's schema extension of a base model (`user`/`session`/`account`/`verification`) silently dropping the derived Auth list's `db` (`map`/`schema`/`timestamps`) and `access` config.
+
 ## 0.36.0
 
 ## 0.35.0
