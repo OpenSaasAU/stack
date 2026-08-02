@@ -1411,7 +1411,21 @@ function getPrismaRelation(
     return { modelLines: [fkLine, relationLine], foreignKeyIndex, backRelation }
   }
 
-  // Non-FK side of a one-to-one relationship: just the relation field
+  // Non-FK side of a one-to-one relationship: just the relation field. This
+  // side has no foreign key column, so `db.isNullable` (which only makes
+  // sense paired with a column) cannot be honoured here — reject rather than
+  // silently ignore a developer's stated intent (the FK-owning side is
+  // determined by `db.foreignKey`/alphabetical ordering, not by which field
+  // declares `isNullable`).
+  if (field.db?.isNullable === false) {
+    throw new Error(
+      `db.isNullable can only be used on the foreign-key-owning side of a relationship. ` +
+        `"${listKey}.${fieldName}" does not own the foreign key for this one-to-one relationship — ` +
+        `set db.isNullable on "${targetList}.${targetField}" instead, or make this side own the ` +
+        `foreign key via db.foreignKey.`,
+    )
+  }
+
   let relationLine = `  ${paddedName} ${targetList}?`
   if (field.db?.extendPrismaSchema) {
     relationLine = field.db.extendPrismaSchema({ relationLine }).relationLine

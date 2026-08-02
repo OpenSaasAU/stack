@@ -978,6 +978,36 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('user         User? // Back reference')
     })
 
+    it('should throw when db.isNullable is set on the non-FK-owning side of a one-to-one relationship', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              profile: relationship({
+                ref: 'Profile.user',
+                db: { foreignKey: true },
+              }),
+            },
+          },
+          Profile: {
+            fields: {
+              bio: text(),
+              // Wrong side: User.profile owns the FK, not Profile.user.
+              user: relationship({ ref: 'User.profile', db: { isNullable: false } }),
+            },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        'db.isNullable can only be used on the foreign-key-owning side',
+      )
+    })
+
     it('should generate @@index for foreign keys by default (matching Keystone behavior)', () => {
       const config: OpenSaasConfig = {
         db: {
