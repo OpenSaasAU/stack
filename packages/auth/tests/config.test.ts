@@ -14,6 +14,7 @@ describe('normalizeAuthConfig', () => {
     expect(result.emailVerification.enabled).toBe(false)
     expect(result.passwordReset.enabled).toBe(false)
     expect(result.session.expiresIn).toBe(604800) // 7 days
+    expect(result.session.updateAge).toBe(86400) // 1 day, matching better-auth's own default
     expect(result.sessionFields).toEqual(['userId', 'email', 'name'])
     expect(result.socialProviders).toEqual({})
     expect(result.betterAuthPlugins).toEqual([])
@@ -81,6 +82,14 @@ describe('normalizeAuthConfig', () => {
     expect(result.session.updateAge).toBe(false)
   })
 
+  it('should normalize a custom numeric session.updateAge', () => {
+    const result = normalizeAuthConfig({
+      session: { updateAge: 3600 },
+    })
+
+    expect(result.session.updateAge).toBe(3600)
+  })
+
   it('should normalize custom session fields', () => {
     const result = normalizeAuthConfig({
       sessionFields: ['userId', 'email', 'role'],
@@ -120,22 +129,24 @@ describe('normalizeAuthConfig', () => {
     expect(result.extendUserList.fields).toHaveProperty('role')
   })
 
-  it('should include custom sendEmail function', () => {
-    const mockSendEmail = async () => {}
+  it('should include custom sendResetPassword and sendVerificationEmail functions', () => {
+    const mockSendResetPassword = async () => {}
+    const mockSendVerificationEmail = async () => {}
 
     const result = normalizeAuthConfig({
-      sendEmail: mockSendEmail,
+      emailAndPassword: { enabled: true, sendResetPassword: mockSendResetPassword },
+      emailVerification: { enabled: true, sendVerificationEmail: mockSendVerificationEmail },
     })
 
-    expect(result.sendEmail).toBe(mockSendEmail)
+    expect(result.emailAndPassword.sendResetPassword).toBe(mockSendResetPassword)
+    expect(result.emailVerification.sendVerificationEmail).toBe(mockSendVerificationEmail)
   })
 
-  it('should provide default sendEmail that logs to console', () => {
+  it('should provide default sendResetPassword and sendVerificationEmail that log to console', () => {
     const result = normalizeAuthConfig({})
 
-    expect(typeof result.sendEmail).toBe('function')
-    // Default sendEmail should be a function that accepts email params
-    expect(result.sendEmail.length).toBe(1)
+    expect(typeof result.emailAndPassword.sendResetPassword).toBe('function')
+    expect(typeof result.emailVerification.sendVerificationEmail).toBe('function')
   })
 
   it('should include betterAuthPlugins', () => {

@@ -7,6 +7,7 @@ import type {
   EmailPasswordConfig,
   EmailVerificationConfig,
   PasswordResetConfig,
+  SendAuthEmail,
 } from './types.js'
 
 /**
@@ -69,6 +70,21 @@ function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
 }
 
 /**
+ * Default `sendResetPassword`/`sendVerificationEmail` — logs to console
+ * instead of sending, matching the pre-existing "no sendEmail configured"
+ * behavior for apps that haven't wired a real email provider yet.
+ */
+function defaultSendAuthEmail(kind: 'password reset' | 'verification'): SendAuthEmail {
+  return async ({ user, url }) => {
+    console.log(
+      `[Auth] ${kind[0].toUpperCase()}${kind.slice(1)} email not sent (no callback configured):`,
+    )
+    console.log(`To: ${user.email}`)
+    console.log(`URL: ${url}`)
+  }
+}
+
+/**
  * Normalize auth configuration with defaults
  */
 export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
@@ -79,8 +95,16 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         minPasswordLength: (config.emailAndPassword as EmailPasswordConfig).minPasswordLength ?? 8,
         requireConfirmation:
           (config.emailAndPassword as EmailPasswordConfig).requireConfirmation ?? true,
+        sendResetPassword:
+          (config.emailAndPassword as EmailPasswordConfig).sendResetPassword ??
+          defaultSendAuthEmail('password reset'),
       }
-    : { enabled: false as const, minPasswordLength: 8, requireConfirmation: true }
+    : {
+        enabled: false as const,
+        minPasswordLength: 8,
+        requireConfirmation: true,
+        sendResetPassword: defaultSendAuthEmail('password reset'),
+      }
 
   // Email verification defaults
   const emailVerification = config.emailVerification?.enabled
@@ -89,8 +113,16 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         sendOnSignUp: (config.emailVerification as EmailVerificationConfig).sendOnSignUp ?? true,
         tokenExpiration:
           (config.emailVerification as EmailVerificationConfig).tokenExpiration ?? 86400,
+        sendVerificationEmail:
+          (config.emailVerification as EmailVerificationConfig).sendVerificationEmail ??
+          defaultSendAuthEmail('verification'),
       }
-    : { enabled: false as const, sendOnSignUp: true, tokenExpiration: 86400 }
+    : {
+        enabled: false as const,
+        sendOnSignUp: true,
+        tokenExpiration: 86400,
+        sendVerificationEmail: defaultSendAuthEmail('verification'),
+      }
 
   // Password reset defaults
   const passwordReset = config.passwordReset?.enabled
@@ -103,7 +135,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
   // Session defaults
   const session = {
     expiresIn: config.session?.expiresIn || 604800, // 7 days
-    updateAge: config.session?.updateAge ?? true,
+    updateAge: config.session?.updateAge ?? 86400, // 1 day, matching better-auth's own default
   }
 
   // Session fields defaults
@@ -124,14 +156,6 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     sessionFields,
     extendUserList: config.extendUserList || {},
     access: config.access || {},
-    sendEmail:
-      config.sendEmail ||
-      (async ({ to, subject, html }) => {
-        console.log('[Auth] Email not sent (no sendEmail configured):')
-        console.log(`To: ${to}`)
-        console.log(`Subject: ${subject}`)
-        console.log(`Body: ${html}`)
-      }),
     betterAuthPlugins: config.betterAuthPlugins || [],
     rateLimit: config.rateLimit,
   }

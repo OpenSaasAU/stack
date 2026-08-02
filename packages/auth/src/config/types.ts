@@ -1,5 +1,17 @@
 import type { ListConfig } from '@opensaas/stack-core'
+import type { User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
+
+/**
+ * better-auth's own callback shape for `sendVerificationEmail`/
+ * `sendResetPassword` — `data` is exactly what better-auth passes (no stack
+ * abstraction layered on top), and `request` is the raw request that
+ * triggered it.
+ */
+export type SendAuthEmail = (
+  data: { user: User; url: string; token: string },
+  request?: Request,
+) => Promise<void>
 
 /**
  * OAuth provider configuration
@@ -32,10 +44,36 @@ export type EmailPasswordConfig = {
    */
   minPasswordLength?: number
   /**
-   * Require password confirmation
+   * Require password confirmation (a second "confirm password" field).
+   *
+   * There is no better-auth server-side equivalent — this is purely a UI
+   * concern. `createAuth()` does not read it. Pass it directly to the
+   * pre-built forms instead: `<SignUpForm requirePasswordConfirmation={...} />`
+   * / `<ResetPasswordForm requirePasswordConfirmation={...} />` (both default
+   * to `true`). Setting it here has no effect and `createAuth()` warns if it
+   * is configured.
+   *
    * @default true
    */
   requireConfirmation?: boolean
+  /**
+   * Send a password reset email. Passed straight through to better-auth's own
+   * `emailAndPassword.sendResetPassword` — the stack does not wrap or
+   * reshape it. If not provided, reset emails are logged to console instead
+   * of sent.
+   *
+   * @example
+   * ```typescript
+   * sendResetPassword: async ({ user, url }) => {
+   *   await resend.emails.send({
+   *     to: user.email,
+   *     subject: 'Reset your password',
+   *     html: `<a href="${url}">Reset your password</a>`,
+   *   })
+   * }
+   * ```
+   */
+  sendResetPassword?: SendAuthEmail
 }
 
 /**
@@ -53,6 +91,24 @@ export type EmailVerificationConfig = {
    * @default 86400 (24 hours)
    */
   tokenExpiration?: number
+  /**
+   * Send a verification email. Passed straight through to better-auth's own
+   * `emailVerification.sendVerificationEmail` — the stack does not wrap or
+   * reshape it. If not provided, verification emails are logged to console
+   * instead of sent.
+   *
+   * @example
+   * ```typescript
+   * sendVerificationEmail: async ({ user, url }) => {
+   *   await resend.emails.send({
+   *     to: user.email,
+   *     subject: 'Verify your email',
+   *     html: `<a href="${url}">Verify your email</a>`,
+   *   })
+   * }
+   * ```
+   */
+  sendVerificationEmail?: SendAuthEmail
 }
 
 /**
@@ -77,10 +133,12 @@ export type SessionConfig = {
    */
   expiresIn?: number
   /**
-   * Update session expiration on each request
-   * @default true
+   * How often the session should be refreshed, in seconds. Passed straight
+   * through to better-auth's own `session.updateAge`. Set `false` to disable
+   * refresh entirely (the session expiry is then fixed at creation time).
+   * @default 86400 (1 day, matching better-auth's own default)
    */
-  updateAge?: boolean
+  updateAge?: number | false
 }
 
 /**
@@ -322,19 +380,6 @@ export type AuthConfig = {
    * narrower, User-specific override.
    */
   access?: AuthAccessConfig
-
-  /**
-   * Custom email sending function for verification and password reset
-   * If not provided, emails will be logged to console
-   *
-   * @example
-   * ```typescript
-   * sendEmail: async ({ to, subject, html }) => {
-   *   await resend.emails.send({ to, subject, html })
-   * }
-   * ```
-   */
-  sendEmail?: (params: { to: string; subject: string; html: string }) => Promise<void>
 
   /**
    * Additional Better Auth plugins to enable

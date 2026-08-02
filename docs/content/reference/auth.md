@@ -89,6 +89,25 @@ authPlugin({
 })
 ```
 
+`sendResetPassword` is forwarded straight through to better-auth's own `emailAndPassword.sendResetPassword` — no stack wrapping. It receives exactly what better-auth passes (`user`, `url`, `token`), so you build the subject line and body yourself:
+
+```typescript
+authPlugin({
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await emailService.send({
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
+  },
+})
+```
+
+If not provided, reset emails are logged to the console in development.
+
 ### `emailVerification`
 
 Configure email verification for new sign-ups:
@@ -102,6 +121,25 @@ authPlugin({
   },
 })
 ```
+
+`sendVerificationEmail` is forwarded straight through to better-auth's own `emailVerification.sendVerificationEmail` — no stack wrapping. It receives exactly what better-auth passes (`user`, `url`, `token`):
+
+```typescript
+authPlugin({
+  emailVerification: {
+    enabled: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await emailService.send({
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
+  },
+})
+```
+
+If not provided, verification emails are logged to the console in development.
 
 ### `passwordReset`
 
@@ -151,7 +189,7 @@ Configure session behavior:
 authPlugin({
   session: {
     expiresIn: 604800, // default: 604800 (7 days)
-    updateAge: true, // default: true - update expiry on each request
+    updateAge: 86400, // default: 86400 (1 day) - seconds between session refreshes; set `false` to disable
   },
 })
 ```
@@ -214,21 +252,6 @@ authPlugin({
   },
 })
 ```
-
-### `sendEmail`
-
-Provide a custom email sending function for verification and password reset emails:
-
-```typescript
-authPlugin({
-  sendEmail: async ({ to, subject, html }) => {
-    // Use your email service (SendGrid, Resend, etc.)
-    await emailService.send({ to, subject, html })
-  },
-})
-```
-
-If not provided, emails will be logged to the console in development.
 
 ### `betterAuthPlugins`
 

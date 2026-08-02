@@ -77,6 +77,31 @@ export function createAuth(
           )
         }
 
+        // `requireConfirmation` has no better-auth equivalent — it's a UI-only
+        // concern the pre-built forms already take as their own
+        // `requirePasswordConfirmation` prop. Warn rather than silently drop it,
+        // since setting it here looks like it should do something.
+        if (
+          authConfig.emailAndPassword.enabled &&
+          authConfig.emailAndPassword.requireConfirmation !== true
+        ) {
+          console.warn(
+            '[@opensaas/stack-auth] `emailAndPassword.requireConfirmation` has no effect here — ' +
+              'createAuth() has no better-auth option to forward it to. Pass ' +
+              '`requirePasswordConfirmation` directly to <SignUpForm> / <ResetPasswordForm> instead.',
+          )
+        }
+
+        // `passwordReset` is wired through better-auth's `emailAndPassword` config
+        // (there's no password to reset without a password-based account), so it
+        // silently has no effect if email/password auth itself isn't enabled.
+        if (authConfig.passwordReset.enabled && !authConfig.emailAndPassword.enabled) {
+          console.warn(
+            '[@opensaas/stack-auth] `passwordReset.enabled` has no effect here — ' +
+              '`emailAndPassword.enabled` is false, so there is no password-based account to reset.',
+          )
+        }
+
         // Build better-auth configuration
         const betterAuthConfig: BetterAuthOptions = {
           database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
@@ -88,9 +113,12 @@ export function createAuth(
           session: {
             ...toBetterAuthModelOptions(authConfig.models.session),
             expiresIn: authConfig.session.expiresIn || 604800,
-            updateAge: authConfig.session.updateAge
-              ? (authConfig.session.expiresIn || 604800) / 10
-              : 0,
+            // better-auth treats `updateAge: 0` as "refresh on every request", not
+            // "never refresh" — disabling refresh entirely requires its separate
+            // `disableSessionRefresh` flag regardless of `updateAge`.
+            ...(authConfig.session.updateAge === false
+              ? { disableSessionRefresh: true }
+              : { updateAge: authConfig.session.updateAge }),
           },
           account: toBetterAuthModelOptions(authConfig.models.account),
           verification: toBetterAuthModelOptions(authConfig.models.verification),
@@ -100,6 +128,23 @@ export function createAuth(
             ? {
                 enabled: true,
                 requireEmailVerification: authConfig.emailVerification.enabled,
+                minPasswordLength: authConfig.emailAndPassword.minPasswordLength,
+                ...(authConfig.passwordReset.enabled
+                  ? {
+                      sendResetPassword: authConfig.emailAndPassword.sendResetPassword,
+                      resetPasswordTokenExpiresIn: authConfig.passwordReset.tokenExpiration,
+                    }
+                  : {}),
+              }
+            : undefined,
+
+          // Email verification (independent of emailAndPassword — also covers
+          // e.g. a social-provider account whose email isn't yet verified)
+          emailVerification: authConfig.emailVerification.enabled
+            ? {
+                sendVerificationEmail: authConfig.emailVerification.sendVerificationEmail,
+                sendOnSignUp: authConfig.emailVerification.sendOnSignUp,
+                expiresIn: authConfig.emailVerification.tokenExpiration,
               }
             : undefined,
 
@@ -195,17 +240,21 @@ export function createAuth(
 }
 
 /**
- * Get session from better-auth and transform it to OpenSaas session format
- * This is used internally by the generated context
+ * Get session from better-auth and transform it to OpenSaas session format.
+ *
+ * Not called by any generated code today — apps currently hand-roll this same
+ * transform against `auth.api.getSession({ headers: await headers() })` (see
+ * `examples/starter-auth/lib/auth.ts`). Exported as a reusable helper for that
+ * pattern; pass the caller's request headers (e.g. Next.js `await headers()`
+ * in a Server Component/action) so a session cookie can actually be resolved.
  */
 export async function getSessionFromAuth(
   auth: ReturnType<typeof betterAuth>,
   sessionFields: string[],
+  headers: Headers,
 ) {
   try {
-    const session = await auth.api.getSession({
-      headers: new Headers(),
-    })
+    const session = await auth.api.getSession({ headers })
 
     if (!session?.user) {
       return null

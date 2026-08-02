@@ -164,7 +164,15 @@ authPlugin({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    requireConfirmation: true,
+    requireConfirmation: true, // UI-only — pass to <SignUpForm>/<ResetPasswordForm> directly
+    // Passed straight through to better-auth's own `emailAndPassword.sendResetPassword`
+    sendResetPassword: async ({ user, url }) => {
+      await yourEmailService.send({
+        to: user.email,
+        subject: 'Reset your password',
+        html: `<a href="${url}">Reset your password</a>`,
+      })
+    },
   },
 
   // Email verification
@@ -172,6 +180,14 @@ authPlugin({
     enabled: true,
     sendOnSignUp: true,
     tokenExpiration: 86400, // 24 hours in seconds
+    // Passed straight through to better-auth's own `emailVerification.sendVerificationEmail`
+    sendVerificationEmail: async ({ user, url }) => {
+      await yourEmailService.send({
+        to: user.email,
+        subject: 'Verify your email',
+        html: `<a href="${url}">Verify your email</a>`,
+      })
+    },
   },
 
   // Password reset
@@ -195,7 +211,7 @@ authPlugin({
   // Session configuration
   session: {
     expiresIn: 604800, // 7 days in seconds
-    updateAge: true, // Refresh session on each request
+    updateAge: 86400, // seconds between session refreshes; set `false` to disable
   },
 
   // Fields to include in session object
@@ -207,11 +223,6 @@ authPlugin({
       role: text({ defaultValue: 'user' }),
       company: text(),
     },
-  },
-
-  // Custom email sending function
-  sendEmail: async ({ to, subject, html }) => {
-    await yourEmailService.send({ to, subject, html })
   },
 })
 ```
