@@ -151,7 +151,7 @@ Configure session behavior:
 authPlugin({
   session: {
     expiresIn: 604800, // default: 604800 (7 days)
-    updateAge: true, // default: true - update expiry on each request
+    updateAge: 86400, // default: 86400 (1 day) - seconds between session refreshes; set `false` to disable
   },
 })
 ```

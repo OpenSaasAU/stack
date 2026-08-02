@@ -93,7 +93,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
   // Session defaults
   const session = {
     expiresIn: config.session?.expiresIn || 604800, // 7 days
-    updateAge: config.session?.updateAge ?? true,
+    updateAge: config.session?.updateAge ?? 86400, // 1 day, matching better-auth's own default
   }
 
   // Session fields defaults

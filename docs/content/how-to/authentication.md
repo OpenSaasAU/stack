@@ -1257,7 +1257,7 @@ directly through the raw client, so most apps never need to grant
    authPlugin({
      session: {
        expiresIn: 604800, // 7 days
-       updateAge: true, // Extend expiry on each request
+       updateAge: 86400, // Refresh session every 1 day; set `false` to disable
      },
    })
    ```

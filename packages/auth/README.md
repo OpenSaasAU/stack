@@ -164,7 +164,7 @@ authPlugin({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    requireConfirmation: true,
+    requireConfirmation: true, // UI-only — pass to <SignUpForm>/<ResetPasswordForm> directly
   },
 
   // Email verification
@@ -195,7 +195,7 @@ authPlugin({
   // Session configuration
   session: {
     expiresIn: 604800, // 7 days in seconds
-    updateAge: true, // Refresh session on each request
+    updateAge: 86400, // seconds between session refreshes; set `false` to disable
   },
 
   // Fields to include in session object

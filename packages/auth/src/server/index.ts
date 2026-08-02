@@ -1,10 +1,29 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
-import type { BetterAuthOptions } from 'better-auth'
+import type { BetterAuthOptions, User } from 'better-auth'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
+
+/**
+ * Build the better-auth `sendVerificationEmail`/`sendResetPassword` callback
+ * from the normalized `sendEmail` config, rendering a minimal HTML body
+ * around the link better-auth provides.
+ */
+function toSendEmailCallback(
+  sendEmail: NormalizedAuthConfig['sendEmail'],
+  subject: string,
+  bodyText: string,
+) {
+  return async ({ user, url }: { user: User; url: string }) => {
+    await sendEmail({
+      to: user.email,
+      subject,
+      html: `<p>${bodyText}</p><p><a href="${url}">${url}</a></p>`,
+    })
+  }
+}
 
 /**
  * Get better-auth database configuration from OpenSaas config
@@ -77,6 +96,18 @@ export function createAuth(
           )
         }
 
+        // `requireConfirmation` has no better-auth equivalent — it's a UI-only
+        // concern the pre-built forms already take as their own
+        // `requirePasswordConfirmation` prop. Warn rather than silently drop it,
+        // since setting it here looks like it should do something.
+        if (authConfig.emailAndPassword.requireConfirmation !== true) {
+          console.warn(
+            '[@opensaas/stack-auth] `emailAndPassword.requireConfirmation` has no effect here — ' +
+              'createAuth() has no better-auth option to forward it to. Pass ' +
+              '`requirePasswordConfirmation` directly to <SignUpForm> / <ResetPasswordForm> instead.',
+          )
+        }
+
         // Build better-auth configuration
         const betterAuthConfig: BetterAuthOptions = {
           database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
@@ -88,9 +119,7 @@ export function createAuth(
           session: {
             ...toBetterAuthModelOptions(authConfig.models.session),
             expiresIn: authConfig.session.expiresIn || 604800,
-            updateAge: authConfig.session.updateAge
-              ? (authConfig.session.expiresIn || 604800) / 10
-              : 0,
+            updateAge: authConfig.session.updateAge === false ? 0 : authConfig.session.updateAge,
           },
           account: toBetterAuthModelOptions(authConfig.models.account),
           verification: toBetterAuthModelOptions(authConfig.models.verification),
@@ -100,6 +129,31 @@ export function createAuth(
             ? {
                 enabled: true,
                 requireEmailVerification: authConfig.emailVerification.enabled,
+                minPasswordLength: authConfig.emailAndPassword.minPasswordLength,
+                ...(authConfig.passwordReset.enabled
+                  ? {
+                      sendResetPassword: toSendEmailCallback(
+                        authConfig.sendEmail,
+                        'Reset your password',
+                        'Click the link below to reset your password:',
+                      ),
+                      resetPasswordTokenExpiresIn: authConfig.passwordReset.tokenExpiration,
+                    }
+                  : {}),
+              }
+            : undefined,
+
+          // Email verification (independent of emailAndPassword — also covers
+          // e.g. a social-provider account whose email isn't yet verified)
+          emailVerification: authConfig.emailVerification.enabled
+            ? {
+                sendVerificationEmail: toSendEmailCallback(
+                  authConfig.sendEmail,
+                  'Verify your email address',
+                  'Click the link below to verify your email address:',
+                ),
+                sendOnSignUp: authConfig.emailVerification.sendOnSignUp,
+                expiresIn: authConfig.emailVerification.tokenExpiration,
               }
             : undefined,
 
@@ -195,17 +249,21 @@ export function createAuth(
 }
 
 /**
- * Get session from better-auth and transform it to OpenSaas session format
- * This is used internally by the generated context
+ * Get session from better-auth and transform it to OpenSaas session format.
+ *
+ * Not called by any generated code today — apps currently hand-roll this same
+ * transform against `auth.api.getSession({ headers: await headers() })` (see
+ * `examples/starter-auth/lib/auth.ts`). Exported as a reusable helper for that
+ * pattern; pass the caller's request headers (e.g. Next.js `await headers()`
+ * in a Server Component/action) so a session cookie can actually be resolved.
  */
 export async function getSessionFromAuth(
   auth: ReturnType<typeof betterAuth>,
   sessionFields: string[],
+  headers: Headers,
 ) {
   try {
-    const session = await auth.api.getSession({
-      headers: new Headers(),
-    })
+    const session = await auth.api.getSession({ headers })
 
     if (!session?.user) {
       return null

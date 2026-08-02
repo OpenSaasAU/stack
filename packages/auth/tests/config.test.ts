@@ -14,6 +14,7 @@ describe('normalizeAuthConfig', () => {
     expect(result.emailVerification.enabled).toBe(false)
     expect(result.passwordReset.enabled).toBe(false)
     expect(result.session.expiresIn).toBe(604800) // 7 days
+    expect(result.session.updateAge).toBe(86400) // 1 day, matching better-auth's own default
     expect(result.sessionFields).toEqual(['userId', 'email', 'name'])
     expect(result.socialProviders).toEqual({})
     expect(result.betterAuthPlugins).toEqual([])
@@ -79,6 +80,14 @@ describe('normalizeAuthConfig', () => {
 
     expect(result.session.expiresIn).toBe(86400)
     expect(result.session.updateAge).toBe(false)
+  })
+
+  it('should normalize a custom numeric session.updateAge', () => {
+    const result = normalizeAuthConfig({
+      session: { updateAge: 3600 },
+    })
+
+    expect(result.session.updateAge).toBe(3600)
   })
 
   it('should normalize custom session fields', () => {

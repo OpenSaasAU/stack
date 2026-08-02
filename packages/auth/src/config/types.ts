@@ -32,7 +32,15 @@ export type EmailPasswordConfig = {
    */
   minPasswordLength?: number
   /**
-   * Require password confirmation
+   * Require password confirmation (a second "confirm password" field).
+   *
+   * There is no better-auth server-side equivalent — this is purely a UI
+   * concern. `createAuth()` does not read it. Pass it directly to the
+   * pre-built forms instead: `<SignUpForm requirePasswordConfirmation={...} />`
+   * / `<ResetPasswordForm requirePasswordConfirmation={...} />` (both default
+   * to `true`). Setting it here has no effect and `createAuth()` warns if it
+   * is configured.
+   *
    * @default true
    */
   requireConfirmation?: boolean
@@ -77,10 +85,12 @@ export type SessionConfig = {
    */
   expiresIn?: number
   /**
-   * Update session expiration on each request
-   * @default true
+   * How often the session should be refreshed, in seconds. Passed straight
+   * through to better-auth's own `session.updateAge`. Set `false` to disable
+   * refresh entirely (the session expiry is then fixed at creation time).
+   * @default 86400 (1 day, matching better-auth's own default)
    */
-  updateAge?: boolean
+  updateAge?: number | false
 }
 
 /**
