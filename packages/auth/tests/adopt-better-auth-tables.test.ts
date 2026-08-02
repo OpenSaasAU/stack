@@ -76,6 +76,105 @@ describe('adoptBetterAuthTables - recipe defaults', () => {
   })
 })
 
+describe('adoptBetterAuthTables - table names (issue #862)', () => {
+  it('sets no tableName by default (prefixed modelName also pins the table, as before)', () => {
+    const fragment = adoptBetterAuthTables()
+
+    expect(fragment.user).toEqual({ modelName: 'AuthUser' })
+    expect(fragment.session).toEqual({ modelName: 'AuthSession' })
+  })
+
+  it('useBetterAuthTableNames sets every model tableName to the better-auth default lowercase name', () => {
+    const fragment = adoptBetterAuthTables({ useBetterAuthTableNames: true })
+
+    expect(fragment.user).toEqual({ modelName: 'AuthUser', tableName: 'user' })
+    expect(fragment.session).toEqual({ modelName: 'AuthSession', tableName: 'session' })
+    expect(fragment.account).toEqual({ modelName: 'AuthAccount', tableName: 'account' })
+    expect(fragment.verification).toEqual({
+      modelName: 'AuthVerification',
+      tableName: 'verification',
+    })
+  })
+
+  it('tableNames sets explicit per-model table names', () => {
+    const fragment = adoptBetterAuthTables({
+      tableNames: { user: 'users', session: 'user_sessions' },
+    })
+
+    expect(fragment.user).toEqual({ modelName: 'AuthUser', tableName: 'users' })
+    expect(fragment.session).toEqual({ modelName: 'AuthSession', tableName: 'user_sessions' })
+    // Models without an explicit tableName entry stay unset.
+    expect(fragment.account).toEqual({ modelName: 'AuthAccount' })
+  })
+
+  it('tableNames takes precedence over useBetterAuthTableNames for the same model', () => {
+    const fragment = adoptBetterAuthTables({
+      useBetterAuthTableNames: true,
+      tableNames: { user: 'custom_user_table' },
+    })
+
+    expect(fragment.user?.tableName).toBe('custom_user_table')
+    // Other models still fall back to the better-auth default.
+    expect(fragment.session?.tableName).toBe('session')
+  })
+
+  it('combines tableName with a field column map on the same model', () => {
+    const fragment = adoptBetterAuthTables({
+      useBetterAuthTableNames: true,
+      fields: { user: { name: 'full_name' } },
+    })
+
+    expect(fragment.user).toEqual({
+      modelName: 'AuthUser',
+      tableName: 'user',
+      fields: { name: 'full_name' },
+    })
+  })
+})
+
+describe('adoptBetterAuthTables - clean-diff adoption with better-auth default table names', () => {
+  it('produces Auth lists that @@map to the live lowercase tables under prefixed list keys', async () => {
+    const result = await generationConfig({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {
+        User: list({
+          fields: { subjectId: text({ validation: { isRequired: true } }) },
+        }),
+      },
+    })
+
+    // List keys stay prefixed (no collision with the app's own User)...
+    expect(result.lists).toHaveProperty('AuthUser')
+    // ...but the physical table is better-auth's own default lowercase name.
+    expect(result.lists.AuthUser.db).toEqual({ timestamps: true, map: 'user', schema: 'auth' })
+    expect(result.lists.AuthSession.db).toEqual({
+      timestamps: true,
+      map: 'session',
+      schema: 'auth',
+    })
+    expect(result.lists.AuthAccount.db).toEqual({
+      timestamps: true,
+      map: 'account',
+      schema: 'auth',
+    })
+    expect(result.lists.AuthVerification.db).toEqual({
+      timestamps: true,
+      map: 'verification',
+      schema: 'auth',
+    })
+
+    // The app's own domain User is untouched.
+    expect(result.lists.User.fields).toHaveProperty('subjectId')
+    expect(result.lists.User.fields).not.toHaveProperty('email')
+  })
+})
+
 describe('adoptBetterAuthTables - composes with authPlugin', () => {
   it('spreads into authPlugin alongside the rest of the auth config', async () => {
     const result = await config({

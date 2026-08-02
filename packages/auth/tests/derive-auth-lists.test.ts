@@ -140,11 +140,16 @@ describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679)', () 
 })
 
 describe('deriveAuthLists - custom modelName overrides', () => {
+  // `deriveAuthLists` is the pure derivation step: it consumes an already-
+  // resolved `tableName` rather than re-deriving one from `modelName`. That
+  // default derivation (tableName follows modelName when it differs from the
+  // better-auth default) lives in `normalizeModelConfig` (config/index.ts) —
+  // mirror its output here since these fixtures bypass normalization.
   const customModels: NormalizedAuthModels = {
-    user: { modelName: 'AuthUser', fields: {} },
-    session: { modelName: 'AuthSession', fields: {} },
-    account: { modelName: 'AuthAccount', fields: {} },
-    verification: { modelName: 'AuthVerification', fields: {} },
+    user: { modelName: 'AuthUser', tableName: 'AuthUser', fields: {} },
+    session: { modelName: 'AuthSession', tableName: 'AuthSession', fields: {} },
+    account: { modelName: 'AuthAccount', tableName: 'AuthAccount', fields: {} },
+    verification: { modelName: 'AuthVerification', tableName: 'AuthVerification', fields: {} },
   }
 
   it('derives list keys from modelName', () => {
@@ -190,6 +195,61 @@ describe('deriveAuthLists - custom modelName overrides', () => {
     expect(lists.AuthSession.db?.timestamps).toBe(true)
     expect(lists.AuthAccount.db?.timestamps).toBe(true)
     expect(lists.AuthVerification.db?.timestamps).toBe(true)
+  })
+})
+
+describe('deriveAuthLists - tableName independent of modelName (issue #862)', () => {
+  it('emits @@map from tableName even though modelName is unchanged', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'User', tableName: 'users', fields: {} },
+      session: { modelName: 'Session', fields: {} },
+      account: { modelName: 'Account', fields: {} },
+      verification: { modelName: 'Verification', fields: {} },
+    }
+
+    const { keys, lists } = deriveAuthLists(models)
+
+    // The list key follows modelName, unaffected by tableName.
+    expect(keys.user).toBe('User')
+    expect(lists.User.db?.map).toBe('users')
+  })
+
+  it('adopts a better-auth default lowercase table under a prefixed list key', () => {
+    // The shape issue #862 exists for: a prefixed list key (to avoid
+    // colliding with the app's own domain User) whose live table is still
+    // better-auth's own default lowercase name.
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', tableName: 'user', fields: {} },
+      session: { modelName: 'AuthSession', tableName: 'session', fields: {} },
+      account: { modelName: 'AuthAccount', tableName: 'account', fields: {} },
+      verification: { modelName: 'AuthVerification', tableName: 'verification', fields: {} },
+    }
+
+    const { keys, lists } = deriveAuthLists(models)
+
+    expect(keys).toEqual({
+      user: 'AuthUser',
+      session: 'AuthSession',
+      account: 'AuthAccount',
+      verification: 'AuthVerification',
+    })
+    expect(lists.AuthUser.db?.map).toBe('user')
+    expect(lists.AuthSession.db?.map).toBe('session')
+    expect(lists.AuthAccount.db?.map).toBe('account')
+    expect(lists.AuthVerification.db?.map).toBe('verification')
+  })
+
+  it('emits no @@map when tableName is unset, even with a renamed modelName', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {} },
+      session: { modelName: 'Session', fields: {} },
+      account: { modelName: 'Account', fields: {} },
+      verification: { modelName: 'Verification', fields: {} },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthUser.db?.map).toBeUndefined()
   })
 })
 
@@ -243,7 +303,7 @@ describe('deriveAuthLists - schema placement', () => {
 
   it('carries both @@map and @@schema for renamed + relocated lists', () => {
     const models: NormalizedAuthModels = {
-      user: { modelName: 'AuthUser', fields: {}, schema: 'auth' },
+      user: { modelName: 'AuthUser', tableName: 'AuthUser', fields: {}, schema: 'auth' },
       session: { modelName: 'AuthSession', fields: {}, schema: 'auth' },
       account: { modelName: 'AuthAccount', fields: {}, schema: 'auth' },
       verification: { modelName: 'AuthVerification', fields: {}, schema: 'auth' },

@@ -71,13 +71,16 @@ developer writes — not hardcoded. The pure derivation lives in
 `src/config/derive-auth-lists.ts` (`deriveAuthLists`), which `getAuthLists`
 and the plugin's add-vs-extend logic consume:
 
-- per-model `modelName` → list key + table `@@map`
+- per-model `modelName` → list key (and Prisma model name)
+- per-model `tableName` → table `@@map`, **independent of `modelName`**
+  (defaults to `modelName` when it differs from the better-auth default,
+  otherwise unset — i.e. unchanged output when `tableName` isn't set)
 - per-model `fields` (better-auth field → column) → field-level `@map`
 - the `userId` column override → the `user` relationship foreign-key `@map`
 - relationship refs between the Auth lists follow the derived keys
   (e.g. `Session.user → AuthUser.sessions`)
 
-With no `modelName`/`fields` overrides the output is unchanged
+With no `modelName`/`tableName`/`fields` overrides the output is unchanged
 (`User`/`Session`/`Account`/`Verification`, original field shapes, no `@@map`).
 
 ```typescript
@@ -87,6 +90,15 @@ authPlugin({
   session: { modelName: 'AuthSession', fields: { userId: 'user_id' } },
 })
 // Adds AuthUser/AuthSession/... and leaves an app's own `User` untouched.
+```
+
+```typescript
+// modelName sets the list key; tableName independently pins the live table —
+// e.g. a prefixed list key adopting better-auth's own default lowercase table.
+authPlugin({
+  user: { modelName: 'AuthUser', tableName: 'user' },
+  session: { modelName: 'AuthSession', tableName: 'session' },
+})
 ```
 
 Because the plugin only ever adds/extends its **derived** keys, an app's own
@@ -164,10 +176,10 @@ How it wires up (Postgres multi-schema):
 
 `adoptBetterAuthTables()` (`src/config/adopt-better-auth-tables.ts`) is a thin
 recipe that returns the `AuthConfig` adoption knobs — the plugin-level `schema`
-plus a per-model `modelName` (and optional column `fields` maps) — preset to the
-conventions of a standard separate-schema better-auth install. It ties together
-the keys/field derivation and schema placement so a migrator doesn't rebuild the
-config by hand. Spread it into `authPlugin`:
+plus a per-model `modelName` (and optional column `fields`/`tableName` maps) —
+preset to the conventions of a standard separate-schema better-auth install. It
+ties together the keys/field derivation and schema placement so a migrator
+doesn't rebuild the config by hand. Spread it into `authPlugin`:
 
 ```typescript
 import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
@@ -176,7 +188,23 @@ authPlugin({
   ...adoptBetterAuthTables(), // schema: 'auth', AuthUser/AuthSession/AuthAccount/AuthVerification
   emailAndPassword: { enabled: true },
 })
-// Options: adoptBetterAuthTables({ schema, modelNamePrefix, fields })
+// Options: adoptBetterAuthTables({ schema, modelNamePrefix, fields, useBetterAuthTableNames, tableNames })
+```
+
+The most common adoption shape is a project that ran better-auth **before**
+Stack, so its live tables are still better-auth's own default lowercase names
+(`user`/`session`/`account`/`verification`) even though the derived list keys
+need an `Auth` prefix to avoid colliding with the app's own domain `User`.
+`useBetterAuthTableNames: true` sets every model's `tableName` to that
+default; the per-model `tableNames` map is the escape hatch for a mix (it
+wins over `useBetterAuthTableNames` for any model it names):
+
+```typescript
+authPlugin({
+  ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
+  // → AuthUser/AuthSession/AuthAccount/AuthVerification list keys,
+  //   @@map("user")/@@map("session")/@@map("account")/@@map("verification")
+})
 ```
 
 It is pure config (no side effects): everything it sets can also be written

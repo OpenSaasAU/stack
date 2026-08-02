@@ -165,6 +165,44 @@ describe('normalizeAuthConfig', () => {
     expect(result.access.user).toBe(userAccess)
     expect(result.access.session).toBe(sessionAccess)
   })
+
+  describe('models.tableName (issue #862)', () => {
+    it('defaults tableName to undefined for unrenamed models', () => {
+      const result = normalizeAuthConfig({})
+
+      expect(result.models.user.tableName).toBeUndefined()
+      expect(result.models.session.tableName).toBeUndefined()
+      expect(result.models.account.tableName).toBeUndefined()
+      expect(result.models.verification.tableName).toBeUndefined()
+    })
+
+    it('defaults tableName to the renamed modelName, matching pre-#862 behaviour', () => {
+      const result = normalizeAuthConfig({
+        user: { modelName: 'AuthUser' },
+      })
+
+      expect(result.models.user.modelName).toBe('AuthUser')
+      expect(result.models.user.tableName).toBe('AuthUser')
+    })
+
+    it('resolves an explicit tableName independent of modelName', () => {
+      const result = normalizeAuthConfig({
+        user: { modelName: 'AuthUser', tableName: 'user' },
+      })
+
+      expect(result.models.user.modelName).toBe('AuthUser')
+      expect(result.models.user.tableName).toBe('user')
+    })
+
+    it('honours an explicit tableName even when modelName is left at its default', () => {
+      const result = normalizeAuthConfig({
+        session: { tableName: 'sessions' },
+      })
+
+      expect(result.models.session.modelName).toBe('Session')
+      expect(result.models.session.tableName).toBe('sessions')
+    })
+  })
 })
 
 describe('authPlugin', () => {

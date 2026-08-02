@@ -113,3 +113,34 @@ describe('generated auth schema — required columns mirror better-auth (issue #
     }
   })
 })
+
+describe('generated auth schema — tableName independent of modelName (issue #862)', () => {
+  it('emits a prefixed model name with a @@map to a better-auth default lowercase table', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          user: { modelName: 'AuthUser', tableName: 'user' },
+          session: { modelName: 'AuthSession', tableName: 'session' },
+          account: { modelName: 'AuthAccount', tableName: 'account' },
+          verification: { modelName: 'AuthVerification', tableName: 'verification' },
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {},
+    })
+
+    for (const [model, table] of [
+      ['AuthUser', 'user'],
+      ['AuthSession', 'session'],
+      ['AuthAccount', 'account'],
+      ['AuthVerification', 'verification'],
+    ]) {
+      const block = modelBlock(schema, model)
+      // The generated model keeps the prefixed name but maps to the live
+      // lowercase table — no DROP/CREATE rename against a real better-auth
+      // install using its own default table names.
+      expect(block).toContain(`@@map("${table}")`)
+    }
+  })
+})
