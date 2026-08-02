@@ -19,7 +19,7 @@ The first pass of a read, run before the database is hit. Uses operation-level a
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
-The second pass of a read, run on the returned rows. Removes fields the session cannot read, runs `resolveOutput` hooks, and computes virtual fields. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
+The second pass of a read, run on the returned rows. Removes fields the session cannot read and produces the value of every computed field the read is going to return. A field the read will not return does no work here at all — neither its read check nor its computation — so this phase costs what the read asked for rather than what the list happens to define. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
 _Avoid_: result filter, output filter, field stripper
 
 **Resolve chain**:
@@ -34,8 +34,12 @@ _Avoid_: auto-include, default include, unqualified read
 The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further (ADR-0026). This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it.
 _Avoid_: deep include, nested expansion, relation tree
 
+**Computed field**:
+A field whose value is produced rather than read straight from storage — one with no column of its own, or one that transforms what its column holds. It is produced only where the read is going to return it, and it sees the row's stored columns and its own declared dependencies, never another computed field's value. Reaching for one finds nothing there, so no two computed fields can depend on the order they were declared in.
+_Avoid_: virtual field (that names one kind, not the category), derived field, resolver
+
 **Declared dependency**:
-A relation a computed field names as an input it cannot compute without. The read fetches it for the field's benefit wherever that field is computed, and does not return it — a declared dependency never widens what a caller receives, so a call site's shape stays readable from the call site (see Bare read). Declaring it is what earns the data: a computed field that reaches for a relation it did not declare finds nothing there.
+A relation a computed field names as an input it cannot compute without. The read fetches it for the field's benefit wherever that field is computed, and does not return it — a declared dependency never widens what a caller receives, so a call site's shape stays readable from the call site (see Bare read). It is fetched exactly where the field is computed and nowhere else, so a read pays for a dependency precisely when it pays for the field that named it. Declaring it is what earns the data: a computed field that reaches for a relation it did not declare finds nothing there, including when some other field's declaration happened to fetch it.
 _Avoid_: auto-include, eager load, field dependency, prefetch
 
 **Declaration closure**:
