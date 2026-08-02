@@ -44,6 +44,18 @@ import { getRelatedListConfig } from './engine.js'
  * (`needs-closure.ts`) is the primary backstop — a cyclic `needs` closure
  * fails generation and should never reach this code at runtime — this guard
  * is defense in depth, not the mechanism relied on for correctness.
+ *
+ * The guard applies to DECLARATION-ADDED edges only, which is exactly where
+ * the unbounded recursion can come from: a branch added by this fold carries
+ * no caller include of its own, so everything beneath it is declaration-added
+ * too, and each such edge either reaches a list not yet on the path or stops
+ * — bounding that suffix by the number of lists. An edge the request itself
+ * named is bounded by the request's own finite literal instead. Applying the
+ * guard to those as well would stop the fold at a path that merely revisits a
+ * list (`Post → author → posts`, or a self-referential `parent`), silently
+ * leaving the revisited list's own declared dependencies unsatisfied — the
+ * `undefined`-compute ADR-0025 exists to prevent, at every level a field is
+ * computed.
  */
 
 /** Which relation keys, at which nesting level, exist only to satisfy a `needs` declaration. */
@@ -142,10 +154,14 @@ export function foldDeclaredDependencies(
 
     const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
     if (!relatedConfig) continue
-    // Defensive cycle guard (see module doc comment) — a chain of `needs`
-    // that revisits a list already on this path stops here rather than
-    // recursing without bound. The value at `key` is left exactly as-is.
-    if (visitedLists.includes(relatedConfig.listName)) continue
+    // Defensive cycle guard (see module doc comment) — a DECLARATION-ADDED
+    // edge into a list already on this path stops here rather than recursing
+    // without bound. The value at `key` is left exactly as-is. The guard is
+    // deliberately not applied to an edge the request itself named: that
+    // recursion is bounded by the request's own finite literal and cannot
+    // loop, so stopping it would silently drop the folds beneath a request
+    // that merely revisits a list (e.g. `Post → author → posts`).
+    if (declaredOnly.keys.has(key) && visitedLists.includes(relatedConfig.listName)) continue
 
     const explicitNested = getExplicitInclude(value)
     const nested = foldDeclaredDependencies(

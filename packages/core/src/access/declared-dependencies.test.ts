@@ -167,6 +167,85 @@ describe('foldDeclaredDependencies', () => {
     expect(result.declaredOnly).toEqual(emptyDeclaredOnlyTree())
   })
 
+  it("folds a revisited list's own needs beneath a relation the request named", () => {
+    // The request names Post → author → posts, revisiting Post. Nothing here
+    // can loop — the include is a finite literal the caller wrote out — so the
+    // fold must keep going and satisfy Post.blurb's `needs` at THAT level too.
+    // Guarding a caller-named edge on list identity would stop the fold at
+    // `posts` and leave `blurb` computing over an undefined `tags`.
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Post: {
+          fields: {
+            author: relField('User.posts'),
+            comments: relField('Comment', true),
+            tags: relField('Tag', true),
+            blurb: virtualNeeds(['tags']),
+          },
+        },
+        User: { fields: { posts: relField('Post.author', true) } },
+        Comment: { fields: { body: { type: 'text' } as FieldConfig } },
+        Tag: { fields: { label: { type: 'text' } as FieldConfig } },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+
+    const result = foldDeclaredDependencies(
+      { author: { include: { posts: { include: { comments: true } } } } },
+      config.lists.Post.fields,
+      config,
+      'Post',
+    )
+
+    expect(result.include).toEqual({
+      tags: true,
+      author: { include: { posts: { include: { comments: true, tags: true } } } },
+    })
+    // Only the nested `tags` needs fine-grained tracking: the root-level one is
+    // declaration-only at this level (stripped wholesale), while the nested one
+    // sits inside branches the caller named and must be stripped individually.
+    expect(result.declaredOnly.keys.has('tags')).toBe(true)
+    expect(result.declaredOnly.nested.author?.nested.posts?.keys.has('tags')).toBe(true)
+    expect(result.declaredOnly.nested.author?.nested.posts?.keys.has('comments')).toBe(false)
+  })
+
+  it("folds a self-referential relation's own needs when the request names it", () => {
+    // `parent` points back at Category itself. The request named it, so the
+    // fold must satisfy Category's own `needs` beneath it — `depth` is computed
+    // on the parent row too.
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Category: {
+          fields: {
+            parent: relField('Category.children'),
+            children: relField('Category.parent', true),
+            depth: virtualNeeds(['children']),
+          },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+
+    const result = foldDeclaredDependencies(
+      { parent: true },
+      config.lists.Category.fields,
+      config,
+      'Category',
+    )
+
+    // `children` folds in at the root AND beneath the caller-named `parent`.
+    // The fold beneath `parent` stops there: `children` is declaration-added,
+    // so the guard applies to its own onward edge back into Category.
+    expect(result.include).toEqual({
+      parent: { include: { children: true } },
+      children: true,
+    })
+    expect(result.declaredOnly.keys.has('children')).toBe(true)
+    expect(result.declaredOnly.nested.parent?.keys.has('children')).toBe(true)
+  })
+
   it('defensively terminates a two-list mutual `needs` cycle instead of recursing without bound', () => {
     // Order.total needs lineItems; LineItem.orderRef needs order — a cycle
     // `validateNeedsClosureDepth` (needs-closure.ts) rejects at generate time.
