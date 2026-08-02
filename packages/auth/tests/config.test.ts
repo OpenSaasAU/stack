@@ -18,6 +18,15 @@ describe('normalizeAuthConfig', () => {
     expect(result.sessionFields).toEqual(['userId', 'email', 'name'])
     expect(result.socialProviders).toEqual({})
     expect(result.betterAuthPlugins).toEqual([])
+    expect(result.betterAuthOptions).toEqual({})
+  })
+
+  it('should pass through betterAuthOptions unchanged', () => {
+    const result = normalizeAuthConfig({
+      betterAuthOptions: { baseURL: 'https://example.com' },
+    })
+
+    expect(result.betterAuthOptions).toEqual({ baseURL: 'https://example.com' })
   })
 
   it('should normalize email and password config', () => {

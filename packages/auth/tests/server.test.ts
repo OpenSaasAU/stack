@@ -19,7 +19,8 @@ vi.mock('better-auth/next-js', () => ({
   nextCookies: nextCookiesMock,
 }))
 
-const { createAuth, getSessionFromAuth } = await import('../src/server/index.js')
+const { createAuth, buildBetterAuthOptions, getSessionFromAuth } =
+  await import('../src/server/index.js')
 
 function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): NormalizedAuthConfig {
   return {
@@ -49,6 +50,7 @@ function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): Normaliz
     access: {},
     betterAuthPlugins: [],
     rateLimit: undefined,
+    betterAuthOptions: {},
     ...overrides,
   }
 }
@@ -302,6 +304,182 @@ describe('createAuth', () => {
 
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('passwordReset'))
     warnSpy.mockRestore()
+  })
+})
+
+describe('betterAuthOptions passthrough', () => {
+  beforeEach(() => {
+    betterAuthMock.mockClear()
+    prismaAdapterMock.mockClear()
+    nextCookiesMock.mockClear()
+  })
+
+  it('produces byte-for-byte identical options to today when unused', async () => {
+    // `normalizeAuthConfig` is what actually defaults a config without
+    // `betterAuthOptions` to `{}` (see config.test.ts) — reproduce that
+    // realistic normalized shape here rather than an AuthConfig missing a
+    // required NormalizedAuthConfig field.
+    const authConfig = makeAuthConfig({ betterAuthOptions: {} })
+
+    const built = await buildBetterAuthConfig(authConfig)
+
+    expect(built).toEqual({
+      database: { client: { __mockPrisma: true }, opts: { provider: 'sqlite' } },
+      user: { modelName: 'User' },
+      session: { modelName: 'Session', expiresIn: 604800, updateAge: 86400 },
+      account: { modelName: 'Account' },
+      verification: { modelName: 'Verification' },
+      emailAndPassword: {
+        enabled: true,
+        requireEmailVerification: false,
+        minPasswordLength: 8,
+      },
+      emailVerification: undefined,
+      trustedOrigins: [],
+      socialProviders: {},
+      rateLimit: undefined,
+      plugins: [{ id: 'next-cookies' }],
+    })
+  })
+
+  it('surfaces a top-level option the stack does not model (e.g. baseURL)', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({ betterAuthOptions: { baseURL: 'https://example.com' } }),
+    )
+
+    expect(config.baseURL).toBe('https://example.com')
+  })
+
+  it('merges a nested database hook without clobbering sibling top-level keys', async () => {
+    const after = vi.fn()
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        session: { expiresIn: 604800, updateAge: 86400 },
+        betterAuthOptions: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only shape
+          databaseHooks: { user: { create: { after } } } as any,
+        },
+      }),
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
+    expect((config as any).databaseHooks.user.create.after).toBe(after)
+    // The stack's own session config survives — passthrough added a sibling
+    // top-level key, it didn't replace the whole options object.
+    expect(config.session?.expiresIn).toBe(604800)
+  })
+
+  it('merges a nested session option without clobbering the stack-set session keys', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        session: { expiresIn: 604800, updateAge: 3600 },
+        betterAuthOptions: {
+          session: { cookieCache: { enabled: true, maxAge: 300 } },
+        },
+      }),
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
+    expect((config.session as any).cookieCache).toEqual({ enabled: true, maxAge: 300 })
+    expect(config.session?.expiresIn).toBe(604800)
+    expect(config.session?.updateAge).toBe(3600)
+  })
+
+  it('lets the passthrough win on a genuine key collision', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        session: { expiresIn: 604800, updateAge: 3600 },
+        betterAuthOptions: {
+          session: { expiresIn: 999 },
+        },
+      }),
+    )
+
+    expect(config.session?.expiresIn).toBe(999)
+  })
+
+  it('replaces an array outright instead of concatenating (e.g. trustedOrigins)', async () => {
+    process.env.BETTER_AUTH_TRUSTED_ORIGINS = 'https://env-origin.com'
+    try {
+      const config = await buildBetterAuthConfig(
+        makeAuthConfig({
+          betterAuthOptions: { trustedOrigins: ['https://config-origin.com'] },
+        }),
+      )
+
+      expect(config.trustedOrigins).toEqual(['https://config-origin.com'])
+    } finally {
+      delete process.env.BETTER_AUTH_TRUSTED_ORIGINS
+    }
+  })
+
+  it('rejects betterAuthOptions.database', async () => {
+    await expect(
+      buildBetterAuthOptions(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only shape
+        makeOpensaasConfig(makeAuthConfig({ betterAuthOptions: { database: {} as any } })),
+        makeContext(),
+      ),
+    ).rejects.toThrow(/betterAuthOptions\.database/)
+  })
+
+  it('rejects betterAuthOptions.plugins', async () => {
+    await expect(
+      buildBetterAuthOptions(
+        makeOpensaasConfig(makeAuthConfig({ betterAuthOptions: { plugins: [] } })),
+        makeContext(),
+      ),
+    ).rejects.toThrow(/betterAuthOptions\.plugins/)
+  })
+
+  it.each(['user', 'session', 'account', 'verification'] as const)(
+    'rejects betterAuthOptions.%s.additionalFields',
+    async (model) => {
+      await expect(
+        buildBetterAuthOptions(
+          makeOpensaasConfig(
+            makeAuthConfig({
+              betterAuthOptions: {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only shape
+                [model]: { additionalFields: { foo: { type: 'string' } } } as any,
+              },
+            }),
+          ),
+          makeContext(),
+        ),
+      ).rejects.toThrow(new RegExp(`betterAuthOptions\\.${model}\\.additionalFields`))
+    },
+  )
+
+  it('does not reject additionalFields nested under an unrelated model key', async () => {
+    // A plain object at `user` with no `additionalFields` key must not trip the guard.
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({ betterAuthOptions: { user: { modelName: 'CustomUser' } } }),
+    )
+
+    expect(config.user).toMatchObject({ modelName: 'CustomUser' })
+  })
+})
+
+describe('buildBetterAuthOptions / createAuth parity', () => {
+  beforeEach(() => {
+    betterAuthMock.mockClear()
+  })
+
+  it('createAuth constructs betterAuth with exactly what buildBetterAuthOptions returns', async () => {
+    const authConfig = makeAuthConfig({
+      betterAuthOptions: { baseURL: 'https://example.com' },
+    })
+    const opensaasConfig = makeOpensaasConfig(authConfig)
+    const context = makeContext()
+
+    const built = await buildBetterAuthOptions(opensaasConfig, context)
+
+    const auth = createAuth(opensaasConfig, context)
+    await auth.api.getSession({})
+
+    expect(betterAuthMock).toHaveBeenCalledTimes(1)
+    expect(betterAuthMock.mock.calls[0][0]).toEqual(built)
   })
 })
 

@@ -271,6 +271,29 @@ authPlugin({
 
 The auth plugin automatically converts Better Auth plugin schemas to OpenSaaS lists.
 
+### `betterAuthOptions`
+
+Escape hatch for any better-auth option the stack doesn't model as its own config field. Deep-merged into the options `createAuth()` builds, applied **last** — a plain-object value at a given key merges recursively with what the stack already set there (so a nested addition like `session.cookieCache` adds alongside the stack's own `session.expiresIn`/`updateAge` rather than replacing them), and on a genuine key collision `betterAuthOptions` wins. Arrays and any other value type replace the stack's value outright.
+
+```typescript
+authPlugin({
+  betterAuthOptions: {
+    // Sync a domain user row for every better-auth user
+    databaseHooks: { user: { create: { after: syncDomainUser } } },
+    // 5-minute session cookie cache
+    session: { cookieCache: { enabled: true, maxAge: 300 } },
+    // Keep PII out of the verification table
+    verification: { storeIdentifier: 'hashed' },
+    // Derive the base URL instead of relying on env vars
+    baseURL: process.env.BETTER_AUTH_URL,
+  },
+})
+```
+
+`database` and `plugins` are rejected — they're already the dedicated seams (the stack's `db` config, and `betterAuthPlugins` above) and accepting them here would create two unranked ways to set the same thing. So is `additionalFields` under `user`/`session`/`account`/`verification`: it has schema consequences (new columns) that a passthrough can't also apply to the generated Prisma schema, so add fields to the derived list instead — `extendUserList` for the user model, or declare the list yourself in your own `lists` config for the others.
+
+The same options object is available standalone via `buildBetterAuthOptions()` — see [Escape hatch: hand-wiring `betterAuth()`](#escape-hatch-hand-wiring-betterauth) below.
+
 ## Auto-Generated Lists
 
 The auth plugin automatically generates the following lists:
@@ -346,6 +369,34 @@ Then create the API route:
 // app/api/auth/[...all]/route.ts
 export { GET, POST } from '@/lib/auth'
 ```
+
+### Escape hatch: hand-wiring `betterAuth()`
+
+`createAuth()` covers the common case. If you need to construct `betterAuth()`
+yourself — e.g. a third-party contract that requires a resolved instance
+rather than `createAuth()`'s lazy proxy — `buildBetterAuthOptions()` gives you
+the exact same options object `createAuth()` passes to `betterAuth()`, so your
+hand-wired instance derives from the stack config instead of duplicating it:
+
+```typescript
+// lib/auth.ts
+import { betterAuth } from 'better-auth'
+import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
+import config from '../opensaas.config'
+import { rawOpensaasContext } from '@/.opensaas/context'
+
+export const auth = betterAuth({
+  ...(await buildBetterAuthOptions(config, rawOpensaasContext)),
+  // Local additions on top of the stack-derived options
+  databaseHooks: { user: { create: { after: syncDomainUser } } },
+})
+```
+
+This keeps the auth plugin authoritative for everything it models (providers,
+session expiry, password policy, the plugin array) while your additions stay
+an explicit, reviewable diff. It also gives an incremental migration path onto
+`createAuth()`: adopt the builder first, then move options into
+[`betterAuthOptions`](#betterauthoptions) as the stack grows knobs for them.
 
 ## Client Setup
 
