@@ -435,6 +435,44 @@ The function receives:
 
 Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular and broad modifications.
 
+**Model-Level Composite Indexes (`db.indexes`):**
+
+Field-level `isIndexed` (on a scalar or relationship field) can only ever produce a single-column `@@unique`/`@@index`. A list's `db.indexes` is the multi-column case: each entry names two or more of the list's own OpenSaaS field names (not raw database column names) and the generator resolves each to its Prisma column — a scalar field's own name, or a relationship field's foreign key column (`<field>Id`) when this side owns it.
+
+```typescript
+Audition: list({
+  fields: {
+    student: relationship({ ref: 'Student.auditions' }),
+    production: relationship({ ref: 'Production.auditions' }),
+  },
+  db: {
+    // One audition per student per production — a database-level backstop
+    // for a business rule a hook's existence check can't close on its own
+    // (two concurrent submissions both pass the check and both insert).
+    indexes: [{ fields: ['student', 'production'], unique: true }],
+  },
+})
+// Generates: @@unique([studentId, productionId])
+
+AuthVerification: list({
+  fields: {
+    identifier: text(),
+    createdAt: timestamp(),
+  },
+  db: {
+    indexes: [
+      {
+        fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+        name: 'AuthVerification_identifier_createdAt_idx', // adopts an existing live constraint name (Prisma's `map:`)
+      },
+    ],
+  },
+})
+// Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+```
+
+An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry, and the bad field — never silently dropped or emitted as invalid Prisma.
+
 ### Field Types
 
 **Key file:** `packages/core/src/fields/index.ts`

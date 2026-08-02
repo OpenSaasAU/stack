@@ -19,6 +19,8 @@ export type {
   OutputConfig,
   ListConfig,
   DatabaseConfig,
+  ListIndex,
+  ListIndexFieldRef,
   FieldConfig,
   OperationAccess,
   // Custom Bulk actions (issue #736) — declared per list in

@@ -1247,6 +1247,16 @@ export type PrismaRelationResult = {
    */
   modelLines: string[]
   /**
+   * The Prisma-level foreign key field name this side owns (e.g. `authorId`),
+   * regardless of whether it is indexed. `undefined` when this side doesn't
+   * own a foreign key column at all (the many side, or the non-FK side of a
+   * one-to-one). Lets other generator passes resolve a relationship field
+   * name to its physical column — e.g. a model-level composite index
+   * ({@link ListIndex}) naming a relationship field — without duplicating
+   * {@link foreignKeyIndex}'s narrower, indexing-conditional presence.
+   */
+  foreignKeyField?: string
+  /**
    * Foreign key index to add to the owning model, if this side owns an
    * indexed foreign key.
    */
@@ -1802,6 +1812,43 @@ export type Hooks<
   validateInput?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
 }
 
+/**
+ * A single field reference within a model-level {@link ListIndex}. Either
+ * just the OpenSaaS field name, or an object naming it alongside a sort
+ * direction.
+ */
+export type ListIndexFieldRef =
+  | string
+  | {
+      field: string
+      /** Sort direction for this column within the index/constraint. */
+      sort?: 'asc' | 'desc'
+    }
+
+/**
+ * A model-level composite `@@unique`/`@@index` constraint spanning two or
+ * more of a list's own fields. See {@link ListConfig.db}'s `indexes` for the
+ * full explanation and examples (#864).
+ */
+export type ListIndex = {
+  /**
+   * The fields participating in this index/constraint, in declaration order.
+   * OpenSaaS field names, not raw database column names.
+   */
+  fields: ListIndexFieldRef[]
+  /**
+   * Emit `@@unique([...])` instead of `@@index([...])`.
+   * @default false
+   */
+  unique?: boolean
+  /**
+   * Constraint/index name, emitted as Prisma's `map:` argument — lets an
+   * existing live constraint be adopted under its current name rather than
+   * renamed.
+   */
+  name?: string
+}
+
 // Generic `any` default allows ListConfig to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 /**
@@ -1879,6 +1926,67 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     timestamps?: boolean
+    /**
+     * Model-level composite `@@unique`/`@@index` constraints spanning two or
+     * more of this list's own fields (#864).
+     *
+     * Field-level `isIndexed` (on a scalar or relationship field) can only
+     * ever produce a single-column index — it has no way to express a
+     * constraint or index that spans more than one column. `db.indexes` is
+     * that multi-column case: each entry names two or more of the list's own
+     * OpenSaaS field names, not raw database column names. The generator
+     * resolves each to its underlying Prisma column — a scalar field's own
+     * name (its Prisma field name is unaffected by `db.map`), or a
+     * relationship field's foreign key column (`<field>Id`) when this side
+     * owns it.
+     *
+     * A composite **unique** is the load-bearing case: it's the
+     * database-level backstop for a business rule two concurrent writes could
+     * otherwise both slip past (e.g. "one booking per student per
+     * production") — something a hook's existence check cannot close on its
+     * own, and can't be retrofitted once duplicate rows exist. A composite
+     * **index** (non-unique) is the equivalent performance-only case (a hot
+     * multi-column lookup path).
+     *
+     * An entry naming a field the list doesn't have, a virtual field, a
+     * to-many relationship, or the non-FK side of a one-to-one relationship
+     * fails `pnpm generate` with an error naming the list, the entry, and the
+     * bad field — it is never silently dropped or emitted as invalid Prisma.
+     *
+     * @example One audition per student per production (composite unique)
+     * ```typescript
+     * Audition: list({
+     *   fields: {
+     *     student: relationship({ ref: 'Student.auditions' }),
+     *     production: relationship({ ref: 'Production.auditions' }),
+     *   },
+     *   db: {
+     *     indexes: [{ fields: ['student', 'production'], unique: true }],
+     *   },
+     * })
+     * // Generates: @@unique([studentId, productionId])
+     * ```
+     *
+     * @example Hot lookup path (composite index) with a sort direction and an adopted constraint name
+     * ```typescript
+     * AuthVerification: list({
+     *   fields: {
+     *     identifier: text(),
+     *     createdAt: timestamp(),
+     *   },
+     *   db: {
+     *     indexes: [
+     *       {
+     *         fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+     *         name: 'AuthVerification_identifier_createdAt_idx',
+     *       },
+     *     ],
+     *   },
+     * })
+     * // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+     * ```
+     */
+    indexes?: ListIndex[]
   }
   /**
    * MCP server configuration for this list

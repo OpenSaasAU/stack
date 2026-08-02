@@ -1,4 +1,10 @@
-import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
+import type {
+  OpenSaasConfig,
+  ListConfig,
+  DatabaseConfig,
+  FieldConfig,
+  ListIndex,
+} from '@opensaas/stack-core'
 import type { TypeInfo } from '@opensaas/stack-core/extend'
 import type { RelationshipField, PrismaRelationResult } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
@@ -103,6 +109,101 @@ function getFieldIndex(
   }
 
   return undefined
+}
+
+/**
+ * Resolve one field reference inside a model-level {@link ListIndex} (#864) to
+ * the Prisma column it must emit — the OpenSaaS field name for a scalar (the
+ * Prisma-level field name is unaffected by `db.map`), or the owning foreign
+ * key column (`<field>Id`) for a relationship field.
+ *
+ * Throws a descriptive, generate-time error (naming the list, the index
+ * entry, and the bad field) rather than silently dropping the entry or
+ * emitting invalid Prisma, for every case that has no single column to
+ * reference: an unknown field, a virtual field, a multi-column field, a
+ * to-many relationship, or the non-FK side of a one-to-one relationship.
+ */
+function resolveIndexFieldColumn(
+  listName: string,
+  listConfig: ListConfig<TypeInfo>,
+  relationResults: Map<string, PrismaRelationResult>,
+  entryDescription: string,
+  fieldRef: ListIndex['fields'][number],
+): { column: string; sort?: 'asc' | 'desc' } {
+  const fieldName = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
+  const sort = typeof fieldRef === 'string' ? undefined : fieldRef.sort
+
+  const fieldConfig = listConfig.fields[fieldName]
+  if (!fieldConfig) {
+    throw new Error(
+      `${entryDescription} on list "${listName}" references unknown field "${fieldName}"`,
+    )
+  }
+
+  if (fieldConfig.virtual) {
+    throw new Error(
+      `${entryDescription} on list "${listName}" references virtual field "${fieldName}", which has no database column`,
+    )
+  }
+
+  if (fieldConfig.type === 'relationship') {
+    const relField = fieldConfig as RelationshipField
+    if (relField.many) {
+      throw new Error(
+        `${entryDescription} on list "${listName}" references to-many relationship field "${fieldName}", which has no single database column`,
+      )
+    }
+
+    const relResult = relationResults.get(`${listName}.${fieldName}`)
+    if (!relResult?.foreignKeyField) {
+      throw new Error(
+        `${entryDescription} on list "${listName}" references relationship field "${fieldName}", which does not own a foreign key column on this model (the other side of the relationship owns it)`,
+      )
+    }
+
+    return { column: relResult.foreignKeyField, sort }
+  }
+
+  if (fieldConfig.getPrismaColumns) {
+    throw new Error(
+      `${entryDescription} on list "${listName}" references field "${fieldName}", which maps to more than one database column and cannot be used in a model-level index`,
+    )
+  }
+
+  return { column: fieldName, sort }
+}
+
+/**
+ * Generate the `@@unique([...])`/`@@index([...])` lines for a list's
+ * model-level `db.indexes` (#864). Emitted after the existing field-level
+ * scalar/foreign-key index lines, in declaration order, so a config with no
+ * `db.indexes` produces byte-for-byte identical output to before this
+ * feature existed.
+ */
+function generateModelIndexLines(
+  listName: string,
+  listConfig: ListConfig<TypeInfo>,
+  relationResults: Map<string, PrismaRelationResult>,
+): string[] {
+  const indexes = listConfig.db?.indexes
+  if (!indexes || indexes.length === 0) return []
+
+  return indexes.map((index, i) => {
+    const entryDescription = `Model-level index db.indexes[${i}]`
+    const resolved = index.fields.map((fieldRef) =>
+      resolveIndexFieldColumn(listName, listConfig, relationResults, entryDescription, fieldRef),
+    )
+
+    const fieldsList = resolved
+      .map(({ column, sort }) =>
+        sort ? `${column}(sort: ${sort === 'asc' ? 'Asc' : 'Desc'})` : column,
+      )
+      .join(', ')
+    const mapArg = index.name ? `, map: "${index.name}"` : ''
+    const attribute = index.unique ? '@@unique' : '@@index'
+
+    return `  ${attribute}([${fieldsList}]${mapArg})`
+  })
 }
 
 /**
@@ -381,6 +482,12 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
         lines.push(`  @@index([${index.foreignKeyField}])`)
       }
     }
+
+    // Add model-level composite `@@unique`/`@@index` constraints declared via
+    // `db.indexes` (#864) — the multi-column case single-field `isIndexed`
+    // can't reach. Emitted last so a config with no `db.indexes` produces
+    // byte-for-byte identical output to before this feature existed.
+    lines.push(...generateModelIndexLines(listName, listConfig, relationResults))
 
     // Map the model to a custom table name when configured (e.g. adopting
     // existing tables whose physical name differs from the list key).

@@ -12,6 +12,7 @@ import {
   json,
   decimal,
   calendarDay,
+  virtual,
 } from '@opensaas/stack-core/fields'
 
 describe('Prisma Schema Generator', () => {
@@ -1089,6 +1090,298 @@ describe('Prisma Schema Generator', () => {
 
       expect(schema).not.toContain('@@index([title])')
       expect(schema).not.toContain('@@unique([title])')
+    })
+  })
+
+  describe('Model-level composite indexes (db.indexes) (#864)', () => {
+    it('generates a composite @@unique across two relationship fields', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Student: {
+            fields: { name: text() },
+          },
+          Production: {
+            fields: { title: text() },
+          },
+          Audition: {
+            fields: {
+              student: relationship({ ref: 'Student' }),
+              production: relationship({ ref: 'Production' }),
+            },
+            db: {
+              indexes: [{ fields: ['student', 'production'], unique: true }],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@unique([studentId, productionId])')
+    })
+
+    it('generates a composite @@index (non-unique) across scalar fields', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          AuthVerification: {
+            fields: {
+              identifier: text(),
+              createdAt: timestamp(),
+            },
+            db: {
+              indexes: [{ fields: ['identifier', 'createdAt'] }],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@index([identifier, createdAt])')
+      expect(schema).not.toContain('@@unique([identifier, createdAt])')
+    })
+
+    it('resolves a scalar field carrying db.map to its Prisma field name, not the mapped column', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              firstName: text({ db: { map: 'first_name' } }),
+              lastName: text(),
+            },
+            db: {
+              indexes: [{ fields: ['firstName', 'lastName'], unique: true }],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@unique([firstName, lastName])')
+    })
+
+    it('emits an optional constraint name as Prisma map:', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          AuthVerification: {
+            fields: {
+              identifier: text(),
+              createdAt: timestamp(),
+            },
+            db: {
+              indexes: [
+                {
+                  fields: ['identifier', 'createdAt'],
+                  name: 'AuthVerification_identifier_createdAt_idx',
+                },
+              ],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain(
+        '@@index([identifier, createdAt], map: "AuthVerification_identifier_createdAt_idx")',
+      )
+    })
+
+    it('emits an optional per-field sort direction', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          AuthVerification: {
+            fields: {
+              identifier: text(),
+              createdAt: timestamp(),
+            },
+            db: {
+              indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@index([identifier, createdAt(sort: Desc)])')
+    })
+
+    it('emits a composite index after field-level indexes, in declaration order', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: { name: text() },
+          },
+          Post: {
+            fields: {
+              title: text({ isIndexed: true }),
+              author: relationship({ ref: 'User' }),
+              category: text(),
+            },
+            db: {
+              indexes: [{ fields: ['title', 'category'] }],
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+      const titleIndex = schema.indexOf('@@index([title])')
+      const authorIndex = schema.indexOf('@@index([authorId])')
+      const compositeIndex = schema.indexOf('@@index([title, category])')
+
+      expect(titleIndex).toBeGreaterThan(-1)
+      expect(authorIndex).toBeGreaterThan(-1)
+      expect(compositeIndex).toBeGreaterThan(-1)
+      expect(compositeIndex).toBeGreaterThan(titleIndex)
+      expect(compositeIndex).toBeGreaterThan(authorIndex)
+    })
+
+    it('leaves output unchanged for a config with no db.indexes', () => {
+      const withoutIndexes: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: { title: text() },
+          },
+        },
+      }
+      const withEmptyIndexes: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: { title: text() },
+            db: { indexes: [] },
+          },
+        },
+      }
+
+      expect(generatePrismaSchema(withEmptyIndexes)).toBe(generatePrismaSchema(withoutIndexes))
+    })
+
+    it('throws naming the list, entry, and field for an unknown field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: { title: text() },
+            db: { indexes: [{ fields: ['title', 'nope'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /db\.indexes\[0\].*on list "Post".*unknown field "nope"/,
+      )
+    })
+
+    it('throws for a virtual field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              computed: virtual({
+                type: 'string',
+                hooks: { resolveOutput: () => 'x' },
+              }),
+            },
+            db: { indexes: [{ fields: ['title', 'computed'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(/references virtual field "computed"/)
+    })
+
+    it('throws for a to-many relationship field', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          User: {
+            fields: { name: text() },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              tags: relationship({ ref: 'User', many: true }),
+            },
+            db: { indexes: [{ fields: ['title', 'tags'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /references to-many relationship field "tags"/,
+      )
+    })
+
+    it('throws for the non-FK side of a one-to-one relationship', () => {
+      // Neither side sets db.foreignKey explicitly, so ownership falls to the
+      // alphabetical default: "Account" < "User", so Account owns the FK and
+      // User.account is the non-FK side — the one db.indexes references here.
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Account: {
+            fields: {
+              user: relationship({ ref: 'User.account' }),
+            },
+          },
+          User: {
+            fields: {
+              name: text(),
+              account: relationship({ ref: 'Account.user' }),
+            },
+            db: { indexes: [{ fields: ['name', 'account'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /does not own a foreign key column on this model/,
+      )
+    })
+
+    it('generates byte-for-byte identical model output when no indexes are declared, matching pre-feature behaviour', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User' }),
+            },
+          },
+          User: {
+            fields: { name: text() },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+      expect(schema).toMatchSnapshot()
     })
 
     it('should generate @@map for a list-level db.map', () => {
