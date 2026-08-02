@@ -85,13 +85,16 @@ function isRelationshipFieldConfig(
   )
 }
 
+/** A plain object — excludes `null` and arrays, which `typeof x === 'object'` alone would admit. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /** The explicit nested `include` on an include entry, if the entry is a structured object naming one. */
 function getExplicitInclude(value: unknown): Record<string, unknown> | undefined {
-  if (value && typeof value === 'object' && 'include' in value) {
-    const include = (value as { include?: unknown }).include
-    return include && typeof include === 'object' ? (include as Record<string, unknown>) : undefined
-  }
-  return undefined
+  if (!isPlainObject(value)) return undefined
+  const { include } = value
+  return isPlainObject(include) ? include : undefined
 }
 
 /**
