@@ -158,6 +158,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     access: config.access || {},
     betterAuthPlugins: config.betterAuthPlugins || [],
     rateLimit: config.rateLimit,
+    betterAuthOptions: config.betterAuthOptions || {},
   }
 }
 

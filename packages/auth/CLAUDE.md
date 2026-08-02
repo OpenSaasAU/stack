@@ -29,6 +29,7 @@ Auto-generated lists:
 ### Server (`src/server/index.ts`)
 
 - `createAuth(config, rawContext?)` - Creates Better-auth instance with MCP plugin support
+- `buildBetterAuthOptions(config, rawContext?)` - Returns the same `BetterAuthOptions` `createAuth()` builds, without constructing an instance — for apps that need to hand-wire their own `betterAuth()`
 - Returns `{ handler, signIn, signOut, ... }` - Better-auth methods
 
 ### Client (`src/client/index.ts`)
@@ -321,6 +322,74 @@ authPlugin({
   },
 })
 ```
+
+### Escape hatch for unmodelled better-auth options (`betterAuthOptions`)
+
+`AuthConfig` models a deliberately closed set of better-auth options. For
+anything the stack doesn't model — database hooks, `session.cookieCache`,
+`baseURL`, `verification.storeIdentifier`, and so on — pass it through
+`betterAuthOptions`, typed as better-auth's own `BetterAuthOptions` so it
+tracks better-auth's surface without the stack re-declaring it:
+
+```typescript
+authPlugin({
+  betterAuthOptions: {
+    databaseHooks: { user: { create: { after: syncDomainUser } } },
+    session: { cookieCache: { enabled: true, maxAge: 300 } },
+    verification: { storeIdentifier: 'hashed' },
+    baseURL: process.env.BETTER_AUTH_URL,
+  },
+})
+```
+
+`createAuth()` (`src/server/index.ts`) deep-merges `betterAuthOptions` onto
+the options it builds from the rest of `AuthConfig`, applied **last**:
+plain-object values merge recursively per key (so `session: { cookieCache }`
+lands alongside the stack's own `session.expiresIn`/`updateAge` instead of
+replacing the whole `session` block), arrays and other value types replace
+outright, and `betterAuthOptions` wins on any genuine key collision. The
+merge and the option-building it merges onto both live in
+`buildBetterAuthOptions()`, the single place `createAuth()` and the exported
+builder share — they cannot drift from each other because `createAuth()`
+calls it directly rather than reimplementing it.
+
+`database` and `plugins` are rejected outright (`assertNoUnsupportedPassthroughKeys`
+in `src/server/index.ts`): they already have dedicated seams (`db` in the
+stack config, and `betterAuthPlugins` respectively), and accepting them here
+would create two unranked ways to set the same thing — worse for `plugins`,
+since the stack must append `nextCookies()` last (see "Auth forms submit
+through server actions" below). `additionalFields` under `user`/`session`/
+`account`/`verification` is rejected too — it adds columns with no
+corresponding change to the generated Prisma schema, which is exactly the
+silent-divergence failure mode this passthrough exists to avoid elsewhere.
+Add fields to the derived list instead: `extendUserList` for the user model,
+or declare the list yourself in your own `lists` config for the others (the
+auth plugin's `addList`-vs-`extendList` logic — see "Deriving Auth lists from
+better-auth config" above — merges in field additions for any list matching
+one of its derived keys).
+
+### Hand-wiring `betterAuth()` from the stack config (`buildBetterAuthOptions`)
+
+An app that needs a resolved `betterAuth()` instance at module-init time
+(rather than `createAuth()`'s lazy proxy) can derive its options from the
+stack config instead of duplicating them:
+
+```typescript
+import { betterAuth } from 'better-auth'
+import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
+
+export const auth = betterAuth({
+  ...(await buildBetterAuthOptions(config, rawOpensaasContext)),
+  databaseHooks: { user: { create: { after: syncDomainUser } } }, // not yet in betterAuthOptions
+})
+```
+
+This is the same async-resolve-then-construct step `createAuth()` performs
+internally, exported standalone — see ADR-0014 and root `CLAUDE.md`'s
+"Getting the ORM client outside a request" for why `createAuth()` itself
+can't be synchronous. It gives an incremental path onto `createAuth()`: adopt
+the builder first, then fold options into `betterAuthOptions` above as the
+stack grows first-class config for them.
 
 ## Integration Points
 

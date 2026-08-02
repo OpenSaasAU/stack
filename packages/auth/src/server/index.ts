@@ -34,6 +34,240 @@ function toBetterAuthModelOptions(
   return Object.keys(options).length > 0 ? options : undefined
 }
 
+const MODELS_WITH_NO_ADDITIONAL_FIELDS_PASSTHROUGH = [
+  'user',
+  'session',
+  'account',
+  'verification',
+] as const
+
+/**
+ * Reject `betterAuthOptions` keys that already have a dedicated, non-passthrough
+ * seam — accepting them here would create two unranked ways to set the same
+ * thing, or (for `additionalFields`) silently diverge from the generated
+ * Prisma schema. See the `betterAuthOptions` doc comment on `AuthConfig`.
+ */
+function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, unknown>): void {
+  if ('database' in betterAuthOptions) {
+    throw new Error(
+      '[@opensaas/stack-auth] `betterAuthOptions.database` is not supported — the stack ' +
+        'derives the database adapter from your `db` config and the running context. ' +
+        'Configure the database through `db` in `opensaas.config.ts` instead.',
+    )
+  }
+
+  if ('plugins' in betterAuthOptions) {
+    throw new Error(
+      '[@opensaas/stack-auth] `betterAuthOptions.plugins` is not supported — better-auth ' +
+        'plugins are added through `authPlugin({ betterAuthPlugins: [...] })`, which the stack ' +
+        'appends `nextCookies()` after. Use `betterAuthPlugins` instead.',
+    )
+  }
+
+  for (const model of MODELS_WITH_NO_ADDITIONAL_FIELDS_PASSTHROUGH) {
+    const modelOptions = betterAuthOptions[model]
+    if (
+      modelOptions &&
+      typeof modelOptions === 'object' &&
+      !Array.isArray(modelOptions) &&
+      'additionalFields' in modelOptions
+    ) {
+      throw new Error(
+        `[@opensaas/stack-auth] \`betterAuthOptions.${model}.additionalFields\` is not ` +
+          'supported — it adds columns that would not be reflected in the generated Prisma ' +
+          'schema. Add fields to the derived list instead: ' +
+          (model === 'user'
+            ? '`extendUserList`, or declare the list yourself in your own `lists` config.'
+            : 'declare the derived list yourself in your own `lists` config (the auth plugin ' +
+              'merges in field additions for the models it derives).'),
+      )
+    }
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  )
+}
+
+/**
+ * Deep-merge `overrides` onto `base`, recursing into plain-object values so a
+ * nested addition (one database hook, one session sub-option) merges
+ * alongside sibling keys the stack already set there rather than replacing
+ * the whole branch. Arrays and any other value type replace outright.
+ * `overrides` wins on every key collision.
+ */
+function mergeBetterAuthOptions(
+  base: Record<string, unknown>,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...base }
+  for (const [key, value] of Object.entries(overrides)) {
+    const baseValue = result[key]
+    result[key] =
+      isPlainObject(baseValue) && isPlainObject(value)
+        ? mergeBetterAuthOptions(baseValue, value)
+        : value
+  }
+  return result
+}
+
+/**
+ * Build the `BetterAuthOptions` a better-auth instance for this OpenSaas
+ * config should be constructed with — the same options `createAuth()` uses
+ * internally, available standalone for an app that still needs to hand-wire
+ * its own `betterAuth()` instance (e.g. a third-party contract that requires
+ * a resolved instance at module-init time). Keeps the auth plugin
+ * authoritative for everything it models; the app's additions on top become
+ * an explicit, reviewable diff instead of a parallel, hand-duplicated config.
+ *
+ * @example
+ * ```typescript
+ * import { betterAuth } from 'better-auth'
+ * import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
+ *
+ * export const auth = betterAuth({
+ *   ...(await buildBetterAuthOptions(config, context)),
+ *   databaseHooks: { user: { create: { after: syncDomainUser } } },
+ * })
+ * ```
+ */
+export async function buildBetterAuthOptions(
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
+): Promise<BetterAuthOptions> {
+  const resolvedConfig = await Promise.resolve(opensaasConfig)
+  const resolvedContext = await Promise.resolve(context)
+
+  // Extract auth config from plugin data
+  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+
+  if (!authConfig) {
+    throw new Error(
+      'Auth config not found. Make sure to use authPlugin() in your opensaas.config.ts',
+    )
+  }
+
+  // `requireConfirmation` has no better-auth equivalent — it's a UI-only
+  // concern the pre-built forms already take as their own
+  // `requirePasswordConfirmation` prop. Warn rather than silently drop it,
+  // since setting it here looks like it should do something.
+  if (
+    authConfig.emailAndPassword.enabled &&
+    authConfig.emailAndPassword.requireConfirmation !== true
+  ) {
+    console.warn(
+      '[@opensaas/stack-auth] `emailAndPassword.requireConfirmation` has no effect here — ' +
+        'createAuth() has no better-auth option to forward it to. Pass ' +
+        '`requirePasswordConfirmation` directly to <SignUpForm> / <ResetPasswordForm> instead.',
+    )
+  }
+
+  // `passwordReset` is wired through better-auth's `emailAndPassword` config
+  // (there's no password to reset without a password-based account), so it
+  // silently has no effect if email/password auth itself isn't enabled.
+  if (authConfig.passwordReset.enabled && !authConfig.emailAndPassword.enabled) {
+    console.warn(
+      '[@opensaas/stack-auth] `passwordReset.enabled` has no effect here — ' +
+        '`emailAndPassword.enabled` is false, so there is no password-based account to reset.',
+    )
+  }
+
+  assertNoUnsupportedPassthroughKeys(authConfig.betterAuthOptions as Record<string, unknown>)
+
+  // Build better-auth configuration
+  const betterAuthConfig: BetterAuthOptions = {
+    database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
+
+    // Mirror the per-model config (modelName + field column maps) back to
+    // better-auth so the running auth instance reads/writes the same
+    // tables/columns the OpenSaaS Auth lists were derived from.
+    user: toBetterAuthModelOptions(authConfig.models.user),
+    session: {
+      ...toBetterAuthModelOptions(authConfig.models.session),
+      expiresIn: authConfig.session.expiresIn || 604800,
+      // better-auth treats `updateAge: 0` as "refresh on every request", not
+      // "never refresh" — disabling refresh entirely requires its separate
+      // `disableSessionRefresh` flag regardless of `updateAge`.
+      ...(authConfig.session.updateAge === false
+        ? { disableSessionRefresh: true }
+        : { updateAge: authConfig.session.updateAge }),
+    },
+    account: toBetterAuthModelOptions(authConfig.models.account),
+    verification: toBetterAuthModelOptions(authConfig.models.verification),
+
+    // Enable email and password if configured
+    emailAndPassword: authConfig.emailAndPassword.enabled
+      ? {
+          enabled: true,
+          requireEmailVerification: authConfig.emailVerification.enabled,
+          minPasswordLength: authConfig.emailAndPassword.minPasswordLength,
+          ...(authConfig.passwordReset.enabled
+            ? {
+                sendResetPassword: authConfig.emailAndPassword.sendResetPassword,
+                resetPasswordTokenExpiresIn: authConfig.passwordReset.tokenExpiration,
+              }
+            : {}),
+        }
+      : undefined,
+
+    // Email verification (independent of emailAndPassword — also covers
+    // e.g. a social-provider account whose email isn't yet verified)
+    emailVerification: authConfig.emailVerification.enabled
+      ? {
+          sendVerificationEmail: authConfig.emailVerification.sendVerificationEmail,
+          sendOnSignUp: authConfig.emailVerification.sendOnSignUp,
+          expiresIn: authConfig.emailVerification.tokenExpiration,
+        }
+      : undefined,
+
+    // Trust host (required for production)
+    trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],
+
+    // Social providers
+    socialProviders: Object.entries(authConfig.socialProviders)
+      .filter(([_, config]) => config?.enabled !== false)
+      .reduce(
+        (acc, [provider, config]) => {
+          if (config) {
+            acc[provider] = {
+              clientId: config.clientId,
+              clientSecret: config.clientSecret,
+            }
+          }
+          return acc
+        },
+        {} as Record<string, { clientId: string; clientSecret: string }>,
+      ),
+
+    // Rate limiting configuration
+    rateLimit: authConfig.rateLimit
+      ? {
+          enabled: authConfig.rateLimit.enabled,
+          window: authConfig.rateLimit.window,
+          max: authConfig.rateLimit.max,
+        }
+      : undefined,
+
+    // Pass through any additional Better Auth plugins, then append
+    // nextCookies LAST so it can write the Set-Cookie headers produced by
+    // any auth.api.* call made inside a Next.js server action into Next's
+    // cookie store. This is what makes the server-action auth forms (which
+    // call auth.api.signInEmail/signUpEmail/etc. server-side) actually
+    // persist a session. It must be the final plugin in the array.
+    plugins: [...(authConfig.betterAuthPlugins || []), nextCookies()],
+  }
+
+  return mergeBetterAuthOptions(
+    betterAuthConfig as unknown as Record<string, unknown>,
+    authConfig.betterAuthOptions as Record<string, unknown>,
+  ) as BetterAuthOptions
+}
+
 /**
  * Create a better-auth instance from OpenSaas config
  * This should be called once at app startup
@@ -65,126 +299,7 @@ export function createAuth(
 
     if (!authPromise) {
       authPromise = (async () => {
-        const resolvedConfig = await configPromise
-        const resolvedContext = await contextPromise
-
-        // Extract auth config from plugin data
-        const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
-
-        if (!authConfig) {
-          throw new Error(
-            'Auth config not found. Make sure to use authPlugin() in your opensaas.config.ts',
-          )
-        }
-
-        // `requireConfirmation` has no better-auth equivalent — it's a UI-only
-        // concern the pre-built forms already take as their own
-        // `requirePasswordConfirmation` prop. Warn rather than silently drop it,
-        // since setting it here looks like it should do something.
-        if (
-          authConfig.emailAndPassword.enabled &&
-          authConfig.emailAndPassword.requireConfirmation !== true
-        ) {
-          console.warn(
-            '[@opensaas/stack-auth] `emailAndPassword.requireConfirmation` has no effect here — ' +
-              'createAuth() has no better-auth option to forward it to. Pass ' +
-              '`requirePasswordConfirmation` directly to <SignUpForm> / <ResetPasswordForm> instead.',
-          )
-        }
-
-        // `passwordReset` is wired through better-auth's `emailAndPassword` config
-        // (there's no password to reset without a password-based account), so it
-        // silently has no effect if email/password auth itself isn't enabled.
-        if (authConfig.passwordReset.enabled && !authConfig.emailAndPassword.enabled) {
-          console.warn(
-            '[@opensaas/stack-auth] `passwordReset.enabled` has no effect here — ' +
-              '`emailAndPassword.enabled` is false, so there is no password-based account to reset.',
-          )
-        }
-
-        // Build better-auth configuration
-        const betterAuthConfig: BetterAuthOptions = {
-          database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
-
-          // Mirror the per-model config (modelName + field column maps) back to
-          // better-auth so the running auth instance reads/writes the same
-          // tables/columns the OpenSaaS Auth lists were derived from.
-          user: toBetterAuthModelOptions(authConfig.models.user),
-          session: {
-            ...toBetterAuthModelOptions(authConfig.models.session),
-            expiresIn: authConfig.session.expiresIn || 604800,
-            // better-auth treats `updateAge: 0` as "refresh on every request", not
-            // "never refresh" — disabling refresh entirely requires its separate
-            // `disableSessionRefresh` flag regardless of `updateAge`.
-            ...(authConfig.session.updateAge === false
-              ? { disableSessionRefresh: true }
-              : { updateAge: authConfig.session.updateAge }),
-          },
-          account: toBetterAuthModelOptions(authConfig.models.account),
-          verification: toBetterAuthModelOptions(authConfig.models.verification),
-
-          // Enable email and password if configured
-          emailAndPassword: authConfig.emailAndPassword.enabled
-            ? {
-                enabled: true,
-                requireEmailVerification: authConfig.emailVerification.enabled,
-                minPasswordLength: authConfig.emailAndPassword.minPasswordLength,
-                ...(authConfig.passwordReset.enabled
-                  ? {
-                      sendResetPassword: authConfig.emailAndPassword.sendResetPassword,
-                      resetPasswordTokenExpiresIn: authConfig.passwordReset.tokenExpiration,
-                    }
-                  : {}),
-              }
-            : undefined,
-
-          // Email verification (independent of emailAndPassword — also covers
-          // e.g. a social-provider account whose email isn't yet verified)
-          emailVerification: authConfig.emailVerification.enabled
-            ? {
-                sendVerificationEmail: authConfig.emailVerification.sendVerificationEmail,
-                sendOnSignUp: authConfig.emailVerification.sendOnSignUp,
-                expiresIn: authConfig.emailVerification.tokenExpiration,
-              }
-            : undefined,
-
-          // Trust host (required for production)
-          trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],
-
-          // Social providers
-          socialProviders: Object.entries(authConfig.socialProviders)
-            .filter(([_, config]) => config?.enabled !== false)
-            .reduce(
-              (acc, [provider, config]) => {
-                if (config) {
-                  acc[provider] = {
-                    clientId: config.clientId,
-                    clientSecret: config.clientSecret,
-                  }
-                }
-                return acc
-              },
-              {} as Record<string, { clientId: string; clientSecret: string }>,
-            ),
-
-          // Rate limiting configuration
-          rateLimit: authConfig.rateLimit
-            ? {
-                enabled: authConfig.rateLimit.enabled,
-                window: authConfig.rateLimit.window,
-                max: authConfig.rateLimit.max,
-              }
-            : undefined,
-
-          // Pass through any additional Better Auth plugins, then append
-          // nextCookies LAST so it can write the Set-Cookie headers produced by
-          // any auth.api.* call made inside a Next.js server action into Next's
-          // cookie store. This is what makes the server-action auth forms (which
-          // call auth.api.signInEmail/signUpEmail/etc. server-side) actually
-          // persist a session. It must be the final plugin in the array.
-          plugins: [...(authConfig.betterAuthPlugins || []), nextCookies()],
-        }
-
+        const betterAuthConfig = await buildBetterAuthOptions(configPromise, contextPromise)
         authInstance = betterAuth(betterAuthConfig)
         return authInstance
       })()

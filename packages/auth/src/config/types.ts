@@ -1,5 +1,5 @@
 import type { ListConfig } from '@opensaas/stack-core'
-import type { User } from 'better-auth'
+import type { BetterAuthOptions, User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
 /**
@@ -429,6 +429,44 @@ export type AuthConfig = {
      */
     max?: number
   }
+
+  /**
+   * Escape hatch for better-auth options the stack doesn't model — typed as
+   * better-auth's own `BetterAuthOptions` so it stays in step with
+   * better-auth's surface without the stack re-declaring it. Deep-merged into
+   * the options `createAuth()` builds, applied LAST: a plain-object value at a
+   * given key merges recursively with whatever the stack already set there
+   * (so e.g. `session: { cookieCache: {...} }` adds alongside the stack's own
+   * `session.expiresIn`/`updateAge` rather than clobbering them); any other
+   * value (including arrays) replaces the stack's value outright. On a genuine
+   * key collision, this option wins.
+   *
+   * `database` and `plugins` are rejected — they're already the dedicated
+   * seams (the stack's `db` config, and `betterAuthPlugins` respectively) and
+   * accepting them here would create two unranked ways to set the same thing.
+   * So is `additionalFields` under `user`/`session`/`account`/`verification` —
+   * it has schema consequences (new columns) that a passthrough can't also
+   * apply to the generated Prisma schema; add fields to the derived list
+   * instead (`extendUserList` for the user model, or declare the list
+   * yourself for the others — see `packages/auth/CLAUDE.md`).
+   *
+   * The same options object is available standalone via
+   * `buildBetterAuthOptions()` (`@opensaas/stack-auth/server`) for apps that
+   * still need to hand-wire their own `betterAuth()` instance.
+   *
+   * @example
+   * ```typescript
+   * authPlugin({
+   *   betterAuthOptions: {
+   *     databaseHooks: { user: { create: { after: syncDomainUser } } },
+   *     session: { cookieCache: { enabled: true, maxAge: 300 } },
+   *     verification: { storeIdentifier: 'hashed' },
+   *     baseURL: process.env.BETTER_AUTH_URL,
+   *   },
+   * })
+   * ```
+   */
+  betterAuthOptions?: Partial<BetterAuthOptions>
 }
 
 /**
