@@ -26,14 +26,24 @@ const DEFAULT_MODEL_NAMES = {
  * falling back to the better-auth default model name and an empty column map.
  * The model's Postgres schema is the per-model `schema` override when present,
  * otherwise the plugin-level `schema` default (or `undefined` for `public`).
+ *
+ * `tableName` defaults to today's behaviour when not explicitly set: it
+ * follows `modelName` when that differs from the better-auth default (so a
+ * renamed list still pins its table via `@@map`), otherwise it stays unset.
+ * An explicit `tableName` is independent of `modelName` — it lets a renamed
+ * list key adopt a differently-named live table (e.g. better-auth's own
+ * default lowercase table names).
  */
 function normalizeModelConfig(
   config: AuthModelConfig | undefined,
   defaultModelName: string,
   defaultSchema: string | undefined,
 ): NormalizedAuthModelConfig {
+  const modelName = config?.modelName || defaultModelName
+  const tableName = config?.tableName ?? (modelName !== defaultModelName ? modelName : undefined)
   return {
-    modelName: config?.modelName || defaultModelName,
+    modelName,
+    tableName,
     fields: config?.fields || {},
     schema: config?.schema ?? defaultSchema,
   }

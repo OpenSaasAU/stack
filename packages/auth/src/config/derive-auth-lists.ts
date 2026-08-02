@@ -2,13 +2,15 @@
  * Pure `better-auth config → Auth lists` derivation.
  *
  * This module is intentionally free of side effects and plugin/runtime
- * concerns: given the resolved better-auth model config (per-model `modelName`
- * and `fields` column maps) plus any custom User fields, it produces the four
- * OpenSaaS Auth lists (user/session/account/verification) with:
+ * concerns: given the resolved better-auth model config (per-model `modelName`,
+ * `tableName`, and `fields` column maps) plus any custom User fields, it
+ * produces the four OpenSaaS Auth lists (user/session/account/verification)
+ * with:
  *
  *  - list keys taken from each model's `modelName`
- *  - a table `@@map` (list-level `db.map`) when the key differs from the
- *    default better-auth model name
+ *  - a table `@@map` (list-level `db.map`) taken from each model's resolved
+ *    `tableName` — independent of `modelName`, so a renamed list key can still
+ *    adopt a differently-named live table
  *  - field-level `@map` (`db.map`) for any better-auth field → column override
  *  - relationship refs between the auth lists wired to the *derived* keys
  *    (e.g. `Session.user → AuthUser.sessions`)
@@ -30,17 +32,6 @@ import type { ListConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
-
-/**
- * Default better-auth model names — used to decide whether a `@@map` is needed
- * (only when the configured `modelName` differs from the default).
- */
-const DEFAULT_MODEL_NAMES = {
-  user: 'User',
-  session: 'Session',
-  account: 'Account',
-  verification: 'Verification',
-} as const
 
 /**
  * The derived Auth list set together with the keys each list was placed under.
@@ -71,24 +62,24 @@ export type DerivedAuthLists = {
  * Auth list must opt back in so the generated models keep those columns and
  * better-auth keeps working.
  *
- * When the developer renames the model (e.g. `modelName: 'AuthUser'`), we also
- * pin the physical table name to that model name via `@@map("AuthUser")` so the
- * generated list adopts the developer's live table exactly. When a `schema` is
- * configured (plugin-level or per-model), the list is placed in that Postgres
- * schema via `@@schema(...)`.
+ * The physical table name (`@@map`) comes from the model's resolved
+ * `tableName` — independent of the list key/`modelName` — so a renamed list
+ * key can still adopt a differently-named live table (e.g. better-auth's own
+ * default lowercase table names). When a `schema` is configured (plugin-level
+ * or per-model), the list is placed in that Postgres schema via `@@schema(...)`.
  *
- * With no `modelName`/`schema` overrides we emit only `timestamps: true`,
+ * With no `tableName`/`schema` overrides we emit only `timestamps: true`,
  * leaving the default `User`/`Session`/... table/schema output unchanged.
  */
-function listDb(
-  model: NormalizedAuthModelConfig,
-  defaultModelName: string,
-): { timestamps: true; map?: string; schema?: string } {
-  const map = model.modelName !== defaultModelName ? model.modelName : undefined
+function listDb(model: NormalizedAuthModelConfig): {
+  timestamps: true
+  map?: string
+  schema?: string
+} {
   const schema = model.schema
   return {
     timestamps: true,
-    ...(map !== undefined ? { map } : {}),
+    ...(model.tableName !== undefined ? { map: model.tableName } : {}),
     ...(schema !== undefined ? { schema } : {}),
   }
 }
@@ -165,7 +156,7 @@ function createUserList(
       // Custom fields from user config
       ...(userConfig.fields || {}),
     },
-    db: listDb(model, DEFAULT_MODEL_NAMES.user),
+    db: listDb(model),
     access: userConfig.access || access,
     hooks: userConfig.hooks,
   })
@@ -202,7 +193,7 @@ function createSessionList(
         db: userRelationshipDb(f),
       }),
     },
-    db: listDb(model, DEFAULT_MODEL_NAMES.session),
+    db: listDb(model),
     access,
   })
 }
@@ -237,7 +228,7 @@ function createAccountList(
       idToken: text({ db: fieldDb('idToken', f) }),
       password: text({ db: fieldDb('password', f) }),
     },
-    db: listDb(model, DEFAULT_MODEL_NAMES.account),
+    db: listDb(model),
     access,
   })
 }
@@ -262,7 +253,7 @@ function createVerificationList(
         db: { isNullable: false, ...fieldDb('expiresAt', f) },
       }),
     },
-    db: listDb(model, DEFAULT_MODEL_NAMES.verification),
+    db: listDb(model),
     access,
   })
 }

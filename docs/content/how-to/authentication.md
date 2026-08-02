@@ -1024,6 +1024,59 @@ The recipe is just a convenience over the plugin's own `schema` / per-model
 `modelName` / `fields` options — anything it sets you can also set directly on
 `authPlugin`, or override after spreading it in.
 
+### Adopting better-auth's default table names
+
+The most common migration shape isn't the renamed-table one above — it's a
+project that ran better-auth **before** adding Stack, so its tables are
+still better-auth's own default lowercase names (`user`, `session`,
+`account`, `verification`). Your app almost always also has its own domain
+`User`, so the Auth identity still needs a prefixed list key (`AuthUser`) to
+avoid a collision — but that prefixed key must map to the _unprefixed_ live
+table, not a table named `AuthUser`.
+
+`modelName` and the physical table name are independent for exactly this
+reason: `modelName` sets the list key, and a separate `tableName` pins the
+`@@map`. Pass `useBetterAuthTableNames: true` to point every model's table
+name at better-auth's own defaults while keeping the `Auth`-prefixed list
+keys:
+
+```typescript
+authPlugin({
+  ...adoptBetterAuthTables({ schema: 'auth', useBetterAuthTableNames: true }),
+  emailAndPassword: { enabled: true },
+})
+// List keys: AuthUser / AuthSession / AuthAccount / AuthVerification
+// Live tables: user / session / account / verification (via @@map)
+```
+
+For a mix — most tables use better-auth's defaults but one was renamed — use
+the per-model `tableNames` escape hatch instead (it takes precedence over
+`useBetterAuthTableNames` for any model it names):
+
+```typescript
+adoptBetterAuthTables({
+  useBetterAuthTableNames: true,
+  tableNames: { user: 'app_users' }, // only the user table was renamed
+})
+```
+
+The same knob is available directly on `authPlugin` without the recipe, for a
+single model:
+
+```typescript
+authPlugin({
+  user: { modelName: 'AuthUser', tableName: 'user' },
+  session: { modelName: 'AuthSession', tableName: 'session' },
+  account: { modelName: 'AuthAccount', tableName: 'account' },
+  verification: { modelName: 'AuthVerification', tableName: 'verification' },
+})
+```
+
+With no `tableName` set, behaviour is unchanged from before this option
+existed: the table name follows `modelName` whenever it differs from the
+better-auth default, so a renamed-table install (the `adoptBetterAuthTables()`
+default from the previous section) keeps working without any changes.
+
 ### Linking your app User to the Auth identity
 
 Because the Auth identity (`AuthUser`) and your domain `User` are separate

@@ -150,10 +150,30 @@ export type AuthAccessConfig = {
 export type AuthModelConfig = {
   /**
    * The table/list name for this model.
-   * Becomes the OpenSaaS list key (and Prisma model name) and the table `@@map`.
+   * Becomes the OpenSaaS list key and Prisma model name.
    * @default the default better-auth model name (e.g. 'User', 'Session')
    */
   modelName?: string
+  /**
+   * The physical database table name for this model, independent of
+   * `modelName`. Generates a `@@map("...")` on the derived list.
+   *
+   * Lets a renamed list key (e.g. `modelName: 'AuthUser'`, to avoid colliding
+   * with an app's own domain `User`) still adopt a live table under a
+   * different name — most commonly better-auth's own default lowercase
+   * table names (`user`, `session`, `account`, `verification`).
+   *
+   * @default `modelName` when it differs from the better-auth default model
+   *   name, otherwise unset (no `@@map`) — i.e. today's behaviour when this
+   *   option is not set.
+   *
+   * @example
+   * ```typescript
+   * // List key AuthUser, but the live table is still called `user`.
+   * user: { modelName: 'AuthUser', tableName: 'user' }
+   * ```
+   */
+  tableName?: string
   /**
    * Map better-auth field names to database column names.
    * Each entry generates a `@map("column")` on the derived field.
@@ -369,12 +389,15 @@ export type AuthConfig = {
 /**
  * Resolved per-model auth configuration after normalization.
  * Always carries a concrete `modelName` (the developer's override or the
- * better-auth default) and a (possibly empty) `fields` column map. `schema`
- * carries the resolved Postgres schema for the model (per-model override, else
- * the plugin-level schema, else `undefined` for the default `public` schema).
+ * better-auth default) and a (possibly empty) `fields` column map. `tableName`
+ * is the resolved physical table name — `undefined` means no `@@map` is
+ * emitted (the list key doubles as the table name). `schema` carries the
+ * resolved Postgres schema for the model (per-model override, else the
+ * plugin-level schema, else `undefined` for the default `public` schema).
  */
 export type NormalizedAuthModelConfig = {
   modelName: string
+  tableName?: string
   fields: Record<string, string>
   schema?: string
 }

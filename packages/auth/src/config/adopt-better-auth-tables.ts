@@ -28,6 +28,22 @@
  * auth migration. The recipe never touches the application's own domain `User`:
  * its model names are `Auth`-prefixed by default and the plugin only ever
  * adds/extends its *derived* keys.
+ *
+ * The single most common adoption shape is a project that ran better-auth
+ * *before* adding Stack: its live tables are still better-auth's own default
+ * lowercase names (`user`/`session`/`account`/`verification`), even though the
+ * derived list keys need the `Auth` prefix to avoid colliding with the app's
+ * own domain `User`. Pass `useBetterAuthTableNames: true` to point every
+ * model's physical table at that default while keeping the prefixed list keys
+ * (or `tableNames` for an explicit per-model override):
+ *
+ * ```typescript
+ * authPlugin({
+ *   ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
+ *   // AuthUser/AuthSession/AuthAccount/AuthVerification list keys,
+ *   // @@map("user")/@@map("session")/@@map("account")/@@map("verification")
+ * })
+ * ```
  */
 
 import type { AuthConfig, AuthModelConfig } from './types.js'
@@ -89,6 +105,39 @@ export type AdoptBetterAuthTablesOptions = {
     account?: Record<string, string>
     verification?: Record<string, string>
   }
+
+  /**
+   * Set every model's physical table name to better-auth's own default
+   * lowercase table name (`user`, `session`, `account`, `verification`) —
+   * independent of the prefixed list key/`modelName`.
+   *
+   * This is the single most common adoption shape: a project that ran
+   * better-auth before adding the stack has exactly these tables, and the
+   * default `modelNamePrefix: 'Auth'` alone would otherwise pin the table
+   * name to the prefixed model name (`AuthUser`, ...), which `prisma migrate
+   * diff` reads as a rename against the live `user` table.
+   *
+   * Ignored for a model with an explicit entry in {@link tableNames}.
+   *
+   * @default false
+   */
+  useBetterAuthTableNames?: boolean
+
+  /**
+   * Per-model explicit table name overrides, keyed by model. Takes
+   * precedence over `useBetterAuthTableNames` for that model.
+   *
+   * @example
+   * ```typescript
+   * adoptBetterAuthTables({ tableNames: { user: 'users' } })
+   * ```
+   */
+  tableNames?: {
+    user?: string
+    session?: string
+    account?: string
+    verification?: string
+  }
 }
 
 /** The four better-auth models and their default (unprefixed) model names. */
@@ -97,6 +146,14 @@ const MODEL_DEFAULT_NAMES = {
   session: 'Session',
   account: 'Account',
   verification: 'Verification',
+} as const
+
+/** better-auth's own default lowercase table names, per model. */
+const BETTER_AUTH_DEFAULT_TABLE_NAMES = {
+  user: 'user',
+  session: 'session',
+  account: 'account',
+  verification: 'verification',
 } as const
 
 /**
@@ -123,11 +180,23 @@ export type AdoptBetterAuthTablesConfig = Pick<
 export function adoptBetterAuthTables(
   options: AdoptBetterAuthTablesOptions = {},
 ): AdoptBetterAuthTablesConfig {
-  const { schema = 'auth', modelNamePrefix = 'Auth', fields = {} } = options
+  const {
+    schema = 'auth',
+    modelNamePrefix = 'Auth',
+    fields = {},
+    useBetterAuthTableNames = false,
+    tableNames = {},
+  } = options
 
   const buildModel = (model: keyof typeof MODEL_DEFAULT_NAMES): AuthModelConfig => {
     const config: AuthModelConfig = {
       modelName: `${modelNamePrefix}${MODEL_DEFAULT_NAMES[model]}`,
+    }
+    const tableName =
+      tableNames[model] ??
+      (useBetterAuthTableNames ? BETTER_AUTH_DEFAULT_TABLE_NAMES[model] : undefined)
+    if (tableName !== undefined) {
+      config.tableName = tableName
     }
     const fieldMap = fields[model]
     if (fieldMap && Object.keys(fieldMap).length > 0) {
