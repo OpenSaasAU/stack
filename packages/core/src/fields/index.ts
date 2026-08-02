@@ -1387,10 +1387,16 @@ function getPrismaRelation(
         ? ` @map("${field.db.foreignKey.map}")`
         : ` @map("${fieldName}")`
 
-    let fkLine = `  ${fkPaddedName} String?${uniqueModifier}${mapModifier}`
+    // Nullability: explicit db.isNullable overrides the default (nullable),
+    // matching the scalar fields' `db.isNullable` convention. It moves the FK
+    // column and its relation field together — they can never disagree.
+    const isNullable = field.db?.isNullable ?? true
+    const nullModifier = isNullable ? '?' : ''
+
+    let fkLine = `  ${fkPaddedName} String${nullModifier}${uniqueModifier}${mapModifier}`
     let relationLine = targetField
-      ? `  ${paddedName} ${targetList}?  @relation(fields: [${foreignKeyField}], references: [id])`
-      : `  ${paddedName} ${targetList}?  @relation("${listKey}_${fieldName}", fields: [${foreignKeyField}], references: [id])`
+      ? `  ${paddedName} ${targetList}${nullModifier}  @relation(fields: [${foreignKeyField}], references: [id])`
+      : `  ${paddedName} ${targetList}${nullModifier}  @relation("${listKey}_${fieldName}", fields: [${foreignKeyField}], references: [id])`
 
     if (field.db?.extendPrismaSchema) {
       const extended = field.db.extendPrismaSchema({ fkLine, relationLine })
@@ -1405,7 +1411,21 @@ function getPrismaRelation(
     return { modelLines: [fkLine, relationLine], foreignKeyField, foreignKeyIndex, backRelation }
   }
 
-  // Non-FK side of a one-to-one relationship: just the relation field
+  // Non-FK side of a one-to-one relationship: just the relation field. This
+  // side has no foreign key column, so `db.isNullable` (which only makes
+  // sense paired with a column) cannot be honoured here — reject rather than
+  // silently ignore a developer's stated intent (the FK-owning side is
+  // determined by `db.foreignKey`/alphabetical ordering, not by which field
+  // declares `isNullable`).
+  if (field.db?.isNullable === false) {
+    throw new Error(
+      `db.isNullable can only be used on the foreign-key-owning side of a relationship. ` +
+        `"${listKey}.${fieldName}" does not own the foreign key for this one-to-one relationship — ` +
+        `set db.isNullable on "${targetList}.${targetField}" instead, or make this side own the ` +
+        `foreign key via db.foreignKey.`,
+    )
+  }
+
   let relationLine = `  ${paddedName} ${targetList}?`
   if (field.db?.extendPrismaSchema) {
     relationLine = field.db.extendPrismaSchema({ relationLine }).relationLine
@@ -1449,6 +1469,16 @@ export function relationship<
           'List-only refs (ref: "ListName") always create foreign keys automatically.',
       )
     }
+  }
+
+  // Validate db.isNullable usage: only the FK-owning (single) side of a
+  // relationship has a column to make non-nullable — the many side always
+  // generates an array field with no nullability of its own.
+  if (options.db?.isNullable !== undefined && options.many) {
+    throw new Error(
+      'db.isNullable can only be used on single relationships (many: false or undefined). ' +
+        'Many-side of a relationship has no foreign key column to make non-nullable.',
+    )
   }
 
   const field: RelationshipField<TTypeInfo> = {

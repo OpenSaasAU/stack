@@ -110,14 +110,18 @@ function fieldDb(fieldName: string, fields: Record<string, string>): { map: stri
  * Build the `db` config for a `user` relationship (`Session.user` /
  * `Account.user`), honouring a `userId` column override from the better-auth
  * `fields` map and mirroring better-auth's own FK shape: no separate FK index
- * — the index is applied at the field level via `isIndexed: false` — and
- * `onDelete: Cascade`, so a generated Auth schema diffs clean against a live
- * better-auth database on both dimensions instead of showing a spurious index
- * drop and a referential-action change (issue #679).
+ * — the index is applied at the field level via `isIndexed: false` —
+ * `onDelete: Cascade`, and a required (non-nullable) foreign key, since
+ * better-auth's adapter always writes a `userId` on every session/account row
+ * it creates. This means a generated Auth schema diffs clean against a live
+ * better-auth database on all three dimensions instead of showing a spurious
+ * index drop, a referential-action change, and a `DROP NOT NULL` (issues #679,
+ * #863).
  */
 function userRelationshipDb(fields: Record<string, string>): NonNullable<RelationshipField['db']> {
   const column = fields.userId
   return {
+    isNullable: false,
     ...(column ? { foreignKey: { map: column } } : {}),
     extendPrismaSchema: ({ fkLine, relationLine }) => ({
       fkLine,
@@ -187,7 +191,9 @@ function createSessionList(
         isIndexed: 'unique',
         db: fieldDb('token', f),
       }),
-      expiresAt: timestamp({ db: fieldDb('expiresAt', f) }),
+      expiresAt: timestamp({
+        db: { isNullable: false, ...fieldDb('expiresAt', f) },
+      }),
       ipAddress: text({ db: fieldDb('ipAddress', f) }),
       userAgent: text({ db: fieldDb('userAgent', f) }),
       user: relationship({
@@ -252,7 +258,9 @@ function createVerificationList(
     fields: {
       identifier: text({ validation: { isRequired: true }, db: fieldDb('identifier', f) }),
       value: text({ validation: { isRequired: true }, db: fieldDb('value', f) }),
-      expiresAt: timestamp({ db: fieldDb('expiresAt', f) }),
+      expiresAt: timestamp({
+        db: { isNullable: false, ...fieldDb('expiresAt', f) },
+      }),
     },
     db: listDb(model, DEFAULT_MODEL_NAMES.verification),
     access,

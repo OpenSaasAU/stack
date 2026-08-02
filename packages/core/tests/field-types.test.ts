@@ -761,6 +761,18 @@ describe('Field Types', () => {
         expect(field.ref).toBe('Post.author')
         expect(field.many).toBe(true)
       })
+
+      test('accepts db.isNullable on a single relationship', () => {
+        const field = relationship({ ref: 'User.posts', db: { isNullable: false } })
+
+        expect(field.db?.isNullable).toBe(false)
+      })
+
+      test('throws error when db.isNullable is used with many: true', () => {
+        expect(() => {
+          relationship({ ref: 'Post.author', many: true, db: { isNullable: false } })
+        }).toThrow('db.isNullable can only be used on single relationships')
+      })
     })
   })
 
