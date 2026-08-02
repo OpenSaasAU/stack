@@ -750,6 +750,93 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('categoryId   String? @map("category")')
     })
 
+    it('should generate a required FK column and relation field with db.isNullable: false', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({
+                ref: 'User.posts',
+                db: { isNullable: false },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String @map("author")')
+      expect(schema).not.toContain('authorId     String?')
+      expect(schema).toContain('author       User  @relation(fields: [authorId], references: [id])')
+      expect(schema).not.toContain('author       User?')
+    })
+
+    it('should default the FK column and relation field to nullable without db.isNullable', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              posts: relationship({ ref: 'Post.author', many: true }),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('authorId     String?')
+      expect(schema).toContain(
+        'author       User?  @relation(fields: [authorId], references: [id])',
+      )
+    })
+
+    it('should generate a required FK for a list-only relationship with db.isNullable: false', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Category: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              category: relationship({ ref: 'Category', db: { isNullable: false } }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('categoryId   String @map("category")')
+      expect(schema).not.toContain('categoryId   String?')
+    })
+
     it('should apply extendPrismaSchema to self-referential relationship with onDelete', () => {
       const config: OpenSaasConfig = {
         db: {

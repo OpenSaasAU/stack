@@ -79,3 +79,37 @@ describe('generated auth schema — Session/Account user FK mirrors better-auth 
     expect(widget).toContain('@@index([ownerId])')
   })
 })
+
+describe('generated auth schema — required columns mirror better-auth (issue #863)', () => {
+  it('emits a required (non-nullable) userId FK and user relation on Session and Account', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    for (const model of ['Session', 'Account']) {
+      const block = modelBlock(schema, model)
+
+      expect(block).toMatch(/userId\s+String\s/)
+      expect(block).not.toMatch(/userId\s+String\?/)
+      expect(block).toMatch(/user\s+User\s+@relation/)
+      expect(block).not.toMatch(/user\s+User\?/)
+    }
+  })
+
+  it('emits a required (non-nullable) expiresAt on Session and Verification', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    for (const model of ['Session', 'Verification']) {
+      const block = modelBlock(schema, model)
+
+      expect(block).toMatch(/expiresAt\s+DateTime\s/)
+      expect(block).not.toMatch(/expiresAt\s+DateTime\?/)
+    }
+  })
+})

@@ -1110,6 +1110,28 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     isIndexed?: boolean | 'unique'
     db?: {
       /**
+       * Controls DB-level nullability of the foreign key column (and its
+       * relation field) independently of the many side's own shape. Only
+       * meaningful on the FK-owning (single) side of a relationship — the
+       * many side has no column of its own to make non-nullable and rejects
+       * this option.
+       *
+       * @default true (nullable, matching every relationship generated before
+       * this option existed)
+       *
+       * @example
+       * ```typescript
+       * // Every session genuinely belongs to a user — make the FK required
+       * user: relationship({
+       *   ref: 'User.sessions',
+       *   db: { isNullable: false },
+       * })
+       * // Generates: userId String  (was String?)
+       * //            user   User    @relation(...)  (was User?)
+       * ```
+       */
+      isNullable?: boolean
+      /**
        * Controls foreign key placement and column name for bidirectional relationships
        * Can be a boolean or an object with a map property
        * Only valid on single (non-many) relationships

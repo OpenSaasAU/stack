@@ -921,6 +921,7 @@ relationship(options: {
   many?: boolean
   db?: {
     foreignKey?: boolean
+    isNullable?: boolean
   }
   ui?: {
     displayMode?: 'select' | 'cards'
@@ -1045,6 +1046,40 @@ The `db.foreignKey` option is only needed for one-to-one relationships where you
 {% callout type="warning" %}
 Setting `db.foreignKey: true` on both sides of a one-to-one relationship will cause a validation error. Only one side can store the foreign key.
 {% /callout %}
+
+##### `db.isNullable`
+
+Controls DB-level nullability of the foreign key column and its relation field, together — they can never disagree.
+
+**Type:** `boolean`
+**Default:** `true` (nullable, matching every relationship generated before this option existed)
+
+**Constraints:**
+
+- Only valid on the FK-owning (single) side of a relationship — the many side has no foreign key column of its own and rejects this option
+
+**Example:**
+
+```typescript
+Session: list({
+  fields: {
+    // Every session genuinely belongs to a user — make the FK required
+    user: relationship({
+      ref: 'User.sessions',
+      db: { isNullable: false },
+    }),
+  },
+})
+```
+
+**Generated Prisma schema:**
+
+```prisma
+model Session {
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+```
 
 ##### `ui.displayMode`
 

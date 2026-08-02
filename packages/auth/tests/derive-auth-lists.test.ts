@@ -44,6 +44,13 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     expect(lists.User.fields.accounts.ref).toBe('Account.user')
   })
 
+  it('marks Session/Verification expiresAt as DB-required, matching better-auth (issue #863)', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.Session.fields.expiresAt.db?.isNullable).toBe(false)
+    expect(lists.Verification.fields.expiresAt.db?.isNullable).toBe(false)
+  })
+
   it('emits no table @@map and no scalar @map for default keys', () => {
     const { lists } = deriveAuthLists(defaultModels)
 
@@ -106,6 +113,13 @@ describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679)', () 
       // The FK line itself is untouched by the cascade rewrite.
       expect(result.fkLine).toBe('  userId       String?')
     }
+  })
+
+  it('marks the user FK non-nullable, matching better-auth (issue #863)', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.Session.fields.user.db?.isNullable).toBe(false)
+    expect(lists.Account.fields.user.db?.isNullable).toBe(false)
   })
 
   it('keeps the cascade extendPrismaSchema alongside a userId column override', () => {
