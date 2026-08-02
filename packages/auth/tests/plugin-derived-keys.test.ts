@@ -161,6 +161,54 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     expect(appUser.access?.operation?.update?.({} as any)).toBe(false)
     expect(appUser.access?.operation?.update).toBe(hostUserUpdate)
   })
+
+  it('preserves the derived Auth list db (map/schema/timestamps) and access when a better-auth plugin extends a base model (#861)', async () => {
+    // A better-auth provider plugin (e.g. the `anonymous` plugin) that ships a
+    // schema extension for the base `user` model — the exact shape adoptBetterAuthTables()
+    // + betterAuthPlugins produces in the field. Before the #861 fix, the
+    // plugin's schema loop ran BEFORE the derived Auth lists were added, so it
+    // pre-empted `AuthUser` with a bare `list({ fields })` (no `db`, no
+    // `access`) — and the real derived list then lost to the field-only
+    // `extendList` merge, silently dropping `@@map`/`@@schema`/timestamps/access.
+    const anonymousBetterAuthPlugin = {
+      id: 'anonymous',
+      schema: {
+        user: {
+          fields: {
+            isAnonymous: { type: 'boolean', required: false },
+          },
+        },
+      },
+    }
+
+    const userQuery = vi.fn(() => true)
+    const result = await config({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          schema: 'auth',
+          user: { modelName: 'AuthUser' },
+          session: { modelName: 'AuthSession' },
+          account: { modelName: 'AuthAccount' },
+          verification: { modelName: 'AuthVerification' },
+          betterAuthPlugins: [anonymousBetterAuthPlugin],
+          access: { user: { operation: { query: userQuery } } },
+        }),
+      ],
+      lists: {},
+    })
+
+    const authUser = result.lists.AuthUser
+
+    // The plugin's schema extension is merged in...
+    expect(authUser.fields).toHaveProperty('isAnonymous')
+    // ...without displacing the derived list's own db config...
+    expect(authUser.db?.map).toBe('AuthUser')
+    expect(authUser.db?.schema).toBe('auth')
+    expect(authUser.db?.timestamps).toBe(true)
+    // ...or its access config.
+    expect(authUser.access?.operation?.query).toBe(userQuery)
+  })
 })
 
 describe('authPlugin - runtime user-key resolution', () => {

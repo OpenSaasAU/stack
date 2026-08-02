@@ -62,7 +62,45 @@ export function authPlugin(config: AuthConfig): Plugin {
         verification: normalized.models.verification.modelName,
       }
 
-      // Extract additional lists from Better Auth plugins
+      // Add all auth lists FIRST, before any better-auth plugin schema
+      // extension is processed. This must happen before the betterAuthPlugins
+      // loop below so a base-model extension (e.g. a plugin's `schema: {
+      // user: { fields: … } }`) always finds the real derived list already
+      // registered under its key and takes the merge (`extendList`) path
+      // against it — instead of pre-empting that key with a bare
+      // `list({ fields })` that carries no `db`/`access` (see #861).
+      //
+      // The plugin only ever touches its OWN derived keys. When a developer
+      // renames the auth user model (e.g. user.modelName: 'AuthUser'), the
+      // derived key is 'AuthUser' and an app's separate 'User' list is left
+      // untouched — the plugin never extends/overwrites a list it didn't
+      // derive. Extending only kicks in when an existing list shares the
+      // derived key (e.g. the default 'User'), which is the intended
+      // "merge auth fields into my User" behaviour.
+      for (const [listName, listConfig] of Object.entries(authLists)) {
+        if (context.config.lists[listName]) {
+          // A list already exists under this derived key — merge auth fields
+          // in only. Access control belongs to whoever owns the list (the
+          // application declared it first), so the plugin never forwards its
+          // own access here — see ADR-0013.
+          context.extendList(listName, {
+            fields: listConfig.fields,
+            hooks: listConfig.hooks,
+            mcp: listConfig.mcp,
+          })
+        } else {
+          // Otherwise, add the auth list
+          context.addList(listName, listConfig)
+        }
+      }
+
+      // Extract additional lists from Better Auth plugins. Because the auth
+      // lists above are already registered, a schema extension of a base
+      // model (user/session/account/verification) always finds its resolved
+      // key occupied by the real derived list and merges via `extendList` —
+      // its `db`/`access` are preserved. Non-base plugin tables (e.g.
+      // `oauth_application`, `passkey`) still register as new lists via
+      // `addList`, same as before.
       for (const plugin of normalized.betterAuthPlugins) {
         if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
           // Plugin has schema property - convert to OpenSaaS lists
@@ -86,32 +124,6 @@ export function authPlugin(config: AuthConfig): Plugin {
               context.addList(listName, listConfig)
             }
           }
-        }
-      }
-
-      // Add all auth lists.
-      //
-      // The plugin only ever touches its OWN derived keys. When a developer
-      // renames the auth user model (e.g. user.modelName: 'AuthUser'), the
-      // derived key is 'AuthUser' and an app's separate 'User' list is left
-      // untouched — the plugin never extends/overwrites a list it didn't
-      // derive. Extending only kicks in when an existing list shares the
-      // derived key (e.g. the default 'User'), which is the intended
-      // "merge auth fields into my User" behaviour.
-      for (const [listName, listConfig] of Object.entries(authLists)) {
-        if (context.config.lists[listName]) {
-          // A list already exists under this derived key — merge auth fields
-          // in only. Access control belongs to whoever owns the list (the
-          // application declared it first), so the plugin never forwards its
-          // own access here — see ADR-0013.
-          context.extendList(listName, {
-            fields: listConfig.fields,
-            hooks: listConfig.hooks,
-            mcp: listConfig.mcp,
-          })
-        } else {
-          // Otherwise, add the auth list
-          context.addList(listName, listConfig)
         }
       }
 
