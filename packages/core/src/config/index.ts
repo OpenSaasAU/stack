@@ -146,6 +146,8 @@ export type {
   FieldHooks,
   FieldsWithTypeInfo,
   DatabaseConfig,
+  ListIndex,
+  ListIndexFieldRef,
   SessionConfig,
   UIConfig,
   ListUIConfig,

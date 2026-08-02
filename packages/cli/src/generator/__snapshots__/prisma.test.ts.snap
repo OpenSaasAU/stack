@@ -24,6 +24,34 @@ model Account {
 "
 `;
 
+exports[`Prisma Schema Generator > Model-level composite indexes (db.indexes) (#864) > generates byte-for-byte identical model output when no indexes are declared, matching pre-feature behaviour 1`] = `
+"generator client {
+  provider            = "prisma-client"
+  output              = "../.opensaas/prisma-client"
+  importFileExtension = "ts"
+  moduleFormat        = "esm"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title        String?
+  authorId     String? @map("author")
+  author       User?  @relation("Post_author", fields: [authorId], references: [id])
+  @@index([authorId])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name         String?
+  from_Post_author Post[]  @relation("Post_author")
+}
+"
+`;
+
 exports[`Prisma Schema Generator > field defaultValue → @default(...) > generates a representative multi-field model with mixed defaults 1`] = `
 "generator client {
   provider            = "prisma-client"

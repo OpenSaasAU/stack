@@ -1402,7 +1402,7 @@ function getPrismaRelation(
     const indexType = field.isIndexed ?? true
     const foreignKeyIndex = indexType !== false ? { foreignKeyField, indexType } : undefined
 
-    return { modelLines: [fkLine, relationLine], foreignKeyIndex, backRelation }
+    return { modelLines: [fkLine, relationLine], foreignKeyField, foreignKeyIndex, backRelation }
   }
 
   // Non-FK side of a one-to-one relationship: just the relation field
