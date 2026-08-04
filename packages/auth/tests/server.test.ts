@@ -481,6 +481,108 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
     expect(betterAuthMock.mock.calls[0][0]).toEqual(built)
   })
+
+  it('createAuth with a plugin tuple constructs betterAuth with exactly what buildBetterAuthOptions returns for the same tuple', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA] })
+    const opensaasConfig = makeOpensaasConfig(authConfig)
+    const context = makeContext()
+
+    const built = await buildBetterAuthOptions(opensaasConfig, context, [pluginA])
+
+    const auth = createAuth(opensaasConfig, context, [pluginA])
+    await auth.api.getSession({})
+
+    expect(betterAuthMock).toHaveBeenCalledTimes(1)
+    expect(betterAuthMock.mock.calls[0][0]).toEqual(built)
+  })
+
+  it('createAuth rejects when its plugin tuple does not match the resolved betterAuthPlugins', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const differentInstance = { id: 'plugin-a' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA] })
+    const opensaasConfig = makeOpensaasConfig(authConfig)
+    const context = makeContext()
+
+    const auth = createAuth(opensaasConfig, context, [differentInstance])
+
+    await expect(auth.api.getSession({})).rejects.toThrow(
+      /does not match the plugin array resolved/,
+    )
+    expect(betterAuthMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildBetterAuthOptions plugin-tuple argument', () => {
+  beforeEach(() => {
+    betterAuthMock.mockClear()
+    prismaAdapterMock.mockClear()
+    nextCookiesMock.mockClear()
+  })
+
+  it('rejects when the supplied tuple has a different length than the resolved betterAuthPlugins', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA] })
+
+    await expect(
+      buildBetterAuthOptions(makeOpensaasConfig(authConfig), makeContext(), []),
+    ).rejects.toThrow(/has 0 plugin\(s\), but the plugin array resolved.*has 1/)
+  })
+
+  it('rejects naming the mismatching index when a supplied plugin is not the same instance', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const pluginB = { id: 'plugin-b' }
+    const differentInstance = { id: 'plugin-a' } // same id, different identity
+
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA, pluginB] })
+
+    await expect(
+      buildBetterAuthOptions(makeOpensaasConfig(authConfig), makeContext(), [
+        differentInstance,
+        pluginB,
+      ]),
+    ).rejects.toThrow(/at index 0/)
+  })
+
+  it('rejects naming the mismatching index when the supplied order differs', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const pluginB = { id: 'plugin-b' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA, pluginB] })
+
+    await expect(
+      buildBetterAuthOptions(makeOpensaasConfig(authConfig), makeContext(), [pluginB, pluginA]),
+    ).rejects.toThrow(/at index 0/)
+  })
+
+  it('does not throw when the supplied tuple is the exact same instances in the same order', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const pluginB = { id: 'plugin-b' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA, pluginB] })
+
+    const config = await buildBetterAuthOptions(makeOpensaasConfig(authConfig), makeContext(), [
+      pluginA,
+      pluginB,
+    ])
+
+    expect(config.plugins).toEqual([pluginA, pluginB, { id: 'next-cookies' }])
+  })
+
+  it('appends exactly one nextCookies() plugin, last, whether or not a plugin tuple is supplied', async () => {
+    const pluginA = { id: 'plugin-a' }
+    const authConfig = makeAuthConfig({ betterAuthPlugins: [pluginA] })
+    const opensaasConfig = makeOpensaasConfig(authConfig)
+    const context = makeContext()
+
+    const withoutArg = await buildBetterAuthOptions(opensaasConfig, context)
+    expect(nextCookiesMock).toHaveBeenCalledTimes(1)
+    expect(withoutArg.plugins).toEqual([pluginA, { id: 'next-cookies' }])
+
+    nextCookiesMock.mockClear()
+
+    const withArg = await buildBetterAuthOptions(opensaasConfig, context, [pluginA])
+    expect(nextCookiesMock).toHaveBeenCalledTimes(1)
+    expect(withArg.plugins).toEqual([pluginA, { id: 'next-cookies' }])
+  })
 })
 
 describe('getSessionFromAuth', () => {

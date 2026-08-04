@@ -398,6 +398,71 @@ an explicit, reviewable diff. It also gives an incremental migration path onto
 `createAuth()`: adopt the builder first, then move options into
 [`betterAuthOptions`](#betterauthoptions) as the stack grows knobs for them.
 
+### Typed `auth.api.*` reads: pass your plugin tuple
+
+Called with just `(config, context)`, both `createAuth()` and
+`buildBetterAuthOptions()` return the **widened** `BetterAuthOptions` /
+`Auth<BetterAuthOptions>` types. better-auth infers plugin endpoints and a
+`customSession()`'s replaced session shape from the _literal_ type of the
+options object, so constructing from a widened type erases them — a plugin
+like `emailOTP()` loses `auth.api.signInEmailOTP`, and `auth.api.getSession()`
+falls back to better-auth's default `{ user, session }` instead of your
+`customSession()` callback's return type.
+
+If your app reads `auth.api.*` in typed code and uses either of those,
+**pass your `betterAuthPlugins` array as a third argument** — the exact same
+array already passed to `authPlugin({ betterAuthPlugins })` — to either
+function:
+
+```typescript
+// auth-plugins.ts
+import { emailOTP } from 'better-auth/plugins'
+
+export const appBetterAuthPlugins = [emailOTP({ sendVerificationOTP })]
+```
+
+```typescript
+// opensaas.config.ts
+import { authPlugin } from '@opensaas/stack-auth'
+import { appBetterAuthPlugins } from './auth-plugins'
+
+export default config({
+  plugins: [authPlugin({ betterAuthPlugins: appBetterAuthPlugins })],
+  // ...
+})
+```
+
+```typescript
+// lib/auth.ts
+import { betterAuth } from 'better-auth'
+import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
+import config from '../opensaas.config'
+import { rawOpensaasContext } from '@/.opensaas/context'
+import { appBetterAuthPlugins } from '../auth-plugins'
+
+export const auth = betterAuth({
+  ...(await buildBetterAuthOptions(config, rawOpensaasContext, appBetterAuthPlugins)),
+  databaseHooks: { user: { create: { after: syncDomainUser } } },
+})
+// auth.api.signInEmailOTP is now typed, and auth.api.getSession() returns
+// your customSession() shape if you have one.
+```
+
+The same third argument works on `createAuth()` — `createAuth(config, rawOpensaasContext, appBetterAuthPlugins)`.
+Either way, the supplied array is for typing only: the plugin array actually
+used at runtime is always the one resolved from `authPlugin({ betterAuthPlugins })`,
+with exactly one `nextCookies()` appended last. Passing an array that isn't
+the same plugin instances in the same order throws, naming the mismatch, so
+the two can't silently drift apart.
+
+**Which entry point to reach for:** `createAuth()`'s lazy `Proxy` does not
+behave identically to a real `Auth` instance for every property — every
+access, including a non-function property, is surfaced through an `async`
+wrapper (so `auth.options`, for example, reads back as a `Promise` rather than
+the plain object a real instance returns synchronously). If your app reads
+`auth.api.*` in typed code, reach for `buildBetterAuthOptions()` plus
+`betterAuth()` — it constructs a real instance and does not have this gap.
+
 ## Client Setup
 
 Create a client for authentication in your components:

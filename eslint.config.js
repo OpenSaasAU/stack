@@ -47,6 +47,11 @@ export default [
       ...tseslint.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // Base `no-redeclare` doesn't understand TypeScript function overload
+      // signatures and flags each one as a duplicate declaration;
+      // `@typescript-eslint/no-redeclare` is overload-aware.
+      'no-redeclare': 'off',
+      '@typescript-eslint/no-redeclare': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': [
         'warn',

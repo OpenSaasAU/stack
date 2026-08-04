@@ -102,7 +102,7 @@ export function authPlugin(config: AuthConfig): Plugin {
       // `oauth_application`, `passkey`) still register as new lists via
       // `addList`, same as before.
       for (const plugin of normalized.betterAuthPlugins) {
-        if (plugin && typeof plugin === 'object' && 'schema' in plugin) {
+        if (plugin && typeof plugin === 'object' && plugin.schema) {
           // Plugin has schema property - convert to OpenSaaS lists
           const pluginSchema = plugin.schema
           const pluginLists = convertBetterAuthSchema(pluginSchema, baseModelKeys)

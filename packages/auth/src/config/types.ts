@@ -1,5 +1,5 @@
 import type { ListConfig } from '@opensaas/stack-core'
-import type { BetterAuthOptions, User } from 'better-auth'
+import type { BetterAuthOptions, BetterAuthPlugin, User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
 /**
@@ -394,8 +394,7 @@ export type AuthConfig = {
    * ]
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
-  betterAuthPlugins?: any[]
+  betterAuthPlugins?: BetterAuthPlugin[]
 
   /**
    * Rate limiting configuration
@@ -528,8 +527,7 @@ export type NormalizedAuthConfig = Required<
    * default (used to wire the datasource `schemas` array during generation).
    */
   schema?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth plugin types are not exposed, must use any
-  betterAuthPlugins: any[]
+  betterAuthPlugins: BetterAuthPlugin[]
   rateLimit?: {
     enabled: boolean
     window?: number

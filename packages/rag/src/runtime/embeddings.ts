@@ -81,16 +81,13 @@ export interface ChunkedEmbedding {
 export function generateEmbedding(
   options: GenerateEmbeddingOptions & { enableChunking: true },
 ): Promise<ChunkedEmbedding[]>
-// eslint-disable-next-line no-redeclare
 export function generateEmbedding(
   options: GenerateEmbeddingOptions & { enableChunking?: false },
 ): Promise<StoredEmbedding>
-// eslint-disable-next-line no-redeclare
 export function generateEmbedding(
   options: GenerateEmbeddingOptions,
 ): Promise<StoredEmbedding | ChunkedEmbedding[]>
 // Implementation
-// eslint-disable-next-line no-redeclare
 export async function generateEmbedding(
   options: GenerateEmbeddingOptions,
 ): Promise<StoredEmbedding | ChunkedEmbedding[]> {

@@ -1,10 +1,57 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
-import type { BetterAuthOptions } from 'better-auth'
+import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
+
+/**
+ * The `BetterAuthOptions` shape produced when an app's own plugin tuple is
+ * passed to `buildBetterAuthOptions()`/`createAuth()` — the tuple plus the
+ * `nextCookies()` plugin the stack always appends last. Carrying the literal
+ * tuple type (rather than the widened `BetterAuthPlugin[]`) is what lets
+ * `betterAuth()` re-infer plugin endpoints (e.g. `emailOTP()`'s
+ * `api.signInEmailOTP`) and a `customSession()` plugin's replaced session
+ * shape from the resulting options object.
+ */
+type ResolvedBetterAuthOptions<TPlugins extends readonly BetterAuthPlugin[]> = Omit<
+  BetterAuthOptions,
+  'plugins'
+> & {
+  plugins: [...TPlugins, ReturnType<typeof nextCookies>]
+}
+
+/**
+ * Guard against the supplied plugin tuple silently drifting from the plugin
+ * array actually resolved from `authPlugin({ betterAuthPlugins })` — the
+ * supplied tuple exists for typing only, so if it isn't the exact same
+ * instances in the exact same order, the type it produces would be a lie
+ * about what `betterAuth()` is actually constructed with.
+ */
+function assertPluginTupleMatchesResolved(
+  supplied: readonly BetterAuthPlugin[],
+  resolved: readonly BetterAuthPlugin[],
+): void {
+  if (supplied.length !== resolved.length) {
+    throw new Error(
+      '[@opensaas/stack-auth] The plugin tuple passed to `buildBetterAuthOptions()` / `createAuth()` ' +
+        `has ${supplied.length} plugin(s), but the plugin array resolved from \`authPlugin({ ` +
+        `betterAuthPlugins })\` has ${resolved.length}. Pass the exact same array (without ` +
+        '`nextCookies()` — the stack appends that itself).',
+    )
+  }
+
+  const mismatchIndex = supplied.findIndex((plugin, index) => plugin !== resolved[index])
+  if (mismatchIndex !== -1) {
+    throw new Error(
+      '[@opensaas/stack-auth] The plugin tuple passed to `buildBetterAuthOptions()` / `createAuth()` ' +
+        `does not match the plugin array resolved from \`authPlugin({ betterAuthPlugins })\` at index ` +
+        `${mismatchIndex} (got plugin "${supplied[mismatchIndex]?.id}", expected the same instance as ` +
+        `"${resolved[mismatchIndex]?.id}"). Pass the exact same array — same instances, same order.`,
+    )
+  }
+}
 
 /**
  * Get better-auth database configuration from OpenSaas config
@@ -125,21 +172,55 @@ function mergeBetterAuthOptions(
  * authoritative for everything it models; the app's additions on top become
  * an explicit, reviewable diff instead of a parallel, hand-duplicated config.
  *
- * @example
+ * Called with just `(config, context)`, the return type is the widened
+ * `BetterAuthOptions` — `betterAuth()` infers its plugin/session types from
+ * the *literal* type of the options object, so constructing from this
+ * widened return erases plugin endpoints (e.g. `emailOTP()`'s
+ * `api.signInEmailOTP`) and a `customSession()` plugin's replaced session
+ * shape. **If your app reads `auth.api.*` in typed code and uses either of
+ * those, pass its plugin tuple as the third argument** — the exact same
+ * array already passed to `authPlugin({ betterAuthPlugins })` — so the
+ * return type carries the literal tuple instead:
+ *
  * ```typescript
  * import { betterAuth } from 'better-auth'
+ * import { emailOTP } from 'better-auth/plugins'
  * import { buildBetterAuthOptions } from '@opensaas/stack-auth/server'
  *
+ * export const appBetterAuthPlugins = [emailOTP()] // same array passed to authPlugin({ betterAuthPlugins })
+ *
  * export const auth = betterAuth({
- *   ...(await buildBetterAuthOptions(config, context)),
+ *   ...(await buildBetterAuthOptions(config, context, appBetterAuthPlugins)),
  *   databaseHooks: { user: { create: { after: syncDomainUser } } },
  * })
+ * // auth.api.signInEmailOTP / auth.api.getSession()'s customSession shape are now typed.
  * ```
+ *
+ * The supplied tuple is for typing only — the array actually used at runtime
+ * is always the one resolved from `authPlugin({ betterAuthPlugins })`, with
+ * exactly one `nextCookies()` appended last. Passing a tuple that isn't the
+ * same plugin instances in the same order throws, so the two can't silently
+ * drift apart.
+ *
+ * Note `createAuth()`'s lazy Proxy does not behave identically to a real
+ * `Auth` instance for every property (see its own doc comment) — reach for
+ * this builder plus `betterAuth()` instead when the app reads `auth.api.*`
+ * in typed code.
  */
 export async function buildBetterAuthOptions(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
   context: AccessContext | Promise<AccessContext>,
-): Promise<BetterAuthOptions> {
+): Promise<BetterAuthOptions>
+export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
+  plugins: TPlugins,
+): Promise<ResolvedBetterAuthOptions<TPlugins>>
+export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
+  plugins?: TPlugins,
+): Promise<BetterAuthOptions | ResolvedBetterAuthOptions<TPlugins>> {
   const resolvedConfig = await Promise.resolve(opensaasConfig)
   const resolvedContext = await Promise.resolve(context)
 
@@ -178,6 +259,11 @@ export async function buildBetterAuthOptions(
   }
 
   assertNoUnsupportedPassthroughKeys(authConfig.betterAuthOptions as Record<string, unknown>)
+
+  const resolvedPlugins = authConfig.betterAuthPlugins || []
+  if (plugins) {
+    assertPluginTupleMatchesResolved(plugins, resolvedPlugins)
+  }
 
   // Build better-auth configuration
   const betterAuthConfig: BetterAuthOptions = {
@@ -259,47 +345,81 @@ export async function buildBetterAuthOptions(
     // cookie store. This is what makes the server-action auth forms (which
     // call auth.api.signInEmail/signUpEmail/etc. server-side) actually
     // persist a session. It must be the final plugin in the array.
-    plugins: [...(authConfig.betterAuthPlugins || []), nextCookies()],
+    plugins: [...resolvedPlugins, nextCookies()],
   }
 
   return mergeBetterAuthOptions(
     betterAuthConfig as unknown as Record<string, unknown>,
     authConfig.betterAuthOptions as Record<string, unknown>,
-  ) as BetterAuthOptions
+  ) as BetterAuthOptions | ResolvedBetterAuthOptions<TPlugins>
 }
 
 /**
  * Create a better-auth instance from OpenSaas config
  * This should be called once at app startup
  *
- * @example
+ * Returns a lazy `Proxy` (see the caveat below), typed as `Auth<BetterAuthOptions>`
+ * when called with just `(config, context)` — the widened type, same erasure
+ * caveat as {@link buildBetterAuthOptions}'s no-argument form. **If your app
+ * reads `auth.api.*` in typed code and relies on a plugin's endpoints (e.g.
+ * `emailOTP()`) or a `customSession()`'s replaced session shape, pass its
+ * plugin tuple as the third argument** — the exact same array already passed
+ * to `authPlugin({ betterAuthPlugins })` — so the declared type carries the
+ * literal tuple instead:
+ *
  * ```typescript
  * // lib/auth.ts
  * import { createAuth } from '@opensaas/stack-auth/server'
  * import config from '../opensaas.config'
  * import { rawOpensaasContext } from '@/.opensaas/context'
  *
- * export const auth = createAuth(config, rawOpensaasContext)
+ * export const appBetterAuthPlugins = [emailOTP()] // same array passed to authPlugin({ betterAuthPlugins })
+ *
+ * export const auth = createAuth(config, rawOpensaasContext, appBetterAuthPlugins)
  * ```
+ *
+ * As with the builder, the supplied tuple is for typing only, and a tuple
+ * that isn't the same plugin instances in the same order throws.
+ *
+ * **Proxy caveat:** the lazy `Proxy` this returns does not behave identically
+ * to a real `Auth` instance for every property — every access, including a
+ * non-function property, is surfaced through an `async` wrapper (so e.g.
+ * `auth.options` reads back as a `Promise`, not the plain object a real
+ * instance would return synchronously). The declared type does not model
+ * this difference; where it matters, reach for {@link buildBetterAuthOptions}
+ * plus `betterAuth()` instead, which constructs a real instance.
  */
 export function createAuth(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
   context: AccessContext | Promise<AccessContext>,
-) {
+): Auth<BetterAuthOptions>
+export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
+  plugins: TPlugins,
+): Auth<ResolvedBetterAuthOptions<TPlugins>>
+export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
+  opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
+  context: AccessContext | Promise<AccessContext>,
+  plugins?: TPlugins,
+): Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>> {
   // Resolve config and context asynchronously
   const configPromise = Promise.resolve(opensaasConfig)
   const contextPromise = Promise.resolve(context)
 
   // Create auth instance lazily when needed
-  let authInstance: ReturnType<typeof betterAuth> | null = null
-  let authPromise: Promise<ReturnType<typeof betterAuth>> | null = null
+  type AuthInstance = Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>>
+  let authInstance: AuthInstance | null = null
+  let authPromise: Promise<AuthInstance> | null = null
 
   async function getAuthInstance() {
     if (authInstance) return authInstance
 
     if (!authPromise) {
       authPromise = (async () => {
-        const betterAuthConfig = await buildBetterAuthOptions(configPromise, contextPromise)
+        const betterAuthConfig = plugins
+          ? await buildBetterAuthOptions(configPromise, contextPromise, plugins)
+          : await buildBetterAuthOptions(configPromise, contextPromise)
         authInstance = betterAuth(betterAuthConfig)
         return authInstance
       })()
@@ -309,7 +429,7 @@ export function createAuth(
   }
 
   // Return a proxy that lazily initializes the auth instance
-  return new Proxy({} as ReturnType<typeof betterAuth>, {
+  return new Proxy({} as AuthInstance, {
     get(_, prop) {
       if (prop === 'then') {
         // Support await on the proxy itself

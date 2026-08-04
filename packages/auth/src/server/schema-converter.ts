@@ -12,13 +12,13 @@ import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
  * Inferred from better-auth internal types
  */
 type BetterAuthFieldAttribute = {
-  type: string // 'string' | 'number' | 'boolean' | 'date' | etc.
+  type: string | string[] // 'string' | 'number' | 'boolean' | 'date' | etc., or an enum array
   required?: boolean
   unique?: boolean
   references?: {
     model: string
     field: string
-    onDelete?: 'cascade' | 'set null' | 'restrict'
+    onDelete?: 'no action' | 'restrict' | 'cascade' | 'set null' | 'set default'
   }
   defaultValue?: unknown
   returned?: boolean
@@ -29,7 +29,7 @@ type BetterAuthFieldAttribute = {
  * Better Auth table schema structure
  */
 type BetterAuthTableSchema = {
-  modelName: string
+  modelName?: string
   fields: Record<string, BetterAuthFieldAttribute>
 }
 
