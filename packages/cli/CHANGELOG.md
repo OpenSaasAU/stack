@@ -1,5 +1,32 @@
 # @opensaas/stack-cli
 
+## 0.38.0
+
+### Minor Changes
+
+- [#889](https://github.com/OpenSaasAU/stack/pull/889) [`b9b9357`](https://github.com/OpenSaasAU/stack/commit/b9b935719774b01a81cfd2082387b76806c1a484) Thanks [@borisno2](https://github.com/borisno2)! - Fix `getSessionFromAuth` to project `sessionFields` from the _resolved_ better-auth session instead of only its `user` sub-object. A `customSession` plugin's replaced shape with no `user` key is now correctly treated as a signed-in session (never misreported as anonymous), and a session-only field (e.g. the admin plugin's `impersonatedBy`) is now resolvable. Errors from the underlying session lookup now propagate instead of silently becoming `null`, and a `sessionFields` entry that can't be resolved is omitted and logs a warning (once per field, per process) instead of vanishing silently.
+
+  The scaffolded `getSession()` — the CLI feature generator's `lib/auth.ts` template, and `examples/starter-auth`/`examples/auth-demo` — now call this single shared helper, reading `sessionFields` from the resolved config at runtime instead of baking a field list in at generation time. `examples/auth-demo`'s `getSession()` also now correctly returns `null` for an anonymous visitor (previously returned a truthy object of `undefined` values).
+
+  ```typescript
+  authPlugin({ sessionFields: ['userId', 'email', 'name', 'role'] })
+  ```
+
+  ```typescript
+  // lib/auth.ts
+  export async function getSession() {
+    const resolvedConfig = await config
+    const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+    const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+    return getSessionFromAuth(auth, sessionFields, await headers())
+  }
+  ```
+
+### Patch Changes
+
+- Updated dependencies [[`b21d8b2`](https://github.com/OpenSaasAU/stack/commit/b21d8b2af43f7a2a7ea10a89cfb39140a856bd68), [`b21d8b2`](https://github.com/OpenSaasAU/stack/commit/b21d8b2af43f7a2a7ea10a89cfb39140a856bd68), [`17eb72f`](https://github.com/OpenSaasAU/stack/commit/17eb72f0a9a4b7508e3f318da66bb8d4c6cbd705)]:
+  - @opensaas/stack-core@0.38.0
+
 ## 0.37.0
 
 ### Minor Changes
