@@ -337,8 +337,21 @@ export type AuthConfig = {
   schema?: string
 
   /**
-   * Which fields to include in the session object
-   * This determines what data is available in access control functions
+   * Which fields to include in the session object passed to access control
+   * functions — a **flattened projection** of the resolved better-auth
+   * session, not the session's own shape. `getSessionFromAuth` (the
+   * implementation the scaffolded `getSession()` calls) resolves each name
+   * against a fixed precedence: a top-level key on the resolved session
+   * object, then the `user` object, then the `session` sub-object.
+   * `userId` is special-cased to the authenticated user's `id`.
+   *
+   * A `customSession` better-auth plugin fully replaces the resolved shape
+   * (it can nest fields anywhere, e.g. under its own custom key) —
+   * reconciling that shape against `sessionFields` is the application's job.
+   * A listed name that can't be resolved is omitted and warns once per
+   * field per process, naming what was checked, rather than silently
+   * becoming `undefined` in an access control function.
+   *
    * @default ['userId', 'email', 'name']
    *
    * @example

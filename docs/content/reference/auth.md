@@ -217,6 +217,32 @@ access: {
 }
 ```
 
+**`sessionFields` describes a flattened projection, not the session's own shape.** Each
+name is resolved off the _resolved_ better-auth session (whatever `auth.api.getSession()`
+returns) against a fixed precedence, so a collision between sources is predictable:
+
+1. `userId` is special-cased to the authenticated user's `id` — the documented default.
+2. Every other name resolves against the first hit in: a top-level key on the resolved
+   session object, then the `user` object, then the `session` sub-object. This is what makes
+   a session-only field (e.g. the admin plugin's `impersonatedBy`) reachable, not just fields
+   on the user.
+
+A name that can't be resolved is omitted from the session and logs a warning (once per field,
+per process) naming what was checked, instead of silently surfacing later as an access-control
+function reading `undefined`.
+
+A `customSession` better-auth plugin fully **replaces** the resolved session and can nest its
+fields anywhere — e.g. under its own custom key. When that happens, `sessionFields` and the
+actual resolved shape describe different things, and reconciling them (renaming, flattening a
+nested value) is the application's job, not something `sessionFields` does automatically.
+
+The scaffolded `getSession()` (`lib/auth.ts`) calls the exported `getSessionFromAuth()` helper
+(`@opensaas/stack-auth/server`) with the config's resolved `sessionFields`, read at runtime —
+changing `sessionFields` takes effect without regenerating `lib/auth.ts`. `getSessionFromAuth()`
+returns `null` only when there is genuinely no session; a resolved session with no `user` key
+(a `customSession` plugin that dropped it) is still a session and still gets projected. Errors
+from the underlying session lookup propagate rather than becoming `null`.
+
 ### `extendUserList`
 
 Add custom fields, access control, or hooks to the auto-generated User list:

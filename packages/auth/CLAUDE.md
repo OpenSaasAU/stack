@@ -235,7 +235,8 @@ const context = createContext(config, prisma, session)
 
 ### Session Fields Configuration
 
-Control which User fields appear in session:
+`sessionFields` describes a **flattened projection** of the resolved better-auth session, not
+the session's own shape:
 
 ```typescript
 authPlugin({ sessionFields: ['userId', 'email', 'name', 'role'] })
@@ -246,6 +247,15 @@ access: {
   }
 }
 ```
+
+`getSessionFromAuth()` (`@opensaas/stack-auth/server`) is the single implementation of this
+projection — the scaffolded `getSession()` calls it with `sessionFields` read from the resolved
+config at runtime. Each name resolves against a fixed precedence (a top-level key on the
+resolved session, then `user`, then `session`), with `userId` special-cased to the user's `id`.
+A `customSession` better-auth plugin fully replaces the resolved shape and can nest fields
+anywhere; reconciling that against `sessionFields` is the app's job — an unresolvable name is
+omitted and warns once (per field, per process) rather than silently becoming `undefined`. See
+the `sessionFields` reference (`docs/content/reference/auth.md`) for the full contract.
 
 ### Session Type Safety
 
