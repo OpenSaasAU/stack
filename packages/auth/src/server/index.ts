@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
@@ -570,7 +570,7 @@ export async function getSessionFromAuth(
   auth: ReturnType<typeof betterAuth>,
   sessionFields: string[],
   headers: Headers,
-): Promise<Record<string, unknown> | null> {
+): Promise<Session | null> {
   const resolvedSession = await auth.api.getSession({ headers })
 
   if (!resolvedSession) {

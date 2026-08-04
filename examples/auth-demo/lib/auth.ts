@@ -20,8 +20,7 @@ export async function getSession(): Promise<Session | null> {
   const resolvedConfig = await config
   const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
   const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
-  const session = await getSessionFromAuth(auth, sessionFields, await headers())
-  return session as unknown as Session | null
+  return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
 /**
