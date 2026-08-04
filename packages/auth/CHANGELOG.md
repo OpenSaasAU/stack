@@ -1,5 +1,42 @@
 # @opensaas/stack-auth
 
+## 0.38.0
+
+### Minor Changes
+
+- [#888](https://github.com/OpenSaasAU/stack/pull/888) [`8183827`](https://github.com/OpenSaasAU/stack/commit/8183827ec65d6cfd7153028f84057ab65dfdc7dd) Thanks [@borisno2](https://github.com/borisno2)! - `buildBetterAuthOptions()` and `createAuth()` now accept an optional third argument — your app's `betterAuthPlugins` array, the same array passed to `authPlugin({ betterAuthPlugins })` — so the returned options/`Auth` type carries the literal plugin tuple instead of the widened `BetterAuthOptions`/`Auth<BetterAuthOptions>`. Without this, `betterAuth()` constructed from the widened return loses plugin-derived `auth.api.*` endpoints (e.g. `emailOTP()`'s `signInEmailOTP`) and a `customSession()` plugin's replaced session shape.
+
+  ```typescript
+  export const appBetterAuthPlugins = [emailOTP({ sendVerificationOTP })] // same array passed to authPlugin({ betterAuthPlugins })
+
+  export const auth = betterAuth({
+    ...(await buildBetterAuthOptions(config, rawOpensaasContext, appBetterAuthPlugins)),
+  })
+  // auth.api.signInEmailOTP is now typed, and auth.api.getSession() returns your customSession() shape.
+  ```
+
+  The supplied tuple is for typing only — the plugin array used at runtime is always the one resolved from `authPlugin({ betterAuthPlugins })`. Passing a tuple that isn't the same plugin instances in the same order throws, naming the mismatch, so the two can't silently drift apart. Calling either function with no third argument is unchanged — same widened return type, same runtime options, fully backwards compatible.
+
+  Also, `AuthConfig`/`NormalizedAuthConfig`'s `betterAuthPlugins` field is now typed as better-auth's own `BetterAuthPlugin[]` instead of `any[]`.
+
+- [#889](https://github.com/OpenSaasAU/stack/pull/889) [`b9b9357`](https://github.com/OpenSaasAU/stack/commit/b9b935719774b01a81cfd2082387b76806c1a484) Thanks [@borisno2](https://github.com/borisno2)! - Fix `getSessionFromAuth` to project `sessionFields` from the _resolved_ better-auth session instead of only its `user` sub-object. A `customSession` plugin's replaced shape with no `user` key is now correctly treated as a signed-in session (never misreported as anonymous), and a session-only field (e.g. the admin plugin's `impersonatedBy`) is now resolvable. Errors from the underlying session lookup now propagate instead of silently becoming `null`, and a `sessionFields` entry that can't be resolved is omitted and logs a warning (once per field, per process) instead of vanishing silently.
+
+  The scaffolded `getSession()` — the CLI feature generator's `lib/auth.ts` template, and `examples/starter-auth`/`examples/auth-demo` — now call this single shared helper, reading `sessionFields` from the resolved config at runtime instead of baking a field list in at generation time. `examples/auth-demo`'s `getSession()` also now correctly returns `null` for an anonymous visitor (previously returned a truthy object of `undefined` values).
+
+  ```typescript
+  authPlugin({ sessionFields: ['userId', 'email', 'name', 'role'] })
+  ```
+
+  ```typescript
+  // lib/auth.ts
+  export async function getSession() {
+    const resolvedConfig = await config
+    const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+    const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+    return getSessionFromAuth(auth, sessionFields, await headers())
+  }
+  ```
+
 ## 0.37.0
 
 ### Minor Changes
