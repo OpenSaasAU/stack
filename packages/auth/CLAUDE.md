@@ -28,8 +28,8 @@ Auto-generated lists:
 
 ### Server (`src/server/index.ts`)
 
-- `createAuth(config, rawContext?)` - Creates Better-auth instance with MCP plugin support
-- `buildBetterAuthOptions(config, rawContext?)` - Returns the same `BetterAuthOptions` `createAuth()` builds, without constructing an instance — for apps that need to hand-wire their own `betterAuth()`
+- `createAuth(config, rawContext?, betterAuthPlugins?)` - Creates Better-auth instance with MCP plugin support
+- `buildBetterAuthOptions(config, rawContext?, betterAuthPlugins?)` - Returns the same `BetterAuthOptions` `createAuth()` builds, without constructing an instance — for apps that need to hand-wire their own `betterAuth()`. The optional third argument (the app's own `betterAuthPlugins` array) makes the return type carry that literal plugin tuple instead of the widened array type — see "Typed `auth.api.*` reads" below.
 - Returns `{ handler, signIn, signOut, ... }` - Better-auth methods
 
 ### Client (`src/client/index.ts`)
@@ -390,6 +390,43 @@ internally, exported standalone — see ADR-0014 and root `CLAUDE.md`'s
 can't be synchronous. It gives an incremental path onto `createAuth()`: adopt
 the builder first, then fold options into `betterAuthOptions` above as the
 stack grows first-class config for them.
+
+**Typed `auth.api.*` reads.** Called with just `(config, context)`, both
+`buildBetterAuthOptions()` and `createAuth()` return the widened
+`BetterAuthOptions` / `Auth<BetterAuthOptions>` — better-auth infers plugin
+endpoints and a `customSession()`'s replaced session shape from the _literal_
+options type, so the widened form erases them (an `emailOTP()` plugin loses
+`auth.api.signInEmailOTP`; `auth.api.getSession()` falls back to `{ user,
+session }` instead of a `customSession()` shape). Both functions take the
+app's `betterAuthPlugins` array — the exact same array passed to
+`authPlugin({ betterAuthPlugins })` — as an optional third argument, and their
+return type then carries that literal tuple (plus the `nextCookies()` the
+stack always appends last) instead of the widened array type:
+
+```typescript
+export const appBetterAuthPlugins = [emailOTP({ sendVerificationOTP })] // same array passed to authPlugin({ betterAuthPlugins })
+
+export const auth = betterAuth({
+  ...(await buildBetterAuthOptions(config, rawOpensaasContext, appBetterAuthPlugins)),
+})
+// auth.api.signInEmailOTP is now typed.
+```
+
+The supplied tuple is for typing only — the plugin array used at runtime is
+always the one resolved from `authPlugin({ betterAuthPlugins })` — so both
+functions verify the supplied tuple is the same plugin instances in the same
+order as the resolved array, throwing a prefixed error naming the mismatch if
+not (`assertPluginTupleMatchesResolved` in `src/server/index.ts`). This is
+what closes the drift hole a hand-rolled re-pass of the plugin array would
+otherwise open.
+
+`createAuth()`'s lazy `Proxy` does not behave identically to a real `Auth`
+instance for every property regardless of which form you use — every access,
+including a non-function property, is surfaced through an `async` wrapper (so
+`auth.options` reads back as a `Promise`, not the plain object a real
+instance returns synchronously). Reach for `buildBetterAuthOptions()` plus
+`betterAuth()` instead when the app reads `auth.api.*` in typed code — it
+constructs a real instance and does not have this gap.
 
 ## Integration Points
 
