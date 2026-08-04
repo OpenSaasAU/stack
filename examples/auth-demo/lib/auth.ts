@@ -1,4 +1,6 @@
-import { createAuth } from '@opensaas/stack-auth/server'
+import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
+import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import { headers } from 'next/headers'
 import { rawOpensaasContext } from '@/.opensaas/context'
@@ -10,18 +12,15 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 
 /**
- * Get the current session in OpenSaas format
- * Extracts configured sessionFields from Better Auth session
+ * Get the current session in OpenSaas format. Reads `sessionFields` from the
+ * resolved config at runtime, so changing it doesn't require regenerating
+ * this file. Returns `null` for an anonymous visitor.
  */
-export async function getSession() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
-  return {
-    userId: session?.user?.id,
-    email: session?.user?.email,
-    name: session?.user?.name,
-  }
+export async function getSession(): Promise<Session | null> {
+  const resolvedConfig = await config
+  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
 /**

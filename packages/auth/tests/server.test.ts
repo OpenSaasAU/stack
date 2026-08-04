@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { BetterAuthOptions } from 'better-auth'
 import type { NormalizedAuthConfig } from '../src/config/types.js'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
@@ -606,14 +606,118 @@ describe('getSessionFromAuth', () => {
     expect(result).toBeNull()
   })
 
-  it('returns null when auth.api.getSession throws', async () => {
+  it('propagates an error thrown by the underlying session lookup, distinguishable from no session', async () => {
     const getSession = vi.fn(async () => {
       throw new Error('boom')
     })
     const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
 
-    const result = await getSessionFromAuth(auth, ['userId'], new Headers())
+    await expect(getSessionFromAuth(auth, ['userId'], new Headers())).rejects.toThrow('boom')
+  })
 
-    expect(result).toBeNull()
+  it('resolves the documented happy path unchanged: fields on the user, userId from user.id', async () => {
+    const getSession = vi.fn(async () => ({
+      user: { id: 'user-1', email: 'a@b.com', name: 'Ada' },
+    }))
+    const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+    const result = await getSessionFromAuth(auth, ['userId', 'email', 'name'], new Headers())
+
+    expect(result).toEqual({ userId: 'user-1', email: 'a@b.com', name: 'Ada' })
+  })
+
+  it('projects a customSession shape with no top-level user key instead of reporting anonymous', async () => {
+    // A customSession plugin can fully replace the resolved shape (e.g.
+    // nesting fields under a custom key) and drop the `user` object entirely
+    // — that must still be treated as "a session", not "no session".
+    const getSession = vi.fn(async () => ({
+      email: 'nested@example.com',
+      data: { role: 'admin' },
+    }))
+    const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+    const result = await getSessionFromAuth(auth, ['email'], new Headers())
+
+    expect(result).not.toBeNull()
+    expect(result).toEqual({ email: 'nested@example.com' })
+  })
+
+  it('resolves a field living on the session sub-object, not just the user', async () => {
+    const getSession = vi.fn(async () => ({
+      user: { id: 'user-1' },
+      session: { impersonatedBy: 'admin-1' },
+    }))
+    const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+    const result = await getSessionFromAuth(auth, ['userId', 'impersonatedBy'], new Headers())
+
+    expect(result).toEqual({ userId: 'user-1', impersonatedBy: 'admin-1' })
+  })
+
+  describe('resolution precedence', () => {
+    it('prefers a top-level key over the same name on user or session (deliberate collision)', async () => {
+      const getSession = vi.fn(async () => ({
+        role: 'top-level-role',
+        user: { role: 'user-role' },
+        session: { role: 'session-role' },
+      }))
+      const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+      const result = await getSessionFromAuth(auth, ['role'], new Headers())
+
+      expect(result).toEqual({ role: 'top-level-role' })
+    })
+
+    it('prefers the user object over the session sub-object when there is no top-level key', async () => {
+      const getSession = vi.fn(async () => ({
+        user: { role: 'user-role' },
+        session: { role: 'session-role' },
+      }))
+      const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+      const result = await getSessionFromAuth(auth, ['role'], new Headers())
+
+      expect(result).toEqual({ role: 'user-role' })
+    })
+  })
+
+  // The warn-once cache is module-level state, so these tests re-import the
+  // module fresh via vi.resetModules() — same pattern as the `select` no-op
+  // warning tests in packages/core/tests/context.test.ts.
+  describe('unresolved field warning', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>
+    let freshGetSessionFromAuth: typeof getSessionFromAuth
+
+    beforeEach(async () => {
+      vi.resetModules()
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const mod = await import('../src/server/index.js')
+      freshGetSessionFromAuth = mod.getSessionFromAuth
+    })
+
+    afterEach(() => {
+      warnSpy.mockRestore()
+    })
+
+    it('omits an unresolvable field, warns once naming it, and does not throw', async () => {
+      const getSession = vi.fn(async () => ({ user: { id: 'user-1' } }))
+      const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+      const result = await freshGetSessionFromAuth(auth, ['userId', 'nickname'], new Headers())
+
+      expect(result).toEqual({ userId: 'user-1' })
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0][0]).toContain('"nickname"')
+    })
+
+    it('does not warn again for the same field on a second call', async () => {
+      const getSession = vi.fn(async () => ({ user: { id: 'user-1' } }))
+      const auth = { api: { getSession } } as unknown as Parameters<typeof getSessionFromAuth>[0]
+
+      await freshGetSessionFromAuth(auth, ['nickname'], new Headers())
+      await freshGetSessionFromAuth(auth, ['nickname'], new Headers())
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
   })
 })

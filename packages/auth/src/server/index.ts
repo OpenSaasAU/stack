@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
 import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
@@ -475,41 +475,121 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
 }
 
 /**
- * Get session from better-auth and transform it to OpenSaas session format.
+ * Field names already warned about failing to resolve against a session, so a
+ * given field warns at most once per process rather than once per request.
+ */
+const unresolvedSessionFieldWarnings = new Set<string>()
+
+/**
+ * Warn (once per field, per process) that a `sessionFields` entry could not
+ * be resolved from the session shape `auth.api.getSession()` actually
+ * returned — naming the field and what keys were available to check, so the
+ * gap is visible here instead of surfacing later as an access-control
+ * function silently reading `undefined`.
+ */
+function warnUnresolvedSessionField(field: string, resolvedSession: Record<string, unknown>): void {
+  if (unresolvedSessionFieldWarnings.has(field)) return
+  unresolvedSessionFieldWarnings.add(field)
+
+  const user = isPlainObject(resolvedSession.user) ? resolvedSession.user : undefined
+  const sessionRow = isPlainObject(resolvedSession.session) ? resolvedSession.session : undefined
+
+  console.warn(
+    `[@opensaas/stack-auth] sessionFields: "${field}" was not found on the resolved session. ` +
+      `Checked its top-level keys (${Object.keys(resolvedSession).join(', ') || 'none'}), ` +
+      `its "user" object (${user ? Object.keys(user).join(', ') || 'none' : 'not present'}), ` +
+      `and its "session" object (${sessionRow ? Object.keys(sessionRow).join(', ') || 'none' : 'not present'}). ` +
+      `The field is omitted from the projected session. A \`customSession\` plugin that nests this ` +
+      `value elsewhere is the app's own to reconcile — see the \`sessionFields\` reference. ` +
+      `This warning will not repeat for "${field}".`,
+  )
+}
+
+/**
+ * Resolve a single `sessionFields` entry off the resolved better-auth
+ * session (whatever `auth.api.getSession()` returned — the default `{
+ * session, user }` shape, or a `customSession` plugin's replaced shape).
  *
- * Not called by any generated code today — apps currently hand-roll this same
- * transform against `auth.api.getSession({ headers: await headers() })` (see
- * `examples/starter-auth/lib/auth.ts`). Exported as a reusable helper for that
- * pattern; pass the caller's request headers (e.g. Next.js `await headers()`
- * in a Server Component/action) so a session cookie can actually be resolved.
+ * `userId` is special-cased to the authenticated user's `id` — the
+ * documented default apps depend on. Every other name resolves against a
+ * fixed precedence so a collision between sources is predictable rather
+ * than incidental: a top-level key on the resolved session object, then the
+ * `user` object, then the `session` sub-object.
+ */
+function resolveSessionField(
+  field: string,
+  resolvedSession: Record<string, unknown>,
+): { found: true; value: unknown } | { found: false } {
+  const user = isPlainObject(resolvedSession.user) ? resolvedSession.user : undefined
+
+  if (field === 'userId') {
+    return user && 'id' in user ? { found: true, value: user.id } : { found: false }
+  }
+
+  if (field in resolvedSession) {
+    return { found: true, value: resolvedSession[field] }
+  }
+  if (user && field in user) {
+    return { found: true, value: user[field] }
+  }
+  const sessionRow = isPlainObject(resolvedSession.session) ? resolvedSession.session : undefined
+  if (sessionRow && field in sessionRow) {
+    return { found: true, value: sessionRow[field] }
+  }
+  return { found: false }
+}
+
+/**
+ * Get session from better-auth and transform it to OpenSaas session format —
+ * a flattened projection of `sessionFields` off the *resolved* session
+ * object, not just its `user` sub-object. This is what makes a
+ * `customSession` plugin's fields (added at the top level, or a
+ * session-only field like the admin plugin's `impersonatedBy`) reachable.
+ * See the `sessionFields` reference for the resolution precedence.
+ *
+ * Returns `null` only when there is genuinely no session — a resolved
+ * session with no `user` key (a `customSession` plugin that dropped it) is
+ * still a session and still gets projected, never misreported as anonymous.
+ * A listed field that can't be resolved from the session shape is omitted
+ * and warns once per field per process (see `warnUnresolvedSessionField`)
+ * instead of silently vanishing into an access-control function reading
+ * `undefined`.
+ *
+ * Errors from the underlying `auth.api.getSession()` call propagate rather
+ * than becoming `null` — collapsing a lookup failure (e.g. a session-store
+ * outage) into "anonymous" is indistinguishable from a mass sign-out under
+ * fail-closed access control, so the caller must see it.
+ *
+ * Not called by any generated code before this helper existed — apps used to
+ * hand-roll this same transform against `auth.api.getSession({ headers:
+ * await headers() })`. Exported as the single reusable implementation; pass
+ * the caller's request headers (e.g. Next.js `await headers()` in a Server
+ * Component/action) so a session cookie can actually be resolved.
  */
 export async function getSessionFromAuth(
   auth: ReturnType<typeof betterAuth>,
   sessionFields: string[],
   headers: Headers,
-) {
-  try {
-    const session = await auth.api.getSession({ headers })
+): Promise<Session | null> {
+  const resolvedSession = await auth.api.getSession({ headers })
 
-    if (!session?.user) {
-      return null
-    }
-
-    // Build session object with requested fields
-    const result: Record<string, unknown> = {}
-
-    for (const field of sessionFields) {
-      if (field === 'userId') {
-        result.userId = session.user.id
-      } else if (field in session.user) {
-        result[field] = session.user[field as keyof typeof session.user]
-      }
-    }
-
-    return result
-  } catch {
+  if (!resolvedSession) {
     return null
   }
+
+  const resolvedSessionRecord = resolvedSession as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+
+  for (const field of sessionFields) {
+    const resolved = resolveSessionField(field, resolvedSessionRecord)
+    if (resolved.found) {
+      result[field] = resolved.value
+    } else {
+      warnUnresolvedSessionField(field, resolvedSessionRecord)
+    }
+  }
+
+  return result
 }
 
 export type { BetterAuthOptions }

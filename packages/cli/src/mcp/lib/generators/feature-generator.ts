@@ -172,7 +172,9 @@ export default config({
       path: 'lib/auth.ts',
       language: 'typescript',
       description: 'Better-auth server instance and session helper',
-      content: `import { createAuth } from '@opensaas/stack-auth/server'
+      content: `import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
+import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+import type { Session } from '@opensaas/stack-core'
 import { headers } from 'next/headers'
 import config from '../opensaas.config'
 import { rawOpensaasContext } from '@/.opensaas/context'
@@ -180,16 +182,15 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 
 /**
- * Get the current session in OpenSaas format (the configured sessionFields).
+ * Get the current session in OpenSaas format. Reads \`sessionFields\` from the
+ * resolved config at runtime, so changing it doesn't require regenerating
+ * this file.
  */
-export async function getSession() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || !session.user) return null
-  return {
-    userId: session.user.id,
-    email: session.user.email,
-    name: session.user.name,${hasRoles ? `\n    role: (session.user as { role?: string }).role,` : ''}
-  }
+export async function getSession(): Promise<Session | null> {
+  const resolvedConfig = await config
+  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
 export const GET = auth.handler
