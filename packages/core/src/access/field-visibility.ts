@@ -225,7 +225,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     }
 
     // Handle relationship fields - recursively filter fields within related items
-    // Note: Access control filtering is now done at database level via buildIncludeWithAccessControl
+    // Note: Access control filtering is now done at database level via buildAccessScopedInclude
     // This only handles field-level access (hiding sensitive fields)
     //
     // Deliberately uncapped: the row/relation scoping in access-filter.ts bounds

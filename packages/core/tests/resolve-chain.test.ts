@@ -331,7 +331,7 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     expect(observedLengths.sort()).toEqual([1, 1, 1])
   })
 
-  it('an unrelated top-level read in flight alongside a hook still gets its full explicit include scoped', async () => {
+  it('an unrelated top-level read in flight alongside a hook still gets its own explicit include scoped', async () => {
     let releaseSlowHook: () => void = () => {}
 
     const config: OpenSaasConfig = {
@@ -389,21 +389,21 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     // While the slow hook is still in flight, issue a plain top-level read
-    // that has nothing to do with it. A bare read fetches scalars only
-    // (ADR-0024), so name `child` explicitly — a caller include naming a
-    // relation BARE (`true`, no nested include of its own) still picks up the
-    // access-controlled include for whatever lies beneath it.
-    const fastPromise = context.db.fast.findMany({ include: { child: true } })
+    // that has nothing to do with it, explicitly naming a nested path two
+    // levels deep (child → grandchild) — the "One hop" rule (ADR-0026) means
+    // reaching grandchild requires naming it, which this request does.
+    const fastPromise = context.db.fast.findMany({
+      include: { child: { include: { grandchild: true } } },
+    })
 
     await fastPromise
     releaseSlowHook()
     await slowPromise
 
-    // The unrelated read's access-controlled scoping must still descend two
-    // levels deep (child → grandchild), not collapse to a bare `{ child: true }`
-    // because it happened to run while a totally different read's hook was
-    // active — `insideResolveOutput` must stay scoped to the hook's OWN
-    // derived context, never leak into a concurrently-running, unrelated one.
+    // The unrelated read's access-controlled scoping must descend exactly as
+    // far as ITS OWN request named, unaffected by a totally different read's
+    // hook being in flight concurrently — no shared, leaking context state
+    // between the two.
     expect(prisma.fast.findMany.mock.calls[0][0].include).toEqual({
       child: { include: { grandchild: true } },
     })

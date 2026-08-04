@@ -15,7 +15,7 @@ import { getDbKey } from '../lib/case-utils.js'
  * per-row query is issued and the count can never include rows the session
  * cannot read. This module is the single place the related list's
  * operation-level `query` access is folded into that `_count`, mirroring how
- * `buildIncludeWithAccessControl` folds it into relation includes.
+ * `buildAccessScopedInclude` folds it into relation includes.
  *
  * It also resolves the count Filter spec's markers: Prisma cannot compare a
  * relation count in a `where`, so a to-many relationship's Filter spec emits a

@@ -1,12 +1,13 @@
 /**
- * Maximum nesting depth of relation `include`s that the Access Filter
- * (`buildIncludeWithAccessControl`) will auto-scope on a read.
+ * Maximum nesting depth of relation `include`s the Access Filter
+ * (`buildAccessScopedInclude`) will scope on a read.
  *
- * Security implication: this is an access-control boundary, not just a cost
- * bound. Past this depth the engine cannot compute a row/field scope for a
- * relation, so a caller-supplied `include` naming a relation at or beyond it
- * must be treated as a denial (see `AccessScopeDepthExceededError`) rather
- * than passed through unscoped — see ADR-0022 and issue #830.
+ * Since ADR-0026 made the read pipeline caller-directed, this is a COST
+ * limit, not an access-control boundary: nothing walks the relationship
+ * graph unprompted anymore, so there is no unscoped tree to fail open on. A
+ * request naming a relation at or beyond this depth still throws
+ * `AccessScopeDepthExceededError` (ADR-0022, issue #830) — the engine
+ * declines to serve a tree this expensive, not because it cannot scope one.
  */
 export const READ_INCLUDE_MAX_DEPTH = 5
 

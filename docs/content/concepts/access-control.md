@@ -23,7 +23,7 @@ Two defaults set the tone:
 
 Writes check operation-level access, filter writable fields, then persist. Reads are a **two-phase** pipeline:
 
-1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for: a read with no `include` (and no fragment `query`) fetches the row's own columns and virtual fields only, matching Prisma's own semantics — see [Queries & Fragments](/docs/concepts/queries).
+1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for, one hop at a time: a read with no `include` (and no fragment `query`) fetches the row's own columns and virtual fields only, matching Prisma's own semantics, and naming a relation fetches that relation's own columns and stops — reaching further means naming further in the `include`. A relation nobody named never has its list's `query` access evaluated at all. See [Queries & Fragments](/docs/concepts/queries).
 2. **Field Visibility** (post-query): on the returned rows, fields the session can't read are removed, `resolveOutput` hooks run, and virtual fields are computed.
 
 In order:
@@ -184,7 +184,7 @@ if (!post) {
 
 ## Nested `include` depth limit
 
-The Access Filter — the pass that scopes relation `include`s before the database is queried — only auto-scopes relationships up to a fixed nesting depth (`READ_INCLUDE_MAX_DEPTH`, currently 5 hops from the list you queried). This is a deliberate exception to the [Silent Failures](#silent-failures) convention above: if a caller-supplied `include` names a relation nested **past** that depth, the engine cannot prove the read is row- and field-scoped, so instead of returning it anyway (which would silently bypass access control) it throws `AccessScopeDepthExceededError`:
+The Access Filter — the pass that scopes relation `include`s before the database is queried — only scopes an `include` up to a fixed nesting depth (`READ_INCLUDE_MAX_DEPTH`, currently 5 hops from the list you queried). This is a cost limit, not an inability to scope: since the walk only ever follows branches a request itself names, there is no unscoped subtree to fail open on past the cap. If a caller-supplied `include` names a relation nested **past** that depth, the engine declines to serve a tree this expensive rather than serving it anyway, so it throws `AccessScopeDepthExceededError`:
 
 ```typescript
 import { AccessScopeDepthExceededError } from '@opensaas/stack-core'

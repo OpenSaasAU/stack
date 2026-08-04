@@ -123,7 +123,7 @@ describe('Relationship Access Control', () => {
         expect(result.author?.name).toBe('John Doe')
       })
 
-      it('should filter out single relationship when access denied (via buildIncludeWithAccessControl)', async () => {
+      it('should filter out single relationship when access denied (via buildAccessScopedInclude)', async () => {
         const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
@@ -152,16 +152,18 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        // Test that buildIncludeWithAccessControl excludes the denied relationship
-        const { buildIncludeWithAccessControl } = await import('../src/access/index.js')
+        // Test that buildAccessScopedInclude excludes the denied relationship
+        const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const include = await buildIncludeWithAccessControl(
+        const include = await buildAccessScopedInclude(
+          { author: true },
           config.lists.Post.fields,
           {
             session: null,
             context: mockContext,
           },
           config,
+          'Post',
         )
 
         // When access is denied, the relationship should not be included
@@ -286,7 +288,7 @@ describe('Relationship Access Control', () => {
         expect(result.posts?.[1].title).toBe('Post 2')
       })
 
-      it('should filter items in many relationships based on query access (via buildIncludeWithAccessControl)', async () => {
+      it('should filter items in many relationships based on query access (via buildAccessScopedInclude)', async () => {
         const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
@@ -318,19 +320,19 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        // Test that buildIncludeWithAccessControl creates the right where clause
-        const { buildIncludeWithAccessControl, toPrismaInclude } =
-          await import('../src/access/index.js')
+        // Test that buildAccessScopedInclude creates the right where clause
+        const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const result = await buildIncludeWithAccessControl(
+        const include = await buildAccessScopedInclude(
+          { posts: true },
           config.lists.User.fields,
           {
             session: null,
             context: mockContext,
           },
           config,
+          'User',
         )
-        const include = toPrismaInclude(result)
 
         // Should include posts with a where filter
         expect(include).toBeDefined()
@@ -452,7 +454,7 @@ describe('Relationship Access Control', () => {
     })
 
     describe('session-based access for relationships', () => {
-      it('should apply session-based access to relationships (via buildIncludeWithAccessControl)', async () => {
+      it('should apply session-based access to relationships (via buildAccessScopedInclude)', async () => {
         const config: OpenSaasConfig = {
           db: {
             provider: 'postgresql',
@@ -487,19 +489,19 @@ describe('Relationship Access Control', () => {
           },
         }
 
-        // Test that buildIncludeWithAccessControl creates session-based where clause
-        const { buildIncludeWithAccessControl, toPrismaInclude } =
-          await import('../src/access/index.js')
+        // Test that buildAccessScopedInclude creates session-based where clause
+        const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const result = await buildIncludeWithAccessControl(
+        const include = await buildAccessScopedInclude(
+          { posts: true },
           config.lists.User.fields,
           {
             session: { userId: '1' },
             context: mockContext,
           },
           config,
+          'User',
         )
-        const include = toPrismaInclude(result)
 
         // Should include posts with session-based where filter
         expect(include).toBeDefined()

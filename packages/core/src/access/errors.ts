@@ -2,15 +2,19 @@ import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 
 /**
  * Thrown when a caller-supplied `include` names a relation nested deeper than
- * the Access Filter can scope (see `READ_INCLUDE_MAX_DEPTH`). Deliberately
- * distinct from `ValidationError`: this is not bad user input, it is the
- * engine refusing to return data it cannot prove is row/field scoped. Code
- * that catches `ValidationError` to report form errors must not silently
- * swallow this.
+ * `READ_INCLUDE_MAX_DEPTH`. Deliberately distinct from `ValidationError`: this
+ * is not bad user input, it is the engine declining to serve a tree this
+ * expensive. Code that catches `ValidationError` to report form errors must
+ * not silently swallow this.
  *
- * Only an explicit caller selection past the depth cap triggers this — the
- * auto-include silently stopping at the cap (no caller `include` involved)
- * never throws. See ADR-0022 and issue #830.
+ * Only an explicit request naming something at or past the cap triggers this
+ * — a read that simply doesn't reach this deep never throws. Before
+ * ADR-0026 made the read pipeline caller-directed, this cap was the engine's
+ * last line of defense against returning a relation it could not prove was
+ * row/field scoped (ADR-0022, issue #830); a request naming anything at this
+ * depth is now scoped exactly like every other named relation; the cap
+ * exists solely to bound how deep a request may cost the engine to serve. See
+ * ADR-0026 and `docs/adr/0022-access-control-fails-closed-when-it-cannot-scope.md`.
  */
 export class AccessScopeDepthExceededError extends Error {
   public listKey: string
@@ -19,10 +23,10 @@ export class AccessScopeDepthExceededError extends Error {
 
   constructor(listKey: string, fieldKey: string, depth: number) {
     super(
-      `Cannot compute an access scope for "${listKey}.${fieldKey}" at include depth ${depth}: ` +
-        `this exceeds the Access Filter's maximum read-include depth (${READ_INCLUDE_MAX_DEPTH}). ` +
-        `A caller-supplied include this deep cannot be row- and field-scoped, so the read is denied ` +
-        `rather than returned unscoped. Restructure the query to fetch this relation separately.`,
+      `Cannot include "${listKey}.${fieldKey}" at include depth ${depth}: this exceeds the read ` +
+        `pipeline's maximum include depth (${READ_INCLUDE_MAX_DEPTH}). This is a cost limit, not an ` +
+        `inability to scope — the engine declines to serve a tree this deep rather than returning ` +
+        `it. Restructure the query to fetch this relation separately.`,
     )
     this.name = 'AccessScopeDepthExceededError'
     this.listKey = listKey
