@@ -12,8 +12,8 @@ import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
-import { buildInclude, pickFields, isFragment } from '../query/index.js'
-import type { FieldSelection } from '../query/index.js'
+import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
+import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -926,6 +926,13 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
  * stays on the exact ADR-0024 path — `include: undefined`, no related
  * `query` access evaluated — unless folding actually added something, which
  * only happens when a field on this list declares `needs`.
+ *
+ * Also returns the `FieldSelectionScope` a fragment's own field selection
+ * produces (ADR-0027), so the caller can pass it to `filterReadableFields`
+ * and make computation itself projection-aware, not only the fold above.
+ * `undefined` for every non-fragment path: a caller `include` (sudo or not)
+ * and a bare read both mean "compute every field," matching what they
+ * already fetch.
  */
 async function resolveReadInclude(
   callerInclude: Record<string, unknown> | undefined,
@@ -935,19 +942,33 @@ async function resolveReadInclude(
   listConfig: ListConfig<any>,
   context: AccessContext & { _isSudo?: boolean },
   config: OpenSaasConfig,
-): Promise<{ include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree }> {
+): Promise<{
+  include: Record<string, unknown> | undefined
+  declaredOnly: DeclaredOnlyTree
+  selection: FieldSelectionScope | undefined
+}> {
   if (fragmentFields !== undefined) {
     const fragmentInclude = buildInclude(fragmentFields) ?? undefined
-    return foldDeclaredDependencies(fragmentInclude, listConfig.fields, config, listName)
+    const selection = buildFieldSelectionScope(fragmentFields)
+    const folded = foldDeclaredDependencies(
+      fragmentInclude,
+      listConfig.fields,
+      config,
+      listName,
+      [listName],
+      selection,
+    )
+    return { ...folded, selection }
   }
 
   if (context._isSudo) {
-    return foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
+    const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
+    return { ...folded, selection: undefined }
   }
 
   const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
   if (!folded.include) {
-    return folded
+    return { ...folded, selection: undefined }
   }
 
   const include = await buildAccessScopedInclude(
@@ -957,7 +978,7 @@ async function resolveReadInclude(
     config,
     listName,
   )
-  return { include, declaredOnly: folded.declaredOnly }
+  return { include, declaredOnly: folded.declaredOnly, selection: undefined }
 }
 
 /**
@@ -1023,7 +1044,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly } = await resolveReadInclude(
+    let { include, declaredOnly, selection } = await resolveReadInclude(
       args.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1035,8 +1056,10 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // Virtual fields have no database column. Whichever path produced
     // `include` (fragment, access-controlled merge, or sudo passthrough), a
     // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). The virtual value is still computed unconditionally below by
-    // `filterReadableFields`, independent of what was requested here.
+    // (#628). Below, `filterReadableFields` computes a virtual field's value
+    // exactly when `selection` says the read is going to return it (ADR-0027)
+    // — every one of them for a bare/`include`-based read (`selection` is
+    // `undefined`), only the ones a fragment named otherwise.
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Execute query with optimized includes
@@ -1065,6 +1088,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       0,
       listName,
       declaredOnly,
+      selection,
     )
 
     // When a fragment is provided, pick only the requested fields from the result
@@ -1136,7 +1160,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly } = await resolveReadInclude(
+    let { include, declaredOnly, selection } = await resolveReadInclude(
       args?.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1148,8 +1172,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Virtual fields have no database column. Whichever path produced
     // `include` (fragment, access-controlled merge, or sudo passthrough), a
     // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). The virtual value is still computed unconditionally below by
-    // `filterReadableFields`, independent of what was requested here.
+    // (#628). Below, `filterReadableFields` computes a virtual field's value
+    // exactly when `selection` says the read is going to return it (ADR-0027)
+    // — every one of them for a bare/`include`-based read (`selection` is
+    // `undefined`), only the ones a fragment named otherwise.
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Execute query with optimized includes
@@ -1179,6 +1205,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           0,
           listName,
           declaredOnly,
+          selection,
         ),
       ),
     )
@@ -1452,7 +1479,7 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly } = await resolveReadInclude(
+    let { include, declaredOnly, selection } = await resolveReadInclude(
       args?.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1484,6 +1511,7 @@ function createGet<TPrisma extends PrismaClientLike>(
         0,
         listName,
         declaredOnly,
+        selection,
       )
       // When a fragment is provided, pick only the requested fields from the result
       if (fragment) {

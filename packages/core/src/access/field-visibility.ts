@@ -6,6 +6,7 @@ import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
 import type { DeclaredOnlyTree } from './declared-dependencies.js'
 import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
+import type { FieldSelectionScope } from '../query/index.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -22,6 +23,14 @@ import { buildDbDelegate } from '../context/index.js'
  * evaluator in `field-access.ts`), runs `resolveOutput` hooks, and computes
  * virtual fields. None of this can move into phase 1: virtual fields are
  * computed in JavaScript and field access can depend on the fetched row.
+ *
+ * A computed field — any field carrying a `resolveOutput` hook, virtual or
+ * not — is produced only where the read is going to return it (ADR-0027). A
+ * fragment `query`'s own field selection is the only thing that restricts a
+ * level this way; a bare or `include`-based read, and any relation reached
+ * purely to satisfy a `needs` declaration, still compute every field, as
+ * before. A field the read is not going to return does no work at all —
+ * neither its read-access evaluation nor its hook.
  *
  * Phase 1 (pre-query row/relation scoping) lives in `access-filter.ts`. See
  * `docs/adr/0001-access-control-is-a-two-phase-read.md` and the access-control
@@ -96,8 +105,11 @@ function deriveResolveOutputContext(
  * from the result.
  *
  * `accessItem` is the row used to evaluate field access; `hookItem` is the
- * object passed to the hook as `item` (these differ for virtual fields, which
- * see the already-filtered output so they can read sibling fields).
+ * object passed to the hook as `item`. For a stored field, both are
+ * `workingItem` (the row's own stored/fetched columns). For a virtual field,
+ * `hookItem` is `computedFieldItem` instead — the same stored columns with
+ * every skipped-or-denied key removed — so it never sees another computed
+ * field's resolved value (ADR-0027).
  */
 async function resolveReadableFieldValue(params: {
   fieldConfig: FieldConfig | undefined
@@ -189,6 +201,13 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // returned — after resolveOutput has had a chance to read them — so a
   // declared dependency never widens what the caller receives.
   declaredOnly: DeclaredOnlyTree = emptyDeclaredOnlyTree(),
+  // The fragment scope this level was reached under (ADR-0027), and the same
+  // tree one level down for each nested relation. `undefined` — the default,
+  // and what a bare/`include`-based read passes at every level — means
+  // unrestricted: every field on the list is computed, unchanged from
+  // before ADR-0027. Only a `query` fragment's own field selection ever
+  // restricts a level.
+  selection?: FieldSelectionScope,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -214,6 +233,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     workingItem[fieldName] = assembled
   }
 
+  // Keys denied by field-level read access during the pass below — as opposed
+  // to a key merely skipped by `selection` or held back only for
+  // `declaredOnly` stripping. Tracked separately because a denied key must
+  // stay invisible to a computed field's hook (below), while a declared-only
+  // key must stay VISIBLE to one — that is the entire point of declaring it
+  // (ADR-0025) — even though `selection` above skipped adding it to
+  // `filtered` because the caller's fragment never asked for it.
+  const accessDeniedKeys = new Set<string>()
+
   // Process existing fields from the database result
   for (const [fieldName, value] of Object.entries(workingItem)) {
     const fieldConfig = fieldConfigs[fieldName]
@@ -221,6 +249,17 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // Always include id, createdAt, updatedAt
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
       filtered[fieldName] = value
+      continue
+    }
+
+    // Projection-aware skip (ADR-0027): a fragment read that does not select
+    // this field does no work for it at all — no field-level read-access
+    // check, no resolveOutput, no recursion into a relation — because the
+    // read is never going to return it. `selection` is only ever restricted
+    // by a fragment's own field selection; a bare/`include`-based read, and a
+    // relation reached only to satisfy another field's `needs`, pass no
+    // selection at all and compute every field here, unchanged.
+    if (selection?.fields && !selection.fields.has(fieldName)) {
       continue
     }
 
@@ -251,6 +290,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       })
 
       if (!canRead) {
+        accessDeniedKeys.add(fieldName)
         continue
       }
 
@@ -260,6 +300,12 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // back to an empty tree when this relation isn't declaration-related at
       // all — the common case.
       const nestedDeclaredOnly = declaredOnly.nested[fieldName] ?? emptyDeclaredOnlyTree()
+      // This relation's own fragment scope, if the caller's fragment named it
+      // with a nested Fragment/RelationSelector. `undefined` (a bare `true`
+      // selector, or no `selection` at all) means the nested list computes
+      // unrestricted — matching what naming a relation without narrowing it
+      // further has always meant.
+      const nestedSelection = selection?.nested[fieldName]
 
       if (relatedConfig) {
         // For many relationships (arrays) - recursively filter fields in each item
@@ -275,6 +321,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 depth + 1,
                 relatedConfig.listName,
                 nestedDeclaredOnly,
+                nestedSelection,
               ),
             ),
           )
@@ -290,6 +337,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
             depth + 1,
             relatedConfig.listName,
             nestedDeclaredOnly,
+            nestedSelection,
           )
         }
       } else {
@@ -314,7 +362,36 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
     if (result.readable) {
       filtered[fieldName] = result.value
+    } else {
+      accessDeniedKeys.add(fieldName)
     }
+  }
+
+  // The item a virtual field's hook sees: stored columns and fetched
+  // relations (from `workingItem`, never a resolved value — no hook's output
+  // is ever written back into `workingItem`). A key is visible here if it
+  // either survived into `filtered` (selected and allowed) OR exists only to
+  // satisfy a `needs` declaration (`declaredOnly` — that IS the point of
+  // declaring it: fetched for a hook, never for the caller, ADR-0025).
+  // Everything else — field-level denied, or skipped by `selection` and
+  // declared by no one — is deleted. A computed field reaches for exactly its
+  // own declared dependencies and nothing another field's hook produced
+  // (ADR-0027): reaching for a sibling that was denied or skipped-and-
+  // undeclared finds nothing there, the same as reaching for one never
+  // declared at all, and reaching for a sibling that DID survive finds its
+  // raw stored form, never another hook's resolved value — a virtual field
+  // computed earlier in declaration order is exactly as invisible as one
+  // computed later.
+  const computedFieldItem: Record<string, unknown> = { ...workingItem }
+  for (const key of Object.keys(workingItem)) {
+    if (['id', 'createdAt', 'updatedAt'].includes(key)) continue
+    if (accessDeniedKeys.has(key)) {
+      delete computedFieldItem[key]
+      continue
+    }
+    if (key in filtered) continue
+    if (declaredOnly.keys.has(key)) continue
+    delete computedFieldItem[key]
   }
 
   // Process virtual fields - compute values from other fields
@@ -330,22 +407,29 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Virtual fields must have a resolveOutput hook to compute their value;
-    // without one there is nothing to add to the result.
-    if (!(fieldConfig.hooks?.resolveOutput && listKey)) {
-      // Still evaluate read access to preserve any access-fn side effects.
-      await checkFieldAccess(fieldConfig.access, 'read', { ...args, item: workingItem })
+    // Projection-aware skip (ADR-0027): same rule as the stored-field pass
+    // above — a fragment that does not select this virtual field does no
+    // work for it at all.
+    if (selection?.fields && !selection.fields.has(fieldName)) {
       continue
     }
 
-    // Check read access and compute the value via the shared helper. Virtual
-    // fields see the already-filtered item so they can read sibling fields.
+    // A virtual field with no resolveOutput hook can never produce a value
+    // on ANY read — there is nothing to compute, so there is nothing to do,
+    // including evaluating its read access (ADR-0027 reconciles the
+    // access-only evaluation this branch used to preserve: a field that
+    // never has output has no side effect worth preserving access for).
+    if (!(fieldConfig.hooks?.resolveOutput && listKey)) {
+      continue
+    }
+
+    // Check read access and compute the value via the shared helper.
     const result = await resolveReadableFieldValue({
       fieldConfig,
       fieldName,
       value: undefined, // Virtual fields don't have a database value
       accessItem: workingItem,
-      hookItem: filtered,
+      hookItem: computedFieldItem,
       listKey,
       args,
       config,
@@ -357,10 +441,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   }
 
   // Strip relations that were fetched ONLY to satisfy a `needs` declaration
-  // (ADR-0025), now that every resolveOutput hook at this level — including
-  // virtual fields, which read the assembled `filtered` object above — has
-  // had the chance to see them. A declared dependency is private plumbing,
-  // not an implicit `include`: it never widens what the caller receives.
+  // (ADR-0025), now that every resolveOutput hook at this level has had the
+  // chance to see them (via `computedFieldItem`, never `filtered` itself — a
+  // declared dependency is read from stored columns, not from another
+  // field's resolved output). A declared dependency is private plumbing, not
+  // an implicit `include`: it never widens what the caller receives.
   for (const key of declaredOnly.keys) {
     delete filtered[key]
   }

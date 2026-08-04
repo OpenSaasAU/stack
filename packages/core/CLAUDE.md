@@ -261,6 +261,14 @@ The read pipeline is **caller-directed**: `buildAccessScopedInclude` walks only 
 
 A computed field's declared dependency (`needs`, ADR-0025, below) folds in at **every** relation it's reached through, including one added purely to satisfy another field's own `needs` — the fold recurses through `foldDeclaredDependencies` rather than riding a caller-named relation's auto-expanded subtree, since nothing auto-expands anymore. See `docs/adr/0026-naming-a-relation-fetches-its-columns-not-its-subtree.md`.
 
+### A Computed Field Runs Only When It Is Going To Be Returned (ADR-0027)
+
+A computed field — any field carrying a `resolveOutput` hook, virtual or not — is computed **if and only if the read is actually going to return it**, and its declared relations (`needs`) are fetched under exactly the same condition. A fragment `query` selecting three fields runs only those three fields' hooks (and folds only their `needs`); a field it doesn't select does no work at all — neither its field-level `read` access nor its hook runs. This is **projection-aware, never access-aware**: a fragment's own field selection is the only thing that restricts a level this way. A bare read or an `include`-based read is unaffected — every computed field on the list still computes, exactly as before, since neither ever had a narrower field selection to restrict by. The rule applies at every nesting level: a nested fragment selecting a subset computes only that subset there; a nested `include` still computes every computed field at that level.
+
+**A computed field's hook never sees another computed field's resolved output**, on any read path — only the row's stored columns and its own declared dependencies. A sibling field that was skipped (unselected by a fragment) or denied by field-level access is absent from what the hook sees, never present holding its raw pre-hook value — reaching for it finds nothing there, the same as reaching for a relation never declared via `needs`. Before this, a virtual field received the already-assembled, already-resolved object, so a virtual field could accidentally read an earlier-declared virtual's resolved value purely by declaration order; reordering two such fields silently changed the result. That accidental coupling is gone: recompute from the stored columns both fields share instead.
+
+A hookless virtual field (one with `access.read` but no `resolveOutput`) has its read access evaluated on no read at all — such a field can never produce output, so there's nothing to preserve access side effects for. See `docs/adr/0027-a-computed-field-runs-only-when-it-is-going-to-be-returned.md` and the "Computed field" glossary entry in `CONTEXT.md`.
+
 ### Context Type Safety
 
 Context uses generic typing to preserve Prisma types:
@@ -412,13 +420,13 @@ User: list({
 
 // Usage
 const user = await context.db.user.findUnique({ where: { id } })
-console.log(user.fullName) // "John Doe" — computed via resolveOutput on every read
+console.log(user.fullName) // "John Doe" — computed via resolveOutput whenever the read returns it
 ```
 
 **Key characteristics:**
 
 - Not stored in database (no Prisma column created)
-- Computed via `resolveOutput` on every read (`select` is not honoured — narrow with `include`/fragment `query`)
+- Computed via `resolveOutput` on every bare/`include`-based read; on a fragment `query` read, only when the fragment selects it (ADR-0027) — `select` is still not honoured, narrow with `include`/fragment `query`
 - Must provide `type` (TypeScript type string) and `resolveOutput` hook
 - Can optionally provide `resolveInput` for write side effects
 - Useful for derived values, computed properties, and external API sync

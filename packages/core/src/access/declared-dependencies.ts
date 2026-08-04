@@ -1,5 +1,6 @@
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { getRelatedListConfig } from './engine.js'
+import type { FieldSelectionScope } from '../query/index.js'
 
 /**
  * Declared Dependencies — folding a computed field's `needs` into a read's
@@ -102,11 +103,22 @@ function getExplicitInclude(value: unknown): Record<string, unknown> | undefined
  * list that have a `resolveOutput` hook. A `needs` entry on a field without
  * one is inert — there is no hook to feed it to — so it contributes nothing
  * to fetch.
+ *
+ * `selectedFields`, when given, restricts the union to fields the read is
+ * actually going to return (ADR-0027) — a field a fragment did not select is
+ * never computed, so its declared relation is never fetched for it either.
+ * `undefined` means unrestricted: every field with a hook contributes,
+ * matching a bare or `include`-based read, which always returns every
+ * computed field on the list.
  */
-export function getDeclaredRelationNames(fieldConfigs: Record<string, FieldConfig>): string[] {
+export function getDeclaredRelationNames(
+  fieldConfigs: Record<string, FieldConfig>,
+  selectedFields?: ReadonlySet<string>,
+): string[] {
   const names = new Set<string>()
-  for (const fieldConfig of Object.values(fieldConfigs)) {
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (!fieldConfig?.hooks?.resolveOutput) continue
+    if (selectedFields && !selectedFields.has(fieldName)) continue
     for (const name of fieldConfig.needs ?? []) {
       names.add(name)
     }
@@ -127,6 +139,15 @@ export function getDeclaredRelationNames(fieldConfigs: Record<string, FieldConfi
  *
  * `listKey` seeds the cycle guard at the root of a read; recursive calls
  * extend it with each related list reached along THIS fold's own path.
+ *
+ * `selection`, when given, is the fragment scope this level was reached
+ * under (ADR-0027) — only fields it names contribute their `needs` (see
+ * `getDeclaredRelationNames`). It is `undefined` for a bare/`include`-based
+ * read (unrestricted: every field's `needs` folds in, unchanged from before
+ * ADR-0027) and for any branch reached only to satisfy a declaration — a
+ * relation added purely by this fold has no fragment scope of its own, so
+ * its own list folds unrestricted, exactly as it did before selectivity
+ * existed.
  */
 export function foldDeclaredDependencies(
   rawInclude: Record<string, unknown> | undefined,
@@ -134,8 +155,9 @@ export function foldDeclaredDependencies(
   config: OpenSaasConfig,
   listKey: string,
   visitedLists: readonly string[] = [listKey],
+  selection?: FieldSelectionScope,
 ): { include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree } {
-  const declaredNames = getDeclaredRelationNames(fieldConfigs)
+  const declaredNames = getDeclaredRelationNames(fieldConfigs, selection?.fields)
 
   if (declaredNames.length === 0 && !rawInclude) {
     return { include: rawInclude, declaredOnly: emptyDeclaredOnlyTree() }
@@ -166,6 +188,14 @@ export function foldDeclaredDependencies(
     // that merely revisits a list (e.g. `Post → author → posts`).
     if (declaredOnly.keys.has(key) && visitedLists.includes(relatedConfig.listName)) continue
 
+    // A branch added purely by the fold has no fragment scope of its own —
+    // it folds unrestricted, as before ADR-0027. A branch the request itself
+    // named (caller include or fragment) carries that name's own nested
+    // scope, if the fragment gave it one (a bare `true` selector leaves it
+    // `undefined` — also unrestricted, since the caller asked for
+    // "everything" there).
+    const nestedSelection = declaredOnly.keys.has(key) ? undefined : selection?.nested[key]
+
     const explicitNested = getExplicitInclude(value)
     const nested = foldDeclaredDependencies(
       explicitNested,
@@ -173,6 +203,7 @@ export function foldDeclaredDependencies(
       config,
       relatedConfig.listName,
       [...visitedLists, relatedConfig.listName],
+      nestedSelection,
     )
 
     if (nested.include) {

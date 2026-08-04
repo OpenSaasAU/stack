@@ -346,6 +346,59 @@ export function buildInclude(fields: FieldSelection<unknown>): Record<string, un
 }
 
 /**
+ * A snapshot of which field names a fragment selects at one nesting level,
+ * plus the same tree one level down for every relation selected via a nested
+ * Fragment/RelationSelector. `fields: undefined` means "unrestricted" — every
+ * field at this level is going to be returned, which is what a bare or
+ * `include`-based read means for the whole tree (only a `query` fragment ever
+ * produces a restricted scope, and only as deep as it names).
+ *
+ * Used to make computed-field evaluation (`filterReadableFields`) and
+ * declared-dependency folding (`foldDeclaredDependencies`) projection-aware
+ * (ADR-0027): a field not named by the scope at its level is never computed
+ * and its `needs` are never folded, because the read is never going to
+ * return it.
+ * @internal
+ */
+export type FieldSelectionScope = {
+  readonly fields: ReadonlySet<string> | undefined
+  readonly nested: Readonly<Record<string, FieldSelectionScope>>
+}
+
+/**
+ * Build the `FieldSelectionScope` for one fragment's field selection,
+ * recursing into nested Fragment/RelationSelector entries the same way
+ * `buildInclude` does. A relation named with the bare `true` shorthand (no
+ * narrower nested Fragment) gets no entry in `nested`, so a level reached
+ * through it is treated as unrestricted — the caller asked for "everything"
+ * there and gave no narrower shape to restrict it with.
+ * @internal
+ */
+export function buildFieldSelectionScope(fields: FieldSelection<unknown>): FieldSelectionScope {
+  const fieldNames = new Set(Object.keys(fields as Record<string, unknown>))
+  const nested: Record<string, FieldSelectionScope> = {}
+
+  for (const [key, value] of Object.entries(fields as Record<string, unknown>)) {
+    if (value === null || value === true || typeof value !== 'object') continue
+    const val = value as Record<string, unknown>
+
+    if (isFragment(val)) {
+      nested[key] = buildFieldSelectionScope(val._fields as FieldSelection<unknown>)
+      continue
+    }
+
+    if ('query' in val && isFragment(val.query)) {
+      nested[key] = buildFieldSelectionScope(
+        (val.query as Fragment<unknown, FieldSelection<unknown>>)
+          ._fields as FieldSelection<unknown>,
+      )
+    }
+  }
+
+  return { fields: fieldNames, nested }
+}
+
+/**
  * Recursively pick only the fields requested by a fragment from a raw Prisma
  * result object. This ensures the runtime shape exactly matches the type
  * produced by `ResultOf<F>`.
