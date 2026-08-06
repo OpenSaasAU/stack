@@ -19,7 +19,7 @@
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "better-auth": "^1.6.25",
     "better-sqlite3": "^12.6.2",
     "next": "^16.2.10",
