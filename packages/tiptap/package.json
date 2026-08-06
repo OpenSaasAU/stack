@@ -47,7 +47,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@tiptap/extension-placeholder": "^3.28.0",
+    "@tiptap/extension-placeholder": "^3.29.2",
     "@tiptap/pm": "^3.28.0",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.28.0",
