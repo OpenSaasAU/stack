@@ -23,7 +23,7 @@
     "better-auth": "^1.6.25",
     "better-sqlite3": "^12.6.2",
     "next": "^16.2.10",
-    "postcss": "^8.5.18",
+    "postcss": "^8.5.26",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
