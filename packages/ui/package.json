@@ -103,7 +103,7 @@
     "happy-dom": "^20.10.6",
     "next": "^16.2.10",
     "playwright": "^1.61.1",
-    "postcss": "^8.5.18",
+    "postcss": "^8.5.26",
     "postcss-cli": "^11.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
