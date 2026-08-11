@@ -67,8 +67,20 @@ Side-effect hooks that run _inside_ the write's database transaction and roll ba
 _Avoid_: operation hooks (ambiguous about the boundary)
 
 **Transaction-boundary hooks** (`beforeTransaction` / `afterTransaction`):
-Side-effect hooks that run _outside_ the write's database transaction, for non-transactional work (e.g. external API calls) that must not hold the transaction open. `beforeTransaction` runs before the transaction opens; `afterTransaction` runs after it settles and **always** runs — receiving whether the transaction committed or rolled back — so the pair forms a compensation bracket around the atomic write. Like the in-transaction hooks, they fire per list involved in the write (including nested lists).
+Side-effect hooks that run _outside_ the write's database transaction, for non-transactional work (e.g. external API calls) that must not hold the transaction open. `beforeTransaction` runs before its write; `afterTransaction` runs when the outermost transaction the write participates in settles, and **always** runs — reporting whether that transaction committed or rolled back — so the pair forms a compensation bracket around the atomic write. Like the in-transaction hooks, they fire per list involved in the write (including nested lists).
 _Avoid_: outer hooks, outbox hooks
+
+**Joined write**:
+A `context.db` write that runs inside a transaction it did not open, because the client it was handed exposes no way to open one. Arises both inside an interactive transaction and from a hook writing through the context it was given.
+_Avoid_: nested write (that means the relationship-payload sense), inner write
+
+**Transaction owner**:
+The component that opened the transaction a write participates in, and so the only one that knows when it settles. A joined write's transaction-boundary hooks report the outcome its owner observed.
+_Avoid_: transaction opener, transaction root
+
+**Unowned join**:
+A joined write with no transaction owner — the stack did not open the enclosing transaction and cannot observe its settle, as when an application manages its own transaction or a test double cannot open one. Its `afterTransaction` reports optimistically at write time, the one case where the outcome is not a fact.
+_Avoid_: orphan write, detached write
 
 ### Migration & schema generation
 
