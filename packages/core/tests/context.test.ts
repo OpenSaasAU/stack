@@ -1311,6 +1311,33 @@ describe('getContext', () => {
         ).rejects.toThrow(/bogusKey/)
       })
 
+      it("throws on an undeclared key reached via Prisma's direct-nesting to-one filter (no `is` wrapper)", async () => {
+        // Prisma's documented default for filtering a to-one relation nests the
+        // related list's fields directly, with no `is`/`isNot` wrapper at all —
+        // e.g. `{ author: { email: { contains: '...' } } }`. An undeclared key
+        // reached this way (one hop through a to-one relation, rather than at
+        // the root) must be rejected exactly like the wrapped `is` form.
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(
+          context.db.post.findMany({ where: { author: { bogusKey: 'x' } } }),
+        ).rejects.toThrow(/User/)
+        await expect(
+          context.db.post.findMany({ where: { author: { bogusKey: 'x' } } }),
+        ).rejects.toThrow(/bogusKey/)
+        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      })
+
+      it('accepts a declared field on the direct-nesting to-one filter form', async () => {
+        mockPrisma.post.findMany.mockResolvedValue([])
+
+        const context = await getContext(config, mockPrisma, null)
+        const where = { author: { name: { equals: 'John' } } }
+        await context.db.post.findMany({ where })
+
+        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
+      })
+
       it('rejects a Prisma-generated back-relation the list config never declares (the regression that matters most)', async () => {
         // Organisation declares no relationship back to Document — mirrors a
         // list whose Prisma model gets a `from_Document_organisation`

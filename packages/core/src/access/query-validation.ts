@@ -128,7 +128,7 @@ function walkWhere(
     // Scalar field filters use Prisma's own operator vocabulary (`equals`,
     // `contains`, `in`, …) and never nest another field name — trusted as-is,
     // no further walk needed. Only a relationship field's filter nests a
-    // WHERE clause for another list, via a relation quantifier.
+    // WHERE clause for another list.
     if (
       resolved.isRelationship &&
       value !== null &&
@@ -137,14 +137,27 @@ function walkWhere(
     ) {
       const related = getRelatedListConfig(resolved.fieldConfig.ref, config)
       if (!related) continue
-      for (const [quantifier, quantifierValue] of Object.entries(
-        value as Record<string, unknown>,
-      )) {
-        if (RELATION_QUANTIFIERS.has(quantifier)) {
-          walkWhere(quantifierValue, related.listConfig, related.listName, config, isSudo)
+
+      const relationEntries = Object.entries(value as Record<string, unknown>)
+      const hasQuantifier = relationEntries.some(([k]) => RELATION_QUANTIFIERS.has(k))
+
+      if (hasQuantifier) {
+        // Wrapped form: `{ author: { is: {...} } }` / `{ posts: { some: {...} } }`.
+        // Only the quantifier's own value is a nested WHERE clause for the
+        // related list.
+        for (const [quantifier, quantifierValue] of relationEntries) {
+          if (RELATION_QUANTIFIERS.has(quantifier)) {
+            walkWhere(quantifierValue, related.listConfig, related.listName, config, isSudo)
+          }
         }
-        // Other keys under a relation field (e.g. `equals: null` for a to-one
-        // nullability check) are not nested WHERE clauses — nothing to walk.
+      } else {
+        // Direct-nesting form: Prisma's documented default for a to-one
+        // relation filter nests the related list's own fields with no `is`
+        // wrapper at all (`{ author: { email: { contains: '...' } } }`). The
+        // whole value object IS the nested WHERE clause here — walk it
+        // directly, or an undeclared key reached exactly this way (one hop
+        // through a to-one relation) would pass through unchecked.
+        walkWhere(value, related.listConfig, related.listName, config, isSudo)
       }
     }
   }
