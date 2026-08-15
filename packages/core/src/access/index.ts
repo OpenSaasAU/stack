@@ -21,6 +21,9 @@ export {
 } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).
 export { checkFieldAccess, filterWritableFields } from './field-access.js'
+// Read-path key validation — the `findMany`/`count` counterpart to the write
+// path's #564 undeclared-key reject.
+export { validateQueryKeys } from './query-validation.js'
 // Phase 1 — Access Filter (pre-query row/relation scoping).
 export { buildAccessScopedInclude, stripVirtualFieldsFromInclude } from './access-filter.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).

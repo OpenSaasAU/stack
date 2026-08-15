@@ -1255,6 +1255,173 @@ describe('getContext', () => {
       })
     })
 
+    describe('read-path key validation (#912)', () => {
+      it('throws on an undeclared `where` key on findMany, naming the list and the key', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(context.db.post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(/Post/)
+        await expect(context.db.post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(
+          /bogusKey/,
+        )
+        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      })
+
+      it('throws on an undeclared `where` key on count', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(context.db.user.count({ where: { bogusKey: 'x' } })).rejects.toThrow(
+          /bogusKey/,
+        )
+        expect(mockPrisma.user.count).not.toHaveBeenCalled()
+      })
+
+      it('throws on an undeclared `orderBy` key on findMany', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(context.db.post.findMany({ orderBy: { bogusKey: 'asc' } })).rejects.toThrow(
+          /bogusKey/,
+        )
+        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      })
+
+      it('throws on an undeclared key nested inside a logical operator (AND/OR/NOT)', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(
+          context.db.post.findMany({
+            where: { OR: [{ title: { contains: 'a' } }, { bogusKey: 'x' }] },
+          }),
+        ).rejects.toThrow(/bogusKey/)
+
+        await expect(
+          context.db.post.findMany({
+            where: { AND: [{ NOT: { bogusKey: 'x' } }] },
+          }),
+        ).rejects.toThrow(/bogusKey/)
+      })
+
+      it('throws on an undeclared key nested inside a relation filter, naming the RELATED list', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(
+          context.db.post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
+        ).rejects.toThrow(/User/)
+        await expect(
+          context.db.post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
+        ).rejects.toThrow(/bogusKey/)
+      })
+
+      it('rejects a Prisma-generated back-relation the list config never declares (the regression that matters most)', async () => {
+        // Organisation declares no relationship back to Document — mirrors a
+        // list whose Prisma model gets a `from_Document_organisation`
+        // back-relation purely because Document holds an FK pointing at it.
+        const backRelationPrisma = {
+          organisation: { findMany: vi.fn(), count: vi.fn() },
+        }
+        const backRelationConfig: OpenSaasConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Organisation: {
+              fields: { name: { type: 'text' } },
+              access: { operation: { query: () => true } },
+            },
+          },
+        }
+
+        const context = await getContext(backRelationConfig, backRelationPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { from_Document_organisation: { some: {} } },
+          }),
+        ).rejects.toThrow(/from_Document_organisation/)
+        await expect(
+          context.db.organisation.count({
+            where: { from_Document_organisation: { some: {} } },
+          }),
+        ).rejects.toThrow(/from_Document_organisation/)
+
+        expect(backRelationPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(backRelationPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('never mistakes a Prisma filter operator (equals/contains/startsWith/in/is/isNot) for a field name', async () => {
+        mockPrisma.post.findMany.mockResolvedValue([
+          { id: '1', title: 'Test Post', content: 'x', authorId: 'u1' },
+        ])
+
+        const context = await getContext(config, mockPrisma, null)
+        const where = {
+          title: { equals: 'Test Post', contains: 'Test', startsWith: 'T', in: ['Test Post'] },
+          author: { is: { name: 'John' }, isNot: null },
+        }
+
+        await context.db.post.findMany({ where })
+
+        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
+      })
+
+      it('passes all of the above through under sudo (the single trusted bypass)', async () => {
+        mockPrisma.post.findMany.mockResolvedValue([])
+
+        const context = (await getContext(config, mockPrisma, null)).sudo()
+        await context.db.post.findMany({
+          where: { bogusKey: 'x', OR: [{ alsoBogus: 'y' }] },
+          orderBy: { alsoOrderByBogus: 'asc' },
+        })
+
+        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { bogusKey: 'x', OR: [{ alsoBogus: 'y' }] },
+            orderBy: { alsoOrderByBogus: 'asc' },
+          }),
+        )
+      })
+
+      it('keeps an implied foreign-key scalar filterable (authorId for author: relationship(...))', async () => {
+        mockPrisma.post.findMany.mockResolvedValue([])
+
+        const context = await getContext(config, mockPrisma, null)
+        await context.db.post.findMany({ where: { authorId: 'user-1' } })
+
+        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { authorId: 'user-1' } }),
+        )
+      })
+
+      it('findFirst inherits the check through findMany, with no second copy', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(context.db.post.findFirst({ where: { bogusKey: 'x' } })).rejects.toThrow(
+          /bogusKey/,
+        )
+        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      })
+
+      it('updateMany inherits the check through findMany, with no second copy', async () => {
+        const context = await getContext(config, mockPrisma, null)
+
+        await expect(
+          context.db.user.updateMany({ where: { bogusKey: 'x' }, data: { name: 'y' } }),
+        ).rejects.toThrow(/bogusKey/)
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.user.update).not.toHaveBeenCalled()
+      })
+
+      it('an ordinary read using only declared keys is unaffected', async () => {
+        const mockUsers = [{ id: '1', name: 'John', email: 'john@example.com' }]
+        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+
+        const context = await getContext(config, mockPrisma, null)
+        const result = await context.db.user.findMany({
+          where: { name: 'John' },
+          orderBy: { name: 'asc' },
+        })
+
+        expect(result).toEqual(mockUsers)
+      })
+    })
+
     describe('explicit include merges with access control (#566)', () => {
       // Author has many Posts; Post.query access scopes to published posts only.
       // A caller-supplied `include` must NOT bypass that per-relation filter.
