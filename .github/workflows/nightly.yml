@@ -25,6 +25,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # This job deliberately scaffolds outside the workspace, so it needs no
+      # repo checkout of its own — but `pnpm/action-setup` resolves the pnpm
+      # version from the workspace `package.json`'s `packageManager`, and with
+      # nothing checked out it fails with "No pnpm version is specified".
+      # Sparse-check-out just that file: it keeps the runner's pnpm in lockstep
+      # with the repo (a pinned `version:` here would silently drift), and the
+      # scaffold below still runs in a temp dir against the PUBLISHED package.
+      - name: Check out package.json for the pnpm version
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
