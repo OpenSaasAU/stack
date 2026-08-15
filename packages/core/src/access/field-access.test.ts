@@ -122,6 +122,32 @@ describe('checkFieldAccess', () => {
     ).rejects.toThrow(InvalidFieldAccessResultError)
   })
 
+  it('throws with a descriptive message for null, and for other primitive results', async () => {
+    const nullAccess = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      read: () => null as any,
+    }
+    await expect(
+      checkFieldAccess(nullAccess, 'read', {
+        session: null,
+        item: {},
+        context: nonSudoContext(),
+      }),
+    ).rejects.toThrow(/returned null, not a boolean/)
+
+    const numberAccess = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      read: () => 42 as any,
+    }
+    await expect(
+      checkFieldAccess(numberAccess, 'read', {
+        session: null,
+        item: {},
+        context: nonSudoContext(),
+      }),
+    ).rejects.toThrow(/returned a number, not a boolean/)
+  })
+
   it('sudo bypasses the rule entirely, so a filter-returning rule never reaches the throw', async () => {
     const fieldAccess = {
       read: () => ({ ownerId: { equals: 'someone-else' } }),
