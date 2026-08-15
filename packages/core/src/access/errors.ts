@@ -87,10 +87,16 @@ function describeFieldAccessResult(result: unknown): string {
  * Before #913 this fell through to an unconditional `return true`, silently
  * granting the field blanket access; it now fails loudly and closed instead,
  * for `read`, `create`, and `update` alike.
+ *
+ * Deliberately does not expose the offending result as a public field: unlike
+ * `AccessScopeDepthExceededError`/`ResolveOutputCycleError`'s fields, there is
+ * no concretely-typed shape to give it (the whole problem is that it isn't
+ * the `boolean` the caller's rule promised), and the root CLAUDE.md forbids
+ * exposing `unknown`/`any` as part of a package's external API. A description
+ * of what was returned instead is folded into the message text.
  */
 export class InvalidFieldAccessResultError extends Error {
   public operation: 'read' | 'create' | 'update'
-  public result: unknown
 
   constructor(operation: 'read' | 'create' | 'update', result: unknown) {
     super(
@@ -103,6 +109,5 @@ export class InvalidFieldAccessResultError extends Error {
     )
     this.name = 'InvalidFieldAccessResultError'
     this.operation = operation
-    this.result = result
   }
 }

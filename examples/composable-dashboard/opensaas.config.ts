@@ -6,12 +6,21 @@ import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
  * Access control helpers
  */
 
-// Check if user is signed in
-const isSignedIn: AccessControl = ({ session }) => {
+// Check if user is signed in. Typed by its parameter (`Parameters<AccessControl>[0]`)
+// rather than as a whole `: AccessControl`, with an explicit `boolean` return: this
+// helper is reused for both operation-level access (list-level `create`) and
+// field-level access (per-field `create`), and only the former accepts a Prisma
+// filter — field access is a per-field visibility decision, not a row filter. Since
+// this helper never returns a filter, pinning its return type to `boolean` keeps it
+// valid at both call sites.
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
   return !!session
 }
 
-// Check if user is the author of a post
+// Check if user is the author of a post. Scopes ROWS, so it stays `AccessControl`
+// (filter-returning) and is used only at the operation level below — field-level
+// access cannot honour a filter, see the per-field `access` checks on Post's fields,
+// which compare `item.authorId` directly and return a `boolean`.
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
   return {
@@ -79,7 +88,10 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            // Field-level access is a boolean-only visibility check (it cannot
+            // scope rows like `isAuthor`'s filter does at the operation level
+            // above), so this compares `item.authorId` directly.
+            update: ({ session, item }) => !!session && session.userId === item?.authorId,
           },
         }),
         slug: text({
@@ -91,16 +103,19 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            update: ({ session, item }) => !!session && session.userId === item?.authorId,
           },
         }),
         internalNotes: text({
           ui: { displayMode: 'textarea' },
-          // Only the author can read/write internal notes
+          // Only the author can read/write internal notes. There's no `item`
+          // yet on create, so "signed in" is the create-time check — the
+          // author is the person creating the post; read/update compare the
+          // signed-in session against the item's actual author.
           access: {
-            read: isAuthor,
-            create: isAuthor,
-            update: isAuthor,
+            read: ({ session, item }) => !!session && session.userId === item?.authorId,
+            create: isSignedIn,
+            update: ({ session, item }) => !!session && session.userId === item?.authorId,
           },
         }),
         status: select({
