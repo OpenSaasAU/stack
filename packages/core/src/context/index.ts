@@ -7,6 +7,7 @@ import {
   buildAccessScopedInclude,
   stripVirtualFieldsFromInclude,
   foldDeclaredDependencies,
+  validateQueryKeys,
 } from '../access/index.js'
 import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
@@ -875,7 +876,7 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
       create: createOp,
       update: updateOp,
       delete: createDelete(listName, listConfig, prisma, context, config),
-      count: createCount(listName, listConfig, prisma, context),
+      count: createCount(listName, listConfig, prisma, context, config),
       createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
       updateMany: createUpdateMany(
         listName,
@@ -1133,6 +1134,18 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       )
     }
 
+    // #912 — reject a `where`/`orderBy` key the list config doesn't declare
+    // (e.g. a Prisma-generated back-relation) before it ever reaches the
+    // access filter merge below. `sudo` bypasses, matching the write path.
+    validateQueryKeys({
+      where: args?.where,
+      orderBy: args?.orderBy,
+      listConfig,
+      listName,
+      config,
+      isSudo: context._isSudo === true,
+    })
+
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
@@ -1388,8 +1401,21 @@ function createCount<TPrisma extends PrismaClientLike>(
   listConfig: ListConfig<any>,
   prisma: TPrisma,
   context: AccessContext<TPrisma>,
+  config: OpenSaasConfig,
 ) {
   return async (args?: { where?: Record<string, unknown> }) => {
+    // #912 — reject a `where` key the list config doesn't declare (e.g. a
+    // Prisma-generated back-relation), same as findMany. `count` leaks the
+    // most cleanly of any read op — a bare count answers a predicate with no
+    // rows returned at all — so it gets the same reject, not a lesser one.
+    validateQueryKeys({
+      where: args?.where,
+      listConfig,
+      listName,
+      config,
+      isSudo: context._isSudo === true,
+    })
+
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
