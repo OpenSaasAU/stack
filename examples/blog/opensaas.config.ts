@@ -19,17 +19,25 @@ import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
  */
 
 // Check if user is signed in
-const isSignedIn: AccessControl = ({ session: _session }) => {
+//
+// Typed as `Parameters<AccessControl>[0]` rather than the whole function as
+// `: AccessControl`, and returning `boolean` explicitly: these helpers are
+// reused for both operation-level access (which accepts a Prisma filter) and
+// field-level access (which does not, and never has — field access is a
+// per-field visibility decision, not a row filter). Since none of these
+// return a filter, pinning the return type to `boolean` keeps them valid at
+// both call sites.
+const isSignedIn = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
   return true
 }
 
 // Check if user is the author of a post
-const isAuthor: AccessControl = ({ session: _session }) => {
+const isAuthor = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
   return true
 }
 
 // Check if user is the owner of their own user record
-const isOwner: AccessControl = ({ session: _session, item: _item }) => {
+const isOwner = ({ session: _session, item: _item }: Parameters<AccessControl>[0]): boolean => {
   return true
 }
 

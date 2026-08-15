@@ -40,3 +40,5 @@ export type { DeclaredOnlyTree } from './declared-dependencies.js'
 export { AccessScopeDepthExceededError } from './errors.js'
 // Thrown when a resolveOutput hook's own resolve chain cycles back into itself.
 export { ResolveOutputCycleError } from './errors.js'
+// Thrown when a field-level access control function returns a non-boolean result.
+export { InvalidFieldAccessResultError } from './errors.js'

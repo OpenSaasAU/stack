@@ -327,9 +327,16 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
  * Field-level access control function.
  * For create/update operations, receives inputData to validate incoming values.
  *
- * Note: While this type accepts filters for backward compatibility with AccessControl,
- * filters are ignored in field-level access. Only boolean results are used.
- * If a filter is returned, it defaults to allowing access (true).
+ * Unlike operation-level `AccessControl`, this returns `boolean` only. Field
+ * access is a per-field visibility decision, not a row filter — a denied
+ * field is removed, never used to scope which rows are returned (see the
+ * "Field-level access" glossary entry in `CONTEXT.md`, ADR-0001, and
+ * ADR-0030). A rule that needs to depend on the row or the write payload
+ * should evaluate the condition itself and return a boolean, e.g.
+ * `({ item, session }) => item?.ownerId === session?.userId`. The runtime
+ * evaluator (`checkFieldAccess`) enforces this: a rule that somehow returns
+ * anything other than `true`/`false` (bypassing this type) throws rather than
+ * defaulting to allow.
  */
 export type FieldAccessControl<
   TItem = Record<string, unknown>,
@@ -358,7 +365,7 @@ export type FieldAccessControl<
         inputData: TUpdateInput
         operation: 'update'
       },
-) => boolean | PrismaFilter<TItem> | Promise<boolean | PrismaFilter<TItem>>
+) => boolean | Promise<boolean>
 
 /**
  * Field-level access control

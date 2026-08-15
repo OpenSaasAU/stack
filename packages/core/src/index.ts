@@ -75,6 +75,14 @@ export { AccessScopeDepthExceededError } from './access/index.js'
 // from `ValidationError` for the same reason as `AccessScopeDepthExceededError`.
 export { ResolveOutputCycleError } from './access/index.js'
 
+// Thrown by `checkFieldAccess` when a field-level access control function
+// returns anything other than a strict boolean (see ADR-0001 and ADR-0030).
+// Distinct from `ValidationError` for the same reason as
+// `AccessScopeDepthExceededError` — this is the engine refusing to interpret
+// a result it cannot treat as an allow/deny decision, not a user-input
+// validation failure.
+export { InvalidFieldAccessResultError } from './access/index.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
 // getPrismaRelation for relationships) so a misimplemented field fails early

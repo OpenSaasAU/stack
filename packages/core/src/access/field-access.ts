@@ -4,6 +4,7 @@ import type { FieldAccess } from './types.js'
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
+import { InvalidFieldAccessResultError } from './errors.js'
 
 /**
  * Shared field-level access evaluation.
@@ -24,6 +25,10 @@ import { ValidationError } from '../hooks/index.js'
  * (read/update/delete), and on the `inputData` being written (create/update),
  * so all of those are accepted. Do not introduce a parallel evaluator with a
  * narrower signature.
+ *
+ * Returns a strict boolean, never a filter: a rule that returns anything else
+ * throws `InvalidFieldAccessResultError` rather than defaulting to allow (see
+ * that error's doc, ADR-0001, and ADR-0030).
  */
 export async function checkFieldAccess(
   fieldAccess: FieldAccess | undefined,
@@ -67,36 +72,15 @@ export async function checkFieldAccess(
     return true
   }
 
-  // Default to allowing access if we can't determine
-  return true
-}
-
-/**
- * Simple filter matching for field-level access
- * Checks if an item matches a Prisma-like filter object
- */
-function matchesFilter(item: Record<string, unknown>, filter: Record<string, unknown>): boolean {
-  for (const [key, condition] of Object.entries(filter)) {
-    if (typeof condition === 'object' && condition !== null) {
-      // Handle nested conditions like { equals: value }
-      if ('equals' in condition) {
-        if (item[key] !== condition.equals) {
-          return false
-        }
-      } else if ('not' in condition) {
-        if (item[key] === condition.not) {
-          return false
-        }
-      }
-      // Add more condition types as needed
-    } else {
-      // Direct equality check
-      if (item[key] !== condition) {
-        return false
-      }
-    }
-  }
-  return true
+  // `FieldAccessControl` is typed to return `boolean` only — field access is a
+  // per-field visibility decision, not a row filter (ADR-0001, ADR-0030). A
+  // well-typed rule can never reach this line; getting here means a caller
+  // bypassed the type (most notably by returning a Prisma filter, the shape
+  // operation-level `AccessControl` accepts but this does not). Fail loudly
+  // and closed — this operation applies identically whether or not `item` is
+  // available, so `create` (which has no `item` to evaluate a filter against)
+  // needs no separate answer: neither operation ever honours a non-boolean.
+  throw new InvalidFieldAccessResultError(operation, result)
 }
 
 /**
