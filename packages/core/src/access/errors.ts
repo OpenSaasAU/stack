@@ -64,3 +64,45 @@ export class ResolveOutputCycleError extends Error {
     this.chain = chain
   }
 }
+
+function describeFieldAccessResult(result: unknown): string {
+  if (result === null) return 'null'
+  if (result === undefined) return 'undefined'
+  if (typeof result === 'object') return 'an object (e.g. a Prisma filter)'
+  return `a ${typeof result}`
+}
+
+/**
+ * Thrown when a field-level access control function returns anything other
+ * than a strict `boolean`. `FieldAccessControl` is typed to return `boolean`
+ * only: field access is a single per-field visibility decision, not a row
+ * filter, and a denied field is removed rather than used to scope rows (see
+ * the "Field-level access" glossary entry in `CONTEXT.md`, ADR-0001, and
+ * ADR-0030).
+ *
+ * A rule that type-checks can never reach this — the only way here is a
+ * caller that bypasses the type (an untyped JS config, or a value forced past
+ * the checker), most notably a Prisma filter, which is the shape
+ * operation-level `AccessControl` accepts but `FieldAccessControl` does not.
+ * Before #913 this fell through to an unconditional `return true`, silently
+ * granting the field blanket access; it now fails loudly and closed instead,
+ * for `read`, `create`, and `update` alike.
+ */
+export class InvalidFieldAccessResultError extends Error {
+  public operation: 'read' | 'create' | 'update'
+  public result: unknown
+
+  constructor(operation: 'read' | 'create' | 'update', result: unknown) {
+    super(
+      `Field-level access control for operation "${operation}" returned ` +
+        `${describeFieldAccessResult(result)}, not a boolean. Field access is a per-field ` +
+        `visibility decision — it must return true or false, and (unlike operation-level access) ` +
+        `cannot scope which rows are affected. If you meant to restrict access based on the row or ` +
+        `the write payload, evaluate the condition yourself and return a boolean, e.g. ` +
+        `\`({ item, session }) => item?.ownerId === session?.userId\`.`,
+    )
+    this.name = 'InvalidFieldAccessResultError'
+    this.operation = operation
+    this.result = result
+  }
+}

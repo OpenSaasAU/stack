@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { filterWritableFields } from './field-access.js'
+import { checkFieldAccess, filterWritableFields } from './field-access.js'
+import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 
 // A non-sudo access context. The cast is localized to test setup (mirrors the
@@ -20,6 +21,121 @@ function sudoContext() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any
 }
+
+// ── #913: a field rule returning a filter must not be granted blanket access ──
+
+describe('checkFieldAccess', () => {
+  it('allows when the rule returns true', async () => {
+    const allowed = await checkFieldAccess({ read: () => true }, 'read', {
+      session: null,
+      item: { ownerId: 'someone-else' },
+      context: nonSudoContext(),
+    })
+    expect(allowed).toBe(true)
+  })
+
+  it('denies when the rule returns false', async () => {
+    const allowed = await checkFieldAccess({ read: () => false }, 'read', {
+      session: null,
+      item: { ownerId: 'someone-else' },
+      context: nonSudoContext(),
+    })
+    expect(allowed).toBe(false)
+  })
+
+  it('allows when no field access is configured', async () => {
+    const allowed = await checkFieldAccess(undefined, 'read', {
+      session: null,
+      context: nonSudoContext(),
+    })
+    expect(allowed).toBe(true)
+  })
+
+  it('allows when no rule is configured for the operation', async () => {
+    const allowed = await checkFieldAccess({ update: () => false }, 'read', {
+      session: null,
+      context: nonSudoContext(),
+    })
+    expect(allowed).toBe(true)
+  })
+
+  it('throws InvalidFieldAccessResultError, not allow, when a read rule returns a filter', async () => {
+    // The exact reproduction from the issue: a rule written to scope a field
+    // by row, which the previous fail-open default granted full access to.
+    const fieldAccess = {
+      read: () => ({ ownerId: { equals: 'someone-else' } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    await expect(
+      checkFieldAccess(fieldAccess, 'read', {
+        session: null,
+        item: { ownerId: 'the-owner' },
+        context: nonSudoContext(),
+      }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
+  })
+
+  it('throws for a filter-returning rule on create, where there is no item to test it against', async () => {
+    const fieldAccess = {
+      create: () => ({ ownerId: { equals: 'someone-else' } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    await expect(
+      checkFieldAccess(fieldAccess, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { ownerId: 'the-owner' },
+      }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
+  })
+
+  it('throws for a filter-returning rule on update', async () => {
+    const fieldAccess = {
+      update: () => ({ ownerId: { equals: 'someone-else' } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    await expect(
+      checkFieldAccess(fieldAccess, 'update', {
+        session: null,
+        item: { ownerId: 'the-owner' },
+        context: nonSudoContext(),
+        inputData: { ownerId: 'someone-else' },
+      }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
+  })
+
+  it('throws for a non-boolean, non-filter result too (e.g. undefined)', async () => {
+    const fieldAccess = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      read: () => undefined as any,
+    }
+
+    await expect(
+      checkFieldAccess(fieldAccess, 'read', {
+        session: null,
+        item: {},
+        context: nonSudoContext(),
+      }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
+  })
+
+  it('sudo bypasses the rule entirely, so a filter-returning rule never reaches the throw', async () => {
+    const fieldAccess = {
+      read: () => ({ ownerId: { equals: 'someone-else' } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    const allowed = await checkFieldAccess(fieldAccess, 'read', {
+      session: null,
+      item: { ownerId: 'the-owner' },
+      context: sudoContext(),
+    })
+    expect(allowed).toBe(true)
+  })
+})
 
 describe('filterWritableFields', () => {
   it('should filter out foreign key fields when their corresponding relationship field exists', async () => {
@@ -359,6 +475,33 @@ describe('filterWritableFields', () => {
         inputData: data,
       }),
     ).rejects.toThrow(/status/)
+  })
+
+  // ── #913: a field rule returning a filter must not grant blanket write access ──
+
+  it('throws InvalidFieldAccessResultError, not a blanket write, when field access returns a filter (non-sudo)', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      status: {
+        type: 'text',
+        access: {
+          // Written as a row-scoping rule; field access does not honour filters.
+          update: () => ({ status: { equals: 'draft' } }),
+          create: () => ({ status: { equals: 'draft' } }),
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+    const data = { title: 'Test', status: 'published' }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        item: { id: 'post-1', status: 'draft' },
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
   })
 
   it('does NOT throw on a would-be-denied field under sudo', async () => {
