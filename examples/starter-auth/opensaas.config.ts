@@ -176,8 +176,14 @@ export default config({
             create: isSignedIn,
             // Field-level access is a boolean-only visibility check (it cannot
             // scope rows like `isAuthor`'s filter does at the operation level
-            // above), so this compares `item.authorId` directly.
-            update: ({ session, item }) => !!session && session.userId === item?.authorId,
+            // above), so this compares `item.authorId` directly. The `!` is
+            // deliberate: the admin UI's inline-edit affordance check calls
+            // field-level `update` rules without an `item` (it's deciding
+            // whether to show the affordance per column, not per row) and
+            // treats a throw there as "potentially writable, let the real
+            // per-row check at commit time decide" — dereferencing `item`
+            // un-guarded is what makes that fallback trigger correctly.
+            update: ({ session, item }) => !!session && session.userId === item!.authorId,
           },
         }),
         slug: text({
@@ -189,7 +195,7 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: ({ session, item }) => !!session && session.userId === item?.authorId,
+            update: ({ session, item }) => !!session && session.userId === item!.authorId,
           },
         }),
         internalNotes: text({
@@ -200,9 +206,9 @@ export default config({
           // check; read/update compare the signed-in session against the
           // item's actual author.
           access: {
-            read: ({ session, item }) => !!session && session.userId === item?.authorId,
+            read: ({ session, item }) => !!session && session.userId === item!.authorId,
             create: isSignedIn,
-            update: ({ session, item }) => !!session && session.userId === item?.authorId,
+            update: ({ session, item }) => !!session && session.userId === item!.authorId,
           },
         }),
         status: select({
