@@ -1,4 +1,5 @@
 import type { Fragment, FieldSelection, ResultOf } from '../query/index.js'
+import type { TransactionRegistry } from './transaction-registry.js'
 
 /**
  * Session interface - can be augmented by developers to add custom fields
@@ -303,6 +304,17 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
    * in CONTEXT.md.
    */
   _resolveOutputChain: readonly { listKey: string; fieldKey: string }[]
+  /**
+   * Present when this context is JOINED into an enclosing transaction it did
+   * not open (ADR-0028, #899) — set by `context.transaction()`, or by the
+   * Write Pipeline when it opens the transaction the current write's hooks
+   * are rebound into. A write reached through a context carrying this defers
+   * its `afterTransaction` bracket to the registry instead of firing it at
+   * write time; `undefined` for a top-level context with no owner. Threaded
+   * through the same context-rebind path as `plugins`/`_resolveOutputChain`.
+   * @internal
+   */
+  _transactionOwner?: TransactionRegistry
 }
 
 /**
