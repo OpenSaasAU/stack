@@ -16,5 +16,8 @@ const suggestions = collectFilterSuggestions(listConfig, listKey, config)
 // After — pass the session/context the field's `read` access is checked against
 const specs = await collectFilterSpecs(listConfig, listKey, config, { session, context })
 const where = await buildListFilterWhere(query, listConfig, listKey, config, { session, context })
-const suggestions = await collectFilterSuggestions(listConfig, listKey, config, { session, context })
+const suggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+  session,
+  context,
+})
 ```
