@@ -1,5 +1,5 @@
 import type { Session, AccessContext } from './types.js'
-import type { FieldAccess } from './types.js'
+import type { FieldAccess, FieldAccessControl } from './types.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
@@ -49,7 +49,15 @@ export async function checkFieldAccess(
     return true // No field access means allow
   }
 
-  const accessControl = fieldAccess[operation]
+  // `FieldAccess['read']` is narrower than `FieldAccess['create'/'update']` (it
+  // only accepts the single `operation: 'read'` call shape, see `types.ts`),
+  // so indexing by a not-yet-narrowed `operation` union produces a callable
+  // whose effective parameter type collapses to an intersection TypeScript
+  // can't satisfy generically here. Widen back to the general
+  // `FieldAccessControl` — the same shape this function has always built and
+  // passed below — since by construction the args object always matches
+  // whichever operation is actually requested.
+  const accessControl = fieldAccess[operation] as FieldAccessControl | undefined
   if (!accessControl) {
     return true // No specific access control means allow
   }
