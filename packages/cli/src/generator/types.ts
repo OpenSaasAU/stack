@@ -278,12 +278,19 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
  *
  * Most scalar fields are narrowed so that field-level narrowing (e.g.
  * `calendarDay` -> `string`) is a genuine compile error to violate at the
- * `context.db.<list>.create()/update()` call site (#599). Two field shapes are
+ * `context.db.<list>.create()/update()` call site (#599). Three field shapes are
  * deliberately left on Prisma's input type to avoid regressing valid writes:
  *
  * - `decimal`: OpenSaaS narrows to `Decimal`, but Prisma accepts
  *   `Decimal | number | string`. A strict override would wrongly reject valid
  *   `number`/`string` decimal writes.
+ * - `bigInt`: OpenSaaS narrows to `bigint` (issue #907), but Prisma accepts
+ *   `bigint | number`. A strict override would wrongly reject a valid `number`
+ *   write, the same failure mode as `decimal` above. (`bigInt()`'s own
+ *   `getZodSchema` additionally accepts a numeric `string`, coerced to
+ *   `bigint` at the access-control boundary — wider than this narrowly-typed
+ *   `context.db` call site, which is fine: the boundary is TypeScript's, not
+ *   the field's.)
  * - `json`: OpenSaaS narrows to `unknown`, but Prisma's input type carries the
  *   `JsonNull`/`DbNull` sentinels. Overriding to `unknown` would drop them.
  *
@@ -297,8 +304,13 @@ function shouldNarrowScalarWrite(fieldConfig: FieldConfig): boolean {
   if (fieldConfig.type === 'relationship') return false
   if (fieldConfig.virtual) return false
   if (!fieldConfig.getTypeScriptType) return false
-  // Keep Prisma's input type for decimal/json (see doc comment above).
-  if (fieldConfig.type === 'decimal' || fieldConfig.type === 'json') return false
+  // Keep Prisma's input type for decimal/bigInt/json (see doc comment above).
+  if (
+    fieldConfig.type === 'decimal' ||
+    fieldConfig.type === 'bigInt' ||
+    fieldConfig.type === 'json'
+  )
+    return false
   // Multi-column / storage fields back raw columns, not a single scalar.
   if (typeof fieldConfig.getColumnNames === 'function') return false
   return true

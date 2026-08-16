@@ -8,6 +8,7 @@ import type { OpenSaasConfig } from '@opensaas/stack-core'
 import {
   text,
   decimal,
+  bigInt,
   json,
   checkbox,
   calendarDay,
@@ -19,8 +20,8 @@ import {
  *
  * The generated `context.db.<list>.create()/update()` `data` member now narrows
  * scalar fields to their OpenSaaS `getTypeScriptType()` types while leaving
- * relationship nested writes, unchecked FK fields, and decimal/json on Prisma's
- * input shape. These tests assert the *real* compile behaviour by feeding the
+ * relationship nested writes, unchecked FK fields, and decimal/bigInt/json on
+ * Prisma's input shape. These tests assert the *real* compile behaviour by feeding the
  * actual generated `*Args` types — exactly as `generateCustomDBType` wires them
  * into the `create`/`update`/`createMany`/`updateMany` method signatures
  * (`<T extends Args>(args: Prisma.SelectSubset<T, Args>) => ...`) — into a real
@@ -30,6 +31,7 @@ import {
  *  - `day: new Date()` (a `Date` to a `calendarDay`) is a COMPILE ERROR.
  *  - `day: '2026-01-01'` (a `string`) compiles.
  *  - `price` accepts `number` and `string` (decimal not over-narrowed).
+ *  - `sequence` accepts `bigint` and `number` (bigInt not over-narrowed, #907).
  *  - `meta` accepts a plain JSON value and Prisma's `JsonNull` sentinel.
  *  - relationship writes (`owner.connect`, unchecked `ownerId`) compile.
  *  - `active` (`checkbox({ defaultValue: false })`) is OPTIONAL on create.
@@ -89,6 +91,7 @@ export namespace Prisma {
     title: string
     day?: Date | string                       // calendarDay backing column: DateTime @db.Date
     price?: Decimal | number | string
+    sequence?: bigint | number                // bigInt backing column: BigInt
     meta?: InputJsonValue | JsonNullValueInput
     active?: boolean
     owner?: { connect: { id: string } }       // relationship nested write (checked)
@@ -98,6 +101,7 @@ export namespace Prisma {
     title?: string
     day?: Date | string
     price?: Decimal | number | string
+    sequence?: bigint | number
     meta?: InputJsonValue | JsonNullValueInput
     active?: boolean
     owner?: { connect: { id: string } } | { disconnect: true }
@@ -105,7 +109,7 @@ export namespace Prisma {
   }
 
   export type EventSelect = {
-    title?: boolean; day?: boolean; price?: boolean; meta?: boolean; active?: boolean; owner?: boolean
+    title?: boolean; day?: boolean; price?: boolean; sequence?: boolean; meta?: boolean; active?: boolean; owner?: boolean
   }
   export type EventInclude = { owner?: boolean }
   export type EventWhereInput = { title?: string }
@@ -160,6 +164,10 @@ async function run() {
   await db.event.create({ data: { title: 't', price: 12.5 } })
   await db.event.create({ data: { title: 't', price: '12.50' } })
 
+  // bigInt accepts bigint and number (not over-narrowed to bare bigint, #907).
+  await db.event.create({ data: { title: 't', sequence: 5n } })
+  await db.event.create({ data: { title: 't', sequence: 5 } })
+
   // json accepts a plain value and Prisma's JsonNull sentinel.
   await db.event.create({ data: { title: 't', meta: { a: 1 } } })
 
@@ -176,6 +184,10 @@ async function run() {
 
   // update path: string and decimal-number compile.
   await db.event.update({ where: { id: 'e1' }, data: { day: '2026-01-02', price: 9 } })
+
+  // update path: bigint and number both compile for bigInt (#907).
+  await db.event.update({ where: { id: 'e1' }, data: { sequence: 9n } })
+  await db.event.update({ where: { id: 'e1' }, data: { sequence: 9 } })
 
   // createMany element narrowing: Date rejected, string accepted.
   await db.event.createMany({ data: [{ title: 't', day: '2026-01-01' }] })
@@ -247,6 +259,7 @@ const TEST_CONFIG: OpenSaasConfig = {
         title: text({ validation: { isRequired: true } }),
         day: calendarDay(),
         price: decimal(),
+        sequence: bigInt(),
         meta: json(),
         active: checkbox({ defaultValue: false }),
         owner: relationship({ ref: 'User' }),
@@ -281,8 +294,9 @@ describe('write-path data narrowing (#599)', () => {
     expect(generated).toContain('day?: string | null')
     // checkbox({ defaultValue: false }) is optional on create (the bug fix).
     expect(generated).toContain('active?: boolean')
-    // decimal/json are NOT narrowed: they stay out of the Omit key list.
+    // decimal/bigInt/json are NOT narrowed: they stay out of the Omit key list.
     expect(generated).not.toContain("'price'")
+    expect(generated).not.toContain("'sequence'")
     expect(generated).not.toContain("'meta'")
   })
 })
