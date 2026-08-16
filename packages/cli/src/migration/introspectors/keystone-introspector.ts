@@ -8,6 +8,7 @@
 import path from 'path'
 import fs from 'fs-extra'
 import { createJiti } from 'jiti'
+import { resolveTsconfigAlias } from '../../generator/tsconfig-alias.js'
 import type { IntrospectedSchema, IntrospectedModel, IntrospectedField } from '../types.js'
 
 export interface KeystoneList {
@@ -57,10 +58,19 @@ export class KeystoneIntrospector {
     }
 
     try {
+      // Resolve tsconfig.json path aliases the same way the generate command
+      // does (#905), so an aliased value import in keystone.config.ts (or
+      // anything it imports) resolves here too.
+      const { alias, warnings } = resolveTsconfigAlias(cwd)
+      for (const warning of warnings) {
+        console.warn(`⚠️  ${warning}`)
+      }
+
       // Use jiti to load TypeScript config
       const jiti = createJiti(import.meta.url, {
         interopDefault: true,
         moduleCache: false,
+        alias,
       })
 
       const configModule = (await jiti.import(foundPath)) as { default?: unknown } | unknown
