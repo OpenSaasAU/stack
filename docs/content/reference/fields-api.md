@@ -68,6 +68,8 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+
 **Example:**
 
 ```typescript
@@ -285,6 +287,8 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+
 #### Database Type
 
 Prisma: `BigInt`
@@ -473,6 +477,8 @@ Database index configuration.
 - `true` - Create non-unique index for faster queries
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
+
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
 
 **Example:**
 
@@ -743,6 +749,8 @@ Database index configuration.
 - `true` - Create non-unique index for faster date queries
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
+
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
 
 **Example:**
 
