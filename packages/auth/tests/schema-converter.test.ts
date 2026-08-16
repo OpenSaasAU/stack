@@ -298,6 +298,23 @@ describe('convertBetterAuthSchema', () => {
     expect(lists).not.toHaveProperty('User')
   })
 
+  it('should resolve a rateLimit table (case-insensitively) against the configured baseModelKeys remap (issue #909)', () => {
+    const schema = {
+      rateLimit: {
+        modelName: '',
+        fields: {
+          customField: { type: 'boolean' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema, { rateLimit: 'AuthRateLimit' })
+
+    expect(lists).toHaveProperty('AuthRateLimit')
+    expect(lists).not.toHaveProperty('RateLimit')
+    expect(lists.AuthRateLimit.fields).toHaveProperty('customField')
+  })
+
   it('should leave non-base tables unaffected by baseModelKeys', () => {
     const schema = {
       oauth_application: {
