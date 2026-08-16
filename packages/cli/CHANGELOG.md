@@ -1,5 +1,50 @@
 # @opensaas/stack-cli
 
+## 0.39.0
+
+### Minor Changes
+
+- [#926](https://github.com/OpenSaasAU/stack/pull/926) [`5e546b0`](https://github.com/OpenSaasAU/stack/commit/5e546b0fe3542ba41fc77e0a4628acc96eec13ea) Thanks [@borisno2](https://github.com/borisno2)! - Add a first-class `bigInt()` field type for 64-bit integers (e.g. a millisecond epoch) that overflow `integer()`'s 32-bit `Int` — Prisma `BigInt`, TypeScript `bigint`, with an admin UI component, filtering, and MCP support.
+
+  ```typescript
+  import { bigInt } from '@opensaas/stack-core/fields'
+
+  fields: {
+    occurredAtMs: bigInt({ validation: { isRequired: true } }),
+  }
+
+  await context.db.event.create({
+    data: { occurredAtMs: 9007199254740993n }, // bigint, number, or numeric string
+  })
+  ```
+
+  Create/update accept `bigint`, an integer `number`, or a numeric `string`, and always coerce to `bigint`. A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently losing precision. `bigint` isn't JSON-serialisable, so an MCP CRUD tool renders the value as a decimal string instead of throwing, and the admin UI's server→client boundary (list table, item form, relationship table) now round-trips a `bigint` value correctly rather than throwing during render. The migration introspector maps Prisma `BigInt` columns to `bigInt()` instead of the previous lossy `text()` fallback.
+
+- [#932](https://github.com/OpenSaasAU/stack/pull/932) [`5400956`](https://github.com/OpenSaasAU/stack/commit/5400956c79c0e2f2bc1a70e976ad27f28be54688) Thanks [@borisno2](https://github.com/borisno2)! - Resolve `tsconfig.json` path aliases (`compilerOptions.paths`) when loading `opensaas.config.ts`, so a value import using an alias (e.g. `@/*`) works in the config and anywhere in its import closure, not just in type-only positions.
+
+  ```typescript
+  // tsconfig.json
+  {
+    "compilerOptions": {
+      "paths": { "@/*": ["./src/*"] }
+    }
+  }
+
+  // opensaas.config.ts
+  import { lists } from '@/opensaas/lists' // now resolves
+  ```
+
+  Only the single-trailing-`*`, single-target form of `paths` is translated; an entry with multiple candidate targets or an unsupported pattern shape logs a warning naming the pattern and is skipped rather than failing generation. Projects without a `tsconfig.json`, or without `paths`, are unaffected. The `opensaas migrate` command's Keystone config loader resolves aliases the same way.
+
+### Patch Changes
+
+- [#927](https://github.com/OpenSaasAU/stack/pull/927) [`bbf8843`](https://github.com/OpenSaasAU/stack/commit/bbf8843567f0b95689589c53d3ceb9e3eb00adca) Thanks [@borisno2](https://github.com/borisno2)! - Fix migration introspector mapping Prisma/Keystone `Decimal` columns to `text()` instead of `decimal()`. Declared `@db.Decimal(precision, scale)` attributes now carry through to the generated field.
+
+- [#931](https://github.com/OpenSaasAU/stack/pull/931) [`114302b`](https://github.com/OpenSaasAU/stack/commit/114302b95129484fadb6a1a640435ab1a5d2d102) Thanks [@borisno2](https://github.com/borisno2)! - `db.indexes` generation now fails with a descriptive error for an empty `fields` array, and for a single-field entry that duplicates a column already indexed by that field's own `isIndexed` — previously these silently produced invalid or duplicate Prisma.
+
+- Updated dependencies [[`5e546b0`](https://github.com/OpenSaasAU/stack/commit/5e546b0fe3542ba41fc77e0a4628acc96eec13ea), [`cbb03fc`](https://github.com/OpenSaasAU/stack/commit/cbb03fc26047869d23513fbb156c6194d9be389b), [`5f00c3a`](https://github.com/OpenSaasAU/stack/commit/5f00c3a456295a1125281a4227309a8f8c6d853d), [`6f9a64d`](https://github.com/OpenSaasAU/stack/commit/6f9a64d2f25212e91181adc2b67add326a540f6a), [`9a399d6`](https://github.com/OpenSaasAU/stack/commit/9a399d68e4d3f384d4cef5ccd5fc8ec6802a40a5), [`05c9ad4`](https://github.com/OpenSaasAU/stack/commit/05c9ad40f8c4e76718d870e0c1c02511a3475943), [`4d8b654`](https://github.com/OpenSaasAU/stack/commit/4d8b654d099ce13d00893ebc4ce904fa69f2c47a), [`e0baadd`](https://github.com/OpenSaasAU/stack/commit/e0baaddade059cfea639d232f6953fc8c339f6f4), [`ab4a5dd`](https://github.com/OpenSaasAU/stack/commit/ab4a5ddd83eebcf85d4a98f210cd378b974725f5), [`94802ee`](https://github.com/OpenSaasAU/stack/commit/94802eee3b2fdc64fab4b576945820a6df9311c5), [`114302b`](https://github.com/OpenSaasAU/stack/commit/114302b95129484fadb6a1a640435ab1a5d2d102)]:
+  - @opensaas/stack-core@0.39.0
+
 ## 0.38.0
 
 ### Minor Changes

@@ -1,5 +1,28 @@
 # @opensaas/stack-auth
 
+## 0.39.0
+
+### Minor Changes
+
+- [#928](https://github.com/OpenSaasAU/stack/pull/928) [`d5a04bb`](https://github.com/OpenSaasAU/stack/commit/d5a04bb7936a2663fbbfcacbf44f777d423dbc05) Thanks [@borisno2](https://github.com/borisno2)! - Add a `rateLimit.storage` option to `authPlugin`. Setting it to `'database'` derives a fifth `RateLimit` Auth list, mirroring better-auth's own database-backed rate limiter table (`key`/`count`/`lastRequest`, no timestamps, no defaults) so an app that wants a persisted limiter no longer has to hand-write the model.
+
+  ```typescript
+  authPlugin({
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+    },
+  })
+  ```
+
+  `rateLimit` also carries the same `modelName`/`fields`/`tableName`/`schema` adoption knobs as the other four models, so an app with an existing limiter table can adopt it. `access.rateLimit` grants access to the derived list (closed by default, per ADR-0013). `adoptBetterAuthTables({ rateLimit: true })` adopts an existing database-backed limiter table alongside the other four. Setting `rateLimit.storage` via the `betterAuthOptions` passthrough is now rejected — use the first-class option instead.
+
+### Patch Changes
+
+- [#930](https://github.com/OpenSaasAU/stack/pull/930) [`bb04e44`](https://github.com/OpenSaasAU/stack/commit/bb04e44c0f758e00b61d34efc829d0d25b0be3d2) Thanks [@borisno2](https://github.com/borisno2)! - Fix the better-auth schema converter mapping a `bigint: true` field attribute to a 32-bit `Int` instead of a `BigInt` column, which silently overflowed on values like a millisecond epoch.
+
+- [#923](https://github.com/OpenSaasAU/stack/pull/923) [`d0763c5`](https://github.com/OpenSaasAU/stack/commit/d0763c56ff15dd3bb16e00e5dae4d216b7bbdbaf) Thanks [@borisno2](https://github.com/borisno2)! - `getSessionFromAuth()` now accepts an auth instance from either `createAuth()` overload — including the plugin-narrowed one — without a cast.
+
 ## 0.38.0
 
 ### Minor Changes

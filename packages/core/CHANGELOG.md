@@ -1,5 +1,128 @@
 # @opensaas/stack-core
 
+## 0.39.0
+
+### Minor Changes
+
+- [#926](https://github.com/OpenSaasAU/stack/pull/926) [`5e546b0`](https://github.com/OpenSaasAU/stack/commit/5e546b0fe3542ba41fc77e0a4628acc96eec13ea) Thanks [@borisno2](https://github.com/borisno2)! - Add a first-class `bigInt()` field type for 64-bit integers (e.g. a millisecond epoch) that overflow `integer()`'s 32-bit `Int` — Prisma `BigInt`, TypeScript `bigint`, with an admin UI component, filtering, and MCP support.
+
+  ```typescript
+  import { bigInt } from '@opensaas/stack-core/fields'
+
+  fields: {
+    occurredAtMs: bigInt({ validation: { isRequired: true } }),
+  }
+
+  await context.db.event.create({
+    data: { occurredAtMs: 9007199254740993n }, // bigint, number, or numeric string
+  })
+  ```
+
+  Create/update accept `bigint`, an integer `number`, or a numeric `string`, and always coerce to `bigint`. A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently losing precision. `bigint` isn't JSON-serialisable, so an MCP CRUD tool renders the value as a decimal string instead of throwing, and the admin UI's server→client boundary (list table, item form, relationship table) now round-trips a `bigint` value correctly rather than throwing during render. The migration introspector maps Prisma `BigInt` columns to `bigInt()` instead of the previous lossy `text()` fallback.
+
+- [#919](https://github.com/OpenSaasAU/stack/pull/919) [`cbb03fc`](https://github.com/OpenSaasAU/stack/commit/cbb03fc26047869d23513fbb156c6194d9be389b) Thanks [@borisno2](https://github.com/borisno2)! - Fix a fail-open bug where a field-level access rule returning a Prisma filter (instead of a boolean) silently granted the field full access. `checkFieldAccess` now throws `InvalidFieldAccessResultError` for any non-boolean result instead of defaulting to allow.
+
+  This narrows `FieldAccessControl`'s return type from `boolean | PrismaFilter | Promise<...>` to `boolean | Promise<boolean>` — field-level access was already documented (ADR-0001) to be boolean-only; the type had drifted from that. If a field rule returned a filter, it will now fail to compile (or throw at runtime for untyped/JS configs) instead of silently granting access. Evaluate the condition yourself and return a boolean instead, e.g.:
+
+  ```ts
+  // Before (silently granted full access on read/write)
+  someField: text({
+    access: {
+      update: ({ session }) => ({ ownerId: { equals: session?.userId } }),
+    },
+  })
+
+  // After
+  someField: text({
+    access: {
+      update: ({ session, item }) => !!session && session.userId === item?.ownerId,
+    },
+  })
+  ```
+
+  See `docs/adr/0030-field-level-access-fails-closed-on-a-non-boolean-result.md` for the full reasoning.
+
+- [#925](https://github.com/OpenSaasAU/stack/pull/925) [`6f9a64d`](https://github.com/OpenSaasAU/stack/commit/6f9a64d2f25212e91181adc2b67add326a540f6a) Thanks [@borisno2](https://github.com/borisno2)! - Fix a field-level `read` gate withholding a field's VALUE but leaving its PREDICATE unconstrained: a read-denied field could still be named in a `where`/`orderBy`, letting its value (or relative order) be recovered by probing — `count()` is the cleanest instrument, since it answers a predicate while returning no rows at all. `findMany`/`count` now reject a `where`/`orderBy` key naming a field the session cannot read (including nested inside `AND`/`OR`/`NOT`), throwing instead of returning a silently narrowed or empty result. A `read` rule that depends on the fetched row (`item`) cannot be evaluated before the query runs and now resolves to a denial rather than being skipped — see `docs/adr/0031-a-predicate-cannot-name-a-field-the-session-cannot-read.md`. `sudo` is unaffected.
+
+  This was independently reachable through the admin UI's own list view: `collectFilterSpecs`, `buildListFilterWhere`, and `collectFilterSuggestions` (`@opensaas/stack-core`) now take a required `{ session, context }` argument and return a `Promise`, excluding a read-denied field from the collected Filter specs so the UI never suggests, autocompletes, or submits a filter the engine is going to reject — a `field:value` token for such a field now degrades to free text instead. The list view's sort validation (`@opensaas/stack-ui`) excludes the same fields from what a `?sort=` URL param may activate.
+
+  ```ts
+  // Before
+  const specs = collectFilterSpecs(listConfig, listKey, config)
+  const where = buildListFilterWhere(query, listConfig, listKey, config)
+  const suggestions = collectFilterSuggestions(listConfig, listKey, config)
+
+  // After — pass the session/context the field's `read` access is checked against
+  const specs = await collectFilterSpecs(listConfig, listKey, config, { session, context })
+  const where = await buildListFilterWhere(query, listConfig, listKey, config, { session, context })
+  const suggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+    session,
+    context,
+  })
+  ```
+
+- [#934](https://github.com/OpenSaasAU/stack/pull/934) [`9a399d6`](https://github.com/OpenSaasAU/stack/commit/9a399d68e4d3f384d4cef5ccd5fc8ec6802a40a5) Thanks [@list({](https://github.com/list({)! - `afterTransaction` now fires when the OUTERMOST transaction a write participates in settles, and can report `status: 'rolled-back'` where it always reported `'committed'` before (ADR-0028, fixes [#899](https://github.com/OpenSaasAU/stack/issues/899)).
+
+  A write that joins a transaction it did not open — inside `context.transaction()`, or a hook's own `context.db` write — used to fire its `afterTransaction` bracket optimistically as soon as its own write returned, even though the enclosing transaction was still open and could still roll back. It now defers that bracket until the transaction owner (`context.transaction()`, or the Write Pipeline when it opened the transaction) observes the real commit/rollback, then reports the outcome as a conjunction: `committed` if and only if the write itself succeeded **and** the enclosing transaction committed (the write's own error always wins over the transaction's outcome). `beforeTransaction` is unaffected — it still runs eagerly, before its write.
+
+  ```typescript
+
+    hooks: {
+      afterTransaction: async ({ status, item, error }) => {
+        if (status === 'rolled-back') {
+          // Now correctly fires even when this write itself succeeded but the
+          // OUTER context.transaction() callback later threw.
+          await billing.releaseSeat(error)
+        } else {
+          await billing.confirmSeat(item.seatId)
+        }
+      },
+    },
+  })
+  ```
+
+  Three behavior changes to be aware of when upgrading:
+
+  - A `context.transaction()` call can now **reject** with `AfterTransactionError` even after its underlying transaction already committed, if a deferred `afterTransaction` hook throws. A transaction/serialization error (e.g. `P2034`) still takes precedence and propagates unwrapped, so an existing `P2034` retry loop is unaffected.
+  - The deferred `item` a joined write's `afterTransaction` receives on commit is the row **as that write persisted it**, captured at write time — not re-read at flush — so it can be stale if a later write in the same transaction touches the same record.
+  - Transaction-boundary hooks (`beforeTransaction`/`afterTransaction`) on a joined write now always receive a context bound to the base client, never the transaction client — matching what top-level writes already did.
+
+  A write with no transaction owner at all (an app-managed `prisma.$transaction`, or a client that cannot open one, e.g. a bare test mock) is unaffected and still fires `afterTransaction` optimistically at write time.
+
+  See `docs/adr/0028-a-transaction-boundary-hook-reports-the-outermost-transaction.md` and the "In-transaction vs transaction-boundary hooks" section of the hooks concept doc.
+
+- [#924](https://github.com/OpenSaasAU/stack/pull/924) [`05c9ad4`](https://github.com/OpenSaasAU/stack/commit/05c9ad40f8c4e76718d870e0c1c02511a3475943) Thanks [@borisno2](https://github.com/borisno2)! - Fix `FieldAccess['read']` typing `item` as absent when Field Visibility always passes the fetched row. A field `read` rule that reads a property off `item` now compiles without a cast, `any`, or non-null assertion:
+
+  ```ts
+  // Before (required a cast/assertion — `item` was typed `undefined`)
+  internalNotes: text({
+    access: {
+      read: ({ item, session }) => item!.ownerId === session?.userId,
+    } as FieldAccessControl,
+  })
+
+  // After (compiles as written — `item` is typed as the row)
+  internalNotes: text({
+    access: { read: ({ item, session }) => item.ownerId === session?.userId },
+  })
+  ```
+
+  `FieldAccess['read']` now accepts only the single `operation: 'read'` call shape (rather than the full `read | create | update` union `FieldAccess['create']`/`FieldAccess['update']` still accept), so a rule written for the `read` slot never needs to narrow on `operation` to use `item`. The `create` branch — where there genuinely is no row yet — is unchanged.
+
+### Patch Changes
+
+- [#947](https://github.com/OpenSaasAU/stack/pull/947) [`5f00c3a`](https://github.com/OpenSaasAU/stack/commit/5f00c3a456295a1125281a4227309a8f8c6d853d) Thanks [@borisno2](https://github.com/borisno2)! - Clean up comments across `access/`, `config/`, `fields/`, `filter/`, `hooks/`, `lib/`, `mcp/`, `query/`, `utils/` and `validation/` per the CLAUDE.md Comments rule. No behavior changes.
+
+- [#946](https://github.com/OpenSaasAU/stack/pull/946) [`4d8b654`](https://github.com/OpenSaasAU/stack/commit/4d8b654d099ce13d00893ebc4ce904fa69f2c47a) Thanks [@borisno2](https://github.com/borisno2)! - Restore two comments in `src/context/` that were trimmed too far in a prior comment cleanup ([#945](https://github.com/OpenSaasAU/stack/issues/945)). No behavior changes.
+
+- [#920](https://github.com/OpenSaasAU/stack/pull/920) [`e0baadd`](https://github.com/OpenSaasAU/stack/commit/e0baaddade059cfea639d232f6953fc8c339f6f4) Thanks [@borisno2](https://github.com/borisno2)! - `findMany`/`count` now reject an undeclared `where`/`orderBy` key (including nested inside `AND`/`OR`/`NOT` or a relation filter), closing the same back-relation surface [#564](https://github.com/OpenSaasAU/stack/issues/564) closed on writes. `sudo` still bypasses.
+
+- [#945](https://github.com/OpenSaasAU/stack/pull/945) [`ab4a5dd`](https://github.com/OpenSaasAU/stack/commit/ab4a5ddd83eebcf85d4a98f210cd378b974725f5) Thanks [@borisno2](https://github.com/borisno2)! - Clean up comments in `src/context/` per the CLAUDE.md Comments rule. No behavior changes.
+
+- [#929](https://github.com/OpenSaasAU/stack/pull/929) [`94802ee`](https://github.com/OpenSaasAU/stack/commit/94802eee3b2fdc64fab4b576945820a6df9311c5) Thanks [@borisno2](https://github.com/borisno2)! - Fix: a relation filter in `where` (`some`/`every`/`none`/`is`/`isNot`) no longer bypasses the related list's `query` access — it is now scoped exactly like `include` already is, recursing through every hop of a chain, on both `findMany` and `count`. A filter through a related list that denies query access now throws `RelationFilterAccessDeniedError` instead of silently running unscoped; field-level `read` access on the related list also now applies to keys named inside the filter. `@opensaas/stack-ui`'s admin list view no longer needs its own relationship label-filter access fold, since the engine now covers it.
+
+- [#931](https://github.com/OpenSaasAU/stack/pull/931) [`114302b`](https://github.com/OpenSaasAU/stack/commit/114302b95129484fadb6a1a640435ab1a5d2d102) Thanks [@borisno2](https://github.com/borisno2)! - Correct `ListIndex`/`db.indexes` doc comments, which wrongly claimed an entry must span two or more fields — a single-field entry is fully supported and now documented as such.
+
 ## 0.38.0
 
 ### Minor Changes
