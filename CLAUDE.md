@@ -1054,6 +1054,29 @@ model Teacher {
 - Prisma automatically creates join tables named `_relationName` when you use `@relation("relationName")`
 - For new projects, use the default Prisma naming unless you need Keystone compatibility or have specific naming requirements
 
+## Comments
+
+**Default to none.** The code says what it does; a good name says why it exists. A comment that restates either is a second copy of the truth that nothing keeps in sync — and prose is the only part of a file no test can falsify.
+
+A comment earns its place when it carries something the code **cannot**:
+
+- A constraint from outside the file — Prisma's behaviour, a Better-auth contract, a Next.js server/client boundary, a browser quirk, an upstream bug being worked around. Link it.
+- A warning where the obvious edit is the wrong one. `validation: { isRequired: true }` is an application-layer check and does **not** make the Prisma column non-null — that needs `db: { isNullable: false }`. The reader is about to make the mistake; the comment is the only thing in their way.
+- A **Known limits** block on a generator, migration script, or introspector, naming what it cannot handle. That is not derivable from the code — the code is precisely the part that does not handle those cases.
+
+Everything else that feels worth writing is **rationale, and rationale does not belong beside code.** Put it in an ADR (`docs/adr/`), the issue, the changeset, or the PR body. Those are dated, reviewed, and explicitly superseded when they stop being true. A docblock is none of those: it decays silently, and it decays fastest next to the values most likely to change.
+
+Two tests before keeping one:
+
+1. **Staleness.** If someone edits the line below, does the comment become false? If yes and no test would catch it, it is a liability, not documentation. `const MAX_BATCH = 3` annotated "Three, not 'a few'" becomes a lie the moment anyone writes `5`.
+2. **Restatement.** Does it say what the line already says? Delete the comment, not the line.
+
+**Never comment the absence of something.** No note explaining why there is no type annotation, no `// no-op`, no record of what the code used to be. Git holds that, and a reader who needs it can ask git.
+
+A file header should orient a reader in a line or two. If it needs a page, the explanation belongs in a doc or an ADR and the file should link to it — a nine-line docblock above `export const lists = {}` is the shape to avoid.
+
+**Public API docblocks are the deliberate exception.** Exported config options, field builders, and plugin surfaces carry TSDoc because it is what the consumer's editor shows — that is a contract, not a narration of the implementation beneath it.
+
 ## Development Workflow
 
 ### Making Changes to Core

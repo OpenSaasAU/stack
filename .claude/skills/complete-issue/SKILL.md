@@ -27,6 +27,9 @@ Make a todo list for all the tasks below and work through them one at a time, ma
 - Use the `/tdd` skill for any non-trivial logic
 - Write failing tests first, then implement to make them pass
 - Keep changes focused on what the issue requires — no scope creep
+- **Write few comments.** See the "Comments" section of `CLAUDE.md` for the rule; the failure mode to watch for is specific to working this way. You will finish an issue holding a great deal of hard-won reasoning — why a threshold is 3 and not 5, which two options you weighed, what broke when you tried the obvious thing. The pull to write all of it down next to the code is strong, and it is the wrong destination. **That reasoning is what the PR body, the issue, the changeset and an ADR are for.** They are dated and reviewable; a docblock is neither, and it rots fastest beside the values most likely to change. If you catch yourself writing a paragraph to justify a line, move it to the PR body and leave the line bare.
+
+  Concretely, do not ship: a file header longer than a couple of lines, a docblock on a self-describing constant, a comment restating the line beneath it, or a note explaining why something is _absent_. If a comment would become false when someone edits the code below it, and no test would catch that, delete it. TSDoc on an exported config option, field builder, or plugin surface is the exception — that is the consumer's editor documentation, not narration.
 
 ### 4. Commit and Push
 
