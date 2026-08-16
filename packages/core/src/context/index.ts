@@ -1044,7 +1044,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // `undefined`), only the ones a fragment named otherwise.
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1057,7 +1056,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       return null
     }
 
-    // Filter readable fields and apply resolveOutput hooks (including nested relationships)
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       item,
@@ -1073,7 +1071,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       selection,
     )
 
-    // When a fragment is provided, pick only the requested fields from the result
     if (fragment) {
       return pickFields(filtered, fragment._fields)
     }
@@ -1082,9 +1079,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create findMany operation with access control
- */
 function createFindMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1104,10 +1098,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'findMany')
 
-    // Check singleton constraint (throw error instead of silently returning empty)
+    // Singleton misuse throws rather than silently returning `[]` — unlike an
+    // access denial, this is a caller-shape error.
     if (isSingletonList(listConfig)) {
       throw new ValidationError(
         [`Cannot use findMany: ${listName} is a singleton list. Use get() instead.`],
@@ -1172,7 +1166,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           })) as Record<string, unknown>)
         : args?.where
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return []
@@ -1180,7 +1173,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // When a query fragment is provided, build include from fragment fields
     const fragment = isFragment(args?.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
@@ -1195,16 +1187,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       config,
     )
 
-    // Virtual fields have no database column. Whichever path produced
-    // `include` (fragment, access-controlled merge, or sudo passthrough), a
-    // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). Below, `filterReadableFields` computes a virtual field's value
-    // exactly when `selection` says the read is going to return it (ADR-0027)
-    // — every one of them for a bare/`include`-based read (`selection` is
-    // `undefined`), only the ones a fragment named otherwise.
+    // Strips virtual keys from `include` before the Prisma call — see the
+    // `createFindUnique` comment above for why (#628, ADR-0027).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1216,7 +1202,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       include,
     })
 
-    // Filter readable fields for each item and apply resolveOutput hooks (including nested relationships)
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await Promise.all(
       items.map((item: Record<string, unknown>) =>
@@ -1236,7 +1221,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       ),
     )
 
-    // When a fragment is provided, pick only the requested fields from each result
     if (fragment) {
       return filtered.map((item: Record<string, unknown>) => pickFields(item, fragment._fields))
     }
@@ -1270,9 +1254,6 @@ function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
   }
 }
 
-/**
- * Create create operation with access control and hooks
- */
 function createCreate<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1296,10 +1277,8 @@ function createCreate<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create createMany operation with access control and hooks
- * Runs create in a loop to ensure all hooks and access control are executed for each item
- */
+// Runs create in a loop (not Prisma's native createMany) so every item still
+// gets its own hooks and access control.
 function createCreateMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1322,9 +1301,6 @@ function createCreateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create update operation with access control and hooks
- */
 function createUpdate<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1348,10 +1324,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create updateMany operation with access control and hooks
- * Runs findMany to get records, then update in a loop to ensure all hooks and access control are executed
- */
+// Finds matching records, then updates each individually (not Prisma's native
+// updateMany) so every item still gets its own hooks and access control.
 function createUpdateMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1365,10 +1339,8 @@ function createUpdateMany<TPrisma extends PrismaClientLike>(
   updateFn: any,
 ) {
   return async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
-    // First, find all matching records (respects access control)
     const items = await findManyFn({ where: args.where })
 
-    // Then update each one individually (runs hooks and access control for each)
     const results = []
     for (const item of items) {
       const result = await updateFn({ where: { id: item.id }, data: args.data })
@@ -1379,9 +1351,6 @@ function createUpdateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create delete operation with access control and hooks
- */
 function createDelete<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1405,9 +1374,6 @@ function createDelete<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create count operation with access control
- */
 function createCount<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1468,7 +1434,6 @@ function createCount<TPrisma extends PrismaClientLike>(
           })) as Record<string, unknown>)
         : args?.where
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return 0
@@ -1476,7 +1441,6 @@ function createCount<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // Execute count
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1488,10 +1452,6 @@ function createCount<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create get operation for singleton lists
- * Returns the single record, or auto-creates it if enabled
- */
 function createGet<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1509,15 +1469,12 @@ function createGet<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'get')
 
-    // First try to find the existing record
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
 
-    // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = {}
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1530,15 +1487,15 @@ function createGet<TPrisma extends PrismaClientLike>(
         return null
       }
 
-      // Merge access filter (for singleton, we don't have a specific where clause)
+      // A singleton has no per-record `where`, so the access filter (if any) is
+      // the whole `where`.
       if (accessResult && typeof accessResult === 'object') {
         where = accessResult
       }
     }
 
-    // When a query fragment is provided, build the include from the fragment
-    // instead of the access-controlled include. Access control still runs via
-    // filterReadableFields; the fragment then narrows to only the requested fields.
+    // Access control still runs via filterReadableFields even though a
+    // fragment drives `include`; the fragment only narrows which fields come back.
     const fragment = isFragment(args?.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
@@ -1556,15 +1513,12 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Try to find the record
     const item = await model.findFirst({
       where,
       include,
     })
 
-    // If record exists, return it
     if (item) {
-      // Filter readable fields and apply resolveOutput hooks
       const filtered = await filterReadableFields(
         item,
         listConfig.fields,
@@ -1578,20 +1532,17 @@ function createGet<TPrisma extends PrismaClientLike>(
         declaredOnly,
         selection,
       )
-      // When a fragment is provided, pick only the requested fields from the result
       if (fragment) {
         return pickFields(filtered, fragment._fields)
       }
       return filtered
     }
 
-    // If no record and auto-create is enabled, create it
     if (shouldAutoCreate(listConfig)) {
       const defaultData = getDefaultData(listConfig)
       return await createFn({ data: defaultData })
     }
 
-    // No record and auto-create is disabled
     return null
   }
 }
