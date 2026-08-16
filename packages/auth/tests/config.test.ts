@@ -223,6 +223,82 @@ describe('normalizeAuthConfig', () => {
       expect(result.models.session.tableName).toBe('sessions')
     })
   })
+
+  describe('models.rateLimit (issue #909)', () => {
+    it('is absent when rateLimit is not configured', () => {
+      const result = normalizeAuthConfig({})
+
+      expect(result.models.rateLimit).toBeUndefined()
+    })
+
+    it('is absent when storage is "memory" or unset', () => {
+      expect(normalizeAuthConfig({ rateLimit: { enabled: true } }).models.rateLimit).toBeUndefined()
+      expect(
+        normalizeAuthConfig({ rateLimit: { enabled: true, storage: 'memory' } }).models.rateLimit,
+      ).toBeUndefined()
+    })
+
+    it('is absent when storage is "secondary-storage"', () => {
+      expect(
+        normalizeAuthConfig({ rateLimit: { enabled: true, storage: 'secondary-storage' } }).models
+          .rateLimit,
+      ).toBeUndefined()
+    })
+
+    it('is present with the default RateLimit model name when storage is "database"', () => {
+      const result = normalizeAuthConfig({ rateLimit: { enabled: true, storage: 'database' } })
+
+      expect(result.models.rateLimit).toEqual({
+        modelName: 'RateLimit',
+        tableName: undefined,
+        fields: {},
+      })
+    })
+
+    it('is present even when enabled is false, since better-auth still expects the table', () => {
+      const result = normalizeAuthConfig({ rateLimit: { enabled: false, storage: 'database' } })
+
+      expect(result.models.rateLimit).toBeDefined()
+      expect(result.models.rateLimit?.modelName).toBe('RateLimit')
+    })
+
+    it('honours a custom modelName/tableName/fields/schema on the rateLimit model', () => {
+      const result = normalizeAuthConfig({
+        rateLimit: {
+          enabled: true,
+          storage: 'database',
+          modelName: 'AuthRateLimit',
+          tableName: 'rate_limit',
+          fields: { key: 'limit_key' },
+          schema: 'auth',
+        },
+      })
+
+      expect(result.models.rateLimit).toEqual({
+        modelName: 'AuthRateLimit',
+        tableName: 'rate_limit',
+        fields: { key: 'limit_key' },
+        schema: 'auth',
+      })
+    })
+
+    it('resolves the plugin-level schema default for the rateLimit model like the other four', () => {
+      const result = normalizeAuthConfig({
+        schema: 'auth',
+        rateLimit: { enabled: true, storage: 'database' },
+      })
+
+      expect(result.models.rateLimit?.schema).toBe('auth')
+      expect(result.models.user.schema).toBe('auth')
+    })
+
+    it('keeps storage on the normalized top-level rateLimit config', () => {
+      const result = normalizeAuthConfig({ rateLimit: { enabled: true, storage: 'database' } })
+
+      expect(result.rateLimit?.storage).toBe('database')
+      expect(result.rateLimit?.enabled).toBe(true)
+    })
+  })
 })
 
 describe('authPlugin', () => {
@@ -583,6 +659,91 @@ describe('authPlugin', () => {
       })
 
       expect(result.lists.User.access).toBe(extendAccess)
+    })
+  })
+
+  describe('RateLimit list (issue #909)', () => {
+    it('does not inject a RateLimit list when rateLimit is unconfigured', async () => {
+      const result = await config({
+        plugins: [authPlugin({})],
+        lists: {},
+      })
+
+      expect(result.lists).not.toHaveProperty('RateLimit')
+    })
+
+    it('does not inject a RateLimit list for storage "memory" or "secondary-storage"', async () => {
+      const memory = await config({
+        plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'memory' } })],
+        lists: {},
+      })
+      expect(memory.lists).not.toHaveProperty('RateLimit')
+
+      const secondary = await config({
+        plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'secondary-storage' } })],
+        lists: {},
+      })
+      expect(secondary.lists).not.toHaveProperty('RateLimit')
+    })
+
+    it('injects a RateLimit list when storage is "database"', async () => {
+      const result = await config({
+        plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'database' } })],
+        lists: {},
+      })
+
+      const rateLimit = result.lists.RateLimit
+      expect(rateLimit).toBeDefined()
+      expect(rateLimit.fields).toHaveProperty('key')
+      expect(rateLimit.fields).toHaveProperty('count')
+      expect(rateLimit.fields).toHaveProperty('lastRequest')
+    })
+
+    it('injects a RateLimit list even when enabled is false, since better-auth still expects the table', async () => {
+      const result = await config({
+        plugins: [authPlugin({ rateLimit: { enabled: false, storage: 'database' } })],
+        lists: {},
+      })
+
+      expect(result.lists.RateLimit).toBeDefined()
+    })
+
+    it('ships the RateLimit list closed by default (ADR-0013)', async () => {
+      const result = await config({
+        plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'database' } })],
+        lists: {},
+      })
+
+      expect(result.lists.RateLimit.access).toBeUndefined()
+    })
+
+    it('applies access.rateLimit to the derived list', async () => {
+      const rateLimitQuery = () => true
+      const result = await config({
+        plugins: [
+          authPlugin({
+            rateLimit: { enabled: true, storage: 'database' },
+            access: { rateLimit: { operation: { query: rateLimitQuery } } },
+          }),
+        ],
+        lists: {},
+      })
+
+      expect(result.lists.RateLimit.access?.operation?.query).toBe(rateLimitQuery)
+    })
+
+    it('respects a custom modelName on the rateLimit config', async () => {
+      const result = await config({
+        plugins: [
+          authPlugin({
+            rateLimit: { enabled: true, storage: 'database', modelName: 'AuthRateLimit' },
+          }),
+        ],
+        lists: {},
+      })
+
+      expect(result.lists).toHaveProperty('AuthRateLimit')
+      expect(result.lists).not.toHaveProperty('RateLimit')
     })
   })
 })

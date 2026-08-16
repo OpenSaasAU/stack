@@ -203,6 +203,14 @@ export type AuthAccessConfig = {
   account?: ListConfig<any>['access']
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   verification?: ListConfig<any>['access']
+  /**
+   * Access control for the `RateLimit` list — only meaningful when
+   * `rateLimit.storage: 'database'` derives it. Per ADR-0013 the list ships
+   * closed like the other four; grant access here (e.g. to inspect throttled
+   * keys in the Admin UI).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  rateLimit?: ListConfig<any>['access']
 }
 
 export type AuthModelConfig = {
@@ -413,6 +421,22 @@ export type AuthConfig = {
    * Rate limiting configuration
    * Controls rate limiting for authentication endpoints
    *
+   * `storage` mirrors better-auth's own `rateLimit.storage` option
+   * (`'memory' | 'database' | 'secondary-storage'`, default `'memory'`). Set
+   * it to `'database'` to persist the limiter across restarts/instances — the
+   * plugin then derives a fifth `RateLimit` Auth list (per ADR-0007) so the
+   * required table exists in the generated Prisma schema, following the same
+   * adoption knobs (`modelName`/`fields`/`tableName`/`schema`) the other four
+   * models carry. Derivation keys off `storage` alone — `enabled: false` with
+   * `storage: 'database'` still produces the list, since better-auth still
+   * expects the table regardless of whether the limiter is currently active
+   * (`enabled` is routinely environment-driven; tying the schema to it would
+   * make dev/prod schemas differ).
+   *
+   * Setting `storage` via `betterAuthOptions.rateLimit.storage` is rejected —
+   * use this option instead, since it also has schema consequences the
+   * passthrough can't apply.
+   *
    * @example
    * ```typescript
    * // Disable rate limiting for testing
@@ -425,6 +449,12 @@ export type AuthConfig = {
    *   enabled: true,
    *   window: 60,  // 60 seconds
    *   max: 100,    // 100 requests per window
+   * }
+   *
+   * // Persist the limiter in the database (derives a RateLimit list)
+   * rateLimit: {
+   *   enabled: true,
+   *   storage: 'database',
    * }
    * ```
    */
@@ -440,7 +470,12 @@ export type AuthConfig = {
      * @default 100
      */
     max?: number
-  }
+    /**
+     * Where better-auth persists the rate limiter.
+     * @default 'memory'
+     */
+    storage?: 'memory' | 'database' | 'secondary-storage'
+  } & AuthModelConfig
 
   /**
    * Escape hatch for better-auth options the stack doesn't model — typed as
@@ -498,7 +533,8 @@ export type NormalizedAuthModelConfig = {
 }
 
 /**
- * Resolved auth model configuration for all four better-auth models.
+ * Resolved auth model configuration for all four better-auth models, plus an
+ * optional fifth for the database-backed rate limiter.
  * Consumed by the Auth-list derivation and the runtime user-key resolution.
  */
 export type NormalizedAuthModels = {
@@ -506,6 +542,12 @@ export type NormalizedAuthModels = {
   session: NormalizedAuthModelConfig
   account: NormalizedAuthModelConfig
   verification: NormalizedAuthModelConfig
+  /**
+   * Present only when `rateLimit.storage === 'database'` — derives a fifth
+   * `RateLimit` Auth list. Absent (not `undefined`-valued) otherwise, so
+   * `Object.values(models)` never yields a model-less entry.
+   */
+  rateLimit?: NormalizedAuthModelConfig
 }
 
 /**
@@ -545,5 +587,6 @@ export type NormalizedAuthConfig = Required<
     enabled: boolean
     window?: number
     max?: number
+    storage?: 'memory' | 'database' | 'secondary-storage'
   }
 }

@@ -137,10 +137,11 @@ export function convertTableToList(
 }
 
 /**
- * Base better-auth model keys — the four tables the auth plugin's own model
- * config (`user`/`session`/`account`/`verification`) can remap via `modelName`.
+ * Base better-auth model keys — the tables the auth plugin's own model config
+ * (`user`/`session`/`account`/`verification`, plus `rateLimit` when
+ * `rateLimit.storage: 'database'` derives it) can remap via `modelName`.
  */
-type BaseAuthModelKey = 'user' | 'session' | 'account' | 'verification'
+type BaseAuthModelKey = 'user' | 'session' | 'account' | 'verification' | 'rateLimit'
 
 /**
  * Resolved list key for each base better-auth model, as derived by
@@ -171,6 +172,8 @@ function resolveBaseModelKey(
       return baseModelKeys.account
     case 'verification':
       return baseModelKeys.verification
+    case 'ratelimit':
+      return baseModelKeys.rateLimit
     default:
       return undefined
   }

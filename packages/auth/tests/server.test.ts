@@ -459,6 +459,106 @@ describe('betterAuthOptions passthrough', () => {
 
     expect(config.user).toMatchObject({ modelName: 'CustomUser' })
   })
+
+  it('rejects betterAuthOptions.rateLimit.storage', async () => {
+    await expect(
+      buildBetterAuthOptions(
+        makeOpensaasConfig(
+          makeAuthConfig({ betterAuthOptions: { rateLimit: { storage: 'database' } } }),
+        ),
+        makeContext(),
+      ),
+    ).rejects.toThrow(/betterAuthOptions\.rateLimit\.storage/)
+  })
+
+  it('does not reject other betterAuthOptions.rateLimit keys (customRules/customStorage) and merges them', async () => {
+    const customRules = { '/sign-in/email': { window: 10, max: 3 } }
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        rateLimit: { enabled: true, window: 60, max: 100 },
+        betterAuthOptions: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only shape
+          rateLimit: { customRules } as any,
+        },
+      }),
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
+    const rateLimit = config.rateLimit as any
+    expect(rateLimit.customRules).toBe(customRules)
+    // The stack's own enabled/window/max survive the merge alongside customRules.
+    expect(rateLimit.enabled).toBe(true)
+    expect(rateLimit.window).toBe(60)
+    expect(rateLimit.max).toBe(100)
+  })
+})
+
+describe('rateLimit option forwarding (issue #909)', () => {
+  beforeEach(() => {
+    betterAuthMock.mockClear()
+    prismaAdapterMock.mockClear()
+    nextCookiesMock.mockClear()
+  })
+
+  it('forwards enabled/window/max with no storage key when rateLimit.storage is unset', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({ rateLimit: { enabled: true, window: 60, max: 100 } }),
+    )
+
+    expect(config.rateLimit).toEqual({ enabled: true, window: 60, max: 100 })
+  })
+
+  it('forwards storage: "database" alongside enabled/window/max', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        rateLimit: { enabled: true, window: 60, max: 100, storage: 'database' },
+        models: {
+          user: { modelName: 'User', fields: {} },
+          session: { modelName: 'Session', fields: {} },
+          account: { modelName: 'Account', fields: {} },
+          verification: { modelName: 'Verification', fields: {} },
+          rateLimit: { modelName: 'RateLimit', fields: {} },
+        },
+      }),
+    )
+
+    expect(config.rateLimit).toMatchObject({
+      enabled: true,
+      window: 60,
+      max: 100,
+      storage: 'database',
+      modelName: 'RateLimit',
+    })
+  })
+
+  it('forwards a custom rateLimit modelName/fields to better-auth so the running instance matches the derived table', async () => {
+    const config = await buildBetterAuthConfig(
+      makeAuthConfig({
+        rateLimit: { enabled: true, storage: 'database' },
+        models: {
+          user: { modelName: 'User', fields: {} },
+          session: { modelName: 'Session', fields: {} },
+          account: { modelName: 'Account', fields: {} },
+          verification: { modelName: 'Verification', fields: {} },
+          rateLimit: { modelName: 'AuthRateLimit', fields: { key: 'limit_key' } },
+        },
+      }),
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
+    const rateLimit = config.rateLimit as any
+    expect(rateLimit.modelName).toBe('AuthRateLimit')
+    expect(rateLimit.fields).toEqual({ key: 'limit_key' })
+  })
+
+  it('does not forward modelName/fields when no rateLimit model was derived (storage unset)', async () => {
+    const config = await buildBetterAuthConfig(makeAuthConfig({ rateLimit: { enabled: true } }))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrow test-only access
+    const rateLimit = config.rateLimit as any
+    expect(rateLimit.modelName).toBeUndefined()
+    expect(rateLimit.fields).toBeUndefined()
+  })
 })
 
 describe('buildBetterAuthOptions / createAuth parity', () => {

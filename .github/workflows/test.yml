@@ -95,6 +95,18 @@ jobs:
           RUN_SCAFFOLD_GUARD: '1'
           DATABASE_URL: 'file:./dev.db'
 
+      # Live proof the database-backed rate limiter (issue #909) actually
+      # works: generates a real schema with the derived RateLimit list,
+      # pushes it to a real SQLite database, and drives real betterAuth()
+      # instances through it. Borrows the same offline toolchain as the
+      # scaffold guard above, so it needs no additional install. Opt-in via
+      # RUN_RATE_LIMIT_E2E so it stays out of the fast unit lane. See
+      # ADR-0002 and packages/auth/tests/rate-limit-e2e.test.ts.
+      - name: Run database-backed rate limiter e2e guard
+        run: pnpm --filter @opensaas/stack-auth test rate-limit-e2e
+        env:
+          RUN_RATE_LIMIT_E2E: '1'
+
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
 

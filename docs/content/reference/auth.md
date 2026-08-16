@@ -320,6 +320,48 @@ authPlugin({
 
 The same options object is available standalone via `buildBetterAuthOptions()` — see [Escape hatch: hand-wiring `betterAuth()`](#escape-hatch-hand-wiring-betterauth) below.
 
+### `rateLimit`
+
+Controls rate limiting for authentication endpoints:
+
+```typescript
+authPlugin({
+  rateLimit: {
+    enabled: true,
+    window: 60, // seconds
+    max: 100, // requests per window
+  },
+})
+```
+
+`storage` mirrors better-auth's own `rateLimit.storage` option (`'memory' | 'database' | 'secondary-storage'`, default `'memory'`). Setting it to `'database'` is what generates the fifth `RateLimit` list (see [Auto-Generated Lists](#auto-generated-lists) below) — the persisted limiter needs a table, and this is the only way to get one:
+
+```typescript
+authPlugin({
+  rateLimit: {
+    enabled: true,
+    storage: 'database',
+  },
+})
+```
+
+Derivation keys off `storage` alone, not `enabled` — `{ enabled: false, storage: 'database' }` still produces the `RateLimit` list, since better-auth still expects the table regardless of whether the limiter is currently active (`enabled` is routinely environment-driven, and tying the generated schema to it would make dev and prod schemas differ).
+
+`rateLimit` also carries the same adoption knobs as the other four models — `modelName`, `fields`, `tableName`, `schema` — so an app with an existing database-backed limiter table can adopt it rather than being forced into a new one:
+
+```typescript
+authPlugin({
+  rateLimit: {
+    enabled: true,
+    storage: 'database',
+    modelName: 'AuthRateLimit',
+    fields: { key: 'limit_key' },
+  },
+})
+```
+
+Setting `storage` via the `betterAuthOptions.rateLimit` passthrough is rejected — it has schema consequences (deriving the `RateLimit` list) a passthrough can't also apply to the generated Prisma schema. Other `betterAuthOptions.rateLimit` keys (`customRules`, `customStorage`) still pass through and merge with `enabled`/`window`/`max` as usual.
+
 ## Auto-Generated Lists
 
 The auth plugin automatically generates the following lists:
@@ -371,6 +413,17 @@ Stores email verification and password reset tokens:
 - `expiresAt` (DateTime)
 - `createdAt` (DateTime, auto)
 - `updatedAt` (DateTime, auto)
+
+### RateLimit
+
+Only present when `rateLimit.storage: 'database'` is set — mirrors better-auth's own rate-limit table exactly:
+
+- `id` (String, auto-generated)
+- `key` (String, unique, required — load-bearing: the limiter races concurrent requests into a create and relies on the unique-constraint violation to serialise them)
+- `count` (Int, required)
+- `lastRequest` (BigInt, required — a millisecond epoch)
+
+No `createdAt`/`updatedAt` (better-auth's own table has neither), and none of the three columns carries a database default — the limiter supplies `lastRequest` explicitly on every write. Like the other four lists, it ships closed by default (ADR-0013); grant access via `authPlugin({ access: { rateLimit: { ... } } })`.
 
 ## Server Setup
 
