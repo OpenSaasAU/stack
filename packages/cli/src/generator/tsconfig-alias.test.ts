@@ -106,6 +106,19 @@ describe('resolveTsconfigAlias', () => {
     expect(warnings).toHaveLength(1)
   })
 
+  it('warns and skips a bare "*" catch-all pattern instead of aliasing every specifier', () => {
+    writeTsconfig({
+      compilerOptions: { paths: { '*': ['./src/*'], '@utils/*': ['./src/utils/*'] } },
+    })
+
+    const { alias, warnings } = resolveTsconfigAlias(tempDir)
+
+    expect(alias).toEqual({ '@utils/': path.join(tempDir, 'src', 'utils') })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('"*"')
+    expect(warnings[0]).toContain('catch-all')
+  })
+
   it('mixes representable and unrepresentable entries: resolves one, warns on the other', () => {
     writeTsconfig({
       compilerOptions: {
@@ -213,6 +226,23 @@ describe('resolveTsconfigAlias + jiti integration', () => {
       default: { lists: { hello: string } }
     }
     expect(mod.default.lists).toEqual({ hello: 'transitive' })
+  })
+
+  it('a bare "*" catch-all does not corrupt resolution of the config’s own absolute path (issue repro)', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { paths: { '*': ['./src/*'] } } }),
+    )
+    fs.writeFileSync(path.join(tempDir, 'opensaas.config.ts'), 'export default { lists: {} }\n')
+
+    const { alias } = resolveTsconfigAlias(tempDir)
+    expect(alias).toBeUndefined()
+
+    const jiti = createJiti(tempDir, { interopDefault: true, alias })
+    const mod = (await jiti.import(path.join(tempDir, 'opensaas.config.ts'))) as {
+      default: { lists: Record<string, never> }
+    }
+    expect(mod.default.lists).toEqual({})
   })
 
   it('fails to resolve the alias when no tsconfig.json is present (baseline without the fix)', async () => {
