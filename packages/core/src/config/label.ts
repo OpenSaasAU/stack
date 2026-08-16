@@ -1,8 +1,11 @@
 import type { ListConfig } from './types.js'
 
 /**
- * Resolve the field name used as a list's Label field — see the "Label
- * field" glossary entry in `CONTEXT.md`.
+ * Resolve the field name used as a list's Label field: `ui.labelField` if
+ * set, else `name`, else `title`, else `id`.
+ *
+ * @throws if `ui.labelField` names a field not declared on the list, or a
+ * relationship field (the Label field must be a scalar).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function getLabelFieldName(listConfig: ListConfig<any>): string {
@@ -29,8 +32,8 @@ export function getLabelFieldName(listConfig: ListConfig<any>): string {
 }
 
 /**
- * Render a row's Label field as text — see the "Item label" glossary entry
- * in `CONTEXT.md`.
+ * Render a row's Label field ({@link getLabelFieldName}) as text, falling
+ * back to `item.id` when the value is `null`/`undefined`.
  */
 export function getItemLabel(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
