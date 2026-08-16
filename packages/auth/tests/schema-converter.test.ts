@@ -36,6 +36,47 @@ describe('convertTableToList', () => {
     expect(listConfig.fields.score.defaultValue).toBe(0)
   })
 
+  it('should convert a number field with bigint: true to a bigInt field (issue #917)', () => {
+    const tableSchema = {
+      modelName: 'TestTable',
+      fields: {
+        lastRequest: { type: 'number', required: true, bigint: true },
+      },
+    }
+
+    const listConfig = convertTableToList('test_table', tableSchema)
+
+    expect(listConfig.fields.lastRequest.type).toBe('bigInt')
+    expect(listConfig.fields.lastRequest.validation?.isRequired).toBe(true)
+  })
+
+  it('should keep a number field with bigint: false as integer', () => {
+    const tableSchema = {
+      modelName: 'TestTable',
+      fields: {
+        age: { type: 'number', bigint: false },
+      },
+    }
+
+    const listConfig = convertTableToList('test_table', tableSchema)
+
+    expect(listConfig.fields.age.type).toBe('integer')
+  })
+
+  it('should pass defaultValue through on a bigint number field', () => {
+    const tableSchema = {
+      modelName: 'TestTable',
+      fields: {
+        lastRequest: { type: 'number', bigint: true, defaultValue: 0 },
+      },
+    }
+
+    const listConfig = convertTableToList('test_table', tableSchema)
+
+    expect(listConfig.fields.lastRequest.type).toBe('bigInt')
+    expect(listConfig.fields.lastRequest.defaultValue).toBe(0)
+  })
+
   it('should convert boolean fields', () => {
     const tableSchema = {
       modelName: 'TestTable',
