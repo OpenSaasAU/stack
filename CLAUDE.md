@@ -435,9 +435,9 @@ The function receives:
 
 Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular and broad modifications.
 
-**Model-Level Composite Indexes (`db.indexes`):**
+**Model-Level Indexes (`db.indexes`):**
 
-Field-level `isIndexed` (on a scalar or relationship field) can only ever produce a single-column `@@unique`/`@@index`. A list's `db.indexes` is the multi-column case: each entry names two or more of the list's own OpenSaaS field names (not raw database column names) and the generator resolves each to its Prisma column — a scalar field's own name, or a relationship field's foreign key column (`<field>Id`) when this side owns it.
+Field-level `isIndexed` is the sugar for the unnamed single-column case. `db.indexes` is the full form — reach for it when a constraint needs a `name` (Prisma's `map:`, for adopting an existing live constraint), a `sort` direction, or spans more than one column. Arity is incidental: each entry names one or more of the list's own OpenSaaS field names (not raw database column names) and the generator resolves each to its Prisma column — a scalar field's own name, or a relationship field's foreign key column (`<field>Id`) when this side owns it. See the [reference docs](https://stack.opensaas.au/docs/reference/config-api#dbindexes) for the full rules.
 
 ```typescript
 Audition: list({
@@ -469,9 +469,20 @@ AuthVerification: list({
   },
 })
 // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+
+RateLimit: list({
+  fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
+  db: {
+    // A single-field entry is as legitimate as a composite one — this is the
+    // form for adopting a live table's unique constraint under a name Prisma
+    // wouldn't derive on its own.
+    indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
+  },
+})
+// Generates: @@unique([key], map: "RateLimit_key_key")
 ```
 
-An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry, and the bad field — never silently dropped or emitted as invalid Prisma.
+An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry, and the bad field — never silently dropped or emitted as invalid Prisma. The same is true for an empty `fields` array, and for a single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes (the error names both the field/`isIndexed` and the entry — remove one of them).
 
 ### Field Types
 

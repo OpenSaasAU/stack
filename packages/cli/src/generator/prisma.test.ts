@@ -1503,6 +1503,186 @@ describe('Prisma Schema Generator', () => {
       )
     })
 
+    describe('single-field entries (#918)', () => {
+      it('emits @@unique with map: for a single-field entry with unique and a name', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            RateLimit: {
+              fields: { key: text() },
+              db: {
+                indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
+              },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@unique([key], map: "RateLimit_key_key")')
+      })
+
+      it('emits a bare @@unique for a single-field entry with unique and no name', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            RateLimit: {
+              fields: { key: text() },
+              db: { indexes: [{ fields: ['key'], unique: true }] },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@unique([key])')
+      })
+
+      it('emits @@index for a single-field entry with unique absent', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            Post: {
+              fields: { slug: text() },
+              db: { indexes: [{ fields: ['slug'] }] },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@index([slug])')
+        expect(schema).not.toContain('@@unique([slug])')
+      })
+
+      it('emits a sort direction on a single-field entry', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            Post: {
+              fields: { createdAt: timestamp() },
+              db: { indexes: [{ fields: [{ field: 'createdAt', sort: 'desc' }] }] },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@index([createdAt(sort: Desc)])')
+      })
+
+      it("resolves a relationship field's foreign-key column through a single-field entry, same as the composite case", () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            User: { fields: { name: text() } },
+            Post: {
+              fields: {
+                title: text(),
+                // Field-level isIndexed disabled: db.indexes owns this column.
+                author: relationship({ ref: 'User', isIndexed: false }),
+              },
+              db: {
+                indexes: [{ fields: ['author'], unique: true, name: 'Post_authorId_key' }],
+              },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@unique([authorId], map: "Post_authorId_key")')
+      })
+    })
+
+    it('throws naming the list and entry for an empty fields array', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: { title: text() },
+            db: { indexes: [{ fields: [] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /db\.indexes\[0\].*on list "Post".*empty "fields" array/,
+      )
+    })
+
+    it('throws naming the field, its isIndexed, and the entry when a single-field entry collides with a unique field-level isIndexed', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          RateLimit: {
+            fields: { key: text({ isIndexed: 'unique' }) },
+            db: { indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /db\.indexes\[0\].*on list "RateLimit".*field "key".*isIndexed: 'unique'/,
+      )
+    })
+
+    it('throws when a single-field entry collides with a plain (true) field-level isIndexed', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: { slug: text({ isIndexed: true }) },
+            db: { indexes: [{ fields: ['slug'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /db\.indexes\[0\].*on list "Post".*field "slug".*isIndexed: true/,
+      )
+    })
+
+    it("throws when a single-field entry collides with a relationship field's default (true) foreign-key index", () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          User: { fields: { name: text() } },
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User' }), // isIndexed defaults to true for FKs
+            },
+            db: { indexes: [{ fields: ['author'] }] },
+          },
+        },
+      }
+
+      expect(() => generatePrismaSchema(config)).toThrow(
+        /db\.indexes\[0\].*on list "Post".*field "author".*isIndexed: true/,
+      )
+    })
+
+    it('does not flag a collision when the single-field entry and a field-level isIndexed target different columns', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Post: {
+            fields: {
+              slug: text({ isIndexed: 'unique' }),
+              category: text(),
+            },
+            db: { indexes: [{ fields: ['category'] }] },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@unique')
+      expect(schema).toContain('@@index([category])')
+    })
+
     it('generates byte-for-byte identical model output when no indexes are declared, matching pre-feature behaviour', () => {
       const config: OpenSaasConfig = {
         db: { provider: 'sqlite' },

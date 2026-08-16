@@ -347,6 +347,81 @@ Model Context Protocol configuration for this list.
 
 **Type:** [`ListMcpConfig`](#listmcpconfig)
 
+##### `db.indexes`
+
+Model-level `@@unique`/`@@index` constraints, spanning one or more of this list's own fields.
+
+**Type:** `ListIndex[]`
+
+```typescript
+type ListIndexFieldRef = string | { field: string; sort?: 'asc' | 'desc' }
+
+type ListIndex = {
+  fields: ListIndexFieldRef[]
+  unique?: boolean // default: false
+  name?: string // emitted as Prisma's `map:`
+}
+```
+
+Field-level [`isIndexed`](/docs/reference/fields-api#isindexed) is the sugar for the unnamed single-column case. `db.indexes` is the full form — reach for it when a constraint needs a `name` (for adopting an existing live constraint under a name Prisma wouldn't derive), a `sort` direction, or spans more than one column. Arity is incidental: an entry names **one or more** of the list's own OpenSaaS field names (not raw database column names). The generator resolves each to its Prisma column — a scalar field's own name (unaffected by `db.map`), or a relationship field's foreign key column (`<field>Id`) when this side owns it.
+
+**Example — composite unique (a database-level backstop a hook's existence check can't close on its own):**
+
+```typescript
+Audition: list({
+  fields: {
+    student: relationship({ ref: 'Student.auditions' }),
+    production: relationship({ ref: 'Production.auditions' }),
+  },
+  db: {
+    indexes: [{ fields: ['student', 'production'], unique: true }],
+  },
+})
+// Generates: @@unique([studentId, productionId])
+```
+
+**Example — single-field entry, naming an adopted constraint:**
+
+```typescript
+RateLimit: list({
+  fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
+  db: {
+    indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
+  },
+})
+// Generates: @@unique([key], map: "RateLimit_key_key")
+```
+
+**Example — sort direction and an adopted constraint name:**
+
+```typescript
+AuthVerification: list({
+  fields: {
+    identifier: text(),
+    createdAt: timestamp(),
+  },
+  db: {
+    indexes: [
+      {
+        fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+        name: 'AuthVerification_identifier_createdAt_idx',
+      },
+    ],
+  },
+})
+// Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+```
+
+**Errors at `pnpm generate` time** (each names the list and the entry):
+
+- An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship.
+- An entry whose `fields` array is empty.
+- A single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes — the error names both the field/`isIndexed` and the entry, since either one should be removed rather than both left producing the same constraint.
+
+No entry is ever silently dropped or emitted as invalid Prisma.
+
+**Deliberately not validated:** duplicate names across entries, and two entries covering the same column set — Prisma catches both with messages naming the columns, and all `db.indexes` entries live in one place.
+
 ---
 
 ### `OperationAccess`

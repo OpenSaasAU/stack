@@ -174,25 +174,102 @@ function resolveIndexFieldColumn(
 }
 
 /**
+ * A field-level `isIndexed` declaration that already produces a single-column
+ * `@@unique`/`@@index` line, keyed by the Prisma column it indexes. Used to
+ * detect a `db.indexes` single-field entry that would duplicate it (#918).
+ */
+type FieldLevelIndexColumn = { fieldName: string; indexType: boolean | 'unique' }
+
+/**
+ * Collect every field on the list carrying a field-level `isIndexed`
+ * declaration, keyed by the Prisma column it indexes — the column a
+ * single-field `db.indexes` entry must not also target (#918).
+ *
+ * Reads `isIndexed` generically (not every field type declares it, so the
+ * property is read via a narrow cast) rather than reusing the block-index
+ * bookkeeping the main generation loop builds for `@@index`/`@@unique`
+ * lines: a scalar field's `isIndexed: 'unique'` emits an inline field-level
+ * `@unique`, not a block line, but it still owns the column and still
+ * collides with a `db.indexes` entry naming it. A relationship field with no
+ * explicit `isIndexed` defaults to indexed (matching the FK auto-index
+ * default in the relationship field builder); a to-many relationship has no
+ * single foreign-key column and is skipped.
+ */
+function collectFieldLevelIndexColumns(
+  listName: string,
+  listConfig: ListConfig<TypeInfo>,
+  relationResults: Map<string, PrismaRelationResult>,
+): Map<string, FieldLevelIndexColumn> {
+  const columns = new Map<string, FieldLevelIndexColumn>()
+
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    if (fieldConfig.virtual) continue
+
+    if (fieldConfig.type === 'relationship') {
+      const relField = fieldConfig as RelationshipField
+      if (relField.many) continue
+      const indexType = relField.isIndexed ?? true
+      if (indexType === false) continue
+      const relResult = relationResults.get(`${listName}.${fieldName}`)
+      if (relResult?.foreignKeyField) {
+        columns.set(relResult.foreignKeyField, { fieldName, indexType })
+      }
+      continue
+    }
+
+    const indexType = (fieldConfig as { isIndexed?: boolean | 'unique' }).isIndexed
+    if (indexType === undefined || indexType === false) continue
+    columns.set(fieldName, { fieldName, indexType })
+  }
+
+  return columns
+}
+
+/**
  * Generate the `@@unique([...])`/`@@index([...])` lines for a list's
  * model-level `db.indexes` (#864). Emitted after the existing field-level
  * scalar/foreign-key index lines, in declaration order, so a config with no
  * `db.indexes` produces byte-for-byte identical output to before this
  * feature existed.
+ *
+ * An entry spans one or more fields (#918) — arity is incidental; a named
+ * single-column constraint is as legitimate as a composite one. Two cases
+ * fail generation rather than silently producing nothing or invalid Prisma:
+ * an empty `fields` array, and a single-field entry that indexes the exact
+ * column a field-level `isIndexed` already indexes.
  */
 function generateModelIndexLines(
   listName: string,
   listConfig: ListConfig<TypeInfo>,
   relationResults: Map<string, PrismaRelationResult>,
+  fieldLevelIndexColumns: Map<string, FieldLevelIndexColumn>,
 ): string[] {
   const indexes = listConfig.db?.indexes
   if (!indexes || indexes.length === 0) return []
 
   return indexes.map((index, i) => {
     const entryDescription = `Model-level index db.indexes[${i}]`
+
+    if (index.fields.length === 0) {
+      throw new Error(
+        `${entryDescription} on list "${listName}" has an empty "fields" array — an index/constraint must name at least one field`,
+      )
+    }
+
     const resolved = index.fields.map((fieldRef) =>
       resolveIndexFieldColumn(listName, listConfig, relationResults, entryDescription, fieldRef),
     )
+
+    if (resolved.length === 1) {
+      const collision = fieldLevelIndexColumns.get(resolved[0].column)
+      if (collision) {
+        const isIndexedValue =
+          typeof collision.indexType === 'string' ? `'${collision.indexType}'` : 'true'
+        throw new Error(
+          `${entryDescription} on list "${listName}" duplicates the constraint already produced by field "${collision.fieldName}"'s isIndexed: ${isIndexedValue} — both would emit an index on "${resolved[0].column}"; remove one of them`,
+        )
+      }
+    }
 
     const fieldsList = resolved
       .map(({ column, sort }) =>
@@ -483,11 +560,20 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add model-level composite `@@unique`/`@@index` constraints declared via
-    // `db.indexes` (#864) — the multi-column case single-field `isIndexed`
-    // can't reach. Emitted last so a config with no `db.indexes` produces
-    // byte-for-byte identical output to before this feature existed.
-    lines.push(...generateModelIndexLines(listName, listConfig, relationResults))
+    // Add model-level `@@unique`/`@@index` constraints declared via
+    // `db.indexes` (#864, #918) — the full form when a name or a sort
+    // direction is needed; `isIndexed` above remains the sugar for the
+    // unnamed single-column case. Emitted last so a config with no
+    // `db.indexes` produces byte-for-byte identical output to before this
+    // feature existed.
+    lines.push(
+      ...generateModelIndexLines(
+        listName,
+        listConfig,
+        relationResults,
+        collectFieldLevelIndexColumns(listName, listConfig, relationResults),
+      ),
+    )
 
     // Map the model to a custom table name when configured (e.g. adopting
     // existing tables whose physical name differs from the list key).

@@ -1867,14 +1867,20 @@ export type ListIndexFieldRef =
     }
 
 /**
- * A model-level composite `@@unique`/`@@index` constraint spanning two or
- * more of a list's own fields. See {@link ListConfig.db}'s `indexes` for the
- * full explanation and examples (#864).
+ * A model-level `@@unique`/`@@index` constraint spanning one or more of a
+ * list's own fields. See {@link ListConfig.db}'s `indexes` for the full
+ * explanation and examples (#864, #918).
  */
 export type ListIndex = {
   /**
    * The fields participating in this index/constraint, in declaration order.
    * OpenSaaS field names, not raw database column names.
+   *
+   * One or more fields — a named single-column constraint is as legitimate
+   * as a composite one, and is the form to reach for when a live table's
+   * constraint carries a name Prisma wouldn't derive on its own. Field-level
+   * `isIndexed` remains the sugar for the unnamed single-column case; this
+   * is the full form when a name or a sort direction is needed.
    */
   fields: ListIndexFieldRef[]
   /**
@@ -1968,31 +1974,40 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      */
     timestamps?: boolean
     /**
-     * Model-level composite `@@unique`/`@@index` constraints spanning two or
-     * more of this list's own fields (#864).
+     * Model-level `@@unique`/`@@index` constraints spanning one or more of
+     * this list's own fields (#864, #918). See the [reference
+     * docs](https://stack.opensaas.au/docs/reference/config-api#dbindexes)
+     * for the full explanation, arity, and error conditions.
      *
-     * Field-level `isIndexed` (on a scalar or relationship field) can only
-     * ever produce a single-column index — it has no way to express a
-     * constraint or index that spans more than one column. `db.indexes` is
-     * that multi-column case: each entry names two or more of the list's own
-     * OpenSaaS field names, not raw database column names. The generator
-     * resolves each to its underlying Prisma column — a scalar field's own
-     * name (its Prisma field name is unaffected by `db.map`), or a
-     * relationship field's foreign key column (`<field>Id`) when this side
-     * owns it.
+     * Field-level `isIndexed` (on a scalar or relationship field) is the
+     * sugar for the unnamed single-column case. `db.indexes` is the full
+     * form — reach for it when a constraint needs a `name` (Prisma's `map:`,
+     * for adopting an existing live constraint), a `sort` direction, or spans
+     * more than one column. Arity is incidental: each entry names one or
+     * more of the list's own OpenSaaS field names, not raw database column
+     * names. The generator resolves each to its underlying Prisma column — a
+     * scalar field's own name (its Prisma field name is unaffected by
+     * `db.map`), or a relationship field's foreign key column (`<field>Id`)
+     * when this side owns it.
      *
-     * A composite **unique** is the load-bearing case: it's the
-     * database-level backstop for a business rule two concurrent writes could
-     * otherwise both slip past (e.g. "one booking per student per
-     * production") — something a hook's existence check cannot close on its
-     * own, and can't be retrofitted once duplicate rows exist. A composite
-     * **index** (non-unique) is the equivalent performance-only case (a hot
-     * multi-column lookup path).
+     * A **unique** entry is the load-bearing case: it's the database-level
+     * backstop for a business rule concurrent writes could otherwise both
+     * slip past (e.g. "one booking per student per production", or a
+     * single-column unique a live table already enforces under a name Prisma
+     * wouldn't derive) — something a hook's existence check cannot close on
+     * its own, and can't be retrofitted once duplicate rows exist. An
+     * **index** (non-unique) entry is the equivalent performance-only case
+     * (a hot lookup path).
      *
-     * An entry naming a field the list doesn't have, a virtual field, a
-     * to-many relationship, or the non-FK side of a one-to-one relationship
-     * fails `pnpm generate` with an error naming the list, the entry, and the
-     * bad field — it is never silently dropped or emitted as invalid Prisma.
+     * Two conditions fail `pnpm generate` with an error naming the list and
+     * the entry: an empty `fields` array, and a single-field entry that
+     * indexes the exact column a field-level `isIndexed` on the same list
+     * already indexes (the error also names that field and its `isIndexed`
+     * value — one of the two should be removed). An entry naming a field the
+     * list doesn't have, a virtual field, a to-many relationship, or the
+     * non-FK side of a one-to-one relationship fails the same way, naming
+     * the bad field too — no entry is ever silently dropped or emitted as
+     * invalid Prisma.
      *
      * @example One audition per student per production (composite unique)
      * ```typescript
@@ -2025,6 +2040,19 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *   },
      * })
      * // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
+     * ```
+     *
+     * @example Naming a single-column unique constraint (adopting a live table's existing name)
+     * ```typescript
+     * RateLimit: list({
+     *   fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
+     *   db: {
+     *     indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
+     *   },
+     * })
+     * // Generates: @@unique([key], map: "RateLimit_key_key")
+     * // Setting key's own isIndexed too would duplicate this constraint and
+     * // fail generation — one of the two must own the column.
      * ```
      */
     indexes?: ListIndex[]
