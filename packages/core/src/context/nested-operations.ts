@@ -150,6 +150,9 @@ function createCreatedRowRecovery(
  * Capture the ids of the rows currently linked to the parent via `fieldName`,
  * BEFORE the parent persists, so created rows can later be identified by id-diff.
  * Empty for a parent CREATE (no parent row exists yet to have related rows).
+ *
+ * `prisma` must be the transaction client — the read has to participate in the
+ * transaction to see a consistent snapshot.
  */
 async function capturePreExistingIds(
   parentListName: string,

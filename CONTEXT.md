@@ -59,7 +59,7 @@ The convention that an access-denied operation returns `null` (single) or `[]` (
 _Avoid_: access error, permission error
 
 **Write Pipeline**:
-The single module that runs the canonical, secured write sequence (hooks → validation → operation-level access → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
+The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
 _Avoid_: operation handler, mutation service
 
 **Hook Pipeline**:
