@@ -33,23 +33,22 @@ export type ServerActionProps =
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
   | { listKey: string; action: 'bulkDelete'; ids: string[] }
-  // Custom list-specific Bulk action (issue #736). `key` names an action
-  // declared in the list's `ui.listView.bulkActions`; the client only ever
-  // sends this serialisable `{ key, ids }` — the server-side `handler`
-  // (never serialised) is looked up by `key` and run with the rebuilt secured
-  // context over `ids`. Returns a distinct `{ bulkAction, message? }` shape so
-  // a redirect-on-`success` wrapper never hijacks it (same rationale as
-  // `bulkDelete`).
+  // Custom list-specific bulk action (issue #736). `key` names an action
+  // declared in the list's `ui.listView.bulkActions`; the client sends only
+  // this serialisable `{ key, ids }` and the server-side `handler` (never
+  // serialised) is looked up by `key`. Returns a distinct `{ bulkAction,
+  // message? }` shape, never `success`, so a redirect-on-`success` wrapper
+  // does not hijack it.
   | { listKey: string; action: 'bulkAction'; key: string; ids: string[] }
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
-  // RELATED row, so the related list's own access control + hooks apply (never
-  // the parent's). `mode: 'disconnect'` unlinks the row non-destructively by
-  // disconnecting its back-reference (`field`; `parentId` is the record being
-  // edited, needed only when that back-reference is to-many, e.g. a
-  // many-to-many join); `mode: 'delete'` truly deletes the row. Like
-  // `bulkDelete`, it returns a distinct `{ removed }` shape (never a
-  // single-op `success`) so a UI wrapper that redirects on `success` — the
-  // item-form pattern — does not hijack an in-place row removal.
+  // RELATED row, so the related list's own access control and hooks apply —
+  // never the parent's. The other relationship-table actions below share this
+  // boundary. `mode: 'disconnect'` unlinks the row by disconnecting its
+  // back-reference (`field`; `parentId` is needed only when that back-reference
+  // is to-many, e.g. a many-to-many join) without deleting it; `mode: 'delete'`
+  // truly deletes the row. Returns a distinct `{ removed }` shape, never
+  // `success`, so a UI wrapper that redirects on `success` does not hijack an
+  // in-place row removal.
   | {
       listKey: string
       action: 'removeRelated'
@@ -58,13 +57,10 @@ export type ServerActionProps =
       field?: string
       parentId?: string
     }
-  // Relationship-table inline cell edit (issue #737). `listKey`/`id` target the
-  // RELATED row and `field`/`value` a single scalar field on it, so the update
-  // runs through the related list's OWN operation- and field-level access +
-  // hooks/validation (never the parent's) — the same ADR-0018 boundary as
-  // `removeRelated`. It returns a distinct `{ updated }` shape (never a
-  // single-op `success`) so a UI wrapper that redirects on `success` — the
-  // item-form pattern — cannot hijack an in-place cell edit.
+  // Relationship-table inline cell edit (issue #737); same ADR-0018 boundary
+  // as `removeRelated` — `listKey`/`id` target the RELATED row. Returns a
+  // distinct `{ updated }` shape, never `success`, so a UI wrapper that
+  // redirects on `success` does not hijack an in-place cell edit.
   | {
       listKey: string
       action: 'updateRelated'
@@ -72,14 +68,12 @@ export type ServerActionProps =
       field: string
       value: unknown
     }
-  // Relationship-table pre-linked create (issue #738). `listKey` targets the
-  // RELATED list, so the related list's own create access control + hooks apply
-  // (never the parent's) — the same ADR-0018 boundary as `removeRelated`. The
-  // back-reference to the parent is set on the SERVER from `field`/`parentId`
-  // (never trusted from `data`), so the new row is linked to exactly the parent
-  // being edited. It returns a distinct `{ created }` shape (never a single-op
-  // `success`) so a UI wrapper that redirects on `success` — the item-form
-  // pattern — does not hijack an in-place create.
+  // Relationship-table pre-linked create (issue #738); same ADR-0018 boundary
+  // as `removeRelated` — `listKey` targets the RELATED list. The back-reference
+  // to the parent is set on the SERVER from `field`/`parentId`, never trusted
+  // from `data`, so a hostile client cannot re-target the link. Returns a
+  // distinct `{ created }` shape, never `success`, so a UI wrapper that
+  // redirects on `success` does not hijack an in-place create.
   | {
       listKey: string
       action: 'createRelated'
@@ -96,21 +90,11 @@ export type ServerActionProps =
       selectedIds?: string[]
     }
 
-/**
- * Tracks which (listName, operation) pairs have already warned about an ignored
- * `select` argument, so a misused read op warns once rather than on every call.
- */
 const selectWarnings = new Set<string>()
 
 /**
- * Warn (once per list+operation) when a caller passes a `select` argument to a
- * read op that does not honour it.
- *
- * `context.db` reads never apply Prisma `select` semantics — narrowing is done
- * via `include` or a fragment `query`. The op still runs and returns the full,
- * access-filtered result, so this is a visible no-op rather than an error.
- *
- * Centralised here so every affected read op shares one implementation.
+ * Warn once per (list, operation) when a caller passes `select` to a read op
+ * that ignores it. See "Narrowing Reads" in packages/core/CLAUDE.md.
  */
 function warnIfSelectIgnored(
   args: { select?: unknown } | undefined,
@@ -131,9 +115,6 @@ function warnIfSelectIgnored(
   )
 }
 
-/**
- * Check if a list is configured as a singleton
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
@@ -141,25 +122,17 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 
 /**
  * Compute the set of single-field unique selectors a `findUnique` `where` may be
- * keyed by, derived from what the list config exposes at runtime.
+ * keyed by, derived from what the list config exposes at runtime: `id`, plus any
+ * field declared `isIndexed: 'unique'` — for a `relationship` field, this is the
+ * foreign-key column name (`<field>Id`), since that's the column Prisma marks
+ * `@unique`, not the relation field itself.
  *
- * The set is:
- * - `id` — always a unique identifier on every list.
- * - Any field declared `isIndexed: 'unique'` in the config (e.g. `text({ isIndexed: 'unique' })`).
- * - For a `relationship` field declared `isIndexed: 'unique'`, the foreign-key
- *   column name (`<field>Id`) — that is the column Prisma marks `@unique`, so the
- *   unique `where` is keyed by `<field>Id`, not the relation field itself.
- *
- * Chosen rule (documented intentionally): the config does NOT expose compound
- * (`@@unique`) keys at runtime — there is no list-level unique declaration in the
- * config API — so we cannot validate compound `<Model>_<a>_<b>` selectors. We
- * therefore enforce the tractable subset: `where` must contain EXACTLY ONE
- * recognised single-field unique key and NO other keys. This rejects non-unique
- * filters (the bug in #567) and rejects extra non-unique keys alongside a unique
- * one, while never falsely rejecting a valid single-field unique lookup. If a
- * project legitimately needs a compound-unique lookup, that path is not covered
- * here and would need explicit config support; the safe escape hatch for any
- * non-unique single-row lookup is `findFirst` (see #565).
+ * The config exposes no list-level compound (`@@unique`) declaration, so this
+ * cannot validate a compound `<Model>_<a>_<b>` selector — `where` must contain
+ * exactly one recognised single-field unique key and no others. This rejects
+ * non-unique filters (#567) without ever rejecting a valid single-field unique
+ * lookup; a compound-unique or otherwise non-unique lookup should use
+ * `findFirst` instead (see #565).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function getUniqueWhereKeys(listConfig: ListConfig<any>): Set<string> {
@@ -205,10 +178,6 @@ function assertUniqueWhere(
   }
 }
 
-/**
- * Check if auto-create is enabled for a singleton list
- * Defaults to true if not explicitly set to false
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
@@ -216,22 +185,15 @@ function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   return listConfig.isSingleton.autoCreate !== false
 }
 
-/**
- * Extract default values from field configs
- * Used to auto-create singleton records with sensible defaults
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   const data: Record<string, unknown> = {}
 
   for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    // Skip virtual fields - they're not stored in database
     if (fieldConfig.virtual) continue
 
-    // Skip system fields (id, createdAt, updatedAt)
     if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
 
-    // Add default value if present
     if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
       data[fieldKey] = fieldConfig.defaultValue
     }
@@ -505,34 +467,19 @@ export function getContext<
     }
   }
 
-  // Generic server action handler with discriminated union for type safety
-  // Returns a result object instead of throwing to work properly in Next.js production
+  // Returns a result object instead of throwing — required for server actions
+  // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
     | { success: false; error: string; fieldErrors?: Record<string, string> }
-    // Bulk actions report a count rather than a single-op `success` flag: the
-    // shape is deliberately distinct so a UI wrapper that redirects on a
-    // single-item `success` (the item-form pattern) does not hijack a
-    // list-level bulk operation.
+    // The distinct shapes below (never `success`) mirror the ServerActionProps
+    // variants above — see their comments for the redirect-on-`success`
+    // footgun each one avoids.
     | { deleted: number; total: number }
-    // Relationship-table row removal reports `removed` (with an optional reason)
-    // rather than `success` — same distinct-shape rationale as `bulkDelete`, so
-    // an in-place removal never triggers a redirect-on-success wrapper.
     | { removed: boolean; error?: string }
-    // Relationship-table pre-linked create reports `created` (with the new row's
-    // id, or an error + fieldErrors for the drawer) rather than `success` — same
-    // distinct-shape rationale, so an in-place create never triggers a
-    // redirect-on-success wrapper.
     | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
-    // Custom Bulk action (issue #736) reports `bulkAction` with the handler's
-    // optional `message` (success) or an `error` (not found / denied / threw) —
-    // again a distinct shape from single-op `success`.
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
-    // Relationship-table inline cell edit reports `updated` (with an optional
-    // reason + fieldErrors for the edited cell) rather than `success` — same
-    // distinct-shape rationale, so an in-place cell edit never triggers a
-    // redirect-on-success wrapper.
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
     const dbKey = getDbKey(props.listKey)
@@ -562,9 +509,7 @@ export function getContext<
         try {
           const result = await model.delete({ where: { id } })
           if (result !== null && result !== undefined) deleted++
-        } catch {
-          // Skip this row (e.g. a DB constraint error); it is not counted.
-        }
+        } catch {}
       }
       return { deleted, total: props.ids.length }
     }

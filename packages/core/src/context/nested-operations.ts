@@ -19,34 +19,15 @@ import { getDbKey } from '../lib/case-utils.js'
 import { applyCreateDefaults } from './apply-defaults.js'
 
 /**
- * Nested writes (#569 / ADR-0010).
- *
- * Nested `create`/`update`/`delete` must fire the SAME list- and field-level
- * `beforeOperation`/`afterOperation` as the equivalent top-level write, so a
- * record's side effects are identical whether it was written nested or
- * top-level. Persistence itself is still performed by Prisma's single nested
- * write (so Prisma keeps owning FK ordering and intra-statement atomicity); we
- * run the nested records' `beforeOperation` BEFORE that persist and their
- * `afterOperation` AFTER it, all inside the one interactive transaction the
- * Write Pipeline opens.
- *
- * Mechanism (per ADR-0010, "hooks around a single nested persist"):
- *   - `processNestedOperations` runs nested resolveInput/validate/field-rules
- *     (as before) AND nested `beforeOperation`, and returns the transformed
- *     payload together with a list of deferred {@link AfterTask}s.
- *   - The Write Pipeline persists the parent (with the nested relations
- *     `include`d so the persisted nested rows come back), then calls
- *     {@link runAfterTasks} so each nested record's `afterOperation` fires with
- *     a real persisted `item` and (for update/delete) its `originalItem`.
- *   - Everything runs inside the transaction, so a throwing `beforeOperation`/
- *     `afterOperation` rolls back the whole write.
+ * Nested writes (#569 / ADR-0010): give nested `create`/`update`/`delete` the
+ * same before/afterOperation hooks as an equivalent top-level write, inside
+ * the one transaction the Write Pipeline opens. `processNestedOperations`
+ * transforms the payload and runs `beforeOperation`, returning deferred
+ * {@link AfterTask}s that {@link runAfterTasks} runs once the parent has
+ * persisted. See ADR-0010 for the full mechanism.
  */
 
-/**
- * A deferred nested `afterOperation` task, run after the parent has persisted.
- * It receives the persisted parent row (with nested relations included) so it
- * can recover the persisted nested `item`.
- */
+/** A deferred nested `afterOperation` task, run once the parent has persisted. */
 export interface AfterTask {
   /** Field name on the parent linking to the related list (for include lookup). */
   fieldName: string
@@ -67,16 +48,11 @@ export interface NestedOpsResult {
   includeFields: Set<string>
 }
 
-/**
- * Check if a field config is a relationship field
- */
 function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
   return fieldConfig?.type === 'relationship'
 }
 
-/**
- * Resolve the related list name for a related list config (config object identity).
- */
+/** Resolve a list name by matching config object identity, not by name. */
 function findListName(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
@@ -94,8 +70,7 @@ function findListName(
  * Read the rows of a parent's included relation as an array.
  *
  * A to-one relation comes back as a single row (or `null`); a to-many relation
- * comes back as an array. This normalises both to an array so callers can apply
- * a uniform id-diff.
+ * comes back as an array. Normalises both so callers can apply a uniform id-diff.
  */
 function includedRows(
   parentResult: Record<string, unknown>,
@@ -123,13 +98,10 @@ function recoverUpdatedRow(
 }
 
 /**
- * Recover the CREATED nested rows from the parent result by id-diff.
- *
- * Created rows have no known id before the write, so they are identified as the
- * included rows whose ids are NOT in `preExistingIds` (the set of related-row
- * ids captured before the persist). Returned in include order, which the create
- * handler pairs to its create-payload entries by position (see
- * {@link CreatedRowRecovery}).
+ * Recover the CREATED nested rows from the parent result by id-diff: the
+ * included rows whose ids are NOT in `preExistingIds`. Returned in include
+ * order, which {@link CreatedRowRecovery} pairs to create-payload entries by
+ * position — reordering this would break that pairing.
  */
 function recoverCreatedRows(
   parentResult: Record<string, unknown>,
@@ -143,19 +115,13 @@ function recoverCreatedRows(
 
 /**
  * Shared, memoised recovery of the rows created for ONE nested `create` payload
- * on ONE relation field.
+ * on ONE relation field, by id-diff against the parent's pre-persist related
+ * ids, paired to create-payload entries by position. See ADR-0010. The id-diff
+ * is cached per parent result so every entry's task shares it.
  *
- * A to-many `create: [{A},{B}]` produces several rows that must each fire their
- * own `afterOperation` against their OWN row. We cannot tell which included row
- * corresponds to which payload entry by content alone, so we identify the set of
- * NEW rows by id-diff against the ids that existed before the persist, then pair
- * them to the create-payload entries by POSITION (Prisma preserves create-array
- * order in the included result). The id-diff is computed once per parent result
- * and cached so every entry's task shares it.
- *
- * `inputData`↔row pairing is therefore positional and best-effort; `item`
- * correctness (each task gets a genuinely-created, distinct row) is guaranteed:
- * a pre-existing row can never be returned because it is excluded by the diff.
+ * `inputData`↔row pairing is positional and best-effort; `item` correctness
+ * (each task gets a genuinely-created, distinct row) is guaranteed — a
+ * pre-existing row can never be returned because the diff excludes it.
  */
 interface CreatedRowRecovery {
   /** Recover the created row for the create-payload entry at `index`. */
@@ -182,14 +148,8 @@ function createCreatedRowRecovery(
 
 /**
  * Capture the ids of the rows currently linked to the parent via `fieldName`,
- * BEFORE the parent persists. Used to identify which included rows are NEW
- * (created by this write) afterwards.
- *
- * - For a parent CREATE there are no pre-existing related rows (the parent does
- *   not exist yet), so the set is empty.
- * - For a parent UPDATE we read the parent row's current relation and collect
- *   its ids. The same `tx` client is used so the read participates in the
- *   transaction and sees a consistent snapshot.
+ * BEFORE the parent persists, so created rows can later be identified by id-diff.
+ * Empty for a parent CREATE (no parent row exists yet to have related rows).
  */
 async function capturePreExistingIds(
   parentListName: string,
@@ -220,11 +180,9 @@ async function capturePreExistingIds(
 }
 
 /**
- * Process nested create operations.
- *
- * Runs the target list's full input pipeline (resolveInput → validate →
- * field-rules → filter-writable → recurse) AND its `beforeOperation`, then
- * registers an `afterOperation` task keyed to the parent's included relation.
+ * Process nested create operations: run the target list's full input pipeline
+ * and `beforeOperation`, then register an `afterOperation` task keyed to the
+ * parent's included relation.
  */
 async function processNestedCreate(
   items: Record<string, unknown> | Array<Record<string, unknown>>,
@@ -242,7 +200,6 @@ async function processNestedCreate(
 
   const processedItems = await Promise.all(
     itemsArray.map(async (item, index) => {
-      // 1. Check create access (skip if sudo mode)
       if (!context._isSudo) {
         const createAccess = relatedListConfig.access?.operation?.create
         const accessResult = await checkAccess(createAccess, {
@@ -255,7 +212,6 @@ async function processNestedCreate(
         }
       }
 
-      // 2. Execute list-level resolveInput hook
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'create',
@@ -265,7 +221,6 @@ async function processNestedCreate(
         context,
       })
 
-      // 3. Execute field-level resolveInput hooks
       resolvedData = await executeFieldResolveInputHooks(
         item,
         resolvedData,
@@ -275,13 +230,11 @@ async function processNestedCreate(
         relatedListName,
       )
 
-      // 3.5 Apply field defaults to omitted inputs (resolve-then-validate, #615).
-      // Mirrors the top-level Hook Pipeline so a nested required-with-default
-      // field resolves to its default before validation instead of failing
-      // `isRequired`. Create-only; explicit values (incl. null) are preserved.
+      // Apply field defaults to omitted inputs (resolve-then-validate, #615) so
+      // a nested required-with-default field resolves before `isRequired` runs,
+      // mirroring the top-level pipeline. Create-only.
       resolvedData = applyCreateDefaults(resolvedData, relatedListConfig.fields)
 
-      // 4. Execute validate hook
       await executeValidate(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'create',
@@ -291,7 +244,6 @@ async function processNestedCreate(
         context,
       })
 
-      // 4.5 Field-level validate hooks
       await executeFieldValidateHooks(
         item,
         resolvedData,
@@ -301,14 +253,13 @@ async function processNestedCreate(
         relatedListName,
       )
 
-      // 5. Field validation (built-in rules)
       const validation = validateFieldRules(resolvedData, relatedListConfig.fields, 'create')
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors)
       }
 
-      // 5.5 Split multi-column fields into physical columns (#789). Only
-      // reached once the logical value has passed validation above.
+      // Split multi-column fields into physical columns (#789) — must run after
+      // validation, which operates on the logical (pre-split) value.
       resolvedData = await splitMultiColumnFields(
         item,
         resolvedData,
@@ -317,7 +268,6 @@ async function processNestedCreate(
         context,
       )
 
-      // 6. Filter writable fields
       const filtered = await filterWritableFields(
         resolvedData,
         relatedListConfig.fields,
@@ -329,9 +279,8 @@ async function processNestedCreate(
         },
       )
 
-      // 7. Recursively process nested operations in this item. This nested row
-      // is itself being CREATED, so its own relations have no pre-existing rows
-      // (parent originalItem is undefined → empty pre-existing set).
+      // This nested row is itself being created, so it has no pre-existing
+      // related rows of its own (parent originalItem is undefined below).
       const { data: nestedData, afterTasks: childAfterTasks } = await processNestedOperations(
         filtered,
         relatedListConfig.fields,
@@ -340,12 +289,11 @@ async function processNestedCreate(
         'create',
         relatedListName,
         undefined,
-        // This nested row is being CREATED, so its enclosing inputData is its own
-        // create payload (passed to the connect-site owning-field gate, #588).
+        // Its own create payload is the enclosing inputData for the connect-site
+        // owning-field gate (#588).
         item,
       )
 
-      // 8. Field-level beforeOperation (side effects) for this nested create
       await executeFieldBeforeOperationHooks(
         item,
         resolvedData,
@@ -355,7 +303,6 @@ async function processNestedCreate(
         relatedListName,
       )
 
-      // 9. List-level beforeOperation for this nested create
       await executeBeforeOperation(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'create',
@@ -364,26 +311,19 @@ async function processNestedCreate(
         context,
       })
 
-      // 10. Register afterOperation: fires once the parent (and thus this nested
-      // row) has persisted. The created row is recovered by id-diff and paired
-      // to THIS create-payload entry by position (see CreatedRowRecovery), so a
-      // to-many `create: [{A},{B}]` fires once per row, each against its OWN
-      // distinct row, and never against a pre-existing sibling.
+      // Fires once the parent has persisted. The row is recovered by id-diff and
+      // paired to THIS entry by position (see CreatedRowRecovery), so a to-many
+      // `create: [{A},{B}]` fires once per row against its own distinct row.
       afterTasks.push({
         fieldName,
         run: async (parentResult) => {
           const createdItem = recovery.rowAt(parentResult, index)
           if (!createdItem) {
-            // The created row could not be identified by id-diff — the parent
-            // write did not return this nested relation (e.g. the underlying
-            // client does not echo `include`d relations). We must NOT hand an
-            // id-less `{}` to a hook as if it were the persisted row (finding 4:
-            // that would fire `afterOperation` against a fabricated item). The
-            // before-persist hooks have already run; we deliberately SKIP this
-            // record's create `afterOperation` rather than fire it with a bogus
-            // item. Real Prisma always echoes the `include`d relation, so this
-            // skip is reached only by clients/mocks that omit it. `item`
-            // correctness is the must-have; a missing row is never fabricated.
+            // Could not identify the created row by id-diff — the parent write
+            // didn't echo this nested relation (e.g. a client/mock that doesn't
+            // honour `include`; real Prisma always does). Deliberately SKIP this
+            // record's `afterOperation` rather than fabricate an id-less item —
+            // `item` correctness is the must-have, so a missing row is never faked.
             return
           }
 
@@ -406,7 +346,6 @@ async function processNestedCreate(
             relatedListName,
           )
 
-          // Run any deeper nested afterOperation tasks, scoped to the persisted row.
           await runAfterTasks(childAfterTasks, createdItem)
         },
       })
@@ -421,23 +360,18 @@ async function processNestedCreate(
 /**
  * Verify that a single connection target is reachable for the caller.
  *
- * Connecting an existing row references it; it does not modify the row's own
- * data. Mirroring Keystone, this requires **read/query** access on the target
- * list (not `update`). When query access returns a filter object, the filter is
- * evaluated in the DATABASE (not in memory) via
- * `findFirst({ where: { AND: [connection, accessFilter] } })`. The connect is
- * allowed iff that query returns a row, which correctly handles arbitrary
- * nested-relation predicates and boolean combinators (`AND`/`OR`/`some`/
- * `none`/`not`). The existence check is folded into the reachability query so a
- * non-existent id is still denied.
+ * Connecting references an existing row rather than modifying it, so — mirroring
+ * Keystone — it requires **read/query** access on the target (#578), not update.
+ * A filter-result query access is evaluated in the DATABASE via
+ * `findFirst({ where: { AND: [connection, accessFilter] } })` rather than in
+ * memory, so it correctly handles arbitrary nested-relation predicates and
+ * boolean combinators; a non-existent id is folded into the same check.
  *
- * In ADDITION to the target read/reachability check (#578), the OWNING
- * relationship field's field-level access (its `create`/`update` access on the
- * list being written, e.g. `Post.author`) must permit the connect (#588). This
- * is the other half Keystone required: a connect needs read access on the
- * target AND write access on the owning relationship field. If the owning
- * field's field-level access denies, the connect is denied even when the target
- * row is readable/reachable.
+ * In ADDITION, the OWNING relationship field's field-level access (e.g.
+ * `Post.author`'s `create`/`update` access) must permit the connect (#588) —
+ * the other half Keystone requires: read access on the target AND write access
+ * on the owning field. A deny here denies the connect even when the target row
+ * is readable/reachable.
  *
  * Sudo bypasses the entire check (handled by the caller).
  */

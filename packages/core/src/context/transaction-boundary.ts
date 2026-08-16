@@ -15,51 +15,30 @@ import type {
 } from '../access/transaction-registry.js'
 
 /**
- * Transaction-boundary hooks (#590 / ADR-0010).
- *
- * `beforeTransaction`/`afterTransaction` run OUTSIDE the write's `$transaction`
- * — `beforeTransaction` before it opens, `afterTransaction` after it settles —
- * for non-transactional side effects (e.g. external API calls) that must not
- * hold a DB transaction open and cannot be rolled back. The pair forms a
- * compensation bracket around the atomic write described by ADR-0010.
- *
- * This module:
- *  1. Enumerates the lists involved in a write up front, BY WALKING THE INPUT
- *     TREE only (no DB reads), so the bracket can run per involved list before
- *     the transaction opens (mirroring how in-transaction before/afterOperation
- *     fire per record, but at list granularity).
- *  2. Runs all `beforeTransaction` hooks, tracking exactly which involved lists'
- *     `beforeTransaction` ran, then — after the caller settles the transaction —
- *     runs `afterTransaction` ONLY for those lists (the symmetric-bracket
- *     "always-run" rule), surfacing any hook errors afterward.
+ * Transaction-boundary hooks (#590 / ADR-0010): `beforeTransaction`/`afterTransaction`
+ * bracket a write's `$transaction` from the outside, for non-transactional side
+ * effects. See ADR-0010 for the bracket's design and ADR-0028 for how a joined
+ * write's `afterTransaction` defers to the transaction owner.
  */
 
 /**
- * One list involved in a write, with the data the transaction-boundary hooks
- * receive. Enumerated purely from the input tree (no DB reads).
- *
- * The persisted/pre-write rows (`item`/`originalItem`) are surfaced to
- * `afterTransaction` ONLY for the TOP-LEVEL record (`isTopLevel`). For nested
- * lists the per-record persisted row is not reliably recoverable outside the
- * transaction, so they are passed as `undefined` rather than mis-handing the
- * top-level row as if it were the nested row. `originalItem` here is therefore
- * populated only for the top-level update/delete target (the pipeline resolves
- * it before the transaction opens).
+ * One list involved in a write, enumerated purely from the input tree (no DB
+ * reads). `item`/`originalItem` are populated only for the top-level record
+ * (`isTopLevel`) — a nested list's persisted row isn't reliably recoverable
+ * outside the transaction, so handing it the top-level row instead would be
+ * silently wrong.
  */
 export interface InvolvedList {
   listKey: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   operation: WriteOperation
-  /** Whether this is the top-level write target (the only list with a reliable persisted row). */
   isTopLevel: boolean
-  /** The input payload for this involvement (create/update); `undefined` for delete. */
+  /** `undefined` for delete, which has no input payload. */
   inputData: Record<string, unknown> | undefined
-  /** The existing row for the TOP-LEVEL update/delete target; `undefined` otherwise. */
   originalItem: Record<string, unknown> | undefined
 }
 
-/** Nested-op kinds whose payloads imply an involved list + operation. */
 const NESTED_OP_OPERATIONS: ReadonlyArray<{ kind: string; operation: WriteOperation }> = [
   { kind: 'create', operation: 'create' },
   { kind: 'update', operation: 'update' },
@@ -68,7 +47,6 @@ const NESTED_OP_OPERATIONS: ReadonlyArray<{ kind: string; operation: WriteOperat
   { kind: 'connectOrCreate', operation: 'create' },
 ]
 
-/** Distinct dedupe-key operations `NESTED_OP_OPERATIONS` can produce (create/update/delete). */
 const DISTINCT_OPERATION_COUNT = new Set(NESTED_OP_OPERATIONS.map((o) => o.operation)).size
 
 function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
