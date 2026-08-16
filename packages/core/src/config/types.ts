@@ -2903,15 +2903,17 @@ export type PluginContext = {
 
   /**
    * Add a new list to the config
-   * Throws error if list already exists (unless merge strategy used)
+   * Throws error if list already exists
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin API must accept any list config
   addList: (name: string, listConfig: ListConfig<any>) => void
 
   /**
-   * Extend an existing list with additional fields, hooks, or access control
-   * Deep merges fields, hooks, and access control
-   * Throws error if list doesn't exist
+   * Extend an existing list with additional fields, hooks, or MCP config.
+   * Merges fields, hooks, and MCP config. Throws if the list doesn't exist,
+   * or if the extension sets operation-level `access` — access control
+   * belongs to whoever created the list, never a plugin extending it
+   * (ADR-0013).
    */
   extendList: (
     name: string,
@@ -3031,10 +3033,6 @@ export type Plugin = {
 }
 
 /**
- * Main configuration type
- * Using interface instead of type to allow module augmentation
- */
-/**
  * Configurable generator output locations.
  *
  * Lets a project relocate the generated Prisma schema and the `.opensaas`
@@ -3095,6 +3093,10 @@ export interface OutputConfig {
   buildTarget?: 'node'
 }
 
+/**
+ * Main configuration type.
+ * Uses an interface, not a type alias, so it can be extended via module augmentation.
+ */
 export interface OpenSaasConfig {
   db: DatabaseConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
