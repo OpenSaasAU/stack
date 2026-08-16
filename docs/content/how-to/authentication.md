@@ -1300,7 +1300,9 @@ Stores email verification and password reset tokens:
 }
 ```
 
-**Access Control:** closed by default — grant it via `authPlugin({ access: { verification: { ... } } })`.
+**Access Control:** closed by default — better-auth manages these tokens
+directly through the raw client, so most apps never need to grant
+`access.verification` at all.
 
 ### RateLimit List
 
@@ -1324,10 +1326,6 @@ authPlugin({
 ```
 
 **Access Control:** closed by default — grant it via `authPlugin({ access: { rateLimit: { ... } } })` (e.g. to inspect throttled keys in the Admin UI).
-
-**Access Control:** closed by default — better-auth manages these tokens
-directly through the raw client, so most apps never need to grant
-`access.verification` at all.
 
 ## Best Practices
 
