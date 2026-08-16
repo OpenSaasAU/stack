@@ -69,8 +69,7 @@ function asEntryObject(value: unknown): IncludeEntryObject | null {
  *
  * The access filter is authoritative: the caller's filter may only NARROW the
  * result further, never widen past what access permits. We therefore wrap both
- * in a Prisma `AND` so neither can override the other. If only one side is
- * present, it is returned as-is; if neither is present, the result is undefined.
+ * in a Prisma `AND` so neither can override the other.
  */
 function andWhere(
   accessWhere: PrismaFilter | undefined,
@@ -350,7 +349,6 @@ export function stripVirtualFieldsFromInclude(
   for (const [key, value] of Object.entries(include)) {
     const fieldConfig = fieldConfigs[key]
 
-    // Virtual fields have no database column — drop them from the include.
     if (fieldConfig?.virtual) continue
 
     const isDeclaredRelationship =

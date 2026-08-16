@@ -42,19 +42,16 @@ export function formatPrismaDefault(
 
   switch (fieldType) {
     case 'integer':
-      // Bare numeric literal — Prisma expects no quotes for Int defaults.
       return String(value)
 
     case 'text':
-      // Double-quoted string literal. The value is escaped via JSON.stringify so
-      // embedded quotes/backslashes are handled correctly.
+      // JSON.stringify (not a template literal) so embedded quotes/backslashes
+      // in the value are escaped correctly.
       return JSON.stringify(String(value))
 
     case 'json': {
-      // Keystone's JSON-literal form: canonical, space-free JSON.stringify of the
-      // value, then wrap the whole serialised string in escaped double quotes so
-      // Prisma stores the JSON text as the column default. The outer
-      // JSON.stringify produces the escaped, double-quoted wrapper.
+      // Double JSON.stringify: once to canonicalize the value as JSON text,
+      // again to wrap that text in an escaped, double-quoted Prisma literal.
       const serialised = JSON.stringify(value)
       // JSON.stringify can return undefined for unserialisable values (e.g. a
       // function). Treat that as "no default" rather than emitting `@default()`.

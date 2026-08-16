@@ -1,16 +1,11 @@
 import type { ListConfig } from './types.js'
 
 /**
- * Resolve the field name that represents a list's rows as a single label —
- * the projection half of the label seam. `getItemLabel` reads exactly the
- * field this returns, so the field chosen for projection can never drift
- * from the field used for rendering.
+ * Resolve the field name used as a list's Label field: `ui.labelField` if
+ * set, else `name`, else `title`, else `id`.
  *
- * Fallback order: configured `ui.labelField` → `name` → `title` → `id`
- * (first field that exists on the list).
- *
- * @throws if `ui.labelField` is set but does not reference a declared,
- * non-relationship field on the list.
+ * @throws if `ui.labelField` names a field not declared on the list, or a
+ * relationship field (the Label field must be a scalar).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 export function getLabelFieldName(listConfig: ListConfig<any>): string {
@@ -37,10 +32,8 @@ export function getLabelFieldName(listConfig: ListConfig<any>): string {
 }
 
 /**
- * Resolve the display label for a single row — the render half of the label
- * seam. Reads the field `getLabelFieldName` resolves, falling back to `id`
- * when that field is missing from the row (e.g. stripped by field-level
- * access).
+ * Render a row's Label field ({@link getLabelFieldName}) as text, falling
+ * back to `item.id` when the value is `null`/`undefined`.
  */
 export function getItemLabel(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo

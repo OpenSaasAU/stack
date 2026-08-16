@@ -2,9 +2,6 @@ import type { AccessControl, FieldAccess } from '../access/types.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 
-/**
- * Field configuration types
- */
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
 
@@ -12,10 +9,7 @@ export type FieldType =
  * Field-level hook argument types (exported for user annotations)
  */
 
-/**
- * Arguments for field-level resolveInput hook
- * Used to transform field values before database write
- */
+/** Arguments for {@link FieldHooks.resolveInput}. */
 export type FieldResolveInputHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -39,10 +33,7 @@ export type FieldResolveInputHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level validate hook
- * Used for custom validation logic
- */
+/** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
 export type FieldValidateHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -76,10 +67,7 @@ export type FieldValidateHookArgs<
       addValidationError: (msg: string) => void
     }
 
-/**
- * Arguments for field-level beforeOperation hook
- * Used for side effects before database write
- */
+/** Arguments for {@link FieldHooks.beforeOperation}. */
 export type FieldBeforeOperationHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -109,10 +97,7 @@ export type FieldBeforeOperationHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level afterOperation hook
- * Used for side effects after database operation
- */
+/** Arguments for {@link FieldHooks.afterOperation}. */
 export type FieldAfterOperationHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -263,10 +248,7 @@ export type FieldAfterTransactionHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level resolveOutput hook
- * Used to transform field values after database read
- */
+/** Arguments for {@link FieldHooks.resolveOutput}. */
 export type FieldResolveOutputHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -507,10 +489,10 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   defaultValue?: unknown
   hooks?: FieldHooks<TTypeInfo>
   /**
-   * Marks this field as virtual - not stored in database
-   * Virtual fields use resolveInput/resolveOutput hooks for computation
-   * They are excluded from Prisma schema and input types
-   * Only computed when explicitly selected/included in queries
+   * Marks this field as virtual — not stored in database, computed via
+   * `resolveInput`/`resolveOutput` hooks, and excluded from the Prisma
+   * schema and input types. Computed whenever the read is going to return
+   * it (ADR-0027) — not gated behind an explicit `include`/selection.
    */
   virtual?: boolean
   /**
@@ -1377,20 +1359,8 @@ export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo
  */
 export type FieldConfig = BaseFieldConfig<TypeInfo>
 
-/**
- * List configuration types
- */
-
-/**
- * Utility type to inject TypeInfo into a single field config
- * Extracts TInput and TOutput from BaseFieldConfig and reconstructs with new TypeInfo
- */
 type WithTypeInfo<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo>
 
-/**
- * Utility type to transform all fields in a record to inject TypeInfo
- * Maps over each field and applies WithTypeInfo transformation
- */
 export type FieldsWithTypeInfo<TTypeInfo extends TypeInfo> = {
   [key: string]: WithTypeInfo<TTypeInfo>
 }
@@ -1566,8 +1536,7 @@ export type ListAccessControl<T = any> =
     }
 
 /**
- * Hook arguments for resolveInput hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `resolveInput` hook.
  * - create: resolvedData is CreateInput, item is undefined
  * - update: resolvedData is UpdateInput, item is the existing record
  */
@@ -1594,8 +1563,7 @@ export type ResolveInputHookArgs<
     }
 
 /**
- * Hook arguments for validate hook (renamed from validateInput for Keystone compatibility)
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `validate` hook (renamed from `validateInput` for Keystone compatibility).
  * - create: resolvedData is CreateInput, item is undefined
  * - update: resolvedData is UpdateInput, item is the existing record
  * - delete: item is the item being deleted
@@ -1632,8 +1600,7 @@ export type ValidateHookArgs<
     }
 
 /**
- * Hook arguments for beforeOperation hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `beforeOperation` hook.
  * - create: has inputData and resolvedData, no item
  * - update: has inputData, resolvedData, and item
  * - delete: has item only
@@ -1666,8 +1633,7 @@ export type BeforeOperationHookArgs<
     }
 
 /**
- * Hook arguments for afterOperation hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `afterOperation` hook.
  * - create: has item, inputData, and resolvedData, no originalItem
  * - update: has item, originalItem, inputData, and resolvedData
  * - delete: has originalItem only
@@ -2057,9 +2023,6 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      */
     indexes?: ListIndex[]
   }
-  /**
-   * MCP server configuration for this list
-   */
   mcp?: ListMcpConfig
   /**
    * Restricts this list to a single record (singleton pattern)
@@ -2366,9 +2329,6 @@ export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeI
   access?: ListAccessControl<TTypeInfo['item']>
 }
 
-/**
- * Database configuration
- */
 export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
   /**
@@ -2587,9 +2547,6 @@ export type DatabaseConfig = {
   }
 }
 
-/**
- * Session configuration
- */
 export type SessionConfig = {
   // Uses `any` return type because session structure is user-defined and varies per application
   // The stack doesn't enforce a specific session shape - users can use NextAuth, Clerk, etc.
@@ -2597,9 +2554,6 @@ export type SessionConfig = {
   getSession: () => Promise<any>
 }
 
-/**
- * Theme preset options
- */
 export type ThemePreset = 'modern' | 'classic' | 'neon'
 
 /**
@@ -2695,14 +2649,8 @@ export type ThemeConfig = {
   shadows?: ThemeShadows
 }
 
-/**
- * UI configuration
- */
 export type UIConfig = {
   basePath?: string
-  /**
-   * Theme configuration for the admin UI
-   */
   theme?: ThemeConfig
 }
 
@@ -2745,18 +2693,12 @@ export type McpCustomTool = {
    * Unique name for the tool
    */
   name: string
-  /**
-   * Description of what the tool does
-   */
   description: string
   /**
    * Input schema (Zod schema)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputSchema: any
-  /**
-   * Handler function that executes the tool
-   */
   handler: (args: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     input: any
@@ -2764,9 +2706,6 @@ export type McpCustomTool = {
   }) => Promise<unknown>
 }
 
-/**
- * List-level MCP configuration
- */
 export type ListMcpConfig = {
   /**
    * Enable MCP tools for this list
@@ -2837,9 +2776,6 @@ export type McpAuthConfig =
        * Authentication type - custom auth provider
        */
       type: string
-      /**
-       * Additional auth-specific configuration
-       */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Allows custom auth provider configuration
       [key: string]: any
     }
@@ -2967,15 +2903,17 @@ export type PluginContext = {
 
   /**
    * Add a new list to the config
-   * Throws error if list already exists (unless merge strategy used)
+   * Throws error if list already exists
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin API must accept any list config
   addList: (name: string, listConfig: ListConfig<any>) => void
 
   /**
-   * Extend an existing list with additional fields, hooks, or access control
-   * Deep merges fields, hooks, and access control
-   * Throws error if list doesn't exist
+   * Extend an existing list with additional fields, hooks, or MCP config.
+   * Merges fields, hooks, and MCP config. Throws if the list doesn't exist,
+   * or if the extension sets operation-level `access` — access control
+   * belongs to whoever created the list, never a plugin extending it
+   * (ADR-0013).
    */
   extendList: (
     name: string,
@@ -3095,10 +3033,6 @@ export type Plugin = {
 }
 
 /**
- * Main configuration type
- * Using interface instead of type to allow module augmentation
- */
-/**
  * Configurable generator output locations.
  *
  * Lets a project relocate the generated Prisma schema and the `.opensaas`
@@ -3159,6 +3093,10 @@ export interface OutputConfig {
   buildTarget?: 'node'
 }
 
+/**
+ * Main configuration type.
+ * Uses an interface, not a type alias, so it can be extended via module augmentation.
+ */
 export interface OpenSaasConfig {
   db: DatabaseConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration

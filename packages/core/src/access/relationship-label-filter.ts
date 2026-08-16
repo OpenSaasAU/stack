@@ -49,10 +49,8 @@ export function isToOneRelationshipField(field: FieldConfig | undefined): boolea
 }
 
 /**
- * No longer folds access into to-one relationship label filters — the engine
- * (`buildAccessScopedWhere`, #916) now scopes every relation filter in
- * `where` directly, including the `{ is: {...} }` shape a label filter
- * produces. Returns `where` unchanged. See the module doc comment above.
+ * No longer folds access into label filters — see the module doc above.
+ * Returns `where` unchanged.
  */
 export async function resolveRelationshipLabelFilters(
   where: Record<string, unknown> | undefined,

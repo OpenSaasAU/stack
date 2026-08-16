@@ -1,8 +1,3 @@
-/**
- * Runtime MCP route handler
- * Creates MCP API handlers from OpenSaaS config at runtime
- */
-
 import * as z from 'zod'
 import type { OpenSaasConfig, FieldConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
@@ -16,12 +11,7 @@ import type { McpSession, McpSessionProvider } from './types.js'
  */
 type ContextSession = { userId: string; [key: string]: unknown }
 
-/**
- * Convert an MCP session into a context session.
- * Transport-level fields (accessToken, expiresAt, scopes) are stripped;
- * everything else — userId plus any custom fields the session provider
- * attached (email, role, ...) — flows through to access control.
- */
+/** Strips transport-level fields; userId and any custom session fields flow through to access control. */
 function toContextSession(session: McpSession): ContextSession {
   const { accessToken: _accessToken, expiresAt: _expiresAt, scopes: _scopes, ...rest } = session
   return rest as ContextSession
@@ -35,20 +25,12 @@ function getPluginMcpTools(config: OpenSaasConfig): McpCustomTool[] {
   return (config._pluginData?.__mcpTools as McpCustomTool[] | undefined) ?? []
 }
 
-/**
- * Whether a custom tool's inputSchema is a Zod schema (as opposed to a plain
- * JSON Schema object). Duck-typed so it works across zod module instances.
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing across zod instances
 function isZodSchema(schema: any): schema is z.ZodType {
   return !!schema && typeof schema.safeParse === 'function'
 }
 
-/**
- * Normalize a custom tool's inputSchema for the tools/list response.
- * Zod schemas are converted to JSON Schema (the MCP wire format); plain
- * objects are passed through as-is.
- */
+/** Zod schemas are converted to JSON Schema (the MCP wire format); plain objects pass through as-is. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inputSchema is user-supplied
 function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
   if (isZodSchema(inputSchema)) {
@@ -96,7 +78,6 @@ export function createMcpHandlers(options: {
 } {
   const { config, getSession, getContext } = options
 
-  // Validate MCP is enabled
   if (!config.mcp?.enabled) {
     const notEnabledHandler = async () =>
       new Response(JSON.stringify({ error: 'MCP not enabled' }), {
@@ -108,11 +89,7 @@ export function createMcpHandlers(options: {
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
-  /**
-   * Main MCP request handler
-   */
   const handler = async (req: Request): Promise<Response> => {
-    // Authenticate using provided session provider
     const session = await getSession(req.headers)
     if (!session) {
       return new Response(null, {
@@ -132,23 +109,19 @@ export function createMcpHandlers(options: {
         params?: any
       }
 
-      // Handle initialize
       if (body.method === 'initialize') {
         return handleInitialize(body.params, body.id)
       }
 
-      // Handle notifications/initialized (sent by client after initialize response)
       if (body.method === 'notifications/initialized') {
         // Notifications don't require a response in JSON-RPC 2.0
         return new Response(null, { status: 204 })
       }
 
-      // Handle tools/list
       if (body.method === 'tools/list') {
         return handleToolsList(config, body.id)
       }
 
-      // Handle tools/call
       if (body.method === 'tools/call') {
         return await handleToolsCall(body.params, session, config, getContext, body.id)
       }
@@ -198,9 +171,6 @@ type McpTool = {
   }
 }
 
-/**
- * Handle initialize request - respond with server capabilities
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Initialize params are from the client
 function handleInitialize(_params?: any, id?: number | string): Response {
   return new Response(
@@ -224,9 +194,6 @@ function handleInitialize(_params?: any, id?: number | string): Response {
   )
 }
 
-/**
- * Convert field config to JSON schema property
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
 function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, unknown> {
   const baseSchema: Record<string, unknown> = {}
@@ -261,7 +228,6 @@ function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, 
       }
       break
     case 'relationship':
-      // For relationships, expect an ID or connect object
       baseSchema.type = 'object'
       baseSchema.properties = {
         connect: {
@@ -273,16 +239,11 @@ function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, 
       }
       break
     default:
-      // For custom field types, default to string
       baseSchema.type = 'string'
   }
 
   return baseSchema
 }
-
-/**
- * Generate field schemas for create/update operations
- */
 
 function generateFieldSchemas(
   fields: Record<string, FieldConfig>,
@@ -295,12 +256,10 @@ function generateFieldSchemas(
   const required: string[] = []
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip system fields
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
 
     properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
 
-    // Add to required array if field is required for this operation
     if (
       operation === 'create' &&
       'validation' in fieldConfig &&
@@ -314,15 +273,10 @@ function generateFieldSchemas(
   return { properties, required }
 }
 
-/**
- * Handle tools/list request - list all available tools
- */
 function handleToolsList(config: OpenSaasConfig, id?: number | string): Response {
   const tools: McpTool[] = []
 
-  // Generate CRUD tools for each list
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    // Check if MCP is enabled for this list
     if (listConfig.mcp?.enabled === false) continue
 
     const dbKey = getDbKey(listKey)
@@ -340,7 +294,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
       delete: listConfig.mcp?.tools?.delete ?? defaultTools.delete ?? true,
     }
 
-    // Read tool
     if (enabledTools.read) {
       tools.push({
         name: `list_${dbKey}_query`,
@@ -357,7 +310,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
       })
     }
 
-    // Create tool
     if (enabledTools.create) {
       const fieldSchemas = generateFieldSchemas(listConfig.fields, 'create')
       tools.push({
@@ -378,7 +330,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
       })
     }
 
-    // Update tool
     if (enabledTools.update) {
       const fieldSchemas = generateFieldSchemas(listConfig.fields, 'update')
       tools.push({
@@ -406,7 +357,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
       })
     }
 
-    // Delete tool
     if (enabledTools.delete) {
       tools.push({
         name: `list_${dbKey}_delete`,
@@ -428,7 +378,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
       })
     }
 
-    // Custom tools
     if (listConfig.mcp?.customTools) {
       for (const customTool of listConfig.mcp.customTools) {
         tools.push({
@@ -461,9 +410,6 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
   )
 }
 
-/**
- * Handle tools/call request - execute a tool
- */
 async function handleToolsCall(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP tool params vary by tool
   params: any,
@@ -489,7 +435,6 @@ async function handleToolsCall(
     )
   }
 
-  // Parse tool name: list_{dbKey}_{operation}
   const match = toolName.match(/^list_([a-z][a-zA-Z0-9]*)_(query|create|update|delete)$/)
 
   if (match) {
@@ -497,13 +442,9 @@ async function handleToolsCall(
     return await handleCrudTool(dbKey, operation, toolArgs, session, config, getContext, id)
   }
 
-  // Handle custom tools
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
-/**
- * Handle CRUD tool execution
- */
 async function handleCrudTool(
   dbKey: string,
   operation: string,
@@ -514,7 +455,6 @@ async function handleCrudTool(
   getContext: (session?: ContextSession) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
-  // Create context with the user session (custom session fields pass through)
   const context = await getContext(toContextSession(session))
 
   try {
@@ -585,9 +525,6 @@ async function handleCrudTool(
   }
 }
 
-/**
- * Handle custom tool execution
- */
 async function handleCustomTool(
   toolName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Custom tool arguments are user-defined
@@ -609,7 +546,6 @@ async function handleCustomTool(
     return createErrorResponse(`Unknown tool: ${toolName}`, id)
   }
 
-  // Validate input when the tool declares a Zod schema
   let input = args
   if (isZodSchema(customTool.inputSchema)) {
     const parsed = customTool.inputSchema.safeParse(args)
@@ -661,9 +597,6 @@ function mcpJsonReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value
 }
 
-/**
- * Helper to create success response
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Response data structure is flexible per MCP protocol
 function createSuccessResponse(data: any, id?: number | string): Response {
   return new Response(
@@ -680,9 +613,6 @@ function createSuccessResponse(data: any, id?: number | string): Response {
   )
 }
 
-/**
- * Helper to create error response
- */
 function createErrorResponse(message: string, id?: number | string): Response {
   return new Response(
     JSON.stringify({

@@ -4,15 +4,6 @@ import { getDbKey } from '../lib/case-utils.js'
 // Internal helpers
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Unwrap the item type from a field type, stripping null, undefined, and
- * Array wrappers so we can constrain nested fragment shapes.
- *
- * Examples:
- *   User | null     → User
- *   User[]          → User
- *   (User | null)[] → User
- */
 type UnwrapItem<T> = NonNullable<T> extends Array<infer U> ? NonNullable<U> : NonNullable<T>
 
 // ─────────────────────────────────────────────────────────────
@@ -20,44 +11,9 @@ type UnwrapItem<T> = NonNullable<T> extends Array<infer U> ? NonNullable<U> : No
 // ─────────────────────────────────────────────────────────────
 
 /**
- * A selector for a relationship field.
- *
- * Two forms are accepted:
- * 1. A `Fragment` directly (shorthand — no extra Prisma args on the nested query).
- * 2. An object `{ query, where?, orderBy?, take?, skip? }` to combine a fragment
- *    with Prisma filter/ordering/pagination applied to the nested relationship.
- *
- * @example Shorthand (most common)
- * ```ts
- * const postFrag = defineFragment<Post>()({
- *   id: true,
- *   author: authorFragment,   // shorthand
- * } as const)
- * ```
- *
- * @example With nested filtering
- * ```ts
- * const postFrag = defineFragment<Post>()({
- *   id: true,
- *   comments: {
- *     query:   commentFragment,
- *     where:   { approved: true },
- *     orderBy: { createdAt: 'desc' },
- *     take:    5,
- *   },
- * } as const)
- * ```
- *
- * @example Variables via factory function
- * ```ts
- * function makePostFragment(status: string) {
- *   return defineFragment<Post>()({
- *     id:      true,
- *     comments: { query: commentFragment, where: { status } },
- *   } as const)
- * }
- * type PostData = ResultOf<ReturnType<typeof makePostFragment>>
- * ```
+ * A selector for a relationship field: either a {@link Fragment} directly
+ * (shorthand), or `{ query, where?, orderBy?, take?, skip? }` to combine a
+ * fragment with Prisma filter/ordering/pagination on the nested relationship.
  */
 export type RelationSelector<TRelated extends Record<string, unknown>> =
   | Fragment<TRelated, FieldSelection<TRelated>>
@@ -70,26 +26,9 @@ export type RelationSelector<TRelated extends Record<string, unknown>> =
     }
 
 /**
- * A field selection for model type `TItem`.
- *
- * Each key maps to:
- * - `true`                — include the scalar/primitive field as-is
- * - A `Fragment`          — include a relationship and recurse (shorthand)
- * - A `RelationSelector`  — include a relationship with optional Prisma filter/ordering
- *
- * Only keys present in `TItem` are accepted. For relationship (object) fields
- * you may pass a Fragment, a RelationSelector, or `true` (returns the raw Prisma
- * value and loses type narrowing).
- *
- * @example
- * ```ts
- * const sel: FieldSelection<Post> = {
- *   id: true,
- *   title: true,
- *   author: authorFragment,
- *   comments: { query: commentFragment, where: { approved: true } },
- * }
- * ```
+ * A field selection for model type `TItem`. Passing `true` for a
+ * relationship field returns the raw Prisma value and loses type narrowing —
+ * use a {@link Fragment} or {@link RelationSelector} to keep it typed.
  */
 export type FieldSelection<T> = {
   readonly [K in keyof T]?: UnwrapItem<T[K]> extends Record<string, unknown>
@@ -99,19 +38,7 @@ export type FieldSelection<T> = {
 
 /**
  * A reusable, composable field-selection descriptor for model type `TItem`.
- *
- * Create with {@link defineFragment}. Compose by referencing another Fragment
- * (or a {@link RelationSelector}) as the value for a relationship key.
- *
- * @example
- * ```ts
- * const userFragment = defineFragment<User>()({ id: true, name: true } as const)
- * const postFragment = defineFragment<Post>()({
- *   id: true,
- *   title: true,
- *   author: userFragment,
- * } as const)
- * ```
+ * Create with {@link defineFragment}.
  */
 export type Fragment<TItem, TFields extends FieldSelection<TItem> = FieldSelection<TItem>> = {
   readonly _type: 'fragment'
@@ -122,11 +49,7 @@ export type Fragment<TItem, TFields extends FieldSelection<TItem> = FieldSelecti
 // Internal type helpers
 // ─────────────────────────────────────────────────────────────
 
-/**
- * @internal
- * Extract the Fragment from either a Fragment directly or a RelationSelector object.
- * Returns `never` for scalar `true` selections (so they fall to the scalar branch).
- */
+/** @internal Returns `never` for scalar `true` selections, so they fall to the scalar branch in {@link SelectedFields}. */
 type ExtractFragment<TSelector> =
   TSelector extends Fragment<infer TItem, infer TFields>
     ? Fragment<TItem, TFields>
@@ -134,16 +57,12 @@ type ExtractFragment<TSelector> =
       ? Fragment<TItem, TFields>
       : never
 
-/**
- * @internal
- * Map a FieldSelection over a model type, computing the picked output type.
- */
+/** @internal */
 type SelectedFields<TItem, TFields extends FieldSelection<TItem>> = {
   [K in keyof TFields & keyof TItem]: [ExtractFragment<TFields[K]>] extends [never]
-    ? // Scalar field (value is `true`) — tuple wrapping avoids the vacuous `never extends T` pitfall
+    ? // tuple wrapping avoids the vacuous `never extends T` pitfall
       TItem[K]
-    : // Relationship field — preserve array/null/undefined wrappers from the model
-      TItem[K] extends Array<unknown>
+    : TItem[K] extends Array<unknown>
       ? ResultOf<ExtractFragment<TFields[K]>>[]
       : null extends TItem[K]
         ? ResultOf<ExtractFragment<TFields[K]>> | null
@@ -157,24 +76,8 @@ type SelectedFields<TItem, TFields extends FieldSelection<TItem>> = {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Infer the TypeScript result type from a Fragment.
- *
- * Analogous to `gql.tada`'s `ResultOf` helper — given a fragment definition,
- * `ResultOf` tells you exactly what shape you will receive at runtime.
- *
- * - Scalar fields selected with `true` retain their original Prisma type.
- * - Relationship fields selected with a nested Fragment/RelationSelector are
- *   recursively narrowed.
- * - Nullability and array wrappers from the original model type are preserved.
- *
- * @example
- * ```ts
- * type UserData  = ResultOf<typeof userFragment>
- * // → { id: string; name: string }
- *
- * type PostData  = ResultOf<typeof postFragment>
- * // → { id: string; title: string; author: { id: string; name: string } | null }
- * ```
+ * Infer the TypeScript result type from a {@link Fragment} — the shape
+ * `runQuery`/`runQueryOne` return at runtime for that fragment.
  */
 export type ResultOf<F> =
   F extends Fragment<infer TItem, infer TFields> ? SelectedFields<TItem, TFields> : never
@@ -183,20 +86,14 @@ export type ResultOf<F> =
  * Arguments accepted by {@link runQuery}.
  */
 export type QueryArgs = {
-  /** Prisma where filter. The access control layer will additionally scope results. */
+  /** Prisma where filter — the access control layer additionally scopes results. */
   where?: Record<string, unknown>
-  /** Prisma orderBy clause. Pass a single object or an array for multi-column ordering. */
   orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-  /** Maximum number of records to return. */
   take?: number
-  /** Number of records to skip (for pagination). */
   skip?: number
 }
 
-/**
- * Minimal context shape required by the query runners.
- * Compatible with the full `AccessContext` produced by `getContext()`.
- */
+/** Compatible with the full `AccessContext` produced by `getContext()`. */
 export interface QueryRunnerContext {
   db: {
     [key: string]: {
@@ -211,64 +108,9 @@ export interface QueryRunnerContext {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Create a type-safe, reusable fragment for a given model type.
- *
- * The function is curried so that TypeScript can infer both the model type
- * (from the explicit type parameter) and the field selection (from the
- * argument), without requiring you to repeat yourself.
- *
- * @example Basic usage
- * ```ts
- * import type { User } from '.prisma/client'
- * import { defineFragment } from '@opensaas/stack-core'
- *
- * export const userFragment = defineFragment<User>()({
- *   id:    true,
- *   name:  true,
- *   email: true,
- * } as const)
- * ```
- *
- * @example Compose fragments
- * ```ts
- * import type { Post } from '.prisma/client'
- *
- * export const postFragment = defineFragment<Post>()({
- *   id:      true,
- *   title:   true,
- *   author:  userFragment,
- * } as const)
- * ```
- *
- * @example Nested filtering with RelationSelector
- * ```ts
- * export const postWithApprovedComments = defineFragment<Post>()({
- *   id:    true,
- *   title: true,
- *   comments: {
- *     query:   commentFragment,
- *     where:   { approved: true },
- *     orderBy: { createdAt: 'desc' },
- *     take:    5,
- *   },
- * } as const)
- * ```
- *
- * @example Variables via factory function
- * ```ts
- * function makePostFragment(status: string) {
- *   return defineFragment<Post>()({
- *     id:      true,
- *     comments: { query: commentFragment, where: { status } },
- *   } as const)
- * }
- * type PostData = ResultOf<ReturnType<typeof makePostFragment>>
- *
- * const posts = await context.db.post.findMany({
- *   query: makePostFragment('approved'),
- *   where: { published: true },
- * })
- * ```
+ * Create a type-safe, reusable fragment for a given model type. Curried so
+ * TypeScript can infer the model type from the explicit type parameter and
+ * the field selection from the argument.
  */
 export function defineFragment<TItem>() {
   return function <TFields extends FieldSelection<TItem>>(
@@ -279,7 +121,7 @@ export function defineFragment<TItem>() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Runtime helpers — exported for use in context/index.ts
+// Runtime helpers
 // ─────────────────────────────────────────────────────────────
 
 /** @internal */
@@ -293,14 +135,10 @@ export function isFragment(value: unknown): value is Fragment<unknown, FieldSele
 }
 
 /**
- * Walk a field selection and build the Prisma `include` map needed to eagerly
- * load all nested relationship fragments/selectors.
- *
- * Scalar fields (`true`) do not require an include entry — Prisma returns all
- * scalar columns by default. Only relationship fields backed by a Fragment or
- * RelationSelector generate include entries (recursively).
- *
- * Exported for use in `context/index.ts` when the `query` parameter is present.
+ * Build the Prisma `include` map for a field selection's nested fragments.
+ * Scalar fields (`true`) need no include entry — Prisma returns all scalar
+ * columns by default; only relationship fields backed by a Fragment or
+ * RelationSelector generate one (recursively).
  * @internal
  */
 export function buildInclude(fields: FieldSelection<unknown>): Record<string, unknown> | undefined {
@@ -312,7 +150,6 @@ export function buildInclude(fields: FieldSelection<unknown>): Record<string, un
 
     const val = value as Record<string, unknown>
 
-    // ── Shorthand: Fragment directly ──────────────────────────
     if (isFragment(val)) {
       hasIncludes = true
       const nestedInclude = buildInclude(val._fields as FieldSelection<unknown>)
@@ -320,7 +157,6 @@ export function buildInclude(fields: FieldSelection<unknown>): Record<string, un
       continue
     }
 
-    // ── RelationSelector: { query, where?, orderBy?, take?, skip? } ──
     if ('query' in val && isFragment(val.query)) {
       hasIncludes = true
       const selector = val as {
@@ -400,10 +236,7 @@ export function buildFieldSelectionScope(fields: FieldSelection<unknown>): Field
 
 /**
  * Recursively pick only the fields requested by a fragment from a raw Prisma
- * result object. This ensures the runtime shape exactly matches the type
- * produced by `ResultOf<F>`.
- *
- * Exported for use in `context/index.ts`.
+ * result object, so the runtime shape matches `ResultOf<F>`.
  * @internal
  */
 export function pickFields<TItem, TFields extends FieldSelection<TItem>>(
@@ -424,7 +257,6 @@ export function pickFields<TItem, TFields extends FieldSelection<TItem>>(
 
     const val = value as Record<string, unknown>
 
-    // ── Shorthand: Fragment directly ──────────────────────────
     if (isFragment(val)) {
       if (Array.isArray(fieldValue)) {
         result[key] = fieldValue.map((elem) =>
@@ -438,7 +270,6 @@ export function pickFields<TItem, TFields extends FieldSelection<TItem>>(
       continue
     }
 
-    // ── RelationSelector: { query, where?, ... } ──────────────
     if ('query' in val && isFragment(val.query)) {
       const nestedFrag = val.query as Fragment<unknown, FieldSelection<unknown>>
       if (Array.isArray(fieldValue)) {
@@ -466,29 +297,9 @@ export function pickFields<TItem, TFields extends FieldSelection<TItem>>(
 
 /**
  * Execute a fragment-based query against a list, returning all matching
- * records shaped to the fragment's field selection.
- *
- * Under the hood this calls `context.db[listKey].findMany()`, so all access
- * control rules defined in your config are still enforced.
- *
- * **Tip:** You can also call `context.db.post.findMany({ query: fragment, ... })`
- * directly — both forms produce the same result.
- *
- * @param context - An `AccessContext` (or any object with a compatible `db`).
- * @param listKey - The PascalCase list name (e.g. `'Post'`, `'BlogPost'`).
- * @param fragment - A fragment created with {@link defineFragment}.
- * @param args     - Optional query arguments (where, orderBy, take, skip).
- * @returns        An array typed to exactly the fragment's field selection.
- *
- * @example
- * ```ts
- * const posts = await runQuery(context, 'Post', postFragment, {
- *   where:   { published: true },
- *   orderBy: { createdAt: 'desc' },
- *   take:    10,
- * })
- * // posts: Array<ResultOf<typeof postFragment>>
- * ```
+ * records shaped to the fragment's field selection. Calls
+ * `context.db[listKey].findMany()` under the hood, so access control still
+ * applies.
  */
 export async function runQuery<TItem, TFields extends FieldSelection<TItem>>(
   context: QueryRunnerContext,
@@ -518,25 +329,8 @@ export async function runQuery<TItem, TFields extends FieldSelection<TItem>>(
 
 /**
  * Execute a fragment-based query that returns a single record (or `null`).
- *
- * Under the hood this calls `context.db[listKey].findFirst()`, so all access
- * control rules are still enforced.
- *
- * **Tip:** You can also call `context.db.post.findUnique({ where: { id }, query: fragment })`
- * directly.
- *
- * @param context - An `AccessContext` (or any object with a compatible `db`).
- * @param listKey - The PascalCase list name (e.g. `'Post'`).
- * @param fragment - A fragment created with {@link defineFragment}.
- * @param where    - A Prisma where clause to identify the record.
- * @returns        The matched record shaped to the fragment, or `null`.
- *
- * @example
- * ```ts
- * const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
- * if (!post) return notFound()
- * // post: ResultOf<typeof postFragment>
- * ```
+ * Calls `context.db[listKey].findFirst()` under the hood, so access control
+ * still applies.
  */
 export async function runQueryOne<TItem, TFields extends FieldSelection<TItem>>(
   context: QueryRunnerContext,

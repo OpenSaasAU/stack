@@ -22,13 +22,9 @@ import { getLabelFieldName } from '../config/label.js'
 import type { FilterOperator, FilterSpec } from '../filter/types.js'
 import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 
-/**
- * Operators shared by numeric/date fields: plain equality plus the four
- * comparisons. `eq` maps to Prisma's `equals`; the comparisons pass through.
- */
+/** Operators shared by numeric/date fields' `getFilterSpec`. */
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 
-/** Map a Filter operator to its Prisma condition key (`eq` → `equals`). */
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
 }
@@ -55,9 +51,6 @@ export type {
   MultiColumnPrismaResult,
 } from '../config/types.js'
 
-/**
- * Format field name for display in error messages
- */
 function formatFieldName(fieldName: string): string {
   return fieldName
     .replace(/([A-Z])/g, ' $1')
@@ -119,12 +112,10 @@ export function text<
       const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Native type modifier (e.g., @db.Text)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
@@ -153,7 +144,6 @@ export function text<
         modifiers += ' @unique'
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -173,9 +163,6 @@ export function text<
         optional: !isRequired,
       }
     },
-    // Text fields drive free-text search: a bare word (or a `field:value`) maps
-    // to a case-preserving `contains`. This is what replaces the old hard-coded
-    // `type === 'text'` search in the admin list view.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: ['eq'],
       freeText: true,
@@ -225,24 +212,19 @@ export function integer<
       const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Native type modifier (e.g., @db.SmallInt, @db.BigInt)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Default value if provided (bare numeric literal). Independent of the
-      // nullable `?` modifier above — the default never overwrites nullability.
       const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'integer')
       if (defaultLiteral !== undefined) {
         modifiers += ` @default(${defaultLiteral})`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -260,8 +242,7 @@ export function integer<
         optional: !isRequired,
       }
     },
-    // Integers support equality and comparisons (`orders:>5`). A non-integer
-    // value can't be interpreted, so its token degrades to free text.
+    // A non-integer token can't be interpreted, so it degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
@@ -329,8 +310,6 @@ export function decimal<
     scale,
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      // Decimal values can be provided as strings or numbers
-      // Prisma will convert them to Decimal instances
       const baseSchema = z.union(
         [
           z.string({
@@ -347,7 +326,6 @@ export function decimal<
 
       let schema = baseSchema
 
-      // Add min validation if specified
       if (options?.validation?.min !== undefined) {
         const minValue = parseFloat(options.validation.min)
         schema = schema.refine(
@@ -361,7 +339,6 @@ export function decimal<
         )
       }
 
-      // Add max validation if specified
       if (options?.validation?.max !== undefined) {
         const maxValue = parseFloat(options.validation.max)
         schema = schema.refine(
@@ -387,27 +364,22 @@ export function decimal<
 
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Precision and scale
       modifiers += ` @db.Decimal(${precision}, ${scale})`
 
-      // Default value if provided
       if (options?.defaultValue !== undefined) {
         modifiers += ` @default(${options.defaultValue})`
       }
 
-      // Database mapping
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
 
-      // Unique modifier. A non-unique index has no field-level form in Prisma,
-      // so it is requested out-of-line via `index` below and emitted by the
-      // generator as `@@index([...])` on the model.
+      // Unique modifier — non-unique index routes through `index` below,
+      // same as `text()`'s getPrismaType.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
       }
@@ -530,30 +502,24 @@ export function bigInt<
       const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Native type modifier (e.g., @db.UnsignedBigInt on MySQL)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Default value if provided (bare integer literal). Independent of the
-      // nullable `?` modifier above — the default never overwrites nullability.
       if (options?.defaultValue !== undefined) {
         modifiers += ` @default(${options.defaultValue})`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
 
-      // Unique modifier. A non-unique index has no field-level form in Prisma,
-      // so it is requested out-of-line via `index` below and emitted by the
-      // generator as `@@index([...])` on the model.
+      // Unique modifier — non-unique index routes through `index` below,
+      // same as `text()`'s getPrismaType.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
       }
@@ -572,7 +538,7 @@ export function bigInt<
         optional: !isRequired,
       }
     },
-    // BigInts compare like integers; a non-integer token degrades to free text.
+    // A non-integer token degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
@@ -602,8 +568,9 @@ export function checkbox<
       const hasDefault = options?.defaultValue !== undefined
       let modifiers = ''
 
-      // Nullable modifier - checkbox fields are non-nullable by default (must be true or false)
-      // Use db.isNullable: true to allow NULL values in the database
+      // Checkboxes are non-nullable by default (must be true or false), unlike
+      // the other scalar fields' nullable-unless-required default — set
+      // db.isNullable: true to allow NULL.
       if (db?.isNullable === true) {
         modifiers += '?'
       }
@@ -612,7 +579,6 @@ export function checkbox<
         modifiers += ` @default(${options.defaultValue})`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -628,8 +594,7 @@ export function checkbox<
         optional: options?.defaultValue === undefined,
       }
     },
-    // Checkboxes filter by equality against the two enumerated values. Anything
-    // other than true/false can't be interpreted and degrades to free text.
+    // Anything other than true/false degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: ['eq'],
       toCondition: (operator, value) => {
@@ -672,27 +637,22 @@ export function timestamp<
         'kind' in options.defaultValue &&
         options.defaultValue.kind === 'now'
 
-      // Nullability: explicit db.isNullable overrides the default (nullable unless @default(now()))
       const isNullable = db?.isNullable ?? !hasDefaultNow
 
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Default value
       if (hasDefaultNow) {
         modifiers += ' @default(now())'
       }
 
-      // Native type modifier (e.g., @db.Timestamptz for PostgreSQL)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -714,8 +674,7 @@ export function timestamp<
         optional: !hasDefault,
       }
     },
-    // Timestamps support equality and comparisons (`joined:>2024-01-01`). An
-    // unparseable date degrades to free text.
+    // An unparseable date degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
@@ -794,23 +753,11 @@ export function calendarDay<
   return {
     type: 'calendarDay',
     ...options,
-    // Writes: the write pipeline runs field resolveInput BEFORE zod
-    // validation (Hook Pipeline: field resolveInput → built-in field rules),
-    // so this is the only point a YYYY-MM-DD string can be turned into
-    // something Prisma's `@db.Date` write validator accepts — Prisma 7
-    // rejects a bare date string there (#621). Convert a valid string to a
-    // UTC-midnight Date; leave anything else (a Date already, null/undefined,
-    // or a malformed string) untouched so the zod schema below still rejects
-    // malformed input with a clear message. Reads resolvedData[fieldKey]
-    // (not raw inputData) so a list-level resolveInput that injects a default
-    // for an omitted key is still coerced instead of being overwritten.
-    //
-    // Reads: the underlying @db.Date column hands Prisma a Date (or a TEXT
-    // string under the SQLite fallback). Normalise to a YYYY-MM-DD string so the
-    // runtime value matches the declared `string` type. UTC components are used
-    // so the formatting never drifts a day in non-UTC timezones.
-    // Cast hooks to any since field builders are generic and can't know the
-    // specific TFieldKey (same pattern as password()).
+    // Hook Pipeline runs field resolveInput before zod validation — the only
+    // point a YYYY-MM-DD string can be turned into what Prisma's `@db.Date`
+    // write validator accepts (#621). Reads resolvedData[fieldKey], not raw
+    // inputData, so a list-level resolveInput's injected default for an
+    // omitted key is still coerced rather than overwritten.
     hooks: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveInput: ({ resolvedData, fieldKey }: { resolvedData: any; fieldKey: string }) => {
@@ -823,7 +770,6 @@ export function calendarDay<
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveOutput: ({ value }: { value: any }) => formatCalendarDay(value),
-      // Merge with user-provided hooks if any
       ...options?.hooks,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hook object needs type assertion for field builder
     } as any,
@@ -831,10 +777,9 @@ export function calendarDay<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      // Accept ISO8601 date strings (YYYY-MM-DD) in the shape a caller passes,
-      // or a `Date` — the shape resolveInput above turns a valid string into
-      // before this schema runs. Malformed strings fall through resolveInput
-      // untouched and still fail the regex here with a clear message.
+      // Accepts a `Date` because resolveInput above already converted a valid
+      // string to one before this schema runs; a malformed string falls
+      // through resolveInput untouched and fails the regex here instead.
       const stringSchema = z
         .string({
           message: `${formatFieldName(fieldName)} must be a valid date in ISO8601 format (YYYY-MM-DD)`,
@@ -848,7 +793,6 @@ export function calendarDay<
       if (isRequired && operation === 'create') {
         return dateSchema
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: omitted keys pass; present values must be valid
         return dateSchema.optional()
       } else {
         return dateSchema.optional().nullable()
@@ -862,31 +806,26 @@ export function calendarDay<
 
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Add @db.Date attribute for date-only storage
-      // Only for PostgreSQL/MySQL - SQLite doesn't support native DATE type
-      // SQLite will use TEXT for DateTime fields
+      // SQLite has no native DATE type and falls back to TEXT for DateTime
+      // columns, so @db.Date only applies on PostgreSQL/MySQL.
       if (provider && provider.toLowerCase() !== 'sqlite') {
         modifiers += ' @db.Date'
       }
 
-      // Default value if provided
       if (options?.defaultValue !== undefined) {
         modifiers += ` @default("${options.defaultValue}")`
       }
 
-      // Database mapping
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
 
-      // Unique modifier. A non-unique index has no field-level form in Prisma,
-      // so it is requested out-of-line via `index` below and emitted by the
-      // generator as `@@index([...])` on the model.
+      // Unique modifier — non-unique index routes through `index` below,
+      // same as `text()`'s getPrismaType.
       if (options?.isIndexed === 'unique') {
         modifiers += ' @unique'
       }
@@ -903,12 +842,6 @@ export function calendarDay<
       const isRequired = validation?.isRequired
       const isNullable = db?.isNullable ?? !isRequired
 
-      // calendarDay is a YYYY-MM-DD string end-to-end (Keystone's CalendarDay
-      // scalar). Returning 'string' here makes the entity/read type and the
-      // standalone generated CreateInput/UpdateInput types `string`. At the
-      // context.db write path a Date is still rejected at runtime by validation
-      // (the generated db method `data` type derives from Prisma's `Date | string`
-      // input — making it a compile-time error is tracked in #599).
       return {
         type: 'string',
         optional: isNullable,
@@ -1019,46 +952,37 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
     ...options,
     resultExtension: {
       outputType: "import('@opensaas/stack-core/internal').HashedPassword",
-      // No compute - delegates to resolveOutput hook
     },
     ui: {
       ...options?.ui,
       valueForClientSerialization: ({ value }) => ({ isSet: !!value }),
     },
-    // Cast hooks to any since field builders are generic and can't know the specific TFieldKey
     hooks: {
-      // Hash password before writing to database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveInput: async ({ inputData, fieldKey }: { inputData: any; fieldKey: string }) => {
-        // Skip if undefined or null (allows partial updates)
         const inputValue = inputData[fieldKey]
         if (inputValue === undefined || inputValue === null) {
           return inputValue
         }
 
-        // Skip if not a string
         if (typeof inputValue !== 'string' || inputValue.length === 0) {
           return inputValue
         }
 
-        // Skip if already hashed (idempotent)
+        // Idempotent: skip re-hashing a value that's already a hash.
         if (isHashedPassword(inputValue)) {
           return inputValue
         }
 
-        // Hash the password
         return (await hashPassword(inputValue)).toString()
       },
-      // Wrap password with HashedPassword class after reading from database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveOutput: ({ value }: { value: any }) => {
-        // Only wrap string values (hashed passwords)
         if (typeof value === 'string' && value.length > 0) {
           return new HashedPassword(value)
         }
         return undefined
       },
-      // Merge with user-provided hooks if any
       ...options?.hooks,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hook object needs type assertion for field builder
     } as any,
@@ -1067,7 +991,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
       const isRequired = validation?.isRequired
 
       if (isRequired && operation === 'create') {
-        // Required in create mode: reject undefined and empty strings
         return z
           .string({
             message: `${formatFieldName(fieldName)} must be text`,
@@ -1076,7 +999,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
             message: `${formatFieldName(fieldName)} is required`,
           })
       } else if (isRequired && operation === 'update') {
-        // Required in update mode: omitted keys pass; if provided, reject empty strings
         return z
           .string()
           .min(1, {
@@ -1084,7 +1006,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
           })
           .optional()
       } else {
-        // Not required: can be undefined or any string
         return z
           .string({
             message: `${formatFieldName(fieldName)} must be text`,
@@ -1100,17 +1021,14 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
       const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Native type modifier (e.g., @db.Text)
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -1190,7 +1108,6 @@ export function select<
       const isNullable = options.db?.isNullable ?? (!isRequired && !hasDefault)
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
@@ -1203,12 +1120,11 @@ export function select<
         const derivedEnumName = listName ? `${listName}${capitalizedField}` : capitalizedField
         const enumName = options.db?.enumName ?? derivedEnumName
 
-        // Add default value if provided (no quotes for enum values)
+        // No quotes for enum default values (unlike the string branch below).
         if (hasDefault) {
           modifiers += ` @default(${options.defaultValue})`
         }
 
-        // Map modifier
         if (options.db?.map) {
           modifiers += ` @map("${options.db.map}")`
         }
@@ -1222,12 +1138,10 @@ export function select<
 
       // String type (default)
 
-      // Add default value if provided
       if (hasDefault) {
         modifiers += ` @default("${options.defaultValue}")`
       }
 
-      // Map modifier
       if (options.db?.map) {
         modifiers += ` @map("${options.db.map}")`
       }
@@ -1294,9 +1208,6 @@ function parseRelationshipRef(ref: string): { list: string; field?: string } {
   }
 }
 
-/**
- * Check if a relationship is one-to-one (bidirectional with both sides having many: false).
- */
 function isOneToOneRelationship(
   fieldName: string,
   field: RelationshipField,
@@ -1329,10 +1240,6 @@ function isOneToOneRelationship(
   return !(targetFieldConfig as RelationshipField).many
 }
 
-/**
- * Determine if this side of a relationship should store the foreign key.
- * For one-to-one relationships, only one side stores the foreign key.
- */
 function shouldHaveForeignKey(
   listKey: string,
   fieldName: string,
@@ -1383,9 +1290,6 @@ function shouldHaveForeignKey(
   return fieldName.localeCompare(targetField) < 0
 }
 
-/**
- * Check whether a many relationship is a true many-to-many (both sides many).
- */
 function isManyToMany(
   fieldName: string,
   field: RelationshipField,
@@ -1459,13 +1363,9 @@ function computeManyToManyRelationName(
     return `${listKey}_${fieldName}`
   }
 
-  // Default Prisma naming - no explicit relation name needed
   return undefined
 }
 
-/**
- * Build the Prisma schema contribution for a relationship field.
- */
 function getPrismaRelation(
   field: RelationshipField,
   fieldName: string,
@@ -1579,7 +1479,6 @@ export function relationship<
     throw new Error('Relationship field must have a ref')
   }
 
-  // Validate ref format: 'ListName.fieldName' or 'ListName'
   const refParts = options.ref.split('.')
   if (refParts.length !== 1 && refParts.length !== 2) {
     throw new Error(
@@ -1587,9 +1486,7 @@ export function relationship<
     )
   }
 
-  // Validate db.foreignKey usage
   if (options.db?.foreignKey !== undefined) {
-    // Can only be used on single relationships (not many)
     if (options.many) {
       throw new Error(
         'db.foreignKey can only be used on single relationships (many: false or undefined). ' +
@@ -1597,7 +1494,6 @@ export function relationship<
       )
     }
 
-    // Can only be used on bidirectional relationships (with target field)
     if (refParts.length === 1) {
       throw new Error(
         'db.foreignKey can only be used on bidirectional relationships (ref: "ListName.fieldName"). ' +
@@ -1606,9 +1502,6 @@ export function relationship<
     }
   }
 
-  // Validate db.isNullable usage: only the FK-owning (single) side of a
-  // relationship has a column to make non-nullable — the many side always
-  // generates an array field with no nullability of its own.
   if (options.db?.isNullable !== undefined && options.many) {
     throw new Error(
       'db.isNullable can only be used on single relationships (many: false or undefined). ' +
@@ -1736,7 +1629,6 @@ export function json<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      // Accept any valid JSON value
       const baseSchema = z.unknown()
 
       if (isRequired && operation === 'create') {
@@ -1762,7 +1654,6 @@ export function json<
           })
           .optional()
       } else {
-        // Not required: can be undefined or null
         return baseSchema.optional().nullable()
       }
     },
@@ -1773,25 +1664,19 @@ export function json<
       const isNullable = db?.isNullable ?? !isRequired
       let modifiers = ''
 
-      // Optional modifier
       if (isNullable) {
         modifiers += '?'
       }
 
-      // Native type modifier
       if (db?.nativeType) {
         modifiers += ` @db.${db.nativeType}`
       }
 
-      // Default value if provided. Uses Keystone's JSON-literal form: canonical
-      // (space-free) JSON wrapped in escaped double quotes. Independent of the
-      // nullable `?` modifier above — the default never overwrites nullability.
       const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'json')
       if (defaultLiteral !== undefined) {
         modifiers += ` @default(${defaultLiteral})`
       }
 
-      // Map modifier
       if (db?.map) {
         modifiers += ` @map("${db.map}")`
       }
@@ -1824,21 +1709,14 @@ function typeDescriptorToString(descriptor: import('../config/types.js').TypeDes
     return descriptor
   }
 
-  // Extract type name from constructor or use provided name
   const typeName = descriptor.name || descriptor.value.name
 
-  // Generate import string
   return `import('${descriptor.from}').${typeName}`
 }
 
-/**
- * Extract TypeScript imports from a TypeDescriptor
- * Returns array of import statements needed for type generation
- */
 function typeDescriptorToImports(
   descriptor: import('../config/types.js').TypeDescriptor,
 ): Array<{ names: string[]; from: string; typeOnly?: boolean }> {
-  // If it's a string, check if it's an import string
   if (typeof descriptor === 'string') {
     const importMatch = descriptor.match(/import\('([^']+)'\)\.(\w+)/)
     if (importMatch) {
@@ -1939,7 +1817,6 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     type: import('../config/types.js').TypeDescriptor
   },
 ): VirtualField<TTypeInfo> {
-  // Validate that resolveOutput is provided
   if (!options.hooks?.resolveOutput) {
     throw new Error(
       'Virtual fields must provide a resolveOutput hook to compute their value. ' +
@@ -1947,7 +1824,6 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     )
   }
 
-  // Convert type descriptor to string
   const outputType = typeDescriptorToString(options.type)
   const imports = typeDescriptorToImports(options.type)
 
@@ -1958,19 +1834,16 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     virtual: true,
     outputType,
     ...rest,
-    // Virtual fields don't create database columns
-    // Return undefined to signal generator to skip this field
+    // undefined signals the generator to skip creating a database column.
     getPrismaType: undefined,
-    // Virtual fields appear in output types with their specified type
     getTypeScriptType: () => {
       return {
         type: outputType,
-        optional: false, // Virtual fields always compute a value
+        optional: false, // A virtual field always computes a value.
       }
     },
-    // Add import statements if needed
     getTypeScriptImports: imports.length > 0 ? () => imports : undefined,
-    // Virtual fields never validate input (they don't accept database input)
+    // Virtual fields don't accept database input, so validation always fails.
     getZodSchema: () => {
       return z.never()
     },

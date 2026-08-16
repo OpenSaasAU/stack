@@ -48,15 +48,11 @@ export function parseFilterQuery(query: string): FilterToken[] {
   let i = 0
 
   while (i < n) {
-    // Skip leading whitespace between tokens.
     while (i < n && isWhitespace(query[i])) i++
     if (i >= n) break
 
     const start = i
 
-    // Optional `field:` prefix. A URL scheme (`http://…`) is not a field
-    // prefix: when the colon is immediately followed by `//`, keep the whole
-    // token as free text so pasted URLs are searched verbatim.
     let field: string | null = null
     const prefixMatch = FIELD_PREFIX_RE.exec(query.slice(i))
     if (prefixMatch && !query.startsWith('//', i + prefixMatch[0].length)) {
@@ -64,8 +60,6 @@ export function parseFilterQuery(query: string): FilterToken[] {
       i += prefixMatch[0].length
     }
 
-    // Comparison operator prefix — only meaningful once a field is present.
-    // A leading `>`/`<` on a bare word is left as part of the free-text value.
     let operator: FilterOperator = 'eq'
     if (field) {
       if (query.startsWith('>=', i)) {
@@ -83,15 +77,14 @@ export function parseFilterQuery(query: string): FilterToken[] {
       }
     }
 
-    // Value: quoted (spaces kept) or a run up to the next whitespace.
     let value = ''
     if (query[i] === '"') {
-      i++ // opening quote
+      i++
       while (i < n && query[i] !== '"') {
         value += query[i]
         i++
       }
-      if (i < n) i++ // closing quote
+      if (i < n) i++
     } else {
       while (i < n && !isWhitespace(query[i])) {
         value += query[i]

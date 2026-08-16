@@ -56,13 +56,11 @@ export function serializeFilterQuery(tokens: FilterToken[]): string {
   const parts: string[] = []
 
   for (const token of tokens) {
-    // An empty value is not a filter — skip it rather than emit `field:` / `""`.
     if (token.value === '') continue
 
     if (token.field === null) {
-      // Bare free-text word. A leading `>`/`<` stays literal for bare words
-      // (the parser only treats them as operators after a `field:`), so no
-      // operator guard is needed here.
+      // A leading `>`/`<` stays literal for a bare word (the parser only
+      // treats them as operators after a `field:`), so no operator guard here.
       parts.push(quoteIfNeeded(token.value, false))
       continue
     }

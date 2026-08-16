@@ -30,18 +30,14 @@ import { buildDbDelegate } from '../context/index.js'
  * level this way; a bare or `include`-based read, and any relation reached
  * purely to satisfy a `needs` declaration, still compute every field, as
  * before. A field the read is not going to return does no work at all —
- * neither its read-access evaluation nor its hook.
+ * neither its read-access evaluation nor its hook. The projection-aware skip
+ * below shows this rule at each of the two places it applies.
  *
  * Phase 1 (pre-query row/relation scoping) lives in `access-filter.ts`. See
  * `docs/adr/0001-access-control-is-a-two-phase-read.md` and the access-control
  * glossary in `CONTEXT.md`.
  */
 
-/**
- * Runtime type for resolveOutput hooks
- * Used when we need to call hooks generically without knowing the specific field type
- * Supports both sync and async implementations
- */
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
   value: unknown
@@ -123,7 +119,6 @@ async function resolveReadableFieldValue(params: {
 }): Promise<{ readable: false } | { readable: true; value: unknown }> {
   const { fieldConfig, fieldName, value, accessItem, hookItem, listKey, args, config } = params
 
-  // Check field access (checkFieldAccess already handles sudo mode)
   const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
     ...args,
     item: accessItem,
@@ -133,10 +128,9 @@ async function resolveReadableFieldValue(params: {
     return { readable: false }
   }
 
-  // Apply resolveOutput hook if present
   if (fieldConfig?.hooks?.resolveOutput && listKey) {
-    // Cast to runtime type for generic execution
-    // At runtime, the hook will receive the correct value type for the field
+    // The hook is erased to this runtime shape here; at the actual call it
+    // receives the value typed for its own field.
     const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
     const link = { listKey, fieldKey: fieldName }
     const chain = args.context._resolveOutputChain
@@ -164,7 +158,6 @@ async function resolveReadableFieldValue(params: {
       return { readable: false }
     }
 
-    // Use Promise.resolve() to handle both sync and async hooks
     const resolved = await Promise.resolve(
       hook({
         value,
@@ -181,10 +174,6 @@ async function resolveReadableFieldValue(params: {
   return { readable: true, value }
 }
 
-/**
- * Filter fields from an object based on read access
- * Recursively applies access control to nested relationships
- */
 export async function filterReadableFields<T extends Record<string, unknown>>(
   item: T,
   fieldConfigs: Record<string, FieldConfig>,
@@ -201,12 +190,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // returned — after resolveOutput has had a chance to read them — so a
   // declared dependency never widens what the caller receives.
   declaredOnly: DeclaredOnlyTree = emptyDeclaredOnlyTree(),
-  // The fragment scope this level was reached under (ADR-0027), and the same
-  // tree one level down for each nested relation. `undefined` — the default,
-  // and what a bare/`include`-based read passes at every level — means
-  // unrestricted: every field on the list is computed, unchanged from
-  // before ADR-0027. Only a `query` fragment's own field selection ever
-  // restricts a level.
+  // The fragment scope this level was reached under (ADR-0027, see module doc
+  // above), and the same tree one level down for each nested relation.
   selection?: FieldSelectionScope,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
@@ -246,26 +231,22 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   for (const [fieldName, value] of Object.entries(workingItem)) {
     const fieldConfig = fieldConfigs[fieldName]
 
-    // Always include id, createdAt, updatedAt
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
       filtered[fieldName] = value
       continue
     }
 
-    // Projection-aware skip (ADR-0027): a fragment read that does not select
-    // this field does no work for it at all — no field-level read-access
-    // check, no resolveOutput, no recursion into a relation — because the
-    // read is never going to return it. `selection` is only ever restricted
-    // by a fragment's own field selection; a bare/`include`-based read, and a
-    // relation reached only to satisfy another field's `needs`, pass no
-    // selection at all and compute every field here, unchanged.
+    // Projection-aware skip (ADR-0027, see module doc above): a field this
+    // level's fragment did not select gets no read-access check, no
+    // resolveOutput, and no recursion into a relation — none of that work
+    // happens for a value the read isn't going to return.
     if (selection?.fields && !selection.fields.has(fieldName)) {
       continue
     }
 
-    // Handle relationship fields - recursively filter fields within related items
-    // Note: Access control filtering is now done at database level via buildAccessScopedInclude
-    // This only handles field-level access (hiding sensitive fields)
+    // Row/relation-level access is already scoped at the DB level via
+    // buildAccessScopedInclude; this only handles field-level access (hiding
+    // sensitive fields).
     //
     // Deliberately uncapped: the row/relation scoping in access-filter.ts bounds
     // what gets FETCHED (a caller include past its depth cap is now a denial,
@@ -283,7 +264,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       value !== null &&
       value !== undefined
     ) {
-      // Gate the relationship on read access before recursing.
       const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
         ...args,
         item: workingItem,
@@ -308,8 +288,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       const nestedSelection = selection?.nested[fieldName]
 
       if (relatedConfig) {
-        // For many relationships (arrays) - recursively filter fields in each item
-        // The recursive call already handles applying resolveOutput hooks
         if (Array.isArray(value)) {
           filtered[fieldName] = await Promise.all(
             value.map((relatedItem) =>
@@ -325,10 +303,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
               ),
             ),
           )
-        }
-        // For single relationships (objects) - recursively filter fields
-        // The recursive call already handles applying resolveOutput hooks
-        else if (typeof value === 'object') {
+        } else if (typeof value === 'object') {
           filtered[fieldName] = await filterReadableFields(
             value as Record<string, unknown>,
             relatedConfig.listConfig.fields,
@@ -341,14 +316,13 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
           )
         }
       } else {
-        // Related config not found, include the value as-is
         filtered[fieldName] = value
       }
       continue
     }
 
-    // Non-relationship field (or relationship without an includable value):
-    // check read access and apply resolveOutput via the shared helper.
+    // Non-relationship field, or a relationship field whose value is not
+    // includable (null/undefined) — falls through to the shared helper.
     const result = await resolveReadableFieldValue({
       fieldConfig,
       fieldName,
@@ -394,15 +368,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     delete computedFieldItem[key]
   }
 
-  // Process virtual fields - compute values from other fields
-  // Virtual fields don't exist in the database result, so we need to compute them separately
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    // Skip if already processed (from database result)
     if (fieldName in filtered) {
       continue
     }
 
-    // Only process virtual fields
     if (!fieldConfig.virtual) {
       continue
     }
@@ -423,7 +393,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Check read access and compute the value via the shared helper.
     const result = await resolveReadableFieldValue({
       fieldConfig,
       fieldName,

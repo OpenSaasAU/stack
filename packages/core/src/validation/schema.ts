@@ -1,9 +1,6 @@
 import { z } from 'zod'
 import type { FieldConfig } from '../config/types.js'
 
-/**
- * Generate Zod schema from field configurations
- */
 export function generateZodSchema(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
@@ -11,7 +8,6 @@ export function generateZodSchema(
   const shape: Record<string, z.ZodTypeAny> = {}
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    // Skip system fields, relationships, and virtual fields
     // Virtual fields don't accept input - they only compute output
     if (
       ['id', 'createdAt', 'updatedAt'].includes(fieldName) ||
@@ -21,7 +17,6 @@ export function generateZodSchema(
       continue
     }
 
-    // Use the field's schema generator
     if (fieldConfig.getZodSchema) {
       shape[fieldName] = fieldConfig.getZodSchema(fieldName, operation)
     } else {
@@ -33,10 +28,6 @@ export function generateZodSchema(
   return z.object(shape)
 }
 
-/**
- * Validate data against field configurations using Zod
- * Returns structured errors by field
- */
 export function validateWithZod(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
@@ -50,7 +41,6 @@ export function validateWithZod(
     return { success: true }
   }
 
-  // Convert Zod errors to field-specific error messages
   const errors: Record<string, string> = {}
   for (const issue of result.error.issues) {
     const fieldPath = issue.path.join('.')

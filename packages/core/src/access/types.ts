@@ -38,9 +38,6 @@ export interface Session {
   [key: string]: unknown
 }
 
-/**
- * Generic Prisma model delegate type
- */
 export type PrismaModelDelegate = {
   findUnique: (args: unknown) => Promise<unknown>
   findFirst: (args: unknown) => Promise<unknown>
@@ -51,12 +48,8 @@ export type PrismaModelDelegate = {
   count: (args?: unknown) => Promise<number>
 }
 
-/**
- * Generic Prisma client type
- * This is intentionally permissive to allow actual PrismaClient types
- * Uses `any` because Prisma generates highly complex client types that are difficult to constrain
- * This type is used as a generic constraint and the actual type safety comes from TPrisma parameter
- */
+// Uses `any` because Prisma generates highly complex client types that are difficult
+// to constrain here; actual type safety comes from the TPrisma generic parameter.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type PrismaClientLike = any
 
@@ -103,11 +96,9 @@ export type FindManyQueryArgs = {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
-  // Overload 1: with query fragment — return type narrows to ResultOf<fragment>[]
   <TItem, TFields extends FieldSelection<TItem>>(
     args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
-  // Overload 2: original Prisma behaviour
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
 }
 
@@ -145,11 +136,9 @@ export type FindFirstQueryArgs = {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
-  // Overload 1: with query fragment — return type narrows to ResultOf<fragment> | null
   <TItem, TFields extends FieldSelection<TItem>>(
     args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  // Overload 2: original Prisma behaviour
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
 }
 
@@ -172,23 +161,17 @@ export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> {
-  // Overload 1: with query fragment — return type narrows to ResultOf<fragment> | null
   <TItem, TFields extends FieldSelection<TItem>>(args: {
     where: Record<string, unknown>
     query: Fragment<TItem, TFields>
   }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  // Overload 2: original Prisma behaviour
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
 }
 
-/**
- * Map Prisma client to access-controlled database context
- * Preserves Prisma's type information for each model
- */
 export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
   [K in keyof TPrisma]: TPrisma[K] extends {
-    // Uses `any` in conditional type checks to verify Prisma model shape
-    // This is a standard TypeScript pattern for checking if a property exists with any signature
+    // Uses `any` here to check the property exists with any signature, a standard
+    // TypeScript pattern for verifying Prisma model shape in a conditional type.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     findUnique: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -233,17 +216,7 @@ export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
   [key: string]: any
 }
 
-/**
- * Storage utilities for file/image uploads
- */
 export type StorageUtils = {
-  /**
-   * Upload a file to storage
-   * @param providerName - Name of storage provider from config
-   * @param file - File object
-   * @param buffer - File contents as Buffer
-   * @param options - Upload options (validation, metadata)
-   */
   uploadFile: (
     providerName: string,
     file: File,
@@ -251,13 +224,6 @@ export type StorageUtils = {
     options?: unknown,
   ) => Promise<unknown>
 
-  /**
-   * Upload an image with transformations
-   * @param providerName - Name of storage provider from config
-   * @param file - File object
-   * @param buffer - File contents as Buffer
-   * @param options - Upload options (validation, transformations, metadata)
-   */
   uploadImage: (
     providerName: string,
     file: File,
@@ -265,24 +231,12 @@ export type StorageUtils = {
     options?: unknown,
   ) => Promise<unknown>
 
-  /**
-   * Delete a file from storage
-   * @param providerName - Name of storage provider from config
-   * @param filename - Name of file to delete
-   */
   deleteFile: (providerName: string, filename: string) => Promise<void>
 
-  /**
-   * Delete an image and all its transformations
-   * @param metadata - Image metadata containing storage provider and filename
-   */
   deleteImage: (metadata: unknown) => Promise<void>
 }
 
-/**
- * Context type (simplified for access control)
- * Using interface instead of type to allow module augmentation
- */
+// Uses `interface` rather than `type` so consumers can extend it via module augmentation.
 export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
   session: Session | null
   prisma: TPrisma
@@ -317,14 +271,9 @@ export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLi
   _transactionOwner?: TransactionRegistry
 }
 
-/**
- * Prisma filter type - represents a where clause
- * Uses Partial to allow filtering by any subset of fields
- */
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>
 
 /**
- * Access control function type
  * Can return:
  * - boolean: true = allow, false = deny
  * - PrismaFilter: Prisma where clause to filter results
@@ -373,7 +322,6 @@ type FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput> =
     }
 
 /**
- * Field-level access control function.
  * For create/update operations, receives inputData to validate incoming values.
  *
  * Unlike operation-level `AccessControl`, this returns `boolean` only. Field
@@ -401,8 +349,6 @@ export type FieldAccessControl<
 > = (args: FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput>) => boolean | Promise<boolean>
 
 /**
- * Field-level access control
- *
  * `read` is typed from the single `operation: 'read'` member of
  * `FieldAccessControlArgs`, not the full `FieldAccessControl` union — so a
  * rule written directly for this slot sees `item` as always present (never

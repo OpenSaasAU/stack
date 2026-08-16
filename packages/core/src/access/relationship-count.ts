@@ -99,7 +99,6 @@ export async function buildRelationshipCountSelect(
   return Object.keys(select).length > 0 ? select : undefined
 }
 
-/** Read a to-many relationship's count off a fetched row's `_count` payload. */
 function readRelationshipCount(row: Record<string, unknown>, fieldName: string): number {
   const counts = row._count
   if (counts && typeof counts === 'object') {
@@ -109,7 +108,6 @@ function readRelationshipCount(row: Record<string, unknown>, fieldName: string):
   return 0
 }
 
-/** Whether a count satisfies a Filter operator/value comparison. */
 function matchesCount(count: number, operator: FilterOperator, value: number): boolean {
   switch (operator) {
     case 'eq':
@@ -140,7 +138,6 @@ function asCountDelegate(value: unknown): CountFindManyDelegate | null {
   return null
 }
 
-/** Extract the `RelationshipCountFilterMarker` from a condition value, if present. */
 function readCountMarker(value: unknown): RelationshipCountFilterMarker | null {
   if (!value || typeof value !== 'object') return null
   const marker = (value as Record<string, unknown>)[RELATIONSHIP_COUNT_FILTER_KEY]
@@ -291,13 +288,8 @@ export async function resolveRelationshipCountFilters(
       args,
       config,
     )
-    // Preserve any sibling conditions co-present on this member rather than
-    // replacing it wholesale with the resolved `{ id: { in } }`. The filter engine
-    // currently guarantees each AND-member (and the no-AND single object) carries
-    // exactly one field condition, so `siblings` is empty today and this equals the
-    // previous wholesale replacement — but if a future engine change ever merged
-    // multiple conditions into one member, spreading keeps the marker's siblings
-    // from being silently dropped.
+    // Preserve any sibling conditions rather than replacing the member
+    // wholesale — see `mergeResolvedMember` above for why.
     const siblings: Record<string, unknown> = { ...member }
     delete siblings[found.field]
     resolvedMembers.push(mergeResolvedMember(siblings, resolved))

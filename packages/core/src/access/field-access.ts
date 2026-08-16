@@ -78,13 +78,12 @@ export async function checkFieldAccess(
     inputData?: Record<string, unknown>
   },
 ): Promise<boolean> {
-  // Skip access check in sudo mode
   if (args.context._isSudo) {
     return true
   }
 
   if (!fieldAccess) {
-    return true // No field access means allow
+    return true
   }
 
   // `FieldAccess['read']` is narrower than `FieldAccess['create'/'update']` (it
@@ -97,7 +96,7 @@ export async function checkFieldAccess(
   // whichever operation is actually requested.
   const accessControl = fieldAccess[operation] as FieldAccessControl | undefined
   if (!accessControl) {
-    return true // No specific access control means allow
+    return true
   }
 
   const result = await accessControl({
@@ -108,12 +107,10 @@ export async function checkFieldAccess(
     operation,
   } as Parameters<typeof accessControl>[0])
 
-  // If result is false, deny access
   if (result === false) {
     return false
   }
 
-  // If result is true, allow access
   if (result === true) {
     return true
   }
@@ -141,10 +138,9 @@ export async function checkFieldAccess(
  * the pre-query counterpart, called from `query-validation.ts`'s `where`/
  * `orderBy` walk for every key that resolves to a declared field.
  *
- * It delegates to the SAME evaluator Field Visibility uses
- * (`checkFieldAccess`) — there is no second, parallel field-access evaluator
- * for predicates, matching this module's own rule for every other caller.
- * The one difference is the `item` it hands the rule: there is no fetched row
+ * It delegates to the same evaluator Field Visibility uses (`checkFieldAccess`),
+ * per this module's canonical-evaluator rule above. The one difference is the
+ * `item` it hands the rule: there is no fetched row
  * yet, so a rule that depends on one (the shape `FieldAccess['read']`
  * documents as the norm, e.g. `item?.ownerId === session?.userId`) cannot be
  * answered here. Rather than skip the check for such a rule — which would
@@ -184,9 +180,6 @@ export async function isFieldReadableForPredicate(
   }
 }
 
-/**
- * Filter fields from input data based on write access (create/update)
- */
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<
@@ -207,8 +200,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
-  // Build a set of foreign key field names to exclude
-  // Foreign keys should not be in the data when using Prisma's relation syntax
+  // Foreign keys must not appear in `data` when using Prisma's relation syntax.
   const foreignKeyFields = new Set<string>()
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
@@ -247,19 +239,18 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
 
-    // Skip system fields
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
       continue
     }
 
-    // Skip virtual fields - they don't store in database
-    // Virtual fields with resolveInput hooks handle side effects separately
+    // Virtual fields don't store in the database — skipped here, but their
+    // resolveInput hooks still run as a separate side-effect step.
     if (fieldConfig && 'virtual' in fieldConfig && fieldConfig.virtual) {
       continue
     }
 
-    // Skip foreign key fields (e.g., authorId) when their corresponding relationship field exists
-    // This prevents conflicts when using Prisma's relation syntax (e.g., author: { connect: { id } })
+    // Prevents conflicts with Prisma's relation syntax (e.g.,
+    // `author: { connect: { id } }`).
     if (foreignKeyFields.has(fieldName)) {
       continue
     }
