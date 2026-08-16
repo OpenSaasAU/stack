@@ -143,6 +143,21 @@ export class PrismaIntrospector {
       field.defaultValue = rest.substring(startIdx, endIdx)
     }
 
+    // Extract native type attribute (e.g. `@db.Decimal(10, 2)`)
+    const nativeTypeMatch = rest.match(/@db\.(\w+)(?:\(([^)]*)\))?/)
+    if (nativeTypeMatch) {
+      const [, nativeName, nativeArgs] = nativeTypeMatch
+      field.nativeType = {
+        name: nativeName,
+        args: nativeArgs
+          ? nativeArgs
+              .split(',')
+              .map((arg) => arg.trim())
+              .filter(Boolean)
+          : [],
+      }
+    }
+
     // Extract relation
     const relationMatch = rest.match(/@relation\(([^)]+)\)/)
     if (relationMatch) {
@@ -201,7 +216,7 @@ export class PrismaIntrospector {
       DateTime: { type: 'timestamp', import: 'timestamp' },
       Json: { type: 'json', import: 'json' },
       BigInt: { type: 'bigInt', import: 'bigInt' },
-      Decimal: { type: 'text', import: 'text' }, // No native support
+      Decimal: { type: 'decimal', import: 'decimal' },
       Bytes: { type: 'text', import: 'text' }, // No native support
     }
 
@@ -217,7 +232,7 @@ export class PrismaIntrospector {
     // Check for unsupported types
     for (const model of schema.models) {
       for (const field of model.fields) {
-        if (['Decimal', 'Bytes'].includes(field.type)) {
+        if (field.type === 'Bytes') {
           warnings.push(
             `Field "${model.name}.${field.name}" uses unsupported type "${field.type}" - will be mapped to text()`,
           )

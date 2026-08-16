@@ -246,6 +246,7 @@ export class KeystoneIntrospector {
       text: { type: 'text', import: 'text' },
       integer: { type: 'integer', import: 'integer' },
       float: { type: 'decimal', import: 'decimal' }, // No native float - mapped to decimal()
+      decimal: { type: 'decimal', import: 'decimal' },
       checkbox: { type: 'checkbox', import: 'checkbox' },
       timestamp: { type: 'timestamp', import: 'timestamp' },
       select: { type: 'select', import: 'select' },

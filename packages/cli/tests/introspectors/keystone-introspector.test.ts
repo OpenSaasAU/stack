@@ -100,6 +100,13 @@ export default {
     })
   })
 
+  it('should map decimal to decimal() (issue #908)', () => {
+    expect(introspector.mapKeystoneTypeToOpenSaas('decimal')).toEqual({
+      type: 'decimal',
+      import: 'decimal',
+    })
+  })
+
   it('should handle file and image fields', () => {
     expect(introspector.mapKeystoneTypeToOpenSaas('image')).toEqual({
       type: 'image',

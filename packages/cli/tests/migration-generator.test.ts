@@ -649,4 +649,102 @@ model Product {
       expect(output.warnings.some((w) => w.includes('Float') && w.includes('decimal()'))).toBe(true)
     })
   })
+
+  describe('Decimal Field Mapping (issue #908)', () => {
+    let tempDir: string
+
+    beforeEach(async () => {
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'migration-decimal-'))
+      await fs.ensureDir(path.join(tempDir, 'prisma'))
+    })
+
+    afterEach(async () => {
+      await fs.remove(tempDir)
+    })
+
+    it('should carry precision/scale through for a declared @db.Decimal(p, s) column', async () => {
+      const schema = `
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id    String  @id @default(cuid())
+  price Decimal @db.Decimal(10, 2)
+}
+`
+      await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
+
+      const session: MigrationSession = {
+        id: 'test',
+        projectType: 'prisma',
+        analysis: {
+          projectTypes: ['prisma'],
+          cwd: tempDir,
+          provider: 'postgresql',
+        },
+        currentQuestionIndex: 0,
+        answers: {
+          db_provider: 'postgresql',
+          enable_auth: false,
+          default_access: 'public-read-auth-write',
+        },
+        isComplete: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const output = await generator.generate(session)
+
+      expect(output.configContent).toContain(
+        'price: decimal({ validation: { isRequired: true }, precision: 10, scale: 2 })',
+      )
+      expect(output.configContent).toMatch(
+        /import \{[^}]*\bdecimal\b[^}]*\} from '@opensaas\/stack-core\/fields'/,
+      )
+      expect(output.warnings.some((w) => w.includes('Decimal'))).toBe(false)
+    })
+
+    it('should generate a bare decimal() with no precision/scale for a Decimal column without @db.Decimal', async () => {
+      const schema = `
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id    String   @id @default(cuid())
+  price Decimal?
+}
+`
+      await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
+
+      const session: MigrationSession = {
+        id: 'test',
+        projectType: 'prisma',
+        analysis: {
+          projectTypes: ['prisma'],
+          cwd: tempDir,
+          provider: 'postgresql',
+        },
+        currentQuestionIndex: 0,
+        answers: {
+          db_provider: 'postgresql',
+          enable_auth: false,
+          default_access: 'public-read-auth-write',
+        },
+        isComplete: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const output = await generator.generate(session)
+
+      expect(output.configContent).toContain('price: decimal()')
+      expect(output.configContent).not.toContain('precision')
+      expect(output.configContent).not.toContain('scale')
+      expect(output.warnings.some((w) => w.includes('Decimal'))).toBe(false)
+    })
+  })
 })
