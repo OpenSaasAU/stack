@@ -2,9 +2,6 @@ import type { AccessControl, FieldAccess } from '../access/types.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 
-/**
- * Field configuration types
- */
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
 
@@ -12,10 +9,7 @@ export type FieldType =
  * Field-level hook argument types (exported for user annotations)
  */
 
-/**
- * Arguments for field-level resolveInput hook
- * Used to transform field values before database write
- */
+/** Arguments for {@link FieldHooks.resolveInput}. */
 export type FieldResolveInputHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -39,10 +33,7 @@ export type FieldResolveInputHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level validate hook
- * Used for custom validation logic
- */
+/** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
 export type FieldValidateHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -76,10 +67,7 @@ export type FieldValidateHookArgs<
       addValidationError: (msg: string) => void
     }
 
-/**
- * Arguments for field-level beforeOperation hook
- * Used for side effects before database write
- */
+/** Arguments for {@link FieldHooks.beforeOperation}. */
 export type FieldBeforeOperationHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -109,10 +97,7 @@ export type FieldBeforeOperationHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level afterOperation hook
- * Used for side effects after database operation
- */
+/** Arguments for {@link FieldHooks.afterOperation}. */
 export type FieldAfterOperationHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
@@ -263,10 +248,7 @@ export type FieldAfterTransactionHookArgs<
       context: import('../access/types.js').AccessContext
     }
 
-/**
- * Arguments for field-level resolveOutput hook
- * Used to transform field values after database read
- */
+/** Arguments for {@link FieldHooks.resolveOutput}. */
 export type FieldResolveOutputHookArgs<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
