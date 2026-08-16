@@ -19,6 +19,7 @@ import { hookPipeline } from './hook-pipeline.js'
 import { processNestedOperations, runAfterTasks } from './nested-operations.js'
 import type { AfterTask } from './nested-operations.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
+import { TransactionRegistry } from '../access/transaction-registry.js'
 import { getDbKey } from '../lib/case-utils.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
@@ -256,12 +257,30 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
     config,
   })
 
+  // ── Transaction ownership for the transaction-boundary hooks (ADR-0028) ────
+  // A write already reached through a context carrying `_transactionOwner` is
+  // itself JOINING an enclosing transaction it did not open (a nested
+  // `context.transaction()`, or a hook's own `context.db` write) — regardless
+  // of whether `prisma` here happens to still expose `$transaction`, it must
+  // defer to that owner rather than opening a second transaction. Otherwise,
+  // if `prisma` can open a real interactive transaction, THIS write becomes
+  // the owner: it creates the registry every joined write below it (including
+  // hook-issued writes reached via `bindContextToTransaction`) enqueues into.
+  const existingOwner = context._transactionOwner
+  const opensOwnTransaction =
+    !existingOwner && typeof (prisma as TransactionCapable).$transaction === 'function'
+  const ownedRegistry = opensOwnTransaction ? new TransactionRegistry() : undefined
+  const transactionOwnerForBody = existingOwner ?? ownedRegistry
+
   // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
   // beforeTransaction runs before the transaction opens; afterTransaction runs
-  // after it settles (commit or rollback), per the symmetric-bracket rule.
+  // after it settles (commit or rollback) — deferred to the owner for a joined
+  // write (ADR-0028), per the symmetric-bracket rule.
   return runWithTransactionBoundary({
     involvedLists,
     context,
+    joinedOwner: existingOwner,
+    ownedRegistry,
     runTransaction: () =>
       // ADR-0010: every write runs inside ONE interactive transaction. The
       // parent and ALL nested writes share this transaction's client `tx` as
@@ -282,7 +301,10 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
           // survive a rollback. Rebind the context's `db` (and `prisma`) to the
           // transaction client `tx` so before/afterOperation `context.db` writes
           // participate in — and roll back with — this write's transaction.
-          context: bindContextToTransaction(args, tx),
+          // Also carries the transaction owner (ADR-0028) so any such write
+          // defers its own transaction-boundary bracket instead of firing it
+          // before this transaction has actually settled.
+          context: bindContextToTransaction(args, tx, transactionOwnerForBody),
         }),
       ),
   })
@@ -301,10 +323,15 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
  * write issued from inside a `resolveOutput` hook keeps that hook's chain).
  * Plugin runtimes are NOT re-executed; the existing `plugins` object is
  * reused as-is.
+ *
+ * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook
+ * that issues its own `context.db` write from inside this transaction defers
+ * its transaction-boundary bracket to that owner instead of firing eagerly.
  */
 function bindContextToTransaction<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
   tx: TPrisma,
+  transactionOwner: TransactionRegistry | undefined,
 ): AccessContext<TPrisma> {
   const { context, config } = args
   const txContext: AccessContext<TPrisma> = {
@@ -315,6 +342,7 @@ function bindContextToTransaction<TPrisma extends PrismaClientLike>(
     plugins: context.plugins,
     _isSudo: context._isSudo,
     _resolveOutputChain: context._resolveOutputChain,
+    _transactionOwner: transactionOwner,
   }
   // Rebuild the db delegate against `tx`, pointing back at `txContext` so hooks
   // reached through it also see the transactional context.

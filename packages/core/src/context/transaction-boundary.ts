@@ -9,6 +9,10 @@ import {
   type TransactionOutcome,
 } from '../hooks/index.js'
 import type { WriteOperation } from './write-pipeline.js'
+import type {
+  TransactionRegistry,
+  TransactionSettleOutcome,
+} from '../access/transaction-registry.js'
 
 /**
  * Transaction-boundary hooks (#590 / ADR-0010).
@@ -283,8 +287,12 @@ async function runBeforeTransactionForList<TPrisma extends PrismaClientLike>(
  * Run the list- and field-level `afterTransaction` hooks for one involved list
  * with the settled {@link TransactionOutcome}. Collects (does not throw) any
  * errors so the caller can keep running the remaining lists' compensators.
+ *
+ * Exported for {@link TransactionRegistry}-drained (deferred, joined-write)
+ * flushes, which run this same per-list logic once the transaction owner
+ * observes the real settle (ADR-0028).
  */
-async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
+export async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
   involved: InvolvedList,
   outcome: TransactionOutcome,
   context: AccessContext<TPrisma>,
@@ -401,29 +409,63 @@ export class AfterTransactionError extends Error {
 }
 
 /**
- * Bracket a write's transaction with the transaction-boundary hooks (#590).
+ * Compute a joined write's FINAL outcome once its owner's settle is known
+ * (ADR-0028): the write's own error always wins (it never fires early — see
+ * the ADR's provider-dependent-early-settle rejection); otherwise the write
+ * committed if and only if the owner's transaction also committed.
+ */
+function resolveDeferredOutcome(
+  writeOutcome: TransactionOutcome,
+  settle: TransactionSettleOutcome,
+): TransactionOutcome {
+  if (writeOutcome.status === 'rolled-back') return writeOutcome
+  if (settle.status === 'committed') return writeOutcome
+  return { status: 'rolled-back', error: settle.error }
+}
+
+/**
+ * Bracket a write's transaction with the transaction-boundary hooks (#590,
+ * ADR-0028 / #899).
  *
  * Sequence:
  *  1. Run every involved list's `beforeTransaction` in order, tracking which
- *     ran. A throw aborts: the transaction is NEVER opened; `afterTransaction`
- *     fires (status `rolled-back`, with the throw as `error`) ONLY for the lists
- *     whose `beforeTransaction` already ran (symmetric bracket), and the throw
- *     is then re-surfaced.
- *  2. Otherwise open the transaction via `runTransaction` (the existing #569
- *     machinery). On settle (commit or rollback) run `afterTransaction` for
- *     EVERY involved list (all of their `beforeTransaction` ran) with the
- *     outcome.
- *  3. If any `afterTransaction` throws, the rest still run; the collected
- *     errors are surfaced afterward as an {@link AfterTransactionError}.
+ *     ran (always eager — ADR-0028 keeps the symmetric bracket's "before" half
+ *     synchronous even for a joined write). A throw aborts: the transaction is
+ *     NEVER opened, and the throw is re-surfaced.
+ *  2. Otherwise run `runTransaction` (the existing #569 machinery — opens a
+ *     real transaction, joins one already open, or runs directly against a
+ *     client with no transaction support at all).
+ *  3. What happens to `afterTransaction` next depends on ownership:
+ *     - **Joined** (`args.joinedOwner` set — this write's context is nested in
+ *       a transaction it did not open): its bracket is DEFERRED — enqueued on
+ *       the owner's {@link TransactionRegistry} instead of firing now. The
+ *       owner drains it once it observes the real settle, at which point
+ *       {@link resolveDeferredOutcome} decides the final status.
+ *     - **Owner** (`args.ownedRegistry` set — this write just opened the
+ *       transaction every joined write below it shares): runs its own bracket
+ *       eagerly exactly as before, THEN drains `ownedRegistry` with the same
+ *       settle outcome so every write that joined this transaction gets its
+ *       deferred bracket flushed too.
+ *     - **Unowned** (neither set — no `context.transaction()` and no real
+ *       transaction to open, e.g. a bare test double): unchanged, fires
+ *       eagerly at write time (the "unowned join" case — there is no owner to
+ *       defer to and no settle signal to wait for).
+ *  4. If any `afterTransaction` throws, the rest still run; the collected
+ *     errors are surfaced afterward as an {@link AfterTransactionError} — for
+ *     a joined write this surfaces from the OWNER's promise, not this write's.
  *
  * Sudo does not affect these hooks — they always run; sudo only bypasses access.
  */
 export async function runWithTransactionBoundary<TPrisma extends PrismaClientLike>(args: {
   involvedLists: InvolvedList[]
   context: AccessContext<TPrisma>
+  /** Set when this write is nested in a transaction it did not open (ADR-0028). */
+  joinedOwner?: TransactionRegistry
+  /** Set when this write just opened the transaction joined writes below it share. */
+  ownedRegistry?: TransactionRegistry
   runTransaction: () => Promise<Record<string, unknown> | null>
 }): Promise<Record<string, unknown> | null> {
-  const { involvedLists, context, runTransaction } = args
+  const { involvedLists, context, joinedOwner, ownedRegistry, runTransaction } = args
 
   // Lists whose beforeTransaction ran (in order), for the symmetric bracket. A
   // list is marked as "ran" the moment its beforeTransaction BEGINS, so even a
@@ -446,14 +488,25 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
   // lists whose beforeTransaction ran, then surface the original error.
   if (beforeError !== undefined) {
     const outcome: TransactionOutcome = { status: 'rolled-back', error: beforeError }
-    const afterErrors: unknown[] = []
-    for (const involved of ran) {
-      await runAfterTransactionForList(involved, outcome, context, afterErrors)
+    if (joinedOwner) {
+      // Deferred: matches the eager branch below, which also discards any
+      // afterTransaction errors on this path (only beforeError propagates).
+      joinedOwner.enqueue(async (_settle, _errors) => {
+        const discarded: unknown[] = []
+        for (const involved of ran) {
+          await runAfterTransactionForList(involved, outcome, context, discarded)
+        }
+      })
+    } else {
+      const afterErrors: unknown[] = []
+      for (const involved of ran) {
+        await runAfterTransactionForList(involved, outcome, context, afterErrors)
+      }
     }
     throw beforeError
   }
 
-  // Open the transaction and capture the settle outcome.
+  // Open (or join) the transaction and capture THIS WRITE's own settle outcome.
   let outcome: TransactionOutcome
   let result: Record<string, unknown> | null = null
   let txError: unknown
@@ -465,6 +518,20 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
     outcome = { status: 'rolled-back', error: err }
   }
 
+  if (joinedOwner) {
+    // Deferred (ADR-0028): this write cannot observe the enclosing
+    // transaction's real settle, so its bracket is queued rather than fired.
+    // The write's own result/throw is unaffected — only afterTransaction waits.
+    joinedOwner.enqueue(async (settle, errors) => {
+      const finalOutcome = resolveDeferredOutcome(outcome, settle)
+      for (const involved of ran) {
+        await runAfterTransactionForList(involved, finalOutcome, context, errors)
+      }
+    })
+    if (txError !== undefined) throw txError
+    return result
+  }
+
   // afterTransaction always runs for every list whose beforeTransaction ran
   // (here: all involved lists). All compensators run even if one throws.
   const afterErrors: unknown[] = []
@@ -472,8 +539,17 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
     await runAfterTransactionForList(involved, outcome, context, afterErrors)
   }
 
+  // This write OWNS the transaction every joined write below it shares — drain
+  // their deferred brackets now, with the same settle outcome this write just
+  // observed (ADR-0028).
+  if (ownedRegistry) {
+    const settle: TransactionSettleOutcome =
+      txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
+    await ownedRegistry.drain(settle, afterErrors)
+  }
+
   // Surface errors: the transaction's own error takes precedence (the write
-  // failed); otherwise any afterTransaction errors.
+  // failed); otherwise any afterTransaction errors (own + drained).
   if (txError !== undefined) throw txError
   if (afterErrors.length > 0) throw new AfterTransactionError(afterErrors)
 

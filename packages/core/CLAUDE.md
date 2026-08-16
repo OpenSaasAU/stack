@@ -170,6 +170,27 @@ Key points:
 - If the client cannot open an interactive transaction (e.g. a test mock, or you
   are already inside one), `fn` runs directly with identical hook/access
   semantics. See ADR-0012.
+- **A transaction-boundary `afterTransaction` reports the OUTERMOST transaction,
+  not its own write's return (ADR-0028).** A write nested in `context.transaction()`
+  (or a hook's own `context.db` write) cannot itself observe when the enclosing
+  transaction settles, so its `afterTransaction` is deferred until the owner —
+  `context.transaction()`, or the Write Pipeline when it opened the transaction —
+  observes the real commit/rollback. `beforeTransaction` stays eager in every
+  case, so under `context.transaction()` it runs with that transaction already
+  open (keep it fast; a `context.db` write from it can block on rows the
+  transaction itself is writing). Status is a conjunction — `committed` iff the
+  write itself succeeded AND the enclosing transaction committed, the write's
+  own error always winning otherwise — and the deferred `item` is the row as
+  that write persisted it, not re-read at flush (so a later same-record write in
+  the same transaction leaves it stale). Because of this, a **rejected
+  `context.transaction()` no longer implies rollback**: a deferred hook that
+  throws after a successful commit rejects the call with `AfterTransactionError`
+  over already-final data, though a transaction/serialization error (e.g.
+  `P2034`) still takes precedence and propagates unwrapped. A write with no
+  transaction owner at all (an app-managed `prisma.$transaction`, or a client —
+  e.g. a bare test mock — that cannot open one) still fires `afterTransaction`
+  optimistically at write time, unchanged. See ADR-0028 and the hooks concept
+  doc.
 
 ### Generators (`src/generator/`)
 

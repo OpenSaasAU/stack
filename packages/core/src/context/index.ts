@@ -24,6 +24,9 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
+import { AfterTransactionError } from './transaction-boundary.js'
+import { TransactionRegistry } from '../access/transaction-registry.js'
+import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
 
 export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
@@ -382,6 +385,36 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
 }
 
 /**
+ * Drain a `context.transaction()` owner's deferral registry once its callback
+ * (and any real underlying transaction) has settled (ADR-0028), then apply the
+ * existing error-precedence rule: a transaction/callback error always wins
+ * (compensators still all ran, but their errors are discarded in favor of
+ * re-surfacing the original — matching the Write Pipeline's `txError`
+ * precedence); otherwise, any deferred `afterTransaction` errors reject the
+ * call with {@link AfterTransactionError} even though the callback itself
+ * succeeded and the transaction committed.
+ */
+async function settleTransactionOwner<T>(
+  settled: Promise<T>,
+  registry: TransactionRegistry,
+): Promise<T> {
+  const errors: unknown[] = []
+  let result: T
+  try {
+    result = await settled
+  } catch (err) {
+    const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
+    await registry.drain(outcome, errors)
+    throw err
+  }
+  await registry.drain({ status: 'committed' }, errors)
+  if (errors.length > 0) {
+    throw new AfterTransactionError(errors)
+  }
+  return result
+}
+
+/**
  * Create an access-controlled context
  *
  * @param config - OpenSaas configuration
@@ -401,6 +434,10 @@ export function getContext<
   // Internal: when rebuilding the context against a transaction client, reuse the
   // already-initialised plugin services rather than re-running plugin runtimes.
   _sharedPlugins?: Record<string, unknown>,
+  // Internal (ADR-0028, #899): when rebuilding the context for a transaction
+  // owner's callback body, carry the deferral registry so writes reached
+  // through this context join it instead of firing afterTransaction eagerly.
+  _transactionOwner?: TransactionRegistry,
 ): StackContext<TPrisma> {
   // Initialize db object - will be populated with access-controlled operations
   // Type is intentionally broad to allow dynamic model access
@@ -439,6 +476,7 @@ export function getContext<
     plugins: _sharedPlugins ?? {},
     _isSudo,
     _resolveOutputChain: [],
+    _transactionOwner,
   }
 
   // Create access-controlled operations for each list, populating `db` in place.
@@ -806,31 +844,80 @@ export function getContext<
   // Sudo function - creates a new context that bypasses access control
   // but still executes all hooks and validation
   function sudo(): StackContext<TPrisma> {
-    return getContext(config, prisma, session, context.storage, true)
+    return getContext(
+      config,
+      prisma,
+      session,
+      context.storage,
+      true,
+      undefined,
+      // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
+      // `tx.sudo().db.x.create()`) must still defer to that owner.
+      context._transactionOwner,
+    )
   }
 
-  // Interactive, hook-firing transaction (#614). Rebinds the access-controlled
-  // context to the transaction client so every `txContext.db.*` write runs its
-  // access checks + hooks but persists inside ONE transaction (atomic). The
-  // transaction `options` (e.g. `isolationLevel`) pass through to Prisma, and a
-  // serialization failure thrown inside the callback propagates to the caller
-  // for retry (it is never converted to a silent `null`).
+  // Interactive, hook-firing transaction (#614, ADR-0028 / #899). Rebinds the
+  // access-controlled context to the transaction client so every
+  // `txContext.db.*` write runs its access checks + hooks but persists inside
+  // ONE transaction (atomic). The transaction `options` (e.g. `isolationLevel`)
+  // pass through to Prisma, and a serialization failure thrown inside the
+  // callback propagates to the caller for retry (it is never converted to a
+  // silent `null`).
+  //
+  // This call OWNS a deferral registry for its callback's writes (ADR-0028):
+  // it always observes when its own callback settles — resolve/reject — even
+  // when the underlying client cannot open a real interactive transaction, so
+  // every `txContext.db.*` write defers its transaction-boundary bracket here
+  // instead of firing eagerly, and this call flushes them with the real
+  // outcome once the callback (and any real transaction) has settled. A
+  // `transaction()` nested inside another joins the outer owner's queue
+  // rather than creating a second one.
   function transaction<T>(
     fn: (txContext: StackContext<TPrisma>) => Promise<T>,
     options?: TransactionOptions,
   ): Promise<T> {
-    const client = prisma as unknown as TransactionCapable<TPrisma>
-    if (typeof client.$transaction !== 'function') {
-      // No interactive transaction available — either a plain client/mock or we
-      // are already inside a transaction (a Prisma tx client exposes no
-      // `$transaction`). Run directly: hook/access semantics are identical and
-      // atomicity is provided by any enclosing transaction.
+    if (context._transactionOwner) {
       return fn(returned)
     }
-    return client.$transaction(
-      (tx) => fn(getContext(config, tx, session, context.storage, _isSudo, context.plugins)),
-      options,
-    ) as Promise<T>
+
+    const registry = new TransactionRegistry()
+    const client = prisma as unknown as TransactionCapable<TPrisma>
+
+    const settled =
+      typeof client.$transaction !== 'function'
+        ? // No interactive transaction available — either a plain client/mock or
+          // we are already inside a transaction (a Prisma tx client exposes no
+          // `$transaction`). Run directly: hook/access semantics are identical
+          // and atomicity is provided by any enclosing transaction.
+          fn(
+            getContext(
+              config,
+              prisma,
+              session,
+              context.storage,
+              _isSudo,
+              context.plugins,
+              registry,
+            ),
+          )
+        : (client.$transaction(
+            (tx) =>
+              fn(
+                getContext(
+                  config,
+                  tx,
+                  session,
+                  context.storage,
+                  _isSudo,
+                  context.plugins,
+                  registry,
+                ),
+              ),
+            options,
+          ) as Promise<T>)
+
+    return settleTransactionOwner(settled, registry)
   }
 
   const returned: StackContext<TPrisma> = {

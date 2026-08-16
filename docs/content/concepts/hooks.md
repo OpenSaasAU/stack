@@ -161,6 +161,40 @@ hooks split into two families by where they run relative to that transaction:
     fires the bracket as a `create` involvement even though no row is written.
     Write your compensators to be **idempotent** so a no-op write is safe to
     compensate.
+  - **`afterTransaction` reports the OUTERMOST transaction, not the write's own
+    return (ADR-0028).** A write that joins a transaction it did not open — one
+    made inside `context.transaction()`, or a hook's own `context.db` write —
+    cannot itself observe when that enclosing transaction settles. Its
+    `afterTransaction` is deferred until the transaction owner
+    (`context.transaction()`, or the Write Pipeline when it opened the
+    transaction) observes the real settle, then fires with that outcome.
+    `beforeTransaction` stays eager in every case — only the paired
+    `afterTransaction` is deferred.
+    - **Status is a conjunction:** `committed` if and only if the write itself
+      succeeded **and** the enclosing transaction committed; otherwise
+      `rolled-back`. A write's own error always wins over the transaction's
+      outcome — a write that failed on its own reports `rolled-back` even if
+      everything else in the transaction went on to commit.
+    - **The deferred `item` is stale-safe, not stale-free.** It is the row as
+      that write persisted it, captured at write time — not re-read at flush —
+      so a later write to the same record in the same transaction leaves it
+      stale in what the compensator sees.
+    - **A rejected `context.transaction()` no longer implies rollback.** If the
+      transaction commits and a deferred `afterTransaction` then throws,
+      `context.transaction()` rejects with `AfterTransactionError` over data
+      that is already final. A transaction/serialization error (e.g. `P2034`)
+      still takes precedence and propagates unwrapped — a retry loop that
+      catches broadly should not treat every rejection as "not committed".
+    - **`beforeTransaction` can now run with the transaction already open.**
+      Under `context.transaction()` it runs on the write's way in, so it holds
+      that transaction open for its duration. Keep it fast, or hoist slow
+      external work above `context.transaction()` — a `context.db` write from
+      inside it can otherwise block on rows the transaction itself is writing.
+    - **A write with no transaction owner at all** (an application managing its
+      own `prisma.$transaction`, or a client that cannot open one — e.g. a bare
+      test mock, with no `context.transaction()` wrapping it) still fires
+      `afterTransaction` optimistically at write time, exactly as before — there
+      is no owner to defer to and no settle to wait for.
 
 ### Compensation pattern
 
