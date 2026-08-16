@@ -2329,9 +2329,6 @@ export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeI
   access?: ListAccessControl<TTypeInfo['item']>
 }
 
-/**
- * Database configuration
- */
 export type DatabaseConfig = {
   provider: 'postgresql' | 'mysql' | 'sqlite'
   /**

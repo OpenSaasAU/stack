@@ -30,11 +30,7 @@ function isZodSchema(schema: any): schema is z.ZodType {
   return !!schema && typeof schema.safeParse === 'function'
 }
 
-/**
- * Normalize a custom tool's inputSchema for the tools/list response.
- * Zod schemas are converted to JSON Schema (the MCP wire format); plain
- * objects are passed through as-is.
- */
+/** Zod schemas are converted to JSON Schema (the MCP wire format); plain objects pass through as-is. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inputSchema is user-supplied
 function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
   if (isZodSchema(inputSchema)) {
@@ -82,7 +78,6 @@ export function createMcpHandlers(options: {
 } {
   const { config, getSession, getContext } = options
 
-  // Validate MCP is enabled
   if (!config.mcp?.enabled) {
     const notEnabledHandler = async () =>
       new Response(JSON.stringify({ error: 'MCP not enabled' }), {
@@ -94,11 +89,7 @@ export function createMcpHandlers(options: {
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
-  /**
-   * Main MCP request handler
-   */
   const handler = async (req: Request): Promise<Response> => {
-    // Authenticate using provided session provider
     const session = await getSession(req.headers)
     if (!session) {
       return new Response(null, {
@@ -118,23 +109,19 @@ export function createMcpHandlers(options: {
         params?: any
       }
 
-      // Handle initialize
       if (body.method === 'initialize') {
         return handleInitialize(body.params, body.id)
       }
 
-      // Handle notifications/initialized (sent by client after initialize response)
       if (body.method === 'notifications/initialized') {
         // Notifications don't require a response in JSON-RPC 2.0
         return new Response(null, { status: 204 })
       }
 
-      // Handle tools/list
       if (body.method === 'tools/list') {
         return handleToolsList(config, body.id)
       }
 
-      // Handle tools/call
       if (body.method === 'tools/call') {
         return await handleToolsCall(body.params, session, config, getContext, body.id)
       }
