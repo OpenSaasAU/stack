@@ -1,6 +1,7 @@
 // Field components
 export { TextField } from './TextField.js'
 export { IntegerField } from './IntegerField.js'
+export { BigIntField } from './BigIntField.js'
 export { CheckboxField } from './CheckboxField.js'
 export { SelectField } from './SelectField.js'
 export { TimestampField } from './TimestampField.js'
@@ -31,6 +32,7 @@ export { fieldComponentRegistry, registerFieldComponent, getFieldComponent } fro
 // Re-export types
 export type { TextFieldProps } from './TextField.js'
 export type { IntegerFieldProps } from './IntegerField.js'
+export type { BigIntFieldProps } from './BigIntField.js'
 export type { CheckboxFieldProps } from './CheckboxField.js'
 export type { SelectFieldProps } from './SelectField.js'
 export type { TimestampFieldProps } from './TimestampField.js'

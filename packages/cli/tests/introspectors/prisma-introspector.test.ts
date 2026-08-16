@@ -185,6 +185,13 @@ model User {
     expect(introspector.mapPrismaTypeToOpenSaas('Json')).toEqual({ type: 'json', import: 'json' })
   })
 
+  it('should map BigInt to bigInt() (issue #907)', () => {
+    expect(introspector.mapPrismaTypeToOpenSaas('BigInt')).toEqual({
+      type: 'bigInt',
+      import: 'bigInt',
+    })
+  })
+
   it('should map Float to decimal() (not the non-existent float())', () => {
     expect(introspector.mapPrismaTypeToOpenSaas('Float')).toEqual({
       type: 'decimal',
@@ -214,7 +221,7 @@ model Product {
     expect(warnings[0]).toContain('decimal()')
   })
 
-  it('should generate warnings for unsupported types', async () => {
+  it('should generate warnings for unsupported types, but not for BigInt (issue #907)', async () => {
     const schema = `
 datasource db {
   provider = "postgresql"
@@ -233,10 +240,10 @@ model Data {
     const result = await introspector.introspect(tempDir)
     const warnings = introspector.getWarnings(result)
 
-    expect(warnings).toHaveLength(3)
-    expect(warnings[0]).toContain('BigInt')
-    expect(warnings[1]).toContain('Decimal')
-    expect(warnings[2]).toContain('Bytes')
+    expect(warnings).toHaveLength(2)
+    expect(warnings[0]).toContain('Decimal')
+    expect(warnings[1]).toContain('Bytes')
+    expect(warnings.some((w) => w.includes('BigInt'))).toBe(false)
   })
 
   it('should throw for missing schema', async () => {

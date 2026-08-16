@@ -5,6 +5,7 @@ import type { TypeInfo } from '@opensaas/stack-core/extend'
 import {
   text,
   integer,
+  bigInt,
   relationship,
   checkbox,
   timestamp,
@@ -63,6 +64,27 @@ describe('Prisma Schema Generator', () => {
       const schema = generatePrismaSchema(config)
 
       expect(schema).toMatchSnapshot()
+    })
+
+    it('should generate a BigInt column for a bigInt() field (issue #907)', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Event: {
+            fields: {
+              occurredAtMs: bigInt({ validation: { isRequired: true } }),
+              retries: bigInt({ defaultValue: 0n }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('occurredAtMs BigInt')
+      expect(schema).toContain('retries      BigInt? @default(0)')
     })
 
     it('should generate model with checkbox field', () => {

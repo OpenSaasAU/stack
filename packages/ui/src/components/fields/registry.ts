@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import { TextField } from './TextField.js'
 import { IntegerField } from './IntegerField.js'
+import { BigIntField } from './BigIntField.js'
 import { CheckboxField } from './CheckboxField.js'
 import { SelectField } from './SelectField.js'
 import { TimestampField } from './TimestampField.js'
@@ -44,6 +45,7 @@ export type FieldComponent = ComponentType<FieldComponentProps & Record<string, 
 export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
   text: TextField,
   integer: IntegerField,
+  bigInt: BigIntField,
   checkbox: CheckboxField,
   select: SelectField,
   timestamp: TimestampField,

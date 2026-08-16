@@ -208,6 +208,118 @@ Prisma: `Int`
 
 ---
 
+### `bigInt()`
+
+64-bit integer field for values that overflow `integer()`'s 32-bit `Int` — e.g. a millisecond epoch (`Date.now()`), a Snowflake ID, or any value beyond `Number.MAX_SAFE_INTEGER`.
+
+```typescript
+import { bigInt } from '@opensaas/stack-core/fields'
+
+bigInt(options?: {
+  validation?: {
+    isRequired?: boolean
+    min?: bigint
+    max?: bigint
+  }
+  defaultValue?: bigint | number | string
+  db?: {
+    map?: string
+    isNullable?: boolean
+    nativeType?: string
+  }
+  isIndexed?: boolean | 'unique'
+  ui?: {
+    [key: string]: unknown
+  }
+  access?: FieldAccess
+  hooks?: FieldHooks<bigint, bigint>
+})
+```
+
+#### Options
+
+##### `validation`
+
+Validation rules for the bigInt field.
+
+**Type:** `object`
+
+**Properties:**
+
+- `isRequired?: boolean` - Field is required on create
+- `min?: bigint` - Minimum value (inclusive)
+- `max?: bigint` - Maximum value (inclusive)
+
+**Example:**
+
+```typescript
+occurredAtMs: bigInt({
+  validation: {
+    isRequired: true,
+    min: 0n,
+  },
+})
+```
+
+##### `defaultValue`
+
+Default value when creating new items.
+
+**Type:** `bigint | number | string`
+
+**Example:**
+
+```typescript
+sequence: bigInt({ defaultValue: 0n })
+```
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+#### Database Type
+
+Prisma: `BigInt`
+
+#### TypeScript Type
+
+`bigint` (optional if not required)
+
+#### Write coercion
+
+Create/update accept `bigint`, an integer `number`, or a numeric `string`, and always coerce to `bigint`:
+
+- A non-integer value (e.g. `1.5`) is rejected.
+- A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently coerced — by the time a `number` reaches that range it has already lost precision, so accepting it would reintroduce the exact defect this field exists to prevent. Pass a `bigint` literal or a numeric string for values beyond that range.
+
+```typescript
+await context.db.event.create({
+  data: {
+    occurredAtMs: 9007199254740993n, // bigint — always safe
+    // occurredAtMs: 1700000000000,  // number — safe below Number.MAX_SAFE_INTEGER
+    // occurredAtMs: '9223372036854775807', // string — safe at any size
+  },
+})
+```
+
+#### Wire representation over MCP
+
+`bigint` is not JSON-serialisable, so an MCP CRUD tool result renders a `bigInt` field's value as a **decimal string**, not a bare `bigint`. This is deliberate (see [ADR-0029](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0029-a-field-may-serialise-differently-from-its-typescript-type.md)): the field's TypeScript type stays `bigint` in application code, and the MCP wire form is the closest JSON-compatible representation an MCP client can consume.
+
+```json
+{ "id": "1", "occurredAtMs": "9007199254740993" }
+```
+
+---
+
 ### `decimal()`
 
 Precise decimal field for currency, financial calculations, and measurements.

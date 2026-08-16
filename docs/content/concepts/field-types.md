@@ -68,6 +68,33 @@ fields: {
 - `validation.max`: Maximum value
 - `defaultValue`: Default integer value
 
+### BigInt Field
+
+64-bit integer field for values that overflow `integer()`'s 32-bit `Int` — a millisecond epoch (`Date.now()`), a Snowflake ID, or anything beyond `Number.MAX_SAFE_INTEGER`:
+
+```typescript
+import { bigInt } from '@opensaas/stack-core/fields'
+
+fields: {
+  occurredAtMs: bigInt({
+    validation: { isRequired: true, min: 0n },
+  }),
+  sequence: bigInt({ defaultValue: 0n }),
+}
+```
+
+**Options:**
+
+- `validation.isRequired`: Boolean
+- `validation.min`: Minimum value (as `bigint`)
+- `validation.max`: Maximum value (as `bigint`)
+- `defaultValue`: Default value (`bigint | number | string`)
+- `isIndexed`: Boolean or `'unique'` for indexing
+
+Create/update accept a `bigint`, an integer `number`, or a numeric `string`, and always coerce to `bigint`. A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than coerced — pass a `bigint` or a string for values beyond that range.
+
+TypeScript type is `bigint`; `bigint` isn't JSON-serialisable, so an MCP CRUD tool renders the value as a decimal string instead (see [ADR-0029](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0029-a-field-may-serialise-differently-from-its-typescript-type.md)).
+
 ### Decimal Field
 
 Precise decimal field ideal for currency, financial calculations, and measurements:
@@ -921,11 +948,17 @@ price: decimal({
   validation: { min: '0' },
 })
 
+// ✅ Good: Use bigInt for whole numbers beyond Number.MAX_SAFE_INTEGER
+occurredAtMs: bigInt({ validation: { isRequired: true } })
+
 // ❌ Bad: Don't use text for numbers
 age: text({ validation: { length: { max: 3 } } })
 
 // ❌ Bad: Don't use integer for currency (loses precision)
 price: integer()
+
+// ❌ Bad: Don't use integer for a millisecond epoch (overflows 32-bit Int)
+occurredAtMs: integer()
 ```
 
 ### 2. Add Validation Rules

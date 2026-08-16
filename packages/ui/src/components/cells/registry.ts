@@ -41,6 +41,10 @@ export type CellComponent = ComponentType<CellComponentProps>
 const cellComponentRegistry: Record<string, CellComponent> = {
   text: TextCell,
   integer: IntegerCell,
+  // Renders identically to `integer` — `String(value)` needs no numeric-type
+  // branching, and after the server/client JSON round-trip (`jsonSafeClone`)
+  // the value here is a real `bigint`.
+  bigInt: IntegerCell,
   checkbox: CheckboxCell,
   select: SelectCell,
   timestamp: TimestampCell,

@@ -650,6 +650,18 @@ async function handleCustomTool(
 }
 
 /**
+ * `JSON.stringify` replacer rendering a `bigint` (e.g. a `bigInt()` field's
+ * value) as a decimal string instead of throwing
+ * (`TypeError: Do not know how to serialize a BigInt`). A decimal string is
+ * the conventional JSON encoding of a 64-bit integer and is what an MCP
+ * client can consume — the field's TypeScript type stays `bigint` in
+ * application code (ADR-0029).
+ */
+function mcpJsonReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? value.toString() : value
+}
+
+/**
  * Helper to create success response
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Response data structure is flexible per MCP protocol
@@ -659,7 +671,7 @@ function createSuccessResponse(data: any, id?: number | string): Response {
       jsonrpc: '2.0',
       id: id ?? null,
       result: {
-        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(data, mcpJsonReplacer, 2) }],
       },
     }),
     {

@@ -877,6 +877,25 @@ export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
   isIndexed?: boolean | 'unique'
 }
 
+/**
+ * 64-bit integer field (Prisma `BigInt`, TypeScript `bigint`) — for values that
+ * overflow `integer()`'s 32-bit `Int` (e.g. a millisecond epoch).
+ *
+ * Wire representation (ADR-0029): `bigint` in application code, a decimal
+ * string over MCP — `bigint` is not JSON-serialisable, so the MCP handler
+ * renders it as a string rather than throwing.
+ */
+export type BigIntField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+  type: 'bigInt'
+  defaultValue?: bigint | number | string
+  validation?: {
+    isRequired?: boolean
+    min?: bigint
+    max?: bigint
+  }
+  isIndexed?: boolean | 'unique'
+}
+
 export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'checkbox'
 }
