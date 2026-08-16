@@ -83,6 +83,15 @@ export interface IntrospectedField {
     fields: string[]
     references: string[]
   }
+  /**
+   * A Prisma native type attribute (e.g. `@db.Decimal(10, 2)`), if the field
+   * declared one. Generalised beyond `Decimal` so other native types
+   * (`@db.VarChar`, `@db.SmallInt`, ...) can reuse the same channel later.
+   */
+  nativeType?: {
+    name: string
+    args: string[]
+  }
 }
 
 export interface IntrospectedSchema {

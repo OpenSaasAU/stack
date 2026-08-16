@@ -522,6 +522,17 @@ control.
       options.push("isIndexed: 'unique'")
     }
 
+    // Carry a declared `@db.Decimal(precision, scale)` through to the decimal() builder
+    if (
+      field.type === 'Decimal' &&
+      field.nativeType?.name === 'Decimal' &&
+      field.nativeType.args.length === 2
+    ) {
+      const [precision, scale] = field.nativeType.args
+      options.push(`precision: ${precision}`)
+      options.push(`scale: ${scale}`)
+    }
+
     // Handle default values
     if (field.defaultValue) {
       if (field.type === 'DateTime' && field.defaultValue === 'now()') {
@@ -533,7 +544,7 @@ control.
     }
 
     // Generate unsupported type warning
-    if (['Decimal', 'Bytes'].includes(field.type)) {
+    if (field.type === 'Bytes') {
       warnings.push(
         `Field "${field.name}" uses unsupported type "${field.type}" - mapped to text()`,
       )

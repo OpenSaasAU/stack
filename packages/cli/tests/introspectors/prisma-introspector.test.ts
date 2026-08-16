@@ -199,6 +199,13 @@ model User {
     })
   })
 
+  it('should map Decimal to decimal() (issue #908)', () => {
+    expect(introspector.mapPrismaTypeToOpenSaas('Decimal')).toEqual({
+      type: 'decimal',
+      import: 'decimal',
+    })
+  })
+
   it('should warn when a Float column is mapped to decimal()', async () => {
     const schema = `
 datasource db {
@@ -221,7 +228,7 @@ model Product {
     expect(warnings[0]).toContain('decimal()')
   })
 
-  it('should generate warnings for unsupported types, but not for BigInt (issue #907)', async () => {
+  it('should generate warnings for unsupported types, but not for BigInt or Decimal (issue #907, #908)', async () => {
     const schema = `
 datasource db {
   provider = "postgresql"
@@ -240,10 +247,35 @@ model Data {
     const result = await introspector.introspect(tempDir)
     const warnings = introspector.getWarnings(result)
 
-    expect(warnings).toHaveLength(2)
-    expect(warnings[0]).toContain('Decimal')
-    expect(warnings[1]).toContain('Bytes')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Bytes')
     expect(warnings.some((w) => w.includes('BigInt'))).toBe(false)
+    expect(warnings.some((w) => w.includes('Decimal'))).toBe(false)
+  })
+
+  it('should capture @db.Decimal(precision, scale) as a native type attribute (issue #908)', async () => {
+    const schema = `
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id    String  @id @default(cuid())
+  price Decimal @db.Decimal(10, 2)
+  bare  Decimal
+}
+`
+    await fs.writeFile(path.join(tempDir, 'prisma', 'schema.prisma'), schema)
+
+    const result = await introspector.introspect(tempDir)
+    const product = result.models[0]
+
+    const priceField = product.fields.find((f) => f.name === 'price')
+    expect(priceField!.nativeType).toEqual({ name: 'Decimal', args: ['10', '2'] })
+
+    const bareField = product.fields.find((f) => f.name === 'bare')
+    expect(bareField!.nativeType).toBeUndefined()
   })
 
   it('should throw for missing schema', async () => {
