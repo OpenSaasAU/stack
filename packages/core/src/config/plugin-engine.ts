@@ -8,17 +8,12 @@ import type {
   BaseFieldConfig,
 } from './types.js'
 
-/**
- * Topological sort for plugin dependency resolution
- * Ensures plugins execute in correct order based on dependencies
- */
 function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   const pluginMap = new Map<string, Plugin>()
   const visited = new Set<string>()
   const visiting = new Set<string>()
   const sorted: Plugin[] = []
 
-  // Build plugin map
   for (const plugin of plugins) {
     if (pluginMap.has(plugin.name)) {
       throw new Error(`Duplicate plugin name: ${plugin.name}`)
@@ -42,7 +37,6 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
 
     visiting.add(pluginName)
 
-    // Visit dependencies first
     if (plugin.dependencies) {
       for (const dep of plugin.dependencies) {
         visit(dep, [...path, pluginName])
@@ -54,7 +48,6 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
     sorted.push(plugin)
   }
 
-  // Visit all plugins
   for (const plugin of plugins) {
     visit(plugin.name)
   }
@@ -62,17 +55,12 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   return sorted
 }
 
-/**
- * Merge hooks from extension into existing hooks
- * Combines hook arrays so multiple plugins can add hooks
- */
 function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): Hooks | undefined {
   if (!extension) return existing
   if (!existing) return extension
 
   const merged: Partial<Hooks> = {}
 
-  // Merge resolveInput hooks (chain them, passing resolvedData through)
   if (existing.resolveInput || extension.resolveInput) {
     if (existing.resolveInput && extension.resolveInput) {
       merged.resolveInput = async (args) => {
@@ -85,7 +73,6 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
     }
   }
 
-  // Merge validateInput hooks (run both)
   if (existing.validateInput || extension.validateInput) {
     if (existing.validateInput && extension.validateInput) {
       merged.validateInput = async (args) => {
@@ -97,7 +84,6 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
     }
   }
 
-  // Merge beforeOperation hooks (run both in sequence)
   if (existing.beforeOperation || extension.beforeOperation) {
     if (existing.beforeOperation && extension.beforeOperation) {
       merged.beforeOperation = async (args) => {
@@ -109,7 +95,6 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
     }
   }
 
-  // Merge afterOperation hooks (run both in sequence)
   if (existing.afterOperation || extension.afterOperation) {
     if (existing.afterOperation && extension.afterOperation) {
       merged.afterOperation = async (args) => {
@@ -124,33 +109,24 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
   return Object.keys(merged).length > 0 ? (merged as Hooks) : undefined
 }
 
-/**
- * Execute plugins and transform config
- * Returns modified config with plugin data attached
- */
 export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasConfig> {
   if (!config.plugins || config.plugins.length === 0) {
     return config
   }
 
-  // Sort plugins by dependencies
   const sortedPlugins = sortPluginsByDependencies(config.plugins)
 
-  // Initialize mutable config state - preserve all config properties
   let currentConfig: OpenSaasConfig = {
     ...config,
     lists: { ...config.lists }, // Clone lists object to avoid mutating original
     _pluginData: {},
   }
 
-  // Field type registry (for third-party fields)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Registry must accept any field config builder
   const fieldTypeRegistry = new Map<string, (options?: unknown) => BaseFieldConfig<any>>()
 
-  // MCP tools registry
   const mcpToolsRegistry: McpCustomTool[] = []
 
-  // Execute each plugin
   for (const plugin of sortedPlugins) {
     const context: PluginContext = {
       config: currentConfig,
@@ -186,16 +162,13 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           )
         }
 
-        // Deep merge fields
         const mergedFields = {
           ...existing.fields,
           ...extension.fields,
         }
 
-        // Merge hooks
         const mergedHooks = mergeHooks(existing.hooks, extension.hooks)
 
-        // Merge MCP config
         const mergedMcp = extension.mcp
           ? {
               ...existing.mcp,
@@ -233,11 +206,9 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
       },
     }
 
-    // Execute plugin init
     await plugin.init(context)
   }
 
-  // Store registered MCP tools in config (if any)
   if (mcpToolsRegistry.length > 0) {
     if (!currentConfig._pluginData) {
       currentConfig._pluginData = {}
@@ -245,8 +216,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
     currentConfig._pluginData.__mcpTools = mcpToolsRegistry
   }
 
-  // Store plugin instances in config for runtime access
-  // This allows context creation to call plugin.runtime() functions
+  // Stored so context creation can call each plugin's runtime() function.
   if (!currentConfig._plugins) {
     currentConfig._plugins = []
   }
@@ -255,9 +225,6 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
   return currentConfig
 }
 
-/**
- * Execute beforeGenerate hooks from plugins
- */
 export async function executeBeforeGenerateHooks(config: OpenSaasConfig): Promise<OpenSaasConfig> {
   if (!config.plugins || config.plugins.length === 0) {
     return config
@@ -274,9 +241,6 @@ export async function executeBeforeGenerateHooks(config: OpenSaasConfig): Promis
   return currentConfig
 }
 
-/**
- * Execute afterGenerate hooks from plugins
- */
 export async function executeAfterGenerateHooks(
   config: OpenSaasConfig,
   files: { prismaSchema: string; types: string; context: string; [key: string]: string },

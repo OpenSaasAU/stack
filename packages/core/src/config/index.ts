@@ -8,16 +8,11 @@ import type {
 import { executePlugins } from './plugin-engine.js'
 import type { AccessControl } from '../access/types.js'
 
-/**
- * Normalize access control shorthand to object form
- * Converts function shorthand to { operation: { query, create, update, delete } } form
- */
 function normalizeListAccess<T>(
   access: ListAccessControl<T> | undefined,
 ): { operation?: OperationAccess<T> } | undefined {
   if (!access) return undefined
 
-  // If it's a function, convert to object form applying to all operations
   if (typeof access === 'function') {
     const fn = access as AccessControl<T>
     return {
@@ -30,32 +25,31 @@ function normalizeListAccess<T>(
     }
   }
 
-  // Already in object form
   return access
 }
 
 /**
- * Helper function to define configuration with type safety
- * Executes plugins if present in config.plugins array
+ * Define an OpenSaas config, executing `plugins` if present.
  *
- * Note: This function is now async when plugins are present
- * For synchronous config definition without plugins, config can still be returned directly
+ * Returns synchronously when there are no plugins (backward compatible);
+ * returns a `Promise` when plugins are present, since plugin execution is
+ * async.
  */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
-  // If no plugins, return config as-is (synchronous, backward compatible)
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
     return userConfig
   }
 
-  // Execute plugins and return promise
   return executePlugins(userConfig)
 }
 
 /**
- * Helper function to define a list with type safety
+ * Define a list with type safety.
  *
- * Accepts raw field configs and transforms them to inject the item type
- * This enables proper typing in field hooks where item is typed correctly
+ * `ListConfigInput<TTypeInfo>` accepts raw field configs; the return type
+ * `ListConfig<TTypeInfo>` injects `TTypeInfo` so hook/field callbacks (e.g.
+ * `resolveInput`'s `item`) are properly typed once `TTypeInfo` is supplied
+ * from generated types.
  *
  * @example
  * ```typescript
@@ -108,18 +102,15 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
 export function list<TTypeInfo extends import('./types.js').TypeInfo>(
   config: ListConfigInput<TTypeInfo>,
 ): ListConfig<TTypeInfo> {
-  // Normalize access control shorthand to object form
   const normalizedConfig = {
     ...config,
     access: normalizeListAccess(config.access),
   }
 
-  // At runtime, field configs are unchanged
-  // At type level, they're transformed to inject TypeInfo types
+  // Runtime shape is unchanged; the cast only narrows the TS type to inject TTypeInfo.
   return normalizedConfig as ListConfig<TTypeInfo>
 }
 
-// Re-export all types
 export type {
   OpenSaasConfig,
   OutputConfig,
@@ -171,16 +162,13 @@ export type {
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,
-  // Plugin system types
   Plugin,
   PluginContext,
   GeneratedFiles,
-  // List-level hook argument types
   ResolveInputHookArgs,
   ValidateHookArgs,
   BeforeOperationHookArgs,
   AfterOperationHookArgs,
-  // Field-level hook argument types
   FieldResolveInputHookArgs,
   FieldValidateHookArgs,
   FieldBeforeOperationHookArgs,

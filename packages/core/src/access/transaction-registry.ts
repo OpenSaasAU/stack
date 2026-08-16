@@ -50,7 +50,6 @@ export class TransactionRegistry {
     this.queue.push(flush)
   }
 
-  /** Run every queued flush, in enqueue order, against the settled outcome. */
   async drain(settle: TransactionSettleOutcome, errors: unknown[]): Promise<void> {
     for (const flush of this.queue) {
       await flush(settle, errors)

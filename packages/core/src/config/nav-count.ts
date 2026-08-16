@@ -13,13 +13,12 @@ type CountDelegate = {
 
 /**
  * Whether a list's query access is **statically denied** — provably no session
- * can read any row without evaluating a session-dependent function.
+ * can read any row, without evaluating a session-dependent function.
  *
- * Mirrors the list view's `canDeleteList` static check (issue #733): query
- * access is statically denied when it is absent (deny-by-default, matching the
- * access engine) or the literal boolean `false`. A function — or `true` —
- * cannot be decided up front, so the count is fetched through the secured
- * context, which re-applies the real rule per row.
+ * Mirrors the list view's `canDeleteList` static check (issue #733): absent
+ * access is deny-by-default (matching the access engine), so only an explicit
+ * `false` counts as statically denied here — a function or `true` falls
+ * through to a real per-row check via the secured context.
  *
  * A statically-denied list must render no nav count at all: a `0` there would
  * imply "this list is empty" when the truth is "you may see none of it".
@@ -35,20 +34,13 @@ export function isListQueryStaticallyDenied(
 }
 
 /**
- * Resolve the access-scoped nav counts for the lists that opt in via
- * `ui.navCount` (issue #735).
+ * Resolve the access-scoped nav counts for lists that opt in via
+ * `ui.navCount` (issue #735). A list gets an entry only if it opts in, isn't
+ * a singleton (no meaningful count), and isn't {@link isListQueryStaticallyDenied}
+ * — everything else is omitted from the map, never zeroed.
  *
- * The returned map is keyed by list key and contains an entry **only** for a
- * list that:
- *
- * 1. opts in (`ui.navCount === true`) — no count query runs for any other list,
- * 2. is not a singleton (a single-record list has no meaningful count), and
- * 3. does not have statically-denied query access (see
- *    {@link isListQueryStaticallyDenied}).
- *
- * Each count is read through the secured `context.db`, whose `count` applies the
- * access filter, so the number reflects exactly what the current session may
- * see (a denied row is not counted). Counts are fetched concurrently.
+ * Each count is read through the secured `context.db`, so it reflects
+ * exactly what the current session may see.
  */
 export async function resolveNavCounts(
   context: AccessContext,

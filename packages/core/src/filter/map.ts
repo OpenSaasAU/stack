@@ -25,7 +25,6 @@ export function buildFilterWhere(
   const freeTextFields = Object.keys(specs).filter((field) => specs[field].freeText)
 
   for (const token of tokens) {
-    // Bare free-text word.
     if (token.field === null) {
       if (token.value) freeTextWords.push(token.value)
       continue
@@ -33,8 +32,6 @@ export function buildFilterWhere(
 
     const spec = specs[token.field]
 
-    // Unknown field / no spec / unsupported operator / empty value →
-    // degrade to free text (search the value across free-text fields).
     if (!spec || !spec.operators.includes(token.operator) || token.value === '') {
       if (token.value) freeTextWords.push(token.value)
       continue
@@ -42,7 +39,6 @@ export function buildFilterWhere(
 
     const condition = spec.toCondition(token.operator, token.value)
     if (condition === null) {
-      // Value couldn't be interpreted for this field → free text.
       freeTextWords.push(token.value)
       continue
     }
@@ -50,7 +46,6 @@ export function buildFilterWhere(
     andConditions.push(condition)
   }
 
-  // Each free-text word: OR across every free-text field's `eq` mapping.
   if (freeTextFields.length > 0) {
     for (const word of freeTextWords) {
       const orConditions = freeTextFields

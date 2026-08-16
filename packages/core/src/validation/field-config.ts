@@ -44,9 +44,6 @@ function hasFieldMethod(field: FieldConfig, method: string): boolean {
   return typeof value === 'function'
 }
 
-/**
- * Build the canonical error message for a missing contract method.
- */
 function buildMessage(
   fieldType: string,
   method: FieldConfigValidationError['missingMethod'],
@@ -102,19 +99,16 @@ export function validateFieldConfig(
   }
 
   if (field.type === 'relationship') {
-    // Relationships render through the relationship path only.
     requireMethod('getPrismaRelation')
     return errors
   }
 
   if (field.virtual === true || field.type === 'virtual') {
-    // Virtual fields are not persisted, so getPrismaType is intentionally absent.
     requireMethod('getTypeScriptType')
     requireMethod('getZodSchema')
     return errors
   }
 
-  // Stored scalar fields must implement the full generation contract.
   requireMethod('getPrismaType')
   requireMethod('getTypeScriptType')
   requireMethod('getZodSchema')
