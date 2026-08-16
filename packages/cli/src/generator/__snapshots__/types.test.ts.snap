@@ -200,40 +200,45 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  user: UserCrud
 }
 
 /**
@@ -241,7 +246,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -251,7 +256,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -464,40 +469,45 @@ export type PostUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'post'
-> & {
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
+> {
+  post: PostCrud
 }
 
 /**
@@ -505,7 +515,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -515,7 +525,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1056,67 +1066,77 @@ export type PostUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user' | 'post'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
+> {
+  user: UserCrud
+  post: PostCrud
 }
 
 /**
@@ -1124,7 +1144,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1134,7 +1154,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1380,40 +1400,45 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  user: UserCrud
 }
 
 /**
@@ -1421,7 +1446,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1431,7 +1456,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1644,40 +1669,45 @@ export type PostUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'post'
-> & {
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
+> {
+  post: PostCrud
 }
 
 /**
@@ -1685,7 +1715,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1695,7 +1725,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -1901,40 +1931,45 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  user: UserCrud
 }
 
 /**
@@ -1942,7 +1977,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1952,7 +1987,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -2165,40 +2200,45 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  user: UserCrud
 }
 
 /**
@@ -2206,7 +2246,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -2216,7 +2256,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -2782,94 +2822,109 @@ export type CommentUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for Comment, with virtual field support.
+ */
+export interface CommentCrud {
+  findUnique: <T extends CommentFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
+  ) => Promise<CommentGetPayload<T> | null>
+  findFirst: <T extends CommentFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, CommentFindFirstArgs>
+  ) => Promise<CommentGetPayload<T> | null>
+  findMany: <T extends CommentFindManyArgs>(
+    args?: Prisma.SelectSubset<T, CommentFindManyArgs>
+  ) => Promise<Array<CommentGetPayload<T>>>
+  create: <T extends CommentCreateArgs>(
+    args: Prisma.SelectSubset<T, CommentCreateArgs>
+  ) => Promise<CommentGetPayload<T>>
+  update: <T extends CommentUpdateArgs>(
+    args: Prisma.SelectSubset<T, CommentUpdateArgs>
+  ) => Promise<CommentGetPayload<T> | null>
+  delete: <T extends CommentDeleteArgs>(
+    args: Prisma.SelectSubset<T, CommentDeleteArgs>
+  ) => Promise<CommentGetPayload<T> | null>
+  count: (args?: Prisma.CommentCountArgs) => Promise<number>
+  createMany: <T extends CommentCreateManyArgs>(
+    args: Prisma.SelectSubset<T, CommentCreateManyArgs>
+  ) => Promise<Array<CommentGetPayload<T>>>
+  updateMany: <T extends CommentUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, CommentUpdateManyArgs>
+  ) => Promise<Array<CommentGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user' | 'post' | 'comment'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
-  comment: {
-    findUnique: <T extends CommentFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
-    ) => Promise<CommentGetPayload<T> | null>
-    findFirst: <T extends CommentFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, CommentFindFirstArgs>
-    ) => Promise<CommentGetPayload<T> | null>
-    findMany: <T extends CommentFindManyArgs>(
-      args?: Prisma.SelectSubset<T, CommentFindManyArgs>
-    ) => Promise<Array<CommentGetPayload<T>>>
-    create: <T extends CommentCreateArgs>(
-      args: Prisma.SelectSubset<T, CommentCreateArgs>
-    ) => Promise<CommentGetPayload<T>>
-    update: <T extends CommentUpdateArgs>(
-      args: Prisma.SelectSubset<T, CommentUpdateArgs>
-    ) => Promise<CommentGetPayload<T> | null>
-    delete: <T extends CommentDeleteArgs>(
-      args: Prisma.SelectSubset<T, CommentDeleteArgs>
-    ) => Promise<CommentGetPayload<T> | null>
-    count: (args?: Prisma.CommentCountArgs) => Promise<number>
-    createMany: <T extends CommentCreateManyArgs>(
-      args: Prisma.SelectSubset<T, CommentCreateManyArgs>
-    ) => Promise<Array<CommentGetPayload<T>>>
-    updateMany: <T extends CommentUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, CommentUpdateManyArgs>
-    ) => Promise<Array<CommentGetPayload<T>>>
-  }
+> {
+  user: UserCrud
+  post: PostCrud
+  comment: CommentCrud
 }
 
 /**
@@ -2877,7 +2932,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -2887,7 +2942,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -3339,67 +3394,77 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'post' | 'user'
-> & {
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  post: PostCrud
+  user: UserCrud
 }
 
 /**
@@ -3407,7 +3472,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -3417,7 +3482,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -3869,67 +3934,77 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'post' | 'user'
-> & {
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  post: PostCrud
+  user: UserCrud
 }
 
 /**
@@ -3937,7 +4012,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -3947,7 +4022,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -4464,67 +4539,77 @@ export type PostUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for Post, with virtual field support.
+ */
+export interface PostCrud {
+  findUnique: <T extends PostFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findFirst: <T extends PostFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  findMany: <T extends PostFindManyArgs>(
+    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  create: <T extends PostCreateArgs>(
+    args: Prisma.SelectSubset<T, PostCreateArgs>
+  ) => Promise<PostGetPayload<T>>
+  update: <T extends PostUpdateArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  delete: <T extends PostDeleteArgs>(
+    args: Prisma.SelectSubset<T, PostDeleteArgs>
+  ) => Promise<PostGetPayload<T> | null>
+  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  createMany: <T extends PostCreateManyArgs>(
+    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+  updateMany: <T extends PostUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+  ) => Promise<Array<PostGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user' | 'post'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
-  post: {
-    findUnique: <T extends PostFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, PostFindUniqueArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findFirst: <T extends PostFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, PostFindFirstArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    findMany: <T extends PostFindManyArgs>(
-      args?: Prisma.SelectSubset<T, PostFindManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    create: <T extends PostCreateArgs>(
-      args: Prisma.SelectSubset<T, PostCreateArgs>
-    ) => Promise<PostGetPayload<T>>
-    update: <T extends PostUpdateArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    delete: <T extends PostDeleteArgs>(
-      args: Prisma.SelectSubset<T, PostDeleteArgs>
-    ) => Promise<PostGetPayload<T> | null>
-    count: (args?: Prisma.PostCountArgs) => Promise<number>
-    createMany: <T extends PostCreateManyArgs>(
-      args: Prisma.SelectSubset<T, PostCreateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-    updateMany: <T extends PostUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, PostUpdateManyArgs>
-    ) => Promise<Array<PostGetPayload<T>>>
-  }
+> {
+  user: UserCrud
+  post: PostCrud
 }
 
 /**
@@ -4532,7 +4617,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -4542,7 +4627,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -5083,67 +5168,77 @@ export type BillUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for Account, with virtual field support.
+ */
+export interface AccountCrud {
+  findUnique: <T extends AccountFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
+  ) => Promise<AccountGetPayload<T> | null>
+  findFirst: <T extends AccountFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, AccountFindFirstArgs>
+  ) => Promise<AccountGetPayload<T> | null>
+  findMany: <T extends AccountFindManyArgs>(
+    args?: Prisma.SelectSubset<T, AccountFindManyArgs>
+  ) => Promise<Array<AccountGetPayload<T>>>
+  create: <T extends AccountCreateArgs>(
+    args: Prisma.SelectSubset<T, AccountCreateArgs>
+  ) => Promise<AccountGetPayload<T>>
+  update: <T extends AccountUpdateArgs>(
+    args: Prisma.SelectSubset<T, AccountUpdateArgs>
+  ) => Promise<AccountGetPayload<T> | null>
+  delete: <T extends AccountDeleteArgs>(
+    args: Prisma.SelectSubset<T, AccountDeleteArgs>
+  ) => Promise<AccountGetPayload<T> | null>
+  count: (args?: Prisma.AccountCountArgs) => Promise<number>
+  createMany: <T extends AccountCreateManyArgs>(
+    args: Prisma.SelectSubset<T, AccountCreateManyArgs>
+  ) => Promise<Array<AccountGetPayload<T>>>
+  updateMany: <T extends AccountUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, AccountUpdateManyArgs>
+  ) => Promise<Array<AccountGetPayload<T>>>
+}
+
+/**
+ * Access-controlled CRUD methods for Bill, with virtual field support.
+ */
+export interface BillCrud {
+  findUnique: <T extends BillFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, BillFindUniqueArgs>
+  ) => Promise<BillGetPayload<T> | null>
+  findFirst: <T extends BillFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, BillFindFirstArgs>
+  ) => Promise<BillGetPayload<T> | null>
+  findMany: <T extends BillFindManyArgs>(
+    args?: Prisma.SelectSubset<T, BillFindManyArgs>
+  ) => Promise<Array<BillGetPayload<T>>>
+  create: <T extends BillCreateArgs>(
+    args: Prisma.SelectSubset<T, BillCreateArgs>
+  ) => Promise<BillGetPayload<T>>
+  update: <T extends BillUpdateArgs>(
+    args: Prisma.SelectSubset<T, BillUpdateArgs>
+  ) => Promise<BillGetPayload<T> | null>
+  delete: <T extends BillDeleteArgs>(
+    args: Prisma.SelectSubset<T, BillDeleteArgs>
+  ) => Promise<BillGetPayload<T> | null>
+  count: (args?: Prisma.BillCountArgs) => Promise<number>
+  createMany: <T extends BillCreateManyArgs>(
+    args: Prisma.SelectSubset<T, BillCreateManyArgs>
+  ) => Promise<Array<BillGetPayload<T>>>
+  updateMany: <T extends BillUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, BillUpdateManyArgs>
+  ) => Promise<Array<BillGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'account' | 'bill'
-> & {
-  account: {
-    findUnique: <T extends AccountFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
-    ) => Promise<AccountGetPayload<T> | null>
-    findFirst: <T extends AccountFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, AccountFindFirstArgs>
-    ) => Promise<AccountGetPayload<T> | null>
-    findMany: <T extends AccountFindManyArgs>(
-      args?: Prisma.SelectSubset<T, AccountFindManyArgs>
-    ) => Promise<Array<AccountGetPayload<T>>>
-    create: <T extends AccountCreateArgs>(
-      args: Prisma.SelectSubset<T, AccountCreateArgs>
-    ) => Promise<AccountGetPayload<T>>
-    update: <T extends AccountUpdateArgs>(
-      args: Prisma.SelectSubset<T, AccountUpdateArgs>
-    ) => Promise<AccountGetPayload<T> | null>
-    delete: <T extends AccountDeleteArgs>(
-      args: Prisma.SelectSubset<T, AccountDeleteArgs>
-    ) => Promise<AccountGetPayload<T> | null>
-    count: (args?: Prisma.AccountCountArgs) => Promise<number>
-    createMany: <T extends AccountCreateManyArgs>(
-      args: Prisma.SelectSubset<T, AccountCreateManyArgs>
-    ) => Promise<Array<AccountGetPayload<T>>>
-    updateMany: <T extends AccountUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, AccountUpdateManyArgs>
-    ) => Promise<Array<AccountGetPayload<T>>>
-  }
-  bill: {
-    findUnique: <T extends BillFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, BillFindUniqueArgs>
-    ) => Promise<BillGetPayload<T> | null>
-    findFirst: <T extends BillFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, BillFindFirstArgs>
-    ) => Promise<BillGetPayload<T> | null>
-    findMany: <T extends BillFindManyArgs>(
-      args?: Prisma.SelectSubset<T, BillFindManyArgs>
-    ) => Promise<Array<BillGetPayload<T>>>
-    create: <T extends BillCreateArgs>(
-      args: Prisma.SelectSubset<T, BillCreateArgs>
-    ) => Promise<BillGetPayload<T>>
-    update: <T extends BillUpdateArgs>(
-      args: Prisma.SelectSubset<T, BillUpdateArgs>
-    ) => Promise<BillGetPayload<T> | null>
-    delete: <T extends BillDeleteArgs>(
-      args: Prisma.SelectSubset<T, BillDeleteArgs>
-    ) => Promise<BillGetPayload<T> | null>
-    count: (args?: Prisma.BillCountArgs) => Promise<number>
-    createMany: <T extends BillCreateManyArgs>(
-      args: Prisma.SelectSubset<T, BillCreateManyArgs>
-    ) => Promise<Array<BillGetPayload<T>>>
-    updateMany: <T extends BillUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, BillUpdateManyArgs>
-    ) => Promise<Array<BillGetPayload<T>>>
-  }
+> {
+  account: AccountCrud
+  bill: BillCrud
 }
 
 /**
@@ -5151,7 +5246,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -5161,7 +5256,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"

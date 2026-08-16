@@ -1097,8 +1097,87 @@ export type ${listName}UpdateManyArgs = {
 }
 
 /**
- * Generate custom DB interface that uses Prisma's conditional types with virtual and transformed fields
- * This leverages Prisma's GetPayload utility to get correct types based on select/include
+ * Generate the named CRUD interface for a single list — extracted out of
+ * `CustomDB` (rather than inlined as an anonymous object-literal member) so
+ * TypeScript resolves it as its own lazily-checked symbol. See #952 / ADR-0032:
+ * an anonymous per-list block inlined directly into one large `CustomDB`
+ * intersection, combined with the self-referential `Context.sudo(): Context`
+ * return type, hit `TS2589: Type instantiation is excessively deep` once a
+ * schema grew past ~7-8 lists.
+ */
+function generateListCrudInterface(listName: string, isSingleton: boolean): string {
+  const lines: string[] = []
+
+  lines.push(`/**`)
+  lines.push(` * Access-controlled CRUD methods for ${listName}, with virtual field support.`)
+  lines.push(` */`)
+  lines.push(`export interface ${listName}Crud {`)
+
+  // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  findUnique: <T extends ${listName}FindUniqueArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
+  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+
+  // findFirst - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  findFirst: <T extends ${listName}FindFirstArgs>(`)
+  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
+  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+
+  // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  findMany: <T extends ${listName}FindManyArgs>(`)
+  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
+  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
+
+  // create - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  create: <T extends ${listName}CreateArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
+  lines.push(`  ) => Promise<${listName}GetPayload<T>>`)
+
+  // update - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  update: <T extends ${listName}UpdateArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
+  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+
+  // delete - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  delete: <T extends ${listName}DeleteArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
+  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+
+  // count - no changes to return type
+  lines.push(`  count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
+
+  // createMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  createMany: <T extends ${listName}CreateManyArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateManyArgs>`)
+  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
+
+  // updateMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
+  lines.push(`  updateMany: <T extends ${listName}UpdateManyArgs>(`)
+  lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
+  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
+
+  // get - only for singleton lists; accepts the same include/query narrowing
+  // as findUnique (minus `where` — a singleton has exactly one row).
+  if (isSingleton) {
+    lines.push(`  get: <T extends ${listName}GetArgs>(`)
+    lines.push(`    args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
+    lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+  }
+
+  lines.push(`}`)
+
+  return lines.join('\n')
+}
+
+/**
+ * Generate the custom DB interface that uses Prisma's conditional types with
+ * virtual and transformed fields. This leverages Prisma's GetPayload utility
+ * to get correct types based on select/include.
+ *
+ * `CustomDB` is declared as an `interface` referencing each list's own named
+ * `{List}Crud` interface (see `generateListCrudInterface`) rather than as a
+ * `type` alias with N per-list object literals hand-unrolled into one
+ * intersection — see #952 / ADR-0032.
  */
 function generateCustomDBType(config: OpenSaasConfig): string {
   const lines: string[] = []
@@ -1109,6 +1188,12 @@ function generateCustomDBType(config: OpenSaasConfig): string {
     return `'${dbKey}'`
   })
 
+  for (const listName of Object.keys(config.lists)) {
+    const isSingleton = !!config.lists[listName]?.isSingleton
+    lines.push(generateListCrudInterface(listName, isSingleton))
+    lines.push('')
+  }
+
   lines.push('/**')
   lines.push(
     " * Custom DB type that uses Prisma's conditional types with virtual and transformed field support",
@@ -1118,70 +1203,13 @@ function generateCustomDBType(config: OpenSaasConfig): string {
   )
   lines.push(' * Virtual fields and transformed fields are added to the base model type')
   lines.push(' */')
-  lines.push('export type CustomDB = Omit<AccessControlledDB<PrismaClient>, ')
+  lines.push('export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, ')
   lines.push(`  ${dbKeys.join(' | ')}`)
-  lines.push('> & {')
+  lines.push('> {')
 
-  // For each list, create strongly-typed methods using Prisma's conditional types
   for (const listName of Object.keys(config.lists)) {
     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
-    const listConfig = config.lists[listName]
-    const isSingleton = !!listConfig?.isSingleton
-
-    lines.push(`  ${dbKey}: {`)
-
-    // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    findUnique: <T extends ${listName}FindUniqueArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
-    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
-
-    // findFirst - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    findFirst: <T extends ${listName}FindFirstArgs>(`)
-    lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
-    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
-
-    // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    findMany: <T extends ${listName}FindManyArgs>(`)
-    lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
-    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-    // create - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    create: <T extends ${listName}CreateArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
-    lines.push(`    ) => Promise<${listName}GetPayload<T>>`)
-
-    // update - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    update: <T extends ${listName}UpdateArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
-    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
-
-    // delete - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    delete: <T extends ${listName}DeleteArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
-    lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
-
-    // count - no changes to return type
-    lines.push(`    count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
-
-    // createMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    createMany: <T extends ${listName}CreateManyArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}CreateManyArgs>`)
-    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-    // updateMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
-    lines.push(`    updateMany: <T extends ${listName}UpdateManyArgs>(`)
-    lines.push(`      args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
-    lines.push(`    ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-    // get - only for singleton lists; accepts the same include/query narrowing
-    // as findUnique (minus `where` — a singleton has exactly one row).
-    if (isSingleton) {
-      lines.push(`    get: <T extends ${listName}GetArgs>(`)
-      lines.push(`      args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
-      lines.push(`    ) => Promise<${listName}GetPayload<T> | null>`)
-    }
-
-    lines.push(`  }`)
+    lines.push(`  ${dbKey}: ${listName}Crud`)
   }
 
   lines.push('}')
@@ -1190,7 +1218,16 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 }
 
 /**
- * Generate BaseContext and Context types that are compatible with AccessContext
+ * Generate BaseContext and Context types that are compatible with AccessContext.
+ *
+ * Both are declared as `interface`s rather than `type` aliases. `Context`'s
+ * `sudo(): Context` return type is self-referential, and a self-referential
+ * `type` alias is eagerly expanded wherever it's checked — the same pattern
+ * already found (and removed) on the core `AccessContext` interface for
+ * breaking TypeScript's structural checking of unrelated generated Prisma
+ * types (see `packages/core/CLAUDE.md`). An `interface` is resolved lazily by
+ * TypeScript instead, so the self-reference no longer forces eager expansion
+ * of the (already large) `CustomDB` it embeds. See #952 / ADR-0032.
  */
 function generateContextType(_config: OpenSaasConfig): string {
   const lines: string[] = []
@@ -1202,7 +1239,7 @@ function generateContextType(_config: OpenSaasConfig): string {
   lines.push(' * Use this type for services that should work in both contexts')
   lines.push(' */')
   lines.push(
-    "export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {",
+    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {",
   )
   lines.push('  db: CustomDB')
   lines.push('  session: TSession')
@@ -1218,7 +1255,7 @@ function generateContextType(_config: OpenSaasConfig): string {
   )
   lines.push(' */')
   lines.push(
-    'export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {',
+    'export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {',
   )
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
   lines.push('  sudo: () => Context<TSession>')
