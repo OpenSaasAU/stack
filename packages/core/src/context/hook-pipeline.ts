@@ -12,78 +12,33 @@ import {
 import { applyCreateDefaults } from './apply-defaults.js'
 
 /**
- * Hook Pipeline — the single module that runs the transform+validate span of a
- * write: list `resolveInput` → field `resolveInput` → list `validate` → field
- * `validate` → built-in field rules (`validateFieldRules`). It owns the order of
- * these phases and the threading of `resolvedData` through them, in one place.
- *
- * It is THE place where input is shaped and validated; it throws
- * {@link ValidationError} on failure exactly as before (validate hooks via
- * `addValidationError`, then `validateFieldRules`) — validation is never silent.
- *
- * Side-effect hooks (`beforeOperation`/`afterOperation`), operation-level access,
- * writable-field filtering, nested operations, persistence and Field Visibility
- * are deliberately OUT of this span — they stay in the Write Pipeline. See the
- * "Hook Pipeline" and "Write Pipeline" glossary terms in CONTEXT.md.
+ * The transform+validate span of a write. See the "Hook Pipeline" and "Write
+ * Pipeline" glossary terms in CONTEXT.md for the full phase order and the
+ * boundary with the Write Pipeline (which owns side-effect hooks, access,
+ * writable-field filtering, nested operations, persistence, Field Visibility).
  */
 
-/**
- * Arguments for one transform+validate span. Only the create/update operations
- * run this span (delete skips the input-shaping phases entirely).
- */
 export interface HookPipelineArgs {
   operation: 'create' | 'update'
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
-  /** The original input data for the write. */
   inputData: Record<string, unknown>
-  /** The existing row for update; `undefined` for create. */
   item: Record<string, unknown> | undefined
   context: AccessContext
 }
 
-/**
- * Result of a transform+validate span: the fully-resolved write data after the
- * resolveInput hooks have run and all validation has passed.
- */
 export interface HookPipelineResult {
   resolvedData: Record<string, unknown>
 }
 
-/**
- * The transform+validate span, owning order + `resolvedData` threading.
- */
 export interface HookPipeline {
   run(args: HookPipelineArgs): Promise<HookPipelineResult>
 }
 
-/**
- * Run the transform+validate span once.
- *
- * Phase order (owned here, in one place):
- *   list `resolveInput`
- *     → field `resolveInput`
- *     → list `validate`
- *     → field `validate`
- *     → built-in field rules (`validateFieldRules`)
- *     → split multi-column fields (`splitMultiColumnFields`)
- *
- * Contract preserved exactly:
- *   - `resolvedData` starts as `inputData` and is threaded through each phase;
- *   - validate hooks report failures via `addValidationError` → THROW
- *     `ValidationError` (never silent);
- *   - built-in field rule failures THROW `ValidationError`;
- *   - a multi-column field (e.g. storage image()/file() in Keystone-parity
- *     mode) is validated under its LOGICAL key BEFORE it is split into
- *     physical columns (#789) — an unrecognised value throws instead of being
- *     silently split into null/undefined columns;
- *   - on success returns the transformed `resolvedData`.
- */
 async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResult> {
   const { operation, listName, listConfig, inputData, item, context } = args
 
-  // ── Phase 1: list-level resolveInput ──────────────────────────────────────
   let resolvedData = await executeResolveInput(
     listConfig.hooks,
     operation === 'create'
@@ -105,7 +60,6 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
         },
   )
 
-  // ── Phase 1.5: field-level resolveInput (e.g. hash passwords) ──────────────
   resolvedData = await executeFieldResolveInputHooks(
     inputData,
     resolvedData,
@@ -116,17 +70,13 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
     item,
   )
 
-  // ── Phase 1.75: apply field defaults to omitted inputs (CREATE only) ───────
-  // Resolve-then-validate (Keystone parity, #615): a field declaring a
-  // `defaultValue` is filled into `resolvedData` here — AFTER resolveInput hooks
-  // and BEFORE validation — but only when the field was OMITTED, so a
-  // required-with-default field passes `isRequired` instead of failing it.
-  // Update is untouched (no default injection on update).
+  // Must run after resolveInput hooks and before validation, so a
+  // required-with-default field passes `isRequired` on an omitted input
+  // instead of failing it (see applyCreateDefaults, issue #615).
   if (operation === 'create') {
     resolvedData = applyCreateDefaults(resolvedData, listConfig.fields)
   }
 
-  // ── Phase 2: list-level validate ──────────────────────────────────────────
   await executeValidate(
     listConfig.hooks,
     operation === 'create'
@@ -148,7 +98,6 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
         },
   )
 
-  // ── Phase 2.5: field-level validate ───────────────────────────────────────
   await executeFieldValidateHooks(
     inputData,
     resolvedData,
@@ -159,17 +108,16 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
     item,
   )
 
-  // ── Phase 3: built-in field rules (isRequired, length, etc.) ──────────────
-  // Validation failures THROW (validation is not silent).
+  // Unlike an access-denied `context.db` operation, a validation failure
+  // throws rather than returning null/[] — validation is never silent.
   const validation = validateFieldRules(resolvedData, listConfig.fields, operation)
   if (validation.errors.length > 0) {
     throw new ValidationError(validation.errors, validation.fieldErrors)
   }
 
-  // ── Phase 4: split multi-column fields into physical columns ──────────────
-  // Only reached once the logical value has passed validation (#789). Replaces
-  // each multi-column field's logical key with its per-part columns, gated by
-  // the field's own write access (see `splitMultiColumnFields`).
+  // Runs only once the logical value has passed validation above (#789) — a
+  // multi-column field validated after splitting could see an unrecognised
+  // value silently become null/undefined columns instead of throwing.
   resolvedData = await splitMultiColumnFields(
     inputData,
     resolvedData,
@@ -182,9 +130,6 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   return { resolvedData }
 }
 
-/**
- * The default Hook Pipeline instance used by the Write Pipeline.
- */
 export const hookPipeline: HookPipeline = {
   run: runHookPipeline,
 }

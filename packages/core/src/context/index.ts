@@ -33,23 +33,22 @@ export type ServerActionProps =
   | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
   | { listKey: string; action: 'delete'; id: string }
   | { listKey: string; action: 'bulkDelete'; ids: string[] }
-  // Custom list-specific Bulk action (issue #736). `key` names an action
-  // declared in the list's `ui.listView.bulkActions`; the client only ever
-  // sends this serialisable `{ key, ids }` — the server-side `handler`
-  // (never serialised) is looked up by `key` and run with the rebuilt secured
-  // context over `ids`. Returns a distinct `{ bulkAction, message? }` shape so
-  // a redirect-on-`success` wrapper never hijacks it (same rationale as
-  // `bulkDelete`).
+  // Custom list-specific bulk action (issue #736). `key` names an action
+  // declared in the list's `ui.listView.bulkActions`; the client sends only
+  // this serialisable `{ key, ids }` and the server-side `handler` (never
+  // serialised) is looked up by `key`. Returns a distinct `{ bulkAction,
+  // message? }` shape, never `success`, so a redirect-on-`success` wrapper
+  // does not hijack it.
   | { listKey: string; action: 'bulkAction'; key: string; ids: string[] }
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
-  // RELATED row, so the related list's own access control + hooks apply (never
-  // the parent's). `mode: 'disconnect'` unlinks the row non-destructively by
-  // disconnecting its back-reference (`field`; `parentId` is the record being
-  // edited, needed only when that back-reference is to-many, e.g. a
-  // many-to-many join); `mode: 'delete'` truly deletes the row. Like
-  // `bulkDelete`, it returns a distinct `{ removed }` shape (never a
-  // single-op `success`) so a UI wrapper that redirects on `success` — the
-  // item-form pattern — does not hijack an in-place row removal.
+  // RELATED row, so the related list's own access control and hooks apply —
+  // never the parent's. The other relationship-table actions below share this
+  // boundary. `mode: 'disconnect'` unlinks the row by disconnecting its
+  // back-reference (`field`; `parentId` is needed only when that back-reference
+  // is to-many, e.g. a many-to-many join) without deleting it; `mode: 'delete'`
+  // truly deletes the row. Returns a distinct `{ removed }` shape, never
+  // `success`, so a UI wrapper that redirects on `success` does not hijack an
+  // in-place row removal.
   | {
       listKey: string
       action: 'removeRelated'
@@ -58,13 +57,10 @@ export type ServerActionProps =
       field?: string
       parentId?: string
     }
-  // Relationship-table inline cell edit (issue #737). `listKey`/`id` target the
-  // RELATED row and `field`/`value` a single scalar field on it, so the update
-  // runs through the related list's OWN operation- and field-level access +
-  // hooks/validation (never the parent's) — the same ADR-0018 boundary as
-  // `removeRelated`. It returns a distinct `{ updated }` shape (never a
-  // single-op `success`) so a UI wrapper that redirects on `success` — the
-  // item-form pattern — cannot hijack an in-place cell edit.
+  // Relationship-table inline cell edit (issue #737); same ADR-0018 boundary
+  // as `removeRelated` — `listKey`/`id` target the RELATED row. Returns a
+  // distinct `{ updated }` shape, never `success`, so a UI wrapper that
+  // redirects on `success` does not hijack an in-place cell edit.
   | {
       listKey: string
       action: 'updateRelated'
@@ -72,14 +68,12 @@ export type ServerActionProps =
       field: string
       value: unknown
     }
-  // Relationship-table pre-linked create (issue #738). `listKey` targets the
-  // RELATED list, so the related list's own create access control + hooks apply
-  // (never the parent's) — the same ADR-0018 boundary as `removeRelated`. The
-  // back-reference to the parent is set on the SERVER from `field`/`parentId`
-  // (never trusted from `data`), so the new row is linked to exactly the parent
-  // being edited. It returns a distinct `{ created }` shape (never a single-op
-  // `success`) so a UI wrapper that redirects on `success` — the item-form
-  // pattern — does not hijack an in-place create.
+  // Relationship-table pre-linked create (issue #738); same ADR-0018 boundary
+  // as `removeRelated` — `listKey` targets the RELATED list. The back-reference
+  // to the parent is set on the SERVER from `field`/`parentId`, never trusted
+  // from `data`, so a hostile client cannot re-target the link. Returns a
+  // distinct `{ created }` shape, never `success`, so a UI wrapper that
+  // redirects on `success` does not hijack an in-place create.
   | {
       listKey: string
       action: 'createRelated'
@@ -96,21 +90,11 @@ export type ServerActionProps =
       selectedIds?: string[]
     }
 
-/**
- * Tracks which (listName, operation) pairs have already warned about an ignored
- * `select` argument, so a misused read op warns once rather than on every call.
- */
 const selectWarnings = new Set<string>()
 
 /**
- * Warn (once per list+operation) when a caller passes a `select` argument to a
- * read op that does not honour it.
- *
- * `context.db` reads never apply Prisma `select` semantics — narrowing is done
- * via `include` or a fragment `query`. The op still runs and returns the full,
- * access-filtered result, so this is a visible no-op rather than an error.
- *
- * Centralised here so every affected read op shares one implementation.
+ * Warn once per (list, operation) when a caller passes `select` to a read op
+ * that ignores it. See "Narrowing Reads" in packages/core/CLAUDE.md.
  */
 function warnIfSelectIgnored(
   args: { select?: unknown } | undefined,
@@ -131,9 +115,6 @@ function warnIfSelectIgnored(
   )
 }
 
-/**
- * Check if a list is configured as a singleton
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
@@ -141,25 +122,17 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 
 /**
  * Compute the set of single-field unique selectors a `findUnique` `where` may be
- * keyed by, derived from what the list config exposes at runtime.
+ * keyed by, derived from what the list config exposes at runtime: `id`, plus any
+ * field declared `isIndexed: 'unique'` — for a `relationship` field, this is the
+ * foreign-key column name (`<field>Id`), since that's the column Prisma marks
+ * `@unique`, not the relation field itself.
  *
- * The set is:
- * - `id` — always a unique identifier on every list.
- * - Any field declared `isIndexed: 'unique'` in the config (e.g. `text({ isIndexed: 'unique' })`).
- * - For a `relationship` field declared `isIndexed: 'unique'`, the foreign-key
- *   column name (`<field>Id`) — that is the column Prisma marks `@unique`, so the
- *   unique `where` is keyed by `<field>Id`, not the relation field itself.
- *
- * Chosen rule (documented intentionally): the config does NOT expose compound
- * (`@@unique`) keys at runtime — there is no list-level unique declaration in the
- * config API — so we cannot validate compound `<Model>_<a>_<b>` selectors. We
- * therefore enforce the tractable subset: `where` must contain EXACTLY ONE
- * recognised single-field unique key and NO other keys. This rejects non-unique
- * filters (the bug in #567) and rejects extra non-unique keys alongside a unique
- * one, while never falsely rejecting a valid single-field unique lookup. If a
- * project legitimately needs a compound-unique lookup, that path is not covered
- * here and would need explicit config support; the safe escape hatch for any
- * non-unique single-row lookup is `findFirst` (see #565).
+ * The config exposes no list-level compound (`@@unique`) declaration, so this
+ * cannot validate a compound `<Model>_<a>_<b>` selector — `where` must contain
+ * exactly one recognised single-field unique key and no others. This rejects
+ * non-unique filters (#567) without ever rejecting a valid single-field unique
+ * lookup; a compound-unique or otherwise non-unique lookup should use
+ * `findFirst` instead (see #565).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function getUniqueWhereKeys(listConfig: ListConfig<any>): Set<string> {
@@ -205,10 +178,6 @@ function assertUniqueWhere(
   }
 }
 
-/**
- * Check if auto-create is enabled for a singleton list
- * Defaults to true if not explicitly set to false
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
@@ -216,22 +185,15 @@ function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   return listConfig.isSingleton.autoCreate !== false
 }
 
-/**
- * Extract default values from field configs
- * Used to auto-create singleton records with sensible defaults
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   const data: Record<string, unknown> = {}
 
   for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    // Skip virtual fields - they're not stored in database
     if (fieldConfig.virtual) continue
 
-    // Skip system fields (id, createdAt, updatedAt)
     if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
 
-    // Add default value if present
     if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
       data[fieldKey] = fieldConfig.defaultValue
     }
@@ -240,12 +202,8 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
-/**
- * Parse Prisma error and convert to user-friendly DatabaseError
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
-  // Check if it's a Prisma error
   if (
     error &&
     typeof error === 'object' &&
@@ -255,15 +213,13 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
   ) {
     const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
 
-    // Handle unique constraint violation
+    // P2002 is Prisma's unique constraint violation code.
     if (prismaError.code === 'P2002') {
       const target = prismaError.meta?.target
       const fieldErrors: Record<string, string> = {}
 
       if (target && Array.isArray(target)) {
-        // Get field names from the constraint target
         for (const fieldName of target) {
-          // Get the field config to get a better label
           const fieldConfig = listConfig.fields[fieldName]
           const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
 
@@ -274,7 +230,6 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
           }
         }
 
-        // Create a user-friendly general message
         const fieldLabels = target.map((f) => f.charAt(0).toUpperCase() + f.slice(1)).join(', ')
         return new DatabaseError(
           `${fieldLabels} must be unique. The value you entered is already in use.`,
@@ -286,7 +241,6 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
       return new DatabaseError('A record with this value already exists', {}, prismaError.code)
     }
 
-    // Handle other Prisma errors - return generic message
     return new DatabaseError(
       prismaError.message || 'A database error occurred',
       {},
@@ -294,22 +248,16 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
     )
   }
 
-  // Not a Prisma error, return as-is if it's already an Error
   if (error instanceof Error) {
     return error
   }
 
-  // Unknown error type
   return new Error('An unknown error occurred')
 }
 
 /**
- * Database transaction isolation levels.
- *
- * Mirrors Prisma's `TransactionIsolationLevel`. The level passed to
- * {@link StackContext.transaction} is forwarded to the underlying interactive
- * transaction; provider support varies (e.g. `Serializable` is supported by
- * PostgreSQL — required for the concurrency-sensitive capacity-gate pattern).
+ * Mirrors Prisma's `TransactionIsolationLevel`. Provider support varies —
+ * e.g. `Serializable` requires PostgreSQL.
  */
 export type TransactionIsolationLevel =
   'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
@@ -386,12 +334,11 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
 
 /**
  * Drain a `context.transaction()` owner's deferral registry once its callback
- * (and any real underlying transaction) has settled (ADR-0028), then apply the
- * existing error-precedence rule: a transaction/callback error always wins
- * (compensators still all ran, but their errors are discarded in favor of
- * re-surfacing the original — matching the Write Pipeline's `txError`
- * precedence); otherwise, any deferred `afterTransaction` errors reject the
- * call with {@link AfterTransactionError} even though the callback itself
+ * (and any real underlying transaction) has settled (ADR-0028). A transaction/
+ * callback error always wins — compensators still all run, but their errors
+ * are discarded in favor of re-surfacing the original, matching the Write
+ * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
+ * errors reject with {@link AfterTransactionError} even though the callback
  * succeeded and the transaction committed.
  */
 async function settleTransactionOwner<T>(
@@ -414,14 +361,6 @@ async function settleTransactionOwner<T>(
   return result
 }
 
-/**
- * Create an access-controlled context
- *
- * @param config - OpenSaas configuration
- * @param prisma - Your Prisma client instance (pass as generic for type safety)
- * @param session - Current session object (or null if not authenticated)
- * @param storage - Optional storage utilities (uploadFile, uploadImage, deleteFile, deleteImage)
- */
 export function getContext<
   TConfig extends OpenSaasConfig,
   TPrisma extends PrismaClientLike = PrismaClientLike,
@@ -439,12 +378,9 @@ export function getContext<
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
 ): StackContext<TPrisma> {
-  // Initialize db object - will be populated with access-controlled operations
-  // Type is intentionally broad to allow dynamic model access
+  // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 
-  // Create context with db reference (will be populated below)
-  // Storage utilities can be provided via parameter or use default stubs
   const context: AccessContext<TPrisma> = {
     session,
     prisma: prisma as TPrisma,
@@ -479,13 +415,10 @@ export function getContext<
     _transactionOwner,
   }
 
-  // Create access-controlled operations for each list, populating `db` in place.
   populateDbDelegate(db, config, prisma, context)
 
-  // Execute plugin runtime functions and populate context.plugins.
   // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
   // any side effects they carry — run exactly once per top-level context.
-  // Use _plugins (sorted by dependencies) if available, otherwise fall back to plugins array
   if (!_sharedPlugins) {
     const pluginsToExecute = config._plugins || config.plugins || []
     for (const plugin of pluginsToExecute) {
@@ -499,40 +432,24 @@ export function getContext<
           )
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
-          // Continue with other plugins even if one fails
         }
       }
     }
   }
 
-  // Generic server action handler with discriminated union for type safety
-  // Returns a result object instead of throwing to work properly in Next.js production
+  // Returns a result object instead of throwing — required for server actions
+  // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
     | { success: false; error: string; fieldErrors?: Record<string, string> }
-    // Bulk actions report a count rather than a single-op `success` flag: the
-    // shape is deliberately distinct so a UI wrapper that redirects on a
-    // single-item `success` (the item-form pattern) does not hijack a
-    // list-level bulk operation.
+    // The distinct shapes below (never `success`) mirror the ServerActionProps
+    // variants above — see their comments for the redirect-on-`success`
+    // footgun each one avoids.
     | { deleted: number; total: number }
-    // Relationship-table row removal reports `removed` (with an optional reason)
-    // rather than `success` — same distinct-shape rationale as `bulkDelete`, so
-    // an in-place removal never triggers a redirect-on-success wrapper.
     | { removed: boolean; error?: string }
-    // Relationship-table pre-linked create reports `created` (with the new row's
-    // id, or an error + fieldErrors for the drawer) rather than `success` — same
-    // distinct-shape rationale, so an in-place create never triggers a
-    // redirect-on-success wrapper.
     | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
-    // Custom Bulk action (issue #736) reports `bulkAction` with the handler's
-    // optional `message` (success) or an `error` (not found / denied / threw) —
-    // again a distinct shape from single-op `success`.
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
-    // Relationship-table inline cell edit reports `updated` (with an optional
-    // reason + fieldErrors for the edited cell) rather than `success` — same
-    // distinct-shape rationale, so an in-place cell edit never triggers a
-    // redirect-on-success wrapper.
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
     const dbKey = getDbKey(props.listKey)
@@ -619,8 +536,7 @@ export function getContext<
       }
     }
 
-    // Relationship-table row removal (ADR-0018, #739). Runs on the RELATED row
-    // through the secured context, so the related list's access + hooks apply.
+    // Runs on the RELATED row (ADR-0018 boundary — see ServerActionProps above).
     // Honours Silent failure: an access-denied operation returns `null`, which
     // becomes `{ removed: false }` with a generic reason — never leaking whether
     // the row was denied or absent.
@@ -661,14 +577,13 @@ export function getContext<
       }
     }
 
-    // Relationship-table pre-linked create (ADR-0018, #738). Creates a row on
-    // the RELATED list through the secured context, so the related list's create
-    // access + hooks (and field-level access) apply — never the parent's. The
-    // back-reference to the parent is set here from `field`/`parentId` (a to-one
-    // back-ref connects a single parent; a to-many back-ref, e.g. many-to-many,
-    // connects the parent by id), so the client can never re-target the link.
-    // Honours Silent failure: an access-denied create returns `null`, surfaced
-    // as `{ created: false }` with a generic reason (no denied-vs-absent leak).
+    // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
+    // The back-reference to the parent is set here from `field`/`parentId` (a
+    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
+    // many-to-many, connects the parent by id), so the client can never
+    // re-target the link. Honours Silent failure: an access-denied create
+    // returns `null`, surfaced as `{ created: false }` with a generic reason
+    // (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always
@@ -726,11 +641,9 @@ export function getContext<
       }
     }
 
-    // Relationship-table inline cell edit (ADR-0018, #737). Updates ONE scalar
-    // field on the RELATED row through the secured context, so the related list's
-    // operation- and field-level update access plus its hooks/validation apply —
-    // never the parent's. Honours Silent failure: an access-denied update returns
-    // `null`, surfaced as `{ updated: false }` with a generic reason (no
+    // Updates ONE scalar field on the RELATED row (ADR-0018 boundary — see
+    // ServerActionProps above). Honours Silent failure: an access-denied update
+    // returns `null`, surfaced as `{ updated: false }` with a generic reason (no
     // denied-vs-absent leak); a validation/db error surfaces its message and
     // fieldErrors so the cell can revert with a reason and show an inline error.
     if (props.action === 'updateRelated') {
@@ -805,7 +718,6 @@ export function getContext<
         data: result,
       }
     } catch (error) {
-      // Handle ValidationError (has fieldErrors)
       if (error instanceof ValidationError) {
         return {
           success: false,
@@ -814,7 +726,6 @@ export function getContext<
         }
       }
 
-      // Handle DatabaseError (has fieldErrors)
       if (error instanceof DatabaseError) {
         return {
           success: false,
@@ -823,7 +734,6 @@ export function getContext<
         }
       }
 
-      // Parse and convert Prisma errors to user-friendly DatabaseError
       const dbError = parsePrismaError(error, listConfig)
       if (dbError instanceof DatabaseError) {
         return {
@@ -833,7 +743,6 @@ export function getContext<
         }
       }
 
-      // Generic error fallback
       return {
         success: false,
         error: dbError.message,
@@ -841,8 +750,7 @@ export function getContext<
     }
   }
 
-  // Sudo function - creates a new context that bypasses access control
-  // but still executes all hooks and validation
+  // Bypasses access control; hooks and validation still run.
   function sudo(): StackContext<TPrisma> {
     return getContext(
       config,
@@ -857,13 +765,8 @@ export function getContext<
     )
   }
 
-  // Interactive, hook-firing transaction (#614, ADR-0028 / #899). Rebinds the
-  // access-controlled context to the transaction client so every
-  // `txContext.db.*` write runs its access checks + hooks but persists inside
-  // ONE transaction (atomic). The transaction `options` (e.g. `isolationLevel`)
-  // pass through to Prisma, and a serialization failure thrown inside the
-  // callback propagates to the caller for retry (it is never converted to a
-  // silent `null`).
+  // Interactive, hook-firing transaction (#614). See the `transaction` doc on
+  // `StackContext` above for the atomicity/isolation/retry contract.
   //
   // This call OWNS a deferral registry for its callback's writes (ADR-0028):
   // it always observes when its own callback settles — resolve/reject — even
@@ -886,10 +789,10 @@ export function getContext<
 
     const settled =
       typeof client.$transaction !== 'function'
-        ? // No interactive transaction available — either a plain client/mock or
-          // we are already inside a transaction (a Prisma tx client exposes no
-          // `$transaction`). Run directly: hook/access semantics are identical
-          // and atomicity is provided by any enclosing transaction.
+        ? // No interactive transaction available (plain client/mock, or already
+          // inside one — see `TransactionCapable` above). Run directly: hook/
+          // access semantics are identical, atomicity comes from the enclosing
+          // transaction.
           fn(
             getContext(
               config,
@@ -954,7 +857,6 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const dbKey = getDbKey(listName)
 
-    // Create base operations
     const createOp = createCreate(listName, listConfig, prisma, context, config)
     const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
     const updateOp = createUpdate(listName, listConfig, prisma, context, config)
@@ -978,7 +880,6 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
       ),
     }
 
-    // Add get() method for singleton lists
     if (isSingletonList(listConfig)) {
       operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
     }
@@ -1071,9 +972,6 @@ async function resolveReadInclude(
   return { include, declaredOnly: folded.declaredOnly, selection: undefined }
 }
 
-/**
- * Create findUnique operation with access control
- */
 function createFindUnique<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1093,19 +991,15 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'findUnique')
 
-    // Enforce unique-`where` (Keystone `findOne` parity). This is a caller-shape
-    // check independent of access, so it runs first and THROWS on misuse — it is
-    // not an access denial and must not be masked as a silent `null`. The
-    // type-level constraint already lives on the generated delegate: the custom
-    // `<List>FindUniqueArgs` only Omits `select`/`include` from
-    // `Prisma.<List>FindUniqueArgs`, so its `where` stays Prisma's
-    // `<List>WhereUniqueInput` — this runtime guard backstops untyped callers.
+    // Runs first, before the access check below — a non-unique `where` is a
+    // caller-shape error (see `assertUniqueWhere`), not an access denial. The
+    // generated `<List>FindUniqueArgs` only Omits `select`/`include` from
+    // Prisma's own type, so `where` stays `<List>WhereUniqueInput` — this
+    // runtime guard backstops untyped callers.
     assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
 
-    // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = args.where
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1118,7 +1012,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         return null
       }
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(args.where, accessResult)
       if (mergedWhere === null) {
         return null
@@ -1126,9 +1019,8 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // When a query fragment is provided, build the include from the fragment
-    // instead of the access-controlled include. Access control still runs via
-    // filterReadableFields; the fragment then narrows to only the requested fields.
+    // Access control still runs via filterReadableFields even though a
+    // fragment drives `include`; the fragment only narrows which fields come back.
     const fragment = isFragment(args.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
@@ -1152,7 +1044,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // `undefined`), only the ones a fragment named otherwise.
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1165,7 +1056,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       return null
     }
 
-    // Filter readable fields and apply resolveOutput hooks (including nested relationships)
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       item,
@@ -1181,7 +1071,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       selection,
     )
 
-    // When a fragment is provided, pick only the requested fields from the result
     if (fragment) {
       return pickFields(filtered, fragment._fields)
     }
@@ -1190,9 +1079,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create findMany operation with access control
- */
 function createFindMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1212,10 +1098,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'findMany')
 
-    // Check singleton constraint (throw error instead of silently returning empty)
+    // Singleton misuse throws rather than silently returning `[]` — unlike an
+    // access denial, this is a caller-shape error.
     if (isSingletonList(listConfig)) {
       throw new ValidationError(
         [`Cannot use findMany: ${listName} is a singleton list. Use get() instead.`],
@@ -1280,7 +1166,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           })) as Record<string, unknown>)
         : args?.where
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return []
@@ -1288,7 +1173,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // When a query fragment is provided, build include from fragment fields
     const fragment = isFragment(args?.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
@@ -1303,16 +1187,10 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       config,
     )
 
-    // Virtual fields have no database column. Whichever path produced
-    // `include` (fragment, access-controlled merge, or sudo passthrough), a
-    // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). Below, `filterReadableFields` computes a virtual field's value
-    // exactly when `selection` says the read is going to return it (ADR-0027)
-    // — every one of them for a bare/`include`-based read (`selection` is
-    // `undefined`), only the ones a fragment named otherwise.
+    // Strips virtual keys from `include` before the Prisma call — see the
+    // `createFindUnique` comment above for why (#628, ADR-0027).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Execute query with optimized includes
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1324,7 +1202,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       include,
     })
 
-    // Filter readable fields for each item and apply resolveOutput hooks (including nested relationships)
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await Promise.all(
       items.map((item: Record<string, unknown>) =>
@@ -1344,7 +1221,6 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       ),
     )
 
-    // When a fragment is provided, pick only the requested fields from each result
     if (fragment) {
       return filtered.map((item: Record<string, unknown>) => pickFields(item, fragment._fields))
     }
@@ -1378,9 +1254,6 @@ function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
   }
 }
 
-/**
- * Create create operation with access control and hooks
- */
 function createCreate<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1404,10 +1277,8 @@ function createCreate<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create createMany operation with access control and hooks
- * Runs create in a loop to ensure all hooks and access control are executed for each item
- */
+// Runs create in a loop (not Prisma's native createMany) so every item still
+// gets its own hooks and access control.
 function createCreateMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1430,9 +1301,6 @@ function createCreateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create update operation with access control and hooks
- */
 function createUpdate<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1456,10 +1324,8 @@ function createUpdate<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create updateMany operation with access control and hooks
- * Runs findMany to get records, then update in a loop to ensure all hooks and access control are executed
- */
+// Finds matching records, then updates each individually (not Prisma's native
+// updateMany) so every item still gets its own hooks and access control.
 function createUpdateMany<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1473,10 +1339,8 @@ function createUpdateMany<TPrisma extends PrismaClientLike>(
   updateFn: any,
 ) {
   return async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
-    // First, find all matching records (respects access control)
     const items = await findManyFn({ where: args.where })
 
-    // Then update each one individually (runs hooks and access control for each)
     const results = []
     for (const item of items) {
       const result = await updateFn({ where: { id: item.id }, data: args.data })
@@ -1487,9 +1351,6 @@ function createUpdateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create delete operation with access control and hooks
- */
 function createDelete<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1513,9 +1374,6 @@ function createDelete<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create count operation with access control
- */
 function createCount<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1576,7 +1434,6 @@ function createCount<TPrisma extends PrismaClientLike>(
           })) as Record<string, unknown>)
         : args?.where
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return 0
@@ -1584,7 +1441,6 @@ function createCount<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // Execute count
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
@@ -1596,10 +1452,6 @@ function createCount<TPrisma extends PrismaClientLike>(
   }
 }
 
-/**
- * Create get operation for singleton lists
- * Returns the single record, or auto-creates it if enabled
- */
 function createGet<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1617,15 +1469,12 @@ function createGet<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'get')
 
-    // First try to find the existing record
     // Access Prisma model dynamically - required because model names are generated at runtime
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (prisma as any)[getDbKey(listName)]
 
-    // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = {}
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1638,15 +1487,15 @@ function createGet<TPrisma extends PrismaClientLike>(
         return null
       }
 
-      // Merge access filter (for singleton, we don't have a specific where clause)
+      // A singleton has no per-record `where`, so the access filter (if any) is
+      // the whole `where`.
       if (accessResult && typeof accessResult === 'object') {
         where = accessResult
       }
     }
 
-    // When a query fragment is provided, build the include from the fragment
-    // instead of the access-controlled include. Access control still runs via
-    // filterReadableFields; the fragment then narrows to only the requested fields.
+    // Access control still runs via filterReadableFields even though a
+    // fragment drives `include`; the fragment only narrows which fields come back.
     const fragment = isFragment(args?.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
@@ -1664,15 +1513,12 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
-    // Try to find the record
     const item = await model.findFirst({
       where,
       include,
     })
 
-    // If record exists, return it
     if (item) {
-      // Filter readable fields and apply resolveOutput hooks
       const filtered = await filterReadableFields(
         item,
         listConfig.fields,
@@ -1686,20 +1532,17 @@ function createGet<TPrisma extends PrismaClientLike>(
         declaredOnly,
         selection,
       )
-      // When a fragment is provided, pick only the requested fields from the result
       if (fragment) {
         return pickFields(filtered, fragment._fields)
       }
       return filtered
     }
 
-    // If no record and auto-create is enabled, create it
     if (shouldAutoCreate(listConfig)) {
       const defaultData = getDefaultData(listConfig)
       return await createFn({ data: defaultData })
     }
 
-    // No record and auto-create is disabled
     return null
   }
 }

@@ -1077,6 +1077,8 @@ A file header should orient a reader in a line or two. If it needs a page, the e
 
 **Public API docblocks are the deliberate exception.** Exported config options, field builders, and plugin surfaces carry TSDoc because it is what the consumer's editor shows — that is a contract, not a narration of the implementation beneath it.
 
+See `docs/agents/comments.md` for worked before/after examples of applying this rule, including where the judgment calls above land in practice.
+
 ## Development Workflow
 
 ### Making Changes to Core
