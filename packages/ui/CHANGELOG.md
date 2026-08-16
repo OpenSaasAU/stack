@@ -1,5 +1,48 @@
 # @opensaas/stack-ui
 
+## 0.39.0
+
+### Minor Changes
+
+- [#926](https://github.com/OpenSaasAU/stack/pull/926) [`5e546b0`](https://github.com/OpenSaasAU/stack/commit/5e546b0fe3542ba41fc77e0a4628acc96eec13ea) Thanks [@borisno2](https://github.com/borisno2)! - Add a first-class `bigInt()` field type for 64-bit integers (e.g. a millisecond epoch) that overflow `integer()`'s 32-bit `Int` — Prisma `BigInt`, TypeScript `bigint`, with an admin UI component, filtering, and MCP support.
+
+  ```typescript
+  import { bigInt } from '@opensaas/stack-core/fields'
+
+  fields: {
+    occurredAtMs: bigInt({ validation: { isRequired: true } }),
+  }
+
+  await context.db.event.create({
+    data: { occurredAtMs: 9007199254740993n }, // bigint, number, or numeric string
+  })
+  ```
+
+  Create/update accept `bigint`, an integer `number`, or a numeric `string`, and always coerce to `bigint`. A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently losing precision. `bigint` isn't JSON-serialisable, so an MCP CRUD tool renders the value as a decimal string instead of throwing, and the admin UI's server→client boundary (list table, item form, relationship table) now round-trips a `bigint` value correctly rather than throwing during render. The migration introspector maps Prisma `BigInt` columns to `bigInt()` instead of the previous lossy `text()` fallback.
+
+- [#925](https://github.com/OpenSaasAU/stack/pull/925) [`6f9a64d`](https://github.com/OpenSaasAU/stack/commit/6f9a64d2f25212e91181adc2b67add326a540f6a) Thanks [@borisno2](https://github.com/borisno2)! - Fix a field-level `read` gate withholding a field's VALUE but leaving its PREDICATE unconstrained: a read-denied field could still be named in a `where`/`orderBy`, letting its value (or relative order) be recovered by probing — `count()` is the cleanest instrument, since it answers a predicate while returning no rows at all. `findMany`/`count` now reject a `where`/`orderBy` key naming a field the session cannot read (including nested inside `AND`/`OR`/`NOT`), throwing instead of returning a silently narrowed or empty result. A `read` rule that depends on the fetched row (`item`) cannot be evaluated before the query runs and now resolves to a denial rather than being skipped — see `docs/adr/0031-a-predicate-cannot-name-a-field-the-session-cannot-read.md`. `sudo` is unaffected.
+
+  This was independently reachable through the admin UI's own list view: `collectFilterSpecs`, `buildListFilterWhere`, and `collectFilterSuggestions` (`@opensaas/stack-core`) now take a required `{ session, context }` argument and return a `Promise`, excluding a read-denied field from the collected Filter specs so the UI never suggests, autocompletes, or submits a filter the engine is going to reject — a `field:value` token for such a field now degrades to free text instead. The list view's sort validation (`@opensaas/stack-ui`) excludes the same fields from what a `?sort=` URL param may activate.
+
+  ```ts
+  // Before
+  const specs = collectFilterSpecs(listConfig, listKey, config)
+  const where = buildListFilterWhere(query, listConfig, listKey, config)
+  const suggestions = collectFilterSuggestions(listConfig, listKey, config)
+
+  // After — pass the session/context the field's `read` access is checked against
+  const specs = await collectFilterSpecs(listConfig, listKey, config, { session, context })
+  const where = await buildListFilterWhere(query, listConfig, listKey, config, { session, context })
+  const suggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+    session,
+    context,
+  })
+  ```
+
+### Patch Changes
+
+- [#929](https://github.com/OpenSaasAU/stack/pull/929) [`94802ee`](https://github.com/OpenSaasAU/stack/commit/94802eee3b2fdc64fab4b576945820a6df9311c5) Thanks [@borisno2](https://github.com/borisno2)! - Fix: a relation filter in `where` (`some`/`every`/`none`/`is`/`isNot`) no longer bypasses the related list's `query` access — it is now scoped exactly like `include` already is, recursing through every hop of a chain, on both `findMany` and `count`. A filter through a related list that denies query access now throws `RelationFilterAccessDeniedError` instead of silently running unscoped; field-level `read` access on the related list also now applies to keys named inside the filter. `@opensaas/stack-ui`'s admin list view no longer needs its own relationship label-filter access fold, since the engine now covers it.
+
 ## 0.38.0
 
 ## 0.37.0
