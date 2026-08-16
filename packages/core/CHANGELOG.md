@@ -1,5 +1,7 @@
 # @opensaas/stack-core
 
+## 0.39.1
+
 ## 0.39.0
 
 ### Minor Changes
