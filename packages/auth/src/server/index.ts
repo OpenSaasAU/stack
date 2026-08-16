@@ -565,9 +565,19 @@ function resolveSessionField(
  * await headers() })`. Exported as the single reusable implementation; pass
  * the caller's request headers (e.g. Next.js `await headers()` in a Server
  * Component/action) so a session cookie can actually be resolved.
+ *
+ * `auth` is typed structurally over just the one member this function reads
+ * — `api.getSession` — rather than a single concrete `Auth<Options>`
+ * instantiation, so it accepts an instance from either `createAuth()`
+ * overload: the widened `Auth<BetterAuthOptions>`, or the narrowed
+ * `Auth<ResolvedBetterAuthOptions<TPlugins>>` returned when a plugin tuple is
+ * passed. `TResolvedSession` is inferred from whatever `auth.api.getSession`
+ * actually returns (the default `{ session, user }` shape, or a
+ * `customSession` plugin's replaced shape) — it is not constrained, so no
+ * `any`/`unknown` is introduced at the call boundary.
  */
-export async function getSessionFromAuth(
-  auth: ReturnType<typeof betterAuth>,
+export async function getSessionFromAuth<TResolvedSession>(
+  auth: { api: { getSession: (args: { headers: Headers }) => Promise<TResolvedSession> } },
   sessionFields: string[],
   headers: Headers,
 ): Promise<Session | null> {
