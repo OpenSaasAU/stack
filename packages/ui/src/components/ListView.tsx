@@ -24,6 +24,7 @@ import {
   resolveRelationshipLabelFilters,
 } from '@opensaas/stack-core'
 import type { FieldConfig } from '@opensaas/stack-core'
+import { isFieldReadableForPredicate } from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -98,12 +99,23 @@ function toRelationshipLabel(
  * Virtual fields have no column to order by, and a to-one relationship has no
  * scalar to order by; a to-many relationship orders by its related `_count`, and
  * every scalar column orders by its own value.
+ *
+ * A field the session cannot READ is excluded too (#915) — evaluated the same
+ * predicate-time way `context.db.*`'s `findMany`/`count` now enforce, so a
+ * sort request naming a read-denied field is never honoured (it would only
+ * reach the engine's own #915 check and throw). `context.db` is still the
+ * real security boundary here; this is what keeps the admin UI's sort
+ * affordance from offering, and the URL param from silently no-op'ing on, a
+ * sort the engine is going to reject.
  */
-function isSortableField(field: FieldConfig | undefined): boolean {
+async function isSortableField(
+  field: FieldConfig | undefined,
+  args: { session: AccessContext<unknown>['session']; context: AccessContext<unknown> },
+): Promise<boolean> {
   if (!field) return false
   if (field.virtual === true) return false
-  if (field.type === 'relationship') return isToManyRelationshipField(field)
-  return true
+  if (field.type === 'relationship' && !isToManyRelationshipField(field)) return false
+  return isFieldReadableForPredicate(field.access, args)
 }
 
 /** Read a to-many relationship's access-scoped count off a fetched row's `_count`. */
@@ -185,10 +197,14 @@ export async function ListView({
   }
 
   // URL sort takes precedence over config initialSort, but only if the field is
-  // actually sortable — an unknown field, a virtual field, or a to-one
-  // relationship has no orderable column and would make Prisma throw (issue
-  // #732).
-  const validatedSort = sort && isSortableField(listConfig.fields[sort.field]) ? sort : undefined
+  // actually sortable — an unknown field, a virtual field, a to-one
+  // relationship, or a field this session cannot read (#915) has no orderable
+  // column and would make either Prisma or the engine's own predicate-time
+  // check throw (issue #732).
+  const sortFieldReadable =
+    sort &&
+    (await isSortableField(listConfig.fields[sort.field], { session: context.session, context }))
+  const validatedSort = sortFieldReadable ? sort : undefined
   const activeSort = validatedSort ?? initialSort
 
   // Fetch items using access-controlled context
@@ -210,7 +226,10 @@ export async function ListView({
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
       search && search.trim()
-        ? buildListFilterWhere(search, listConfig, listKey, config)
+        ? await buildListFilterWhere(search, listConfig, listKey, config, {
+            session: context.session,
+            context,
+          })
         : undefined
 
     // Resolve any to-many relationship count-filter markers (`orders:>5`) into
@@ -331,7 +350,10 @@ export async function ListView({
   // server/client boundary; it mirrors the same specs the server-side
   // `buildListFilterWhere` above uses, so the builder can only produce queries
   // the engine understands.
-  const filterSuggestions = collectFilterSuggestions(listConfig, listKey, config)
+  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+    session: context.session,
+    context,
+  })
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is

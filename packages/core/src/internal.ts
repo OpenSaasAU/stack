@@ -41,6 +41,11 @@ export { validateWithZod, generateZodSchema } from './validation/schema.js'
 // This is the single field-access evaluator — the UI must not re-implement it.
 export { checkFieldAccess } from './access/index.js'
 
+// Predicate-time field-read evaluator (#915), reused by @opensaas/stack-ui to
+// keep the admin list view's sort validation in lockstep with the engine: a
+// field the session cannot read cannot seed an `orderBy` either.
+export { isFieldReadableForPredicate } from './access/index.js'
+
 // Config-shape sub-types consumed by sibling packages (not part of the consumer surface)
 export type {
   DatabaseConfig,

@@ -273,6 +273,92 @@ describe('ListView server-side filtering (filter engine, secured context)', () =
   })
 })
 
+describe('ListView excludes read-denied fields from filtering/sorting (#915)', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'sqlite', url: 'file:./test.db' },
+    lists: {
+      Organisation: list({
+        fields: {
+          name: text(),
+          billingAddress: text({ access: { read: () => false } }),
+        },
+        access: { operation: { query: () => true } },
+      }),
+    },
+  }
+
+  it('drops a read-denied field from the collected filter suggestions', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ organisation: { findMany, count } })
+
+    const tree = await ListView({ context, config, listKey: 'Organisation', basePath: '/admin' })
+    const props = findListViewClientProps(tree)
+
+    expect(props.filterSuggestions.map((s) => s.field)).toEqual(['name'])
+  })
+
+  it('a `field:value` token for a read-denied field degrades to free text (never reaches context.db)', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ organisation: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'Organisation',
+      basePath: '/admin',
+      search: 'billingAddress:12',
+    })
+
+    // Never `{ billingAddress: { contains: '12' } }` — the spec was excluded,
+    // so the token falls back to a free-text search over `name`.
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { name: { contains: '12' } } }),
+    )
+  })
+
+  it('ignores a sort request naming a read-denied field (no orderBy, never reaches Prisma)', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ organisation: { findMany, count } })
+
+    await ListView({
+      context,
+      config,
+      listKey: 'Organisation',
+      basePath: '/admin',
+      sort: { field: 'billingAddress', direction: 'asc' },
+    })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: undefined }))
+  })
+
+  it('leaves a readable field filterable and sortable (no regression)', async () => {
+    const findMany = vi.fn(async () => [])
+    const count = vi.fn(async () => 0)
+    const context = makeContext({ organisation: { findMany, count } })
+
+    const tree = await ListView({
+      context,
+      config,
+      listKey: 'Organisation',
+      basePath: '/admin',
+      search: 'name:Acme',
+      sort: { field: 'name', direction: 'asc' },
+    })
+    const props = findListViewClientProps(tree)
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { name: { contains: 'Acme' } },
+        orderBy: { name: 'asc' },
+      }),
+    )
+    expect(props.filterSuggestions.map((s) => s.field)).toEqual(['name'])
+  })
+})
+
 describe('ListView to-many relationship count sort & filter (issue #732)', () => {
   const config: OpenSaasConfig = {
     db: { provider: 'sqlite', url: 'file:./test.db' },

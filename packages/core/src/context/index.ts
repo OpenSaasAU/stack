@@ -8,6 +8,7 @@ import {
   stripVirtualFieldsFromInclude,
   foldDeclaredDependencies,
   validateQueryKeys,
+  validateQueryFieldReadAccess,
 } from '../access/index.js'
 import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
@@ -1134,19 +1135,8 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       )
     }
 
-    // #912 — reject a `where`/`orderBy` key the list config doesn't declare
-    // (e.g. a Prisma-generated back-relation) before it ever reaches the
-    // access filter merge below. `sudo` bypasses, matching the write path.
-    validateQueryKeys({
-      where: args?.where,
-      orderBy: args?.orderBy,
-      listConfig,
-      listName,
-      config,
-      isSudo: context._isSudo === true,
-    })
-
-    // Check query access (skip if sudo mode)
+    // Check query access first (skip if sudo mode) — this MUST run before the
+    // #912/#915 where/orderBy validation below. See the comment there for why.
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1158,6 +1148,35 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       if (accessResult === false) {
         return []
       }
+
+      // #912 — reject a `where`/`orderBy` key the list config doesn't declare
+      // (e.g. a Prisma-generated back-relation), and #915 — reject one naming
+      // a field this session cannot READ (closing a probe via a `count()`
+      // that varies with the withheld value, or an `orderBy` that leaks
+      // relative ordering). Both run only now that the caller is known to
+      // have SOME access to the list (`accessResult !== false`): the thrown
+      // errors name the offending key, and running them before the access
+      // check above would let a caller with ZERO access to the list learn a
+      // field's name and read-gating status from the error message alone —
+      // turning the validation itself into the kind of oracle #915 closes.
+      // `sudo` bypasses this whole branch, matching the write path.
+      validateQueryKeys({
+        where: args?.where,
+        orderBy: args?.orderBy,
+        listConfig,
+        listName,
+        config,
+        isSudo: false,
+      })
+      await validateQueryFieldReadAccess({
+        where: args?.where,
+        orderBy: args?.orderBy,
+        listConfig,
+        listName,
+        session: context.session,
+        context,
+        isSudo: false,
+      })
 
       // Merge access filter with where clause
       const mergedWhere = mergeFilters(args?.where, accessResult)
@@ -1404,19 +1423,8 @@ function createCount<TPrisma extends PrismaClientLike>(
   config: OpenSaasConfig,
 ) {
   return async (args?: { where?: Record<string, unknown> }) => {
-    // #912 — reject a `where` key the list config doesn't declare (e.g. a
-    // Prisma-generated back-relation), same as findMany. `count` leaks the
-    // most cleanly of any read op — a bare count answers a predicate with no
-    // rows returned at all — so it gets the same reject, not a lesser one.
-    validateQueryKeys({
-      where: args?.where,
-      listConfig,
-      listName,
-      config,
-      isSudo: context._isSudo === true,
-    })
-
-    // Check query access (skip if sudo mode)
+    // Check query access first (skip if sudo mode) — this MUST run before the
+    // #912/#915 where validation below. See the comment there for why.
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1428,6 +1436,33 @@ function createCount<TPrisma extends PrismaClientLike>(
       if (accessResult === false) {
         return 0
       }
+
+      // #912 — reject a `where` key the list config doesn't declare (e.g. a
+      // Prisma-generated back-relation), and #915 — reject one naming a field
+      // this session cannot READ. `count` leaks the most cleanly of any read
+      // op — a bare count answers a predicate with no rows returned at all —
+      // so it gets the same reject, not a lesser one. Both run only now that
+      // the caller is known to have SOME access to the list (`accessResult
+      // !== false`) — see the identical comment in `createFindMany` for why
+      // that ordering matters: running them before the access check would
+      // let a fully-denied caller learn a field's name and read-gating
+      // status from the thrown error alone. `sudo` bypasses this whole
+      // branch, matching the write path.
+      validateQueryKeys({
+        where: args?.where,
+        listConfig,
+        listName,
+        config,
+        isSudo: false,
+      })
+      await validateQueryFieldReadAccess({
+        where: args?.where,
+        listConfig,
+        listName,
+        session: context.session,
+        context,
+        isSudo: false,
+      })
 
       // Merge access filter with where clause
       const mergedWhere = mergeFilters(args?.where, accessResult)

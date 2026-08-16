@@ -135,6 +135,7 @@ export type {
   FilterValueSource,
   FilterFieldSuggestion,
   RelationshipCountFilterMarker,
+  FilterAccessArgs,
 } from './filter/index.js'
 
 // Access-scoped to-many relationship counts for the admin list view (#732):

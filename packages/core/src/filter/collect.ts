@@ -1,7 +1,19 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
+import type { Session, AccessContext } from '../access/types.js'
+import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
 import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types.js'
+
+/**
+ * The session/context a field's `read` access is evaluated against — the same
+ * shape every other access-scoped admin-UI helper takes (e.g.
+ * `resolveRelationshipCountFilters`, `resolveRelationshipLabelFilters`).
+ */
+export type FilterAccessArgs = {
+  session: Session | null
+  context: AccessContext & { _isSudo?: boolean }
+}
 
 /**
  * Resolve every field's {@link FilterSpec} for a list by delegating to each
@@ -9,23 +21,45 @@ import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types
  * whose method returns `undefined`) is simply not filterable — the absence
  * degrades gracefully so third-party fields keep working.
  *
+ * A field the session cannot READ is excluded here too (#915), evaluated the
+ * same predicate-time way `context.db.*`'s `findMany`/`count` now enforce
+ * (`isFieldReadableForPredicate` — no fetched row exists yet, so a
+ * row-dependent `read` rule resolves to "not filterable"). This is what keeps
+ * the admin UI from ever suggesting, autocompleting, or submitting a filter
+ * the engine is going to reject: excluding the spec here means a token
+ * naming that field degrades to free text (`buildFilterWhere`'s existing
+ * "unknown field" path) rather than reaching `context.db` at all.
+ *
  * @param listConfig The list whose fields to inspect.
  * @param listKey    The list's key (passed through to each field's spec).
  * @param config     The full config (relationship specs resolve their target
  *   list's label field from it).
+ * @param args       The session/context to evaluate field-level `read` access
+ *   against.
  */
-export function collectFilterSpecs(
+export async function collectFilterSpecs(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   listKey: string,
   config: OpenSaasConfig,
-): Record<string, FilterSpec> {
+  args: FilterAccessArgs,
+): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
-  for (const [fieldName, field] of Object.entries(listConfig.fields)) {
-    if (typeof field.getFilterSpec !== 'function') continue
-    const spec = field.getFilterSpec(fieldName, listKey, config)
+  const filterableFields = Object.entries(listConfig.fields).filter(
+    ([, field]) => typeof field.getFilterSpec === 'function',
+  )
+  // Each field's read-access check is independent of every other's — run
+  // them concurrently rather than serially, since a `read` rule that does
+  // async work (e.g. a DB lookup) would otherwise add per-field latency to
+  // every list-view page render (found in review of #925).
+  const readableFlags = await Promise.all(
+    filterableFields.map(([, field]) => isFieldReadableForPredicate(field.access, args)),
+  )
+  filterableFields.forEach(([fieldName, field], index) => {
+    if (!readableFlags[index]) return
+    const spec = field.getFilterSpec!(fieldName, listKey, config)
     if (spec) specs[fieldName] = spec
-  }
+  })
   return specs
 }
 
@@ -38,14 +72,15 @@ export function collectFilterSpecs(
  *
  * @returns A `where` fragment, or `undefined` when the query filters nothing.
  */
-export function buildListFilterWhere(
+export async function buildListFilterWhere(
   query: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   listKey: string,
   config: OpenSaasConfig,
-): FilterCondition | undefined {
-  const specs = collectFilterSpecs(listConfig, listKey, config)
+  args: FilterAccessArgs,
+): Promise<FilterCondition | undefined> {
+  const specs = await collectFilterSpecs(listConfig, listKey, config, args)
   const tokens = parseFilterQuery(query)
   return buildFilterWhere(tokens, specs)
 }
@@ -56,13 +91,14 @@ export function buildListFilterWhere(
  * search). Carries no functions, so it can cross the server/client boundary to
  * drive the Filter builder's autocomplete.
  */
-export function collectFilterSuggestions(
+export async function collectFilterSuggestions(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   listKey: string,
   config: OpenSaasConfig,
-): FilterFieldSuggestion[] {
-  const specs = collectFilterSpecs(listConfig, listKey, config)
+  args: FilterAccessArgs,
+): Promise<FilterFieldSuggestion[]> {
+  const specs = await collectFilterSpecs(listConfig, listKey, config, args)
   return Object.entries(specs).map(([field, spec]) => ({
     field,
     operators: spec.operators,

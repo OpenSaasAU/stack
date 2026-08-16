@@ -1,5 +1,7 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
+import type { Session, AccessContext } from './types.js'
 import { getRelatedListConfig } from './engine.js'
+import { isFieldReadableForPredicate } from './field-access.js'
 import { ValidationError } from '../hooks/index.js'
 
 /**
@@ -21,6 +23,15 @@ import { ValidationError } from '../hooks/index.js'
  * access control. That filter is trusted config authored by the same person who
  * declares the fields — walking it would make this an access-control decision
  * (that's #915/#916), not the key-existence seam this ticket establishes.
+ *
+ * `validateQueryFieldReadAccess` below is that access-control decision for
+ * #915: it re-walks `where`/`orderBy` (reusing `resolveQueryField`) and checks
+ * each resolved field's `read` access via the canonical evaluator, so a field
+ * the session cannot read cannot be named in a predicate either. It runs
+ * strictly after this module's key-existence check — an undeclared key is
+ * #912's rejection, not a field-access decision — and stays scoped to the
+ * CURRENT list, deliberately not recursing into a related list's fields
+ * nested inside a relation filter (that's #916).
  */
 
 // Prisma's logical combinators for a WHERE clause — never field names.
@@ -37,7 +48,7 @@ const SYSTEM_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- field configs are heterogeneous across field types
 type FieldConfigMap = Record<string, any>
 
-interface ResolvedQueryField {
+export interface ResolvedQueryField {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- field configs are heterogeneous across field types
   fieldConfig: any
   isRelationship: boolean
@@ -62,7 +73,10 @@ interface ResolvedQueryField {
  * Anything else — most importantly a Prisma-generated back-relation the config
  * never declares — resolves to `undefined` and is rejected by the caller.
  */
-function resolveQueryField(key: string, fields: FieldConfigMap): ResolvedQueryField | undefined {
+export function resolveQueryField(
+  key: string,
+  fields: FieldConfigMap,
+): ResolvedQueryField | undefined {
   if (SYSTEM_FIELDS.has(key)) {
     return { fieldConfig: undefined, isRelationship: false }
   }
@@ -216,4 +230,108 @@ export function validateQueryKeys(args: {
   const { where, orderBy, listConfig, listName, config, isSudo } = args
   if (where !== undefined) walkWhere(where, listConfig, listName, config, isSudo)
   if (orderBy !== undefined) walkOrderBy(orderBy, listConfig, listName, config, isSudo)
+}
+
+/**
+ * #915 — the predicate-time counterpart to `checkFieldAccess`'s post-query
+ * check: reject a `where`/`orderBy` key that names a field the session cannot
+ * read, BEFORE the query runs. See this module's top doc comment for how this
+ * relates to `validateQueryKeys` (#912) and `isFieldReadableForPredicate`'s
+ * doc (in `field-access.ts`) for how a row-dependent `read` rule is handled.
+ *
+ * A key `resolveQueryField` cannot resolve is skipped here — #912 has already
+ * rejected it (or, under `sudo`, deliberately let it through) by the time
+ * this runs. A system field (`id`/`createdAt`/`updatedAt`) resolves with no
+ * `fieldConfig` and carries no field-level access control, so it is always
+ * readable and skipped too.
+ */
+async function checkKeyReadableOrThrow(
+  key: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listName: string,
+  args: { session: Session | null; context: AccessContext & { _isSudo?: boolean } },
+  kind: 'where' | 'orderBy',
+): Promise<void> {
+  const resolved = resolveQueryField(key, listConfig.fields)
+  if (!resolved || resolved.fieldConfig === undefined) return
+
+  const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, args)
+  if (!readable) {
+    throw new ValidationError([
+      `Cannot query "${listName}" — "${key}" is denied by field-level read access. ` +
+        `A field the session cannot read cannot be named in a ${kind} (use sudo to bypass).`,
+    ])
+  }
+}
+
+async function walkWhereReadAccess(
+  where: unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listName: string,
+  args: { session: Session | null; context: AccessContext & { _isSudo?: boolean } },
+): Promise<void> {
+  if (where === null || typeof where !== 'object') return
+
+  if (Array.isArray(where)) {
+    for (const entry of where) await walkWhereReadAccess(entry, listConfig, listName, args)
+    return
+  }
+
+  for (const [key, value] of Object.entries(where as Record<string, unknown>)) {
+    if (LOGICAL_OPERATORS.has(key)) {
+      await walkWhereReadAccess(value, listConfig, listName, args)
+      continue
+    }
+    // Deliberately does not recurse into a relationship field's own nested
+    // value: it checks whether THIS list's relationship field may be named
+    // (its own `read` access), but a field on the RELATED list nested inside
+    // it is #916's scope, not this one.
+    await checkKeyReadableOrThrow(key, listConfig, listName, args, 'where')
+  }
+}
+
+async function walkOrderByReadAccess(
+  orderBy: unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listName: string,
+  args: { session: Session | null; context: AccessContext & { _isSudo?: boolean } },
+): Promise<void> {
+  if (orderBy === null || typeof orderBy !== 'object') return
+
+  if (Array.isArray(orderBy)) {
+    for (const entry of orderBy) await walkOrderByReadAccess(entry, listConfig, listName, args)
+    return
+  }
+
+  for (const key of Object.keys(orderBy as Record<string, unknown>)) {
+    await checkKeyReadableOrThrow(key, listConfig, listName, args, 'orderBy')
+  }
+}
+
+/**
+ * Validate a caller-supplied `where`/`orderBy` against field-level `read`
+ * access, recursing into logical operators (`AND`/`OR`/`NOT`) the same way
+ * `validateQueryKeys` does. Throws a `ValidationError` naming the list and
+ * the offending key on the first read-denied field found. `isSudo` bypasses
+ * the check entirely, matching `validateQueryKeys` and the write path's
+ * `sudo` escape hatch.
+ */
+export async function validateQueryFieldReadAccess(args: {
+  where?: unknown
+  orderBy?: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>
+  listName: string
+  session: Session | null
+  context: AccessContext & { _isSudo?: boolean }
+  isSudo: boolean
+}): Promise<void> {
+  const { where, orderBy, listConfig, listName, session, context, isSudo } = args
+  if (isSudo) return
+  const evalArgs = { session, context }
+  if (where !== undefined) await walkWhereReadAccess(where, listConfig, listName, evalArgs)
+  if (orderBy !== undefined) await walkOrderByReadAccess(orderBy, listConfig, listName, evalArgs)
 }

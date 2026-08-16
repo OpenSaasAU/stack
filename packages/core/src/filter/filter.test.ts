@@ -1,11 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
-import { buildListFilterWhere, collectFilterSpecs, collectFilterSuggestions } from './collect.js'
+import {
+  buildListFilterWhere,
+  collectFilterSpecs,
+  collectFilterSuggestions,
+  type FilterAccessArgs,
+} from './collect.js'
 import type { FilterSpec } from './types.js'
 import { list } from '../config/index.js'
 import { text, integer, select, checkbox, timestamp, relationship } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
+import type { AccessContext } from '../access/types.js'
+
+// A permissive session/context — no field on any list under test declares
+// field-level `read` access unless a test says so, so every field is
+// filterable/sortable by default (matching `checkFieldAccess`'s own
+// allow-by-default for a field with no rule).
+const noAccessArgs: FilterAccessArgs = {
+  session: null,
+  context: { _isSudo: false } as unknown as AccessContext,
+}
 
 // ─────────────────────────────────────────────────────────────
 // parseFilterQuery — the pure query-string → tokens boundary (ADR-0017)
@@ -250,8 +265,8 @@ describe('core field Filter specs', () => {
   const config = makeConfig()
   const postConfig = config.lists.Post
 
-  it('collectFilterSpecs resolves a spec for every filterable core field', () => {
-    const collected = collectFilterSpecs(postConfig, 'Post', config)
+  it('collectFilterSpecs resolves a spec for every filterable core field', async () => {
+    const collected = await collectFilterSpecs(postConfig, 'Post', config, noAccessArgs)
     expect(Object.keys(collected).sort()).toEqual(
       ['author', 'featured', 'publishedAt', 'status', 'title', 'views'].sort(),
     )
@@ -309,23 +324,68 @@ describe('core field Filter specs', () => {
     })
   })
 
-  it('does not produce specs for password/json/virtual (absence degrades gracefully)', () => {
+  it('does not produce specs for password/json/virtual (absence degrades gracefully)', async () => {
     // A list of non-filterable fields yields no specs at all.
-    const specsForUser = collectFilterSpecs(config.lists.User, 'User', config)
+    const specsForUser = await collectFilterSpecs(config.lists.User, 'User', config, noAccessArgs)
     // User only has `name` (text) → exactly one spec, proving non-text absence.
     expect(Object.keys(specsForUser)).toEqual(['name'])
+  })
+
+  it('excludes a field the session cannot read (#915)', async () => {
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        Organisation: list({
+          fields: {
+            name: text(),
+            billingAddress: text({ access: { read: () => false } }),
+          },
+        }),
+      },
+    }
+    const collected = await collectFilterSpecs(
+      gatedConfig.lists.Organisation,
+      'Organisation',
+      gatedConfig,
+      noAccessArgs,
+    )
+    expect(Object.keys(collected)).toEqual(['name'])
+  })
+
+  it('excludes a row-dependent read rule too — no row exists at predicate time (#915)', async () => {
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        Organisation: list({
+          fields: {
+            name: text(),
+            billingAddress: text({
+              access: { read: ({ item, session }) => item.ownerId === session?.userId },
+            }),
+          },
+        }),
+      },
+    }
+    const collected = await collectFilterSpecs(
+      gatedConfig.lists.Organisation,
+      'Organisation',
+      gatedConfig,
+      noAccessArgs,
+    )
+    expect(Object.keys(collected)).toEqual(['name'])
   })
 })
 
 describe('buildListFilterWhere (end-to-end over a real list config)', () => {
   const config = makeConfig()
 
-  it('composes parse + specs into a merged where', () => {
-    const where = buildListFilterWhere(
+  it('composes parse + specs into a merged where', async () => {
+    const where = await buildListFilterWhere(
       'status:Published views:>10 author:"Ada" hello',
       config.lists.Post,
       'Post',
       config,
+      noAccessArgs,
     )
     expect(where).toEqual({
       AND: [
@@ -339,8 +399,35 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
     })
   })
 
-  it('returns undefined for an all-whitespace query', () => {
-    expect(buildListFilterWhere('   ', config.lists.Post, 'Post', config)).toBeUndefined()
+  it('returns undefined for an all-whitespace query', async () => {
+    expect(
+      await buildListFilterWhere('   ', config.lists.Post, 'Post', config, noAccessArgs),
+    ).toBeUndefined()
+  })
+
+  it('a read-denied field degrades to free text instead of reaching the engine (#915)', async () => {
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        Organisation: list({
+          fields: {
+            name: text(),
+            billingAddress: text({ access: { read: () => false } }),
+          },
+        }),
+      },
+    }
+    // `billingAddress:12` never produces `{ billingAddress: { contains: '12' } }`
+    // — the spec is excluded, so the token degrades to a free-text search for
+    // "12" across `name` (the only remaining free-text field) instead.
+    const where = await buildListFilterWhere(
+      'billingAddress:12',
+      gatedConfig.lists.Organisation,
+      'Organisation',
+      gatedConfig,
+      noAccessArgs,
+    )
+    expect(where).toEqual({ name: { contains: '12' } })
   })
 })
 
@@ -379,22 +466,54 @@ describe('to-many relationship Filter spec (count comparisons — issue #732)', 
     expect(spec.suggestions.valueSource).toEqual({ kind: 'none' })
   })
 
-  it('end-to-end: buildListFilterWhere carries a count marker for `posts:>5`', () => {
+  it('end-to-end: buildListFilterWhere carries a count marker for `posts:>5`', async () => {
     const config = countConfig()
-    const where = buildListFilterWhere('posts:>5', config.lists.User, 'User', config)
+    const where = await buildListFilterWhere(
+      'posts:>5',
+      config.lists.User,
+      'User',
+      config,
+      noAccessArgs,
+    )
     expect(where).toEqual({ posts: { _countFilter: { operator: 'gt', value: 5 } } })
   })
 })
 
 describe('collectFilterSuggestions', () => {
-  it('returns serializable, function-free suggestion metadata', () => {
+  it('returns serializable, function-free suggestion metadata', async () => {
     const config = makeConfig()
-    const suggestions = collectFilterSuggestions(config.lists.Post, 'Post', config)
+    const suggestions = await collectFilterSuggestions(
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
     // No functions anywhere → JSON round-trips cleanly.
     expect(JSON.parse(JSON.stringify(suggestions))).toEqual(suggestions)
     const status = suggestions.find((s) => s.field === 'status')!
     expect(status.valueSource.kind).toBe('enum')
     const author = suggestions.find((s) => s.field === 'author')!
     expect(author.valueSource).toEqual({ kind: 'relationship', listKey: 'User', many: false })
+  })
+
+  it('excludes a read-denied field from the suggestion metadata (#915)', async () => {
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        Organisation: list({
+          fields: {
+            name: text(),
+            billingAddress: text({ access: { read: () => false } }),
+          },
+        }),
+      },
+    }
+    const suggestions = await collectFilterSuggestions(
+      gatedConfig.lists.Organisation,
+      'Organisation',
+      gatedConfig,
+      noAccessArgs,
+    )
+    expect(suggestions.map((s) => s.field)).toEqual(['name'])
   })
 })
