@@ -1686,11 +1686,15 @@ describe('getContext', () => {
         expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
       })
 
-      it('does not recurse into a related list nested inside a relation filter (#916 scope)', async () => {
-        // #915 checks whether THIS list's relationship field may be named at
-        // all; a field on the RELATED list reached through it is #916's
-        // separate change, so it must not be rejected here — only #912's
-        // undeclared-key check (or #916, once it lands) governs that key.
+      it('#915 itself does not recurse into a related list nested inside a relation filter, but #916 now does', async () => {
+        // #915 (`validateQueryFieldReadAccess`) checks whether THIS list's
+        // relationship field may be named at all — it does not by itself
+        // reject a field on the RELATED list reached through it. Once #916
+        // landed, that gap is closed by a SEPARATE pass
+        // (`buildAccessScopedWhere`) that scopes relation filters and applies
+        // the related list's own field-read access to keys nested inside
+        // them — so the read-denied `User.secret` field is still rejected
+        // overall, just not by #915's own top-level-only check.
         const relPrisma = {
           post: { findMany: vi.fn(), count: vi.fn() },
         }
@@ -1718,10 +1722,235 @@ describe('getContext', () => {
         const context = await getContext(relConfig, relPrisma, null)
         // Names a field on the RELATED list (User.secret) nested inside the
         // relation filter — not a key of Post itself, so #915's own check
-        // (which only inspects Post's own fields) does not deny it.
-        await context.db.post.findMany({ where: { author: { is: { secret: { contains: 'x' } } } } })
+        // (which only inspects Post's own fields) does not deny it, but
+        // #916's relation-filter scoping (which checks the RELATED list's
+        // field-read access) now does.
+        await expect(
+          context.db.post.findMany({ where: { author: { is: { secret: { contains: 'x' } } } } }),
+        ).rejects.toThrow(/secret/)
 
-        expect(relPrisma.post.findMany).toHaveBeenCalled()
+        expect(relPrisma.post.findMany).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('relation filter access scoping (#916)', () => {
+      // The exact shape from the issue: a publicly-queryable Organisation,
+      // reachable Document/Membership/User lists each gated differently, and
+      // a two-hop chain (Organisation -> members -> user -> email) that lets
+      // an anonymous caller binary-search a field it could never read
+      // directly, unless the relation filter itself is scoped.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let orgPrisma: any
+      let orgConfig: OpenSaasConfig
+
+      beforeEach(() => {
+        orgPrisma = {
+          organisation: { findMany: vi.fn(), count: vi.fn() },
+        }
+        orgConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Organisation: {
+              fields: {
+                name: { type: 'text' },
+                documents: { type: 'relationship', ref: 'Document.organisation', many: true },
+                members: { type: 'relationship', ref: 'Membership.organisation', many: true },
+              },
+              access: { operation: { query: () => true } },
+            },
+            // Membership-scoped: `query` denies everything for an anonymous
+            // session (no session means no membership filter can match).
+            Document: {
+              fields: {
+                organisation: { type: 'relationship', ref: 'Organisation.documents' },
+                billingAddress: { type: 'text' },
+              },
+              access: { operation: { query: () => false } },
+            },
+            Membership: {
+              fields: {
+                organisation: { type: 'relationship', ref: 'Organisation.members' },
+                user: { type: 'relationship', ref: 'User.memberships' },
+              },
+              // Readable by anyone — the hop itself isn't the leak, the
+              // identity list at the end of the chain is.
+              access: { operation: { query: () => true } },
+            },
+            User: {
+              fields: {
+                memberships: { type: 'relationship', ref: 'Membership.user', many: true },
+                email: { type: 'text' },
+              },
+              // Not queryable at all by an anonymous session.
+              access: { operation: { query: () => false } },
+            },
+          },
+        }
+      })
+
+      it('denies a single-hop relation filter through a fully denied related list, on both findMany and count', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          }),
+        ).rejects.toThrow(/Document/)
+        await expect(
+          context.db.organisation.count({
+            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          }),
+        ).rejects.toThrow(/Document/)
+
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('a count probe through a denied relation answers identically for a matching and non-matching value (no oracle)', async () => {
+        // Before the fix these counts could differ (1 vs 0), letting a caller
+        // recover `billingAddress` one character at a time. After the fix
+        // both throw the SAME denial.
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        const matching = context.db.organisation
+          .count({ where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } } })
+          .catch((err: Error) => err.message)
+        const nonMatching = context.db.organisation
+          .count({ where: { documents: { some: { billingAddress: { startsWith: '99 ' } } } } })
+          .catch((err: Error) => err.message)
+
+        expect(await matching).toEqual(await nonMatching)
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('denies a two-hop chain reaching a denied identity list, the exact probe from the issue', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.count({
+            where: {
+              members: { some: { user: { is: { email: { equals: 'ada@example.com' } } } } },
+            },
+          }),
+        ).rejects.toThrow(/User/)
+
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('a two-hop count probe answers identically for a real and a fabricated email (no identity-confirmation oracle)', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        const real = context.db.organisation
+          .count({
+            where: {
+              members: { some: { user: { is: { email: { equals: 'real@example.com' } } } } },
+            },
+          })
+          .catch((err: Error) => err.message)
+        const fabricated = context.db.organisation
+          .count({
+            where: {
+              members: { some: { user: { is: { email: { equals: 'nobody@example.com' } } } } },
+            },
+          })
+          .catch((err: Error) => err.message)
+
+        expect(await real).toEqual(await fabricated)
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it("folds the related list's access filter into a relation filter rather than denying or passing it through unscoped", async () => {
+        orgPrisma.organisation.findMany.mockResolvedValue([])
+        const scopedConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            ...orgConfig.lists,
+            Document: {
+              ...orgConfig.lists.Document,
+              // A filter, not a boolean: only this org's own published docs.
+              access: { operation: { query: () => ({ published: { equals: true } }) } },
+            },
+          },
+        }
+
+        const context = await getContext(scopedConfig, orgPrisma, null)
+        await context.db.organisation.findMany({
+          where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+        })
+
+        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              documents: {
+                some: {
+                  AND: [{ published: { equals: true } }, { billingAddress: { startsWith: '12 ' } }],
+                },
+              },
+            },
+          }),
+        )
+      })
+
+      it('leaves a relation filter through a fully readable related list unwrapped (no perturbation)', async () => {
+        orgPrisma.organisation.findMany.mockResolvedValue([])
+        const openConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            ...orgConfig.lists,
+            Membership: {
+              ...orgConfig.lists.Membership,
+              access: { operation: { query: () => true } },
+            },
+          },
+        }
+        const context = await getContext(openConfig, orgPrisma, null)
+        const where = { members: { some: { organisation: { is: { name: { equals: 'Acme' } } } } } }
+
+        await context.db.organisation.findMany({ where })
+
+        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where }),
+        )
+      })
+
+      it('sudo bypasses relation-filter scoping entirely (#916 unaffected)', async () => {
+        orgPrisma.organisation.findMany.mockResolvedValue([])
+
+        const context = (await getContext(orgConfig, orgPrisma, null)).sudo()
+        const where = { documents: { some: { billingAddress: { startsWith: '12 ' } } } }
+        await context.db.organisation.findMany({ where })
+
+        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where }),
+        )
+      })
+
+      it('a caller with zero list access gets the ordinary silent denial, never the relation-filter error', async () => {
+        const deniedConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            ...orgConfig.lists,
+            Organisation: {
+              ...orgConfig.lists.Organisation,
+              access: { operation: { query: () => false } },
+            },
+          },
+        }
+        const context = await getContext(deniedConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          }),
+        ).resolves.toEqual([])
+        await expect(
+          context.db.organisation.count({
+            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          }),
+        ).resolves.toBe(0)
+
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
       })
     })
 

@@ -31,15 +31,29 @@ import { ValidationError } from '../hooks/index.js'
  * strictly after this module's key-existence check — an undeclared key is
  * #912's rejection, not a field-access decision — and stays scoped to the
  * CURRENT list, deliberately not recursing into a related list's fields
- * nested inside a relation filter (that's #916).
+ * nested inside a relation filter itself (that recursion is #916's job, not
+ * this module's — see below).
+ *
+ * #916 — the relation-filter counterpart — scopes a relation filter itself
+ * (`some`/`every`/`none`/`is`/`isNot`) by the RELATED list's own `query`
+ * access, folding it into the nested clause exactly like
+ * `buildAccessScopedInclude` folds it into `include` (`access-filter.ts`).
+ * It reuses this module's shape-recognition (`resolveQueryField`,
+ * `LOGICAL_OPERATORS`, `RELATION_QUANTIFIERS`, exported below) and calls
+ * `walkWhereReadAccess` once per hop — against the RELATED list's own
+ * config — for the field-read half of the same job this module's
+ * `validateQueryFieldReadAccess` already does for the CURRENT list. There is
+ * deliberately no second copy of either the shape-recognition or the
+ * field-read check: `access-filter.ts` supplies the RELATED list at each
+ * hop and calls back into the same primitives this module already owns.
  */
 
 // Prisma's logical combinators for a WHERE clause — never field names.
-const LOGICAL_OPERATORS = new Set(['AND', 'OR', 'NOT'])
+export const LOGICAL_OPERATORS = new Set(['AND', 'OR', 'NOT'])
 
 // Prisma's relation quantifiers. The value nested under one of these is itself a
 // WHERE clause for the RELATED list, and is walked against that list's fields.
-const RELATION_QUANTIFIERS = new Set(['some', 'every', 'none', 'is', 'isNot'])
+export const RELATION_QUANTIFIERS = new Set(['some', 'every', 'none', 'is', 'isNot'])
 
 // Always present, never declared in a list's `fields` — the write path
 // (`filterWritableFields`) excludes the same three names from `fieldConfigs`.
@@ -265,7 +279,16 @@ async function checkKeyReadableOrThrow(
   }
 }
 
-async function walkWhereReadAccess(
+/**
+ * Check field-level `read` access for every key at ONE level of a `where`
+ * clause, recursing only into logical operators (`AND`/`OR`/`NOT`) — never
+ * into a relationship field's own nested value. Exported so `access-filter.ts`
+ * can call it once per hop, against the RELATED list's own config, as its
+ * relation-filter walk (#916) descends — the same field-read check this
+ * module runs for the CURRENT list via `validateQueryFieldReadAccess`, reused
+ * rather than duplicated.
+ */
+export async function walkWhereReadAccess(
   where: unknown,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
@@ -286,8 +309,9 @@ async function walkWhereReadAccess(
     }
     // Deliberately does not recurse into a relationship field's own nested
     // value: it checks whether THIS list's relationship field may be named
-    // (its own `read` access), but a field on the RELATED list nested inside
-    // it is #916's scope, not this one.
+    // (its own `read` access) — a field on the RELATED list nested inside it
+    // is checked by the CALLER re-invoking this function against the related
+    // list's config (see #916 in the module doc comment above).
     await checkKeyReadableOrThrow(key, listConfig, listName, args, 'where')
   }
 }

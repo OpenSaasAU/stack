@@ -22,7 +22,6 @@ import {
   isToManyRelationshipField,
   OpenSaasConfig,
   resolveRelationshipCountFilters,
-  resolveRelationshipLabelFilters,
 } from '@opensaas/stack-core'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { isFieldReadableForPredicate } from '@opensaas/stack-core/internal'
@@ -246,17 +245,14 @@ export async function ListView({
       config,
     )
 
-    // Fold the related list's `query` access into any to-one relationship
-    // label-filter conditions (`author:Ada`) so the nested `is` clause can
-    // only ever match rows the session may also see directly on the related
-    // list — never a way to distinguish parent rows by a related field the
-    // session cannot itself read (issue #749).
-    const where = await resolveRelationshipLabelFilters(
-      whereWithCountFilters,
-      listConfig,
-      { session: context.session, context },
-      config,
-    )
+    // A to-one relationship label-filter condition (`author:Ada` →
+    // `{ author: { is: { name: {...} } } }`) used to need its own access fold
+    // here (issue #749) so the nested `is` clause could only ever match rows
+    // the session may also see directly on the related list. The secured
+    // `context.db` read below now scopes every relation filter in `where`
+    // itself (`buildAccessScopedWhere`, #916), so this `where` needs no
+    // separate label-filter pass.
+    const where = whereWithCountFilters
 
     // Build the include: to-one relationships fetch the related row (for its
     // Item label), while to-many relationships fetch only an access-scoped

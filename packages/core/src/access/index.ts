@@ -32,7 +32,11 @@ export { validateQueryKeys } from './query-validation.js'
 // session cannot read cannot be named in a predicate either (#915).
 export { validateQueryFieldReadAccess } from './query-validation.js'
 // Phase 1 — Access Filter (pre-query row/relation scoping).
-export { buildAccessScopedInclude, stripVirtualFieldsFromInclude } from './access-filter.js'
+export {
+  buildAccessScopedInclude,
+  buildAccessScopedWhere,
+  stripVirtualFieldsFromInclude,
+} from './access-filter.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — folding `needs` into an include without widening
@@ -49,3 +53,5 @@ export { AccessScopeDepthExceededError } from './errors.js'
 export { ResolveOutputCycleError } from './errors.js'
 // Thrown when a field-level access control function returns a non-boolean result.
 export { InvalidFieldAccessResultError } from './errors.js'
+// Thrown when a relation filter's related list denies query access outright (#916).
+export { RelationFilterAccessDeniedError } from './errors.js'

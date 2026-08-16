@@ -5,6 +5,7 @@ import {
   mergeFilters,
   filterReadableFields,
   buildAccessScopedInclude,
+  buildAccessScopedWhere,
   stripVirtualFieldsFromInclude,
   foldDeclaredDependencies,
   validateQueryKeys,
@@ -1178,8 +1179,22 @@ function createFindMany<TPrisma extends PrismaClientLike>(
         isSudo: false,
       })
 
+      // #916 — scope every relation filter nested in `where`
+      // (`some`/`every`/`none`/`is`/`isNot`) by the RELATED list's own `query`
+      // access, recursing through every hop of a chain — the `where`
+      // counterpart to how `include` is already scoped below via
+      // `buildAccessScopedInclude`. Runs after the checks above for the same
+      // ordering reason: only once the caller is known to have SOME access to
+      // THIS list.
+      const scopedWhere = args?.where
+        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
+            session: context.session,
+            context,
+          })) as Record<string, unknown>)
+        : args?.where
+
       // Merge access filter with where clause
-      const mergedWhere = mergeFilters(args?.where, accessResult)
+      const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return []
       }
@@ -1464,8 +1479,18 @@ function createCount<TPrisma extends PrismaClientLike>(
         isSudo: false,
       })
 
+      // #916 — scope every relation filter nested in `where` by the RELATED
+      // list's own `query` access. See the identical comment in
+      // `createFindMany` for why this runs here, in this order.
+      const scopedWhere = args?.where
+        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
+            session: context.session,
+            context,
+          })) as Record<string, unknown>)
+        : args?.where
+
       // Merge access filter with where clause
-      const mergedWhere = mergeFilters(args?.where, accessResult)
+      const mergedWhere = mergeFilters(scopedWhere, accessResult)
       if (mergedWhere === null) {
         return 0
       }
