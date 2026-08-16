@@ -344,6 +344,110 @@ describe('deriveAuthLists - schema placement', () => {
   })
 })
 
+describe('deriveAuthLists - RateLimit list (rateLimit.storage === "database")', () => {
+  it('is absent when no rateLimit model is supplied', () => {
+    const { keys, lists } = deriveAuthLists(defaultModels)
+
+    expect(keys.rateLimit).toBeUndefined()
+    expect(lists.RateLimit).toBeUndefined()
+    expect(Object.keys(lists).sort()).toEqual(['Account', 'Session', 'User', 'Verification'])
+  })
+
+  it('derives a RateLimit list keyed by the default model name when present', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: {} },
+    }
+
+    const { keys, lists } = deriveAuthLists(models)
+
+    expect(keys.rateLimit).toBe('RateLimit')
+    expect(Object.keys(lists).sort()).toEqual([
+      'Account',
+      'RateLimit',
+      'Session',
+      'User',
+      'Verification',
+    ])
+  })
+
+  it('mirrors better-auth’s rateLimit table shape: key/count/lastRequest, all required, no defaults', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: {} },
+    }
+
+    const { lists } = deriveAuthLists(models)
+    const rateLimit = lists.RateLimit
+
+    expect(rateLimit.fields.key.type).toBe('text')
+    expect(rateLimit.fields.key.isIndexed).toBe('unique')
+    expect(rateLimit.fields.key.validation?.isRequired).toBe(true)
+    expect(rateLimit.fields.key.defaultValue).toBeUndefined()
+
+    expect(rateLimit.fields.count.type).toBe('integer')
+    expect(rateLimit.fields.count.validation?.isRequired).toBe(true)
+    expect(rateLimit.fields.count.db?.isNullable).toBe(false)
+    expect(rateLimit.fields.count.defaultValue).toBeUndefined()
+
+    expect(rateLimit.fields.lastRequest.type).toBe('bigInt')
+    expect(rateLimit.fields.lastRequest.validation?.isRequired).toBe(true)
+    expect(rateLimit.fields.lastRequest.db?.isNullable).toBe(false)
+    expect(rateLimit.fields.lastRequest.defaultValue).toBeUndefined()
+
+    // Exactly these three fields — no createdAt/updatedAt columns on this list.
+    expect(Object.keys(rateLimit.fields).sort()).toEqual(['count', 'key', 'lastRequest'])
+  })
+
+  it('does not opt into auto-timestamps, unlike the other four Auth lists', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: {} },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.RateLimit.db?.timestamps).toBeUndefined()
+    expect(lists.User.db?.timestamps).toBe(true)
+  })
+
+  it('applies a custom modelName, tableName, field column maps, and schema like the other models', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: {
+        modelName: 'AuthRateLimit',
+        tableName: 'rate_limit',
+        fields: { key: 'limit_key', count: 'hit_count', lastRequest: 'last_hit_at' },
+        schema: 'auth',
+      },
+    }
+
+    const { keys, lists } = deriveAuthLists(models)
+
+    expect(keys.rateLimit).toBe('AuthRateLimit')
+    const rateLimit = lists.AuthRateLimit
+    expect(rateLimit.db?.map).toBe('rate_limit')
+    expect(rateLimit.db?.schema).toBe('auth')
+    expect(rateLimit.fields.key.db?.map).toBe('limit_key')
+    expect(rateLimit.fields.count.db?.map).toBe('hit_count')
+    expect(rateLimit.fields.lastRequest.db?.map).toBe('last_hit_at')
+  })
+
+  it('ships closed (no access) unless accessConfig.rateLimit is supplied', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: {} },
+    }
+
+    const { lists: closed } = deriveAuthLists(models)
+    expect(closed.RateLimit.access).toBeUndefined()
+
+    const rateLimitAccess = { operation: { query: () => true } }
+    const { lists: open } = deriveAuthLists(models, {}, { rateLimit: rateLimitAccess })
+    expect(open.RateLimit.access).toBe(rateLimitAccess)
+  })
+})
+
 describe('deriveAuthLists - extendUserList', () => {
   it('adds custom fields to the derived user list', () => {
     const { lists } = deriveAuthLists(

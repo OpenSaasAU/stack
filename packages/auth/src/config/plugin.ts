@@ -54,12 +54,17 @@ export function authPlugin(config: AuthConfig): Plugin {
       // (e.g. `user.modelName: 'AuthUser'`). A provider plugin's schema
       // extension of a base model (e.g. `user`) must resolve against this
       // remap too, so it lands on the adopted Auth list rather than a
-      // re-derived key that can collide with an unrelated host list.
+      // re-derived key that can collide with an unrelated host list. The
+      // `rateLimit` key is only present when `rateLimit.storage: 'database'`
+      // derived the fifth Auth list.
       const baseModelKeys = {
         user: normalized.models.user.modelName,
         session: normalized.models.session.modelName,
         account: normalized.models.account.modelName,
         verification: normalized.models.verification.modelName,
+        ...(normalized.models.rateLimit
+          ? { rateLimit: normalized.models.rateLimit.modelName }
+          : {}),
       }
 
       // Add all auth lists FIRST, before any better-auth plugin schema

@@ -280,3 +280,76 @@ describe('adoptBetterAuthTables - clean-diff adoption (Auth lists ≠ app User)'
     expect(result.lists.AuthSession.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
   })
 })
+
+describe('adoptBetterAuthTables - rateLimit adoption (issue #909)', () => {
+  it('omits rateLimit from the fragment by default', () => {
+    const fragment = adoptBetterAuthTables()
+
+    expect(fragment.rateLimit).toBeUndefined()
+  })
+
+  it('adds a prefixed, database-storage rateLimit fragment when opted in', () => {
+    const fragment = adoptBetterAuthTables({ rateLimit: true })
+
+    expect(fragment.rateLimit).toEqual({
+      enabled: true,
+      storage: 'database',
+      modelName: 'AuthRateLimit',
+    })
+  })
+
+  it('honours a custom schema/prefix on the rateLimit fragment like the other four models', () => {
+    const fragment = adoptBetterAuthTables({
+      rateLimit: true,
+      schema: 'identity',
+      modelNamePrefix: 'BA',
+    })
+
+    expect(fragment.rateLimit).toEqual({
+      enabled: true,
+      storage: 'database',
+      modelName: 'BARateLimit',
+    })
+  })
+
+  it('useBetterAuthTableNames sets the rateLimit tableName to the better-auth default', () => {
+    const fragment = adoptBetterAuthTables({ rateLimit: true, useBetterAuthTableNames: true })
+
+    expect(fragment.rateLimit).toEqual({
+      enabled: true,
+      storage: 'database',
+      modelName: 'AuthRateLimit',
+      tableName: 'rateLimit',
+    })
+  })
+
+  it('merges a rateLimit field column map when provided', () => {
+    const fragment = adoptBetterAuthTables({
+      rateLimit: true,
+      fields: { rateLimit: { key: 'limit_key' } },
+    })
+
+    expect(fragment.rateLimit).toEqual({
+      enabled: true,
+      storage: 'database',
+      modelName: 'AuthRateLimit',
+      fields: { key: 'limit_key' },
+    })
+  })
+
+  it('composes with authPlugin to actually derive the fifth Auth list', async () => {
+    const result = await generationConfig({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          ...adoptBetterAuthTables({ rateLimit: true }),
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {},
+    })
+
+    expect(result.lists).toHaveProperty('AuthRateLimit')
+    expect(result.lists.AuthRateLimit.db?.schema).toBe('auth')
+  })
+})

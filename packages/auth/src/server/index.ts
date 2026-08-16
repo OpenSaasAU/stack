@@ -111,6 +111,21 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
     )
   }
 
+  const rateLimitOptions = betterAuthOptions.rateLimit
+  if (
+    rateLimitOptions &&
+    typeof rateLimitOptions === 'object' &&
+    !Array.isArray(rateLimitOptions) &&
+    'storage' in rateLimitOptions
+  ) {
+    throw new Error(
+      '[@opensaas/stack-auth] `betterAuthOptions.rateLimit.storage` is not supported — it has ' +
+        'schema consequences (deriving the `RateLimit` list) that a passthrough cannot also ' +
+        "apply to the generated Prisma schema. Use `authPlugin({ rateLimit: { storage: 'database' } })` " +
+        'instead.',
+    )
+  }
+
   for (const model of MODELS_WITH_NO_ADDITIONAL_FIELDS_PASSTHROUGH) {
     const modelOptions = betterAuthOptions[model]
     if (
@@ -330,12 +345,19 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
         {} as Record<string, { clientId: string; clientSecret: string }>,
       ),
 
-    // Rate limiting configuration
+    // Rate limiting configuration. `modelName`/`fields` are only forwarded
+    // when `models.rateLimit` was derived (rateLimit.storage === 'database')
+    // — mirroring the running instance's model options back to the table the
+    // `RateLimit` Auth list was derived from.
     rateLimit: authConfig.rateLimit
       ? {
           enabled: authConfig.rateLimit.enabled,
           window: authConfig.rateLimit.window,
           max: authConfig.rateLimit.max,
+          ...(authConfig.rateLimit.storage ? { storage: authConfig.rateLimit.storage } : {}),
+          ...(authConfig.models.rateLimit
+            ? toBetterAuthModelOptions(authConfig.models.rateLimit)
+            : {}),
         }
       : undefined,
 

@@ -27,7 +27,14 @@
  */
 
 import { list } from '@opensaas/stack-core'
-import { text, timestamp, checkbox, relationship } from '@opensaas/stack-core/fields'
+import {
+  text,
+  timestamp,
+  checkbox,
+  integer,
+  bigInt,
+  relationship,
+} from '@opensaas/stack-core/fields'
 import type { ListConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
@@ -45,6 +52,8 @@ export type DerivedAuthLists = {
     session: string
     account: string
     verification: string
+    /** Only present when a `RateLimit` list was derived (`rateLimit.storage === 'database'`). */
+    rateLimit?: string
   }
   /** The derived list configs, keyed by their derived list keys. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -55,12 +64,12 @@ export type DerivedAuthLists = {
  * Build the list-level `db` config (`timestamps` + `@@map` + `@@schema`) for a
  * derived list.
  *
- * Always opts the list into auto-timestamps (`timestamps: true`). better-auth's
- * adapter writes `createdAt`/`updatedAt` on every auth row and the schema
- * converter returns `null` for those columns (it assumes the generator injects
- * them). Now that auto-timestamps are OFF by default (ADR-0004), each derived
- * Auth list must opt back in so the generated models keep those columns and
- * better-auth keeps working.
+ * `timestamps` is a per-model input rather than hardcoded: better-auth's
+ * adapter writes `createdAt`/`updatedAt` on every user/session/account/
+ * verification row (and the schema converter returns `null` for those columns,
+ * assuming the generator injects them), so those four opt back into
+ * auto-timestamps now that they're OFF by default (ADR-0004). The `RateLimit`
+ * model has neither column in better-auth's own schema, so it passes `false`.
  *
  * The physical table name (`@@map`) comes from the model's resolved
  * `tableName` — independent of the list key/`modelName` — so a renamed list
@@ -68,17 +77,17 @@ export type DerivedAuthLists = {
  * default lowercase table names). When a `schema` is configured (plugin-level
  * or per-model), the list is placed in that Postgres schema via `@@schema(...)`.
  *
- * With no `tableName`/`schema` overrides we emit only `timestamps: true`,
- * leaving the default `User`/`Session`/... table/schema output unchanged.
+ * With no `tableName`/`schema` overrides and `timestamps: true` we emit only
+ * `{ timestamps: true }`, leaving the default `User`/`Session`/... output
+ * unchanged.
  */
-function listDb(model: NormalizedAuthModelConfig): {
-  timestamps: true
-  map?: string
-  schema?: string
-} {
+function listDb(
+  model: NormalizedAuthModelConfig,
+  timestamps: boolean,
+): { timestamps?: true; map?: string; schema?: string } {
   const schema = model.schema
   return {
-    timestamps: true,
+    ...(timestamps ? { timestamps: true as const } : {}),
     ...(model.tableName !== undefined ? { map: model.tableName } : {}),
     ...(schema !== undefined ? { schema } : {}),
   }
@@ -156,7 +165,7 @@ function createUserList(
       // Custom fields from user config
       ...(userConfig.fields || {}),
     },
-    db: listDb(model),
+    db: listDb(model, true),
     access: userConfig.access || access,
     hooks: userConfig.hooks,
   })
@@ -193,7 +202,7 @@ function createSessionList(
         db: userRelationshipDb(f),
       }),
     },
-    db: listDb(model),
+    db: listDb(model, true),
     access,
   })
 }
@@ -228,7 +237,7 @@ function createAccountList(
       idToken: text({ db: fieldDb('idToken', f) }),
       password: text({ db: fieldDb('password', f) }),
     },
-    db: listDb(model),
+    db: listDb(model, true),
     access,
   })
 }
@@ -253,7 +262,51 @@ function createVerificationList(
         db: { isNullable: false, ...fieldDb('expiresAt', f) },
       }),
     },
-    db: listDb(model),
+    db: listDb(model, true),
+    access,
+  })
+}
+
+/**
+ * Create the Auth rate-limit list, present only when `rateLimit.storage ===
+ * 'database'` derives a `rateLimit` model. Mirrors better-auth's own
+ * `rateLimit` table exactly (`getAuthTables` in `@better-auth/core`, verified
+ * against better-auth@1.6.25): `key` (unique — load-bearing, not cosmetic,
+ * since the limiter races concurrent requests into a create and relies on the
+ * resulting constraint violation to serialise them), `count`, and
+ * `lastRequest` (a millisecond epoch, hence `bigInt()` rather than
+ * `integer()`, which would overflow). None of the three columns carries a
+ * Prisma default — the limiter supplies `lastRequest` explicitly on every
+ * create/update, and an adopted live table has no default to match. No
+ * `createdAt`/`updatedAt` either (see `listDb`'s `timestamps` argument):
+ * better-auth's own rate-limit table has neither column.
+ *
+ * Per ADR-0013, the plugin ships no permissive access default — closed unless
+ * the application supplies `access.rateLimit`.
+ */
+function createRateLimitList(
+  model: NormalizedAuthModelConfig,
+  access: AuthAccessConfig['rateLimit'],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+): ListConfig<any> {
+  const f = model.fields
+  return list({
+    fields: {
+      key: text({
+        validation: { isRequired: true },
+        isIndexed: 'unique',
+        db: fieldDb('key', f),
+      }),
+      count: integer({
+        validation: { isRequired: true },
+        db: { isNullable: false, ...fieldDb('count', f) },
+      }),
+      lastRequest: bigInt({
+        validation: { isRequired: true },
+        db: { isNullable: false, ...fieldDb('lastRequest', f) },
+      }),
+    },
+    db: listDb(model, false),
     access,
   })
 }
@@ -267,21 +320,25 @@ function createVerificationList(
  * for the user list specifically, `userConfig.access` (`extendUserList.access`,
  * which takes precedence — see {@link AuthAccessConfig}).
  *
+ * A fifth `RateLimit` list is included only when `models.rateLimit` is
+ * present (i.e. `rateLimit.storage === 'database'`).
+ *
  * @param models - Resolved better-auth per-model config (modelName + field column maps)
  * @param userConfig - Extra User-list fields/access/hooks supplied via `extendUserList`
  * @param accessConfig - App-authored access for each Auth list, keyed by better-auth model name
- * @returns The derived list keys and the four Auth list configs keyed by those keys
+ * @returns The derived list keys and the Auth list configs keyed by those keys
  */
 export function deriveAuthLists(
   models: NormalizedAuthModels,
   userConfig: ExtendUserListConfig = {},
   accessConfig: AuthAccessConfig = {},
 ): DerivedAuthLists {
-  const keys = {
+  const keys: DerivedAuthLists['keys'] = {
     user: models.user.modelName,
     session: models.session.modelName,
     account: models.account.modelName,
     verification: models.verification.modelName,
+    ...(models.rateLimit ? { rateLimit: models.rateLimit.modelName } : {}),
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -290,6 +347,10 @@ export function deriveAuthLists(
     [keys.session]: createSessionList(models.session, keys, accessConfig.session),
     [keys.account]: createAccountList(models.account, keys, accessConfig.account),
     [keys.verification]: createVerificationList(models.verification, accessConfig.verification),
+  }
+
+  if (models.rateLimit && keys.rateLimit) {
+    lists[keys.rateLimit] = createRateLimitList(models.rateLimit, accessConfig.rateLimit)
   }
 
   return { keys, lists }

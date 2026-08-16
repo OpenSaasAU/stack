@@ -119,3 +119,42 @@ describe('authPlugin - schema placement (adopt existing auth-schema install)', (
     expect(result.db.schemas).toContain('auth_internal')
   })
 })
+
+describe('authPlugin - RateLimit list schema placement', () => {
+  it('places the RateLimit list in the configured schema and wires the datasource', async () => {
+    const result = await generationConfig({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          schema: 'auth',
+          rateLimit: { enabled: true, storage: 'database', modelName: 'AuthRateLimit' },
+        }),
+      ],
+      lists: {},
+    })
+
+    expect(result.lists.AuthRateLimit.db).toEqual({ map: 'AuthRateLimit', schema: 'auth' })
+    expect(result.db.schemas).toContain('auth')
+  })
+
+  it('honours a per-model schema override independent of the plugin-level schema', async () => {
+    const result = await generationConfig({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          schema: 'auth',
+          rateLimit: {
+            enabled: true,
+            storage: 'database',
+            modelName: 'AuthRateLimit',
+            schema: 'auth_internal',
+          },
+        }),
+      ],
+      lists: {},
+    })
+
+    expect(result.lists.AuthRateLimit.db?.schema).toBe('auth_internal')
+    expect(result.db.schemas).toContain('auth_internal')
+  })
+})

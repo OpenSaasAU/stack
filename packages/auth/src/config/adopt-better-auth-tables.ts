@@ -104,6 +104,7 @@ export type AdoptBetterAuthTablesOptions = {
     session?: Record<string, string>
     account?: Record<string, string>
     verification?: Record<string, string>
+    rateLimit?: Record<string, string>
   }
 
   /**
@@ -137,15 +138,32 @@ export type AdoptBetterAuthTablesOptions = {
     session?: string
     account?: string
     verification?: string
+    rateLimit?: string
   }
+
+  /**
+   * Also adopt an existing database-backed rate limiter table, deriving a
+   * fifth `<prefix>RateLimit` Auth list alongside the other four (per
+   * ADR-0007). Better-auth only creates this table when
+   * `rateLimit.storage: 'database'` — most installs use the in-memory
+   * limiter, so this defaults to `false` and must be opted into explicitly.
+   * The returned fragment sets `rateLimit: { enabled: true, storage:
+   * 'database', modelName: ... }`; override `enabled`/`window`/`max` by
+   * setting `rateLimit` again on your own `authPlugin` config after spreading
+   * this fragment.
+   *
+   * @default false
+   */
+  rateLimit?: boolean
 }
 
-/** The four better-auth models and their default (unprefixed) model names. */
+/** The better-auth models and their default (unprefixed) model names. */
 const MODEL_DEFAULT_NAMES = {
   user: 'User',
   session: 'Session',
   account: 'Account',
   verification: 'Verification',
+  rateLimit: 'RateLimit',
 } as const
 
 /** better-auth's own default lowercase table names, per model. */
@@ -154,17 +172,22 @@ const BETTER_AUTH_DEFAULT_TABLE_NAMES = {
   session: 'session',
   account: 'account',
   verification: 'verification',
+  rateLimit: 'rateLimit',
 } as const
 
 /**
  * The adoption-relevant slice of {@link AuthConfig}: the plugin-level `schema`
- * and the per-model `modelName`/`fields`. Returned (not the full `AuthConfig`)
- * so it spreads cleanly into the developer's own `authPlugin` config.
+ * and the per-model `modelName`/`fields` (`user`/`session`/`account`/
+ * `verification` always; `rateLimit` only when the `rateLimit` option is set).
+ * Returned (not the full `AuthConfig`) so it spreads cleanly into the
+ * developer's own `authPlugin` config.
  */
 export type AdoptBetterAuthTablesConfig = Pick<
   AuthConfig,
   'schema' | 'user' | 'session' | 'account' | 'verification'
->
+> & {
+  rateLimit?: AuthConfig['rateLimit']
+}
 
 /**
  * Build the adoption {@link AuthConfig} fragment for a pre-existing better-auth
@@ -186,6 +209,7 @@ export function adoptBetterAuthTables(
     fields = {},
     useBetterAuthTableNames = false,
     tableNames = {},
+    rateLimit = false,
   } = options
 
   const buildModel = (model: keyof typeof MODEL_DEFAULT_NAMES): AuthModelConfig => {
@@ -211,5 +235,8 @@ export function adoptBetterAuthTables(
     session: buildModel('session'),
     account: buildModel('account'),
     verification: buildModel('verification'),
+    ...(rateLimit
+      ? { rateLimit: { enabled: true, storage: 'database' as const, ...buildModel('rateLimit') } }
+      : {}),
   }
 }

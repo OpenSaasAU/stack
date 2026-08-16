@@ -13,13 +13,15 @@ import type {
 /**
  * Default better-auth model names. Used when the developer does not override
  * `modelName`, preserving the historical `User`/`Session`/`Account`/`Verification`
- * keys exactly.
+ * keys exactly. `rateLimit` only applies when `rateLimit.storage: 'database'`
+ * derives the fifth Auth list.
  */
 const DEFAULT_MODEL_NAMES = {
   user: 'User',
   session: 'Session',
   account: 'Account',
   verification: 'Verification',
+  rateLimit: 'RateLimit',
 } as const
 
 /**
@@ -51,13 +53,14 @@ function normalizeModelConfig(
 }
 
 /**
- * Resolve the better-auth model config for all four auth models.
- * `defaultSchema` is the plugin-level `schema` applied to every model unless a
- * per-model `schema` override is given.
+ * Resolve the better-auth model config for all four auth models, plus a fifth
+ * `rateLimit` model when `rateLimit.storage: 'database'` requires deriving
+ * the `RateLimit` list. `defaultSchema` is the plugin-level `schema` applied
+ * to every model unless a per-model `schema` override is given.
  */
 function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
   const defaultSchema = config.schema
-  return {
+  const models: NormalizedAuthModels = {
     user: normalizeModelConfig(config.user, DEFAULT_MODEL_NAMES.user, defaultSchema),
     session: normalizeModelConfig(config.session, DEFAULT_MODEL_NAMES.session, defaultSchema),
     account: normalizeModelConfig(config.account, DEFAULT_MODEL_NAMES.account, defaultSchema),
@@ -67,6 +70,16 @@ function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
       defaultSchema,
     ),
   }
+
+  if (config.rateLimit?.storage === 'database') {
+    models.rateLimit = normalizeModelConfig(
+      config.rateLimit,
+      DEFAULT_MODEL_NAMES.rateLimit,
+      defaultSchema,
+    )
+  }
+
+  return models
 }
 
 /**

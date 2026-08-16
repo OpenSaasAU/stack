@@ -144,3 +144,84 @@ describe('generated auth schema — tableName independent of modelName (issue #8
     }
   })
 })
+
+describe('generated RateLimit schema mirrors better-auth exactly (issue #909)', () => {
+  it('does not add a RateLimit model when storage is unset', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    expect(schema).not.toContain('model RateLimit')
+  })
+
+  it('emits key (unique, non-null), count (non-null Int), lastRequest (non-null BigInt), no createdAt/updatedAt, no @default', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          rateLimit: { enabled: true, storage: 'database' },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'RateLimit')
+
+    expect(block).toMatch(/key\s+String\s+@unique/)
+    expect(block).toMatch(/count\s+Int\s/)
+    expect(block).not.toMatch(/count\s+Int\?/)
+    expect(block).toMatch(/lastRequest\s+BigInt\s/)
+    expect(block).not.toMatch(/lastRequest\s+BigInt\?/)
+
+    expect(block).not.toContain('createdAt')
+    expect(block).not.toContain('updatedAt')
+    // The system `id` field carries its own @default(cuid()) — only the
+    // three better-auth-mirrored columns must carry none.
+    expect(block).not.toMatch(/key\s+String\s+@unique\s+@default/)
+    expect(block).not.toMatch(/count\s+Int\s+@default/)
+    expect(block).not.toMatch(/lastRequest\s+BigInt\s+@default/)
+  })
+
+  it('honours a custom modelName/tableName/fields/schema on the rateLimit model', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          rateLimit: {
+            enabled: true,
+            storage: 'database',
+            modelName: 'AuthRateLimit',
+            tableName: 'rate_limit',
+            fields: { key: 'limit_key', count: 'hit_count', lastRequest: 'last_hit_at' },
+          },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'AuthRateLimit')
+    expect(block).toContain('@@map("rate_limit")')
+    expect(block).toContain('@map("limit_key")')
+    expect(block).toContain('@map("hit_count")')
+    expect(block).toContain('@map("last_hit_at")')
+  })
+
+  it('produces a RateLimit model even when enabled is false, since better-auth still expects the table', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          rateLimit: { enabled: false, storage: 'database' },
+        }),
+      ],
+      lists: {},
+    })
+
+    expect(schema).toContain('model RateLimit')
+  })
+})

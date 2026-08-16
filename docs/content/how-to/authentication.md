@@ -1063,6 +1063,15 @@ The recipe is just a convenience over the plugin's own `schema` / per-model
 `modelName` / `fields` options — anything it sets you can also set directly on
 `authPlugin`, or override after spreading it in.
 
+If your live install also runs better-auth's database-backed rate limiter,
+opt the recipe into adopting that table too with `rateLimit: true` — it's
+`false` by default since most installs use the in-memory limiter:
+
+```typescript
+adoptBetterAuthTables({ rateLimit: true })
+// → adds rateLimit: { enabled: true, storage: 'database', modelName: 'AuthRateLimit' }
+```
+
 ### Adopting better-auth's default table names
 
 The most common migration shape isn't the renamed-table one above — it's a
@@ -1290,6 +1299,31 @@ Stores email verification and password reset tokens:
   updatedAt: DateTime // Auto-updated
 }
 ```
+
+**Access Control:** closed by default — grant it via `authPlugin({ access: { verification: { ... } } })`.
+
+### RateLimit List
+
+Only present when `rateLimit.storage: 'database'` is set — mirrors better-auth's
+own rate-limit table exactly, so no `createdAt`/`updatedAt` and no defaults on
+any column (the limiter supplies `lastRequest` explicitly on every write):
+
+```typescript
+{
+  id: string // Auto-generated UUID
+  key: string // Unique — the rate-limit bucket key (e.g. "ip|/sign-in/email")
+  count: number // Requests seen in the current window
+  lastRequest: bigint // Millisecond epoch of the last request
+}
+```
+
+```typescript
+authPlugin({
+  rateLimit: { enabled: true, storage: 'database' },
+})
+```
+
+**Access Control:** closed by default — grant it via `authPlugin({ access: { rateLimit: { ... } } })` (e.g. to inspect throttled keys in the Admin UI).
 
 **Access Control:** closed by default — better-auth manages these tokens
 directly through the raw client, so most apps never need to grant
