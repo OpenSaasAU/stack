@@ -442,7 +442,6 @@ async function handleToolsCall(
     return await handleCrudTool(dbKey, operation, toolArgs, session, config, getContext, id)
   }
 
-  // Handle custom tools
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 

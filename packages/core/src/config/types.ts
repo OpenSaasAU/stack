@@ -2547,9 +2547,6 @@ export type DatabaseConfig = {
   }
 }
 
-/**
- * Session configuration
- */
 export type SessionConfig = {
   // Uses `any` return type because session structure is user-defined and varies per application
   // The stack doesn't enforce a specific session shape - users can use NextAuth, Clerk, etc.
@@ -2557,9 +2554,6 @@ export type SessionConfig = {
   getSession: () => Promise<any>
 }
 
-/**
- * Theme preset options
- */
 export type ThemePreset = 'modern' | 'classic' | 'neon'
 
 /**
@@ -2655,14 +2649,8 @@ export type ThemeConfig = {
   shadows?: ThemeShadows
 }
 
-/**
- * UI configuration
- */
 export type UIConfig = {
   basePath?: string
-  /**
-   * Theme configuration for the admin UI
-   */
   theme?: ThemeConfig
 }
 
@@ -2705,18 +2693,12 @@ export type McpCustomTool = {
    * Unique name for the tool
    */
   name: string
-  /**
-   * Description of what the tool does
-   */
   description: string
   /**
    * Input schema (Zod schema)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputSchema: any
-  /**
-   * Handler function that executes the tool
-   */
   handler: (args: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     input: any
@@ -2724,9 +2706,6 @@ export type McpCustomTool = {
   }) => Promise<unknown>
 }
 
-/**
- * List-level MCP configuration
- */
 export type ListMcpConfig = {
   /**
    * Enable MCP tools for this list
@@ -2797,9 +2776,6 @@ export type McpAuthConfig =
        * Authentication type - custom auth provider
        */
       type: string
-      /**
-       * Additional auth-specific configuration
-       */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Allows custom auth provider configuration
       [key: string]: any
     }
