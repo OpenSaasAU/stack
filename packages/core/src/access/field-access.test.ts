@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, expectTypeOf } from 'vitest'
 import { checkFieldAccess, filterWritableFields } from './field-access.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
+import type { FieldAccess, FieldAccessControl } from './types.js'
 
 // A non-sudo access context. The cast is localized to test setup (mirrors the
 // existing sudo-context casts in this file): the runtime AccessContext carries
@@ -21,6 +22,50 @@ function sudoContext() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any
 }
+
+// ── #914: `FieldAccess['read']`'s `item` must type as present, matching what
+// Field Visibility (field-visibility.ts) actually passes ──
+
+describe("FieldAccess['read'] item typing (issue #914)", () => {
+  type Item = { ownerId: string }
+
+  it('types item as present for a read rule that reads a property off it — no cast, no `any`', () => {
+    const fieldAccess: FieldAccess<Item> = {
+      read: ({ session, item }) => item.ownerId === session?.userId,
+    }
+    expect(typeof fieldAccess.read).toBe('function')
+  })
+
+  it('still compiles a read rule that ignores item entirely', () => {
+    const fieldAccess: FieldAccess<Item> = {
+      read: () => true,
+    }
+    expect(typeof fieldAccess.read).toBe('function')
+  })
+
+  it('leaves the create branch unchanged — item is still absent, there genuinely is no row yet', () => {
+    // Pinned against `FieldAccessControl`'s discriminated union directly
+    // (rather than `FieldAccess['create']`'s destructured callback), because
+    // `create`/`update` — unlike `read` — are untouched by this fix and keep
+    // accepting the full `FieldAccessControl` union in `FieldAccess`.
+    type CreateArgs = Extract<Parameters<FieldAccessControl<Item>>[0], { operation: 'create' }>
+    expectTypeOf<CreateArgs['item']>().toEqualTypeOf<undefined>()
+  })
+
+  // Type-level pin: `resolveReadableFieldValue` (field-visibility.ts) is the
+  // sole caller of `checkFieldAccess` for `operation: 'read'`, and always
+  // supplies `item: accessItem` — a full row, never `undefined`. This
+  // assertion has no runtime effect (`expectTypeOf` is a no-op outside
+  // `vitest --typecheck`); its value is that `pnpm build`/`tsc` fails on this
+  // file the moment `FieldAccess['read']`'s `item` type drifts back to
+  // optional/absent, so the declared type and the call site cannot silently
+  // diverge again.
+  it("pins FieldAccess['read']'s item type against the field-visibility.ts call site", () => {
+    type ReadArgs = Parameters<NonNullable<FieldAccess<Item>['read']>>[0]
+    expectTypeOf<ReadArgs['item']>().toEqualTypeOf<Item>()
+    expectTypeOf<ReadArgs['operation']>().toEqualTypeOf<'read'>()
+  })
+})
 
 // ── #913: a field rule returning a filter must not be granted blanket access ──
 

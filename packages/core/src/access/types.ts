@@ -324,6 +324,43 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
 
 /**
+ * The per-operation argument shapes a `FieldAccessControl` function is called
+ * with — the discriminated union `FieldAccessControl` wraps, and the source
+ * of truth `FieldAccess`'s individual `read`/`create`/`update` members are
+ * picked from (via `Extract`) below. Keeping this as its own named type is
+ * what lets both sides reference the exact same three call shapes instead of
+ * two independently-maintained descriptions drifting apart.
+ */
+type FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput> =
+  | {
+      session: Session | null
+      // Field Visibility (phase 2 of the two-phase read) always evaluates
+      // `read` rules against an already-fetched row — see
+      // `resolveReadableFieldValue` in `field-visibility.ts`, the sole
+      // caller of `checkFieldAccess` for this operation. Unlike `create`
+      // (where no row exists yet), there is no case where `item` is absent
+      // here, so it is required rather than optional.
+      item: TItem
+      context: AccessContext
+      inputData?: undefined
+      operation: 'read'
+    }
+  | {
+      session: Session | null
+      item?: undefined
+      context: AccessContext
+      inputData: TCreateInput
+      operation: 'create'
+    }
+  | {
+      session: Session | null
+      item: TItem
+      context: AccessContext
+      inputData: TUpdateInput
+      operation: 'update'
+    }
+
+/**
  * Field-level access control function.
  * For create/update operations, receives inputData to validate incoming values.
  *
@@ -337,45 +374,40 @@ export type AccessControl<T = Record<string, unknown>> = (args: {
  * evaluator (`checkFieldAccess`) enforces this: a rule that somehow returns
  * anything other than `true`/`false` (bypassing this type) throws rather than
  * defaulting to allow.
+ *
+ * This is the general, all-operations union — useful for a single function
+ * reused across more than one of `FieldAccess`'s `read`/`create`/`update`
+ * slots, narrowing on `operation` to tell the call shapes apart. A function
+ * written for exactly one slot doesn't need to: `FieldAccess` picks each
+ * slot's own single-operation shape out of this union (see below), so e.g. a
+ * `read`-only rule sees `item` as always present with no narrowing required.
  */
 export type FieldAccessControl<
   TItem = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-> = (
-  args:
-    | {
-        session: Session | null
-        item?: undefined
-        context: AccessContext
-        inputData?: undefined
-        operation: 'read'
-      }
-    | {
-        session: Session | null
-        item?: undefined
-        context: AccessContext
-        inputData: TCreateInput
-        operation: 'create'
-      }
-    | {
-        session: Session | null
-        item: TItem
-        context: AccessContext
-        inputData: TUpdateInput
-        operation: 'update'
-      },
-) => boolean | Promise<boolean>
+> = (args: FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput>) => boolean | Promise<boolean>
 
 /**
  * Field-level access control
+ *
+ * `read` is typed from the single `operation: 'read'` member of
+ * `FieldAccessControlArgs`, not the full `FieldAccessControl` union — so a
+ * rule written directly for this slot sees `item` as always present (never
+ * `TItem | undefined`) with no narrowing, cast, or `any` needed. A function
+ * typed as the broader `FieldAccessControl` union remains assignable here
+ * (and to `create`/`update`) — accepting more call shapes than the slot
+ * requires is a valid substitute, same as anywhere else function parameters
+ * are contravariant.
  */
 export type FieldAccess<
   TItem = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
 > = {
-  read?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
+  read?: (
+    args: Extract<FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput>, { operation: 'read' }>,
+  ) => boolean | Promise<boolean>
   create?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
   update?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
 }
