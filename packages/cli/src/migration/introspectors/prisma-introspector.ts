@@ -200,7 +200,7 @@ export class PrismaIntrospector {
       Boolean: { type: 'checkbox', import: 'checkbox' },
       DateTime: { type: 'timestamp', import: 'timestamp' },
       Json: { type: 'json', import: 'json' },
-      BigInt: { type: 'text', import: 'text' }, // No native support
+      BigInt: { type: 'bigInt', import: 'bigInt' },
       Decimal: { type: 'text', import: 'text' }, // No native support
       Bytes: { type: 'text', import: 'text' }, // No native support
     }
@@ -217,7 +217,7 @@ export class PrismaIntrospector {
     // Check for unsupported types
     for (const model of schema.models) {
       for (const field of model.fields) {
-        if (['BigInt', 'Decimal', 'Bytes'].includes(field.type)) {
+        if (['Decimal', 'Bytes'].includes(field.type)) {
           warnings.push(
             `Field "${model.name}.${field.name}" uses unsupported type "${field.type}" - will be mapped to text()`,
           )

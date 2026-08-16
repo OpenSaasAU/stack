@@ -33,7 +33,7 @@ export function formatFieldName(name: string): string {
  * Field types whose values are numeric. Numeric columns render right-aligned
  * with tabular numerals so digits line up down the column (issue #710).
  */
-const NUMERIC_FIELD_TYPES = new Set(['integer', 'float', 'decimal', 'bigint'])
+const NUMERIC_FIELD_TYPES = new Set(['integer', 'float', 'decimal', 'bigint', 'bigInt'])
 
 /**
  * Whether a column of the given field type should be treated as numeric for

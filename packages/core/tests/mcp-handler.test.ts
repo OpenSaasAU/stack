@@ -326,6 +326,40 @@ describe('MCP Handler', () => {
       })
     })
 
+    // Regression test (issue #907 / ADR-0029): a bare `JSON.stringify` throws
+    // `TypeError: Do not know how to serialize a BigInt` on a bigInt() field's
+    // value. This must respond successfully, rendering the value as a decimal
+    // string — the field's MCP wire representation.
+    it('should serialize a bigint field value as a decimal string instead of throwing', async () => {
+      const mockResults = [{ id: '1', title: 'Post 1', occurredAtMs: 9007199254740993n }]
+      mockPrisma.post.findMany.mockResolvedValue(mockResults)
+
+      const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'list_post_query',
+            arguments: { where: {}, take: 10 },
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      expect(data.result.content[0].text).toContain('"occurredAtMs": "9007199254740993"')
+
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items[0].occurredAtMs).toBe('9007199254740993')
+    })
+
     it('should execute create operation', async () => {
       const mockResult = { id: '1', title: 'New Post', content: 'New Content' }
       mockPrisma.post.create.mockResolvedValue(mockResult)

@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
   text,
   integer,
+  bigInt,
   checkbox,
   timestamp,
   password,
@@ -323,6 +324,227 @@ describe('Field Types', () => {
 
         expect(tsType.type).toBe('number')
         expect(tsType.optional).toBe(false)
+      })
+    })
+  })
+
+  describe('bigInt field', () => {
+    describe('getZodSchema', () => {
+      test('returns optional bigint schema for non-required field', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(25n).success).toBe(true)
+        expect(schema.safeParse(undefined).success).toBe(true)
+      })
+
+      test('returns required schema for required field in create mode', () => {
+        const field = bigInt({ validation: { isRequired: true } })
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(25n).success).toBe(true)
+        expect(schema.safeParse(undefined).success).toBe(false)
+      })
+
+      test('returns optional schema for required field in update mode', () => {
+        const field = bigInt({ validation: { isRequired: true } })
+        const schema = field.getZodSchema('epoch', 'update')
+
+        expect(schema.safeParse(25n).success).toBe(true)
+        expect(schema.safeParse(undefined).success).toBe(true)
+      })
+
+      test('coerces a bigint input to a bigint output unchanged', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        const result = schema.safeParse(9007199254740993n)
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data).toBe(9007199254740993n)
+          expect(typeof result.data).toBe('bigint')
+        }
+      })
+
+      test('coerces a safe-integer number input to a bigint output', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        const result = schema.safeParse(1700000000000)
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data).toBe(1700000000000n)
+          expect(typeof result.data).toBe('bigint')
+        }
+      })
+
+      test('coerces a numeric string input to a bigint output, round-tripping beyond Number.MAX_SAFE_INTEGER', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        const result = schema.safeParse('9223372036854775807')
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data).toBe(9223372036854775807n)
+        }
+      })
+
+      test('accepts a negative numeric string', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('delta', 'create')
+
+        const result = schema.safeParse('-42')
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data).toBe(-42n)
+        }
+      })
+
+      test('rejects a non-integer number', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(1.5).success).toBe(false)
+      })
+
+      test('rejects a number above Number.MAX_SAFE_INTEGER instead of silently losing precision', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(Number.MAX_SAFE_INTEGER + 10).success).toBe(false)
+      })
+
+      test('rejects a non-numeric string', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse('not-a-number').success).toBe(false)
+      })
+
+      test('rejects a decimal string', () => {
+        const field = bigInt()
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse('1.5').success).toBe(false)
+      })
+
+      test('validates min value', () => {
+        const field = bigInt({ validation: { min: 0n } })
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(-1n).success).toBe(false)
+        expect(schema.safeParse(0n).success).toBe(true)
+        expect(schema.safeParse(1n).success).toBe(true)
+      })
+
+      test('validates max value', () => {
+        const field = bigInt({ validation: { max: 100n } })
+        const schema = field.getZodSchema('epoch', 'create')
+
+        expect(schema.safeParse(99n).success).toBe(true)
+        expect(schema.safeParse(100n).success).toBe(true)
+        expect(schema.safeParse(101n).success).toBe(false)
+      })
+
+      test('validates min and max together', () => {
+        const field = bigInt({ validation: { min: 18n, max: 65n } })
+        const schema = field.getZodSchema('age', 'create')
+
+        expect(schema.safeParse(17n).success).toBe(false)
+        expect(schema.safeParse(18n).success).toBe(true)
+        expect(schema.safeParse(65n).success).toBe(true)
+        expect(schema.safeParse(66n).success).toBe(false)
+      })
+    })
+
+    describe('getPrismaType', () => {
+      test('returns BigInt type for basic field', () => {
+        const field = bigInt()
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.type).toBe('BigInt')
+        expect(prismaType.modifiers).toBe('?')
+      })
+
+      test('returns required BigInt for required field', () => {
+        const field = bigInt({ validation: { isRequired: true } })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.type).toBe('BigInt')
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
+        const field = bigInt({ db: { isNullable: false } })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.modifiers).toBeUndefined()
+      })
+
+      test('db.map generates @map attribute', () => {
+        const field = bigInt({ db: { map: 'occurred_at_ms' } })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.modifiers).toContain('@map("occurred_at_ms")')
+      })
+
+      test('defaultValue generates a bare @default literal', () => {
+        const field = bigInt({ defaultValue: 0n })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.modifiers).toContain('@default(0)')
+      })
+
+      test('isIndexed: true requests a block-level index', () => {
+        const field = bigInt({ isIndexed: true })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.index).toBe(true)
+      })
+
+      test("isIndexed: 'unique' generates @unique modifier", () => {
+        const field = bigInt({ isIndexed: 'unique' })
+        const prismaType = field.getPrismaType('epoch')
+
+        expect(prismaType.modifiers).toContain('@unique')
+      })
+    })
+
+    describe('getTypeScriptType', () => {
+      test('returns optional bigint type for non-required field', () => {
+        const field = bigInt()
+        const tsType = field.getTypeScriptType()
+
+        expect(tsType.type).toBe('bigint')
+        expect(tsType.optional).toBe(true)
+      })
+
+      test('returns required bigint type for required field', () => {
+        const field = bigInt({ validation: { isRequired: true } })
+        const tsType = field.getTypeScriptType()
+
+        expect(tsType.type).toBe('bigint')
+        expect(tsType.optional).toBe(false)
+      })
+    })
+
+    describe('getFilterSpec', () => {
+      test('parses a valid integer token into a BigInt condition', () => {
+        const field = bigInt()
+        const spec = field.getFilterSpec?.('epoch', 'Event', {} as never)
+
+        expect(spec?.toCondition('eq', '9007199254740993')).toEqual({
+          epoch: { equals: 9007199254740993n },
+        })
+        expect(spec?.toCondition('gt', '5')).toEqual({ epoch: { gt: 5n } })
+      })
+
+      test('degrades to free text (null) for a non-integer token', () => {
+        const field = bigInt()
+        const spec = field.getFilterSpec?.('epoch', 'Event', {} as never)
+
+        expect(spec?.toCondition('eq', '1.5')).toBeNull()
+        expect(spec?.toCondition('eq', 'not-a-number')).toBeNull()
       })
     })
   })

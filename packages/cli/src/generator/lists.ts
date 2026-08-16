@@ -15,6 +15,7 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
     text: 'TextField',
     integer: 'IntegerField',
     decimal: 'DecimalField',
+    bigInt: 'BigIntField',
     checkbox: 'CheckboxField',
     timestamp: 'TimestampField',
     calendarDay: 'CalendarDayField',

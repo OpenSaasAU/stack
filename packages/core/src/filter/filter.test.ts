@@ -4,7 +4,15 @@ import { buildFilterWhere } from './map.js'
 import { buildListFilterWhere, collectFilterSpecs, collectFilterSuggestions } from './collect.js'
 import type { FilterSpec } from './types.js'
 import { list } from '../config/index.js'
-import { text, integer, select, checkbox, timestamp, relationship } from '../fields/index.js'
+import {
+  text,
+  integer,
+  bigInt,
+  select,
+  checkbox,
+  timestamp,
+  relationship,
+} from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 // ─────────────────────────────────────────────────────────────
@@ -231,6 +239,7 @@ function makeConfig(): OpenSaasConfig {
         fields: {
           title: text(),
           views: integer(),
+          occurredAtMs: bigInt(),
           status: select({
             options: [
               { label: 'Draft', value: 'draft' },
@@ -253,7 +262,7 @@ describe('core field Filter specs', () => {
   it('collectFilterSpecs resolves a spec for every filterable core field', () => {
     const collected = collectFilterSpecs(postConfig, 'Post', config)
     expect(Object.keys(collected).sort()).toEqual(
-      ['author', 'featured', 'publishedAt', 'status', 'title', 'views'].sort(),
+      ['author', 'featured', 'occurredAtMs', 'publishedAt', 'status', 'title', 'views'].sort(),
     )
   })
 
@@ -268,6 +277,16 @@ describe('core field Filter specs', () => {
     expect(spec.toCondition('gt', '5')).toEqual({ views: { gt: 5 } })
     expect(spec.toCondition('eq', '5')).toEqual({ views: { equals: 5 } })
     expect(spec.toCondition('eq', 'abc')).toBeNull()
+  })
+
+  it('bigInt supports comparisons, emits a bigint condition, and rejects non-integers', () => {
+    const spec = postConfig.fields.occurredAtMs.getFilterSpec!('occurredAtMs', 'Post', config)!
+    expect(spec.toCondition('gt', '9007199254740993')).toEqual({
+      occurredAtMs: { gt: 9007199254740993n },
+    })
+    expect(spec.toCondition('eq', '5')).toEqual({ occurredAtMs: { equals: 5n } })
+    expect(spec.toCondition('eq', 'abc')).toBeNull()
+    expect(spec.toCondition('eq', '1.5')).toBeNull()
   })
 
   it('select matches by value or label and resolves to the stored value', () => {

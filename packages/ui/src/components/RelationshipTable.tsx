@@ -8,6 +8,7 @@ import {
 } from '@opensaas/stack-core'
 import { formatFieldName, formatListName } from '../lib/utils.js'
 import { serializeFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import {
   isOperationPotentiallyAllowed,
   isFieldPotentiallyWritable,
@@ -314,7 +315,7 @@ export async function RelationshipTable({
   }
 
   // JSON round-trip so only serialisable data crosses to the client component.
-  const serializedRows = JSON.parse(JSON.stringify(preparedRows)) as Array<Record<string, unknown>>
+  const serializedRows = jsonSafeClone(preparedRows)
 
   return (
     <RelationshipTableClient

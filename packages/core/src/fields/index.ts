@@ -3,6 +3,7 @@ import type {
   TextField,
   IntegerField,
   DecimalField,
+  BigIntField,
   CheckboxField,
   TimestampField,
   CalendarDayField,
@@ -39,6 +40,7 @@ export type {
   TextField,
   IntegerField,
   DecimalField,
+  BigIntField,
   CheckboxField,
   TimestampField,
   CalendarDayField,
@@ -444,6 +446,139 @@ export function decimal<
         const trimmed = value.trim()
         if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }),
+  }
+}
+
+/**
+ * 64-bit integer field for values that overflow `integer()`'s 32-bit `Int`
+ * (e.g. a millisecond epoch). Prisma `BigInt`, TypeScript `bigint`.
+ *
+ * Accepts `bigint`, an integer `number`, or a numeric `string` on write and
+ * always coerces to `bigint`. A `number` above `Number.MAX_SAFE_INTEGER` is
+ * rejected rather than coerced — it has already lost precision before this
+ * field sees it, so accepting it would reintroduce the exact defect this
+ * field exists to prevent. Pass a `bigint` or a string for values beyond that
+ * range.
+ *
+ * Wire representation (ADR-0029): `bigint` in application code, a decimal
+ * string over MCP.
+ */
+export function bigInt<
+  TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
+>(options?: Omit<BigIntField<TTypeInfo>, 'type'>): BigIntField<TTypeInfo> {
+  return {
+    type: 'bigInt',
+    ...options,
+    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
+      const validation = options?.validation
+      const isRequired = validation?.isRequired
+
+      const coerced = z
+        .union([z.bigint(), z.number(), z.string()], {
+          message: `${formatFieldName(fieldName)} must be a bigint, an integer number, or a numeric string`,
+        })
+        .transform((val, ctx) => {
+          if (typeof val === 'bigint') return val
+
+          if (typeof val === 'number') {
+            if (!Number.isInteger(val)) {
+              ctx.addIssue(`${formatFieldName(fieldName)} must be an integer`)
+              return z.NEVER
+            }
+            if (!Number.isSafeInteger(val)) {
+              ctx.addIssue(
+                `${formatFieldName(fieldName)} exceeds Number.MAX_SAFE_INTEGER — pass a bigint or a numeric string instead`,
+              )
+              return z.NEVER
+            }
+            return BigInt(val)
+          }
+
+          const trimmed = val.trim()
+          if (!/^-?\d+$/.test(trimmed)) {
+            ctx.addIssue(`${formatFieldName(fieldName)} must be an integer`)
+            return z.NEVER
+          }
+          return BigInt(trimmed)
+        })
+
+      let schema = coerced
+
+      if (validation?.min !== undefined) {
+        const min = validation.min
+        schema = schema.refine((val) => val >= min, {
+          message: `${formatFieldName(fieldName)} must be at least ${min}`,
+        })
+      }
+
+      if (validation?.max !== undefined) {
+        const max = validation.max
+        schema = schema.refine((val) => val <= max, {
+          message: `${formatFieldName(fieldName)} must be at most ${max}`,
+        })
+      }
+
+      return !isRequired || operation === 'update' ? schema.optional().nullable() : schema
+    },
+    getPrismaType: (_fieldName: string) => {
+      const validation = options?.validation
+      const db = options?.db
+      const isRequired = validation?.isRequired
+      const isNullable = db?.isNullable ?? !isRequired
+      let modifiers = ''
+
+      // Optional modifier
+      if (isNullable) {
+        modifiers += '?'
+      }
+
+      // Native type modifier (e.g., @db.UnsignedBigInt on MySQL)
+      if (db?.nativeType) {
+        modifiers += ` @db.${db.nativeType}`
+      }
+
+      // Default value if provided (bare integer literal). Independent of the
+      // nullable `?` modifier above — the default never overwrites nullability.
+      if (options?.defaultValue !== undefined) {
+        modifiers += ` @default(${options.defaultValue})`
+      }
+
+      // Map modifier
+      if (db?.map) {
+        modifiers += ` @map("${db.map}")`
+      }
+
+      // Unique modifier. A non-unique index has no field-level form in Prisma,
+      // so it is requested out-of-line via `index` below and emitted by the
+      // generator as `@@index([...])` on the model.
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      }
+
+      return {
+        type: 'BigInt',
+        modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
+      }
+    },
+    getTypeScriptType: () => {
+      const isRequired = options?.validation?.isRequired
+
+      return {
+        type: 'bigint',
+        optional: !isRequired,
+      }
+    },
+    // BigInts compare like integers; a non-integer token degrades to free text.
+    getFilterSpec: (fieldName: string): FilterSpec => ({
+      operators: COMPARISON_OPERATORS,
+      toCondition: (operator, value) => {
+        const trimmed = value.trim()
+        if (!/^-?\d+$/.test(trimmed)) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
       },
       suggestions: { valueSource: { kind: 'none' } },
     }),

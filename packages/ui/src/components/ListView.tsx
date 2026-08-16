@@ -4,6 +4,7 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
+import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -323,7 +324,7 @@ export async function ListView({
   })
 
   // Serialize items for client component (convert Dates, etc to JSON-safe format)
-  const serializedItems = JSON.parse(JSON.stringify(itemsWithResolvedLabels))
+  const serializedItems = jsonSafeClone(itemsWithResolvedLabels)
 
   // Collect each filterable field's serializable Filter spec metadata (fields,
   // operators, enumerated values / relationship label search) to drive the

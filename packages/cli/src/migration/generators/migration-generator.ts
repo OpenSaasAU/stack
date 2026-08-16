@@ -533,7 +533,7 @@ control.
     }
 
     // Generate unsupported type warning
-    if (['BigInt', 'Decimal', 'Bytes'].includes(field.type)) {
+    if (['Decimal', 'Bytes'].includes(field.type)) {
       warnings.push(
         `Field "${field.name}" uses unsupported type "${field.type}" - mapped to text()`,
       )

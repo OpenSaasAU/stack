@@ -44,6 +44,26 @@ function makeConfig(): OpenSaasConfig {
 }
 
 describe('prepareItemForm', () => {
+  it('carries a bigInt field value through the JSON round-trip as a bigint, not a throw', async () => {
+    const context = makeContext({})
+    const config = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Event: {
+          fields: { occurredAtMs: { type: 'bigInt' } },
+          access: { operation: { query: () => true } },
+        },
+      },
+    } as unknown as OpenSaasConfig
+
+    const { initialData } = await prepareItemForm(context, config, config.lists.Event, {
+      id: '1',
+      occurredAtMs: 9007199254740993n,
+    })
+
+    expect(initialData.occurredAtMs).toBe(9007199254740993n)
+  })
+
   it('fetches relationship options via a bounded, take-limited query — never an unbounded findMany({})', async () => {
     const authorFindMany = vi.fn(async () => [
       { id: 'a1', name: 'Ada Lovelace' },

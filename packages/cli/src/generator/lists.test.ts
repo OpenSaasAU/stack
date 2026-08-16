@@ -4,6 +4,7 @@ import type { OpenSaasConfig } from '@opensaas/stack-core'
 import {
   text,
   integer,
+  bigInt,
   relationship,
   checkbox,
   decimal,
@@ -349,6 +350,7 @@ describe('Lists Namespace Generator', () => {
             fields: {
               name: text(),
               count: integer(),
+              occurredAtMs: bigInt(),
               price: decimal(),
               active: checkbox(),
               date: calendarDay(),
@@ -369,6 +371,9 @@ describe('Lists Namespace Generator', () => {
       )
       expect(lists).toContain(
         "price: import('@opensaas/stack-core/fields').DecimalField<Lists.Thing.TypeInfo>",
+      )
+      expect(lists).toContain(
+        "occurredAtMs: import('@opensaas/stack-core/fields').BigIntField<Lists.Thing.TypeInfo>",
       )
       expect(lists).toContain(
         "date: import('@opensaas/stack-core/fields').CalendarDayField<Lists.Thing.TypeInfo>",

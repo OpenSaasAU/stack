@@ -1,6 +1,7 @@
 import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
 import { serializeFieldConfigs, type SerializableFieldConfig } from './serializeFieldConfig.js'
+import { jsonSafeClone } from './jsonSafeClone.js'
 
 /**
  * Extract the currently-selected id(s) from a hydrated relationship value so
@@ -135,7 +136,7 @@ export async function prepareItemForm(
   }
 
   // JSON round-trip ensures only serializable data crosses the client boundary
-  const initialData = JSON.parse(JSON.stringify(formData)) as Record<string, unknown>
+  const initialData = jsonSafeClone(formData)
 
   return { serializableFields, initialData, relationshipData }
 }
