@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { defineFragment } from '../src/query/index.js'
 import { virtual } from '../src/fields/index.js'
-import { AccessScopeDepthExceededError } from '../src/access/index.js'
+import {
+  AccessScopeDepthExceededError,
+  InvalidFieldAccessResultError,
+} from '../src/access/index.js'
 import { READ_INCLUDE_MAX_DEPTH } from '../src/access/depth-limits.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
@@ -1446,6 +1449,238 @@ describe('getContext', () => {
         })
 
         expect(result).toEqual(mockUsers)
+      })
+    })
+
+    describe('predicate-time field-read access (#915)', () => {
+      // The exact shape from the issue: a public `query` gate with one
+      // field-level `read` gate. Without this fix, `billingAddress`'s withheld
+      // value can be recovered one character at a time via `count()`, and its
+      // relative order leaked via `orderBy`, despite no session ever being
+      // allowed to READ it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let orgPrisma: any
+      let orgConfig: OpenSaasConfig
+
+      beforeEach(() => {
+        orgPrisma = {
+          organisation: { findMany: vi.fn(), count: vi.fn() },
+        }
+        orgConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Organisation: {
+              fields: {
+                name: { type: 'text' },
+                billingAddress: {
+                  type: 'text',
+                  access: { read: () => false },
+                },
+              },
+              access: { operation: { query: () => true } },
+            },
+          },
+        }
+      })
+
+      it('denies a `where` filter naming a read-denied field, on both findMany and count', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { billingAddress: { startsWith: '12 ' } },
+          }),
+        ).rejects.toThrow(/billingAddress/)
+        await expect(
+          context.db.organisation.count({
+            where: { billingAddress: { startsWith: '12 ' } },
+          }),
+        ).rejects.toThrow(/billingAddress/)
+
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('a count probe answers identically for a matching and a non-matching prefix (no oracle)', async () => {
+        // Before the fix, these two counts would differ (1 vs 0), letting the
+        // withheld value be recovered one character at a time. After the fix,
+        // both throw the SAME denial — there is no distinguishing signal left.
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        const matching = context.db.organisation
+          .count({ where: { billingAddress: { startsWith: '12 ' } } })
+          .catch((err: Error) => err.message)
+        const nonMatching = context.db.organisation
+          .count({ where: { billingAddress: { startsWith: '99 ' } } })
+          .catch((err: Error) => err.message)
+
+        expect(await matching).toEqual(await nonMatching)
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
+      it('denies ordering by a read-denied field', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({ orderBy: { billingAddress: 'asc' } }),
+        ).rejects.toThrow(/billingAddress/)
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+      })
+
+      it('checks keys nested inside logical operators (AND/OR/NOT)', async () => {
+        const context = await getContext(orgConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { OR: [{ name: { contains: 'a' } }, { billingAddress: { contains: 'x' } }] },
+          }),
+        ).rejects.toThrow(/billingAddress/)
+        await expect(
+          context.db.organisation.findMany({
+            where: { AND: [{ NOT: { billingAddress: { contains: 'x' } } }] },
+          }),
+        ).rejects.toThrow(/billingAddress/)
+      })
+
+      it('a row-dependent read rule resolves to a denial, not a skipped check', async () => {
+        // `item` cannot be evaluated before the query runs — there is no row
+        // yet — so a rule that depends on it (the shape `FieldAccess['read']`
+        // documents as the norm) must deny here even though, post-query, the
+        // very same rule might have allowed this session to read the field.
+        const rowDependentConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            Organisation: {
+              ...orgConfig.lists.Organisation,
+              fields: {
+                ...orgConfig.lists.Organisation.fields,
+                billingAddress: {
+                  type: 'text',
+                  access: {
+                    read: ({ item, session }: { item: { ownerId: string }; session: unknown }) =>
+                      item.ownerId === (session as { userId?: string } | null)?.userId,
+                  },
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(rowDependentConfig, orgPrisma, { userId: 'user-1' })
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { billingAddress: { contains: 'x' } },
+          }),
+        ).rejects.toThrow(/billingAddress/)
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+      })
+
+      it('propagates InvalidFieldAccessResultError (#913), never folding it into a plain denial', async () => {
+        const filterReturningConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            Organisation: {
+              ...orgConfig.lists.Organisation,
+              fields: {
+                ...orgConfig.lists.Organisation.fields,
+                billingAddress: {
+                  type: 'text',
+                  // Bypasses the FieldAccessControl boolean-only type on purpose —
+                  // this is the exact misconfiguration #913 closed.
+                  access: { read: (() => ({ ownerId: 'x' })) as unknown as () => boolean },
+                },
+              },
+            },
+          },
+        }
+
+        const context = await getContext(filterReturningConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { billingAddress: { contains: 'x' } },
+          }),
+        ).rejects.toThrow(InvalidFieldAccessResultError)
+      })
+
+      it('leaves a readable field filterable and sortable (no regression)', async () => {
+        orgPrisma.organisation.findMany.mockResolvedValue([])
+
+        const context = await getContext(orgConfig, orgPrisma, null)
+        await context.db.organisation.findMany({
+          where: { name: { contains: 'Acme' } },
+          orderBy: { name: 'asc' },
+        })
+
+        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { name: { contains: 'Acme' } },
+            orderBy: { name: 'asc' },
+          }),
+        )
+      })
+
+      it('sudo bypasses the check entirely, matching #912', async () => {
+        orgPrisma.organisation.findMany.mockResolvedValue([])
+        orgPrisma.organisation.count.mockResolvedValue(3)
+
+        const context = (await getContext(orgConfig, orgPrisma, null)).sudo()
+        await context.db.organisation.findMany({
+          where: { billingAddress: { startsWith: '12 ' } },
+          orderBy: { billingAddress: 'asc' },
+        })
+        await context.db.organisation.count({
+          where: { billingAddress: { startsWith: '12 ' } },
+        })
+
+        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { billingAddress: { startsWith: '12 ' } },
+            orderBy: { billingAddress: 'asc' },
+          }),
+        )
+        expect(orgPrisma.organisation.count).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { billingAddress: { startsWith: '12 ' } } }),
+        )
+      })
+
+      it('does not recurse into a related list nested inside a relation filter (#916 scope)', async () => {
+        // #915 checks whether THIS list's relationship field may be named at
+        // all; a field on the RELATED list reached through it is #916's
+        // separate change, so it must not be rejected here — only #912's
+        // undeclared-key check (or #916, once it lands) governs that key.
+        const relPrisma = {
+          post: { findMany: vi.fn(), count: vi.fn() },
+        }
+        const relConfig: OpenSaasConfig = {
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            User: {
+              fields: {
+                name: { type: 'text' },
+                secret: { type: 'text', access: { read: () => false } },
+              },
+              access: { operation: { query: () => true } },
+            },
+            Post: {
+              fields: {
+                title: { type: 'text' },
+                author: { type: 'relationship', ref: 'User.posts' },
+              },
+              access: { operation: { query: () => true } },
+            },
+          },
+        }
+        relPrisma.post.findMany.mockResolvedValue([])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        // Names a field on the RELATED list (User.secret) nested inside the
+        // relation filter — not a key of Post itself, so #915's own check
+        // (which only inspects Post's own fields) does not deny it.
+        await context.db.post.findMany({ where: { author: { is: { secret: { contains: 'x' } } } } })
+
+        expect(relPrisma.post.findMany).toHaveBeenCalled()
       })
     })
 

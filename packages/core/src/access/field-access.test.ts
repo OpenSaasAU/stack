@@ -1,5 +1,9 @@
 import { describe, it, expect, expectTypeOf } from 'vitest'
-import { checkFieldAccess, filterWritableFields } from './field-access.js'
+import {
+  checkFieldAccess,
+  filterWritableFields,
+  isFieldReadableForPredicate,
+} from './field-access.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
@@ -205,6 +209,80 @@ describe('checkFieldAccess', () => {
       context: sudoContext(),
     })
     expect(allowed).toBe(true)
+  })
+})
+
+describe('isFieldReadableForPredicate (#915)', () => {
+  it('allows when there is no field access configured', async () => {
+    const readable = await isFieldReadableForPredicate(undefined, {
+      session: null,
+      context: nonSudoContext(),
+    })
+    expect(readable).toBe(true)
+  })
+
+  it('allows when the rule only inspects session (never touches item)', async () => {
+    const readable = await isFieldReadableForPredicate(
+      { read: ({ session }) => session?.userId === 'admin' },
+      { session: { userId: 'admin' }, context: nonSudoContext() },
+    )
+    expect(readable).toBe(true)
+  })
+
+  it('denies when the rule returns false', async () => {
+    const readable = await isFieldReadableForPredicate(
+      { read: () => false },
+      { session: null, context: nonSudoContext() },
+    )
+    expect(readable).toBe(false)
+  })
+
+  it('denies a row-dependent rule that dereferences `item` directly', async () => {
+    const readable = await isFieldReadableForPredicate(
+      { read: ({ item, session }) => item.ownerId === session?.userId },
+      { session: { userId: 'user-1' }, context: nonSudoContext() },
+    )
+    expect(readable).toBe(false)
+  })
+
+  it('denies a row-dependent rule even when it reads `item` via optional chaining', async () => {
+    // This is the exact idiom `InvalidFieldAccessResultError`'s own message
+    // recommends (`item?.ownerId === session?.userId`) — it must still deny,
+    // not silently misevaluate `undefined === session?.userId` against a
+    // poisoned `item`.
+    const readable = await isFieldReadableForPredicate(
+      { read: ({ item, session }) => item?.ownerId === session?.userId },
+      { session: null, context: nonSudoContext() },
+    )
+    expect(readable).toBe(false)
+  })
+
+  it('denies a row-dependent rule that only enumerates `item`s keys', async () => {
+    const readable = await isFieldReadableForPredicate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { read: ({ item }) => Object.keys(item as any).length > 0 },
+      { session: null, context: nonSudoContext() },
+    )
+    expect(readable).toBe(false)
+  })
+
+  it('propagates InvalidFieldAccessResultError instead of folding it into a denial', async () => {
+    const fieldAccess = {
+      read: () => ({ ownerId: { equals: 'someone-else' } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    await expect(
+      isFieldReadableForPredicate(fieldAccess, { session: null, context: nonSudoContext() }),
+    ).rejects.toThrow(InvalidFieldAccessResultError)
+  })
+
+  it('sudo bypasses the rule entirely, so a row-dependent rule never denies', async () => {
+    const readable = await isFieldReadableForPredicate(
+      { read: ({ item, session }) => item.ownerId === session?.userId },
+      { session: null, context: sudoContext() },
+    )
+    expect(readable).toBe(true)
   })
 })
 

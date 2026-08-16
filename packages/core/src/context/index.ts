@@ -8,6 +8,7 @@ import {
   stripVirtualFieldsFromInclude,
   foldDeclaredDependencies,
   validateQueryKeys,
+  validateQueryFieldReadAccess,
 } from '../access/index.js'
 import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
@@ -1146,6 +1147,22 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       isSudo: context._isSudo === true,
     })
 
+    // #915 — reject a `where`/`orderBy` key naming a field this session
+    // cannot READ, so a field-level `read` gate can't be probed via a
+    // predicate (a `count()` that varies with the withheld value, an
+    // `orderBy` that leaks relative ordering). Runs after the #912 check
+    // above so an undeclared key is always #912's rejection, never this
+    // one's. `sudo` bypasses, matching #912.
+    await validateQueryFieldReadAccess({
+      where: args?.where,
+      orderBy: args?.orderBy,
+      listConfig,
+      listName,
+      session: context.session,
+      context,
+      isSudo: context._isSudo === true,
+    })
+
     // Check query access (skip if sudo mode)
     let where: Record<string, unknown> | undefined = args?.where
     if (!context._isSudo) {
@@ -1413,6 +1430,19 @@ function createCount<TPrisma extends PrismaClientLike>(
       listConfig,
       listName,
       config,
+      isSudo: context._isSudo === true,
+    })
+
+    // #915 — same predicate-time field-read check as `findMany`, and for the
+    // same reason count matters most: a bare count answers a predicate while
+    // returning no rows at all, the cleanest instrument for probing a
+    // read-denied field's withheld value.
+    await validateQueryFieldReadAccess({
+      where: args?.where,
+      listConfig,
+      listName,
+      session: context.session,
+      context,
       isSudo: context._isSudo === true,
     })
 

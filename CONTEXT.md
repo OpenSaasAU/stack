@@ -14,6 +14,10 @@ _Avoid_: list access, row access
 A check that gates whether a session may read or write a single field, returning a boolean only. Cannot scope rows — a denied field is removed, not used to exclude records.
 _Avoid_: column access, property access
 
+**Predicate-time read check**:
+A field-level `read` rule evaluated BEFORE the query runs, against a key named in a caller's `where`/`orderBy`, rather than against an already-fetched row — the check that stops a field's withheld value or relative order from being recovered by probing a query that returns no rows containing it (e.g. `count()`). There is no row yet at this point, so a rule that depends on one (dereferences `item`) cannot be answered and resolves to a denial rather than being skipped (ADR-0031).
+_Avoid_: filter access check, where validation
+
 **Access Filter** (pre-query phase):
 The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. It scopes the relations a read asked for; it does not choose them (see Bare read). Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
 _Avoid_: query builder, include builder

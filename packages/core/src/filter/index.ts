@@ -13,6 +13,7 @@ export { parseFilterQuery } from './parse.js'
 export { serializeFilterQuery } from './serialize.js'
 export { buildFilterWhere } from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
+export type { FilterAccessArgs } from './collect.js'
 export { RELATIONSHIP_COUNT_FILTER_KEY } from './types.js'
 export type {
   FilterOperator,
