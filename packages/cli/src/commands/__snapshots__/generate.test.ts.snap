@@ -349,40 +349,45 @@ export type UserUpdateManyArgs = {
 }
 
 /**
+ * Access-controlled CRUD methods for User, with virtual field support.
+ */
+export interface UserCrud {
+  findUnique: <T extends UserFindUniqueArgs>(
+    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findFirst: <T extends UserFindFirstArgs>(
+    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  findMany: <T extends UserFindManyArgs>(
+    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  create: <T extends UserCreateArgs>(
+    args: Prisma.SelectSubset<T, UserCreateArgs>
+  ) => Promise<UserGetPayload<T>>
+  update: <T extends UserUpdateArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  delete: <T extends UserDeleteArgs>(
+    args: Prisma.SelectSubset<T, UserDeleteArgs>
+  ) => Promise<UserGetPayload<T> | null>
+  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  createMany: <T extends UserCreateManyArgs>(
+    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+  updateMany: <T extends UserUpdateManyArgs>(
+    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+  ) => Promise<Array<UserGetPayload<T>>>
+}
+
+/**
  * Custom DB type that uses Prisma's conditional types with virtual and transformed field support
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   'user'
-> & {
-  user: {
-    findUnique: <T extends UserFindUniqueArgs>(
-      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findFirst: <T extends UserFindFirstArgs>(
-      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    findMany: <T extends UserFindManyArgs>(
-      args?: Prisma.SelectSubset<T, UserFindManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    create: <T extends UserCreateArgs>(
-      args: Prisma.SelectSubset<T, UserCreateArgs>
-    ) => Promise<UserGetPayload<T>>
-    update: <T extends UserUpdateArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    delete: <T extends UserDeleteArgs>(
-      args: Prisma.SelectSubset<T, UserDeleteArgs>
-    ) => Promise<UserGetPayload<T> | null>
-    count: (args?: Prisma.UserCountArgs) => Promise<number>
-    createMany: <T extends UserCreateManyArgs>(
-      args: Prisma.SelectSubset<T, UserCreateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-    updateMany: <T extends UserUpdateManyArgs>(
-      args: Prisma.SelectSubset<T, UserUpdateManyArgs>
-    ) => Promise<Array<UserGetPayload<T>>>
-  }
+> {
+  user: UserCrud
 }
 
 /**
@@ -390,7 +395,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -400,7 +405,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
@@ -505,9 +510,9 @@ type StripVirtualFromArgs<T, VirtualKeys extends string> =
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export type CustomDB = Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
   
-> & {
+> {
 }
 
 /**
@@ -515,7 +520,7 @@ export type CustomDB = Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Omit<AccessContext<PrismaClient>, 'db' | 'session'> & {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -525,7 +530,7 @@ export type BaseContext<TSession extends OpensaasSession = OpensaasSession> = Om
  * Extends BaseContext and adds serverAction and sudo methods
  * Use this type in server actions and components that need full context capabilities
  */
-export type Context<TSession extends OpensaasSession = OpensaasSession> = BaseContext<TSession> & {
+export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
 }"
