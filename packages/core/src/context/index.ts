@@ -972,9 +972,6 @@ async function resolveReadInclude(
   return { include, declaredOnly: folded.declaredOnly, selection: undefined }
 }
 
-/**
- * Create findUnique operation with access control
- */
 function createFindUnique<TPrisma extends PrismaClientLike>(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -994,19 +991,15 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
-    // `select` is a visible no-op: warn, then proceed with include/query narrowing.
     warnIfSelectIgnored(args, listName, 'findUnique')
 
-    // Enforce unique-`where` (Keystone `findOne` parity). This is a caller-shape
-    // check independent of access, so it runs first and THROWS on misuse — it is
-    // not an access denial and must not be masked as a silent `null`. The
-    // type-level constraint already lives on the generated delegate: the custom
-    // `<List>FindUniqueArgs` only Omits `select`/`include` from
-    // `Prisma.<List>FindUniqueArgs`, so its `where` stays Prisma's
-    // `<List>WhereUniqueInput` — this runtime guard backstops untyped callers.
+    // Runs first, before the access check below — a non-unique `where` is a
+    // caller-shape error (see `assertUniqueWhere`), not an access denial. The
+    // generated `<List>FindUniqueArgs` only Omits `select`/`include` from
+    // Prisma's own type, so `where` stays `<List>WhereUniqueInput` — this
+    // runtime guard backstops untyped callers.
     assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
 
-    // Check query access (skip if sudo mode)
     let where: Record<string, unknown> = args.where
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1019,7 +1012,6 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
         return null
       }
 
-      // Merge access filter with where clause
       const mergedWhere = mergeFilters(args.where, accessResult)
       if (mergedWhere === null) {
         return null
@@ -1027,9 +1019,8 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       where = mergedWhere
     }
 
-    // When a query fragment is provided, build the include from the fragment
-    // instead of the access-controlled include. Access control still runs via
-    // filterReadableFields; the fragment then narrows to only the requested fields.
+    // Access control still runs via filterReadableFields even though a
+    // fragment drives `include`; the fragment only narrows which fields come back.
     const fragment = isFragment(args.query) ? args.query : null
 
     // Resolve `include`, folding any declared dependencies (`needs`,
