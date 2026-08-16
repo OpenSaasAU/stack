@@ -2,7 +2,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, integer } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl } from '@opensaas/stack-core'
-import type { Lists } from '@/.opensaas/lists'
+import type { Lists } from './.opensaas/lists'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**

@@ -15,6 +15,7 @@ import {
   resolveOutputPaths,
   buildNodeBundle,
   formatNodeBuildDiagnostics,
+  resolveTsconfigAlias,
 } from '../generator/index.js'
 import {
   OpenSaasConfig,
@@ -73,9 +74,17 @@ export async function generateCommand() {
   const spinner = ora('Loading configuration...').start()
 
   try {
+    // Resolve tsconfig.json path aliases (e.g. "@/*") into jiti's alias
+    // option, so a value import in opensaas.config.ts (or anything it
+    // imports) can use the same aliases as the rest of the project (#905).
+    // A project with no tsconfig.json, or no `paths`, resolves to
+    // `alias: undefined`, which is identical to omitting the option.
+    const { alias, warnings: aliasWarnings } = resolveTsconfigAlias(cwd)
+
     // Load config using jiti (supports TypeScript)
     const jiti = createJiti(cwd, {
       interopDefault: true,
+      alias,
     })
 
     // Config may be async (if plugins are present)
@@ -93,6 +102,9 @@ export async function generateCommand() {
     }
 
     spinner.succeed(chalk.green('Configuration loaded'))
+    for (const warning of aliasWarnings) {
+      console.log(chalk.yellow(`⚠️  ${warning}`))
+    }
 
     // Execute beforeGenerate hooks if plugins are present
     if (config.plugins && config.plugins.length > 0) {
