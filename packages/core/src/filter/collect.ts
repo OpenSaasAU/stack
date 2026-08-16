@@ -45,13 +45,21 @@ export async function collectFilterSpecs(
   args: FilterAccessArgs,
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
-  for (const [fieldName, field] of Object.entries(listConfig.fields)) {
-    if (typeof field.getFilterSpec !== 'function') continue
-    const readable = await isFieldReadableForPredicate(field.access, args)
-    if (!readable) continue
-    const spec = field.getFilterSpec(fieldName, listKey, config)
+  const filterableFields = Object.entries(listConfig.fields).filter(
+    ([, field]) => typeof field.getFilterSpec === 'function',
+  )
+  // Each field's read-access check is independent of every other's — run
+  // them concurrently rather than serially, since a `read` rule that does
+  // async work (e.g. a DB lookup) would otherwise add per-field latency to
+  // every list-view page render (found in review of #925).
+  const readableFlags = await Promise.all(
+    filterableFields.map(([, field]) => isFieldReadableForPredicate(field.access, args)),
+  )
+  filterableFields.forEach(([fieldName, field], index) => {
+    if (!readableFlags[index]) return
+    const spec = field.getFilterSpec!(fieldName, listKey, config)
     if (spec) specs[fieldName] = spec
-  }
+  })
   return specs
 }
 

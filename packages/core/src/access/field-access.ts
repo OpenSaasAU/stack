@@ -175,8 +175,12 @@ export async function isFieldReadableForPredicate(
       item: createPoisonedItem(),
     })
   } catch (err) {
-    if (err instanceof InvalidFieldAccessResultError) throw err
-    return false
+    // Only the poisoned-item signal means "row-dependent, deny". Anything
+    // else — including `InvalidFieldAccessResultError` and a genuine bug in
+    // the rule itself — propagates unchanged rather than being silently
+    // folded into an ordinary denial (found in review of #925).
+    if (err instanceof PredicateTimeItemAccessError) return false
+    throw err
   }
 }
 

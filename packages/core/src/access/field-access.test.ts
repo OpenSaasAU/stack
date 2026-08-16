@@ -277,6 +277,24 @@ describe('isFieldReadableForPredicate (#915)', () => {
     ).rejects.toThrow(InvalidFieldAccessResultError)
   })
 
+  it('propagates a genuine error the rule throws for its own reasons, not just non-boolean results', async () => {
+    // The rule never touches `item` — it throws for a reason of its own.
+    // This must NOT be folded into an ordinary `false` denial (that would
+    // mask a real bug in the rule as "field not readable"), matching how the
+    // post-query path (`filterReadableFields`) already lets such a throw
+    // propagate unchanged.
+    const fieldAccess: FieldAccess = {
+      read: ({ session }) => {
+        if (session === null) throw new Error('unexpected anonymous access')
+        return true
+      },
+    }
+
+    await expect(
+      isFieldReadableForPredicate(fieldAccess, { session: null, context: nonSudoContext() }),
+    ).rejects.toThrow('unexpected anonymous access')
+  })
+
   it('sudo bypasses the rule entirely, so a row-dependent rule never denies', async () => {
     const readable = await isFieldReadableForPredicate(
       { read: ({ item, session }) => item.ownerId === session?.userId },

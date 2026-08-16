@@ -1645,6 +1645,47 @@ describe('getContext', () => {
         )
       })
 
+      it('a caller with zero list access gets the ordinary silent denial, not a validation error naming the field (found in review of #925)', async () => {
+        // Operation-level `query` access is fully denied for this session.
+        // The #912/#915 where/orderBy validation must never run in that case
+        // — the thrown ValidationError names the offending key, which would
+        // let a caller with NO access to the list at all learn a field's
+        // name and its read-gating status purely from the error message.
+        // That is itself the kind of oracle #915 exists to close, just
+        // pointed at "does this field exist and is it read-gated" instead of
+        // "what is this field's value" — so a fully denied caller must see
+        // the SAME silent []/0 whether or not the where/orderBy names an
+        // undeclared or read-denied key.
+        const deniedConfig: OpenSaasConfig = {
+          ...orgConfig,
+          lists: {
+            Organisation: {
+              ...orgConfig.lists.Organisation,
+              access: { operation: { query: () => false } },
+            },
+          },
+        }
+        const context = await getContext(deniedConfig, orgPrisma, null)
+
+        await expect(
+          context.db.organisation.findMany({
+            where: { billingAddress: { startsWith: '12 ' } },
+          }),
+        ).resolves.toEqual([])
+        await expect(
+          context.db.organisation.findMany({ where: { bogusKey: 'x' } }),
+        ).resolves.toEqual([])
+        await expect(
+          context.db.organisation.count({
+            where: { billingAddress: { startsWith: '12 ' } },
+          }),
+        ).resolves.toBe(0)
+        await expect(context.db.organisation.count({ where: { bogusKey: 'x' } })).resolves.toBe(0)
+
+        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+      })
+
       it('does not recurse into a related list nested inside a relation filter (#916 scope)', async () => {
         // #915 checks whether THIS list's relationship field may be named at
         // all; a field on the RELATED list reached through it is #916's
