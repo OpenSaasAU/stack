@@ -35,6 +35,16 @@ export interface TsconfigAliasResult {
  * (`extends` chains, project references, conditional exports) is out of
  * scope.
  *
+ * A bare `"*"` pattern (`{ "*": ["./src/*"] }`, a common catch-all for
+ * unprefixed imports like `lib/utils`) is a single-trailing-star pattern too,
+ * but stripping its trailing `*` leaves an EMPTY alias key. `pathe`'s
+ * `resolveAlias` matches keys by prefix (`id.startsWith(key)`), and every
+ * string starts with `''` — so an empty key aliases every module specifier
+ * jiti resolves, including `opensaas.config.ts`'s own absolute path and every
+ * relative import in its closure, not just the bare imports it was meant for.
+ * This is therefore skipped and reported as a warning like any other
+ * unrepresentable entry, rather than corrupting unrelated resolution.
+ *
  * A project with no `tsconfig.json`, or one with no `paths`, returns
  * `{ alias: undefined, warnings: [] }` so callers behave exactly as they did
  * before this translation existed.
@@ -87,6 +97,13 @@ export function resolveTsconfigAlias(cwd: string): TsconfigAliasResult {
     }
 
     const aliasKey = pattern.slice(0, -1)
+    if (aliasKey === '') {
+      warnings.push(
+        `tsconfig.json path "${pattern}" -> "${target}" is a catch-all alias (empty prefix); jiti's prefix-based alias resolution would apply it to every module specifier, not just unprefixed imports, so this alias will not be resolved.`,
+      )
+      continue
+    }
+
     const aliasTarget = path.resolve(baseDir, target.slice(0, -1))
     alias[aliasKey] = aliasTarget
   }
