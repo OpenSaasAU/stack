@@ -54,17 +54,12 @@ function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
 }
 
 /**
- * The number of distinct (listKey, operation) involvement pairs the walk
- * could ever record starting from `startListName` — computed from the
- * CONFIG's relationship graph (not the payload), so it bounds the walk by
- * what the schema can reach rather than by an arbitrary depth.
- *
- * Used as the saturation bound: once `walkNested` has recorded this many
- * pairs, no further pair can be new, so it stops descending. This replaces
- * the old depth cap as the cost bound (#835) — a payload nesting the config's
- * lists more deeply than any previous cap no longer loses their
- * transaction-boundary hooks, while a payload that repeats the same few
- * lists still terminates promptly instead of walking every entry.
+ * Distinct (listKey, operation) pairs reachable from `startListName` via the
+ * CONFIG's relationship graph (not the payload) — the saturation bound
+ * `walkNested` stops at once it has recorded this many. Bounding by reachable
+ * pairs rather than a depth cap (#835) avoids losing hooks for payloads
+ * nested deeper than any fixed cap, while still terminating promptly on
+ * payloads that repeat the same few lists.
  */
 function countReachableInvolvementPairs(
   startListName: string,
@@ -96,15 +91,7 @@ function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   return []
 }
 
-/**
- * Extract the create/update payload from a nested-op entry so nested
- * `beforeTransaction` receives meaningful `inputData`.
- *
- *  - `create`: the entry itself is the create data.
- *  - `update`: the entry's `data`.
- *  - `connectOrCreate`: the entry's `create`.
- *  - `delete`: no input payload.
- */
+/** Extract a nested-op entry's create/update payload so its `beforeTransaction` receives meaningful `inputData`. */
 function nestedInputData(
   kind: string,
   entry: Record<string, unknown>,
@@ -124,10 +111,10 @@ function nestedInputData(
 
 /**
  * Recursively walk a write payload's relationship fields, appending one
- * {@link InvolvedList} per nested create/update/delete involvement. De-dups by
- * (listKey, operation) so a list with many nested records of the same operation
- * fires its transaction-boundary bracket once (these hooks are a per-LIST
- * compensation bracket, not per-record).
+ * {@link InvolvedList} per nested create/update/delete involvement. De-dups
+ * by (listKey, operation): these hooks are a per-LIST compensation bracket,
+ * not per-record, so a list with many nested records of the same operation
+ * fires its bracket once.
  */
 function walkNested(
   data: Record<string, unknown> | undefined,
@@ -137,8 +124,7 @@ function walkNested(
   seen: Set<string>,
   maxPairs: number,
 ): void {
-  // Every reachable pair is already recorded — no further recursion can add
-  // anything new, so stop instead of re-walking the rest of the payload.
+  // Saturated: no further pair can be new (see countReachableInvolvementPairs).
   if (!data || seen.size >= maxPairs) return
 
   for (const [fieldName, value] of Object.entries(data)) {
@@ -156,7 +142,6 @@ function walkNested(
       if (opValue === undefined) continue
 
       const entries = asRecordArray(opValue)
-      // Record the involvement once per (list, operation).
       const dedupeKey = `${relatedListName}:${operation}`
       if (!seen.has(dedupeKey)) {
         seen.add(dedupeKey)
@@ -172,7 +157,6 @@ function walkNested(
 
       if (seen.size >= maxPairs) return
 
-      // Recurse into each nested entry's own relationship payload.
       for (const entry of entries) {
         const childData = nestedInputData(kind, entry)
         walkNested(childData, relatedListConfig.fields, config, out, seen, maxPairs)
@@ -183,8 +167,8 @@ function walkNested(
 
 /**
  * Enumerate the lists involved in a write — the top-level list plus every
- * nested create/update/delete target reachable from the input tree — WITHOUT
- * any DB reads. The top-level list is always first.
+ * nested create/update/delete target — without DB reads. The top-level list
+ * is always first.
  */
 export function enumerateInvolvedLists(args: {
   listName: string
@@ -211,16 +195,12 @@ export function enumerateInvolvedLists(args: {
   const seen = new Set<string>([`${listName}:${operation}`])
   const maxPairs = countReachableInvolvementPairs(listName, listConfig, config)
 
-  // Delete has no nested payload to walk (inputData is undefined).
   walkNested(inputData, listConfig.fields, config, out, seen, maxPairs)
 
   return out
 }
 
-/**
- * Run the list- and field-level `beforeTransaction` hooks for one involved list.
- * A throw propagates to the caller (which aborts the write).
- */
+/** Runs one involved list's `beforeTransaction` hooks. A throw propagates to the caller (which aborts the write). */
 async function runBeforeTransactionForList<TPrisma extends PrismaClientLike>(
   involved: InvolvedList,
   context: AccessContext<TPrisma>,
@@ -262,13 +242,11 @@ async function runBeforeTransactionForList<TPrisma extends PrismaClientLike>(
 }
 
 /**
- * Run the list- and field-level `afterTransaction` hooks for one involved list
- * with the settled {@link TransactionOutcome}. Collects (does not throw) any
- * errors so the caller can keep running the remaining lists' compensators.
- *
- * Exported for {@link TransactionRegistry}-drained (deferred, joined-write)
- * flushes, which run this same per-list logic once the transaction owner
- * observes the real settle (ADR-0028).
+ * Runs one involved list's `afterTransaction` hooks against the settled
+ * {@link TransactionOutcome}, collecting rather than throwing errors so the
+ * caller can keep running the remaining lists' compensators. Exported for
+ * {@link TransactionRegistry} to reuse when draining a deferred, joined
+ * write's bracket (ADR-0028).
  */
 export async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
   involved: InvolvedList,
@@ -278,15 +256,13 @@ export async function runAfterTransactionForList<TPrisma extends PrismaClientLik
 ): Promise<void> {
   const { listKey, listConfig, operation, isTopLevel, inputData, originalItem } = involved
 
-  // On commit, the persisted row (`outcome.item`) is the TOP-LEVEL row. We only
-  // surface `item`/`originalItem` for the top-level list — handing the top-level
-  // row to a nested list's hook (whose type is the nested list's own item) would
-  // be unsound, since the hook would silently read the wrong record. For nested
-  // lists we pass `undefined`; per-record nested compensation must use the
-  // in-transaction `afterOperation`, which already receives the correct nested row.
+  // The persisted row (`outcome.item`) is the TOP-LEVEL row only. Handing it to
+  // a nested list's hook would silently mis-type as that list's own item — for
+  // nested lists `item`/`originalItem` stay `undefined`; per-record nested
+  // compensation belongs in the in-transaction `afterOperation`, which gets the
+  // correct row.
   try {
     if (outcome.status === 'committed') {
-      // The persisted row is surfaced only for the top-level list (see above).
       const committedItem = isTopLevel ? outcome.item : undefined
       if (operation === 'create') {
         await executeAfterTransaction(listConfig.hooks, {
@@ -317,7 +293,6 @@ export async function runAfterTransactionForList<TPrisma extends PrismaClientLik
         })
       }
     } else {
-      // rolled-back: no persisted item.
       if (operation === 'create') {
         await executeAfterTransaction(listConfig.hooks, {
           listKey,
@@ -387,10 +362,9 @@ export class AfterTransactionError extends Error {
 }
 
 /**
- * Compute a joined write's FINAL outcome once its owner's settle is known
- * (ADR-0028): the write's own error always wins (it never fires early — see
- * the ADR's provider-dependent-early-settle rejection); otherwise the write
- * committed if and only if the owner's transaction also committed.
+ * Resolves a joined write's final outcome once the owner's settle is known
+ * (ADR-0028): the write's own error always wins; otherwise committed iff the
+ * owner's transaction also committed.
  */
 function resolveDeferredOutcome(
   writeOutcome: TransactionOutcome,
@@ -402,37 +376,17 @@ function resolveDeferredOutcome(
 }
 
 /**
- * Bracket a write's transaction with the transaction-boundary hooks (#590,
- * ADR-0028 / #899).
+ * Brackets a write's transaction with the transaction-boundary hooks (#590,
+ * ADR-0028 / #899): runs every involved list's `beforeTransaction` eagerly —
+ * a throw here aborts before `runTransaction` (#569) ever opens the write's
+ * transaction — then routes `afterTransaction` by ownership: deferred onto
+ * `args.joinedOwner`'s {@link TransactionRegistry} for a joined write, run
+ * eagerly (draining `args.ownedRegistry`) for the write that opened the
+ * transaction, or run eagerly with neither set. See ADR-0028 for why. A
+ * joined write's `afterTransaction` errors therefore surface as an
+ * {@link AfterTransactionError} from the OWNER's promise, not this write's.
  *
- * Sequence:
- *  1. Run every involved list's `beforeTransaction` in order, tracking which
- *     ran (always eager — ADR-0028 keeps the symmetric bracket's "before" half
- *     synchronous even for a joined write). A throw aborts: the transaction is
- *     NEVER opened, and the throw is re-surfaced.
- *  2. Otherwise run `runTransaction` (the existing #569 machinery — opens a
- *     real transaction, joins one already open, or runs directly against a
- *     client with no transaction support at all).
- *  3. What happens to `afterTransaction` next depends on ownership:
- *     - **Joined** (`args.joinedOwner` set — this write's context is nested in
- *       a transaction it did not open): its bracket is DEFERRED — enqueued on
- *       the owner's {@link TransactionRegistry} instead of firing now. The
- *       owner drains it once it observes the real settle, at which point
- *       {@link resolveDeferredOutcome} decides the final status.
- *     - **Owner** (`args.ownedRegistry` set — this write just opened the
- *       transaction every joined write below it shares): runs its own bracket
- *       eagerly exactly as before, THEN drains `ownedRegistry` with the same
- *       settle outcome so every write that joined this transaction gets its
- *       deferred bracket flushed too.
- *     - **Unowned** (neither set — no `context.transaction()` and no real
- *       transaction to open, e.g. a bare test double): unchanged, fires
- *       eagerly at write time (the "unowned join" case — there is no owner to
- *       defer to and no settle signal to wait for).
- *  4. If any `afterTransaction` throws, the rest still run; the collected
- *     errors are surfaced afterward as an {@link AfterTransactionError} — for
- *     a joined write this surfaces from the OWNER's promise, not this write's.
- *
- * Sudo does not affect these hooks — they always run; sudo only bypasses access.
+ * Sudo bypasses access control only — never these hooks.
  */
 export async function runWithTransactionBoundary<TPrisma extends PrismaClientLike>(args: {
   involvedLists: InvolvedList[]
@@ -445,10 +399,10 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
 }): Promise<Record<string, unknown> | null> {
   const { involvedLists, context, joinedOwner, ownedRegistry, runTransaction } = args
 
-  // Lists whose beforeTransaction ran (in order), for the symmetric bracket. A
-  // list is marked as "ran" the moment its beforeTransaction BEGINS, so even a
-  // list whose beforeTransaction throws gets its afterTransaction (it may have
-  // taken a partial external action that needs compensating).
+  // A list counts as "ran" the moment its beforeTransaction BEGINS (pushed
+  // before the try below), not on success — so a list whose beforeTransaction
+  // itself throws still gets its afterTransaction, in case it took a partial
+  // external action that needs compensating.
   const ran: InvolvedList[] = []
 
   let beforeError: unknown
@@ -462,13 +416,13 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
     }
   }
 
-  // beforeTransaction threw → abort: never open the transaction, compensate the
-  // lists whose beforeTransaction ran, then surface the original error.
+  // Abort path: never open the transaction; compensate the lists that ran,
+  // then rethrow the original error.
   if (beforeError !== undefined) {
     const outcome: TransactionOutcome = { status: 'rolled-back', error: beforeError }
     if (joinedOwner) {
-      // Deferred: matches the eager branch below, which also discards any
-      // afterTransaction errors on this path (only beforeError propagates).
+      // Discards any afterTransaction errors on this path — only beforeError
+      // propagates, matching the eager branch below.
       joinedOwner.enqueue(async (_settle, _errors) => {
         const discarded: unknown[] = []
         for (const involved of ran) {
@@ -484,7 +438,7 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
     throw beforeError
   }
 
-  // Open (or join) the transaction and capture THIS WRITE's own settle outcome.
+  // Open (or join) the transaction and capture this write's own settle outcome.
   let outcome: TransactionOutcome
   let result: Record<string, unknown> | null = null
   let txError: unknown
@@ -497,9 +451,8 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
   }
 
   if (joinedOwner) {
-    // Deferred (ADR-0028): this write cannot observe the enclosing
-    // transaction's real settle, so its bracket is queued rather than fired.
-    // The write's own result/throw is unaffected — only afterTransaction waits.
+    // Deferred (ADR-0028) — only afterTransaction waits; this write's own
+    // result/throw is returned/thrown normally below.
     joinedOwner.enqueue(async (settle, errors) => {
       const finalOutcome = resolveDeferredOutcome(outcome, settle)
       for (const involved of ran) {
@@ -510,24 +463,21 @@ export async function runWithTransactionBoundary<TPrisma extends PrismaClientLik
     return result
   }
 
-  // afterTransaction always runs for every list whose beforeTransaction ran
-  // (here: all involved lists). All compensators run even if one throws.
+  // All compensators run even if one throws.
   const afterErrors: unknown[] = []
   for (const involved of ran) {
     await runAfterTransactionForList(involved, outcome, context, afterErrors)
   }
 
-  // This write OWNS the transaction every joined write below it shares — drain
-  // their deferred brackets now, with the same settle outcome this write just
-  // observed (ADR-0028).
+  // Owner: drain joined writes' deferred brackets with this write's own settle
+  // outcome (ADR-0028).
   if (ownedRegistry) {
     const settle: TransactionSettleOutcome =
       txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
     await ownedRegistry.drain(settle, afterErrors)
   }
 
-  // Surface errors: the transaction's own error takes precedence (the write
-  // failed); otherwise any afterTransaction errors (own + drained).
+  // Transaction error takes precedence over afterTransaction errors (ADR-0028).
   if (txError !== undefined) throw txError
   if (afterErrors.length > 0) throw new AfterTransactionError(afterErrors)
 

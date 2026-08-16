@@ -202,12 +202,8 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
-/**
- * Parse Prisma error and convert to user-friendly DatabaseError
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
-  // Check if it's a Prisma error
   if (
     error &&
     typeof error === 'object' &&
@@ -217,15 +213,13 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
   ) {
     const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
 
-    // Handle unique constraint violation
+    // P2002 is Prisma's unique constraint violation code.
     if (prismaError.code === 'P2002') {
       const target = prismaError.meta?.target
       const fieldErrors: Record<string, string> = {}
 
       if (target && Array.isArray(target)) {
-        // Get field names from the constraint target
         for (const fieldName of target) {
-          // Get the field config to get a better label
           const fieldConfig = listConfig.fields[fieldName]
           const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
 
@@ -236,7 +230,6 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
           }
         }
 
-        // Create a user-friendly general message
         const fieldLabels = target.map((f) => f.charAt(0).toUpperCase() + f.slice(1)).join(', ')
         return new DatabaseError(
           `${fieldLabels} must be unique. The value you entered is already in use.`,
@@ -248,7 +241,6 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
       return new DatabaseError('A record with this value already exists', {}, prismaError.code)
     }
 
-    // Handle other Prisma errors - return generic message
     return new DatabaseError(
       prismaError.message || 'A database error occurred',
       {},
@@ -256,22 +248,16 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
     )
   }
 
-  // Not a Prisma error, return as-is if it's already an Error
   if (error instanceof Error) {
     return error
   }
 
-  // Unknown error type
   return new Error('An unknown error occurred')
 }
 
 /**
- * Database transaction isolation levels.
- *
- * Mirrors Prisma's `TransactionIsolationLevel`. The level passed to
- * {@link StackContext.transaction} is forwarded to the underlying interactive
- * transaction; provider support varies (e.g. `Serializable` is supported by
- * PostgreSQL — required for the concurrency-sensitive capacity-gate pattern).
+ * Mirrors Prisma's `TransactionIsolationLevel`. Provider support varies —
+ * e.g. `Serializable` requires PostgreSQL.
  */
 export type TransactionIsolationLevel =
   'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
@@ -348,12 +334,11 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
 
 /**
  * Drain a `context.transaction()` owner's deferral registry once its callback
- * (and any real underlying transaction) has settled (ADR-0028), then apply the
- * existing error-precedence rule: a transaction/callback error always wins
- * (compensators still all ran, but their errors are discarded in favor of
- * re-surfacing the original — matching the Write Pipeline's `txError`
- * precedence); otherwise, any deferred `afterTransaction` errors reject the
- * call with {@link AfterTransactionError} even though the callback itself
+ * (and any real underlying transaction) has settled (ADR-0028). A transaction/
+ * callback error always wins — compensators still all run, but their errors
+ * are discarded in favor of re-surfacing the original, matching the Write
+ * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
+ * errors reject with {@link AfterTransactionError} even though the callback
  * succeeded and the transaction committed.
  */
 async function settleTransactionOwner<T>(
@@ -376,14 +361,6 @@ async function settleTransactionOwner<T>(
   return result
 }
 
-/**
- * Create an access-controlled context
- *
- * @param config - OpenSaas configuration
- * @param prisma - Your Prisma client instance (pass as generic for type safety)
- * @param session - Current session object (or null if not authenticated)
- * @param storage - Optional storage utilities (uploadFile, uploadImage, deleteFile, deleteImage)
- */
 export function getContext<
   TConfig extends OpenSaasConfig,
   TPrisma extends PrismaClientLike = PrismaClientLike,
@@ -401,12 +378,9 @@ export function getContext<
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
 ): StackContext<TPrisma> {
-  // Initialize db object - will be populated with access-controlled operations
-  // Type is intentionally broad to allow dynamic model access
+  // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 
-  // Create context with db reference (will be populated below)
-  // Storage utilities can be provided via parameter or use default stubs
   const context: AccessContext<TPrisma> = {
     session,
     prisma: prisma as TPrisma,
@@ -441,13 +415,10 @@ export function getContext<
     _transactionOwner,
   }
 
-  // Create access-controlled operations for each list, populating `db` in place.
   populateDbDelegate(db, config, prisma, context)
 
-  // Execute plugin runtime functions and populate context.plugins.
   // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
   // any side effects they carry — run exactly once per top-level context.
-  // Use _plugins (sorted by dependencies) if available, otherwise fall back to plugins array
   if (!_sharedPlugins) {
     const pluginsToExecute = config._plugins || config.plugins || []
     for (const plugin of pluginsToExecute) {
@@ -461,7 +432,6 @@ export function getContext<
           )
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
-          // Continue with other plugins even if one fails
         }
       }
     }
@@ -509,7 +479,9 @@ export function getContext<
         try {
           const result = await model.delete({ where: { id } })
           if (result !== null && result !== undefined) deleted++
-        } catch {}
+        } catch {
+          // Skip this row (e.g. a DB constraint error); it is not counted.
+        }
       }
       return { deleted, total: props.ids.length }
     }
@@ -564,8 +536,7 @@ export function getContext<
       }
     }
 
-    // Relationship-table row removal (ADR-0018, #739). Runs on the RELATED row
-    // through the secured context, so the related list's access + hooks apply.
+    // Runs on the RELATED row (ADR-0018 boundary — see ServerActionProps above).
     // Honours Silent failure: an access-denied operation returns `null`, which
     // becomes `{ removed: false }` with a generic reason — never leaking whether
     // the row was denied or absent.
@@ -606,14 +577,13 @@ export function getContext<
       }
     }
 
-    // Relationship-table pre-linked create (ADR-0018, #738). Creates a row on
-    // the RELATED list through the secured context, so the related list's create
-    // access + hooks (and field-level access) apply — never the parent's. The
-    // back-reference to the parent is set here from `field`/`parentId` (a to-one
-    // back-ref connects a single parent; a to-many back-ref, e.g. many-to-many,
-    // connects the parent by id), so the client can never re-target the link.
-    // Honours Silent failure: an access-denied create returns `null`, surfaced
-    // as `{ created: false }` with a generic reason (no denied-vs-absent leak).
+    // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
+    // The back-reference to the parent is set here from `field`/`parentId` (a
+    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
+    // many-to-many, connects the parent by id), so the client can never
+    // re-target the link. Honours Silent failure: an access-denied create
+    // returns `null`, surfaced as `{ created: false }` with a generic reason
+    // (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always
@@ -671,11 +641,9 @@ export function getContext<
       }
     }
 
-    // Relationship-table inline cell edit (ADR-0018, #737). Updates ONE scalar
-    // field on the RELATED row through the secured context, so the related list's
-    // operation- and field-level update access plus its hooks/validation apply —
-    // never the parent's. Honours Silent failure: an access-denied update returns
-    // `null`, surfaced as `{ updated: false }` with a generic reason (no
+    // Updates ONE scalar field on the RELATED row (ADR-0018 boundary — see
+    // ServerActionProps above). Honours Silent failure: an access-denied update
+    // returns `null`, surfaced as `{ updated: false }` with a generic reason (no
     // denied-vs-absent leak); a validation/db error surfaces its message and
     // fieldErrors so the cell can revert with a reason and show an inline error.
     if (props.action === 'updateRelated') {
@@ -750,7 +718,6 @@ export function getContext<
         data: result,
       }
     } catch (error) {
-      // Handle ValidationError (has fieldErrors)
       if (error instanceof ValidationError) {
         return {
           success: false,
@@ -759,7 +726,6 @@ export function getContext<
         }
       }
 
-      // Handle DatabaseError (has fieldErrors)
       if (error instanceof DatabaseError) {
         return {
           success: false,
@@ -768,7 +734,6 @@ export function getContext<
         }
       }
 
-      // Parse and convert Prisma errors to user-friendly DatabaseError
       const dbError = parsePrismaError(error, listConfig)
       if (dbError instanceof DatabaseError) {
         return {
@@ -778,7 +743,6 @@ export function getContext<
         }
       }
 
-      // Generic error fallback
       return {
         success: false,
         error: dbError.message,
@@ -786,8 +750,7 @@ export function getContext<
     }
   }
 
-  // Sudo function - creates a new context that bypasses access control
-  // but still executes all hooks and validation
+  // Bypasses access control; hooks and validation still run.
   function sudo(): StackContext<TPrisma> {
     return getContext(
       config,
@@ -802,13 +765,8 @@ export function getContext<
     )
   }
 
-  // Interactive, hook-firing transaction (#614, ADR-0028 / #899). Rebinds the
-  // access-controlled context to the transaction client so every
-  // `txContext.db.*` write runs its access checks + hooks but persists inside
-  // ONE transaction (atomic). The transaction `options` (e.g. `isolationLevel`)
-  // pass through to Prisma, and a serialization failure thrown inside the
-  // callback propagates to the caller for retry (it is never converted to a
-  // silent `null`).
+  // Interactive, hook-firing transaction (#614). See the `transaction` doc on
+  // `StackContext` above for the atomicity/isolation/retry contract.
   //
   // This call OWNS a deferral registry for its callback's writes (ADR-0028):
   // it always observes when its own callback settles — resolve/reject — even
@@ -831,10 +789,10 @@ export function getContext<
 
     const settled =
       typeof client.$transaction !== 'function'
-        ? // No interactive transaction available — either a plain client/mock or
-          // we are already inside a transaction (a Prisma tx client exposes no
-          // `$transaction`). Run directly: hook/access semantics are identical
-          // and atomicity is provided by any enclosing transaction.
+        ? // No interactive transaction available (plain client/mock, or already
+          // inside one — see `TransactionCapable` above). Run directly: hook/
+          // access semantics are identical, atomicity comes from the enclosing
+          // transaction.
           fn(
             getContext(
               config,
@@ -899,7 +857,6 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const dbKey = getDbKey(listName)
 
-    // Create base operations
     const createOp = createCreate(listName, listConfig, prisma, context, config)
     const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
     const updateOp = createUpdate(listName, listConfig, prisma, context, config)
@@ -923,7 +880,6 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
       ),
     }
 
-    // Add get() method for singleton lists
     if (isSingletonList(listConfig)) {
       operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
     }

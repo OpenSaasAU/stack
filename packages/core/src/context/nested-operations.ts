@@ -391,18 +391,10 @@ async function verifyConnectReachable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const model = (prisma as any)[getDbKey(relatedListName)]
 
-  // #588 — gate the connect by the OWNING relationship field's field-level
-  // access (evaluated for the enclosing write's operation). This runs in
-  // addition to the target read/reachability check below; a deny here denies
-  // the connect even if the target row is readable. `checkFieldAccess` returns
-  // `true` under sudo, but the caller already skips this whole function for
-  // sudo, so the gate never fires for trusted writes.
-  //
-  // `item`/`inputData` are the ENCLOSING write's `originalItem`/`inputData` —
-  // the SAME values the canonical Phase-5 `filterWritableFields` call passes for
-  // this field — so a field-access rule that depends on `item` or `inputData`
-  // (e.g. `({ item }) => item.status === 'draft'`) evaluates identically here and
-  // at Phase 5, and the two gates cannot diverge into a spurious connect denial.
+  // #588 owning-field gate (see docblock above). `item`/`inputData` are the
+  // ENCLOSING write's `originalItem`/`inputData` — the same values the canonical
+  // Phase-5 `filterWritableFields` call passes for this field — so an
+  // item-/inputData-dependent field-access rule can't diverge between the two gates.
   const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
     session: context.session,
     item: enclosingItem,
@@ -413,20 +405,17 @@ async function verifyConnectReachable(
     throw new Error('Access denied: Cannot connect to this item')
   }
 
-  // Connecting references an existing row; it requires READ (query) access on
-  // the target, not update access.
   const queryAccess = relatedListConfig.access?.operation?.query
   const accessResult = await checkAccess(queryAccess, {
     session: context.session,
     context,
   })
 
-  // Explicit denial.
   if (accessResult === false) {
     throw new Error('Access denied: Cannot connect to this item')
   }
 
-  // Full access: still verify the row exists (keep "Item not found" behaviour).
+  // Full access still verifies the row exists, to keep "Item not found" behaviour.
   if (accessResult === true) {
     const item = await model.findUnique({ where: connection })
     if (!item) {
@@ -435,11 +424,8 @@ async function verifyConnectReachable(
     return
   }
 
-  // Filter result: confirm the row is reachable under the access filter by
-  // AND-combining the connection identifier with the filter and querying the DB.
-  // A non-existent id and an unreachable row both yield no row → denied. This
-  // correctly evaluates arbitrary nested-relation predicates and boolean
-  // combinators because the database does the matching, not an in-memory walk.
+  // Filter result: reachable iff AND-combining the connection with the filter
+  // returns a row (see docblock above).
   const reachable = await model.findFirst({
     where: { AND: [connection, accessResult] },
   })
@@ -468,7 +454,6 @@ async function processNestedConnect(
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const connectionsArray = Array.isArray(connections) ? connections : [connections]
 
-  // Check read access for each item being connected (skip if sudo mode)
   if (!context._isSudo) {
     for (const connection of connectionsArray) {
       await verifyConnectReachable(
@@ -516,18 +501,15 @@ async function processNestedUpdate(
 
       const where = (update as Record<string, unknown>).where as Record<string, unknown>
 
-      // Fetch the existing item — reused as `originalItem` for afterOperation.
+      // Fetched here and reused as `originalItem` for afterOperation.
       const originalItem = await model.findUnique({ where })
 
       if (!originalItem) {
         throw new Error('Cannot update: Item not found')
       }
 
-      // The updated row's id is known up front, so the included-result read-back
-      // finds this row directly by id.
       const knownId = typeof originalItem.id === 'string' ? (originalItem.id as string) : undefined
 
-      // Check update access (skip if sudo mode)
       if (!context._isSudo) {
         const updateAccess = relatedListConfig.access?.operation?.update
         const accessResult = await checkAccess(updateAccess, {
@@ -541,7 +523,6 @@ async function processNestedUpdate(
         }
       }
 
-      // Execute list-level resolveInput hook
       const updateData = (update as Record<string, unknown>).data as Record<string, unknown>
       let resolvedData = await executeResolveInput(relatedListConfig.hooks, {
         listKey: relatedListName,
@@ -552,7 +533,6 @@ async function processNestedUpdate(
         context,
       })
 
-      // Execute field-level resolveInput hooks
       resolvedData = await executeFieldResolveInputHooks(
         updateData,
         resolvedData,
@@ -563,7 +543,6 @@ async function processNestedUpdate(
         originalItem,
       )
 
-      // Execute validate hook
       await executeValidate(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'update',
@@ -573,7 +552,6 @@ async function processNestedUpdate(
         context,
       })
 
-      // Field-level validate hooks
       await executeFieldValidateHooks(
         updateData,
         resolvedData,
@@ -584,14 +562,13 @@ async function processNestedUpdate(
         originalItem,
       )
 
-      // Field validation (built-in rules)
       const validation = validateFieldRules(resolvedData, relatedListConfig.fields, 'update')
       if (validation.errors.length > 0) {
         throw new ValidationError(validation.errors, validation.fieldErrors)
       }
 
-      // Split multi-column fields into physical columns (#789). Only reached
-      // once the logical value has passed validation above.
+      // Split multi-column fields into physical columns (#789) — must run after
+      // validation, which operates on the logical (pre-split) value.
       resolvedData = await splitMultiColumnFields(
         updateData,
         resolvedData,
@@ -601,7 +578,6 @@ async function processNestedUpdate(
         originalItem,
       )
 
-      // Filter writable fields
       const filtered = await filterWritableFields(
         resolvedData,
         relatedListConfig.fields,
@@ -614,8 +590,8 @@ async function processNestedUpdate(
         },
       )
 
-      // Recursively process nested operations. This nested row is being UPDATED,
-      // so its own relations' pre-existing rows are captured from `originalItem`.
+      // This nested row is being updated, so its own relations' pre-existing
+      // rows are captured from `originalItem` below.
       const { data: nestedData, afterTasks: childAfterTasks } = await processNestedOperations(
         filtered,
         relatedListConfig.fields,
@@ -624,12 +600,11 @@ async function processNestedUpdate(
         'update',
         relatedListName,
         originalItem,
-        // This nested row is being UPDATED, so its enclosing inputData is its own
-        // update payload (passed to the connect-site owning-field gate, #588).
+        // Its own update payload is the enclosing inputData for the connect-site
+        // owning-field gate (#588).
         updateData,
       )
 
-      // Field-level beforeOperation (side effects)
       await executeFieldBeforeOperationHooks(
         updateData,
         resolvedData,
@@ -640,7 +615,6 @@ async function processNestedUpdate(
         originalItem,
       )
 
-      // List-level beforeOperation
       await executeBeforeOperation(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'update',
@@ -650,8 +624,7 @@ async function processNestedUpdate(
         context,
       })
 
-      // Register afterOperation: fires after the parent persist. The updated row
-      // is recovered from the parent's included relation by its known id.
+      // Fires after the parent persist; the row is recovered by its known id.
       afterTasks.push({
         fieldName,
         run: async (parentResult) => {
@@ -732,7 +705,6 @@ async function processNestedDelete(
         throw new Error('Cannot delete: Item not found')
       }
 
-      // Check delete access (skip if sudo mode)
       if (!context._isSudo) {
         const deleteAccess = relatedListConfig.access?.operation?.delete
         const accessResult = await checkAccess(deleteAccess, {
@@ -746,7 +718,6 @@ async function processNestedDelete(
         }
       }
 
-      // List-level validate (delete)
       await executeValidate(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'delete',
@@ -754,7 +725,6 @@ async function processNestedDelete(
         context,
       })
 
-      // Field-level validate (delete)
       await executeFieldValidateHooks(
         undefined,
         undefined,
@@ -765,7 +735,6 @@ async function processNestedDelete(
         originalItem,
       )
 
-      // Field-level beforeOperation (delete)
       await executeFieldBeforeOperationHooks(
         {},
         {},
@@ -776,7 +745,6 @@ async function processNestedDelete(
         originalItem,
       )
 
-      // List-level beforeOperation (delete)
       await executeBeforeOperation(relatedListConfig.hooks, {
         listKey: relatedListName,
         operation: 'delete',
@@ -784,8 +752,8 @@ async function processNestedDelete(
         context,
       })
 
-      // Register afterOperation: the row is gone after persist, so the
-      // originalItem is the authoritative record passed to after-hooks.
+      // The row is gone after persist, so originalItem is the authoritative
+      // record passed to the after-hooks below.
       afterTasks.push({
         fieldName: '',
         run: async () => {
@@ -814,9 +782,6 @@ async function processNestedDelete(
   return deletes
 }
 
-/**
- * Process nested connectOrCreate operations
- */
 async function processNestedConnectOrCreate(
   operations: Record<string, unknown> | Array<Record<string, unknown>>,
   fieldName: string,
@@ -839,15 +804,11 @@ async function processNestedConnectOrCreate(
     operationsArray.map(async (op) => {
       const opRecord = op as Record<string, unknown>
 
-      // Check access for the connect portion (skip if sudo mode).
-      //
-      // connectOrCreate connects an existing row when present, otherwise
-      // creates. So when the row exists we apply the same connect semantics as
-      // processNestedConnect — READ (query) access on the target, evaluated via
-      // DB reachability for filter results, PLUS the owning relationship field's
-      // field-level access (#588). When the row does not exist we fall through to
-      // create. We must NOT swallow an access-denied error: only the genuine
-      // "row absent" case may fall back to create.
+      // When the target row exists, connectOrCreate applies the same connect
+      // semantics as processNestedConnect (read access + #588 owning-field gate,
+      // both evaluated via DB reachability); otherwise it falls through to
+      // create. An access-denied error must NOT be swallowed into that fallback
+      // — only a genuine "row absent" may fall back to create.
       let rowExists = false
       if (!context._isSudo) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -856,18 +817,9 @@ async function processNestedConnectOrCreate(
 
         const existingItem = await model.findUnique({ where })
 
-        // Only enforce connect access when the row actually exists; otherwise
-        // the create branch is used.
         if (existingItem) {
           rowExists = true
 
-          // #588 — gate the connect branch by the OWNING relationship field's
-          // field-level access, identical to processNestedConnect. A deny here
-          // denies the connect even if the target row is readable/reachable.
-          // `item`/`inputData` are the ENCLOSING write's `originalItem`/
-          // `inputData` (the same values Phase-5 `filterWritableFields` passes),
-          // so item-/inputData-dependent field rules cannot diverge between the
-          // two gates.
           const owningFieldAllowed = await checkFieldAccess(owningFieldAccess, enclosingOperation, {
             session: context.session,
             item: enclosingItem,
@@ -889,8 +841,6 @@ async function processNestedConnectOrCreate(
             throw new Error('Access denied: Cannot connect to existing item')
           }
 
-          // Filter result: confirm the existing row is reachable under the
-          // access filter via DB reachability (handles nested/boolean filters).
           if (accessResult !== true) {
             const reachable = await model.findFirst({
               where: { AND: [where, accessResult] },
@@ -903,11 +853,10 @@ async function processNestedConnectOrCreate(
         }
       }
 
-      // Process the create portion through the full create pipeline (incl.
-      // before/afterOperation). Only register an afterOperation task when the
-      // create branch will actually run (row absent), so a pure connect does not
-      // fire create hooks. Under sudo we cannot statically know, so we let the
-      // create pipeline run its hooks (sudo bypasses access only, not hooks).
+      // Only register an afterOperation task when the create branch will
+      // actually run (row absent), so a pure connect doesn't fire create hooks.
+      // Under sudo we can't tell statically, so the create pipeline always runs
+      // its hooks there (sudo bypasses access only, not hooks).
       const runCreateHooks = context._isSudo || !rowExists
       const createAfterTasks: AfterTask[] = runCreateHooks ? afterTasks : []
       const processedCreate = await processNestedCreate(
@@ -945,29 +894,20 @@ interface NestedOpHandlerArgs {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>
   /**
-   * Field-level `access` of the OWNING relationship field on the list being
-   * written (e.g. `Post.author`). Used by the connect/connectOrCreate handlers
-   * to gate connects by the owning field's create/update access (#588).
+   * Field-level `access` of the OWNING relationship field (e.g. `Post.author`).
+   * Gates connect/connectOrCreate by the owning field's create/update access —
+   * see the #588 gate in {@link verifyConnectReachable}.
    */
   owningFieldAccess: FieldAccess | undefined
-  /**
-   * The enclosing write's operation (`create`/`update`), used as the field-access
-   * operation for the owning-field connect gate (#588).
-   */
+  /** The enclosing write's operation, used as the owning-field gate's field-access operation. */
   enclosingOperation: 'create' | 'update'
   /**
-   * The enclosing write's existing row (the parent `originalItem`): present for an
-   * enclosing UPDATE, `undefined` for an enclosing CREATE. Threaded into the
-   * connect-site owning-field gate so it evaluates `item` exactly like the
-   * canonical Phase-5 `filterWritableFields` call and the two cannot diverge
-   * (#588 finding).
+   * The enclosing write's `originalItem` (`undefined` for an enclosing create).
+   * Passed to the owning-field gate so it matches the canonical Phase-5
+   * `filterWritableFields` call and the two can't diverge (#588).
    */
   enclosingItem: Record<string, unknown> | undefined
-  /**
-   * The enclosing write's input data. Threaded into the connect-site owning-field
-   * gate so it evaluates `inputData` exactly like the canonical Phase-5
-   * `filterWritableFields` call (#588 finding).
-   */
+  /** The enclosing write's input data, passed to the owning-field gate for the same reason as `enclosingItem`. */
   enclosingInputData: Record<string, unknown> | undefined
   context: AccessContext
   config: OpenSaasConfig
@@ -1241,10 +1181,8 @@ export async function processNestedOperations(
   operation: 'create' | 'update',
   parentListName: string,
   parentOriginalItem: Record<string, unknown> | undefined,
-  // The enclosing write's input data (the SAME value Phase-5 `filterWritableFields`
-  // passes as `inputData`). Threaded into the connect-site owning-field gate (#588
-  // finding) so item-/inputData-dependent field-access rules cannot diverge between
-  // Phase 5 and the connect site. `undefined` is tolerated (defaults to `{}`).
+  // The enclosing write's inputData, for the #588 owning-field gate (see
+  // verifyConnectReachable). `undefined` is tolerated (defaults to `{}`).
   parentInputData: Record<string, unknown> | undefined = undefined,
 ): Promise<NestedOpsResult> {
   const afterTasks: AfterTask[] = []
@@ -1255,13 +1193,11 @@ export async function processNestedOperations(
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = fieldConfigs[fieldName]
 
-    // If not a relationship field or no value, pass through
     if (!isRelationshipField(fieldConfig) || value === null || value === undefined) {
       processed[fieldName] = value
       continue
     }
 
-    // Get related list config
     const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
     const relatedConfig = getRelatedListConfig(relationshipField.ref, config)
     if (!relatedConfig) {
@@ -1270,13 +1206,10 @@ export async function processNestedOperations(
     }
 
     const { listName: relatedListName, listConfig: relatedListConfig } = relatedConfig
-    // Sanity: ensure the resolved list name matches the config identity.
     const resolvedListName = relatedListName || findListName(relatedListConfig, config)
 
-    // #588 — the owning relationship field's field-level access (e.g. the
-    // `access` on `Post.author`). Threaded into the nested-op handlers so the
-    // connect/connectOrCreate handlers can gate connects by this field's
-    // create/update access, in addition to the target's read access.
+    // The owning relationship field's field-level access, for the #588 gate
+    // in verifyConnectReachable.
     const owningFieldAccess = fieldConfig.access
 
     processed[fieldName] = await processFieldNestedOps(
@@ -1287,10 +1220,8 @@ export async function processNestedOperations(
         relatedListConfig,
         owningFieldAccess,
         enclosingOperation: operation,
-        // The enclosing write's `originalItem`/`inputData` — the SAME values the
-        // canonical Phase-5 `filterWritableFields` call passes for this field — so
-        // the connect-site owning-field gate evaluates item-/inputData-dependent
-        // rules identically and cannot diverge into a spurious connect denial (#588).
+        // Same values Phase-5 `filterWritableFields` passes for this field, so
+        // the #588 owning-field gate can't diverge from it.
         enclosingItem: parentOriginalItem,
         enclosingInputData: parentInputData ?? {},
         context,

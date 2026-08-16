@@ -28,30 +28,18 @@ import { getDbKey } from '../lib/case-utils.js'
 import { buildDbDelegate } from './index.js'
 
 /**
- * Write Pipeline — the single module that runs the canonical, secured write
- * sequence for one create/update/delete. It owns the phase order in one place;
- * the per-operation differences (target resolution + access, which input phases
- * run, the DB verb and returned row) are supplied by a {@link WriteStrategy}.
- *
- * The phase order is the framework's single most important invariant. See the
- * "Write Pipeline" glossary term in CONTEXT.md and the hooks ordering in
- * CLAUDE.md. Reads (findUnique/findMany) and the two-phase read model
- * (ADR-0001) are intentionally out of scope here.
+ * Write Pipeline — runs the canonical, secured write sequence for one
+ * create/update/delete; see the "Write Pipeline" glossary entry in CONTEXT.md
+ * for the phase order and the hooks ordering in CLAUDE.md. Reads are out of
+ * scope (ADR-0001).
  */
 
-/**
- * The write operations the pipeline can run.
- */
 export type WriteOperation = 'create' | 'update' | 'delete'
 
 /**
- * Result of resolving a write target (axis 1).
- *
- * - `{ status: 'ok', originalItem }` — proceed. `originalItem` is the existing
- *   row for update/delete, or `undefined` for create.
- * - `{ status: 'denied' }` — access denied, missing target, or filter
- *   non-match. The pipeline short-circuits to `null` (silent failure) BEFORE
- *   any input phases, before-hooks, or the DB call.
+ * Result of resolving a write target (axis 1). `denied` covers access denial,
+ * a missing target, or a filter non-match alike, and short-circuits to `null`
+ * before any hooks or the DB call.
  */
 export type TargetResolution =
   { status: 'ok'; originalItem: Record<string, unknown> | undefined } | { status: 'denied' }
@@ -78,21 +66,14 @@ export interface PrismaModel {
 
 /**
  * Per-operation strategy. Supplies the three axes on which create/update/delete
- * genuinely differ; the pipeline owns the shared phase order around them.
- *
- *   1. `resolveTarget` — fetch the target row (if any) + operation-level access.
- *   2. `runInputPhases` — whether the resolveInput → validate-hooks → field
- *      rules → filter-writable → nested-ops span runs (create & update: yes;
- *      delete: no).
- *   3. `persist` — the DB verb; returns the row passed through Field Visibility.
+ * differ; the pipeline owns the shared phase order around them.
  */
 export interface WriteStrategy {
   operation: WriteOperation
 
   /**
-   * Axis 1: resolve the target row and check operation-level access. Receives
-   * the dynamically-resolved Prisma model so it can fetch rows and perform
-   * filter re-checks. Implementations must honour `context._isSudo`.
+   * Axis 1: resolve the target row and check operation-level access.
+   * Implementations must honour `context._isSudo`.
    */
   resolveTarget(model: PrismaModel): Promise<TargetResolution>
 
@@ -118,8 +99,8 @@ export interface WriteStrategy {
 
 /**
  * Resolve the dynamic Prisma model for a list. Model names are generated at
- * runtime from list keys, which is the one place a cast is unavoidable — it is
- * kept localized here (mirroring the existing pattern in `context/index.ts`).
+ * runtime, so the cast is unavoidable — kept localized here (mirrors
+ * `context/index.ts`).
  */
 function getModel<TPrisma extends PrismaClientLike>(
   prisma: TPrisma,
@@ -130,11 +111,8 @@ function getModel<TPrisma extends PrismaClientLike>(
 }
 
 /**
- * Minimal shape of a Prisma interactive-transaction-capable client.
- *
- * The transaction client `tx` is dynamically typed exactly like the model
- * surface above (model names are generated at runtime), so the cast is kept
- * localized and commented per the house rules.
+ * Minimal shape of a Prisma interactive-transaction-capable client. `tx` is
+ * dynamically typed like the model surface above (names generated at runtime).
  */
 interface TransactionCapable {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- $transaction callback receives a dynamically-typed tx client
@@ -142,15 +120,12 @@ interface TransactionCapable {
 }
 
 /**
- * Run `fn` inside ONE interactive transaction (ADR-0010: every write is
- * transactional, so the hook contract does not depend on whether a write
- * happened to be nested). The transaction client `tx` is passed to `fn` and
- * used as the persistence target for the parent + all nested writes, so they
- * are atomic and a throwing hook rolls the whole write back.
+ * Run `fn` inside ONE interactive transaction, used as the persistence target
+ * for the parent and all nested writes (ADR-0010).
  *
- * If the client does not expose `$transaction` (e.g. a test mock), `fn` runs
- * directly against the client — the hook ordering and arguments are identical;
- * only the rollback guarantee is provided by the real transaction.
+ * Without `$transaction` (e.g. a test mock), `fn` runs directly against the
+ * client — hook ordering and arguments are identical, but only a real
+ * transaction provides the rollback guarantee.
  */
 async function runInTransaction<TPrisma extends PrismaClientLike>(
   prisma: TPrisma,
@@ -166,17 +141,11 @@ async function runInTransaction<TPrisma extends PrismaClientLike>(
   return fn(prisma)
 }
 
-/**
- * Check if a list is configured as a singleton.
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
 }
 
-/**
- * Arguments shared by every write pipeline run.
- */
 export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -186,45 +155,28 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
   config: OpenSaasConfig
   /** The original input data for the write (create/update). `undefined` for delete. */
   inputData: Record<string, unknown> | undefined
-  /** The per-operation strategy supplying the three variation axes. */
+  /** The per-operation strategy (see {@link WriteStrategy}). */
   strategy: WriteStrategy
   /**
-   * The target resolution computed ONCE before the transaction opened (#590).
-   *
-   * The transaction-boundary bracket resolves the top-level target + access
-   * before opening the transaction (both to gate silent-failures without firing
-   * boundary hooks, and to supply `originalItem` to `beforeTransaction`). To
-   * avoid a second resolution inside the transaction, the in-transaction body
-   * reuses this result instead of calling `strategy.resolveTarget` again.
+   * The target resolution computed once before the transaction opens, and
+   * reused inside it rather than resolved a second time — see the
+   * pre-transaction gate in {@link runWritePipeline}.
    */
   preResolvedTarget?: TargetResolution
 }
 
 /**
- * Run the canonical secured write sequence once.
- *
- * Phase order (owned here, in one place):
- *   resolve target + operation-level access
- *     → list/field `resolveInput`
- *     → list/field `validate`
- *     → built-in field rules (`validateFieldRules`)
- *     → filter writable fields
- *     → nested operations
- *     → list/field `beforeOperation`
- *     → DB
- *     → list/field `afterOperation`
- *     → `filterReadableFields` (Field Visibility)
+ * Run the canonical secured write sequence once. Phase order matches the
+ * "Write Pipeline" glossary entry in CONTEXT.md.
  *
  * Contract preserved exactly:
  *   - missing target / access denied / filter non-match → `null` (silent),
  *     BEFORE the DB call and BEFORE `beforeOperation`.
  *   - validation failure → THROW `ValidationError` (never silent).
- *   - sudo mode skips access checks and writable-field filtering (the strategy
- *     and `filterWritableFields` both honour `context._isSudo`).
+ *   - sudo mode skips access checks and writable-field filtering.
  *   - `afterOperation` receives `originalItem` for update/delete (undefined for
  *     create).
- *   - delete returns the deleted row as-is (no Field Visibility pass), matching
- *     current behaviour.
+ *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
 export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
@@ -232,16 +184,12 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   const { prisma, listName, listConfig, context, config, inputData, strategy } = args
 
   // ── Pre-transaction access gate (#590) ──────────────────────────────────────
-  // Resolve the TOP-LEVEL target + operation-level access OUTSIDE the
-  // transaction first, using the NON-transactional client. A
-  // denied/missing/filter-non-match target short-circuits to `null` (silent
-  // failure) WITHOUT firing any transaction-boundary hooks — a denied write
-  // opens no transaction and takes no external action, so it must not run
-  // beforeTransaction/afterTransaction. This resolution also yields the
-  // top-level `originalItem` the boundary hooks receive for update/delete.
-  // The result is passed into the transaction as `preResolvedTarget` and REUSED
-  // there (the in-transaction resolveTarget does NOT re-run), so the target is
-  // read exactly once — #569's resolveTarget call-count semantics are preserved.
+  // Resolves the top-level target + access OUTSIDE the transaction so a denied
+  // write short-circuits to `null` WITHOUT firing beforeTransaction/
+  // afterTransaction — a denied write takes no external action, so the
+  // boundary hooks must not run. The result feeds `preResolvedTarget` and is
+  // REUSED inside the transaction rather than re-resolved, keeping the target
+  // read exactly once (#569).
   const gate = await strategy.resolveTarget(getModel(prisma, listName))
   if (gate.status === 'denied') {
     return null
@@ -258,14 +206,10 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   })
 
   // ── Transaction ownership for the transaction-boundary hooks (ADR-0028) ────
-  // A write already reached through a context carrying `_transactionOwner` is
-  // itself JOINING an enclosing transaction it did not open (a nested
-  // `context.transaction()`, or a hook's own `context.db` write) — regardless
-  // of whether `prisma` here happens to still expose `$transaction`, it must
-  // defer to that owner rather than opening a second transaction. Otherwise,
-  // if `prisma` can open a real interactive transaction, THIS write becomes
-  // the owner: it creates the registry every joined write below it (including
-  // hook-issued writes reached via `bindContextToTransaction`) enqueues into.
+  // A context carrying `_transactionOwner` is JOINING an enclosing transaction
+  // it did not open — defer to that owner even if `prisma` here still exposes
+  // `$transaction`. Otherwise this write becomes the owner: the registry every
+  // joined write below it enqueues into.
   const existingOwner = context._transactionOwner
   const opensOwnTransaction =
     !existingOwner && typeof (prisma as TransactionCapable).$transaction === 'function'
@@ -273,37 +217,23 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   const transactionOwnerForBody = existingOwner ?? ownedRegistry
 
   // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
-  // beforeTransaction runs before the transaction opens; afterTransaction runs
-  // after it settles (commit or rollback) — deferred to the owner for a joined
-  // write (ADR-0028), per the symmetric-bracket rule.
+  // afterTransaction fires when the transaction settles, deferred to the owner
+  // for a joined write (ADR-0028, symmetric-bracket rule).
   return runWithTransactionBoundary({
     involvedLists,
     context,
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
-      // ADR-0010: every write runs inside ONE interactive transaction. The
-      // parent and ALL nested writes share this transaction's client `tx` as
-      // their persistence target, so they are atomic and a throwing
-      // `beforeOperation`/`afterOperation` (or validation) rolls the whole write
-      // back. `runWriteInTransaction` resolves the target row, runs the full
-      // hook pipeline, persists, and runs nested + own `afterOperation` — all
-      // against `tx`.
+      // ADR-0010: parent + nested writes share `tx` as their persistence target.
       runInTransaction(prisma, (tx) =>
         runWriteInTransaction({
           ...args,
           prisma: tx,
-          // Reuse the pre-transaction target resolution (computed above) so the
-          // target is read exactly once (#569 call-count semantics preserved).
+          // Reuse the pre-transaction target resolution (#569 call-count semantics).
           preResolvedTarget: gate,
-          // ADR-0010 atomicity: hooks that write via `context.db` must hit the
-          // SAME transaction, or those writes would commit independently and
-          // survive a rollback. Rebind the context's `db` (and `prisma`) to the
-          // transaction client `tx` so before/afterOperation `context.db` writes
-          // participate in — and roll back with — this write's transaction.
-          // Also carries the transaction owner (ADR-0028) so any such write
-          // defers its own transaction-boundary bracket instead of firing it
-          // before this transaction has actually settled.
+          // Rebind context.db/prisma to `tx` (ADR-0010 atomicity) and carry the
+          // transaction owner (ADR-0028) — see bindContextToTransaction below.
           context: bindContextToTransaction(args, tx, transactionOwnerForBody),
         }),
       ),
@@ -312,21 +242,19 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
 
 /**
  * Build an {@link AccessContext} whose `db`/`prisma` target the transaction
- * client `tx`, so any `context.db` write a hook performs runs inside this
- * write's transaction and rolls back with it (ADR-0010).
+ * client `tx`, so a `context.db` write a hook performs runs inside — and rolls
+ * back with — this write's transaction (ADR-0010).
  *
  * The access-controlled `db` delegates capture their Prisma client at
- * construction, so the request-time `context.db` is bound to the ORIGINAL
- * client. We rebuild the delegates against `tx` via {@link buildDbDelegate},
- * reusing the request context's `session`, `storage`, `plugins`, `_isSudo`, and
- * the current `_resolveOutputChain` value (carried through unchanged, so a
- * write issued from inside a `resolveOutput` hook keeps that hook's chain).
- * Plugin runtimes are NOT re-executed; the existing `plugins` object is
- * reused as-is.
+ * construction, so swapping `context.prisma` alone would not rebind `db` — we
+ * rebuild the delegates against `tx` via {@link buildDbDelegate}, reusing the
+ * request context's `session`, `storage`, `plugins`, `_isSudo`, and
+ * `_resolveOutputChain` as-is (so a write from inside a `resolveOutput` hook
+ * keeps that hook's chain). Plugin runtimes are NOT re-executed.
  *
- * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook
- * that issues its own `context.db` write from inside this transaction defers
- * its transaction-boundary bracket to that owner instead of firing eagerly.
+ * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook's
+ * own `context.db` write defers its transaction-boundary bracket to that owner
+ * instead of firing eagerly.
  */
 function bindContextToTransaction<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
@@ -344,8 +272,8 @@ function bindContextToTransaction<TPrisma extends PrismaClientLike>(
     _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
   }
-  // Rebuild the db delegate against `tx`, pointing back at `txContext` so hooks
-  // reached through it also see the transactional context.
+  // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
+  // through it see the transactional context.
   txContext.db = buildDbDelegate(config, tx, txContext)
   return txContext
 }
@@ -364,12 +292,9 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
   const model = getModel(tx, listName)
 
   // ── Phase 1: resolve target + operation-level access ──────────────────────
-  // Short-circuits to `null` (silent failure) for missing target, denied
-  // access, or filter non-match — before any hook side effects or the DB call.
-  // The transaction-boundary bracket (#590) already resolved this once before
-  // opening the transaction; reuse that result rather than reading the target
-  // twice. (When invoked without the bracket — e.g. a direct unit test — fall
-  // back to resolving here against the tx model.)
+  // Reuses `preResolvedTarget` from the pre-transaction gate rather than
+  // reading the target twice; falls back to resolving here when invoked
+  // directly (e.g. a unit test) without that bracket.
   const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(model))
   if (resolution.status === 'denied') {
     return null
@@ -377,22 +302,18 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
   const originalItem = resolution.originalItem
 
   // ── Delete path: skip input phases, run only validate/field-validate ────────
-  // (matches current delete behaviour exactly).
   if (!strategy.runInputPhases) {
     return runDeletePath({ listName, listConfig, context, originalItem, model, strategy })
   }
 
-  // Only create/update reach here (delete short-circuited above). Narrow the
-  // operation so the field-hook helpers receive a 'create' | 'update' value.
+  // Only create/update reach here (delete short-circuited above); narrow so
+  // field-hook helpers receive a 'create' | 'update' value.
   const writeOp: 'create' | 'update' = operation === 'create' ? 'create' : 'update'
 
-  // `inputData` is always present for create/update (the operations that run
-  // input phases). Default to {} only as a defensive measure.
+  // `inputData` is always present here; `?? {}` is only a defensive fallback.
   const input = inputData ?? {}
 
-  // ── Phases 2–4: transform + validate span (Hook Pipeline) ──────────────────
-  // The Hook Pipeline owns the list/field `resolveInput` → list/field `validate`
-  // → built-in field rules span and the `resolvedData` threading through it. It
+  // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
   const { resolvedData } = await hookPipeline.run({
     operation: writeOp,
@@ -412,11 +333,10 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
   })
 
   // ── Phase 5.5: process nested relationship operations ───────────────────────
-  // This runs each nested record's resolveInput/validate/field-rules AND its
-  // `beforeOperation` (inside this transaction), returning the transformed
-  // payload plus deferred `afterOperation` tasks and the relation fields to
-  // `include` so those tasks can recover their persisted `item`. All nested DB
-  // reads/persistence go through `tx`.
+  // Runs each nested record's resolveInput/validate/field-rules AND its
+  // `beforeOperation` inside this transaction, returning deferred
+  // `afterOperation` tasks plus the relation fields to `include` so those tasks
+  // can recover their persisted `item`.
   const { data, afterTasks, includeFields } = await processNestedOperations(
     filteredData,
     listConfig.fields,
@@ -425,10 +345,9 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
     writeOp,
     listName,
     originalItem,
-    // Pass the enclosing write's `inputData` (the SAME value the Phase-5
-    // `filterWritableFields` call above uses) so the connect-site owning-field
-    // gate evaluates item-/inputData-dependent field rules identically to Phase 5
-    // and the two cannot diverge into a spurious connect denial (#588 finding).
+    // Same `inputData` Phase 5's filterWritableFields used, so the connect-site
+    // owning-field gate evaluates identically and can't diverge into a
+    // spurious connect denial (#588).
     input,
   )
 
@@ -465,8 +384,8 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
   )
 
   // ── Phase 8: DB write ───────────────────────────────────────────────────────
-  // Ask the DB to return the nested relations that have deferred
-  // `afterOperation` tasks so they can recover their persisted `item`.
+  // `include` returns the nested relations with deferred `afterOperation`
+  // tasks so they can recover their persisted `item`.
   const include = buildIncludeFromFields(includeFields)
   const item = await strategy.persist(model, data, include)
 
@@ -486,7 +405,7 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
           listKey: listName,
           operation: 'update',
           inputData: input,
-          // originalItem is the row before the update
+          // Non-null for update (fetched in Phase 1); cast narrows the type.
           originalItem: originalItem as Record<string, unknown>,
           item,
           resolvedData,
@@ -542,11 +461,9 @@ function buildIncludeFromFields(includeFields: Set<string>): Record<string, unkn
 
 /**
  * Run the deferred nested `afterOperation` tasks against the persisted parent
- * row. The persisted parent is always a record here; the `?? {}` is only a
- * type-narrowing guard. Each task recovers its OWN nested row from `item` by
- * id-diff (create) or known id (update); if a created row cannot be recovered
- * the task THROWS rather than firing `afterOperation` with a fabricated item
- * (see `recoverCreatedRows`/the create task in `nested-operations.ts`).
+ * row (`?? {}` is only a type-narrowing guard — parent is always a record
+ * here). Each task recovers its own nested row by id-diff/known id and THROWS
+ * if it can't, rather than firing with a fabricated item (ADR-0010).
  */
 async function runNestedAfterTasks(
   afterTasks: AfterTask[],
@@ -557,10 +474,9 @@ async function runNestedAfterTasks(
 }
 
 /**
- * The delete tail of the pipeline: skips the input-shaping phases and runs only
- * validate/field-validate before the DB delete, then the after-hooks. Returns
- * the deleted row as-is (no Field Visibility pass) — matching current delete
- * behaviour exactly.
+ * The delete tail of the pipeline: skips the input-shaping phases and runs
+ * only validate/field-validate before the DB delete, then the after-hooks.
+ * Returns the deleted row as-is (no Field Visibility pass).
  */
 async function runDeletePath(args: {
   listName: string
@@ -641,11 +557,11 @@ async function runDeletePath(args: {
 // ── Per-operation strategies ──────────────────────────────────────────────────
 
 /**
- * Create strategy.
+ * Create strategy for {@link WriteStrategy}.
  *
- * Axis 1: checks `create` access with NO existing row. Enforces the
- * singleton-create constraint even under sudo. On create, an access result of
- * `true` OR a filter object both proceed — there is no filter re-check.
+ * Axis 1: checks `create` access with no existing row; a filter result
+ * proceeds with no re-check (unlike update/delete). Enforces the
+ * singleton-create constraint even under sudo.
  * Axis 2: runs all input phases.
  * Axis 3: `model.create({ data })`, prepending `id: 1` for singleton lists.
  */
@@ -737,7 +653,7 @@ function resolveExistingTarget(
 }
 
 /**
- * Update strategy.
+ * Update strategy for {@link WriteStrategy}.
  *
  * Axis 1: fetch row, check `update` access, re-check filter results.
  * Axis 2: runs all input phases.
@@ -760,11 +676,11 @@ export function updateWriteStrategy(
 }
 
 /**
- * Delete strategy.
+ * Delete strategy for {@link WriteStrategy}.
  *
  * Axis 1: enforce singleton constraint (even under sudo), fetch row, check
  * `delete` access, re-check filter results.
- * Axis 2: SKIPS input phases (runs only validate/field-validate).
+ * Axis 2: skips input phases (runs only validate/field-validate).
  * Axis 3: `model.delete({ where })`; afterOperation gets `originalItem`.
  */
 export function deleteWriteStrategy(
