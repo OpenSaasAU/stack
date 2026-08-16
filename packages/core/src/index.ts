@@ -83,6 +83,14 @@ export { ResolveOutputCycleError } from './access/index.js'
 // validation failure.
 export { InvalidFieldAccessResultError } from './access/index.js'
 
+// Thrown by a read when a caller-supplied `where` filters on a relation whose
+// related list denies operation-level `query` access outright (see #916 and
+// ADR-0022). Distinct from `ValidationError` for the same reason as
+// `AccessScopeDepthExceededError` — this is the engine declining to return a
+// silently-narrowed match on a relation it cannot scope, not a user-input
+// validation failure.
+export { RelationFilterAccessDeniedError } from './access/index.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
 // getPrismaRelation for relationships) so a misimplemented field fails early
@@ -148,10 +156,12 @@ export {
   isToManyRelationshipField,
 } from './access/relationship-count.js'
 
-// Access-scoped to-one relationship label filters for the admin list view
-// (#749): fold the related list's `query` access into a to-one relationship
-// Filter spec's nested `is` clause so a session can never use a relationship
-// filter token to distinguish rows by a related field it cannot itself read.
+// To-one relationship label filter helpers for the admin list view (#749).
+// `resolveRelationshipLabelFilters` is now a pass-through: the engine itself
+// scopes every relation filter in `where` (`buildAccessScopedWhere`, #916),
+// including the `{ is: {...} } }` shape a label filter produces, so this no
+// longer needs its own access fold. Kept exported, unchanged in shape, for
+// API compatibility — see `relationship-label-filter.ts`'s doc comment.
 export {
   resolveRelationshipLabelFilters,
   isToOneRelationshipField,

@@ -453,13 +453,20 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
   })
 })
 
-describe('ListView to-one relationship label filter access scoping (issue #749)', () => {
+describe('ListView to-one relationship label filter (issue #749 / #916)', () => {
+  // Until #916, ListView folded the related list's `query` access into a
+  // to-one relationship label filter's nested `is` clause itself, since the
+  // engine did not scope relation filters in `where` at all. #916 moved that
+  // scoping into the engine (`buildAccessScopedWhere`, exercised end-to-end
+  // in `packages/core/tests/context.test.ts`'s "relation filter access
+  // scoping (#916)" suite against the real secured context), so ListView now
+  // hands the label filter's `where` to `context.db` UNSCOPED — this mock,
+  // standing in for the real access-controlled `context.db`, is not where
+  // that scoping happens anymore. These tests pin ListView's own contract:
+  // the label filter reaches `context.db` unchanged, access-folding included.
   const config: OpenSaasConfig = {
     db: { provider: 'sqlite', url: 'file:./test.db' },
     lists: {
-      // Only active users are queryable — proves the nested `is` clause a
-      // to-one relationship filter emits gets this access filter ANDed in,
-      // rather than running as an unscoped sub-filter on User.
       User: list({
         fields: { name: text(), active: text() },
         access: { operation: { query: () => ({ active: { equals: 'yes' } }) } },
@@ -471,7 +478,7 @@ describe('ListView to-one relationship label filter access scoping (issue #749)'
     },
   }
 
-  it("ANDs the related list's access filter into a relationship label filter (author:Ada)", async () => {
+  it('passes a relationship label filter (author:Ada) through to context.db unscoped', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
     const context = makeContext({ post: { findMany, count } })
@@ -484,41 +491,8 @@ describe('ListView to-one relationship label filter access scoping (issue #749)'
       search: 'author:Ada',
     })
 
-    const expectedWhere = {
-      author: { is: { AND: [{ active: { equals: 'yes' } }, { name: { contains: 'Ada' } }] } },
-    }
+    const expectedWhere = { author: { is: { name: { contains: 'Ada' } } } }
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }))
     expect(count).toHaveBeenCalledWith({ where: expectedWhere })
-  })
-
-  it('never matches when the related list is fully denied query access (no leak)', async () => {
-    const deniedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        // No access block → query denied by default.
-        User: list({ fields: { name: text() } }),
-        Post: list({
-          fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
-          access: { operation: { query: () => true } },
-        }),
-      },
-    }
-    const findMany = vi.fn(async () => [])
-    const count = vi.fn(async () => 0)
-    const context = makeContext({ post: { findMany, count } })
-
-    await ListView({
-      context,
-      config: deniedConfig,
-      listKey: 'Post',
-      basePath: '/admin',
-      search: 'author:Ada',
-    })
-
-    // The session cannot read User at all, so `author:Ada` can neither
-    // confirm nor rule out a match — it degrades to never-matching rather
-    // than running the nested condition unscoped.
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: [] } } }))
-    expect(count).toHaveBeenCalledWith({ where: { id: { in: [] } } })
   })
 })

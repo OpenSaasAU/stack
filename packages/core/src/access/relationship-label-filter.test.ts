@@ -9,15 +9,16 @@ import {
 } from './relationship-label-filter.js'
 
 /**
- * Access-scoped to-one relationship label filters (issue #749). Verifies that
- * `author:Ada` → `{ author: { is: { name: { contains: 'Ada' } } } }` gets the
- * related list's `query` access folded into the nested `is` clause, so a
- * session can never distinguish parent rows by a related field it cannot
- * itself read.
+ * `resolveRelationshipLabelFilters` used to fold the related list's `query`
+ * access into a to-one relationship label filter's nested `is` clause
+ * (issue #749). Since #916, the engine itself scopes every relation filter in
+ * `where` (`buildAccessScopedWhere`), including this exact `{ is: {...} } }`
+ * shape, so this resolver's own fold is redundant and has been removed — it
+ * is now a pass-through, kept exported only for API compatibility. These
+ * tests pin that pass-through behavior; `access-filter.test.ts` and
+ * `context.test.ts` cover the actual access-scoping this resolver used to do.
  */
 
-// Post is fully open; User (the `author` relation target) is scoped so only
-// active users are queryable; Widget ships fully closed (no access block).
 function makeConfig(): OpenSaasConfig {
   return {
     db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
@@ -63,8 +64,8 @@ describe('isToOneRelationshipField', () => {
   })
 })
 
-describe('resolveRelationshipLabelFilters', () => {
-  it('returns the where unchanged when there are no label-filter members', async () => {
+describe('resolveRelationshipLabelFilters (pass-through since #916)', () => {
+  it('returns a plain where unchanged', async () => {
     const config = makeConfig()
     const where = { title: { contains: 'hello' } }
     const resolved = await resolveRelationshipLabelFilters(
@@ -76,7 +77,7 @@ describe('resolveRelationshipLabelFilters', () => {
     expect(resolved).toBe(where)
   })
 
-  it("ANDs the related list's access filter into the nested `is` clause", async () => {
+  it('returns a to-one label-filter `is` clause unchanged — the engine scopes it now', async () => {
     const config = makeConfig()
     const where = { author: { is: { name: { contains: 'Ada' } } } }
     const resolved = await resolveRelationshipLabelFilters(
@@ -85,31 +86,10 @@ describe('resolveRelationshipLabelFilters', () => {
       { session: null, context: makeContext() },
       config,
     )
-    expect(resolved).toEqual({
-      author: { is: { AND: [{ active: { equals: 1 } }, { name: { contains: 'Ada' } }] } },
-    })
+    expect(resolved).toBe(where)
   })
 
-  it('leaves the member unchanged when the related list is fully readable', async () => {
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
-      lists: {
-        Tag: list({ fields: { name: text() }, access: { operation: { query: () => true } } }),
-        Post: list({ fields: { title: text(), tag: relationship({ ref: 'Tag' }) } }),
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
-    } as any
-    const where = { tag: { is: { name: { contains: 'news' } } } }
-    const resolved = await resolveRelationshipLabelFilters(
-      where,
-      config.lists.Post,
-      { session: null, context: makeContext() },
-      config,
-    )
-    expect(resolved).toEqual(where)
-  })
-
-  it('resolves a fully denied related list to a never-matching member (no leak)', async () => {
+  it('returns a label filter against a fully denied related list unchanged too', async () => {
     const config = makeConfig()
     const where = { widget: { is: { name: { contains: 'Gadget' } } } }
     const resolved = await resolveRelationshipLabelFilters(
@@ -118,26 +98,10 @@ describe('resolveRelationshipLabelFilters', () => {
       { session: null, context: makeContext() },
       config,
     )
-    expect(resolved).toEqual({ id: { in: [] } })
+    expect(resolved).toBe(where)
   })
 
-  it('preserves sibling conditions, ANDing the resolved id constraint for a denied member', async () => {
-    const config = makeConfig()
-    const where = {
-      AND: [{ title: { contains: 'hello' } }, { widget: { is: { name: { contains: 'Gadget' } } } }],
-    }
-    const resolved = await resolveRelationshipLabelFilters(
-      where,
-      config.lists.Post,
-      { session: null, context: makeContext() },
-      config,
-    )
-    expect(resolved).toEqual({
-      AND: [{ title: { contains: 'hello' } }, { id: { in: [] } }],
-    })
-  })
-
-  it('preserves sibling conditions alongside the access-scoped nested `is` clause', async () => {
+  it('returns a where with nested AND/label-filter members unchanged', async () => {
     const config = makeConfig()
     const where = {
       AND: [{ title: { contains: 'hello' } }, { author: { is: { name: { contains: 'Ada' } } } }],
@@ -148,30 +112,17 @@ describe('resolveRelationshipLabelFilters', () => {
       { session: null, context: makeContext() },
       config,
     )
-    expect(resolved).toEqual({
-      AND: [
-        { title: { contains: 'hello' } },
-        { author: { is: { AND: [{ active: { equals: 1 } }, { name: { contains: 'Ada' } }] } } },
-      ],
-    })
+    expect(resolved).toBe(where)
   })
 
-  it('composes with a to-many count marker member left untouched by this resolver', async () => {
+  it('returns undefined unchanged when there is no where at all', async () => {
     const config = makeConfig()
-    const where = {
-      AND: [{ author: { is: { name: { contains: 'Ada' } } } }, { views: { gt: 10 } }],
-    }
     const resolved = await resolveRelationshipLabelFilters(
-      where,
+      undefined,
       config.lists.Post,
       { session: null, context: makeContext() },
       config,
     )
-    expect(resolved).toEqual({
-      AND: [
-        { author: { is: { AND: [{ active: { equals: 1 } }, { name: { contains: 'Ada' } }] } } },
-        { views: { gt: 10 } },
-      ],
-    })
+    expect(resolved).toBeUndefined()
   })
 })
