@@ -489,10 +489,10 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   defaultValue?: unknown
   hooks?: FieldHooks<TTypeInfo>
   /**
-   * Marks this field as virtual - not stored in database
-   * Virtual fields use resolveInput/resolveOutput hooks for computation
-   * They are excluded from Prisma schema and input types
-   * Only computed when explicitly selected/included in queries
+   * Marks this field as virtual — not stored in database, computed via
+   * `resolveInput`/`resolveOutput` hooks, and excluded from the Prisma
+   * schema and input types. Computed whenever the read is going to return
+   * it (ADR-0027) — not gated behind an explicit `include`/selection.
    */
   virtual?: boolean
   /**
@@ -1359,20 +1359,8 @@ export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo
  */
 export type FieldConfig = BaseFieldConfig<TypeInfo>
 
-/**
- * List configuration types
- */
-
-/**
- * Utility type to inject TypeInfo into a single field config
- * Extracts TInput and TOutput from BaseFieldConfig and reconstructs with new TypeInfo
- */
 type WithTypeInfo<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo>
 
-/**
- * Utility type to transform all fields in a record to inject TypeInfo
- * Maps over each field and applies WithTypeInfo transformation
- */
 export type FieldsWithTypeInfo<TTypeInfo extends TypeInfo> = {
   [key: string]: WithTypeInfo<TTypeInfo>
 }
@@ -1548,8 +1536,7 @@ export type ListAccessControl<T = any> =
     }
 
 /**
- * Hook arguments for resolveInput hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `resolveInput` hook.
  * - create: resolvedData is CreateInput, item is undefined
  * - update: resolvedData is UpdateInput, item is the existing record
  */
@@ -1576,8 +1563,7 @@ export type ResolveInputHookArgs<
     }
 
 /**
- * Hook arguments for validate hook (renamed from validateInput for Keystone compatibility)
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `validate` hook (renamed from `validateInput` for Keystone compatibility).
  * - create: resolvedData is CreateInput, item is undefined
  * - update: resolvedData is UpdateInput, item is the existing record
  * - delete: item is the item being deleted
@@ -1614,8 +1600,7 @@ export type ValidateHookArgs<
     }
 
 /**
- * Hook arguments for beforeOperation hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `beforeOperation` hook.
  * - create: has inputData and resolvedData, no item
  * - update: has inputData, resolvedData, and item
  * - delete: has item only
@@ -1648,8 +1633,7 @@ export type BeforeOperationHookArgs<
     }
 
 /**
- * Hook arguments for afterOperation hook
- * Uses discriminated union to provide proper types based on operation
+ * Hook arguments for the list-level `afterOperation` hook.
  * - create: has item, inputData, and resolvedData, no originalItem
  * - update: has item, originalItem, inputData, and resolvedData
  * - delete: has originalItem only
@@ -2039,9 +2023,6 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      */
     indexes?: ListIndex[]
   }
-  /**
-   * MCP server configuration for this list
-   */
   mcp?: ListMcpConfig
   /**
    * Restricts this list to a single record (singleton pattern)

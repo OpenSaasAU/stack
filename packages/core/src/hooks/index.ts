@@ -4,9 +4,6 @@ import type { FieldConfig } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
 import { checkFieldAccess } from '../access/field-access.js'
 
-/**
- * Validation error collection
- */
 export class ValidationError extends Error {
   public errors: string[]
   public fieldErrors: Record<string, string>
@@ -19,10 +16,7 @@ export class ValidationError extends Error {
   }
 }
 
-/**
- * Database error with field-specific error information
- * Used for Prisma errors like unique constraint violations
- */
+/** Used for Prisma errors like unique constraint violations. */
 export class DatabaseError extends Error {
   public fieldErrors: Record<string, string>
   public code?: string
@@ -35,10 +29,6 @@ export class DatabaseError extends Error {
   }
 }
 
-/**
- * Execute resolveInput hook
- * Allows modification of input data before validation
- */
 export async function executeResolveInput<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
@@ -71,10 +61,7 @@ export async function executeResolveInput<
   return result
 }
 
-/**
- * Execute validate hook (supports both 'validate' and deprecated 'validateInput')
- * Allows custom validation logic
- */
+/** Supports both `validate` and the deprecated `validateInput` alias for backwards compatibility. */
 export async function executeValidate<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
@@ -105,7 +92,6 @@ export async function executeValidate<
         context: AccessContext
       },
 ): Promise<void> {
-  // Support both 'validate' (new) and 'validateInput' (deprecated) for backwards compatibility
   const validateHook = hooks?.validate || hooks?.validateInput
   if (!validateHook) {
     return
@@ -132,10 +118,7 @@ export async function executeValidate<
  */
 export const executeValidateInput = executeValidate
 
-/**
- * Execute beforeOperation hook
- * Runs before database operation (cannot modify data)
- */
+/** Side effects only — cannot modify data before the database write. */
 export async function executeBeforeOperation<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
@@ -172,10 +155,6 @@ export async function executeBeforeOperation<
   await hooks.beforeOperation(args as Parameters<typeof hooks.beforeOperation>[0])
 }
 
-/**
- * Execute afterOperation hook
- * Runs after database operation
- */
 export async function executeAfterOperation<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
@@ -410,7 +389,6 @@ export async function executeFieldAfterTransactionHooks(
   isTopLevel: boolean,
   originalItem?: Record<string, unknown>,
 ): Promise<void> {
-  // The persisted/pre-write rows are surfaced only for the top-level list.
   const committedItem = outcome.status === 'committed' && isTopLevel ? outcome.item : undefined
   const committedOriginalItem = isTopLevel ? originalItem : undefined
 
@@ -449,7 +427,6 @@ export async function executeFieldAfterTransactionHooks(
       continue
     }
 
-    // committed
     if (operation === 'delete') {
       await fieldConfig.hooks.afterTransaction({
         ...base,
@@ -479,9 +456,6 @@ export async function executeFieldAfterTransactionHooks(
 }
 
 /**
- * Execute field-level resolveInput hooks
- * Allows fields to transform their input values before database write
- *
  * NOTE (#789): multi-column fields (e.g. storage image()/file() in
  * Keystone-parity mode) are NOT split here. This phase only resolves each
  * field's value under its LOGICAL key, so that phases 2-3 (list/field
@@ -506,11 +480,9 @@ export async function executeFieldResolveInputHooks(
   let result = { ...resolvedData }
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if field not in data, or if there's nothing to resolve
     if (!(fieldKey in result)) continue
     if (!fieldConfig.hooks?.resolveInput) continue
 
-    // Execute field hook
     // Type assertion is safe here because hooks are typed correctly in field definitions
     // and we're working with runtime values that match those types
     const resolvedValue = await fieldConfig.hooks.resolveInput({
@@ -595,10 +567,7 @@ export async function splitMultiColumnFields(
   return result
 }
 
-/**
- * Execute field-level validate hooks
- * Allows fields to perform custom validation after resolveInput but before database write
- */
+/** Runs after resolveInput and before the database write. */
 export async function executeFieldValidateHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputData: Record<string, any> | undefined,
@@ -620,11 +589,10 @@ export async function executeFieldValidateHooks(
   }
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Support both 'validate' (new) and 'validateInput' (deprecated) for backwards compatibility
+    // validate / deprecated validateInput fallback — see executeValidate
     const validateHook = fieldConfig.hooks?.validate ?? fieldConfig.hooks?.validateInput
     if (!validateHook) continue
 
-    // Execute field hook
     // Type assertion is safe here because hooks are typed correctly in field definitions
     if (operation === 'delete') {
       await validateHook({
@@ -647,7 +615,6 @@ export async function executeFieldValidateHooks(
         addValidationError: addValidationError(fieldKey),
       } as Parameters<typeof validateHook>[0])
     } else {
-      // operation === 'update'
       await validateHook({
         listKey,
         fieldKey,
@@ -666,10 +633,6 @@ export async function executeFieldValidateHooks(
   }
 }
 
-/**
- * Execute field-level beforeOperation hooks (side effects only)
- * Allows fields to perform side effects before database write
- */
 export async function executeFieldBeforeOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputData: Record<string, any>,
@@ -683,13 +646,9 @@ export async function executeFieldBeforeOperationHooks(
   item?: any,
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if no hooks defined
     if (!fieldConfig.hooks?.beforeOperation) continue
-    // Skip if field not in data (for create/update)
     if (operation !== 'delete' && !(fieldKey in resolvedData)) continue
 
-    // Execute field hook (side effects only, no return value used)
-    // Type assertion is safe here because hooks are typed correctly in field definitions
     if (operation === 'delete') {
       await fieldConfig.hooks.beforeOperation({
         listKey,
@@ -708,7 +667,6 @@ export async function executeFieldBeforeOperationHooks(
         context,
       } as Parameters<typeof fieldConfig.hooks.beforeOperation>[0])
     } else {
-      // operation === 'update'
       await fieldConfig.hooks.beforeOperation({
         listKey,
         fieldKey,
@@ -722,10 +680,6 @@ export async function executeFieldBeforeOperationHooks(
   }
 }
 
-/**
- * Execute field-level afterOperation hooks (side effects only)
- * Allows fields to perform side effects after database operations
- */
 export async function executeFieldAfterOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: any,
@@ -739,10 +693,8 @@ export async function executeFieldAfterOperationHooks(
   originalItem?: any,
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    // Skip if no hooks defined
     if (!fieldConfig.hooks?.afterOperation) continue
 
-    // Execute field hook (side effects only, no return value used)
     if (operation === 'delete') {
       await fieldConfig.hooks.afterOperation({
         listKey,
@@ -762,7 +714,6 @@ export async function executeFieldAfterOperationHooks(
         context,
       } as Parameters<typeof fieldConfig.hooks.afterOperation>[0])
     } else {
-      // operation === 'update'
       await fieldConfig.hooks.afterOperation({
         listKey,
         fieldKey,
@@ -777,10 +728,6 @@ export async function executeFieldAfterOperationHooks(
   }
 }
 
-/**
- * Validate field-level validation rules using Zod
- * Checks isRequired, length constraints, etc.
- */
 export function validateFieldRules(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
@@ -792,7 +739,6 @@ export function validateFieldRules(
     return { errors: [], fieldErrors: {} }
   }
 
-  // Convert field errors to array of error messages
   const errors = Object.entries(result.errors).map(([_field, message]) => message)
 
   return { errors, fieldErrors: result.errors }

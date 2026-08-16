@@ -1,8 +1,3 @@
-/**
- * Runtime MCP route handler
- * Creates MCP API handlers from OpenSaaS config at runtime
- */
-
 import * as z from 'zod'
 import type { OpenSaasConfig, FieldConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
@@ -16,12 +11,7 @@ import type { McpSession, McpSessionProvider } from './types.js'
  */
 type ContextSession = { userId: string; [key: string]: unknown }
 
-/**
- * Convert an MCP session into a context session.
- * Transport-level fields (accessToken, expiresAt, scopes) are stripped;
- * everything else — userId plus any custom fields the session provider
- * attached (email, role, ...) — flows through to access control.
- */
+/** Strips transport-level fields; userId and any custom session fields flow through to access control. */
 function toContextSession(session: McpSession): ContextSession {
   const { accessToken: _accessToken, expiresAt: _expiresAt, scopes: _scopes, ...rest } = session
   return rest as ContextSession
@@ -35,10 +25,6 @@ function getPluginMcpTools(config: OpenSaasConfig): McpCustomTool[] {
   return (config._pluginData?.__mcpTools as McpCustomTool[] | undefined) ?? []
 }
 
-/**
- * Whether a custom tool's inputSchema is a Zod schema (as opposed to a plain
- * JSON Schema object). Duck-typed so it works across zod module instances.
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing across zod instances
 function isZodSchema(schema: any): schema is z.ZodType {
   return !!schema && typeof schema.safeParse === 'function'

@@ -282,11 +282,9 @@ async function checkKeyReadableOrThrow(
 /**
  * Check field-level `read` access for every key at ONE level of a `where`
  * clause, recursing only into logical operators (`AND`/`OR`/`NOT`) — never
- * into a relationship field's own nested value. Exported so `access-filter.ts`
- * can call it once per hop, against the RELATED list's own config, as its
- * relation-filter walk (#916) descends — the same field-read check this
- * module runs for the CURRENT list via `validateQueryFieldReadAccess`, reused
- * rather than duplicated.
+ * into a relationship field's own nested value. Exported for `access-filter.ts`'s
+ * #916 reuse (see module doc comment above) — called once per hop against the
+ * RELATED list's own config.
  */
 export async function walkWhereReadAccess(
   where: unknown,

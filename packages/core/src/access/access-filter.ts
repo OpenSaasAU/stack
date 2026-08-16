@@ -349,7 +349,6 @@ export function stripVirtualFieldsFromInclude(
   for (const [key, value] of Object.entries(include)) {
     const fieldConfig = fieldConfigs[key]
 
-    // Virtual fields have no database column — drop them from the include.
     if (fieldConfig?.virtual) continue
 
     const isDeclaredRelationship =

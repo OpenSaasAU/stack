@@ -180,12 +180,8 @@ export function foldDeclaredDependencies(
     const relatedConfig = getRelatedListConfig(fieldConfig.ref, config)
     if (!relatedConfig) continue
     // Defensive cycle guard (see module doc comment) — a DECLARATION-ADDED
-    // edge into a list already on this path stops here rather than recursing
-    // without bound. The value at `key` is left exactly as-is. The guard is
-    // deliberately not applied to an edge the request itself named: that
-    // recursion is bounded by the request's own finite literal and cannot
-    // loop, so stopping it would silently drop the folds beneath a request
-    // that merely revisits a list (e.g. `Post → author → posts`).
+    // edge into a list already on this path stops here; the value at `key`
+    // is left exactly as-is.
     if (declaredOnly.keys.has(key) && visitedLists.includes(relatedConfig.listName)) continue
 
     // A branch added purely by the fold has no fragment scope of its own —
@@ -213,9 +209,8 @@ export function foldDeclaredDependencies(
       }
     }
 
-    // A whole branch added purely by the fold above is stripped wholesale by
-    // field-visibility regardless of what's nested inside it, so it needs no
-    // individual nested-key tracking of its own.
+    // Declaration-added branches need no nested tracking of their own (see
+    // module doc comment) — only caller/fragment-named branches do.
     if (!declaredOnly.keys.has(key) && !isDeclaredOnlyTreeEmpty(nested.declaredOnly)) {
       declaredOnly.nested[key] = nested.declaredOnly
     }
