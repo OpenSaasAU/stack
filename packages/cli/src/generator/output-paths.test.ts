@@ -15,7 +15,6 @@ describe('resolveOutputPaths', () => {
       expect(paths.lists).toBe(path.join(CWD, '.opensaas', 'lists.ts'))
       expect(paths.context).toBe(path.join(CWD, '.opensaas', 'context.ts'))
       expect(paths.pluginTypes).toBe(path.join(CWD, '.opensaas', 'plugin-types.ts'))
-      expect(paths.prismaExtensions).toBe(path.join(CWD, '.opensaas', 'prisma-extensions.ts'))
     })
 
     it('always keeps prisma.config.ts at the project root', () => {

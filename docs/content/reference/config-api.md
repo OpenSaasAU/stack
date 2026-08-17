@@ -149,7 +149,7 @@ Array of plugins to extend stack functionality.
 
 Configures where `opensaas generate` writes its output. All paths are resolved relative to the project root (the directory the CLI runs in). When omitted, defaults are unchanged: the schema is written to `prisma/schema.prisma` and the bundle to `.opensaas/`.
 
-The generated files' cross-references follow these locations automatically — `context.ts` and `prisma-extensions.ts` import the project's `opensaas.config` from the resolved bundle directory, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema directory.
+The generated files' cross-references follow these locations automatically — `context.ts` imports the project's `opensaas.config` from the resolved bundle directory, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema directory.
 
 ```typescript
 output: {

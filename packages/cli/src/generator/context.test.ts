@@ -60,9 +60,7 @@ describe('Context Generator', () => {
       const context = generateContext(config)
 
       expect(context).toContain('const globalForPrisma')
-      expect(context).toContain(
-        'globalThis as unknown as { prisma: ReturnType<typeof createExtendedPrisma> | null }',
-      )
+      expect(context).toContain('globalThis as unknown as { prisma: PrismaClient | null }')
       expect(context).toContain('globalForPrisma.prisma')
       expect(context).toContain("if (process.env.NODE_ENV !== 'production')")
     })
@@ -162,7 +160,6 @@ describe('Context Generator', () => {
       // Every relative import in the bundle entry carries an explicit extension.
       expect(context).toContain("from './prisma-client/client.ts'")
       expect(context).toContain("from './types.ts'")
-      expect(context).toContain("from './prisma-extensions.ts'")
       expect(context).toContain("from '../opensaas.config.ts'")
 
       // No extensionless relative import specifiers remain (a host bundler /

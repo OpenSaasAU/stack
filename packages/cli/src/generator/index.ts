@@ -4,7 +4,6 @@ export { generateTypes, writeTypes } from './types.js'
 export { generateListsNamespace, writeLists } from './lists.js'
 export { generateContext, writeContext } from './context.js'
 export { generatePluginTypes, writePluginTypes } from './plugin-types.js'
-export { generatePrismaExtensions, writePrismaExtensions } from './prisma-extensions.js'
 export {
   resolveOutputPaths,
   DEFAULT_PRISMA_SCHEMA,

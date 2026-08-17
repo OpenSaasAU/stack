@@ -16,7 +16,6 @@ import {
   writeLists,
   writeContext,
   writePluginTypes,
-  writePrismaExtensions,
   resolveOutputPaths,
 } from '../generator/index.js'
 import { formatFieldValidationErrors, formatNeedsClosureErrors } from './generate.js'
@@ -332,7 +331,6 @@ describe('Generate Command Integration', () => {
       writeLists(cfg, paths.lists)
       writeContext(cfg, paths.context, crossReferences.configImport)
       writePluginTypes(cfg, paths.pluginTypes)
-      writePrismaExtensions(cfg, paths.prismaExtensions, crossReferences.configImport)
       return { paths, crossReferences }
     }
 
@@ -345,13 +343,7 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(path.join(tempDir, 'prisma', 'schema.prisma'))).toBe(false)
 
       const bundleDir = path.join(tempDir, 'generated', 'opensaas')
-      for (const file of [
-        'types.ts',
-        'lists.ts',
-        'context.ts',
-        'plugin-types.ts',
-        'prisma-extensions.ts',
-      ]) {
+      for (const file of ['types.ts', 'lists.ts', 'context.ts', 'plugin-types.ts']) {
         expect(fs.existsSync(path.join(bundleDir, file))).toBe(true)
       }
       // The default .opensaas/ dir is never created.
@@ -372,7 +364,7 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(path.join(schemaDir, 'schema.prisma'))).toBe(true)
     })
 
-    it('context.ts and prisma-extensions.ts import opensaas.config via a path that resolves', () => {
+    it('context.ts imports opensaas.config via a path that resolves', () => {
       const { paths, crossReferences } = generateWithResolvedPaths(config)
 
       // Place a stand-in opensaas.config at the project root so the relative
@@ -381,14 +373,12 @@ describe('Generate Command Integration', () => {
       fs.writeFileSync(configFile, 'export default {}\n')
 
       const context = fs.readFileSync(paths.context, 'utf-8')
-      const extensions = fs.readFileSync(paths.prismaExtensions, 'utf-8')
 
-      // Both files import the config via the resolved relative specifier, now
+      // context.ts imports the config via the resolved relative specifier, now
       // carrying an explicit `.ts` extension so a host bundler / plain Node can
       // resolve it without an `extensionAlias` (ADR-0008 / SF-14).
       const emittedSpecifier = `${crossReferences.configImport}.ts`
       expect(context).toContain(`from '${emittedSpecifier}'`)
-      expect(extensions).toContain(`from '${emittedSpecifier}'`)
 
       // The emitted specifier (extension included), resolved from the bundle
       // dir, lands on the real config file — no `.ts` is re-appended because it

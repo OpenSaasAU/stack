@@ -11,7 +11,6 @@ import {
   writeLists,
   writeContext,
   writePluginTypes,
-  writePrismaExtensions,
   resolveOutputPaths,
   buildNodeBundle,
   formatNodeBuildDiagnostics,
@@ -169,7 +168,6 @@ export async function generateCommand() {
       const listsPath = paths.lists
       const contextPath = paths.context
       const pluginTypesPath = paths.pluginTypes
-      const prismaExtensionsPath = paths.prismaExtensions
 
       writePrismaSchema(config, prismaSchemaPath, crossReferences.prismaClientOutput)
       writePrismaConfig(config, prismaConfigPath, crossReferences.prismaConfigSchema)
@@ -177,7 +175,14 @@ export async function generateCommand() {
       writeLists(config, listsPath)
       writeContext(config, contextPath, crossReferences.configImport)
       writePluginTypes(config, pluginTypesPath)
-      writePrismaExtensions(config, prismaExtensionsPath, crossReferences.configImport)
+
+      // A project generated before #958 removed the (dead) result-extension
+      // module may still have it on disk — clean it up so it doesn't linger
+      // as an orphaned, unimported file.
+      const stalePrismaExtensionsPath = path.join(paths.opensaasDir, 'prisma-extensions.ts')
+      if (fs.existsSync(stalePrismaExtensionsPath)) {
+        fs.rmSync(stalePrismaExtensionsPath)
+      }
 
       generatorSpinner.succeed(chalk.green('Schema generation complete'))
       console.log(chalk.green('✅ Prisma schema generated'))
@@ -186,7 +191,6 @@ export async function generateCommand() {
       console.log(chalk.green('✅ Lists namespace generated'))
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
-      console.log(chalk.green('✅ Prisma extensions generated'))
 
       // Execute afterGenerate hooks if plugins are present
       if (config.plugins && config.plugins.length > 0) {

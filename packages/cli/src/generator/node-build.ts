@@ -49,7 +49,7 @@ const tscBin = path.join(
  *
  * How the layout is achieved
  * --------------------------
- * The on-disk `context.ts`/`prisma-extensions.ts` import the project config via
+ * The on-disk `context.ts` imports the project config via
  * `../opensaas.config.ts` — one level ABOVE `<opensaasDir>`, outside the compile
  * root. To keep the compiled entry at `<opensaasDir>/dist/context.js` (per
  * ADR-0011) with a config import that resolves inside `dist/`, we stage the
@@ -69,13 +69,7 @@ const tscBin = path.join(
  */
 
 /** Bundle files copied into the staging root before compilation. */
-const STAGED_BUNDLE_FILES = [
-  'context.ts',
-  'types.ts',
-  'lists.ts',
-  'plugin-types.ts',
-  'prisma-extensions.ts',
-] as const
+const STAGED_BUNDLE_FILES = ['context.ts', 'types.ts', 'lists.ts', 'plugin-types.ts'] as const
 
 /** The compiled Prisma client subtree, copied wholesale into the staging root. */
 const PRISMA_CLIENT_DIR = 'prisma-client'
@@ -93,10 +87,10 @@ const DIST_DIRNAME = 'dist'
  * Matches a relative config specifier of ANY depth — one-or-more `../` segments
  * followed by `opensaas.config` (with or without a `.ts`/`.js` extension), in
  * either quote style. The generator emits that specifier from a configurable
- * source (`configImport ?? '../opensaas.config'` in `context.ts`/
- * `prisma-extensions.ts`), so a non-default project layout (e.g. a deeper
- * `../../opensaas.config.ts`) would otherwise make a literal-string rewrite
- * silently no-op. Capture group 1 preserves the quote style.
+ * source (`configImport ?? '../opensaas.config'` in `context.ts`), so a
+ * non-default project layout (e.g. a deeper `../../opensaas.config.ts`) would
+ * otherwise make a literal-string rewrite silently no-op. Capture group 1
+ * preserves the quote style.
  */
 const CONFIG_IMPORT_RE = /(['"])(?:\.\.\/)+opensaas\.config(?:\.ts|\.js)?\1/g
 
