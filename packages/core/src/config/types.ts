@@ -3054,7 +3054,7 @@ export interface OutputConfig {
   prismaSchema?: string
   /**
    * Directory for the generated `.opensaas` bundle (types, lists, context,
-   * plugin-types, prisma-extensions, and the patched Prisma client).
+   * plugin-types, and the patched Prisma client).
    * @default ".opensaas"
    */
   opensaasDir?: string

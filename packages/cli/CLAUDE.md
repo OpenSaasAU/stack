@@ -27,7 +27,7 @@ Entry point exposing `opensaas` CLI command
 - `types.ts` - Generates `.opensaas/types.ts` TypeScript types
 - `context.ts` - Generates `.opensaas/context.ts` context factory
 - `lists.ts` - Generates the `.opensaas/lists` type namespace
-- Supporting modules: `extension.ts`, `node-build.ts`, `output-paths.ts`, `plugin-types.ts`, `prisma-extensions.ts`
+- Supporting modules: `extension.ts`, `node-build.ts`, `output-paths.ts`, `plugin-types.ts`
 
 ## Architecture
 

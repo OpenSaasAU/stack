@@ -3,8 +3,8 @@
  *
  * Why `.ts` (and not extensionless or `.js`)?
  *
- * The Generated bundle (`context.ts`, `types.ts`, `prisma-extensions.ts`,
- * `lists.ts`, and the `prisma-client/**` tree) ships as TypeScript whose
+ * The Generated bundle (`context.ts`, `types.ts`, `lists.ts`, and the
+ * `prisma-client/**` tree) ships as TypeScript whose
  * relative imports point at real `.ts` files on disk. We emit an explicit
  * extension so the bundle resolves identically under every consumer — and is
  * file-traceable by a host bundler — rather than relying on a TS-aware loader's

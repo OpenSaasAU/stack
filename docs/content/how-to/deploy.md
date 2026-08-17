@@ -498,7 +498,7 @@ If you've hit `Prisma Migrate has detected that the environment is non-interacti
 
 ### Bundling the Generated `.opensaas` bundle
 
-`opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `prisma-extensions.ts`, `lists.ts`, and the `prisma-client/**` tree — that your app imports through `getContext`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
+`opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `lists.ts`, and the `prisma-client/**` tree — that your app imports through `getContext`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
 
 **1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions (e.g. `import { PrismaClient } from './prisma-client/client.ts'`), so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no generator flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
 

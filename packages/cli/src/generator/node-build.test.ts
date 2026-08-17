@@ -47,15 +47,6 @@ function writeFixture(
     ].join('\n') + '\n',
   )
 
-  // prisma-extensions also imports the config one level up.
-  fs.writeFileSync(
-    path.join(opensaasDir, 'prisma-extensions.ts'),
-    [
-      `import configValue from '${configImport}'`,
-      'export const prismaExtensions = { config: configValue }',
-    ].join('\n') + '\n',
-  )
-
   const configPath = path.join(projectRoot, 'opensaas.config.ts')
   fs.writeFileSync(configPath, 'export default { name: "fixture" }\n')
 

@@ -10,7 +10,7 @@ export const DEFAULT_PRISMA_SCHEMA = 'prisma/schema.prisma'
 export const DEFAULT_OPENSAAS_DIR = '.opensaas'
 
 /**
- * The five files written into the `.opensaas` bundle directory, plus the
+ * The four files written into the `.opensaas` bundle directory, plus the
  * sub-path of the patched Prisma client. These names are not configurable —
  * only the directory that holds them moves.
  */
@@ -19,7 +19,6 @@ export const OPENSAAS_FILES = {
   lists: 'lists.ts',
   context: 'context.ts',
   pluginTypes: 'plugin-types.ts',
-  prismaExtensions: 'prisma-extensions.ts',
   prismaClient: 'prisma-client',
 } as const
 
@@ -41,8 +40,6 @@ export interface ResolvedWritePaths {
   context: string
   /** Absolute path to `<opensaasDir>/plugin-types.ts`. */
   pluginTypes: string
-  /** Absolute path to `<opensaasDir>/prisma-extensions.ts`. */
-  prismaExtensions: string
 }
 
 /**
@@ -66,8 +63,7 @@ export interface ResolvedCrossReferences {
   prismaClientOutput: string
   /**
    * Module specifier for importing `opensaas.config` from inside the bundle
-   * (used by `context.ts` and `prisma-extensions.ts`) — relative to the
-   * `.opensaas` directory.
+   * (used by `context.ts`) — relative to the `.opensaas` directory.
    * @example "../opensaas.config"
    */
   configImport: string
@@ -119,8 +115,8 @@ function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean
  *   *file's* directory, since Prisma's `generator { output }` is resolved from
  *   the schema file.
  * - `configImport` — `opensaas.config` relative to the `.opensaas` directory,
- *   since `context.ts`/`prisma-extensions.ts` live inside the bundle and import
- *   the project's config by relative path.
+ *   since `context.ts` lives inside the bundle and imports the project's
+ *   config by relative path.
  *
  * @param opensaasPathFallback - The pre-existing `config.opensaasPath` value,
  *   used as the bundle directory when no `output.opensaasDir` is set.
@@ -147,7 +143,6 @@ export function resolveOutputPaths(
     lists: path.join(opensaasDirAbs, OPENSAAS_FILES.lists),
     context: path.join(opensaasDirAbs, OPENSAAS_FILES.context),
     pluginTypes: path.join(opensaasDirAbs, OPENSAAS_FILES.pluginTypes),
-    prismaExtensions: path.join(opensaasDirAbs, OPENSAAS_FILES.prismaExtensions),
   }
 
   const crossReferences: ResolvedCrossReferences = {
