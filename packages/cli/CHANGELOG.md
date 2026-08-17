@@ -1,5 +1,15 @@
 # @opensaas/stack-cli
 
+## 0.39.1
+
+### Patch Changes
+
+- [#955](https://github.com/OpenSaasAU/stack/pull/955) [`ab2bc34`](https://github.com/OpenSaasAU/stack/commit/ab2bc34539bc06d9946933061284480185753edc) Thanks [@borisno2](https://github.com/borisno2)! - Fix `TS2589: Type instantiation is excessively deep` in the generated `Context`/`CustomDB` types once a schema grows past ~7-8 lists. `CustomDB`/`BaseContext`/`Context` are now generated as `interface`s (with each list's CRUD methods extracted to a named `{List}Crud` interface) instead of `type` aliases, so `Context.sudo()`'s self-reference no longer forces eager re-expansion of the whole database type ([#952](https://github.com/OpenSaasAU/stack/issues/952)).
+
+- [#950](https://github.com/OpenSaasAU/stack/pull/950) [`fcc5380`](https://github.com/OpenSaasAU/stack/commit/fcc538020789e46555638b81fa7b7c11ceff08a8) Thanks [@borisno2](https://github.com/borisno2)! - Fix `resolveTsconfigAlias` corrupting resolution of `opensaas.config.ts` and its whole import closure when `tsconfig.json` has a bare `"*"` path pattern (e.g. `{ "*": ["./src/*"] }`, a common catch-all for unprefixed imports like `lib/utils`). The bare pattern now produces an empty alias key, which jiti's prefix-based resolution would otherwise match against every specifier; it is now skipped and reported as a warning like other unrepresentable path entries.
+- Updated dependencies []:
+  - @opensaas/stack-core@0.39.1
+
 ## 0.39.0
 
 ### Minor Changes
