@@ -1,5 +1,11 @@
 # @opensaas/stack-core
 
+## 0.39.2
+
+### Patch Changes
+
+- [#960](https://github.com/OpenSaasAU/stack/pull/960) [`77ca919`](https://github.com/OpenSaasAU/stack/commit/77ca91931bc3de4051c1a40cc00b77158b8192e6) Thanks [@borisno2](https://github.com/borisno2)! - Fix `OutputConfig.opensaasDir`'s doc comment, which still listed the now-removed generated `prisma-extensions.ts` module among the bundle files.
+
 ## 0.39.1
 
 ## 0.39.0

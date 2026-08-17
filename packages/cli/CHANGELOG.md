@@ -1,5 +1,13 @@
 # @opensaas/stack-cli
 
+## 0.39.2
+
+### Patch Changes
+
+- [#960](https://github.com/OpenSaasAU/stack/pull/960) [`77ca919`](https://github.com/OpenSaasAU/stack/commit/77ca91931bc3de4051c1a40cc00b77158b8192e6) Thanks [@borisno2](https://github.com/borisno2)! - Remove the generated `prisma-extensions.ts` module and its unreachable `$extends` branch in the generated context factory — the guard deciding whether to apply it was always true, so the extension never actually ran (`context.db` already applies `resolveOutput` correctly). This also fixes `TS2589: Type instantiation is excessively deep` on larger schemas, since the removed branch's inferred type was the cause. No runtime behavior changes; regenerating cleans up a stale `prisma-extensions.ts` left by prior versions.
+- Updated dependencies [[`77ca919`](https://github.com/OpenSaasAU/stack/commit/77ca91931bc3de4051c1a40cc00b77158b8192e6)]:
+  - @opensaas/stack-core@0.39.2
+
 ## 0.39.1
 
 ### Patch Changes
