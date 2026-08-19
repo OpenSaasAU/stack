@@ -10,7 +10,6 @@ const templatesDir = path.join(packageDir, 'templates')
 const examplesDir = path.join(packageDir, '../../examples')
 const corePackageJsonPath = path.join(packageDir, '../core/package.json')
 
-// Files/directories to exclude when copying
 const excludePatterns = [
   'node_modules',
   '.next',
@@ -56,7 +55,6 @@ async function copyTemplate(
     },
   })
 
-  // Update package.json to replace workspace versions
   const packageJsonPath = path.join(target, 'package.json')
   if (await fs.pathExists(packageJsonPath)) {
     await updatePackageJsonVersions(packageJsonPath, stackVersion)
@@ -69,7 +67,6 @@ async function copyTemplate(
 async function main(): Promise<void> {
   console.log('📦 Copying templates from examples...\n')
 
-  // Get the current version from the core package
   const corePackageJson = await fs.readJSON(corePackageJsonPath)
   const stackVersion = corePackageJson.version
 
@@ -80,10 +77,8 @@ async function main(): Promise<void> {
 
   console.log(`Using stack version: ${stackVersion}\n`)
 
-  // Clean templates directory
   await fs.emptyDir(templatesDir)
 
-  // Copy starter examples to templates
   await copyTemplate('starter', 'basic', stackVersion)
   await copyTemplate('starter-auth', 'with-auth', stackVersion)
 

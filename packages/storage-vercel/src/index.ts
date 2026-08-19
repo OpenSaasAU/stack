@@ -22,9 +22,6 @@ function normalizeStoreId(storeId: string): string {
   return storeId.startsWith('store_') ? storeId.slice('store_'.length) : storeId
 }
 
-/**
- * Configuration for Vercel Blob storage
- */
 export interface VercelBlobStorageConfig {
   type: 'vercel-blob'
   /**
@@ -62,9 +59,6 @@ export interface VercelBlobStorageConfig {
   [key: string]: unknown
 }
 
-/**
- * Vercel Blob storage provider
- */
 export class VercelBlobStorageProvider implements StorageProvider {
   private config: VercelBlobStorageConfig
 
@@ -89,9 +83,6 @@ export class VercelBlobStorageProvider implements StorageProvider {
     return auth
   }
 
-  /**
-   * Generates a unique filename if configured
-   */
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
       return originalFilename
@@ -103,9 +94,6 @@ export class VercelBlobStorageProvider implements StorageProvider {
     return `${timestamp}-${uniqueId}${ext}`
   }
 
-  /**
-   * Gets the full pathname for a file including path prefix
-   */
   private getFullPath(filename: string): string {
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
@@ -187,10 +175,8 @@ export class VercelBlobStorageProvider implements StorageProvider {
     const generatedFilename = this.generateFilename(filename)
     const pathname = this.getFullPath(generatedFilename)
 
-    // Convert Uint8Array to Buffer if needed
     const buffer = Buffer.isBuffer(file) ? file : Buffer.from(file)
 
-    // Upload to Vercel Blob
     const uploadOptions: PutCommandOptions = {
       access: this.getAccess(),
       contentType: options?.contentType,

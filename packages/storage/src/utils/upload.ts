@@ -1,8 +1,5 @@
 import mime from 'mime-types'
 
-/**
- * File validation options
- */
 export interface FileValidationOptions {
   /** Maximum file size in bytes */
   maxFileSize?: number
@@ -12,17 +9,11 @@ export interface FileValidationOptions {
   acceptedExtensions?: string[]
 }
 
-/**
- * File validation result
- */
 export interface FileValidationResult {
   valid: boolean
   error?: string
 }
 
-/**
- * Validates a file against the provided options
- */
 export function validateFile(
   file: { size: number; name: string; type: string },
   options?: FileValidationOptions,
@@ -31,7 +22,6 @@ export function validateFile(
     return { valid: true }
   }
 
-  // Check file size
   if (options.maxFileSize && file.size > options.maxFileSize) {
     return {
       valid: false,
@@ -39,7 +29,6 @@ export function validateFile(
     }
   }
 
-  // Check MIME type
   if (options.acceptedMimeTypes && options.acceptedMimeTypes.length > 0) {
     const fileMimeType = file.type || mime.lookup(file.name) || ''
     if (!options.acceptedMimeTypes.includes(fileMimeType)) {
@@ -50,7 +39,6 @@ export function validateFile(
     }
   }
 
-  // Check file extension
   if (options.acceptedExtensions && options.acceptedExtensions.length > 0) {
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
     if (!options.acceptedExtensions.includes(ext)) {
@@ -64,9 +52,6 @@ export function validateFile(
   return { valid: true }
 }
 
-/**
- * Formats file size in human-readable format
- */
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
 
@@ -77,16 +62,10 @@ export function formatFileSize(bytes: number): string {
   return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`
 }
 
-/**
- * Gets MIME type from filename
- */
 export function getMimeType(filename: string): string {
   return mime.lookup(filename) || 'application/octet-stream'
 }
 
-/**
- * Extracts file metadata from a File or Blob
- */
 export interface FileInfo {
   name: string
   size: number
@@ -94,18 +73,12 @@ export interface FileInfo {
   lastModified?: number
 }
 
-/**
- * Converts a File/Blob to Buffer for Node.js processing
- */
 export async function fileToBuffer(file: Blob | File): Promise<Buffer> {
   const arrayBuffer = await file.arrayBuffer()
   return Buffer.from(arrayBuffer)
 }
 
-/**
- * Parses FormData and extracts file information
- * This is a utility for developers to use in their upload routes
- */
+/** Utility for developers to use in their own upload routes. */
 export async function parseFileFromFormData(
   formData: FormData,
   fieldName: string = 'file',

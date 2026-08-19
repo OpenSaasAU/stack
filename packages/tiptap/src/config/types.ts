@@ -10,26 +10,16 @@ export type RichTextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
     isRequired?: boolean
   }
   ui?: {
-    /**
-     * Placeholder text for empty editor
-     */
+    /** Placeholder text for empty editor */
     placeholder?: string
-    /**
-     * Minimum height for editor in pixels
-     */
+    /** Minimum height for editor in pixels */
     minHeight?: number
-    /**
-     * Maximum height for editor in pixels
-     */
+    /** Maximum height for editor in pixels */
     maxHeight?: number
-    /**
-     * Custom React component to render this field
-     */
+    /** Custom React component to render this field */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: any
-    /**
-     * Custom field type name to use from the global registry
-     */
+    /** Custom field type name to use from the global registry */
     fieldType?: string
   }
 }

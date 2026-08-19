@@ -8,10 +8,6 @@ import type {
   LocalStorageConfig,
 } from '../config/types.js'
 
-/**
- * Local filesystem storage provider
- * Stores files on the local filesystem
- */
 export class LocalStorageProvider implements StorageProvider {
   private config: LocalStorageConfig
 
@@ -19,9 +15,6 @@ export class LocalStorageProvider implements StorageProvider {
     this.config = config
   }
 
-  /**
-   * Ensures the upload directory exists
-   */
   private async ensureUploadDir(): Promise<void> {
     try {
       await fs.access(this.config.uploadDir)
@@ -30,9 +23,6 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  /**
-   * Generates a unique filename if configured
-   */
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
       return originalFilename
@@ -54,10 +44,8 @@ export class LocalStorageProvider implements StorageProvider {
     const generatedFilename = this.generateFilename(filename)
     const filePath = path.join(this.config.uploadDir, generatedFilename)
 
-    // Write file to disk
     await fs.writeFile(filePath, file)
 
-    // Get file stats for size
     const stats = await fs.stat(filePath)
 
     return {
