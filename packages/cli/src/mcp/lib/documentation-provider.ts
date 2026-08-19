@@ -228,6 +228,7 @@ For ${query}, you can also check:
           }
         }
       } catch {
+        // Skip files that can't be read
       }
     }
 
