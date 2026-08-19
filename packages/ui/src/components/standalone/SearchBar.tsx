@@ -39,9 +39,6 @@ export interface SearchBarProps {
 }
 
 /**
- * Standalone search bar component
- * Can be embedded in any custom page
- *
  * @example
  * ```tsx
  * <SearchBar

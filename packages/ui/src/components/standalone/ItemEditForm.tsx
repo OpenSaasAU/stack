@@ -116,7 +116,6 @@ export function ItemEditForm<TData = Record<string, unknown>>({
         ))}
       </div>
 
-      {/* Form Actions */}
       <div
         data-slot="form-actions"
         className={cn('flex gap-3 pt-6 mt-6 border-t border-border', classNames?.actions)}
