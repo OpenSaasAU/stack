@@ -8,9 +8,6 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomBytes } from 'node:crypto'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
-/**
- * Configuration for S3 storage
- */
 export interface S3StorageConfig {
   type: 's3'
   /** S3 bucket name */
@@ -46,7 +43,6 @@ export class S3StorageProvider implements StorageProvider {
   constructor(config: S3StorageConfig) {
     this.config = config
 
-    // Create S3 client
     this.client = new S3Client({
       region: config.region,
       credentials:
@@ -61,9 +57,6 @@ export class S3StorageProvider implements StorageProvider {
     })
   }
 
-  /**
-   * Generates a unique filename if configured
-   */
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
       return originalFilename
@@ -75,9 +68,6 @@ export class S3StorageProvider implements StorageProvider {
     return `${timestamp}-${uniqueId}${ext}`
   }
 
-  /**
-   * Gets the full key for an object including path prefix
-   */
   private getFullKey(filename: string): string {
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
@@ -93,7 +83,6 @@ export class S3StorageProvider implements StorageProvider {
     const generatedFilename = this.generateFilename(filename)
     const key = this.getFullKey(generatedFilename)
 
-    // Upload to S3
     const command = new PutObjectCommand({
       Bucket: this.config.bucket,
       Key: key,
@@ -106,7 +95,6 @@ export class S3StorageProvider implements StorageProvider {
 
     await this.client.send(command)
 
-    // Generate URL
     const url = this.getUrl(generatedFilename)
 
     return {
@@ -157,18 +145,14 @@ export class S3StorageProvider implements StorageProvider {
   getUrl(filename: string): string {
     const key = this.getFullKey(filename)
 
-    // Use custom domain if configured
     if (this.config.customDomain) {
       return `${this.config.customDomain}/${key}`
     }
 
-    // Use standard S3 URL
     if (this.config.endpoint) {
-      // Custom endpoint (S3-compatible services)
       return `${this.config.endpoint}/${this.config.bucket}/${key}`
     }
 
-    // Standard AWS S3 URL
     return `https://${this.config.bucket}.s3.${this.config.region}.amazonaws.com/${key}`
   }
 

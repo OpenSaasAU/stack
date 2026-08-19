@@ -74,12 +74,10 @@ export interface FileDbConfig {
     | { mode: 'keystone'; map?: Partial<FileColumnMap>; parts?: readonly FileColumnPart[] }
 }
 
-/** Whether a field-level `db.columns` option requests multi-column mode. */
 function isMultiColumn(columns: ImageDbConfig['columns'] | FileDbConfig['columns']): boolean {
   return columns === 'keystone' || (typeof columns === 'object' && columns?.mode === 'keystone')
 }
 
-/** Extract any per-part `@map` overrides from a `db.columns` option. */
 function imageColumnOverrides(
   columns: ImageDbConfig['columns'],
 ): Partial<ImageColumnMap> | undefined {
@@ -90,15 +88,14 @@ function fileColumnOverrides(columns: FileDbConfig['columns']): Partial<FileColu
   return typeof columns === 'object' ? columns.map : undefined
 }
 
-/** The file parts a field-level `db.columns` option opts into (defaults to the base three). */
 function fileColumnPartsFor(columns: FileDbConfig['columns']): readonly FileColumnPart[] {
   return typeof columns === 'object' && columns.parts ? columns.parts : DEFAULT_FILE_COLUMN_PARTS
 }
 
 /**
- * Detect a File-like input (something we should upload). An already-shaped
- * metadata value or populated multi-column row is authoritative and must never
- * trigger an upload (the no-re-upload guarantee — see ADR-0006).
+ * An already-shaped metadata value or populated multi-column row is
+ * authoritative and must never trigger a re-upload (the no-re-upload
+ * guarantee — see ADR-0006).
  */
 function isFileLike(value: unknown): value is File {
   return (
@@ -109,9 +106,6 @@ function isFileLike(value: unknown): value is File {
   )
 }
 
-/**
- * File field configuration
- */
 export interface FileFieldConfig<
   TTypeInfo extends TypeInfo = TypeInfo,
 > extends BaseFieldConfig<TTypeInfo> {
@@ -124,11 +118,7 @@ export interface FileFieldConfig<
   cleanupOnDelete?: boolean
   /** Automatically delete old file from storage when replaced with new file */
   cleanupOnReplace?: boolean
-  /**
-   * Database configuration. By default a file is backed by a single `Json?`
-   * column; set `db.columns: 'keystone'` to map onto existing Keystone per-part
-   * columns in place (non-destructive migration). See ADR-0006.
-   */
+  /** Database configuration; see {@link FileDbConfig} for multi-column mode. */
   db?: FileDbConfig
   /** UI options */
   ui?: {
@@ -147,9 +137,6 @@ export interface FileFieldConfig<
   }
 }
 
-/**
- * Image field configuration
- */
 export interface ImageFieldConfig<
   TTypeInfo extends TypeInfo = TypeInfo,
 > extends BaseFieldConfig<TTypeInfo> {
@@ -164,11 +151,7 @@ export interface ImageFieldConfig<
   cleanupOnDelete?: boolean
   /** Automatically delete old file from storage when replaced with new file */
   cleanupOnReplace?: boolean
-  /**
-   * Database configuration. By default an image is backed by a single `Json?`
-   * column; set `db.columns: 'keystone'` to map onto existing Keystone per-part
-   * columns in place (non-destructive migration). See ADR-0006.
-   */
+  /** Database configuration; see {@link ImageDbConfig} for multi-column mode. */
   db?: ImageDbConfig
   /** UI options */
   ui?: {
@@ -214,9 +197,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
 ): FileFieldConfig<TTypeInfo> {
   const { hooks: userHooks, ...restOptions } = options
 
-  // Multi-column (Keystone-parity) mode maps onto existing per-part columns
-  // instead of a single Json? column. The column map is resolved lazily per
-  // field name so default `<field>_<part>` names line up with the live columns.
+  // Column map resolves lazily per field name so default `<field>_<part>`
+  // names line up with the live columns.
   const multiColumn = isMultiColumn(options.db?.columns)
   const columnMapFor = (fieldName: string): FileColumnMap =>
     resolveFileColumnMap(fieldName, fileColumnOverrides(options.db?.columns))
@@ -240,38 +222,31 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
       resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
-        // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
         }
 
-        // If already FileMetadata, keep existing (edit mode - no new file
-        // uploaded). An existing metadata value is AUTHORITATIVE and must never
+        // An existing metadata value is AUTHORITATIVE and must never
         // re-upload. See ADR-0006.
         if (typeof inputValue === 'object' && 'filename' in inputValue && 'url' in inputValue) {
           return inputValue as FileMetadata
         }
 
-        // Only a File-like input triggers an upload.
         if (isFileLike(inputValue)) {
-          // Convert File to buffer
           const fileObj = inputValue
           const arrayBuffer = await fileObj.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
 
-          // Upload file using context.storage utilities
           const metadata = (await context.storage.uploadFile(fieldConfig.storage, fileObj, buffer, {
             validation: fieldConfig.validation,
           })) as FileMetadata
 
-          // If cleanupOnReplace is enabled and there was an old file, delete it
           if (fieldConfig.cleanupOnReplace && item && fieldKey) {
             const oldMetadata = item[fieldKey] as FileMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
               } catch (error) {
-                // Log error but don't fail the operation
                 console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
               }
             }
@@ -286,7 +261,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-        // Only cleanup on delete if enabled. The deleted row is `originalItem`.
+        // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const fileMetadata = originalItem?.[fieldKey] as FileMetadata | null
 
@@ -294,18 +269,15 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
             try {
               await context.storage.deleteFile(fileMetadata.storageProvider, fileMetadata.filename)
             } catch (error) {
-              // Log error but don't fail the operation
               console.error(`Failed to cleanup file on delete: ${fileMetadata.filename}`, error)
             }
           }
         }
       },
-      // Merge with user-provided hooks if any
       ...userHooks,
     },
 
     getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {
-      // File metadata follows the FileMetadata schema
       const fileMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
@@ -325,12 +297,10 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     },
 
     getPrismaType: (_fieldName: string) => {
-      // Store as JSON in database (single-column default mode).
       return { type: 'Json', modifiers: '?' }
     },
 
     getTypeScriptType: () => {
-      // TypeScript type is FileMetadata | null
       return {
         type: 'FileMetadata | null',
         optional: true,
@@ -348,8 +318,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     },
   }
 
-  // Multi-column emission + assemble/split. Only attached in multi-column mode
-  // so the single-Json? default is completely unaffected.
+  // Only attached in multi-column mode; the single-Json? default is unaffected.
   if (multiColumn) {
     fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
       const map = columnMapFor(fieldName)
@@ -398,8 +367,7 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
 ): ImageFieldConfig<TTypeInfo> {
   const { hooks: userHooks, ...restOptions } = options
 
-  // Multi-column (Keystone-parity) mode maps onto existing per-part columns
-  // instead of a single Json? column. See ADR-0006.
+  // See ADR-0006.
   const multiColumn = isMultiColumn(options.db?.columns)
   const columnMapFor = (fieldName: string): ImageColumnMap =>
     resolveImageColumnMap(fieldName, imageColumnOverrides(options.db?.columns))
@@ -422,13 +390,11 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
       resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
-        // If null/undefined, return as-is (deletion or no change)
         if (inputValue === null || inputValue === undefined) {
           return inputValue
         }
 
-        // If already ImageMetadata, keep existing (edit mode - no new file
-        // uploaded). An existing metadata value is AUTHORITATIVE and must never
+        // An existing metadata value is AUTHORITATIVE and must never
         // re-upload. See ADR-0006.
         if (
           typeof inputValue === 'object' &&
@@ -440,14 +406,11 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           return inputValue as ImageMetadata
         }
 
-        // Only a File-like input triggers an upload.
         if (isFileLike(inputValue)) {
-          // Convert File to buffer
           const fileObj = inputValue
           const arrayBuffer = await fileObj.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
 
-          // Upload image using context.storage utilities
           const metadata = (await context.storage.uploadImage(
             fieldConfig.storage,
             fileObj,
@@ -458,14 +421,12 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
             },
           )) as ImageMetadata
 
-          // If cleanupOnReplace is enabled and there was an old file, delete it
           if (fieldConfig.cleanupOnReplace && item && fieldKey) {
             const oldMetadata = item[fieldKey] as ImageMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteImage(oldMetadata)
               } catch (error) {
-                // Log error but don't fail the operation
                 console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
               }
             }
@@ -480,7 +441,7 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-        // Only cleanup on delete if enabled. The deleted row is `originalItem`.
+        // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const imageMetadata = originalItem?.[fieldKey] as ImageMetadata | null
 
@@ -488,18 +449,15 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
             try {
               await context.storage.deleteImage(imageMetadata)
             } catch (error) {
-              // Log error but don't fail the operation
               console.error(`Failed to cleanup image on delete: ${imageMetadata.filename}`, error)
             }
           }
         }
       },
-      // Merge with user-provided hooks if any
       ...userHooks,
     },
 
     getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {
-      // Image metadata follows the ImageMetadata schema (extends FileMetadata)
       const imageMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
@@ -524,20 +482,15 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
           .optional(),
       })
 
-      // Allow null or undefined values. `.nullish()` (= `.nullable().optional()`)
-      // makes the object KEY optional in Zod 4 — a bare union that merely accepts
-      // an `undefined` value does NOT (see issue #618, and the #570 precedent in
-      // core's validation tests).
+      // Same `.nullish()` KEY-optionality rationale as file()'s getZodSchema above.
       return imageMetadataSchema.nullish()
     },
 
     getPrismaType: (_fieldName: string) => {
-      // Store as JSON in database
       return { type: 'Json', modifiers: '?' }
     },
 
     getTypeScriptType: () => {
-      // TypeScript type is ImageMetadata | null
       return {
         type: 'ImageMetadata | null',
         optional: true,
@@ -555,8 +508,7 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
     },
   }
 
-  // Multi-column emission + assemble/split. Only attached in multi-column mode
-  // so the single-Json? default is completely unaffected.
+  // Only attached in multi-column mode; the single-Json? default is unaffected.
   if (multiColumn) {
     fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
       const map = columnMapFor(fieldName)

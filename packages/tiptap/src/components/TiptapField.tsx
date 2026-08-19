@@ -66,14 +66,12 @@ export function TiptapField({
     },
   })
 
-  // Update content when value changes externally
   useEffect(() => {
     if (editor && value !== editor.getJSON()) {
       editor.commands.setContent(value || '')
     }
   }, [editor, value])
 
-  // Update editable state when mode or disabled changes
   useEffect(() => {
     if (editor) {
       editor.setEditable(isEditable)
@@ -98,9 +96,7 @@ export function TiptapField({
         {required && <span className="text-destructive">*</span>}
       </label>
 
-      {/* Editor with toolbar */}
       <div className={`tiptap-editor ${error ? 'border-destructive' : ''}`}>
-        {/* Toolbar */}
         {isEditable && editor && (
           <div className="tiptap-toolbar">
             <button
@@ -174,7 +170,6 @@ export function TiptapField({
           </div>
         )}
 
-        {/* Editor content */}
         <div
           className={disabled ? 'opacity-50 cursor-not-allowed' : ''}
           style={{

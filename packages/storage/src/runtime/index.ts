@@ -88,7 +88,6 @@ export async function uploadFile(
 ): Promise<FileMetadata> {
   const { file, buffer } = data
 
-  // Validate file
   if (options?.validation) {
     const validation = validateFile(
       {
@@ -104,19 +103,15 @@ export async function uploadFile(
     }
   }
 
-  // Get storage provider
   const provider = createStorageProvider(config, storageProviderName)
 
-  // Determine content type
   const contentType = file.type || getMimeType(file.name)
 
-  // Upload file
   const result = await provider.upload(buffer, file.name, {
     contentType,
     metadata: options?.metadata,
   })
 
-  // Return metadata
   return {
     filename: result.filename,
     originalFilename: file.name,
@@ -159,7 +154,6 @@ export async function uploadImage(
 ): Promise<ImageMetadata> {
   const { file, buffer } = data
 
-  // Validate file
   if (options?.validation) {
     const validation = validateFile(
       {
@@ -175,22 +169,17 @@ export async function uploadImage(
     }
   }
 
-  // Get storage provider
   const provider = createStorageProvider(config, storageProviderName)
 
-  // Determine content type
   const contentType = file.type || getMimeType(file.name)
 
-  // Get original image dimensions
   const { width, height } = await getImageDimensions(buffer)
 
-  // Upload original image
   const result = await provider.upload(buffer, file.name, {
     contentType,
     metadata: options?.metadata,
   })
 
-  // Process transformations if provided
   let transformations:
     Record<string, { url: string; width: number; height: number; size: number }> | undefined
   if (options?.transformations) {
@@ -203,7 +192,6 @@ export async function uploadImage(
     )
   }
 
-  // Return metadata
   return {
     filename: result.filename,
     originalFilename: file.name,
@@ -219,9 +207,6 @@ export async function uploadImage(
   }
 }
 
-/**
- * Deletes a file from storage
- */
 export async function deleteFile(
   config: OpenSaasConfig,
   storageProviderName: string,
@@ -231,19 +216,13 @@ export async function deleteFile(
   await provider.delete(filename)
 }
 
-/**
- * Deletes an image and all its transformations from storage
- */
 export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadata): Promise<void> {
   const provider = createStorageProvider(config, metadata.storageProvider)
 
-  // Delete original image
   await provider.delete(metadata.filename)
 
-  // Delete all transformations
   if (metadata.transformations) {
     for (const transformationResult of Object.values(metadata.transformations)) {
-      // Extract filename from URL
       const filename = transformationResult.url.split('/').pop()
       if (filename) {
         await provider.delete(filename)

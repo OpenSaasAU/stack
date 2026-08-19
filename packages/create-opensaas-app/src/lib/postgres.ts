@@ -49,7 +49,6 @@ export function toPostgresConfig(source: string): string {
     )
   }
 
-  // Swap the driver-adapter import.
   let result = source.replace(SQLITE_ADAPTER_IMPORT, PG_ADAPTER_IMPORTS)
 
   // Swap the `db` block. The SQLite block is:

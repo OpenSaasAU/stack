@@ -90,7 +90,6 @@ const FILE_PART_PRISMA_TYPE: Record<FileColumnPart, 'String' | 'Int'> = {
  */
 export type ImageColumnMap = Record<ImageColumnPart, string>
 
-/** Map of file part → physical column name. */
 export type FileColumnMap = Record<FileColumnPart, string>
 
 /** A single physical column to emit for a multi-column field. */
@@ -149,9 +148,7 @@ export function resolveImageColumnMap(
   return { ...keystoneImageColumnMap(fieldName), ...overrides }
 }
 
-/**
- * Resolve the effective file column map.
- */
+/** Resolve the effective file column map; see {@link resolveImageColumnMap}. */
 export function resolveFileColumnMap(
   fieldName: string,
   overrides?: Partial<FileColumnMap>,

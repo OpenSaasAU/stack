@@ -53,7 +53,6 @@ function parseDbFlag(args: string[]): DbProvider | undefined {
 async function main() {
   console.log(chalk.bold.cyan('\n✨ Create OpenSaas Stack Application\n'))
 
-  // Parse command line arguments
   const args = process.argv.slice(2)
   // The project name is the first positional arg. Skip the value consumed by a
   // space-separated `--db <provider>` so e.g. `--db postgres my-app` still picks
@@ -73,7 +72,6 @@ async function main() {
   // prompt; absent, we prompt (defaulting to SQLite, the zero-setup local DB).
   const dbFlag = parseDbFlag(args)
 
-  // Prompt for project name if not provided
   if (!projectName) {
     const response = await prompts({
       type: 'text',
@@ -94,7 +92,6 @@ async function main() {
     projectName = response.projectName
   }
 
-  // Validate project name
   const validation = validateProjectName(projectName)
   if (!validation.ok) {
     console.error(chalk.red(`\n❌ ${validation.message}`))
@@ -105,7 +102,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Prompt for auth unless a flag fixed the choice.
   let withAuth = hasAuthFlag
   if (!hasAuthFlag && !hasNoAuthFlag) {
     const response = await prompts({
@@ -123,9 +119,9 @@ async function main() {
     withAuth = response.withAuth
   }
 
-  // Prompt for the database unless `--db` fixed the choice. SQLite is the
-  // default (zero-setup local dev); PostgreSQL emits the production-ready pg
-  // driver adapter, a Postgres `.env`, and migrate scripts from day one.
+  // SQLite is the default (zero-setup local dev); PostgreSQL emits the
+  // production-ready pg driver adapter, a Postgres `.env`, and migrate scripts
+  // from day one.
   let dbProvider: DbProvider = dbFlag ?? 'sqlite'
   if (!dbFlag) {
     const dbResponse = await prompts({
@@ -147,7 +143,6 @@ async function main() {
     dbProvider = dbResponse.dbProvider
   }
 
-  // Prompt for MCP/AI development tools unless a flag fixed the choice.
   let enableMCP = hasAiFlag
   if (!hasAiFlag && !hasNoAiFlag) {
     const mcpResponse = await prompts({
@@ -165,7 +160,6 @@ async function main() {
     enableMCP = mcpResponse.enableMCP
   }
 
-  // Create project
   await createProject({ projectName, withAuth, enableMCP, dbProvider, skipInstall })
 }
 
@@ -175,18 +169,15 @@ async function createProject(options: TemplateOptions) {
   const spinner = ora('Creating project...').start()
 
   try {
-    // Determine template
     const template = withAuth ? 'with-auth' : 'basic'
     const templateDir = path.join(__dirname, '../templates', template)
     const targetDir = path.join(process.cwd(), projectName)
 
-    // Check if directory already exists
     if (await fs.pathExists(targetDir)) {
       spinner.fail(chalk.red(`Directory ${projectName} already exists`))
       process.exit(1)
     }
 
-    // Check if template exists
     if (!(await fs.pathExists(templateDir))) {
       spinner.fail(chalk.red(`Template ${template} not found`))
       console.error(chalk.dim(`\nExpected template at: ${templateDir}`))
@@ -196,26 +187,22 @@ async function createProject(options: TemplateOptions) {
       process.exit(1)
     }
 
-    // Copy template files
     await fs.copy(templateDir, targetDir)
 
-    // Customize package.json. Templates are SQLite-based, so a `--db postgres`
-    // project swaps the SQLite adapter/driver for the Postgres ones (the
-    // transform preserves scripts — including migrate/migrate:deploy — and the
-    // @opensaas deps).
+    // Templates are SQLite-based, so a `--db postgres` project swaps the
+    // SQLite adapter/driver for the Postgres ones (the transform preserves
+    // scripts — including migrate/migrate:deploy — and the @opensaas deps).
     const pkgPath = path.join(targetDir, 'package.json')
     const pkg = await fs.readJSON(pkgPath)
     const namedPkg = applyProjectName(pkg, projectName)
     const finalPkg = dbProvider === 'postgresql' ? toPostgresPackageJson(namedPkg) : namedPkg
     await fs.writeJSON(pkgPath, finalPkg, { spaces: 2 })
 
-    // Rewrite opensaas.config.ts to the Postgres `PrismaPg` driver adapter when
-    // the user chose PostgreSQL. SQLite keeps the template's config untouched.
+    // SQLite keeps the template's config untouched.
     if (dbProvider === 'postgresql') {
       await rewriteConfigForPostgres(targetDir)
     }
 
-    // Customize README
     const readmePath = path.join(targetDir, 'README.md')
     if (await fs.pathExists(readmePath)) {
       const readme = await fs.readFile(readmePath, 'utf-8')
@@ -233,7 +220,6 @@ async function createProject(options: TemplateOptions) {
 
     spinner.succeed(chalk.green('Project created!'))
 
-    // Install MCP server if requested
     if (enableMCP) {
       await installMCPServer()
     }
@@ -243,7 +229,6 @@ async function createProject(options: TemplateOptions) {
     // database the user configures first. Opt out entirely with --no-install.
     const autoRan = skipInstall ? false : await runSetup(targetDir, projectName, dbProvider)
 
-    // Show next steps
     console.log(chalk.green('\n✅ Your project is ready!\n'))
     console.log(chalk.bold('Next steps:\n'))
     for (const command of nextStepCommands({ projectName, autoRan, provider: dbProvider })) {
@@ -312,10 +297,7 @@ async function writeEnvFile(
   const envExamplePath = path.join(targetDir, '.env.example')
 
   if (withAuth && (await fs.pathExists(envExamplePath))) {
-    // The auth template's `.env.example` carries SQLite database vars plus the
-    // Better-auth variables. For SQLite, copy it through unchanged. For
-    // PostgreSQL, swap the database block for the pooled/direct placeholders
-    // while preserving the auth variables, then write both files.
+    // Overwrites `.env.example` too, not just `.env`, so both reflect the chosen provider.
     const example = await fs.readFile(envExamplePath, 'utf-8')
     const withDb =
       provider === 'postgresql' ? replaceAuthEnvDatabase(example, projectName) : example

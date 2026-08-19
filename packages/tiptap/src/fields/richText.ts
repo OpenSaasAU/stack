@@ -28,18 +28,16 @@ export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      // Accept any valid JSON structure from Tiptap
-      // Tiptap outputs JSONContent which is a complex nested structure
+      // Tiptap emits a complex nested JSONContent structure; accept any valid JSON.
       const baseSchema = z.any()
 
       if (isRequired && operation === 'create') {
-        // For create, reject undefined
+        // Reject undefined on create.
         return baseSchema
       } else if (isRequired && operation === 'update') {
-        // For update, allow undefined (partial updates)
+        // Allow undefined on update (partial updates).
         return z.union([baseSchema, z.undefined()])
       } else {
-        // Not required
         return baseSchema.optional()
       }
     },

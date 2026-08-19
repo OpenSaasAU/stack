@@ -3,24 +3,13 @@
  * This allows pluggable storage solutions (local, S3, Vercel Blob, etc.)
  */
 export interface StorageProvider {
-  /**
-   * Uploads a file to the storage provider
-   * @param file - File data as Buffer or Uint8Array
-   * @param filename - Desired filename (may be transformed by provider)
-   * @param options - Additional upload options (contentType, metadata, etc.)
-   * @returns Upload result with URL and metadata
-   */
+  /** Uploads a file. `filename` may be transformed by the provider (e.g. to guarantee uniqueness). */
   upload(
     file: Buffer | Uint8Array,
     filename: string,
     options?: UploadOptions,
   ): Promise<UploadResult>
 
-  /**
-   * Downloads a file from the storage provider
-   * @param filename - Filename to download
-   * @returns File data as Buffer
-   */
   download(filename: string): Promise<Buffer>
 
   /**
@@ -29,29 +18,15 @@ export interface StorageProvider {
    * Idempotent: deleting a filename that doesn't exist in the backing store
    * resolves without error. Only non-not-found errors (permissions, network,
    * etc.) should reject.
-   * @param filename - Filename to delete
    */
   delete(filename: string): Promise<void>
 
-  /**
-   * Gets the public URL for a file
-   * @param filename - Filename to get URL for
-   * @returns Public URL string
-   */
   getUrl(filename: string): string
 
-  /**
-   * Optional: Gets a signed URL for private files
-   * @param filename - Filename to get signed URL for
-   * @param expiresIn - Expiration time in seconds
-   * @returns Signed URL string
-   */
+  /** Gets a signed URL for private files. */
   getSignedUrl?(filename: string, expiresIn?: number): Promise<string>
 }
 
-/**
- * Options for uploading a file
- */
 export interface UploadOptions {
   /** MIME type of the file */
   contentType?: string
@@ -63,9 +38,6 @@ export interface UploadOptions {
   cacheControl?: string
 }
 
-/**
- * Result from uploading a file
- */
 export interface UploadResult {
   /** Generated filename (may differ from input) */
   filename: string
@@ -79,9 +51,6 @@ export interface UploadResult {
   metadata?: Record<string, unknown>
 }
 
-/**
- * Configuration for local filesystem storage
- */
 export interface LocalStorageConfig {
   type: 'local'
   /** Directory to store uploaded files */
@@ -94,33 +63,21 @@ export interface LocalStorageConfig {
   [key: string]: unknown
 }
 
-/**
- * Base configuration shared by all storage providers
- */
 export interface BaseStorageConfig {
   type: string
   [key: string]: unknown
 }
 
-/**
- * Storage configuration - maps names to storage provider configs
- * Example: { avatars: s3Config, documents: localConfig }
- */
+/** Maps names to storage provider configs, e.g. `{ avatars: s3Config, documents: localConfig }`. */
 export type StorageConfig = Record<string, BaseStorageConfig | LocalStorageConfig>
 
-/**
- * Re-export metadata types from core package
- * These types are now defined in @opensaas/stack-core to avoid circular dependencies
- */
+// Defined in @opensaas/stack-core, not here, to avoid circular dependencies.
 export type {
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,
 } from '@opensaas/stack-core/internal'
 
-/**
- * Configuration for image transformations
- */
 export interface ImageTransformationConfig {
   /** Target width in pixels */
   width?: number
