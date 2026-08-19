@@ -46,9 +46,6 @@ export type SignInFormProps = {
 }
 
 /**
- * Sign in form component
- * Provides email/password sign in and OAuth provider buttons
- *
  * Submits through app-owned server actions rather than calling the auth API
  * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
  *
@@ -96,7 +93,6 @@ export function SignInForm({
         throw new Error(cleanAuthErrorMessage(result.error, 'Sign in failed'))
       }
 
-      // If onSuccess is provided, call it. Otherwise, automatically redirect
       if (onSuccess) {
         onSuccess()
       } else {

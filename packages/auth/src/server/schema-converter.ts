@@ -33,17 +33,11 @@ type BetterAuthFieldAttribute = {
   bigint?: boolean
 }
 
-/**
- * Better Auth table schema structure
- */
 type BetterAuthTableSchema = {
   modelName?: string
   fields: Record<string, BetterAuthFieldAttribute>
 }
 
-/**
- * Convert Better Auth field type to OpenSaaS field config
- */
 function convertField(
   fieldName: string,
   betterAuthField: BetterAuthFieldAttribute,
@@ -55,14 +49,10 @@ function convertField(
     return null
   }
 
-  // Handle references (relationships)
   if (references) {
-    // Relationships are handled separately
-    // Return null here and handle in relationship pass
     return null
   }
 
-  // Map Better Auth types to OpenSaaS field types
   switch (type) {
     case 'string':
       return text({
@@ -98,7 +88,6 @@ function convertField(
       })
 
     default:
-      // Unknown type - default to text
       console.warn(
         `[stack-auth] Unknown Better Auth field type "${type}" for field "${fieldName}", defaulting to text field`,
       )
@@ -109,16 +98,9 @@ function convertField(
 }
 
 /**
- * Convert Better Auth table schema to OpenSaaS ListConfig.
- *
- * Per ADR-0013, plugin-injected lists ship **closed** — no access is set here,
- * so the list denies every operation until the application grants it. For a
- * table that resolves onto one of the four base auth models (user/session/
- * account/verification), that means `authPlugin({ access: { ... } })`; for any
- * other better-auth-plugin-declared table (e.g. OAuth client tables from the
- * `mcp` plugin), the application must declare the list itself under the same
- * derived key so the plugin's field-only extend path can merge in (its access
- * then stands untouched).
+ * Per ADR-0013, ships closed — no access is set here. See
+ * `packages/auth/CLAUDE.md` ("Access control on Auth lists") for how an app
+ * grants access to a table this produces.
  */
 export function convertTableToList(
   tableName: string,
@@ -127,7 +109,6 @@ export function convertTableToList(
 ): ListConfig<any> {
   const fields: Record<string, FieldConfig> = {}
 
-  // First pass: convert regular fields
   for (const [fieldName, fieldAttr] of Object.entries(tableSchema.fields)) {
     const fieldConfig = convertField(fieldName, fieldAttr)
     if (fieldConfig) {
@@ -135,14 +116,12 @@ export function convertTableToList(
     }
   }
 
-  // Second pass: add relationships
-  // NOTE: Better Auth uses one-way references, but OpenSaaS requires bidirectional relationships
-  // We skip relationship conversion for now and rely on the foreign key fields
-  // Users can manually add bidirectional relationships if needed by extending the User list
+  // Better Auth uses one-way references; OpenSaaS requires bidirectional
+  // relationships, so reference fields are kept as plain text (foreign-key)
+  // columns here. An app can add a bidirectional relationship manually by
+  // extending the corresponding list.
   for (const [fieldName, fieldAttr] of Object.entries(tableSchema.fields)) {
     if (fieldAttr.references) {
-      // For now, treat reference fields as regular text fields (foreign keys)
-      // This preserves the userId, clientId, etc. fields that Better Auth expects
       if (!fields[fieldName]) {
         fields[fieldName] = text({
           validation: { isRequired: fieldAttr.required },
@@ -198,17 +177,13 @@ function resolveBaseModelKey(
 }
 
 /**
- * Convert all Better Auth tables to OpenSaaS list configs
- * This is called by authPlugin() to generate lists from Better Auth + plugins
+ * Convert all Better Auth tables to OpenSaaS list configs, called by
+ * `authPlugin()` to generate lists from Better Auth + plugins.
  *
  * @param tables - The better-auth plugin's declared schema extension
- * @param baseModelKeys - The resolved list keys for the four base auth models
- *   (`user`/`session`/`account`/`verification`), from the same model-key remap
- *   the Auth lists themselves use. When a table name matches one of these keys
- *   (case-insensitively), its list key is taken from here instead of being
- *   re-derived from the table name — so a schema extension targeting `user`
- *   lands on the adopted Auth list (e.g. `AuthUser`) rather than a re-derived
- *   `User`, even when that key collides with an unrelated host list.
+ * @param baseModelKeys - Resolved list keys for the four base auth models,
+ *   from the same model-key remap the Auth lists themselves use — see the
+ *   base-model-remap precedence below.
  */
 export function convertBetterAuthSchema(
   tables: Record<string, BetterAuthTableSchema>,

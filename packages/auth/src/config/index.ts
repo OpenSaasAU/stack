@@ -10,12 +10,6 @@ import type {
   SendAuthEmail,
 } from './types.js'
 
-/**
- * Default better-auth model names. Used when the developer does not override
- * `modelName`, preserving the historical `User`/`Session`/`Account`/`Verification`
- * keys exactly. `rateLimit` only applies when `rateLimit.storage: 'database'`
- * derives the fifth Auth list.
- */
 const DEFAULT_MODEL_NAMES = {
   user: 'User',
   session: 'Session',
@@ -25,11 +19,6 @@ const DEFAULT_MODEL_NAMES = {
 } as const
 
 /**
- * Resolve a single better-auth model config block into its normalized form,
- * falling back to the better-auth default model name and an empty column map.
- * The model's Postgres schema is the per-model `schema` override when present,
- * otherwise the plugin-level `schema` default (or `undefined` for `public`).
- *
  * `tableName` defaults to today's behaviour when not explicitly set: it
  * follows `modelName` when that differs from the better-auth default (so a
  * renamed list still pins its table via `@@map`), otherwise it stays unset.
@@ -52,12 +41,6 @@ function normalizeModelConfig(
   }
 }
 
-/**
- * Resolve the better-auth model config for all four auth models, plus a fifth
- * `rateLimit` model when `rateLimit.storage: 'database'` requires deriving
- * the `RateLimit` list. `defaultSchema` is the plugin-level `schema` applied
- * to every model unless a per-model `schema` override is given.
- */
 function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
   const defaultSchema = config.schema
   const models: NormalizedAuthModels = {
@@ -82,11 +65,6 @@ function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
   return models
 }
 
-/**
- * Default `sendResetPassword`/`sendVerificationEmail` — logs to console
- * instead of sending, matching the pre-existing "no sendEmail configured"
- * behavior for apps that haven't wired a real email provider yet.
- */
 function defaultSendAuthEmail(kind: 'password reset' | 'verification'): SendAuthEmail {
   return async ({ user, url }) => {
     console.log(
@@ -97,11 +75,7 @@ function defaultSendAuthEmail(kind: 'password reset' | 'verification'): SendAuth
   }
 }
 
-/**
- * Normalize auth configuration with defaults
- */
 export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
-  // Email and password defaults
   const emailAndPassword = config.emailAndPassword?.enabled
     ? {
         enabled: true as const,
@@ -119,7 +93,6 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         sendResetPassword: defaultSendAuthEmail('password reset'),
       }
 
-  // Email verification defaults
   const emailVerification = config.emailVerification?.enabled
     ? {
         enabled: true as const,
@@ -137,7 +110,6 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
         sendVerificationEmail: defaultSendAuthEmail('verification'),
       }
 
-  // Password reset defaults
   const passwordReset = config.passwordReset?.enabled
     ? {
         enabled: true as const,
@@ -145,17 +117,13 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
       }
     : { enabled: false as const, tokenExpiration: 3600 }
 
-  // Session defaults
   const session = {
-    expiresIn: config.session?.expiresIn || 604800, // 7 days
-    updateAge: config.session?.updateAge ?? 86400, // 1 day, matching better-auth's own default
+    expiresIn: config.session?.expiresIn || 604800,
+    updateAge: config.session?.updateAge ?? 86400, // matches better-auth's own default
   }
 
-  // Session fields defaults
   const sessionFields = config.sessionFields || ['userId', 'email', 'name']
 
-  // Resolve better-auth per-model config (modelName + field column maps).
-  // Defaults preserve the historical User/Session/Account/Verification keys.
   const models = normalizeAuthModels(config)
 
   return {

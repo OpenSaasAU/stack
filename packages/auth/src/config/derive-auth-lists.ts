@@ -1,29 +1,7 @@
 /**
- * Pure `better-auth config → Auth lists` derivation.
- *
- * This module is intentionally free of side effects and plugin/runtime
- * concerns: given the resolved better-auth model config (per-model `modelName`,
- * `tableName`, and `fields` column maps) plus any custom User fields, it
- * produces the four OpenSaaS Auth lists (user/session/account/verification)
- * with:
- *
- *  - list keys taken from each model's `modelName`
- *  - a table `@@map` (list-level `db.map`) taken from each model's resolved
- *    `tableName` — independent of `modelName`, so a renamed list key can still
- *    adopt a differently-named live table
- *  - field-level `@map` (`db.map`) for any better-auth field → column override
- *  - relationship refs between the auth lists wired to the *derived* keys
- *    (e.g. `Session.user → AuthUser.sessions`)
- *
- * When the developer supplies no `modelName`/`fields` overrides, the output
- * keeps the historical default keys (`User`/`Session`/`Account`/
- * `Verification`) and field shapes — see the unit tests. Per ADR-0013, each
- * list ships with **no** operation-level access unless the caller supplies it
- * (`accessConfig`, or `userConfig.access` for the user list) — deny-by-default,
- * not the plugin's former permissive defaults.
- *
- * `getAuthLists`/`convertBetterAuthSchema` (and the runtime user-key
- * resolution) consume this module so derivation lives in exactly one place.
+ * Pure `better-auth config → Auth lists` derivation, free of side effects and
+ * plugin/runtime concerns. See `packages/auth/CLAUDE.md` ("Deriving Auth lists
+ * from better-auth config") for the full behavior and examples.
  */
 
 import { list } from '@opensaas/stack-core'
@@ -64,22 +42,11 @@ export type DerivedAuthLists = {
  * Build the list-level `db` config (`timestamps` + `@@map` + `@@schema`) for a
  * derived list.
  *
- * `timestamps` is a per-model input rather than hardcoded: better-auth's
- * adapter writes `createdAt`/`updatedAt` on every user/session/account/
- * verification row (and the schema converter returns `null` for those columns,
- * assuming the generator injects them), so those four opt back into
- * auto-timestamps now that they're OFF by default (ADR-0004). The `RateLimit`
- * model has neither column in better-auth's own schema, so it passes `false`.
- *
- * The physical table name (`@@map`) comes from the model's resolved
- * `tableName` — independent of the list key/`modelName` — so a renamed list
- * key can still adopt a differently-named live table (e.g. better-auth's own
- * default lowercase table names). When a `schema` is configured (plugin-level
- * or per-model), the list is placed in that Postgres schema via `@@schema(...)`.
- *
- * With no `tableName`/`schema` overrides and `timestamps: true` we emit only
- * `{ timestamps: true }`, leaving the default `User`/`Session`/... output
- * unchanged.
+ * `timestamps` is a per-model input, not hardcoded: better-auth's adapter
+ * writes `createdAt`/`updatedAt` on every user/session/account/verification
+ * row, so those four opt back into auto-timestamps now that they're OFF by
+ * default (ADR-0004). The `RateLimit` model has neither column upstream, so
+ * it passes `false`.
  */
 function listDb(
   model: NormalizedAuthModelConfig,
@@ -132,12 +99,8 @@ function userRelationshipDb(fields: Record<string, string>): NonNullable<Relatio
 
 /**
  * Create the Auth user list, applying derived field column maps + table map and
- * wiring the session/account relationships to the derived keys.
- *
- * Per ADR-0013, the plugin ships no permissive access default: the list is
- * closed unless the application supplies access via `extendUserList.access`
- * (takes precedence — it predates the keyed `access` passthrough and is
- * User-specific) or the `access.user` passthrough.
+ * wiring the session/account relationships to the derived keys. Ships closed
+ * per ADR-0013 unless `userConfig.access` or `access.user` is supplied.
  */
 function createUserList(
   model: NormalizedAuthModelConfig,
@@ -158,11 +121,9 @@ function createUserList(
       emailVerified: checkbox({ defaultValue: false, db: fieldDb('emailVerified', f) }),
       image: text({ db: fieldDb('image', f) }),
 
-      // Relationships to the other auth lists — refs follow the derived keys.
       sessions: relationship({ ref: `${keys.session}.user`, many: true }),
       accounts: relationship({ ref: `${keys.account}.user`, many: true }),
 
-      // Custom fields from user config
       ...(userConfig.fields || {}),
     },
     db: listDb(model, true),
@@ -171,12 +132,7 @@ function createUserList(
   })
 }
 
-/**
- * Create the Auth session list.
- *
- * Per ADR-0013, the plugin ships no permissive access default — closed unless
- * the application supplies `access.session`.
- */
+/** Create the Auth session list. Ships closed per ADR-0013 unless `access.session` is supplied. */
 function createSessionList(
   model: NormalizedAuthModelConfig,
   keys: DerivedAuthLists['keys'],
@@ -207,12 +163,7 @@ function createSessionList(
   })
 }
 
-/**
- * Create the Auth account list.
- *
- * Per ADR-0013, the plugin ships no permissive access default — closed unless
- * the application supplies `access.account`.
- */
+/** Create the Auth account list. Ships closed per ADR-0013 unless `access.account` is supplied. */
 function createAccountList(
   model: NormalizedAuthModelConfig,
   keys: DerivedAuthLists['keys'],
@@ -242,12 +193,7 @@ function createAccountList(
   })
 }
 
-/**
- * Create the Auth verification list.
- *
- * Per ADR-0013, the plugin ships no permissive access default — closed unless
- * the application supplies `access.verification`.
- */
+/** Create the Auth verification list. Ships closed per ADR-0013 unless `access.verification` is supplied. */
 function createVerificationList(
   model: NormalizedAuthModelConfig,
   access: AuthAccessConfig['verification'],
@@ -281,8 +227,7 @@ function createVerificationList(
  * `createdAt`/`updatedAt` either (see `listDb`'s `timestamps` argument):
  * better-auth's own rate-limit table has neither column.
  *
- * Per ADR-0013, the plugin ships no permissive access default — closed unless
- * the application supplies `access.rateLimit`.
+ * Ships closed per ADR-0013 unless `access.rateLimit` is supplied.
  */
 function createRateLimitList(
   model: NormalizedAuthModelConfig,

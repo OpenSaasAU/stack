@@ -25,9 +25,6 @@ export type ForgotPasswordFormProps = {
 }
 
 /**
- * Forgot password form component
- * Allows users to request a password reset email
- *
  * Submits through an app-owned server action rather than calling the auth API
  * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
  *
