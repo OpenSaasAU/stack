@@ -96,9 +96,6 @@ function toRelationshipLabel(
 
 /**
  * Whether a field can seed an `orderBy` for the list table (issue #732).
- * Virtual fields have no column to order by, and a to-one relationship has no
- * scalar to order by; a to-many relationship orders by its related `_count`, and
- * every scalar column orders by its own value.
  *
  * A field the session cannot READ is excluded too (#915) — evaluated the same
  * predicate-time way `context.db.*`'s `findMany`/`count` now enforce, so a
@@ -164,10 +161,6 @@ export interface ListViewProps {
   serverAction?: (input: ServerActionInput) => Promise<unknown>
 }
 
-/**
- * List view component - displays items in a table
- * Server Component that fetches data and renders client table
- */
 export async function ListView({
   context,
   config,
@@ -196,18 +189,14 @@ export async function ListView({
     )
   }
 
-  // URL sort takes precedence over config initialSort, but only if the field is
-  // actually sortable — an unknown field, a virtual field, a to-one
-  // relationship, or a field this session cannot read (#915) has no orderable
-  // column and would make either Prisma or the engine's own predicate-time
-  // check throw (issue #732).
+  // URL sort takes precedence over config initialSort, but only for a
+  // sortable field — see `isSortableField`.
   const sortFieldReadable =
     sort &&
     (await isSortableField(listConfig.fields[sort.field], { session: context.session, context }))
   const validatedSort = sortFieldReadable ? sort : undefined
   const activeSort = validatedSort ?? initialSort
 
-  // Fetch items using access-controlled context
   const skip = (page - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
@@ -245,13 +234,6 @@ export async function ListView({
       config,
     )
 
-    // A to-one relationship label-filter condition (`author:Ada` →
-    // `{ author: { is: { name: {...} } } }`) used to need its own access fold
-    // here (issue #749) so the nested `is` clause could only ever match rows
-    // the session may also see directly on the related list. The secured
-    // `context.db` read below now scopes every relation filter in `where`
-    // itself (`buildAccessScopedWhere`, #916), so this `where` needs no
-    // separate label-filter pass.
     const where = whereWithCountFilters
 
     // Build the include: to-one relationships fetch the related row (for its
@@ -274,8 +256,6 @@ export async function ListView({
       include._count = { select: countSelect }
     }
 
-    // A to-many relationship column sorts by its related `_count`; every other
-    // sortable column orders by its own value.
     const orderBy = activeSort
       ? isToManyRelationshipField(listConfig.fields[activeSort.field])
         ? { [activeSort.field]: { _count: activeSort.direction } }
@@ -299,7 +279,6 @@ export async function ListView({
     console.error(`Failed to fetch ${listKey}:`, error)
   }
 
-  // Extract only the relationship refs needed by client (don't send entire config)
   const relationshipRefs: Record<string, string> = {}
   Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
     if (
@@ -313,10 +292,8 @@ export async function ListView({
   })
 
   // Resolve each relationship value before crossing the server/client boundary
-  // (ListConfig objects carry functions and can't be passed as props):
-  //  • to-one → the related row's `{ id, label }` via the shared label seam.
-  //  • to-many → the access-visible related COUNT (a number) read off `_count`.
-  // The raw `_count` payload is dropped from the serialized item (issue #732).
+  // — ListConfig objects carry functions and can't be passed as props. The raw
+  // `_count` payload is dropped from the serialized item (issue #732).
   const itemsWithResolvedLabels = items.map((item) => {
     const resolved: Record<string, unknown> = { ...item }
     delete resolved._count
@@ -338,13 +315,11 @@ export async function ListView({
     return resolved
   })
 
-  // Serialize items for client component (convert Dates, etc to JSON-safe format)
   const serializedItems = jsonSafeClone(itemsWithResolvedLabels)
 
   // Collect each filterable field's serializable Filter spec metadata (fields,
   // operators, enumerated values / relationship label search) to drive the
-  // Filter builder's pickers. This carries no functions, so it crosses the
-  // server/client boundary; it mirrors the same specs the server-side
+  // Filter builder's pickers. It mirrors the same specs the server-side
   // `buildListFilterWhere` above uses, so the builder can only produce queries
   // the engine understands.
   const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
@@ -355,14 +330,9 @@ export async function ListView({
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is
   // resolved through the shared label seam (`getLabelFieldName`), so it can
-  // never drift from the field the Item label is read off. A per-field cell
-  // override on that field still wins — the client routes to the override first.
+  // never drift from the field the Item label is read off.
   const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
 
-  // Resolve the custom Bulk actions (issue #736) this session may see. The
-  // per-action `hasAccess` gate runs server-side against the live context here,
-  // so the client only ever receives serialisable metadata for actions it is
-  // allowed to invoke.
   const bulkActions = await resolveVisibleBulkActions(
     listConfig.ui?.listView?.bulkActions,
     context,
@@ -384,7 +354,6 @@ export async function ListView({
         }
       />
 
-      {/* Client Table */}
       <ListViewClient
         items={serializedItems || []}
         fieldTypes={Object.fromEntries(
