@@ -1,18 +1,14 @@
 import type { EmbeddingProvider } from './types.js'
 import type { OpenAIEmbeddingConfig, OpenAIEmbeddingModel } from '../config/types.js'
 
-/**
- * Model dimensions mapping
- */
 const MODEL_DIMENSIONS: Record<OpenAIEmbeddingModel, number> = {
   'text-embedding-3-small': 1536,
   'text-embedding-3-large': 3072,
   'text-embedding-ada-002': 1536,
 }
 
-/**
- * Lazily load OpenAI to avoid requiring it at import time
- */
+// `openai` is an optional peer dependency (see package.json) — a static import
+// would break apps that don't install it.
 async function getOpenAI() {
   try {
     const module = await import('openai')
@@ -25,9 +21,8 @@ async function getOpenAI() {
   }
 }
 
-/**
- * Type for OpenAI client (avoids direct dependency)
- */
+// Mirrors the shape of `openai`'s embeddings client so this file doesn't need to
+// import types from the (optional) `openai` package.
 type OpenAIClient = {
   embeddings: {
     create: (params: {
@@ -40,10 +35,7 @@ type OpenAIClient = {
   }
 }
 
-/**
- * OpenAI embedding provider
- * Requires the `openai` package to be installed
- */
+/** Requires the `openai` package to be installed (optional peer dependency). */
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly type = 'openai'
   readonly model: string
@@ -78,9 +70,6 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     }) as OpenAIClient
   }
 
-  /**
-   * Generate embedding for a single text
-   */
   async embed(text: string): Promise<number[]> {
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot generate embedding for empty text')
@@ -100,15 +89,11 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Generate embeddings for multiple texts in a batch
-   */
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) {
       return []
     }
 
-    // Filter out empty texts and keep track of indices
     const validTexts: string[] = []
     const validIndices: number[] = []
 
@@ -124,7 +109,6 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     }
 
     try {
-      // OpenAI supports batch embedding
       const client = await this.ensureClient()
       const response = await client.embeddings.create({
         model: this.model,
@@ -132,16 +116,13 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
         encoding_format: 'float',
       })
 
-      // Create result array with correct size
       const results: number[][] = new Array(texts.length)
 
-      // Fill in embeddings for valid texts
       response.data.forEach((item: { embedding: number[] }, i: number) => {
         const originalIndex = validIndices[i]
         results[originalIndex] = item.embedding
       })
 
-      // Fill in empty arrays for invalid texts
       for (let i = 0; i < texts.length; i++) {
         if (!results[i]) {
           results[i] = new Array(this.dimensions).fill(0)

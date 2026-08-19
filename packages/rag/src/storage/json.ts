@@ -3,17 +3,9 @@ import type { SearchResult, StoredEmbedding } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
 import { getDbKey } from '@opensaas/stack-core'
 
-/**
- * JSON-based vector storage
- * Stores vectors as JSON in the database and performs similarity search in JavaScript
- * Good for development and small datasets, doesn't require special database extensions
- */
 export class JsonVectorStorage implements VectorStorage {
   readonly type = 'json'
 
-  /**
-   * Search for similar vectors using JavaScript-based cosine similarity
-   */
   async search<T = unknown>(
     listKey: string,
     fieldName: string,
@@ -29,8 +21,8 @@ export class JsonVectorStorage implements VectorStorage {
       throw new Error(`List '${listKey}' not found in context.db`)
     }
 
-    // Fetch all items with embeddings (access control applied via context)
-    // We need to fetch all items because we're doing similarity scoring in JS
+    // No `take` here — limit is applied after scoring below, so trimming the
+    // query would cut candidates before ranking.
     const items = await model.findMany({
       where: {
         ...where,
@@ -40,7 +32,6 @@ export class JsonVectorStorage implements VectorStorage {
       },
     })
 
-    // Calculate similarity for each item
     const results: Array<{ item: T; score: number; distance: number }> = []
 
     for (const item of items) {
@@ -52,7 +43,6 @@ export class JsonVectorStorage implements VectorStorage {
 
       const storedVector = embeddingData.vector
 
-      // Validate vector dimensions
       if (storedVector.length !== queryVector.length) {
         console.warn(
           `Vector dimension mismatch for ${listKey}.${item.id}.${fieldName}: ` +
@@ -61,27 +51,22 @@ export class JsonVectorStorage implements VectorStorage {
         continue
       }
 
-      // Calculate cosine similarity
       const score = this.cosineSimilarity(queryVector, storedVector)
 
       if (score >= minScore) {
         results.push({
           item: item as T,
           score,
-          distance: 1 - score, // Convert similarity to distance
+          distance: 1 - score,
         })
       }
     }
 
-    // Sort by score (descending) and limit results
     results.sort((a, b) => b.score - a.score)
 
     return results.slice(0, limit)
   }
 
-  /**
-   * Calculate cosine similarity between two vectors
-   */
   cosineSimilarity(a: number[], b: number[]): number {
     return calculateCosineSimilarity(a, b)
   }

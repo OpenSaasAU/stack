@@ -1,14 +1,3 @@
-/**
- * Runtime utilities for RAG operations
- *
- * This module provides high-level APIs for:
- * - Text chunking
- * - Embedding generation
- * - Semantic search
- * - Batch processing with rate limiting
- */
-
-// Text chunking
 export {
   chunkText,
   estimateTokenCount,
@@ -18,7 +7,6 @@ export {
   type TextChunk,
 } from './chunking.js'
 
-// Embedding generation
 export {
   generateEmbedding,
   generateEmbeddings,
@@ -31,7 +19,6 @@ export {
   type ChunkedEmbedding,
 } from './embeddings.js'
 
-// Semantic search
 export {
   semanticSearch,
   findSimilar,
@@ -39,7 +26,6 @@ export {
   type FindSimilarOptions,
 } from './search.js'
 
-// Batch processing
 export {
   batchProcess,
   RateLimiter,
@@ -50,7 +36,6 @@ export {
   type BatchProcessResult,
 } from './batch.js'
 
-// Build-time utilities
 export {
   simpleChunkText,
   hashContent,
@@ -58,10 +43,8 @@ export {
   generateDocumentEmbeddings,
 } from './build-time.js'
 
-// Markdown processing
 export { stripMarkdown, extractMarkdownText } from './markdown.js'
 
-// Provider helpers
 export {
   createProviderFromEnv,
   getProviderConfigFromEnv,

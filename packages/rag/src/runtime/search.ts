@@ -8,61 +8,26 @@ import type { EmbeddingProvider } from '../providers/types.js'
 import type { VectorStorage } from '../storage/types.js'
 
 export interface SemanticSearchOptions {
-  /**
-   * List key to search (e.g., 'Article', 'Post')
-   */
   listKey: string
-
-  /**
-   * Field name containing embeddings
-   */
   fieldName: string
-
-  /**
-   * Natural language query text
-   */
   query: string
-
-  /**
-   * Embedding provider to use for query embedding
-   */
   provider: EmbeddingProvider
-
-  /**
-   * Vector storage backend to use for search
-   */
   storage: VectorStorage
-
-  /**
-   * Access context for enforcing access control
-   */
   context: AccessContext
 
-  /**
-   * Maximum number of results to return
-   * @default 10
-   */
+  /** @default 10 */
   limit?: number
 
-  /**
-   * Minimum similarity score (0-1)
-   * @default 0.0
-   */
+  /** @default 0.0 */
   minScore?: number
 
-  /**
-   * Additional Prisma where clause to filter results
-   */
   where?: Record<string, unknown>
 }
 
 /**
- * Perform semantic search using natural language query
- *
- * This is a high-level API that:
- * 1. Generates embedding for the query text
- * 2. Searches for similar vectors in the database
- * 3. Enforces access control
+ * Perform semantic search using natural language query. Embeds the query
+ * text, then delegates to `storage.search()`, which also enforces access
+ * control via `context`.
  *
  * @example
  * ```typescript
@@ -93,10 +58,8 @@ export async function semanticSearch<T = unknown>(
     where,
   } = options
 
-  // Generate embedding for query
   const queryVector = await provider.embed(query)
 
-  // Search for similar vectors
   const results = await storage.search<T>(listKey, fieldName, queryVector, {
     limit,
     minScore,
@@ -108,63 +71,28 @@ export async function semanticSearch<T = unknown>(
 }
 
 export interface FindSimilarOptions {
-  /**
-   * List key to search (e.g., 'Article', 'Post')
-   */
   listKey: string
-
-  /**
-   * Field name containing embeddings
-   */
   fieldName: string
-
-  /**
-   * ID of the item to find similar items for
-   */
   itemId: string
-
-  /**
-   * Vector storage backend to use for search
-   */
   storage: VectorStorage
-
-  /**
-   * Access context for enforcing access control
-   */
   context: AccessContext
 
-  /**
-   * Maximum number of results to return
-   * @default 10
-   */
+  /** @default 10 */
   limit?: number
 
-  /**
-   * Minimum similarity score (0-1)
-   * @default 0.0
-   */
+  /** @default 0.0 */
   minScore?: number
 
-  /**
-   * Whether to exclude the source item from results
-   * @default true
-   */
+  /** @default true */
   excludeSelf?: boolean
 
-  /**
-   * Additional Prisma where clause to filter results
-   */
   where?: Record<string, unknown>
 }
 
 /**
- * Find items similar to a given item by ID
- *
- * This is a high-level API that:
- * 1. Fetches the embedding of the source item
- * 2. Searches for similar vectors in the database
- * 3. Enforces access control
- * 4. Optionally excludes the source item from results
+ * Find items similar to a given item by ID. Fetches the source item's
+ * embedding, then delegates to `storage.search()`, which also enforces
+ * access control via `context`.
  *
  * @example
  * ```typescript
@@ -194,8 +122,6 @@ export async function findSimilar<T = unknown>(
     where = {},
   } = options
 
-  // Fetch the source item's embedding
-  // We need to access the database through the context
   const dbKey = getDbKey(listKey)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const model = (context.db as any)[dbKey]
@@ -220,10 +146,8 @@ export async function findSimilar<T = unknown>(
 
   const queryVector = embedding.vector
 
-  // Build where clause
   const searchWhere = excludeSelf ? { ...where, id: { not: itemId } } : where
 
-  // Search for similar vectors
   const results = await storage.search<T>(listKey, fieldName, queryVector, {
     limit,
     minScore,
@@ -234,10 +158,6 @@ export async function findSimilar<T = unknown>(
   return results
 }
 
-/**
- * Convert list key (PascalCase) to database key (camelCase)
- * Same logic as in core package
- */
 function getDbKey(listKey: string): string {
   return listKey.charAt(0).toLowerCase() + listKey.slice(1)
 }

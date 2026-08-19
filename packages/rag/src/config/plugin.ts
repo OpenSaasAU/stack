@@ -51,19 +51,16 @@ export function ragPlugin(config: RAGConfig): Plugin {
     },
 
     init: async (context) => {
-      // First pass: Scan for searchable() wrapped fields and inject embedding fields
+      // Inject embedding fields for searchable() fields first — the pass
+      // below, which wires up autoGenerate hooks, must see these before it runs.
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
         const embeddingFieldsToInject: Record<string, ReturnType<typeof embedding>> = {}
 
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-          // Check if field has _searchable metadata
           if ('_searchable' in fieldConfig) {
             const meta = fieldConfig._searchable as SearchableMetadata
-
-            // Determine embedding field name
             const embeddingName = meta.embeddingFieldName || `${fieldName}Embedding`
 
-            // Create embedding field
             embeddingFieldsToInject[embeddingName] = embedding({
               sourceField: fieldName,
               provider: meta.provider,
@@ -74,7 +71,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
           }
         }
 
-        // Inject all embedding fields at once
         if (Object.keys(embeddingFieldsToInject).length > 0) {
           context.extendList(listName, {
             fields: embeddingFieldsToInject,
@@ -82,8 +78,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
         }
       }
 
-      // Second pass: Find all embedding fields with autoGenerate enabled
-      // This includes both manually defined embedding fields AND injected ones from searchable()
+      // Also catches embedding fields injected by the pass above (extendList
+      // mutates context.config.lists in place, so this loop sees them too).
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
           if (
@@ -103,11 +99,9 @@ export function ragPlugin(config: RAGConfig): Plugin {
               )
             }
 
-            // Inject afterOperation hook to auto-generate embeddings
             context.extendList(listName, {
               hooks: {
                 resolveInput: async (args) => {
-                  // Skip if item is missing
                   if (!args.resolvedData)
                     throw new Error('RAG plugin: Missing resolvedData in resolveInput hook')
 
@@ -117,17 +111,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                     metadata: { sourceHash?: string }
                   } | null
 
-                  // Skip if source text is empty
                   if (!sourceText) return args.resolvedData
 
-                  // Check if we need to regenerate (source text changed)
                   const sourceHash = await hashText(sourceText)
                   if (currentEmbedding && currentEmbedding.metadata.sourceHash === sourceHash) {
-                    // Source text hasn't changed, skip regeneration
                     return args.resolvedData
                   }
 
-                  // Get provider for this field
                   const providerName = embeddingConfig.provider || 'default'
                   const providerConfig =
                     providerName === 'default'
@@ -141,7 +131,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
                     return args.resolvedData
                   }
 
-                  // Generate embedding
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
@@ -165,16 +154,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
         }
       }
 
-      // Register MCP tools if enabled
       if (normalized.enableMcpTools && context.registerMcpTool) {
-        // Find all lists with embedding fields
         for (const [listName, listConfig] of Object.entries(context.config.lists)) {
           const embeddingFields = Object.entries(listConfig.fields).filter(
             ([, fieldConfig]) => fieldConfig.type === 'embedding',
           )
 
           if (embeddingFields.length > 0) {
-            // Register semantic search tool for this list
             const toolName = `semantic_search_${listName.toLowerCase()}`
 
             context.registerMcpTool({
@@ -202,23 +188,19 @@ export function ragPlugin(config: RAGConfig): Plugin {
               handler: async ({ input, context }) => {
                 const { query, limit = 10, minScore = 0.5, field = embeddingFields[0][0] } = input
 
-                // Get provider
                 const providerConfig = normalized.provider
                 if (!providerConfig) {
                   throw new Error('RAG plugin: No default provider configured')
                 }
 
-                // Generate query embedding
                 const provider = createEmbeddingProvider(providerConfig)
                 const queryVector = await provider.embed(query)
 
-                // Search using configured storage backend
-                // Note: This is a simplified implementation
-                // Full implementation would use VectorStorage interface
+                // Simplified: computes similarity in JS over every item rather
+                // than delegating to the configured VectorStorage backend.
                 const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
                 const allItems = await context.db[dbKey].findMany()
 
-                // Calculate cosine similarity for each item
                 const results = allItems
                   .map((item: { [key: string]: { vector: number[] } | null }) => {
                     const embedding = item[field]
@@ -233,7 +215,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                 return {
                   results: results.map((r: { item: unknown; score: number }) => {
-                    // Ensure item is an object before spreading
                     const item = r.item as Record<string, unknown>
                     return {
                       ...item,
@@ -248,18 +229,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
         }
       }
 
-      // Store RAG config for runtime access
       // Access at runtime via: config._pluginData.rag
       context.setPluginData<NormalizedRAGConfig>('rag', normalized)
     },
 
     runtime: () => {
-      // Provide RAG-related utilities at runtime
       return {
-        /**
-         * Generate embedding for a given text
-         * Uses the configured embedding provider
-         */
+        /** Uses the top-level configured provider (not the per-field `providers` map the auto-generate hook honors). */
         generateEmbedding: async (text: string) => {
           const ragConfig = normalized
           if (!ragConfig || !ragConfig.provider) {
@@ -270,9 +246,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
           return await provider.embed(text)
         },
 
-        /**
-         * Generate embeddings for multiple texts (batch)
-         */
+        /** Batch counterpart of {@link generateEmbedding}; same provider selection. */
         generateEmbeddings: async (texts: string[]) => {
           const ragConfig = normalized
           if (!ragConfig || !ragConfig.provider) {
@@ -288,11 +262,10 @@ export function ragPlugin(config: RAGConfig): Plugin {
 }
 
 /**
- * Hash text using SHA-256 for change detection
+ * Non-cryptographic hash of `text`, used to detect whether source text
+ * changed since the last embedding was generated.
  */
 async function hashText(text: string): Promise<string> {
-  // Simple hash implementation
-  // In production, could use crypto.subtle.digest for better performance
   let hash = 0
   for (let i = 0; i < text.length; i++) {
     const char = text.charCodeAt(i)
@@ -302,9 +275,6 @@ async function hashText(text: string): Promise<string> {
   return hash.toString(36)
 }
 
-/**
- * Calculate cosine similarity between two vectors
- */
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
     throw new Error('Vectors must have same dimensions')
