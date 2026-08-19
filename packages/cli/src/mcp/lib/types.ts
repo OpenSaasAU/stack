@@ -1,7 +1,3 @@
-/**
- * Feature catalog types for OpenSaaS Stack MCP server
- */
-
 export type QuestionType = 'text' | 'textarea' | 'select' | 'multiselect' | 'boolean'
 
 export interface FeatureQuestion {
@@ -28,7 +24,7 @@ export interface Feature {
   name: string
   description: string
   includes: string[]
-  dependsOn?: string[] // Other feature IDs required
+  dependsOn?: string[]
   questions: FeatureQuestion[]
   category: 'authentication' | 'content' | 'storage' | 'search' | 'custom'
 }
