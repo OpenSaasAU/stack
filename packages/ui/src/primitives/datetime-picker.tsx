@@ -27,7 +27,6 @@ export function DateTimePicker({
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(value || undefined)
 
   const handleDateSelect = (date: Date) => {
-    // Preserve time if we already have a selected date
     if (selectedDate) {
       date.setHours(selectedDate.getHours())
       date.setMinutes(selectedDate.getMinutes())

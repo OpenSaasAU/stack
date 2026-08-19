@@ -40,8 +40,6 @@ export const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(
     const initials = getInitials(name ?? '')
     const tone = getAvatarTone(trimmed)
 
-    // Decorative avatars are removed from the a11y tree; labelled avatars expose
-    // the full name as an image role.
     const a11yProps = decorative
       ? ({ 'aria-hidden': true } as const)
       : ({ role: 'img', 'aria-label': trimmed || 'Unknown' } as const)
