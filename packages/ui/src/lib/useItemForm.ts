@@ -3,9 +3,6 @@
 import { useState, useTransition } from 'react'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
-/**
- * The action an item form submission represents.
- */
 export type ItemFormAction = 'create' | 'update'
 
 const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']

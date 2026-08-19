@@ -111,7 +111,6 @@ export function ImageField({
     typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
   const isImageMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
-  // Read-only mode
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
@@ -176,7 +175,6 @@ export function ImageField({
     )
   }
 
-  // Edit mode
   return (
     <FieldRoot>
       {label && (
@@ -186,7 +184,6 @@ export function ImageField({
       )}
 
       {previewUrl || isImageMetadata ? (
-        // Image selected/uploaded or preview available - show preview
         <div className="space-y-2">
           <div className="relative inline-block group">
             <Image
@@ -270,7 +267,6 @@ export function ImageField({
           )}
         </div>
       ) : (
-        // No image - show upload area
         <>
           <div
             className={`

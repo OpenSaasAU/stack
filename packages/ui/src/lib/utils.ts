@@ -2,16 +2,10 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
-/**
- * Merge Tailwind CSS classes with clsx
- */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/**
- * Format a list name for display (PascalCase → Title Case)
- */
 export function formatListName(name: string): string {
   return name
     .replace(/([A-Z])/g, ' $1')
@@ -19,9 +13,6 @@ export function formatListName(name: string): string {
     .replace(/^./, (str) => str.toUpperCase())
 }
 
-/**
- * Format a field name for display (camelCase → Title Case)
- */
 export function formatFieldName(name: string): string {
   return name
     .replace(/([A-Z])/g, ' $1')
@@ -35,10 +26,6 @@ export function formatFieldName(name: string): string {
  */
 const NUMERIC_FIELD_TYPES = new Set(['integer', 'float', 'decimal', 'bigint', 'bigInt'])
 
-/**
- * Whether a column of the given field type should be treated as numeric for
- * table alignment (right-aligned cells and headers).
- */
 export function isNumericField(fieldType: string | undefined): boolean {
   return fieldType !== undefined && NUMERIC_FIELD_TYPES.has(fieldType)
 }

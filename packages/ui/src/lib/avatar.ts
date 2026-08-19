@@ -23,8 +23,8 @@ export const AVATAR_TONES: readonly string[] = [
 export function getInitials(label: string): string {
   const words = label.trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return '?'
+  // Spread (not indexing) throughout so a multi-byte character (e.g. an emoji) isn't split mid-codepoint.
   if (words.length === 1) {
-    // Spread (not indexing) so a multi-byte character (e.g. an emoji) isn't split mid-codepoint.
     return [...words[0]].slice(0, 2).join('').toUpperCase()
   }
   const first = [...words[0]][0] ?? ''
