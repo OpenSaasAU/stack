@@ -24,21 +24,4 @@ export function createClient(options: { baseURL: string }): ReturnType<typeof cr
   })
 }
 
-/**
- * Re-export useful types from better-auth
- */
 export type { Session }
-
-/**
- * Note: React hooks (useSession, etc.) are accessed from the client instance
- *
- * @example
- * ```typescript
- * import { authClient } from '@/lib/auth-client'
- *
- * function MyComponent() {
- *   const { data: session } = authClient.useSession()
- *   // ...
- * }
- * ```
- */

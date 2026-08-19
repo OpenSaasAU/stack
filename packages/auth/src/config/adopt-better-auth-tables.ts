@@ -1,49 +1,8 @@
 /**
- * "Adopt existing better-auth tables" recipe.
- *
- * A migrating project usually already has a working, hand-wired better-auth
- * installation: its tables are `AuthUser`/`AuthSession`/`AuthAccount`/
- * `AuthVerification`, mapped into a separate `auth` Postgres schema, and its
- * application `User` (`public.User`) is a *different* model. Reconstructing the
- * matching {@link AuthConfig} by hand — four `modelName`s plus a `schema` on each
- * model — is repetitive and easy to get wrong.
- *
- * {@link adoptBetterAuthTables} produces that {@link AuthConfig} fragment from a
- * couple of options so the migrator doesn't rebuild it from scratch. It only
- * sets the *adoption* knobs (per-model `modelName` + the plugin-level `schema`);
- * the developer composes it with the rest of their auth config (providers,
- * session fields, `extendUserList`, etc.):
- *
- * ```typescript
- * authPlugin({
- *   ...adoptBetterAuthTables(),
- *   emailAndPassword: { enabled: true },
- *   sessionFields: ['userId', 'email', 'name'],
- * })
- * ```
- *
- * Combined with the keys/field derivation (`deriveAuthLists`) and schema
- * placement, the generated Auth lists reach **Schema parity** with the live
- * tables — they are modelled for runtime/types without producing a destructive
- * auth migration. The recipe never touches the application's own domain `User`:
- * its model names are `Auth`-prefixed by default and the plugin only ever
- * adds/extends its *derived* keys.
- *
- * The single most common adoption shape is a project that ran better-auth
- * *before* adding Stack: its live tables are still better-auth's own default
- * lowercase names (`user`/`session`/`account`/`verification`), even though the
- * derived list keys need the `Auth` prefix to avoid colliding with the app's
- * own domain `User`. Pass `useBetterAuthTableNames: true` to point every
- * model's physical table at that default while keeping the prefixed list keys
- * (or `tableNames` for an explicit per-model override):
- *
- * ```typescript
- * authPlugin({
- *   ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
- *   // AuthUser/AuthSession/AuthAccount/AuthVerification list keys,
- *   // @@map("user")/@@map("session")/@@map("account")/@@map("verification")
- * })
- * ```
+ * "Adopt existing better-auth tables" recipe: produces the {@link AuthConfig}
+ * adoption fragment for a pre-existing better-auth install. See
+ * `packages/auth/CLAUDE.md` ("Adopting an existing better-auth install") for
+ * the full rationale and examples.
  */
 
 import type { AuthConfig, AuthModelConfig } from './types.js'
@@ -157,7 +116,6 @@ export type AdoptBetterAuthTablesOptions = {
   rateLimit?: boolean
 }
 
-/** The better-auth models and their default (unprefixed) model names. */
 const MODEL_DEFAULT_NAMES = {
   user: 'User',
   session: 'Session',
@@ -166,7 +124,6 @@ const MODEL_DEFAULT_NAMES = {
   rateLimit: 'RateLimit',
 } as const
 
-/** better-auth's own default lowercase table names, per model. */
 const BETTER_AUTH_DEFAULT_TABLE_NAMES = {
   user: 'user',
   session: 'session',
@@ -195,10 +152,6 @@ export type AdoptBetterAuthTablesConfig = Pick<
  *
  * Returns only the model/schema knobs needed to adopt the live tables; spread it
  * into {@link authPlugin} alongside your own auth config.
- *
- * @param options - Adoption conventions (schema, model-name prefix, column maps)
- * @returns An {@link AuthConfig} fragment with `schema` + per-model `modelName`
- *   (and any field column maps) set to match the live tables
  */
 export function adoptBetterAuthTables(
   options: AdoptBetterAuthTablesOptions = {},

@@ -13,18 +13,12 @@ export type SendAuthEmail = (
   request?: Request,
 ) => Promise<void>
 
-/**
- * OAuth provider configuration
- */
 export type OAuthProvider = {
   clientId: string
   clientSecret: string
   enabled?: boolean
 }
 
-/**
- * Social provider configurations
- */
 export type SocialProvidersConfig = {
   github?: OAuthProvider
   google?: OAuthProvider
@@ -33,9 +27,6 @@ export type SocialProvidersConfig = {
   [key: string]: OAuthProvider | undefined
 }
 
-/**
- * Email and password configuration
- */
 export type EmailPasswordConfig = {
   enabled: boolean
   /**
@@ -76,9 +67,6 @@ export type EmailPasswordConfig = {
   sendResetPassword?: SendAuthEmail
 }
 
-/**
- * Email verification configuration
- */
 export type EmailVerificationConfig = {
   enabled: boolean
   /**
@@ -111,9 +99,6 @@ export type EmailVerificationConfig = {
   sendVerificationEmail?: SendAuthEmail
 }
 
-/**
- * Password reset configuration
- */
 export type PasswordResetConfig = {
   enabled: boolean
   /**
@@ -123,9 +108,6 @@ export type PasswordResetConfig = {
   tokenExpiration?: number
 }
 
-/**
- * Session configuration
- */
 export type SessionConfig = {
   /**
    * Session expiration in seconds
@@ -141,24 +123,6 @@ export type SessionConfig = {
   updateAge?: number | false
 }
 
-/**
- * Per-model better-auth configuration block.
- *
- * Mirrors better-auth's own `BetterAuthDBOptions` (the `user`/`session`/
- * `account`/`verification` config a developer already writes): `modelName`
- * renames the table/list and `fields` maps individual better-auth field names
- * to database column names. The auth plugin derives its Auth lists from this
- * config so the generated lists carry the same keys and column maps as the
- * developer's live better-auth tables.
- *
- * @example
- * ```typescript
- * authPlugin({
- *   user: { modelName: 'AuthUser', fields: { name: 'full_name' } },
- *   session: { modelName: 'AuthSession' },
- * })
- * ```
- */
 /**
  * App-authored operation + field-level access control for the Auth lists,
  * keyed by better-auth model name (not by the derived list key, so it stays
@@ -213,6 +177,24 @@ export type AuthAccessConfig = {
   rateLimit?: ListConfig<any>['access']
 }
 
+/**
+ * Per-model better-auth configuration block.
+ *
+ * Mirrors better-auth's own `BetterAuthDBOptions` (the `user`/`session`/
+ * `account`/`verification` config a developer already writes): `modelName`
+ * renames the table/list and `fields` maps individual better-auth field names
+ * to database column names. The auth plugin derives its Auth lists from this
+ * config so the generated lists carry the same keys and column maps as the
+ * developer's live better-auth tables.
+ *
+ * @example
+ * ```typescript
+ * authPlugin({
+ *   user: { modelName: 'AuthUser', fields: { name: 'full_name' } },
+ *   session: { modelName: 'AuthSession' },
+ * })
+ * ```
+ */
 export type AuthModelConfig = {
   /**
    * The table/list name for this model.
@@ -264,33 +246,16 @@ export type AuthModelConfig = {
   schema?: string
 }
 
-/**
- * Auth configuration options
- */
 export type AuthConfig = {
-  /**
-   * Email and password authentication
-   */
   emailAndPassword?: EmailPasswordConfig | { enabled: true }
 
-  /**
-   * Email verification
-   */
   emailVerification?: EmailVerificationConfig | { enabled: true }
 
-  /**
-   * Password reset
-   */
   passwordReset?: PasswordResetConfig | { enabled: true }
 
-  /**
-   * OAuth/social providers
-   */
   socialProviders?: SocialProvidersConfig
 
   /**
-   * Session configuration.
-   *
    * Carries session expiry settings as well as the better-auth `session` model
    * config (`modelName` + field column `fields` maps) used to derive the Auth
    * session list.
@@ -305,14 +270,8 @@ export type AuthConfig = {
    */
   user?: AuthModelConfig
 
-  /**
-   * better-auth `account` model configuration (modelName + field column maps).
-   */
   account?: AuthModelConfig
 
-  /**
-   * better-auth `verification` model configuration (modelName + field column maps).
-   */
   verification?: AuthModelConfig
 
   /**
@@ -550,10 +509,6 @@ export type NormalizedAuthModels = {
   rateLimit?: NormalizedAuthModelConfig
 }
 
-/**
- * Internal normalized auth configuration
- * Used after parsing user config
- */
 export type NormalizedAuthConfig = Required<
   Omit<
     AuthConfig,
@@ -574,7 +529,6 @@ export type NormalizedAuthConfig = Required<
   passwordReset: Required<PasswordResetConfig>
   /** Resolved session expiry settings (model config lives under `models.session`). */
   session: Required<SessionConfig>
-  /** Resolved better-auth model config (modelName + field column maps + schema) for all auth models. */
   models: NormalizedAuthModels
   /**
    * Plugin-level Postgres schema for the Auth lists, if any. Resolved per-model

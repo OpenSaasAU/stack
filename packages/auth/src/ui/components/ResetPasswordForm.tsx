@@ -42,9 +42,6 @@ export type ResetPasswordFormProps = {
 }
 
 /**
- * Reset password form component
- * Completes a password reset using the token from the reset email.
- *
  * Submits through an app-owned server action rather than calling the auth API
  * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
  *
@@ -78,8 +75,6 @@ export function ResetPasswordForm({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Guard: no token means the user hit this page directly or followed a
-  // malformed/expired link. Don't render a form that can't succeed.
   if (!token) {
     return (
       <div className={`w-full max-w-md mx-auto p-6 ${className}`}>

@@ -7,13 +7,9 @@ import type { DatabaseConfig } from '@opensaas/stack-core/internal'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
 /**
- * The `BetterAuthOptions` shape produced when an app's own plugin tuple is
- * passed to `buildBetterAuthOptions()`/`createAuth()` — the tuple plus the
- * `nextCookies()` plugin the stack always appends last. Carrying the literal
- * tuple type (rather than the widened `BetterAuthPlugin[]`) is what lets
- * `betterAuth()` re-infer plugin endpoints (e.g. `emailOTP()`'s
- * `api.signInEmailOTP`) and a `customSession()` plugin's replaced session
- * shape from the resulting options object.
+ * `BetterAuthOptions['plugins']` narrowed to the app's literal tuple plus the
+ * appended `nextCookies()` — see {@link buildBetterAuthOptions}'s tuple-typing
+ * doc for why this matters.
  */
 type ResolvedBetterAuthOptions<TPlugins extends readonly BetterAuthPlugin[]> = Omit<
   BetterAuthOptions,
@@ -53,9 +49,6 @@ function assertPluginTupleMatchesResolved(
   }
 }
 
-/**
- * Get better-auth database configuration from OpenSaas config
- */
 function getDatabaseConfig(
   dbConfig: DatabaseConfig,
   context: AccessContext,
@@ -66,10 +59,8 @@ function getDatabaseConfig(
 }
 
 /**
- * Translate a normalized OpenSaaS auth model config into the better-auth
- * per-model options (`modelName` + `fields` column map). Returns `undefined`
- * when there is nothing to override so the running auth instance keeps
- * better-auth's own defaults untouched.
+ * Returns `undefined` when there is nothing to override, so the running auth
+ * instance keeps better-auth's own defaults untouched.
  */
 function toBetterAuthModelOptions(
   model: NormalizedAuthModelConfig,
@@ -156,13 +147,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   )
 }
 
-/**
- * Deep-merge `overrides` onto `base`, recursing into plain-object values so a
- * nested addition (one database hook, one session sub-option) merges
- * alongside sibling keys the stack already set there rather than replacing
- * the whole branch. Arrays and any other value type replace outright.
- * `overrides` wins on every key collision.
- */
 function mergeBetterAuthOptions(
   base: Record<string, unknown>,
   overrides: Record<string, unknown>,
@@ -239,7 +223,6 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
   const resolvedConfig = await Promise.resolve(opensaasConfig)
   const resolvedContext = await Promise.resolve(context)
 
-  // Extract auth config from plugin data
   const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
 
   if (!authConfig) {
@@ -280,13 +263,9 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
     assertPluginTupleMatchesResolved(plugins, resolvedPlugins)
   }
 
-  // Build better-auth configuration
   const betterAuthConfig: BetterAuthOptions = {
     database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
 
-    // Mirror the per-model config (modelName + field column maps) back to
-    // better-auth so the running auth instance reads/writes the same
-    // tables/columns the OpenSaaS Auth lists were derived from.
     user: toBetterAuthModelOptions(authConfig.models.user),
     session: {
       ...toBetterAuthModelOptions(authConfig.models.session),
@@ -301,7 +280,6 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
     account: toBetterAuthModelOptions(authConfig.models.account),
     verification: toBetterAuthModelOptions(authConfig.models.verification),
 
-    // Enable email and password if configured
     emailAndPassword: authConfig.emailAndPassword.enabled
       ? {
           enabled: true,
@@ -316,8 +294,8 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
         }
       : undefined,
 
-    // Email verification (independent of emailAndPassword — also covers
-    // e.g. a social-provider account whose email isn't yet verified)
+    // Independent of `emailAndPassword` — also covers e.g. a social-provider
+    // account whose email isn't yet verified.
     emailVerification: authConfig.emailVerification.enabled
       ? {
           sendVerificationEmail: authConfig.emailVerification.sendVerificationEmail,
@@ -326,10 +304,8 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
         }
       : undefined,
 
-    // Trust host (required for production)
     trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',') || [],
 
-    // Social providers
     socialProviders: Object.entries(authConfig.socialProviders)
       .filter(([_, config]) => config?.enabled !== false)
       .reduce(
@@ -345,10 +321,10 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
         {} as Record<string, { clientId: string; clientSecret: string }>,
       ),
 
-    // Rate limiting configuration. `modelName`/`fields` are only forwarded
-    // when `models.rateLimit` was derived (rateLimit.storage === 'database')
-    // — mirroring the running instance's model options back to the table the
-    // `RateLimit` Auth list was derived from.
+    // `modelName`/`fields` are only forwarded when `models.rateLimit` was
+    // derived (rateLimit.storage === 'database') — mirroring the running
+    // instance's model options back to the table the `RateLimit` Auth list
+    // was derived from.
     rateLimit: authConfig.rateLimit
       ? {
           enabled: authConfig.rateLimit.enabled,
@@ -361,12 +337,10 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
         }
       : undefined,
 
-    // Pass through any additional Better Auth plugins, then append
-    // nextCookies LAST so it can write the Set-Cookie headers produced by
-    // any auth.api.* call made inside a Next.js server action into Next's
-    // cookie store. This is what makes the server-action auth forms (which
-    // call auth.api.signInEmail/signUpEmail/etc. server-side) actually
-    // persist a session. It must be the final plugin in the array.
+    // nextCookies must be LAST so it can write the Set-Cookie headers
+    // produced by any auth.api.* call inside a Next.js server action into
+    // Next's cookie store — this is what makes the server-action auth forms
+    // actually persist a session.
     plugins: [...resolvedPlugins, nextCookies()],
   }
 
@@ -425,11 +399,9 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   context: AccessContext | Promise<AccessContext>,
   plugins?: TPlugins,
 ): Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>> {
-  // Resolve config and context asynchronously
   const configPromise = Promise.resolve(opensaasConfig)
   const contextPromise = Promise.resolve(context)
 
-  // Create auth instance lazily when needed
   type AuthInstance = Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>>
   let authInstance: AuthInstance | null = null
   let authPromise: Promise<AuthInstance> | null = null
@@ -450,7 +422,6 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
     return authPromise
   }
 
-  // Return a proxy that lazily initializes the auth instance
   return new Proxy({} as AuthInstance, {
     get(_, prop) {
       if (prop === 'then') {
@@ -458,7 +429,6 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
         return undefined
       }
 
-      // Create a lazy wrapper function
       const lazyWrapper = async (...args: unknown[]) => {
         const instance = await getAuthInstance()
         const value = instance[prop as keyof typeof instance]
@@ -468,14 +438,12 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
         return value
       }
 
-      // Return a proxy that supports both direct calls and nested property access
       return new Proxy(lazyWrapper, {
         get(target, subProp) {
           if (subProp === 'then') {
             // Support await on nested properties
             return undefined
           }
-          // Handle nested property access (e.g., auth.api.getSession)
           return async (...args: unknown[]) => {
             const instance = await getAuthInstance()
             const parentValue = instance[prop as keyof typeof instance]
@@ -502,13 +470,6 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
  */
 const unresolvedSessionFieldWarnings = new Set<string>()
 
-/**
- * Warn (once per field, per process) that a `sessionFields` entry could not
- * be resolved from the session shape `auth.api.getSession()` actually
- * returned — naming the field and what keys were available to check, so the
- * gap is visible here instead of surfacing later as an access-control
- * function silently reading `undefined`.
- */
 function warnUnresolvedSessionField(field: string, resolvedSession: Record<string, unknown>): void {
   if (unresolvedSessionFieldWarnings.has(field)) return
   unresolvedSessionFieldWarnings.add(field)
@@ -527,17 +488,6 @@ function warnUnresolvedSessionField(field: string, resolvedSession: Record<strin
   )
 }
 
-/**
- * Resolve a single `sessionFields` entry off the resolved better-auth
- * session (whatever `auth.api.getSession()` returned — the default `{
- * session, user }` shape, or a `customSession` plugin's replaced shape).
- *
- * `userId` is special-cased to the authenticated user's `id` — the
- * documented default apps depend on. Every other name resolves against a
- * fixed precedence so a collision between sources is predictable rather
- * than incidental: a top-level key on the resolved session object, then the
- * `user` object, then the `session` sub-object.
- */
 function resolveSessionField(
   field: string,
   resolvedSession: Record<string, unknown>,
@@ -582,11 +532,8 @@ function resolveSessionField(
  * outage) into "anonymous" is indistinguishable from a mass sign-out under
  * fail-closed access control, so the caller must see it.
  *
- * Not called by any generated code before this helper existed — apps used to
- * hand-roll this same transform against `auth.api.getSession({ headers:
- * await headers() })`. Exported as the single reusable implementation; pass
- * the caller's request headers (e.g. Next.js `await headers()` in a Server
- * Component/action) so a session cookie can actually be resolved.
+ * Pass the caller's request headers (e.g. Next.js `await headers()` in a
+ * Server Component/action) so a session cookie can actually be resolved.
  *
  * `auth` is typed structurally over just the one member this function reads
  * — `api.getSession` — rather than a single concrete `Auth<Options>`

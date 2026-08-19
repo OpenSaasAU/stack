@@ -1,10 +1,7 @@
 /**
- * Strip better-call's `[body.field]` validation prefixes from an auth error
- * message so forms can display something user-friendly.
- *
- * Better-auth surfaces validation errors like `[body.password] Password is too
- * short`. This removes those bracketed prefixes and normalises whitespace,
- * falling back to a default when the message is empty or missing.
+ * Strip better-call's `[body.field]` validation prefixes (e.g. `[body.password]
+ * Password is too short`) from an auth error message so forms can display
+ * something user-friendly.
  *
  * Internal to the auth forms — not part of the package's public contract.
  */

@@ -51,9 +51,6 @@ export type SignUpFormProps = {
 }
 
 /**
- * Sign up form component
- * Provides email/password registration and OAuth provider buttons
- *
  * Submits through app-owned server actions rather than calling the auth API
  * from the browser. See the "Auth action" contract in `@opensaas/stack-auth/ui`.
  *
@@ -90,7 +87,6 @@ export function SignUpForm({
     e.preventDefault()
     setError('')
 
-    // Validate password confirmation
     if (requirePasswordConfirmation && password !== confirmPassword) {
       setError('Passwords do not match')
       return
@@ -105,7 +101,6 @@ export function SignUpForm({
         throw new Error(cleanAuthErrorMessage(result.error, 'Sign up failed'))
       }
 
-      // If onSuccess is provided, call it. Otherwise, automatically redirect
       if (onSuccess) {
         onSuccess()
       } else {
