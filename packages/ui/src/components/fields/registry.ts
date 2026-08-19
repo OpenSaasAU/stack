@@ -56,6 +56,7 @@ export function registerFieldComponent(
   fieldComponentRegistry[fieldType] = component
 }
 
+/** Field component registered for `fieldType`, or `undefined` if none is registered. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getFieldComponent(fieldType: string): ComponentType<any> | undefined {
   return fieldComponentRegistry[fieldType]

@@ -5,6 +5,10 @@ import { Avatar } from '../../primitives/avatar.js'
 import type { CellComponentProps } from './registry.js'
 
 /**
+ * Renders an avatar bubble beside the label, opted into via `ui.avatar` on the
+ * label column (a per-field `ui.cell` override still takes priority). Slot:
+ * `cell-avatar-label`.
+ *
  * The bubble is rendered `decorative` (hidden from the accessibility tree): the
  * emphasized label text beside it already conveys the row's identity, so the
  * cell's accessible name stays exactly the label — not "AL Ada Lovelace" — which
