@@ -5,9 +5,6 @@ export interface SkeletonLoaderProps {
   variant?: 'text' | 'circular' | 'rectangular'
 }
 
-/**
- * Skeleton loader component for content placeholders
- */
 export function SkeletonLoader({ className, variant = 'rectangular' }: SkeletonLoaderProps) {
   const variantClasses = {
     text: 'h-4 rounded',
@@ -67,9 +64,6 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
   )
 }
 
-/**
- * Form skeleton loader
- */
 export function FormSkeleton({ fields = 4 }: { fields?: number }) {
   return (
     <div className="bg-card border border-border rounded-lg p-6">

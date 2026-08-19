@@ -107,7 +107,6 @@ export function RowSelectionBar({
       </span>
 
       <div className="flex items-center gap-2">
-        {/* Seam for #736: list-specific Bulk actions render here. */}
         <div
           data-slot="selection-actions"
           className={cn('flex items-center gap-2', classNames?.actions)}

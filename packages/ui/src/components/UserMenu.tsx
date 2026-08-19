@@ -10,10 +10,6 @@ export interface UserMenuProps {
   onSignOut?: () => Promise<void>
 }
 
-/**
- * User menu component with sign-out button
- * Client Component
- */
 export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
   const router = useRouter()
 
