@@ -26,9 +26,6 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
 }
 
 /**
- * Standalone form component for editing items
- * Can be embedded in any custom page
- *
  * @example
  * ```tsx
  * <ItemEditForm
@@ -54,7 +51,6 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   classNames,
   basePath = '/admin',
 }: ItemEditFormProps<TData>) {
-  // Serialize field configs to remove non-serializable properties
   const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
 
   // Apply valueForClientSerialization transformations to initial data
@@ -90,7 +86,6 @@ export function ItemEditForm<TData = Record<string, unknown>>({
       onSubmit={handleSubmit}
       className={cn(className, classNames?.root)}
     >
-      {/* General Error */}
       {generalError && (
         <div
           data-slot="form-error"
@@ -103,7 +98,6 @@ export function ItemEditForm<TData = Record<string, unknown>>({
         </div>
       )}
 
-      {/* Form Fields */}
       <div data-slot="form-fields" className={cn('space-y-6', classNames?.fields)}>
         {editableFields.map(([fieldName, fieldConfig]) => (
           <FieldRenderer
