@@ -3,27 +3,13 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 /**
- * Generate Prisma config file for CLI commands
+ * Prisma 7 requires a `prisma.config.ts` file at the project root for CLI
+ * commands (`prisma db push`, `migrate dev`, `migrate deploy`) — separate
+ * from the runtime config, which uses adapters in `opensaas.config.ts`.
  *
- * Prisma 7 requires a prisma.config.ts file at the project root for CLI commands
- * like `prisma db push`, `prisma migrate dev`, and `prisma migrate deploy`. This
- * is separate from the runtime configuration (which uses adapters in
- * opensaas.config.ts).
- *
- * The CLI config provides the database URL for schema operations, while the
- * runtime config provides adapters for actual query execution.
- *
- * The datasource URL prefers `DIRECT_DATABASE_URL` and falls back to
- * `DATABASE_URL`. On serverless Postgres (e.g. Neon) the running app connects
- * through a pooled `DATABASE_URL`, while migrations need a direct (non-pooled)
- * connection — set `DIRECT_DATABASE_URL` to that direct URL. Local SQLite is
- * untouched: with `DIRECT_DATABASE_URL` unset, the expression falls back to
- * `DATABASE_URL`.
- *
- * Note: a local `env` helper is emitted instead of the one from `prisma/config`
- * because the upstream helper throws when a variable is unset, which would break
- * the `??` fallback. The local helper returns `undefined` for missing variables
- * so the fallback can take effect.
+ * The datasource URL prefers `DIRECT_DATABASE_URL`, falling back to
+ * `DATABASE_URL` (see ADR-0003 for the serverless-Postgres pooled/direct
+ * connection split this supports).
  *
  * @param extraDatasourceLines - Verbatim `datasource` block entries the
  *   generator does not itself manage (e.g. a host-added `shadowDatabaseUrl`),
@@ -43,7 +29,6 @@ export function generatePrismaConfig(
   // the schema is relocated via the `output` config block.
   const schema = schemaPath ?? 'prisma'
 
-  // Import dotenv for environment variable loading
   lines.push("import 'dotenv/config'")
   lines.push("import { defineConfig } from 'prisma/config'")
   lines.push('')
@@ -94,14 +79,9 @@ export function extractExtraDatasourceLines(existingContent: string): string[] {
 }
 
 /**
- * Write Prisma config to file
- *
  * If a `prisma.config.ts` already exists at `outputPath`, its `datasource`
  * block is read first so host-added keys the generator does not manage (e.g.
  * `shadowDatabaseUrl`) survive the rewrite — see {@link extractExtraDatasourceLines}.
- *
- * @param schemaPath - Optional override for the `schema` field, forwarded to
- *   {@link generatePrismaConfig}.
  */
 export function writePrismaConfig(
   config: OpenSaasConfig,
@@ -114,7 +94,6 @@ export function writePrismaConfig(
 
   const prismaConfig = generatePrismaConfig(config, schemaPath, extraDatasourceLines)
 
-  // Ensure directory exists
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
