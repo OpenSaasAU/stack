@@ -34,6 +34,7 @@ import type { SearchableOptions, SearchableMetadata } from '../config/types.js'
  * ```
  *
  * @param field - The field to make searchable (usually text() or richText())
+ * @param options - Embedding provider, dimensions, and chunking config for the companion embedding field
  * @returns The same field with searchable metadata attached
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Searchable must accept any field config
