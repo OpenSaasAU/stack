@@ -478,8 +478,7 @@ control.
       } else if (field.type === 'Boolean') {
         options.push(`defaultValue: ${field.defaultValue}`)
       }
-      // Known limit: other default value expressions (e.g. sequences,
-      // dbgenerated(), string/numeric literals) are not mapped.
+      // Other defaults are harder to map automatically
     }
 
     if (field.type === 'Bytes') {
@@ -499,9 +498,6 @@ control.
     return `${mapping.type}(${optionsStr})`
   }
 
-  /**
-   * Generate list access control
-   */
   private generateListAccess(
     hasOwnerAccess: boolean,
     model: IntrospectedModel,
@@ -510,7 +506,6 @@ control.
     const defaultAccess = (answers.default_access as string) || 'public-read-auth-write'
 
     if (hasOwnerAccess) {
-      // Find the user relationship field
       const userField = model.fields.find(
         (f) =>
           f.relation?.model === 'User' ||
@@ -537,7 +532,6 @@ control.
       },`
     }
 
-    // Generate based on default access pattern
     switch (defaultAccess) {
       case 'authenticated-only':
         return `
@@ -588,9 +582,6 @@ control.
     }
   }
 
-  /**
-   * Generate access control helper functions
-   */
   private generateAccessHelpers(answers: Record<string, unknown>): string {
     const helpers: string[] = []
     const ownerModels = (answers.models_with_owner as string[]) || []
@@ -613,9 +604,6 @@ const isOwner: AccessControl = ({ session, item }) => {
     return helpers.join('\n')
   }
 
-  /**
-   * Generate database configuration
-   */
   private generateDatabaseConfig(provider: string): {
     provider: string
     configCode: string
@@ -669,9 +657,6 @@ const isOwner: AccessControl = ({ session, item }) => {
     }
   }
 
-  /**
-   * Generate import statements
-   */
   private generateImports(
     usedFieldTypes: Set<string>,
     useAuth: boolean,
@@ -679,29 +664,22 @@ const isOwner: AccessControl = ({ session, item }) => {
   ): string {
     const imports: string[] = []
 
-    // Core imports
     imports.push("import { config, list } from '@opensaas/stack-core'")
 
-    // Field imports
     const fieldTypes = Array.from(usedFieldTypes).sort()
     imports.push(`import { ${fieldTypes.join(', ')} } from '@opensaas/stack-core/fields'`)
 
-    // Auth imports
     if (useAuth) {
       imports.push("import { authPlugin } from '@opensaas/stack-auth'")
       imports.push("import type { AccessControl } from '@opensaas/stack-core'")
     }
 
-    // Database adapter imports
     const dbConfig = this.generateDatabaseConfig(dbProvider)
     imports.push(...dbConfig.imports)
 
     return imports.join('\n')
   }
 
-  /**
-   * Assemble the complete config file
-   */
   private assembleConfig(options: {
     imports: string
     accessHelpers: string
@@ -713,7 +691,6 @@ const isOwner: AccessControl = ({ session, item }) => {
   }): string {
     const { imports, accessHelpers, dbConfig, lists, useAuth, authMethods, adminBasePath } = options
 
-    // Generate auth plugin config
     let authPluginStr = ''
     if (useAuth) {
       const authOptions: string[] = []
@@ -755,7 +732,6 @@ ${authOptions.join('\n')}
     }),`
     }
 
-    // Build config body
     const pluginsBlock = useAuth
       ? `  plugins: [
 ${authPluginStr}
@@ -780,9 +756,6 @@ ${accessHelpers}${configBody}
 `
   }
 
-  /**
-   * Generate list of dependencies to install
-   */
   private generateDependencies(dbProvider: string, useAuth: boolean): string[] {
     const deps: string[] = [
       '@opensaas/stack-core',
