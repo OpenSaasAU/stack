@@ -34,7 +34,7 @@ import type { SearchableOptions, SearchableMetadata } from '../config/types.js'
  * ```
  *
  * @param field - The field to make searchable (usually text() or richText())
- * @param options - Embedding configuration options
+ * @param options - Embedding provider, dimensions, and chunking config for the companion embedding field
  * @returns The same field with searchable metadata attached
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Searchable must accept any field config
@@ -44,11 +44,10 @@ export function searchable<T extends BaseFieldConfig<any>>(
 ): T & { _searchable: SearchableMetadata } {
   const { embeddingFieldName, provider, dimensions, chunking } = options
 
-  // Attach metadata to the field for ragPlugin to detect
   return {
     ...field,
     _searchable: {
-      // Use custom name if provided, otherwise will be set by plugin based on field name
+      // '' isn't a bug — ragPlugin falls back to a name based on the field when this is empty.
       embeddingFieldName: embeddingFieldName || '',
       provider,
       dimensions,

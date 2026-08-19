@@ -6,9 +6,6 @@ import type {
   OllamaEmbeddingConfig,
 } from './types.js'
 
-/**
- * Normalize RAG configuration with defaults
- */
 export function normalizeRAGConfig(config: RAGConfig): NormalizedRAGConfig {
   return {
     provider: config.provider || null,

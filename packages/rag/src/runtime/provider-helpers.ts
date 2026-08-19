@@ -1,40 +1,10 @@
-/**
- * Helper utilities for working with embedding providers
- * Simplifies provider creation from environment variables
- */
-
 import { createEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import type { EmbeddingProviderConfig } from '../config/types.js'
 import 'dotenv/config'
 
-/**
- * Provider type from environment or configuration
- */
 export type ProviderType = 'openai' | 'ollama'
 
-/**
- * Create an embedding provider from environment variables
- *
- * Reads configuration from environment variables:
- * - EMBEDDING_PROVIDER: 'openai' or 'ollama' (default: 'openai')
- * - OPENAI_API_KEY: Required if using OpenAI
- * - OLLAMA_BASE_URL: Ollama endpoint (default: 'http://localhost:11434')
- *
- * @param overrides - Optional overrides for environment config
- * @returns Configured embedding provider
- *
- * @example
- * ```typescript
- * import { createProviderFromEnv } from '@opensaas/stack-rag/runtime'
- *
- * // Uses EMBEDDING_PROVIDER and OPENAI_API_KEY from env
- * const provider = createProviderFromEnv()
- *
- * // Override provider type
- * const ollamaProvider = createProviderFromEnv({ provider: 'ollama' })
- * ```
- */
 export function createProviderFromEnv(overrides?: {
   provider?: ProviderType
   openaiApiKey?: string
@@ -73,21 +43,6 @@ export function createProviderFromEnv(overrides?: {
   return createEmbeddingProvider(config)
 }
 
-/**
- * Get provider configuration from environment
- *
- * Useful for inspecting what provider would be used without creating it.
- *
- * @returns Provider configuration object
- *
- * @example
- * ```typescript
- * import { getProviderConfigFromEnv } from '@opensaas/stack-rag/runtime'
- *
- * const config = getProviderConfigFromEnv()
- * console.log(`Using ${config.type} provider`)
- * ```
- */
 export function getProviderConfigFromEnv(): EmbeddingProviderConfig {
   const providerType = (process.env.EMBEDDING_PROVIDER as ProviderType) || 'openai'
 

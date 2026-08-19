@@ -3,15 +3,8 @@ import type { EmbeddingProviderConfig } from '../config/types.js'
 import { createOpenAIProvider } from './openai.js'
 import { createOllamaProvider } from './ollama.js'
 
-/**
- * Provider factory registry
- * Maps provider types to factory functions
- */
 const providerFactories = new Map<string, (config: EmbeddingProviderConfig) => EmbeddingProvider>()
 
-/**
- * Register the built-in providers
- */
 providerFactories.set('openai', (config) => {
   if (config.type !== 'openai') {
     throw new Error('Invalid config type for OpenAI provider')
@@ -26,9 +19,6 @@ providerFactories.set('ollama', (config) => {
 })
 
 /**
- * Register a custom embedding provider factory
- * Use this to add support for custom embedding providers
- *
  * @example
  * ```typescript
  * import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
@@ -46,9 +36,6 @@ export function registerEmbeddingProvider(
 }
 
 /**
- * Create an embedding provider instance from configuration
- * Automatically selects the correct provider based on config.type
- *
  * @example
  * ```typescript
  * import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
@@ -75,7 +62,6 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
   return factory(config)
 }
 
-// Export types and individual providers
 export * from './types.js'
 export { OpenAIEmbeddingProvider, createOpenAIProvider } from './openai.js'
 export { OllamaEmbeddingProvider, createOllamaProvider } from './ollama.js'

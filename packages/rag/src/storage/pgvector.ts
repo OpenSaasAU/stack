@@ -6,9 +6,7 @@ import { getDbKey } from '@opensaas/stack-core'
 import { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'
 
 /**
- * pgvector storage backend
- * Uses PostgreSQL with pgvector extension for efficient vector similarity search
- * Requires: CREATE EXTENSION vector;
+ * pgvector storage backend. Requires the Postgres `vector` extension: `CREATE EXTENSION vector;`
  */
 export class PgVectorStorage implements VectorStorage {
   readonly type = 'pgvector'
@@ -18,45 +16,34 @@ export class PgVectorStorage implements VectorStorage {
     this.distanceFunction = config.distanceFunction || 'cosine'
   }
 
-  /**
-   * Get the appropriate distance operator for pgvector
-   */
   private getDistanceOperator(): string {
     switch (this.distanceFunction) {
       case 'cosine':
-        return '<=>' // Cosine distance
+        return '<=>'
       case 'l2':
-        return '<->' // L2 distance
+        return '<->'
       case 'inner_product':
-        return '<#>' // Inner product (negative, so smaller is more similar)
+        // pgvector's <#> returns the negative inner product, so smaller (more negative) is more similar.
+        return '<#>'
       default:
-        return '<=>' // Default to cosine
+        return '<=>'
     }
   }
 
-  /**
-   * Convert distance to similarity score (0-1, higher is more similar)
-   */
   private distanceToScore(distance: number): number {
     switch (this.distanceFunction) {
       case 'cosine':
-        // Cosine distance is 1 - similarity, so similarity = 1 - distance
         return 1 - distance
       case 'l2':
-        // L2 distance: convert to similarity using 1 / (1 + distance)
         return 1 / (1 + distance)
       case 'inner_product':
-        // Inner product: larger (less negative) is more similar
-        // Convert to 0-1 range
+        // Inverts pgvector's negative inner-product distance (see getDistanceOperator) so larger raw values score higher.
         return -distance
       default:
         return 1 - distance
     }
   }
 
-  /**
-   * Search for similar vectors using pgvector
-   */
   async search<T = unknown>(
     listKey: string,
     fieldName: string,
@@ -74,20 +61,16 @@ export class PgVectorStorage implements VectorStorage {
 
     const distanceOp = this.getDistanceOperator()
 
-    // Build the vector string for Prisma raw query
-    // pgvector expects vectors in format: '[1,2,3]'
+    // pgvector expects vectors in the literal format '[1,2,3]'.
     const vectorString = `[${queryVector.join(',')}]`
 
-    // We need to use Prisma.$queryRaw to access pgvector operators
-    // However, we must enforce access control in the raw query itself
-    // to ensure users only see items they have access to
+    // $queryRawUnsafe bypasses context.db's built-in access control, so the access
+    // filter below must be built and merged into the WHERE clause manually.
 
     try {
-      // Get the underlying Prisma client
       const prisma = context.prisma
 
       if (!prisma) {
-        // Fallback: if we can't access Prisma directly, use JSON storage approach
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +
@@ -96,31 +79,24 @@ export class PgVectorStorage implements VectorStorage {
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }
 
-      // Build access control filter
       let accessFilter = null
       if (config) {
         accessFilter = await buildAccessControlFilter(listKey, context, config)
 
-        // If access is denied, return empty results
         if (accessFilter === null) {
           return []
         }
       }
 
-      // Merge access filter with user where clause
       const combinedFilter = accessFilter ? mergeAccessFilter(accessFilter, where) : where
 
-      // If merged filter is null (access denied), return empty results
       if (combinedFilter === null) {
         return []
       }
 
-      // Convert Prisma filter to SQL WHERE clause
       const tableName = listKey // Prisma table names match the model name (PascalCase by default)
       const sqlWhereClause = prismaFilterToSQL(combinedFilter, tableName)
 
-      // Raw query to get IDs and distances with access control
-      // We extract the vector from the JSON field and cast it to vector type
       const results = (await prisma.$queryRawUnsafe(`
         SELECT id,
                (("${fieldName}"->>'vector')::vector ${distanceOp} '${vectorString}'::vector) as distance
@@ -132,7 +108,6 @@ export class PgVectorStorage implements VectorStorage {
         LIMIT ${limit * 2}
       `)) as Array<{ id: string; distance: string }>
 
-      // Get IDs of items within score threshold
       const itemIds = results
         .map((r) => ({
           id: r.id,
@@ -147,8 +122,8 @@ export class PgVectorStorage implements VectorStorage {
         return []
       }
 
-      // Fetch full items via access-controlled context
-      // This applies field-level access control and resolveOutput hooks
+      // Refetch through the access-controlled context so field-level access control
+      // and resolveOutput hooks apply to the returned items.
       const items = await model.findMany({
         where: {
           id: {
@@ -157,7 +132,6 @@ export class PgVectorStorage implements VectorStorage {
         },
       })
 
-      // Match items with their scores and sort by score
       const searchResults: SearchResult<T>[] = []
       for (const idInfo of itemIds) {
         const item = items.find(
@@ -181,9 +155,6 @@ export class PgVectorStorage implements VectorStorage {
     }
   }
 
-  /**
-   * Fallback to JSON-based search if we can't access Prisma directly
-   */
   private async fallbackSearch<T = unknown>(
     listKey: string,
     fieldName: string,
@@ -195,9 +166,6 @@ export class PgVectorStorage implements VectorStorage {
     return jsonStorage.search(listKey, fieldName, queryVector, options)
   }
 
-  /**
-   * Calculate cosine similarity between two vectors
-   */
   cosineSimilarity(a: number[], b: number[]): number {
     return calculateCosineSimilarity(a, b)
   }

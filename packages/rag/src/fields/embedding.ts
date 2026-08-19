@@ -3,60 +3,49 @@ import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 import type { EmbeddingProviderName, ChunkingConfig } from '../config/types.js'
 
 /**
- * Embedding field configuration
- * Stores vector embeddings as JSON with metadata
+ * Stores vector embeddings as JSON with metadata.
  */
 export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'embedding'
 
   /**
-   * Source field name to generate embeddings from
-   * When this field changes, embeddings will be automatically regenerated
+   * When this field changes, embeddings are automatically regenerated.
    *
    * @example 'content' or 'title'
    */
   sourceField?: string
 
   /**
-   * Embedding provider to use
-   * References a provider name from RAG config
-   * Falls back to default provider if not specified
+   * References a provider name from RAG config. Falls back to the default
+   * provider if not specified.
    *
    * @example 'openai' or 'ollama'
    */
   provider?: EmbeddingProviderName
 
   /**
-   * Vector dimensions
-   * Must match the provider's output dimensions
+   * Must match the provider's output dimensions.
    * @default 1536 (OpenAI text-embedding-3-small)
    */
   dimensions?: number
 
   /**
-   * Chunking configuration for long texts
-   * Only applies if sourceField is set
+   * Only applies if sourceField is set.
    */
   chunking?: ChunkingConfig
 
   /**
-   * Whether to automatically generate embeddings
    * @default true if sourceField is set
    */
   autoGenerate?: boolean
 
-  /**
-   * UI configuration
-   */
   ui?: {
     /**
-     * Whether to show the embedding vector in the UI
      * @default false (usually too large to display)
      */
     showVector?: boolean
 
     /**
-     * Whether to show embedding metadata
      * @default true
      */
     showMetadata?: boolean
@@ -64,9 +53,6 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
 }
 
 /**
- * Embedding field builder
- * Creates a field that stores vector embeddings with metadata
- *
  * @example
  * ```typescript
  * import { embedding } from '@opensaas/stack-rag/fields'
@@ -104,7 +90,6 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
     autoGenerate,
 
     getZodSchema: (_fieldName: string, _operation: 'create' | 'update') => {
-      // Embedding schema validation
       const embeddingSchema = z.object({
         vector: z.array(z.number()).length(dimensions, {
           message: `Embedding vector must have exactly ${dimensions} dimensions`,
@@ -118,17 +103,17 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
         }),
       })
 
-      // Embeddings are always optional in input
-      // They are generated automatically via hooks if sourceField is set
+      // Stays optional even when sourceField/autoGenerate is set: ragPlugin
+      // populates it via an afterOperation hook, not synchronously on input.
       return embeddingSchema.nullable().optional() as unknown as z.ZodTypeAny
     },
 
     getPrismaType: (_fieldName: string) => {
-      // Store as JSON in database
-      // For pgvector, we could use vector() type, but JSON is more portable
+      // Json, not a native pgvector column, so the same schema works across
+      // the pgvector/sqlite-vss/JSON storage backends.
       return {
         type: 'Json',
-        modifiers: '?', // Always optional
+        modifiers: '?',
       }
     },
 

@@ -4,15 +4,8 @@ import { createJsonStorage } from './json.js'
 import { createPgVectorStorage } from './pgvector.js'
 import { createSqliteVssStorage } from './sqlite-vss.js'
 
-/**
- * Storage backend factory registry
- * Maps storage types to factory functions
- */
 const storageFactories = new Map<string, (config: VectorStorageConfig) => VectorStorage>()
 
-/**
- * Register the built-in storage backends
- */
 storageFactories.set('json', () => createJsonStorage())
 storageFactories.set('pgvector', (config) => {
   if (config.type !== 'pgvector') {
@@ -28,9 +21,6 @@ storageFactories.set('sqlite-vss', (config) => {
 })
 
 /**
- * Register a custom vector storage backend
- * Use this to add support for custom storage backends (e.g., Pinecone, Qdrant)
- *
  * @example
  * ```typescript
  * import { registerVectorStorage } from '@opensaas/stack-rag/storage'
@@ -48,9 +38,6 @@ export function registerVectorStorage(
 }
 
 /**
- * Create a vector storage instance from configuration
- * Automatically selects the correct backend based on config.type
- *
  * @example
  * ```typescript
  * import { createVectorStorage } from '@opensaas/stack-rag/storage'
@@ -79,12 +66,10 @@ export function createVectorStorage(config: VectorStorageConfig): VectorStorage 
   return factory(config)
 }
 
-// Export types and individual storage backends
 export * from './types.js'
 export { JsonVectorStorage, createJsonStorage } from './json.js'
 export { JsonFileStorage, createJsonFileStorage } from './json-file.js'
 export { PgVectorStorage, createPgVectorStorage } from './pgvector.js'
 export { SqliteVssStorage, createSqliteVssStorage } from './sqlite-vss.js'
 
-// Export access control utilities
 export { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'

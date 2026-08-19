@@ -1,9 +1,6 @@
 import type { EmbeddingProvider } from './types.js'
 import type { OllamaEmbeddingConfig } from '../config/types.js'
 
-/**
- * Ollama API response types
- */
 type OllamaEmbeddingResponse = {
   embedding: number[]
   model: string
@@ -12,14 +9,10 @@ type OllamaEmbeddingResponse = {
   prompt_eval_count?: number
 }
 
-/**
- * Ollama embedding provider
- * Uses local Ollama instance for embedding generation
- */
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   readonly type = 'ollama'
   readonly model: string
-  dimensions: number = 0 // Will be determined from first embedding
+  dimensions: number = 0
 
   private baseURL: string
   private dimensionsInitialized = false
@@ -28,15 +21,11 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     this.baseURL = config.baseURL || 'http://localhost:11434'
     this.model = config.model || 'nomic-embed-text'
 
-    // Remove trailing slash from baseURL
     if (this.baseURL.endsWith('/')) {
       this.baseURL = this.baseURL.slice(0, -1)
     }
   }
 
-  /**
-   * Initialize dimensions by generating a test embedding
-   */
   private async initializeDimensions(): Promise<void> {
     if (this.dimensionsInitialized) {
       return
@@ -53,9 +42,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Make HTTP request to Ollama API
-   */
   private async makeRequest<T>(endpoint: string, body: unknown): Promise<T> {
     const url = `${this.baseURL}${endpoint}`
 
@@ -82,9 +68,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Generate embedding for a single text
-   */
   async embed(text: string): Promise<number[]> {
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot generate embedding for empty text')
@@ -96,7 +79,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         prompt: text,
       })
 
-      // Initialize dimensions if not yet done
       if (!this.dimensionsInitialized) {
         this.dimensions = response.embedding.length
         this.dimensionsInitialized = true
@@ -109,15 +91,14 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   }
 
   /**
-   * Generate embeddings for multiple texts in a batch
-   * Note: Ollama doesn't have native batch API, so we make parallel requests
+   * Ollama has no native batch embeddings endpoint, so this issues one
+   * parallel request per text via `embed()`.
    */
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) {
       return []
     }
 
-    // Filter out empty texts and keep track of indices
     const validTexts: string[] = []
     const validIndices: number[] = []
 
@@ -138,20 +119,16 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
 
     try {
-      // Make parallel requests (Ollama doesn't have batch API)
       const embeddingPromises = validTexts.map((text) => this.embed(text))
       const embeddings = await Promise.all(embeddingPromises)
 
-      // Create result array with correct size
       const results: number[][] = new Array(texts.length)
 
-      // Fill in embeddings for valid texts
       embeddings.forEach((embedding, i) => {
         const originalIndex = validIndices[i]
         results[originalIndex] = embedding
       })
 
-      // Fill in empty arrays for invalid texts
       for (let i = 0; i < texts.length; i++) {
         if (!results[i]) {
           results[i] = new Array(this.dimensions).fill(0)
@@ -166,8 +143,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 }
 
 /**
- * Create an Ollama embedding provider instance
- *
  * @example
  * ```typescript
  * import { createOllamaProvider } from '@opensaas/stack-rag/providers'

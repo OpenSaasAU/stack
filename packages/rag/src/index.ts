@@ -3,7 +3,6 @@
  * RAG and AI embeddings integration for OpenSaas Stack
  */
 
-// Config exports
 export {
   openaiEmbeddings,
   ollamaEmbeddings,
@@ -12,10 +11,8 @@ export {
   jsonStorage,
 } from './config/index.js'
 
-// Plugin export
 export { ragPlugin } from './config/plugin.js'
 
-// Runtime type exports
 export type { RAGRuntimeServices } from './runtime/types.js'
 
 export type {
