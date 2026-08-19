@@ -177,9 +177,6 @@ ${virtualFieldsNote}${contextGraphqlNote}`
     }
   }
 
-  /**
-   * Generate the database adapter example for the migration guide
-   */
   private generateDatabaseAdapterExample(provider: string): string {
     switch (provider) {
       case 'postgresql':
@@ -229,9 +226,6 @@ db: {
     }
   }
 
-  /**
-   * Generate auth migration section for the guide
-   */
   private generateAuthMigrationExample(answers: Record<string, unknown>): string {
     const authMethods = (answers.auth_methods as string[]) || ['email-password']
     const options: string[] = []
@@ -288,9 +282,6 @@ control.
 `
   }
 
-  /**
-   * Generate Keystone-specific dependency list
-   */
   private generateKeystoneDependencies(dbProvider: string, useAuth: boolean): string[] {
     const remove = ['@keystone-6/core', '@keystone-6/auth', '@keystone-6/fields-document']
     const add: string[] = ['@opensaas/stack-core', '@opensaas/stack-ui']
@@ -316,9 +307,6 @@ control.
     return [`# Remove: ${remove.join(', ')}`, `# Add: ${add.join(', ')}`, ...add]
   }
 
-  /**
-   * Generate next steps for a Keystone migration
-   */
   private generateKeystoneSteps(useAuth: boolean, hasVirtualFields: boolean): string[] {
     const steps = [
       'Rename keystone.ts → opensaas.config.ts',
@@ -350,9 +338,6 @@ control.
     return steps
   }
 
-  /**
-   * Generate list definitions from schema
-   */
   private generateLists(
     schema: IntrospectedSchema | undefined,
     answers: Record<string, unknown>,
@@ -360,7 +345,6 @@ control.
     warnings: string[],
   ): string {
     if (!schema || schema.models.length === 0) {
-      // No schema, generate example lists
       usedFieldTypes.add('timestamp')
       return `    // Add your lists here
     // Example:
@@ -373,7 +357,6 @@ control.
     // }),`
     }
 
-    // Filter out auth models if using auth plugin
     const skipAuthModels = answers.skip_auth_models === true
     const authModelNames = ['User', 'Account', 'Session', 'Verification']
 
@@ -384,10 +367,8 @@ control.
       return true
     })
 
-    // Get models that should have owner access
     const ownerModels = new Set((answers.models_with_owner as string[]) || [])
 
-    // Generate each list
     const listDefinitions = modelsToGenerate.map((model) => {
       return this.generateList(
         model,
@@ -402,9 +383,6 @@ control.
     return listDefinitions.join('\n')
   }
 
-  /**
-   * Generate a single list definition
-   */
   private generateList(
     model: IntrospectedModel,
     schema: IntrospectedSchema,
@@ -415,12 +393,12 @@ control.
   ): string {
     const fields: string[] = []
 
-    // Skip system fields (id, createdAt, updatedAt) - OpenSaaS adds these automatically
+    // OpenSaaS adds id/createdAt/updatedAt automatically - skip them here
     const systemFields = ['id', 'createdAt', 'updatedAt']
 
     for (const field of model.fields) {
       if (systemFields.includes(field.name)) continue
-      if (field.isId) continue // Skip ID fields
+      if (field.isId) continue
 
       const fieldDef = this.generateField(field, schema, usedFieldTypes, warnings)
       if (fieldDef) {
@@ -428,7 +406,6 @@ control.
       }
     }
 
-    // Generate access control
     const access = this.generateListAccess(hasOwnerAccess, model, answers)
 
     const fieldsBlock = fields.length > 0 ? `\n${fields.join('\n')}\n      ` : ''
@@ -438,20 +415,15 @@ control.
     }),`
   }
 
-  /**
-   * Generate a field definition
-   */
   private generateField(
     field: IntrospectedField,
     schema: IntrospectedSchema,
     usedFieldTypes: Set<string>,
     warnings: string[],
   ): string | null {
-    // Handle relationships
     if (field.relation) {
       usedFieldTypes.add('relationship')
 
-      // Find the related model and back-reference field
       const relatedModel = schema.models.find((m) => m.name === field.relation!.model)
       const backRef = relatedModel?.fields.find(
         (f) => f.relation && f.relation.model === field.type,
@@ -463,7 +435,6 @@ control.
       return `relationship({ ref: '${ref}'${many} })`
     }
 
-    // Handle enums as select fields
     const enumDef = schema.enums.find((e) => e.name === field.type)
     if (enumDef) {
       usedFieldTypes.add('select')
@@ -477,11 +448,9 @@ control.
       return `select({ ${selectOptions} })`
     }
 
-    // Map Prisma/Keystone types to OpenSaaS
     const mapping = this.prismaIntrospector.mapPrismaTypeToOpenSaas(field.type)
     usedFieldTypes.add(mapping.import)
 
-    // Build options
     const options: string[] = []
 
     if (field.isRequired && !field.defaultValue) {
@@ -503,17 +472,16 @@ control.
       options.push(`scale: ${scale}`)
     }
 
-    // Handle default values
     if (field.defaultValue) {
       if (field.type === 'DateTime' && field.defaultValue === 'now()') {
         options.push("defaultValue: { kind: 'now' }")
       } else if (field.type === 'Boolean') {
         options.push(`defaultValue: ${field.defaultValue}`)
       }
-      // Other defaults are harder to map automatically
+      // Known limit: other default value expressions (e.g. sequences,
+      // dbgenerated(), string/numeric literals) are not mapped.
     }
 
-    // Generate unsupported type warning
     if (field.type === 'Bytes') {
       warnings.push(
         `Field "${field.name}" uses unsupported type "${field.type}" - mapped to text()`,

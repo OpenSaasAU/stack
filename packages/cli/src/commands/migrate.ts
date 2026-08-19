@@ -136,7 +136,6 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     JSON.stringify(projectMetadata, null, 2),
   )
 
-  // Configure Claude Code marketplace and plugins in settings.json
   const settingsPath = path.join(claudeDir, 'settings.json')
   let settings: {
     extraKnownMarketplaces?: Record<
@@ -269,7 +268,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
 
   spinner.succeed(chalk.green(`Detected: ${projectTypes.join(', ')}`))
 
-  // Step 2: Analyze schema
   const analysisSpinner = ora('Analyzing schema...').start()
 
   const analysis: ProjectAnalysis = {
@@ -299,7 +297,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     analysisSpinner.succeed(chalk.yellow('No models found (will create from scratch)'))
   }
 
-  // Step 3: Setup Claude Code (if --with-ai)
   if (options.withAi) {
     const claudeSpinner = ora('Setting up Claude Code...').start()
 
@@ -318,7 +315,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     }
   }
 
-  // Step 4: Display next steps
   console.log(chalk.green('\n✅ Analysis complete!\n'))
 
   if (options.withAi) {
@@ -337,9 +333,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
   console.log()
 }
 
-/**
- * Create the migrate command for Commander
- */
 export function createMigrateCommand(): Command {
   const migrate = new Command('migrate')
   migrate.description('Migrate an existing project to OpenSaaS Stack')
