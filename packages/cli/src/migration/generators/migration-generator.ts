@@ -27,13 +27,9 @@ export class MigrationGenerator {
     this.keystoneIntrospector = new KeystoneIntrospector()
   }
 
-  /**
-   * Generate migration output from session
-   */
   async generate(session: MigrationSession): Promise<MigrationOutput> {
     const { projectType, analysis, answers } = session
 
-    // Get full schema if available
     let schema: IntrospectedSchema | undefined
     try {
       if (projectType === 'prisma') {
@@ -45,35 +41,22 @@ export class MigrationGenerator {
       // Continue without schema - will generate example config
     }
 
-    // For Keystone projects, produce a targeted migration guide rather than
-    // regenerating a full config. Lists, fields, hooks, and access control are
-    // identical between Keystone and OpenSaaS Stack.
     if (projectType === 'keystone') {
       return this.generateKeystoneMigrationGuide(schema, answers)
     }
 
-    // Collect used field types for imports
-    const usedFieldTypes = new Set<string>(['text']) // Always need text
+    const usedFieldTypes = new Set<string>(['text'])
     const warnings: string[] = []
 
-    // Generate lists
     const lists = this.generateLists(schema, answers, usedFieldTypes, warnings)
-
-    // Generate access control helpers
     const accessHelpers = this.generateAccessHelpers(answers)
-
-    // Generate database config
     const dbConfig = this.generateDatabaseConfig(
       (answers.db_provider as string) || analysis.provider || 'sqlite',
     )
 
-    // Determine if using auth
     const useAuth = answers.enable_auth === true
-
-    // Generate imports
     const imports = this.generateImports(usedFieldTypes, useAuth, dbConfig.provider)
 
-    // Generate the full config
     const configContent = this.assembleConfig({
       imports,
       accessHelpers,
@@ -84,16 +67,10 @@ export class MigrationGenerator {
       adminBasePath: (answers.admin_base_path as string) || '/admin',
     })
 
-    // Generate dependencies list
     const dependencies = this.generateDependencies(dbConfig.provider, useAuth)
-
-    // Generate additional files
     const files = this.generateAdditionalFiles(answers, dbConfig.provider)
-
-    // Generate next steps
     const steps = this.generateSteps(useAuth, dbConfig.provider)
 
-    // Add warnings from introspection
     if (schema) {
       const introspectorWarnings =
         projectType === 'prisma'
@@ -111,13 +88,6 @@ export class MigrationGenerator {
     }
   }
 
-  /**
-   * Generate a targeted migration guide for KeystoneJS projects.
-   *
-   * KeystoneJS and OpenSaaS Stack share the same list/field/hook/access API.
-   * The guide focuses only on what actually needs to change rather than
-   * regenerating the entire config.
-   */
   private generateKeystoneMigrationGuide(
     schema: IntrospectedSchema | undefined,
     answers: Record<string, unknown>,

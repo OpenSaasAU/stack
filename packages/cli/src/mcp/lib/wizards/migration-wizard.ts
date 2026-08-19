@@ -1,7 +1,3 @@
-/**
- * Migration Wizard - Interactive guide for migrating to OpenSaaS Stack
- */
-
 import type {
   ProjectType,
   MigrationSession,
@@ -24,22 +20,12 @@ export class MigrationWizard {
     this.generator = new MigrationGenerator()
   }
 
-  /**
-   * Start a new migration wizard session.
-   *
-   * For KeystoneJS projects, uses a minimal fast-path: only asks about
-   * database provider and auth, since lists/fields/hooks/access copy over
-   * unchanged. Produces a targeted migration guide rather than a full rewrite.
-   *
-   * For Prisma/Next.js projects, uses the full interactive question flow.
-   */
   async startMigration(
     projectType: ProjectType,
     analysis?: IntrospectedSchema,
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
     const sessionId = this.generateSessionId()
 
-    // Generate questions based on project type and analysis
     const questions = this.generateQuestions(projectType, analysis)
 
     const session: MigrationSession & { questions?: MigrationQuestion[] } = {
@@ -68,7 +54,6 @@ export class MigrationWizard {
     const firstQuestion = questions[0]
     const progressBar = this.renderProgressBar(1, totalQuestions)
 
-    // For Keystone, add a note that this is a fast-path (only a few questions)
     const keystoneNote =
       projectType === 'keystone'
         ? `\n> **Note:** For KeystoneJS migrations, only a few questions are needed. Your lists, fields, hooks, and access control copy over unchanged — we just need to know about your database and auth setup.\n`
@@ -112,9 +97,6 @@ ${this.renderQuestion(firstQuestion, 1, totalQuestions)}
     }
   }
 
-  /**
-   * Answer a wizard question
-   */
   async answerQuestion(
     sessionId: string,
     answer: string | boolean | string[],
@@ -136,7 +118,6 @@ Please start a new migration with \`opensaas_start_migration\`.`,
     const questions = session.questions!
     const currentQuestion = questions[session.currentQuestionIndex]
 
-    // Validate answer
     const validation = this.validateAnswer(answer, currentQuestion)
     if (!validation.valid) {
       return {
@@ -151,7 +132,6 @@ ${this.renderQuestion(currentQuestion, session.currentQuestionIndex + 1, questio
       }
     }
 
-    // Normalize and store answer
     let normalizedAnswer = answer
     if (currentQuestion.type === 'boolean') {
       const boolValue = this.normalizeBoolean(answer)
@@ -162,11 +142,9 @@ ${this.renderQuestion(currentQuestion, session.currentQuestionIndex + 1, questio
     session.answers[currentQuestion.id] = normalizedAnswer
     session.updatedAt = new Date()
 
-    // Move to next question, skipping conditional questions
     session.currentQuestionIndex++
     while (session.currentQuestionIndex < questions.length) {
       const nextQ = questions[session.currentQuestionIndex]
-      // Skip if this question depends on a previous answer that doesn't match
       if (
         nextQ.dependsOn &&
         session.answers[nextQ.dependsOn.questionId] !== nextQ.dependsOn.value
@@ -177,13 +155,11 @@ ${this.renderQuestion(currentQuestion, session.currentQuestionIndex + 1, questio
       }
     }
 
-    // Check if complete
     if (session.currentQuestionIndex >= questions.length) {
       session.isComplete = true
       return this.generateMigrationConfig(session)
     }
 
-    // Render next question
     const nextQuestion = questions[session.currentQuestionIndex]
     const questionNum = session.currentQuestionIndex + 1
     const progressBar = this.renderProgressBar(questionNum, questions.length)
@@ -206,14 +182,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
     }
   }
 
-  /**
-   * Generate questions based on project type and analysis.
-   *
-   * KeystoneJS fast-path: only asks about db provider and auth.
-   * Lists, fields, hooks, and access control are 1:1 compatible and need no input.
-   *
-   * Prisma/Next.js full flow: asks about access control strategy, per-model config, etc.
-   */
   private generateQuestions(
     projectType: ProjectType,
     analysis?: IntrospectedSchema,
@@ -224,13 +192,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
     return this.generateFullQuestions(analysis)
   }
 
-  /**
-   * Minimal question set for KeystoneJS migrations.
-   *
-   * Keystone and OpenSaaS Stack share the same list/field/hook/access API so we
-   * only need to know the database provider (to generate the adapter config) and
-   * whether the user wants auth (so we know if they're migrating Keystone auth).
-   */
   private generateKeystoneQuestions(analysis?: IntrospectedSchema): MigrationQuestion[] {
     const questions: MigrationQuestion[] = []
 
@@ -271,14 +232,9 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
     return questions
   }
 
-  /**
-   * Full question set for Prisma/Next.js migrations where a new config is
-   * generated from scratch.
-   */
   private generateFullQuestions(analysis?: IntrospectedSchema): MigrationQuestion[] {
     const questions: MigrationQuestion[] = []
 
-    // 1. Database configuration
     questions.push({
       id: 'preserve_database',
       text: 'Do you want to keep your existing database?',
@@ -294,7 +250,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       defaultValue: analysis?.provider || 'sqlite',
     })
 
-    // 2. Authentication
     questions.push({
       id: 'enable_auth',
       text: 'Do you want to add authentication?',
@@ -314,7 +269,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       },
     })
 
-    // 3. Access control strategy
     questions.push({
       id: 'default_access',
       text: 'What should be the default access control strategy?',
@@ -323,7 +277,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       defaultValue: 'public-read-auth-write',
     })
 
-    // 4. Per-model configuration (if models detected)
     if (analysis?.models && analysis.models.length > 0) {
       const modelNames = analysis.models.map((m) => m.name)
 
@@ -351,7 +304,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       }
     }
 
-    // 5. Admin UI
     questions.push({
       id: 'admin_base_path',
       text: 'What base path should the admin UI use?',
@@ -359,7 +311,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       defaultValue: '/admin',
     })
 
-    // 6. Additional features
     questions.push({
       id: 'additional_features',
       text: 'Do you want to add any additional features?',
@@ -368,7 +319,6 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
       defaultValue: [],
     })
 
-    // 7. Final confirmation
     questions.push({
       id: 'confirm',
       text: 'Ready to generate your opensaas.config.ts?',
@@ -379,16 +329,12 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
     return questions
   }
 
-  /**
-   * Generate the final migration config
-   */
   private async generateMigrationConfig(
     session: MigrationSession,
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
     try {
       const output = await this.generator.generate(session)
 
-      // Clean up session
       delete this.sessions[session.id]
 
       const isKeystoneMigration = session.projectType === 'keystone'
@@ -480,18 +426,12 @@ Please try again or create the config manually.
     }
   }
 
-  /**
-   * Check if analysis includes auth-related models
-   */
   private hasAuthModels(analysis?: IntrospectedSchema): boolean {
     if (!analysis?.models) return false
     const authModelNames = ['User', 'Account', 'Session']
     return analysis.models.some((m) => authModelNames.includes(m.name))
   }
 
-  /**
-   * Guess which models should have owner-based access
-   */
   private guessOwnerModels(models: IntrospectedModel[], modelNames: string[]): string[] {
     const ownerModels: string[] = []
 
@@ -499,7 +439,6 @@ Please try again or create the config manually.
       const model = models.find((m) => m.name === name)
       if (!model) continue
 
-      // Check if model has a relationship to User
       const hasUserRelation = model.fields.some(
         (f) =>
           f.relation &&
@@ -516,9 +455,6 @@ Please try again or create the config manually.
     return ownerModels
   }
 
-  /**
-   * Render a question for display
-   */
   private renderQuestion(
     question: MigrationQuestion,
     questionNum: number,
@@ -544,9 +480,6 @@ Please try again or create the config manually.
     return rendered
   }
 
-  /**
-   * Validate an answer
-   */
   private validateAnswer(
     answer: string | boolean | string[],
     question: MigrationQuestion,
@@ -590,9 +523,6 @@ Please try again or create the config manually.
     return { valid: true }
   }
 
-  /**
-   * Normalize boolean answer
-   */
   private normalizeBoolean(answer: string | boolean | string[]): boolean | null {
     if (typeof answer === 'boolean') return answer
     if (typeof answer !== 'string') return null
@@ -603,41 +533,27 @@ Please try again or create the config manually.
     return null
   }
 
-  /**
-   * Format an answer for display
-   */
   private formatAnswer(answer: string | boolean | string[]): string {
     if (typeof answer === 'boolean') return answer ? 'Yes' : 'No'
     if (Array.isArray(answer)) return answer.length > 0 ? answer.join(', ') : '(none)'
     return String(answer)
   }
 
-  /**
-   * Generate a unique session ID
-   */
   private generateSessionId(): string {
     return `migration_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   }
 
-  /**
-   * Render a progress bar
-   */
   private renderProgressBar(current: number, total: number): string {
     const filled = Math.round((current / total) * 10)
     const empty = 10 - filled
     return '▓'.repeat(filled) + '░'.repeat(empty)
   }
 
-  /**
-   * Get a session by ID (for testing/debugging)
-   */
+  // Exposed for tests/debugging.
   getSession(sessionId: string): MigrationSession | undefined {
     return this.sessions[sessionId]
   }
 
-  /**
-   * Clear completed sessions
-   */
   clearCompletedSessions(): void {
     Object.keys(this.sessions).forEach((id) => {
       if (this.sessions[id].isComplete) {
@@ -646,9 +562,6 @@ Please try again or create the config manually.
     })
   }
 
-  /**
-   * Clear old sessions (older than 1 hour)
-   */
   clearOldSessions(): void {
     const oneHourAgo = Date.now() - 60 * 60 * 1000
     Object.keys(this.sessions).forEach((id) => {

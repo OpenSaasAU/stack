@@ -11,8 +11,6 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 function getServerPath(): string {
-  // In development: cli/dist/mcp/server/index.js
-  // In production: same structure
   return join(__dirname, '..', 'mcp', 'server', 'index.js')
 }
 
