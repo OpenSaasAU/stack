@@ -3,30 +3,18 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
 
-/**
- * Generate context factory that abstracts Prisma client from developers
- *
- * Creates a simple API with getContext() and getContextWithSession(session)
- * that internally handles Prisma singleton and config imports.
- */
 export function generateContext(config: OpenSaasConfig, configImport?: string): string {
-  // Module specifier for importing the project's opensaas.config from inside
-  // the `.opensaas` bundle. Defaults to the legacy `../opensaas.config` (bundle
-  // one level below the project root); the output-path resolver supplies a
-  // recomputed value when the bundle is relocated via the `output` config block.
-  //
-  // The explicit `.ts` extension (see ./extension.ts) makes the bundle loadable
-  // by the host bundler / plain Node without an `extensionAlias`. The user's
-  // `opensaas.config.ts` is a real `.ts` file, so `.ts` names it directly.
+  // Defaults to the legacy `../opensaas.config` (bundle one level below the
+  // project root); the output-path resolver supplies a recomputed value when
+  // the bundle is relocated via the `output` config block. The `.ts`
+  // extension keeps the bundle loadable without a consumer `extensionAlias`
+  // (see ./extension.ts).
   const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
 
-  // Check if custom Prisma client constructor is provided
   const hasCustomConstructor = !!config.db.prismaClientConstructor
 
-  // Check if storage is configured
   const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
 
-  // Generate the Prisma client instantiation code
   // Prisma 7 requires adapters, so prismaClientConstructor must be provided
   const prismaInstantiation = hasCustomConstructor
     ? `resolvedConfig.db.prismaClientConstructor!(PrismaClient)`
@@ -47,7 +35,6 @@ export function generateContext(config: OpenSaasConfig, configImport?: string): 
       )
     })()`
 
-  // Generate storage utilities if storage is configured
   const storageUtilities = hasStorage
     ? `
 /**
@@ -118,7 +105,6 @@ const storage = {
 }
 `
 
-  // Always use async version for consistency
   return `/**
  * Auto-generated context factory
  *
@@ -208,12 +194,6 @@ export const config = getConfig()
 `
 }
 
-/**
- * Write context factory to file
- *
- * @param configImport - Optional override for the `opensaas.config` import
- *   specifier, forwarded to {@link generateContext}.
- */
 export function writeContext(
   config: OpenSaasConfig,
   outputPath: string,
@@ -221,7 +201,6 @@ export function writeContext(
 ): void {
   const content = generateContext(config, configImport)
 
-  // Ensure directory exists
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })

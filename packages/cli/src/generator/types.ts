@@ -4,47 +4,33 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { resolveListTimestamps } from './prisma.js'
 
-/**
- * Map OpenSaas field types to TypeScript types
- */
 function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
-  // Relationships are handled separately
   if (field.type === 'relationship') {
     return null
   }
 
-  // Use field's own TypeScript type generator if available
   if (field.getTypeScriptType) {
     const result = field.getTypeScriptType()
     return result.type
   }
 
-  // Fallback for fields without generator methods
   throw new Error(`Field type "${field.type}" does not implement getTypeScriptType method`)
 }
 
-/**
- * Check if a field is optional in the type
- */
 function isFieldOptional(field: FieldConfig): boolean {
   // Relationships are always nullable
   if (field.type === 'relationship') {
     return true
   }
 
-  // Use field's own TypeScript type generator if available
   if (field.getTypeScriptType) {
     const result = field.getTypeScriptType()
     return result.optional
   }
 
-  // Fallback: assume optional
   return true
 }
 
-/**
- * Get names of virtual fields in a list
- */
 function getVirtualFieldNames(fields: Record<string, FieldConfig>): string[] {
   return Object.entries(fields)
     .filter(([_, config]) => config.type === 'virtual')
@@ -52,8 +38,7 @@ function getVirtualFieldNames(fields: Record<string, FieldConfig>): string[] {
 }
 
 /**
- * Generate virtual fields type - only contains virtual fields
- * This is intersected with Prisma's GetPayload to add virtual fields to query results
+ * Intersected with Prisma's GetPayload to add virtual fields to query results.
  */
 function generateVirtualFieldsType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
@@ -74,7 +59,6 @@ function generateVirtualFieldsType(listName: string, fields: Record<string, Fiel
     lines.push(`  ${fieldName}: ${tsType}${nullability}`)
   }
 
-  // If no virtual fields, make it an empty object
   if (virtualFields.length === 0) {
     lines.push('  // No virtual fields defined')
   }
@@ -85,8 +69,7 @@ function generateVirtualFieldsType(listName: string, fields: Record<string, Fiel
 }
 
 /**
- * Generate transformed fields type - fields with resultExtension transformations
- * This replaces Prisma's base types with transformed types (e.g., string -> HashedPassword)
+ * Replaces Prisma's base types with transformed types (e.g., string -> HashedPassword).
  */
 function generateTransformedFieldsType(
   listName: string,
@@ -109,7 +92,6 @@ function generateTransformedFieldsType(
     }
   }
 
-  // If no transformed fields, make it an empty object
   if (transformedFields.length === 0) {
     lines.push('  // No transformed fields defined')
   }
@@ -120,8 +102,8 @@ function generateTransformedFieldsType(
 }
 
 /**
- * Generate TypeScript Output type for a model (includes virtual fields)
- * This is kept for backwards compatibility but CustomDB uses Prisma's GetPayload + VirtualFields
+ * Kept for backwards compatibility — `CustomDB` itself uses Prisma's
+ * GetPayload + VirtualFields instead.
  */
 function generateModelOutputType(
   listName: string,
@@ -141,7 +123,6 @@ function generateModelOutputType(
   lines.push(isSingleton ? '  id: number' : '  id: string')
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip virtual fields - they're in VirtualFields type
     if (fieldConfig.type === 'virtual') continue
 
     if (fieldConfig.type === 'relationship') {
@@ -156,7 +137,7 @@ function generateModelOutputType(
       }
     } else {
       const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue // Skip if no type returned
+      if (!tsType) continue
 
       const optional = isFieldOptional(fieldConfig)
       const nullability = optional ? ' | null' : ''
@@ -173,14 +154,11 @@ function generateModelOutputType(
   if (timestamps.updatedAt) {
     lines.push('  updatedAt: Date')
   }
-  lines.push('} & ' + listName + 'VirtualFields') // Include virtual fields
+  lines.push('} & ' + listName + 'VirtualFields')
 
   return lines.join('\n')
 }
 
-/**
- * Generate convenience type alias (List = ListOutput)
- */
 function generateModelTypeAlias(listName: string): string {
   return `export type ${listName} = ${listName}Output`
 }
@@ -235,17 +213,13 @@ function renderScalarInputMember(
   return `${indent}${fieldName}${optional}: ${tsType}${nullability}`
 }
 
-/**
- * Generate CreateInput type
- */
 function generateCreateInputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
 
   lines.push(`export type ${listName}CreateInput = {`)
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Skip virtual fields - they don't accept input in create operations
-    // Virtual fields with resolveInput hooks handle side effects but don't store data
+    // Virtual fields with resolveInput hooks can handle side effects but don't store data.
     if (fieldConfig.virtual) {
       continue
     }
@@ -262,7 +236,7 @@ function generateCreateInputType(listName: string, fields: Record<string, FieldC
       // Shared source of truth with the write-`data` override (#608): same
       // optionality + `| null` nullability for nullable scalars.
       const member = renderScalarInputMember(fieldName, fieldConfig, true, '  ')
-      if (!member) continue // Skip if no type returned
+      if (!member) continue
       lines.push(member)
     }
   }
@@ -425,9 +399,6 @@ function buildWriteInputOverride(
   return `${base} & {\n${members.join('\n')}\n  }`
 }
 
-/**
- * Generate UpdateInput type
- */
 function generateUpdateInputType(listName: string, fields: Record<string, FieldConfig>): string {
   const lines: string[] = []
 
@@ -454,7 +425,7 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
       // Shared source of truth with the write-`data` override (#608): partial
       // update (always optional) with `| null` nullability for nullable scalars.
       const member = renderScalarInputMember(fieldName, fieldConfig, false, '  ')
-      if (!member) continue // Skip if no type returned
+      if (!member) continue
       lines.push(member)
     }
   }
@@ -464,19 +435,10 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
   return lines.join('\n')
 }
 
-/**
- * Generate WhereInput type by re-exporting Prisma's native WhereInput
- * This ensures compatibility with all Prisma versions and includes all filter operators
- */
 function generateWhereInputType(listName: string, _fields: Record<string, FieldConfig>): string {
-  // Simply re-export Prisma's generated WhereInput type
-  // Prisma already generates comprehensive WhereInput types with all filter operators
   return `export type ${listName}WhereInput = Prisma.${listName}WhereInput`
 }
 
-/**
- * Generate hook types that reference Prisma input types
- */
 function generateHookTypes(listName: string): string {
   const lines: string[] = []
 
@@ -523,10 +485,6 @@ function generateHookTypes(listName: string): string {
   return lines.join('\n')
 }
 
-/**
- * Generate Select type that includes virtual fields
- * Extends Prisma's Select type with virtual field selection support and nested relationship overrides
- */
 function generateSelectType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
   const relationshipFields = Object.entries(fields)
@@ -537,7 +495,6 @@ function generateSelectType(listName: string, fields: Record<string, FieldConfig
     }))
 
   if (virtualFields.length === 0 && relationshipFields.length === 0) {
-    // No virtual fields and no relationships - just re-export Prisma type
     return `/**
  * Select type for ${listName}
  * No virtual fields defined, uses Prisma's Select type directly
@@ -547,14 +504,12 @@ export type ${listName}Select = Prisma.${listName}Select`
 
   const lines: string[] = []
 
-  // Add virtual field properties
   if (virtualFields.length > 0) {
     virtualFields.forEach((name) => {
       lines.push(`  ${name}?: boolean`)
     })
   }
 
-  // Override relationship properties to use custom DefaultArgs
   if (relationshipFields.length > 0) {
     relationshipFields.forEach(({ name, targetList }) => {
       lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
@@ -593,13 +548,10 @@ ${lines.join('\n')}
 }
 
 /**
- * Generate Include type that includes virtual fields
- * Extends Prisma's Include type with virtual field inclusion support and nested relationship overrides
- * Note: Only generates Include type if the list has relationship fields,
- * since Prisma only generates Include types for models with relations
+ * Only generates an Include type if the list has relationship fields — Prisma
+ * itself only generates Include types for models with relations.
  */
 function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string | null {
-  // Check if list has any relationship fields
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
     .map(([name, config]) => ({
@@ -607,8 +559,6 @@ function generateIncludeType(listName: string, fields: Record<string, FieldConfi
       targetList: (config as RelationshipField).ref.split('.')[0],
     }))
 
-  // Prisma only generates Include types for models with relationships
-  // If there are no relationships, don't generate an Include type
   if (relationshipFields.length === 0) {
     return null
   }
@@ -617,20 +567,17 @@ function generateIncludeType(listName: string, fields: Record<string, FieldConfi
 
   const lines: string[] = []
 
-  // Add virtual field properties
   if (virtualFields.length > 0) {
     virtualFields.forEach((name) => {
       lines.push(`  ${name}?: boolean`)
     })
   }
 
-  // Override relationship properties to use custom DefaultArgs
   relationshipFields.forEach(({ name, targetList }) => {
     lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
   })
 
   if (lines.length === 0) {
-    // No virtual fields - just re-export Prisma type
     return `/**
  * Include type for ${listName}
  * No virtual fields defined, uses Prisma's Include type directly
@@ -661,10 +608,9 @@ ${lines.join('\n')}
 }
 
 /**
- * Generate GetPayload helper type that adds virtual fields support to Prisma's GetPayload
- * This allows users to use Prisma.{ListName}GetPayload<T> pattern with virtual fields
- * Always generated to ensure consistency in CustomDB type signatures
- * Even lists without virtual fields need this to support nested relations with virtual fields
+ * Always generated, even for lists without virtual fields — CustomDB type
+ * signatures stay consistent, and lists without their own virtual fields
+ * still need this to support nested relations that have them.
  */
 function generateGetPayloadType(listName: string, fields: Record<string, FieldConfig>): string {
   const virtualFields = getVirtualFieldNames(fields)
@@ -680,7 +626,6 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     config.getColumnNames ? config.getColumnNames(name) : [],
   )
 
-  // Get relationship fields to override with custom GetPayload types
   const relationshipFields = Object.entries(fields)
     .filter(([_, config]) => config.type === 'relationship')
     .map(([name, config]) => ({
@@ -691,7 +636,6 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
 
   const lines: string[] = []
 
-  // Build documentation
   lines.push(`/**`)
   if (virtualFields.length > 0 || transformedFieldNames.length > 0) {
     lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
@@ -737,12 +681,10 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     lines.push(`  Prisma.${listName}GetPayload<${prismaT}> &`)
   }
 
-  // Add transformed fields back
   if (transformedFieldNames.length > 0) {
     lines.push(`  ${listName}TransformedFields &`)
   }
 
-  // Add relationship fields back with custom GetPayload types
   if (relationshipFields.length > 0) {
     lines.push(`  {`)
     for (const rel of relationshipFields) {
@@ -782,7 +724,6 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     lines.push(`  } &`)
   }
 
-  // Build the virtual fields conditional type
   if (virtualFields.length > 0) {
     lines.push(`  (`)
     lines.push(`    T extends { select: any }`)
@@ -808,17 +749,12 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     lines.push(`        : ${listName}VirtualFields`)
     lines.push(`  )`)
   } else {
-    // No virtual fields, just use empty object
     lines.push(`  {}`)
   }
 
   return lines.join('\n')
 }
 
-/**
- * Generate DefaultArgs type for nested relationship selections
- * This type is used when selecting relationships to enable custom Select/Include types
- */
 function generateDefaultArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
 
@@ -842,9 +778,6 @@ export type ${listName}DefaultArgs = {
   }
 }
 
-/**
- * Generate custom FindUniqueArgs type that uses our extended Select/Include
- */
 function generateFindUniqueArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
 
@@ -868,9 +801,6 @@ export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, '
   }
 }
 
-/**
- * Generate custom FindManyArgs type that uses our extended Select/Include
- */
 function generateFindManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
 
@@ -894,9 +824,6 @@ export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'sele
   }
 }
 
-/**
- * Generate custom FindFirstArgs type that uses our extended Select/Include
- */
 function generateFindFirstArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
 
@@ -921,9 +848,8 @@ export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'se
 }
 
 /**
- * Generate custom GetArgs type for a singleton list's `get()` method — the same
- * include/query narrowing as FindUniqueArgs, minus `where` (a singleton has no
- * unique selector; there is exactly one row).
+ * The same include/query narrowing as FindUniqueArgs, minus `where` (a
+ * singleton has no unique selector; there is exactly one row).
  */
 function generateGetArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
@@ -948,9 +874,6 @@ export type ${listName}GetArgs = {
   }
 }
 
-/**
- * Generate custom CreateArgs type that uses our extended Select/Include
- */
 function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // Narrow scalar `data` members to OpenSaaS types so field-level narrowing
@@ -980,9 +903,6 @@ export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' 
   }
 }
 
-/**
- * Generate custom UpdateArgs type that uses our extended Select/Include
- */
 function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // See generateCreateArgsType: narrow scalar `data` members (#599).
@@ -1010,9 +930,6 @@ export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' 
   }
 }
 
-/**
- * Generate custom DeleteArgs type that uses our extended Select/Include
- */
 function generateDeleteArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
 
@@ -1034,9 +951,6 @@ export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'>
   }
 }
 
-/**
- * Generate custom CreateManyArgs type that uses our extended Select/Include
- */
 function generateCreateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // createMany `data` is an array of scalar inputs; narrow each element (#599).
@@ -1064,9 +978,6 @@ export type ${listName}CreateManyArgs = {
   }
 }
 
-/**
- * Generate custom UpdateManyArgs type that uses our extended Select/Include
- */
 function generateUpdateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // updateMany `data` is a single partial scalar input; narrow it (#599).
@@ -1104,6 +1015,10 @@ export type ${listName}UpdateManyArgs = {
  * intersection, combined with the self-referential `Context.sudo(): Context`
  * return type, hit `TS2589: Type instantiation is excessively deep` once a
  * schema grew past ~7-8 lists.
+ *
+ * Every method below is generic over its own `*Args` type, to preserve
+ * Prisma's conditional return type together with the virtual-field-aware
+ * `GetPayload` — `count` is the only exception, since it returns a plain number.
  */
 function generateListCrudInterface(listName: string, isSingleton: boolean): string {
   const lines: string[] = []
@@ -1113,45 +1028,36 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(` */`)
   lines.push(`export interface ${listName}Crud {`)
 
-  // findUnique - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  findUnique: <T extends ${listName}FindUniqueArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
-  // findFirst - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  findFirst: <T extends ${listName}FindFirstArgs>(`)
   lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
-  // findMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  findMany: <T extends ${listName}FindManyArgs>(`)
   lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
-  // create - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  create: <T extends ${listName}CreateArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T>>`)
 
-  // update - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  update: <T extends ${listName}UpdateArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
-  // delete - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  delete: <T extends ${listName}DeleteArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
-  // count - no changes to return type
   lines.push(`  count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
 
-  // createMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  createMany: <T extends ${listName}CreateManyArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
-  // updateMany - generic to preserve Prisma's conditional return type with custom Args for virtual field support
   lines.push(`  updateMany: <T extends ${listName}UpdateManyArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
@@ -1182,7 +1088,7 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
 function generateCustomDBType(config: OpenSaasConfig): string {
   const lines: string[] = []
 
-  // Generate list of db keys to omit from AccessControlledDB
+  // db keys to omit from AccessControlledDB before re-adding each list's own {List}Crud.
   const dbKeys = Object.keys(config.lists).map((listName) => {
     const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
     return `'${dbKey}'`
@@ -1232,7 +1138,6 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 function generateContextType(_config: OpenSaasConfig): string {
   const lines: string[] = []
 
-  // Generate BaseContext - minimal interface for services that only need db and session
   lines.push('/**')
   lines.push(' * Base context type for services that only need database and session access')
   lines.push(' * Compatible with both AccessContext (from hooks) and Context (from server actions)')
@@ -1246,7 +1151,6 @@ function generateContextType(_config: OpenSaasConfig): string {
   lines.push('}')
   lines.push('')
 
-  // Generate Context - extends BaseContext and adds server action capabilities
   lines.push('/**')
   lines.push(' * Full context type with server action capabilities and virtual field typing')
   lines.push(' * Extends BaseContext and adds serverAction and sudo methods')
@@ -1264,9 +1168,6 @@ function generateContextType(_config: OpenSaasConfig): string {
   return lines.join('\n')
 }
 
-/**
- * Collect TypeScript imports from field configurations
- */
 function collectFieldImports(config: OpenSaasConfig): Array<{
   names: string[]
   from: string
@@ -1274,23 +1175,18 @@ function collectFieldImports(config: OpenSaasConfig): Array<{
 }> {
   const importsMap = new Map<string, { names: Set<string>; typeOnly: boolean }>()
 
-  // Iterate through all lists and fields
   for (const listConfig of Object.values(config.lists)) {
     for (const fieldConfig of Object.values(listConfig.fields)) {
-      // Check if field provides imports
       if (fieldConfig.getTypeScriptImports) {
         const imports = fieldConfig.getTypeScriptImports()
         for (const imp of imports) {
           const existing = importsMap.get(imp.from)
           if (existing) {
-            // Merge names into existing import
             imp.names.forEach((name) => existing.names.add(name))
-            // If either import is not type-only, make the merged import not type-only
             if (imp.typeOnly === false) {
               existing.typeOnly = false
             }
           } else {
-            // Add new import
             importsMap.set(imp.from, {
               names: new Set(imp.names),
               typeOnly: imp.typeOnly ?? true,
@@ -1301,7 +1197,6 @@ function collectFieldImports(config: OpenSaasConfig): Array<{
     }
   }
 
-  // Convert map to array
   return Array.from(importsMap.entries()).map(([from, { names, typeOnly }]) => ({
     names: Array.from(names).sort(),
     from,
@@ -1309,20 +1204,15 @@ function collectFieldImports(config: OpenSaasConfig): Array<{
   }))
 }
 
-/**
- * Generate all TypeScript types from config
- */
 export function generateTypes(config: OpenSaasConfig): string {
   const lines: string[] = []
 
-  // Add header comment
   lines.push('/**')
   lines.push(' * Generated types from OpenSaas configuration')
   lines.push(' * DO NOT EDIT - This file is automatically generated')
   lines.push(' */')
   lines.push('')
 
-  // Add necessary imports
   // Use alias for Session to avoid conflicts if user has a list named "Session".
   // Session and AccessContext stay on the public root entry point (Session is the
   // module-augmentation target); the rest are unstable runtime plumbing on /internal.
@@ -1338,7 +1228,6 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push("import type { PrismaClient, Prisma } from './prisma-client/client.ts'")
   lines.push("import type { PluginServices } from './plugin-types.ts'")
 
-  // Add field-specific imports
   const fieldImports = collectFieldImports(config)
   for (const imp of fieldImports) {
     const typePrefix = imp.typeOnly ? 'type ' : ''
@@ -1348,8 +1237,6 @@ export function generateTypes(config: OpenSaasConfig): string {
 
   lines.push('')
 
-  // Emit shared utility type used by GetPayload types to strip virtual field keys
-  // from select/include before passing to Prisma's GetPayload (prevents `never` intersection)
   lines.push(
     '// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them',
   )
@@ -1361,12 +1248,11 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push('      : T')
   lines.push('')
 
-  // Generate types for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    // Generate VirtualFields type first (needed by Output type and CustomDB)
+    // VirtualFields first — needed by the Output type and CustomDB.
     lines.push(generateVirtualFieldsType(listName, listConfig.fields))
     lines.push('')
-    // Generate TransformedFields type (needed by CustomDB)
+    // TransformedFields — needed by CustomDB.
     lines.push(generateTransformedFieldsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateModelOutputType(listName, listConfig, config.db, !!listConfig.isSingleton))
@@ -1381,22 +1267,17 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push('')
     lines.push(generateHookTypes(listName))
     lines.push('')
-    // Generate Select and Include types with virtual field support
     lines.push(generateSelectType(listName, listConfig.fields))
     lines.push('')
-    // Only generate Include type if the list has relationships
     const includeType = generateIncludeType(listName, listConfig.fields)
     if (includeType) {
       lines.push(includeType)
       lines.push('')
     }
-    // Generate GetPayload helper type with virtual field support
     lines.push(generateGetPayloadType(listName, listConfig.fields))
     lines.push('')
-    // Generate DefaultArgs type for nested relationship support
     lines.push(generateDefaultArgsType(listName, listConfig.fields))
     lines.push('')
-    // Generate custom Args types with virtual field support
     lines.push(generateFindUniqueArgsType(listName, listConfig.fields))
     lines.push('')
     lines.push(generateFindManyArgsType(listName, listConfig.fields))
@@ -1419,23 +1300,17 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push('')
   }
 
-  // Generate CustomDB interface
   lines.push(generateCustomDBType(config))
   lines.push('')
 
-  // Generate Context type
   lines.push(generateContextType(config))
 
   return lines.join('\n')
 }
 
-/**
- * Write TypeScript types to file
- */
 export function writeTypes(config: OpenSaasConfig, outputPath: string): void {
   const types = generateTypes(config)
 
-  // Ensure directory exists
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })

@@ -98,7 +98,8 @@ function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean
 /**
  * Pure resolver: given the project root and the user's `output` config, compute
  * where every generated file is written and the relative cross-references that
- * tie them together. Performs no I/O.
+ * tie them together (see {@link ResolvedCrossReferences} for what each one is
+ * for). Performs no I/O.
  *
  * `.opensaas` bundle directory precedence (highest first):
  * 1. `output.opensaasDir` (the new `output` block)
@@ -106,17 +107,6 @@ function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean
  *    option, preserved so setting it alone still relocates the bundle through
  *    the CLI exactly as before
  * 3. the default `.opensaas`
- *
- * Cross-reference computation:
- * - `prismaConfigSchema` — the schema *directory* relative to the project root,
- *   so the top-level `prisma.config.ts` points the Prisma CLI at the relocated
- *   schema.
- * - `prismaClientOutput` — the patched client directory relative to the schema
- *   *file's* directory, since Prisma's `generator { output }` is resolved from
- *   the schema file.
- * - `configImport` — `opensaas.config` relative to the `.opensaas` directory,
- *   since `context.ts` lives inside the bundle and imports the project's
- *   config by relative path.
  *
  * @param opensaasPathFallback - The pre-existing `config.opensaasPath` value,
  *   used as the bundle directory when no `output.opensaasDir` is set.

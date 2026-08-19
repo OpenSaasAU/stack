@@ -38,8 +38,6 @@ export function resolveListTimestamps(
     return { createdAt: false, updatedAt: false }
   }
 
-  // Skip the auto column for any timestamp the list already declares to avoid a
-  // duplicate-field error (Prisma P1012).
   const declaresCreatedAt = Object.prototype.hasOwnProperty.call(listConfig.fields, 'createdAt')
   const declaresUpdatedAt = Object.prototype.hasOwnProperty.call(listConfig.fields, 'updatedAt')
 
@@ -49,9 +47,6 @@ export function resolveListTimestamps(
   }
 }
 
-/**
- * Map OpenSaas field types to Prisma field types
- */
 function mapFieldTypeToPrisma(
   fieldName: string,
   field: FieldConfig,
@@ -59,19 +54,14 @@ function mapFieldTypeToPrisma(
   listName?: string,
   keystoneCompat?: boolean,
 ): string | null {
-  // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
     const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.type
   }
 
-  // Fallback for fields without generator methods
   throw new Error(`Field type "${field.type}" does not implement getPrismaType method`)
 }
 
-/**
- * Get field modifiers (?, @default, @unique, etc.)
- */
 function getFieldModifiers(
   fieldName: string,
   field: FieldConfig,
@@ -79,19 +69,15 @@ function getFieldModifiers(
   listName?: string,
   keystoneCompat?: boolean,
 ): string {
-  // Use field's own Prisma type generator if available
   if (field.getPrismaType) {
     const result = field.getPrismaType(fieldName, provider, listName, keystoneCompat)
     return result.modifiers || ''
   }
 
-  // Fallback for fields without generator methods
   return ''
 }
 
 /**
- * Get the block-level index a field asks for, if any.
- *
  * Prisma has no field-level `@index` attribute, so a non-unique index cannot
  * ride along in the field's modifiers — the field requests it out-of-line and
  * the generator emits `@@index([...])` on the model, exactly as it already does
@@ -284,8 +270,6 @@ function generateModelIndexLines(
 }
 
 /**
- * Generate Prisma schema from OpenSaas config
- *
  * @param prismaClientOutput - Module specifier for the patched Prisma client's
  *   `generator { output }`, relative to the schema file's directory. Defaults to
  *   the legacy `../<opensaasPath>/prisma-client` so existing projects are
@@ -319,7 +303,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   const importFileExtension = prismaGeneratorOptions?.importFileExtension ?? 'ts'
   const moduleFormat = prismaGeneratorOptions?.moduleFormat ?? 'esm'
 
-  // Generator and datasource
   lines.push('generator client {')
   lines.push('  provider            = "prisma-client"')
   lines.push(`  output              = "${clientOutput}"`)
@@ -356,9 +339,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
           keystoneCompat,
         )
         if (result.enumValues && result.enumValues.length > 0) {
-          // The enum lives in the owning model's schema (so an enum used by an
-          // `auth`-schema model lands in `auth`, not `public`). Default to
-          // `public` when the list declares no schema.
           enumDefinitions.set(result.type, {
             values: result.enumValues,
             schema: listConfig.db?.schema ?? 'public',
@@ -368,14 +348,11 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     }
   }
 
-  // Generate enum blocks
   for (const [enumName, { values, schema: enumSchema }] of enumDefinitions) {
     lines.push(`enum ${enumName} {`)
     for (const value of values) {
       lines.push(`  ${value}`)
     }
-    // In multi-schema mode every enum must declare an `@@schema(...)` or Prisma
-    // rejects the schema (P1012). Greenfield (single schema) output is unchanged.
     if (multiSchema) {
       lines.push(`  @@schema("${enumSchema}")`)
     }
@@ -418,28 +395,24 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     }
   }
 
-  // Generate models for each list
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     lines.push(`model ${listName} {`)
 
-    // Add id field - singleton lists emit a bare `id Int @id` (no `@default(1)`) to
-    // match Keystone 6, which emits no column default for singleton ids (see ADR-0004).
-    // Non-singleton lists are unchanged: `id String @id @default(cuid())`.
+    // Singleton lists emit a bare `id Int @id` (no `@default(1)`) to match
+    // Keystone 6, which emits no column default for singleton ids (see
+    // ADR-0004). Non-singleton lists are unchanged.
     if (listConfig.isSingleton) {
       lines.push('  id        Int      @id')
     } else {
       lines.push('  id        String   @id @default(cuid())')
     }
 
-    // Track relationship field names (in declaration order) for later processing
     const relationshipFieldNames: string[] = []
 
     // Block-level indexes requested by scalar fields (see getFieldIndex)
     const scalarIndexes: { field: string; indexType: boolean | 'unique' }[] = []
 
-    // Add regular fields
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-      // Skip virtual fields - they don't create database columns
       if (fieldConfig.virtual) {
         continue
       }
@@ -482,7 +455,7 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
         listName,
         keystoneCompat,
       )
-      if (!prismaType) continue // Skip if no type returned
+      if (!prismaType) continue
 
       const modifiers = getFieldModifiers(
         fieldName,
@@ -511,7 +484,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add relationship fields (lines + foreign key indexes) from the precomputed results
     const foreignKeyIndexes: NonNullable<PrismaRelationResult['foreignKeyIndex']>[] = []
     for (const fieldName of relationshipFieldNames) {
       const result = relationResults.get(`${listName}.${fieldName}`)!
@@ -521,7 +493,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add synthetic relation fields for list-only refs pointing to this list
     const backRelations = backRelationsByTarget.get(listName)
     if (backRelations) {
       for (const line of backRelations) {
@@ -529,9 +500,7 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add auto-timestamps when enabled (off by default — see ADR-0004). The auto
-    // column is skipped for any timestamp the list declares itself (handled inside
-    // resolveListTimestamps) so Prisma never sees a duplicate field (P1012).
+    // See resolveListTimestamps for the enablement/precedence rules (ADR-0004).
     const timestamps = resolveListTimestamps(listConfig, config.db)
     if (timestamps.createdAt) {
       lines.push('  createdAt DateTime @default(now())')
@@ -551,7 +520,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add indexes for foreign key fields
     for (const index of foreignKeyIndexes) {
       if (index.indexType === 'unique') {
         lines.push(`  @@unique([${index.foreignKeyField}])`)
@@ -560,12 +528,9 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       }
     }
 
-    // Add model-level `@@unique`/`@@index` constraints declared via
-    // `db.indexes` (#864, #918) — the full form when a name or a sort
-    // direction is needed; `isIndexed` above remains the sugar for the
-    // unnamed single-column case. Emitted last so a config with no
-    // `db.indexes` produces byte-for-byte identical output to before this
-    // feature existed.
+    // Model-level `db.indexes` constraints (#864, #918) — see
+    // generateModelIndexLines. Emitted last so a config with no `db.indexes`
+    // produces byte-for-byte identical output to before this feature existed.
     lines.push(
       ...generateModelIndexLines(
         listName,
@@ -581,11 +546,8 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
       lines.push(`  @@map("${listConfig.db.map}")`)
     }
 
-    // Place the model in a specific database schema (Postgres multi-schema).
-    // In multi-schema mode every model must declare an `@@schema(...)` or Prisma
-    // rejects the schema (P1012). A list inherits its own `db.schema` when set,
-    // otherwise it defaults to `public` (mirroring the enum default added in
-    // #504). Greenfield (single schema) output is unchanged — no `@@schema`.
+    // A list inherits its own `db.schema` when set, otherwise defaults to
+    // `public` (mirroring the enum default from #504).
     if (multiSchema) {
       lines.push(`  @@schema("${listConfig.db?.schema ?? 'public'}")`)
     }
@@ -594,13 +556,8 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
     lines.push('')
   }
 
-  // Note: For Keystone naming, we use @relation("relationName") on both sides
-  // Prisma automatically creates the join table named _relationName
-  // No need to generate explicit join table models
-
   let schema = lines.join('\n')
 
-  // Apply extendPrismaSchema function if provided
   if (config.db.extendPrismaSchema) {
     schema = config.db.extendPrismaSchema(schema)
   }
@@ -608,12 +565,6 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
   return schema
 }
 
-/**
- * Write Prisma schema to file
- *
- * @param prismaClientOutput - Optional override for the patched Prisma client
- *   output path, forwarded to {@link generatePrismaSchema}.
- */
 export function writePrismaSchema(
   config: OpenSaasConfig,
   outputPath: string,
@@ -621,7 +572,6 @@ export function writePrismaSchema(
 ): void {
   const schema = generatePrismaSchema(config, prismaClientOutput)
 
-  // Ensure directory exists
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
