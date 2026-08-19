@@ -10,9 +10,7 @@ import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
 
 export interface RelationshipTableCellProps {
-  /** The related row's id — the update target through the secured context. */
   rowId: string
-  /** The column (field) name being rendered/edited. */
   column: string
   /** The access-filtered, JSON-serialisable current value for this cell. */
   value: unknown
@@ -227,7 +225,6 @@ export function RelationshipTableCell({
       <div
         ref={editorRef}
         data-slot="relationship-table-cell-editor"
-        // Keep edit interactions inside the cell — never navigate the row.
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -242,8 +239,8 @@ export function RelationshipTableCell({
         }}
         onBlur={(event) => {
           const next = event.relatedTarget
-          // Focus staying inside the editor (or moving into an overlay the
-          // editor opened, e.g. a select dropdown) is not a commit.
+          // Neither counts as a commit: focus is still inside the editor, or
+          // moved into an overlay it opened (see isInOverlay above).
           if (editorRef.current && next instanceof Node && editorRef.current.contains(next)) return
           if (isInOverlay(next)) return
           void commit()
@@ -277,7 +274,6 @@ export function RelationshipTableCell({
           numeric ? 'text-right' : 'text-left',
         )}
         onClick={(event) => {
-          // Edit in place instead of navigating the row.
           event.stopPropagation()
           startEdit()
         }}

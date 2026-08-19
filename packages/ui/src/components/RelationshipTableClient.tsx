@@ -102,10 +102,8 @@ export interface RelationshipTableClientProps {
 }
 
 /**
- * The footer's "showing N of M" label (issue #752): N is the rendered
- * (bounded) row count, M the full access-scoped total. When no total is
- * supplied M falls back to N, so the row count is ALWAYS shown — a bounded
- * table reads "Showing 10 of 42 rows", an unbounded one "Showing 3 of 3 rows".
+ * The footer's "showing N of M" label (issue #752). When `total` is omitted it
+ * falls back to `count`, so the row count is always shown (e.g. "Showing 3 of 3 rows").
  */
 export function formatCountLabel(count: number, total: number | undefined): string {
   const m = total ?? count
@@ -256,7 +254,6 @@ export function RelationshipTableClient({
     <Card data-slot="relationship-table" className="overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <h2 className="font-heading text-lg font-semibold">{title}</h2>
-        {/* Seam: the pre-linked create drawer's "+ Add" control (#738) mounts here. */}
         <div data-slot="relationship-table-toolbar" className="flex items-center gap-2">
           {canCreate && createFields && (
             <RelationshipCreateDrawer
@@ -322,9 +319,6 @@ export function RelationshipTableClient({
                         data-slot="relationship-table-cell"
                         className={cn(numeric && 'text-right')}
                       >
-                        {/* Inline cell edit (#737): editable columns commit a
-                            single-field update through the secured context; the
-                            rest render a read-only Cell (and the row navigates). */}
                         <RelationshipTableCell
                           rowId={rowId}
                           column={column}
@@ -414,7 +408,6 @@ export function RelationshipTableClient({
         </TableFooter>
       </Table>
 
-      {/* Delete opt-in requires a confirmation before the destructive action. */}
       <ConfirmDialog
         isOpen={confirmId !== null}
         title={`Delete ${title} row`}
