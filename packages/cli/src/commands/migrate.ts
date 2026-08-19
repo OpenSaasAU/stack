@@ -15,35 +15,23 @@ interface MigrateOptions {
 }
 
 /**
- * Canonical published Keystone → OpenSaaS Stack migration guide URL.
- *
  * The CLI points migrators at this page rather than embedding the guide text,
  * so the binary stays small and the docs stay the single source of truth.
  */
 export const MIGRATION_GUIDE_URL = 'https://stack.opensaas.au/docs/how-to/migrate-from-keystone'
 
-/**
- * Claude Code marketplace + plugin identifiers used to install the
- * `opensaas-migration` plugin (its skills, commands, and agent).
- */
 export const MIGRATION_PLUGIN_ID = 'opensaas-migration@opensaas-stack-marketplace'
 export const MIGRATION_MARKETPLACE = 'OpenSaasAU/stack'
 
 /**
- * Manual install steps for the `opensaas-migration` Claude Code plugin.
- * These are slash commands run inside Claude Code; `opensaas migrate --with-ai`
- * wires them up automatically instead.
+ * Manual install steps for the `opensaas-migration` Claude Code plugin;
+ * `opensaas migrate --with-ai` wires them up automatically instead.
  */
 export const MIGRATION_PLUGIN_INSTALL_STEPS: readonly string[] = [
   `/plugin marketplace add ${MIGRATION_MARKETPLACE}`,
   `/plugin install ${MIGRATION_PLUGIN_ID}`,
 ]
 
-/**
- * Print the published migration guide URL and how to install the
- * `opensaas-migration` plugin. Kept lightweight on purpose — it points at the
- * canonical guide instead of duplicating its contents.
- */
 export function printMigrationResources(): void {
   console.log(chalk.bold('\n📚 Migration guide:\n'))
   console.log(chalk.cyan(`   ${MIGRATION_GUIDE_URL}`))
@@ -57,26 +45,20 @@ export function printMigrationResources(): void {
   }
 }
 
-/**
- * Detect what type of project this is
- */
 async function detectProjectType(cwd: string): Promise<ProjectType[]> {
   const types: ProjectType[] = []
 
-  // Check for Prisma
   const prismaSchemaPath = path.join(cwd, 'prisma', 'schema.prisma')
   if (fs.existsSync(prismaSchemaPath)) {
     types.push('prisma')
   }
 
-  // Check for KeystoneJS
   const keystoneConfigPath = path.join(cwd, 'keystone.config.ts')
   const keystoneAltPath = path.join(cwd, 'keystone.ts')
   if (fs.existsSync(keystoneConfigPath) || fs.existsSync(keystoneAltPath)) {
     types.push('keystone')
   }
 
-  // Check for Next.js
   const packageJsonPath = path.join(cwd, 'package.json')
   if (fs.existsSync(packageJsonPath)) {
     const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
@@ -88,9 +70,6 @@ async function detectProjectType(cwd: string): Promise<ProjectType[]> {
   return types
 }
 
-/**
- * Analyze a Prisma schema
- */
 async function analyzePrismaSchema(cwd: string): Promise<{
   models: Array<{ name: string; fieldCount: number }>
   provider: string
@@ -98,7 +77,6 @@ async function analyzePrismaSchema(cwd: string): Promise<{
   const schemaPath = path.join(cwd, 'prisma', 'schema.prisma')
   const schema = fs.readFileSync(schemaPath, 'utf-8')
 
-  // Extract models
   const modelRegex = /model\s+(\w+)\s*\{([^}]+)\}/g
   const models: Array<{ name: string; fieldCount: number }> = []
   let match
@@ -114,53 +92,38 @@ async function analyzePrismaSchema(cwd: string): Promise<{
     models.push({ name, fieldCount })
   }
 
-  // Extract provider
   const providerMatch = schema.match(/provider\s*=\s*"(\w+)"/)
   const provider = providerMatch ? providerMatch[1] : 'unknown'
 
   return { models, provider }
 }
 
-/**
- * Ensure directory exists
- */
 function ensureDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true })
   }
 }
 
-/**
- * Get marketplace source for OpenSaaS Stack plugins
- */
 function getMarketplaceSource():
   | { source: 'github'; repo: string }
   | { source: 'git'; url: string }
   | { source: 'local'; path: string } {
-  // Try to detect if we're in development (local monorepo)
+  // Detect a local monorepo checkout (development) vs. an installed package (production).
   const cliPackageDir = path.dirname(path.dirname(new URL(import.meta.url).pathname))
   const potentialMonorepoRoot = path.join(cliPackageDir, '..', '..')
   const marketplacePath = path.join(potentialMonorepoRoot, 'claude-plugins', 'marketplace.json')
 
   if (fs.existsSync(marketplacePath)) {
-    // Development mode - use local marketplace
     return { source: 'local', path: path.join(potentialMonorepoRoot, 'claude-plugins') }
   }
 
-  // Production mode - use GitHub marketplace
   return { source: 'github', repo: 'OpenSaasAU/stack' }
 }
 
-/**
- * Setup Claude Code integration with plugin
- */
 async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<void> {
   const claudeDir = path.join(cwd, '.claude')
-
-  // Create .claude directory
   ensureDir(claudeDir)
 
-  // Write project metadata file for the plugin to read
   const projectMetadata = {
     projectTypes: analysis.projectTypes,
     provider: analysis.provider || 'sqlite',
@@ -173,7 +136,6 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     JSON.stringify(projectMetadata, null, 2),
   )
 
-  // Configure Claude Code marketplace and plugins in settings.json
   const settingsPath = path.join(claudeDir, 'settings.json')
   let settings: {
     extraKnownMarketplaces?: Record<
@@ -188,20 +150,16 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     enabledPlugins?: Record<string, boolean>
   } = {}
 
-  // Read existing settings if they exist
   if (fs.existsSync(settingsPath)) {
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
     } catch {
-      // If settings file is invalid, start fresh
       settings = {}
     }
   }
 
-  // Get the marketplace source
   const marketplaceSource = getMarketplaceSource()
 
-  // Add marketplace configuration
   if (!settings.extraKnownMarketplaces) {
     settings.extraKnownMarketplaces = {}
   }
@@ -210,19 +168,15 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
     source: marketplaceSource,
   }
 
-  // Add enabled plugins
   if (!settings.enabledPlugins) {
     settings.enabledPlugins = {}
   }
 
-  // Add migration plugin if not already enabled
   const migrationPluginId = 'opensaas-migration@opensaas-stack-marketplace'
   settings.enabledPlugins[migrationPluginId] = true
 
-  // Write settings back
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
 
-  // Create a simple README explaining the setup
   const readmeContent = `# OpenSaaS Stack Migration
 
 This project is set up for AI-assisted migration to OpenSaaS Stack.
@@ -288,15 +242,11 @@ When you open this project in Claude Code, the MCP server will be automatically 
   fs.writeFileSync(path.join(claudeDir, 'README.md'), readmeContent)
 }
 
-/**
- * Main migrate command
- */
 async function migrateCommand(options: MigrateOptions): Promise<void> {
   const cwd = process.cwd()
 
   console.log(chalk.bold.cyan('\n🚀 OpenSaaS Stack Migration\n'))
 
-  // Step 1: Detect project type
   const spinner = ora('Detecting project type...').start()
 
   let projectTypes: ProjectType[]
@@ -318,7 +268,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
 
   spinner.succeed(chalk.green(`Detected: ${projectTypes.join(', ')}`))
 
-  // Step 2: Analyze schema
   const analysisSpinner = ora('Analyzing schema...').start()
 
   const analysis: ProjectAnalysis = {
@@ -339,7 +288,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
   if (analysis.models && analysis.models.length > 0) {
     analysisSpinner.succeed(chalk.green(`Found ${analysis.models.length} models`))
 
-    // Display model tree
     const lastIndex = analysis.models.length - 1
     analysis.models.forEach((model, index) => {
       const prefix = index === lastIndex ? '└─' : '├─'
@@ -349,7 +297,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     analysisSpinner.succeed(chalk.yellow('No models found (will create from scratch)'))
   }
 
-  // Step 3: Setup Claude Code (if --with-ai)
   if (options.withAi) {
     const claudeSpinner = ora('Setting up Claude Code...').start()
 
@@ -368,7 +315,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     }
   }
 
-  // Step 4: Display next steps
   console.log(chalk.green('\n✅ Analysis complete!\n'))
 
   if (options.withAi) {
@@ -387,9 +333,6 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
   console.log()
 }
 
-/**
- * Create the migrate command for Commander
- */
 export function createMigrateCommand(): Command {
   const migrate = new Command('migrate')
   migrate.description('Migrate an existing project to OpenSaaS Stack')

@@ -8,7 +8,6 @@ export async function devCommand() {
   const cwd = process.cwd()
   const configPath = path.join(cwd, 'opensaas.config.ts')
 
-  // Check if config exists
   if (!fs.existsSync(configPath)) {
     console.error(chalk.red('Error: opensaas.config.ts not found in current directory'))
     console.error(chalk.gray('   Please run this command from your project root'))
@@ -18,10 +17,8 @@ export async function devCommand() {
   console.log(chalk.bold.cyan('\nOpenSaas Dev Mode\n'))
   console.log(chalk.gray('Watching for changes to opensaas.config.ts...\n'))
 
-  // Run initial generation
   await generateCommand()
 
-  // Watch for changes
   const watcher = chokidar.watch(configPath, {
     persistent: true,
     ignoreInitial: true,
@@ -36,10 +33,8 @@ export async function devCommand() {
     console.error(chalk.red('\nWatcher error:'), error)
   })
 
-  // Keep the process running
   console.log(chalk.gray('Press Ctrl+C to stop watching\n'))
 
-  // Handle graceful shutdown
   process.on('SIGINT', () => {
     console.log(chalk.yellow('\n\nStopping dev mode...'))
     watcher.close()

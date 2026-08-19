@@ -25,9 +25,6 @@ export class StackMCPServer {
     this.keystoneIntrospector = new KeystoneIntrospector()
   }
 
-  /**
-   * Implement a feature - starts the wizard flow
-   */
   async implementFeature({ feature, description }: { feature: string; description?: string }) {
     if (feature === 'custom' && !description) {
       return {
@@ -66,9 +63,6 @@ Would you like me to help you design the config for this feature?`,
     return this.wizardEngine.startFeature(feature)
   }
 
-  /**
-   * Answer a wizard question
-   */
   async answerFeatureQuestion({
     sessionId,
     answer,
@@ -79,16 +73,10 @@ Would you like me to help you design the config for this feature?`,
     return this.wizardEngine.answerQuestion(sessionId, answer)
   }
 
-  /**
-   * Answer a follow-up question
-   */
   async answerFollowUpQuestion({ sessionId, answer }: { sessionId: string; answer: string }) {
     return this.wizardEngine.answerFollowUp(sessionId, answer)
   }
 
-  /**
-   * Search documentation
-   */
   async searchFeatureDocs({ topic }: { topic: string }) {
     const docs = await this.docsProvider.getTopicDocs(topic)
 
@@ -112,9 +100,6 @@ ${docs.relatedTopics.length > 0 ? `\n## Related Topics\n\n${docs.relatedTopics.m
     }
   }
 
-  /**
-   * List all available features
-   */
   async listFeatures() {
     const features = getAllFeatures()
     const categories = {
@@ -180,9 +165,6 @@ opensaas_implement_feature({
     }
   }
 
-  /**
-   * Suggest complementary features based on described features
-   */
   async suggestFeatures({ currentFeatures }: { currentFeatures?: string[] }) {
     const allFeatures = getAllFeatures()
     const implemented = new Set(currentFeatures || [])
@@ -192,7 +174,6 @@ opensaas_implement_feature({
       .map((f) => {
         let reasoning = ''
 
-        // Add context-aware suggestions
         if (f.id === 'authentication' && !implemented.has('authentication')) {
           reasoning = 'Essential for user management and access control'
         } else if (f.id === 'blog' && implemented.has('authentication')) {
@@ -252,9 +233,6 @@ ${s.feature.includes.map((inc) => `- ${inc}`).join('\n')}
     }
   }
 
-  /**
-   * Validate a feature implementation
-   */
   async validateFeature({ feature }: { feature: string; configPath?: string }) {
     const featureDefinition = getFeature(feature)
 
@@ -269,8 +247,7 @@ ${s.feature.includes.map((inc) => `- ${inc}`).join('\n')}
       }
     }
 
-    // TODO: Implement actual validation by reading the config file
-    // For now, return validation checklist
+    // TODO: validate by reading the config file instead of returning a static checklist
 
     return {
       content: [
@@ -301,16 +278,10 @@ ${featureDefinition.dependsOn && featureDefinition.dependsOn.length > 0 ? `\n## 
     }
   }
 
-  /**
-   * Start a migration wizard session
-   */
   async startMigration({ projectType }: { projectType: ProjectType }) {
     return this.migrationWizard.startMigration(projectType)
   }
 
-  /**
-   * Answer a migration wizard question
-   */
   async answerMigration({
     sessionId,
     answer,
@@ -321,9 +292,6 @@ ${featureDefinition.dependsOn && featureDefinition.dependsOn.length > 0 ? `\n## 
     return this.migrationWizard.answerQuestion(sessionId, answer)
   }
 
-  /**
-   * Introspect a Prisma schema
-   */
   async introspectPrisma({ schemaPath }: { schemaPath?: string }) {
     const cwd = process.cwd()
     const path = schemaPath || 'prisma/schema.prisma'
@@ -386,9 +354,6 @@ ${enumList}
     }
   }
 
-  /**
-   * Introspect a KeystoneJS config
-   */
   async introspectKeystone({ configPath }: { configPath?: string }) {
     const cwd = process.cwd()
     const path = configPath || 'keystone.config.ts'
@@ -437,14 +402,8 @@ ${listInfo}
     }
   }
 
-  /**
-   * Search migration documentation
-   */
   async searchMigrationDocs({ query }: { query: string }) {
-    // First try local CLAUDE.md files
     const localDocs = await this.docsProvider.searchLocalDocs(query)
-
-    // Then try hosted docs
     const hostedDocs = await this.docsProvider.searchDocs(query)
 
     const sections: string[] = []
@@ -486,9 +445,6 @@ Or visit: https://stack.opensaas.au/`,
     }
   }
 
-  /**
-   * Get example code for a feature
-   */
   async getExample({ feature }: { feature: string }) {
     const example = await this.docsProvider.getExampleConfig(feature)
 
@@ -534,9 +490,6 @@ ${example.notes ? `\n## Notes\n\n${example.notes}` : ''}
     }
   }
 
-  /**
-   * Cleanup - clear wizard sessions and caches
-   */
   cleanup() {
     this.wizardEngine.clearCompletedSessions()
     this.docsProvider.clearExpiredCache()

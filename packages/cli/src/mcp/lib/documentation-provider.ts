@@ -1,7 +1,3 @@
-/**
- * Documentation provider - Fetches documentation from the hosted docs site
- */
-
 import fs from 'fs-extra'
 import path from 'path'
 import { glob } from 'glob'
@@ -38,9 +34,8 @@ interface ExampleConfig {
 export class OpenSaasDocumentationProvider {
   private readonly DOCS_API = 'https://stack.opensaas.au/api/search'
   private cache = new Map<string, { data: DocumentationLookup; timestamp: number }>()
-  private readonly CACHE_TTL = 1000 * 60 * 30 // 30 minutes
+  private readonly CACHE_TTL = 1000 * 60 * 30
 
-  // Topic mappings for user-friendly queries
   private topicMappings: Record<string, string> = {
     fields: 'field-types',
     'field types': 'field-types',
@@ -71,13 +66,9 @@ export class OpenSaasDocumentationProvider {
     deploy: 'deployment',
   }
 
-  /**
-   * Search documentation by query
-   */
   async searchDocs(query: string, limit = 5, minScore = 0.7): Promise<DocumentationLookup> {
     const cacheKey = `search:${query}:${limit}:${minScore}`
 
-    // Check cache
     const cached = this.cache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
       return cached.data
@@ -106,7 +97,6 @@ export class OpenSaasDocumentationProvider {
         relatedTopics: this.extractRelatedTopics(data.results),
       }
 
-      // Cache the result
       this.cache.set(cacheKey, { data: docLookup, timestamp: Date.now() })
 
       return docLookup
@@ -116,19 +106,12 @@ export class OpenSaasDocumentationProvider {
     }
   }
 
-  /**
-   * Get documentation for a specific topic
-   */
   async getTopicDocs(topic: string): Promise<DocumentationLookup> {
-    // Normalize topic using mappings
     const normalizedTopic = this.topicMappings[topic.toLowerCase()] || topic
 
     return this.searchDocs(normalizedTopic, 3, 0.8)
   }
 
-  /**
-   * Format search results into readable content
-   */
   private formatSearchResults(results: SearchResult[]): string {
     if (results.length === 0) {
       return 'No documentation found for this query.'
@@ -145,9 +128,6 @@ export class OpenSaasDocumentationProvider {
       .join('\n---\n\n')
   }
 
-  /**
-   * Extract code examples from search results
-   */
   private extractCodeExamples(results: SearchResult[]): string[] {
     const codeExamples: string[] = []
     const codeBlockRegex = /```[\s\S]*?```/g
@@ -162,9 +142,6 @@ export class OpenSaasDocumentationProvider {
     return codeExamples
   }
 
-  /**
-   * Extract related topics from search results
-   */
   private extractRelatedTopics(results: SearchResult[]): string[] {
     const topics = new Set<string>()
 
@@ -177,9 +154,6 @@ export class OpenSaasDocumentationProvider {
     return Array.from(topics)
   }
 
-  /**
-   * Fallback documentation when API is unavailable
-   */
   private getFallbackDocs(query: string): DocumentationLookup {
     return {
       topic: query,
@@ -197,13 +171,9 @@ For ${query}, you can also check:
     }
   }
 
-  /**
-   * Search local CLAUDE.md files in the monorepo
-   */
   async searchLocalDocs(query: string): Promise<LocalDocResult> {
     const cwd = process.cwd()
 
-    // Find CLAUDE.md files
     const claudeFiles = await glob('**/CLAUDE.md', {
       cwd,
       ignore: ['node_modules/**', '.next/**', 'dist/**', 'build/**'],
@@ -219,7 +189,6 @@ For ${query}, you can also check:
         const content = await fs.readFile(file, 'utf-8')
         const contentLower = content.toLowerCase()
 
-        // Simple relevance scoring
         let score = 0
         for (const term of queryTerms) {
           if (contentLower.includes(term)) {
@@ -228,7 +197,6 @@ For ${query}, you can also check:
         }
 
         if (score > 0) {
-          // Extract relevant section
           const lines = content.split('\n')
           const relevantLines: string[] = []
           let inRelevantSection = false
@@ -236,21 +204,17 @@ For ${query}, you can also check:
           for (const line of lines) {
             const lineLower = line.toLowerCase()
 
-            // Check if line starts a section
             if (line.startsWith('#')) {
-              // Check if this section title is relevant
               const titleRelevant = queryTerms.some((term) => lineLower.includes(term))
               if (titleRelevant) {
                 inRelevantSection = true
                 relevantLines.push(line)
               } else if (inRelevantSection) {
-                // We've left the relevant section
                 break
               }
             } else if (inRelevantSection) {
               relevantLines.push(line)
             } else if (queryTerms.some((term) => lineLower.includes(term))) {
-              // Found relevant content outside a section
               relevantLines.push(line)
             }
           }
@@ -268,7 +232,6 @@ For ${query}, you can also check:
       }
     }
 
-    // Sort by score
     results.sort((a, b) => b.score - a.score)
 
     if (results.length === 0) {
@@ -286,9 +249,6 @@ For ${query}, you can also check:
     }
   }
 
-  /**
-   * Get example config code for a feature
-   */
   async getExampleConfig(feature: string): Promise<ExampleConfig | null> {
     const examples: Record<string, ExampleConfig> = {
       'blog-with-auth': {
@@ -521,9 +481,6 @@ fields: {
     return examples[normalizedFeature] || null
   }
 
-  /**
-   * Get migration-specific documentation for a project type
-   */
   async findMigrationGuide(projectType: string): Promise<string> {
     const guides: Record<string, string> = {
       prisma: `# Prisma to OpenSaaS Migration
@@ -686,9 +643,6 @@ npx prisma db push
     return guides[projectType.toLowerCase()] || guides.prisma
   }
 
-  /**
-   * Clear expired cache entries
-   */
   clearExpiredCache(): void {
     const now = Date.now()
     for (const [key, value] of this.cache.entries()) {
@@ -698,9 +652,6 @@ npx prisma db push
     }
   }
 
-  /**
-   * Clear all cache
-   */
   clearCache(): void {
     this.cache.clear()
   }

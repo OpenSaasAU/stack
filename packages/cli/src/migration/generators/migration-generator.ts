@@ -27,13 +27,9 @@ export class MigrationGenerator {
     this.keystoneIntrospector = new KeystoneIntrospector()
   }
 
-  /**
-   * Generate migration output from session
-   */
   async generate(session: MigrationSession): Promise<MigrationOutput> {
     const { projectType, analysis, answers } = session
 
-    // Get full schema if available
     let schema: IntrospectedSchema | undefined
     try {
       if (projectType === 'prisma') {
@@ -45,35 +41,22 @@ export class MigrationGenerator {
       // Continue without schema - will generate example config
     }
 
-    // For Keystone projects, produce a targeted migration guide rather than
-    // regenerating a full config. Lists, fields, hooks, and access control are
-    // identical between Keystone and OpenSaaS Stack.
     if (projectType === 'keystone') {
       return this.generateKeystoneMigrationGuide(schema, answers)
     }
 
-    // Collect used field types for imports
-    const usedFieldTypes = new Set<string>(['text']) // Always need text
+    const usedFieldTypes = new Set<string>(['text'])
     const warnings: string[] = []
 
-    // Generate lists
     const lists = this.generateLists(schema, answers, usedFieldTypes, warnings)
-
-    // Generate access control helpers
     const accessHelpers = this.generateAccessHelpers(answers)
-
-    // Generate database config
     const dbConfig = this.generateDatabaseConfig(
       (answers.db_provider as string) || analysis.provider || 'sqlite',
     )
 
-    // Determine if using auth
     const useAuth = answers.enable_auth === true
-
-    // Generate imports
     const imports = this.generateImports(usedFieldTypes, useAuth, dbConfig.provider)
 
-    // Generate the full config
     const configContent = this.assembleConfig({
       imports,
       accessHelpers,
@@ -84,16 +67,10 @@ export class MigrationGenerator {
       adminBasePath: (answers.admin_base_path as string) || '/admin',
     })
 
-    // Generate dependencies list
     const dependencies = this.generateDependencies(dbConfig.provider, useAuth)
-
-    // Generate additional files
     const files = this.generateAdditionalFiles(answers, dbConfig.provider)
-
-    // Generate next steps
     const steps = this.generateSteps(useAuth, dbConfig.provider)
 
-    // Add warnings from introspection
     if (schema) {
       const introspectorWarnings =
         projectType === 'prisma'
@@ -111,13 +88,6 @@ export class MigrationGenerator {
     }
   }
 
-  /**
-   * Generate a targeted migration guide for KeystoneJS projects.
-   *
-   * KeystoneJS and OpenSaaS Stack share the same list/field/hook/access API.
-   * The guide focuses only on what actually needs to change rather than
-   * regenerating the entire config.
-   */
   private generateKeystoneMigrationGuide(
     schema: IntrospectedSchema | undefined,
     answers: Record<string, unknown>,
@@ -207,9 +177,6 @@ ${virtualFieldsNote}${contextGraphqlNote}`
     }
   }
 
-  /**
-   * Generate the database adapter example for the migration guide
-   */
   private generateDatabaseAdapterExample(provider: string): string {
     switch (provider) {
       case 'postgresql':
@@ -259,9 +226,6 @@ db: {
     }
   }
 
-  /**
-   * Generate auth migration section for the guide
-   */
   private generateAuthMigrationExample(answers: Record<string, unknown>): string {
     const authMethods = (answers.auth_methods as string[]) || ['email-password']
     const options: string[] = []
@@ -318,9 +282,6 @@ control.
 `
   }
 
-  /**
-   * Generate Keystone-specific dependency list
-   */
   private generateKeystoneDependencies(dbProvider: string, useAuth: boolean): string[] {
     const remove = ['@keystone-6/core', '@keystone-6/auth', '@keystone-6/fields-document']
     const add: string[] = ['@opensaas/stack-core', '@opensaas/stack-ui']
@@ -346,9 +307,6 @@ control.
     return [`# Remove: ${remove.join(', ')}`, `# Add: ${add.join(', ')}`, ...add]
   }
 
-  /**
-   * Generate next steps for a Keystone migration
-   */
   private generateKeystoneSteps(useAuth: boolean, hasVirtualFields: boolean): string[] {
     const steps = [
       'Rename keystone.ts → opensaas.config.ts',
@@ -380,9 +338,6 @@ control.
     return steps
   }
 
-  /**
-   * Generate list definitions from schema
-   */
   private generateLists(
     schema: IntrospectedSchema | undefined,
     answers: Record<string, unknown>,
@@ -390,7 +345,6 @@ control.
     warnings: string[],
   ): string {
     if (!schema || schema.models.length === 0) {
-      // No schema, generate example lists
       usedFieldTypes.add('timestamp')
       return `    // Add your lists here
     // Example:
@@ -403,7 +357,6 @@ control.
     // }),`
     }
 
-    // Filter out auth models if using auth plugin
     const skipAuthModels = answers.skip_auth_models === true
     const authModelNames = ['User', 'Account', 'Session', 'Verification']
 
@@ -414,10 +367,8 @@ control.
       return true
     })
 
-    // Get models that should have owner access
     const ownerModels = new Set((answers.models_with_owner as string[]) || [])
 
-    // Generate each list
     const listDefinitions = modelsToGenerate.map((model) => {
       return this.generateList(
         model,
@@ -432,9 +383,6 @@ control.
     return listDefinitions.join('\n')
   }
 
-  /**
-   * Generate a single list definition
-   */
   private generateList(
     model: IntrospectedModel,
     schema: IntrospectedSchema,
@@ -445,12 +393,12 @@ control.
   ): string {
     const fields: string[] = []
 
-    // Skip system fields (id, createdAt, updatedAt) - OpenSaaS adds these automatically
+    // OpenSaaS adds id/createdAt/updatedAt automatically - skip them here
     const systemFields = ['id', 'createdAt', 'updatedAt']
 
     for (const field of model.fields) {
       if (systemFields.includes(field.name)) continue
-      if (field.isId) continue // Skip ID fields
+      if (field.isId) continue
 
       const fieldDef = this.generateField(field, schema, usedFieldTypes, warnings)
       if (fieldDef) {
@@ -458,7 +406,6 @@ control.
       }
     }
 
-    // Generate access control
     const access = this.generateListAccess(hasOwnerAccess, model, answers)
 
     const fieldsBlock = fields.length > 0 ? `\n${fields.join('\n')}\n      ` : ''
@@ -468,20 +415,15 @@ control.
     }),`
   }
 
-  /**
-   * Generate a field definition
-   */
   private generateField(
     field: IntrospectedField,
     schema: IntrospectedSchema,
     usedFieldTypes: Set<string>,
     warnings: string[],
   ): string | null {
-    // Handle relationships
     if (field.relation) {
       usedFieldTypes.add('relationship')
 
-      // Find the related model and back-reference field
       const relatedModel = schema.models.find((m) => m.name === field.relation!.model)
       const backRef = relatedModel?.fields.find(
         (f) => f.relation && f.relation.model === field.type,
@@ -493,7 +435,6 @@ control.
       return `relationship({ ref: '${ref}'${many} })`
     }
 
-    // Handle enums as select fields
     const enumDef = schema.enums.find((e) => e.name === field.type)
     if (enumDef) {
       usedFieldTypes.add('select')
@@ -507,11 +448,9 @@ control.
       return `select({ ${selectOptions} })`
     }
 
-    // Map Prisma/Keystone types to OpenSaaS
     const mapping = this.prismaIntrospector.mapPrismaTypeToOpenSaas(field.type)
     usedFieldTypes.add(mapping.import)
 
-    // Build options
     const options: string[] = []
 
     if (field.isRequired && !field.defaultValue) {
@@ -533,7 +472,6 @@ control.
       options.push(`scale: ${scale}`)
     }
 
-    // Handle default values
     if (field.defaultValue) {
       if (field.type === 'DateTime' && field.defaultValue === 'now()') {
         options.push("defaultValue: { kind: 'now' }")
@@ -543,7 +481,6 @@ control.
       // Other defaults are harder to map automatically
     }
 
-    // Generate unsupported type warning
     if (field.type === 'Bytes') {
       warnings.push(
         `Field "${field.name}" uses unsupported type "${field.type}" - mapped to text()`,
@@ -561,9 +498,6 @@ control.
     return `${mapping.type}(${optionsStr})`
   }
 
-  /**
-   * Generate list access control
-   */
   private generateListAccess(
     hasOwnerAccess: boolean,
     model: IntrospectedModel,
@@ -572,7 +506,6 @@ control.
     const defaultAccess = (answers.default_access as string) || 'public-read-auth-write'
 
     if (hasOwnerAccess) {
-      // Find the user relationship field
       const userField = model.fields.find(
         (f) =>
           f.relation?.model === 'User' ||
@@ -599,7 +532,6 @@ control.
       },`
     }
 
-    // Generate based on default access pattern
     switch (defaultAccess) {
       case 'authenticated-only':
         return `
@@ -650,9 +582,6 @@ control.
     }
   }
 
-  /**
-   * Generate access control helper functions
-   */
   private generateAccessHelpers(answers: Record<string, unknown>): string {
     const helpers: string[] = []
     const ownerModels = (answers.models_with_owner as string[]) || []
@@ -675,9 +604,6 @@ const isOwner: AccessControl = ({ session, item }) => {
     return helpers.join('\n')
   }
 
-  /**
-   * Generate database configuration
-   */
   private generateDatabaseConfig(provider: string): {
     provider: string
     configCode: string
@@ -731,9 +657,6 @@ const isOwner: AccessControl = ({ session, item }) => {
     }
   }
 
-  /**
-   * Generate import statements
-   */
   private generateImports(
     usedFieldTypes: Set<string>,
     useAuth: boolean,
@@ -741,29 +664,22 @@ const isOwner: AccessControl = ({ session, item }) => {
   ): string {
     const imports: string[] = []
 
-    // Core imports
     imports.push("import { config, list } from '@opensaas/stack-core'")
 
-    // Field imports
     const fieldTypes = Array.from(usedFieldTypes).sort()
     imports.push(`import { ${fieldTypes.join(', ')} } from '@opensaas/stack-core/fields'`)
 
-    // Auth imports
     if (useAuth) {
       imports.push("import { authPlugin } from '@opensaas/stack-auth'")
       imports.push("import type { AccessControl } from '@opensaas/stack-core'")
     }
 
-    // Database adapter imports
     const dbConfig = this.generateDatabaseConfig(dbProvider)
     imports.push(...dbConfig.imports)
 
     return imports.join('\n')
   }
 
-  /**
-   * Assemble the complete config file
-   */
   private assembleConfig(options: {
     imports: string
     accessHelpers: string
@@ -775,7 +691,6 @@ const isOwner: AccessControl = ({ session, item }) => {
   }): string {
     const { imports, accessHelpers, dbConfig, lists, useAuth, authMethods, adminBasePath } = options
 
-    // Generate auth plugin config
     let authPluginStr = ''
     if (useAuth) {
       const authOptions: string[] = []
@@ -817,7 +732,6 @@ ${authOptions.join('\n')}
     }),`
     }
 
-    // Build config body
     const pluginsBlock = useAuth
       ? `  plugins: [
 ${authPluginStr}
@@ -842,9 +756,6 @@ ${accessHelpers}${configBody}
 `
   }
 
-  /**
-   * Generate list of dependencies to install
-   */
   private generateDependencies(dbProvider: string, useAuth: boolean): string[] {
     const deps: string[] = [
       '@opensaas/stack-core',
@@ -853,7 +764,6 @@ ${accessHelpers}${configBody}
       'prisma',
     ]
 
-    // Database adapter deps
     switch (dbProvider) {
       case 'postgresql':
         deps.push('@prisma/adapter-pg', 'pg', '@types/pg')
@@ -867,7 +777,6 @@ ${accessHelpers}${configBody}
         break
     }
 
-    // Auth deps
     if (useAuth) {
       deps.push('@opensaas/stack-auth', 'better-auth')
     }
@@ -875,9 +784,6 @@ ${accessHelpers}${configBody}
     return deps
   }
 
-  /**
-   * Generate additional files if needed
-   */
   private generateAdditionalFiles(
     answers: Record<string, unknown>,
     dbProvider: string,
@@ -894,10 +800,8 @@ ${accessHelpers}${configBody}
       description: string
     }> = []
 
-    // Generate .env.example
     const envVars: string[] = ['# Database']
 
-    // Database URL based on provider
     switch (dbProvider) {
       case 'postgresql':
         envVars.push('DATABASE_URL="postgresql://user:password@localhost:5432/mydb"')
@@ -944,9 +848,6 @@ ${accessHelpers}${configBody}
     return files
   }
 
-  /**
-   * Generate next steps
-   */
   private generateSteps(useAuth: boolean, dbProvider: string): string[] {
     const steps = [
       'Save the generated config to `opensaas.config.ts`',

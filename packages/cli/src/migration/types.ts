@@ -1,7 +1,3 @@
-/**
- * Migration types - Shared types for the migration system
- */
-
 export type ProjectType = 'prisma' | 'nextjs' | 'keystone'
 
 export interface ModelInfo {
@@ -85,8 +81,7 @@ export interface IntrospectedField {
   }
   /**
    * A Prisma native type attribute (e.g. `@db.Decimal(10, 2)`), if the field
-   * declared one. Generalised beyond `Decimal` so other native types
-   * (`@db.VarChar`, `@db.SmallInt`, ...) can reuse the same channel later.
+   * declared one.
    */
   nativeType?: {
     name: string

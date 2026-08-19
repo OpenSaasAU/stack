@@ -1,7 +1,3 @@
-/**
- * Feature catalog - Defines all available features with their configuration wizards
- */
-
 import type { Feature } from '../types.js'
 
 export const AUTHENTICATION_FEATURE: Feature = {
@@ -268,9 +264,6 @@ export const SEMANTIC_SEARCH_FEATURE: Feature = {
   ],
 }
 
-/**
- * Feature catalog - maps feature IDs to feature definitions
- */
 export const FeatureCatalog = new Map<string, Feature>([
   ['authentication', AUTHENTICATION_FEATURE],
   ['blog', BLOG_FEATURE],
@@ -279,23 +272,14 @@ export const FeatureCatalog = new Map<string, Feature>([
   ['semantic-search', SEMANTIC_SEARCH_FEATURE],
 ])
 
-/**
- * Get feature by ID
- */
 export function getFeature(featureId: string): Feature | undefined {
   return FeatureCatalog.get(featureId)
 }
 
-/**
- * Get all available features
- */
 export function getAllFeatures(): Feature[] {
   return Array.from(FeatureCatalog.values())
 }
 
-/**
- * Get features by category
- */
 export function getFeaturesByCategory(category: Feature['category']): Feature[] {
   return getAllFeatures().filter((f) => f.category === category)
 }
