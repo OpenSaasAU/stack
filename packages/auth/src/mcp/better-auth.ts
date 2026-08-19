@@ -56,13 +56,11 @@ export function withMcpAuth(
   handler: (req: Request, session: McpSession) => Promise<Response> | Response,
 ): (req: Request) => Promise<Response> {
   return async (req: Request) => {
-    // Extract MCP session from Better Auth
     const session = await auth.api.getMcpSession({
       headers: req.headers,
     })
 
     if (!session) {
-      // Return 401 with WWW-Authenticate header for OAuth clients
       return new Response(null, {
         status: 401,
         headers: {
@@ -71,7 +69,6 @@ export function withMcpAuth(
       })
     }
 
-    // Call handler with authenticated session
     return handler(req, session)
   }
 }
@@ -133,14 +130,12 @@ export function createOAuthDiscoveryHandler(_auth: BetterAuthInstance) {
 }
 
 /**
- * Create OAuth protected resource metadata handler
- * Exposes OAuth protected resource metadata for MCP clients
+ * Exposes OAuth protected resource metadata for MCP clients.
  *
- * This should be placed at `/.well-known/oauth-protected-resource/route.ts`
+ * Place at `/.well-known/oauth-protected-resource/route.ts`.
  */
 export function createOAuthProtectedResourceHandler(_auth: BetterAuthInstance) {
   return async (req: Request) => {
-    // Delegate to Better Auth's built-in handler
     const authPath = '/api/auth/.well-known/oauth-protected-resource'
     const authUrl = new URL(authPath, req.url)
 

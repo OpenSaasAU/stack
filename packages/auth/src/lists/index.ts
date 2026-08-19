@@ -42,8 +42,6 @@ const DEFAULT_MODELS: NormalizedAuthModels = {
 }
 
 /**
- * Create the base User list with better-auth required fields.
- *
  * Backwards-compatible helper: derives the default `User` list (keyed `User`,
  * default field shapes) via {@link deriveAuthLists}.
  */
