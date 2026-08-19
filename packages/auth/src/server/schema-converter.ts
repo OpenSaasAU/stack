@@ -1,16 +1,8 @@
-/**
- * Convert Better Auth database schema to OpenSaaS list configs
- * Allows dynamic list generation from Better Auth plugins
- */
-
 import { list } from '@opensaas/stack-core'
 import { text, timestamp, checkbox, integer, bigInt } from '@opensaas/stack-core/fields'
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
 
-/**
- * Better Auth field attribute structure
- * Inferred from better-auth internal types
- */
+/** Inferred from better-auth internal types (not directly importable). */
 type BetterAuthFieldAttribute = {
   type: string | string[] // 'string' | 'number' | 'boolean' | 'date' | etc., or an enum array
   required?: boolean
@@ -206,10 +198,6 @@ export function convertBetterAuthSchema(
   return lists
 }
 
-/**
- * Convert table name to PascalCase
- * e.g., "oauth_application" -> "OauthApplication"
- */
 function toPascalCase(str: string): string {
   return str
     .split(/[_-]/)
