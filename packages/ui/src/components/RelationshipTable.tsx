@@ -23,13 +23,11 @@ type AnyListConfig = ListConfig<any>
 
 export interface RelationshipTableProps {
   config: OpenSaasConfig
-  /** The derived section describing this to-many relationship. */
   section: RelationshipTableSection
   /**
    * The parent record's related rows for this relationship, already fetched and
    * access-filtered through the secured context (`context.db` include) and
-   * BOUNDED by the section's `take` (issue #752). Only access-visible rows/fields
-   * are present here, and at most `section.take` of them.
+   * BOUNDED by the section's `take` (issue #752).
    */
   rows: Array<Record<string, unknown>>
   /**
@@ -41,8 +39,8 @@ export interface RelationshipTableProps {
   total: number
   basePath: string
   /**
-   * The access-scoped context, used to evaluate the related list's operation
-   * access so a removal control is only offered when the session may perform it.
+   * The access-scoped context, used to evaluate the related list's own access
+   * (removal, create, and inline-edit gating) — never the parent's.
    */
   context: AccessContext<unknown>
   /** The list being edited (the parent record's list). */
@@ -55,11 +53,8 @@ export interface RelationshipTableProps {
 
 /**
  * Decide which removal control (if any) a row should show (ADR-0018, #739).
- *
- * The configured `removeAction` is the ceiling; operation-level access on the
- * RELATED list is the gate. A hard deny (no update/delete access at all) hides
- * the control — no affordance for what will always fail. A filter result is
- * treated as "potentially allowed", so the control shows and a row-level denial
+ * The configured `removeAction` is the ceiling; {@link isOperationPotentiallyAllowed}
+ * against the RELATED list's operation access is the gate — a denial there
  * surfaces at commit time as a Silent failure (row stays, reason shown).
  */
 async function resolveRemoveMode(
@@ -88,10 +83,10 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
 /**
  * The subset of columns whose cells may be inline-edited (issue #737, ADR-0018).
  *
- * Gating mirrors #738/#739: the RELATED list's own operation-level update access
- * is the table gate — a hard deny yields no editable cells, so a fully
- * update-denied table stays read-only. Each column is then editable only when it
- * is a writable scalar field of the related list, EXCLUDING:
+ * The RELATED list's own operation-level update access
+ * ({@link isOperationPotentiallyAllowed}) is the table gate — a hard deny yields
+ * no editable cells. Each column is then editable only when it is a writable
+ * scalar field of the related list, EXCLUDING:
  * - relationship columns (relationship editing is out of scope here — they render
  *   as `{ id, label }` and stay read-only),
  * - virtual/computed fields (not stored; nothing to write),
@@ -99,12 +94,10 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
  *   `draft === displayValue` guard never holds and an unchanged cell would waste
  *   a round-trip; they also need a proper structured editor — out of scope here),
  * - password fields and system columns (`id`/`createdAt`/`updatedAt`),
- * - any field whose UPDATE field-access is statically denied.
+ * - any field whose UPDATE field-access is statically denied
+ *   ({@link isFieldPotentiallyWritable}).
  *
- * A field-access rule that returns a filter or depends on the row is treated as
- * "potentially writable": the affordance shows and a row-level denial surfaces at
- * commit as a revert (never a denied-vs-absent leak). All evaluation is on the
- * related list's own access — never the parent's.
+ * All evaluation is on the related list's own access — never the parent's.
  */
 export async function resolveEditableColumns(
   section: RelationshipTableSection,
@@ -149,11 +142,8 @@ interface CreateFormData {
  * Gating (ADR-0018): the "+ Add" is shown only when
  * - a back-reference field exists to preset the link (list-only refs have none,
  *   so cannot be pre-linked and are excluded — mirroring #739's disconnect), and
- * - the RELATED list's own `create` access is not statically denied. A hard deny
- *   (no create rule, or `create` returns `false`) hides the control — no
- *   affordance for what will always fail. A filter/function result is
- *   "potentially allowed", so the control shows and a row-level denial surfaces
- *   at commit time as a Silent failure (generic reason, no denied-vs-absent leak).
+ * - the RELATED list's own `create` access is not statically denied
+ *   ({@link isOperationPotentiallyAllowed}).
  *
  * The create form is the related list's fields with the back-reference removed —
  * it is preset + hidden, set on the server from the parent id — so the drawer
@@ -263,16 +253,8 @@ export async function RelationshipTable({
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
 
-  // Which removal control (if any) this table's rows may show, gated on the
-  // related list's own operation access (never the parent's).
   const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
-
-  // The pre-linked create drawer (#738), gated on the related list's own create
-  // access (never the parent's) and the presence of a back-reference to preset.
   const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
-
-  // Which columns may be inline-edited (#737), gated on the related list's own
-  // operation- and field-level update access (never the parent's).
   const editableColumns = await resolveEditableColumns(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so

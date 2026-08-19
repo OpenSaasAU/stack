@@ -5,19 +5,13 @@ import { Label } from '../../primitives/label.js'
 import { cn } from '../../lib/utils.js'
 
 /**
- * Shared field-shell primitives (issue #709).
+ * Shared field-shell primitives (issue #709). Every field component composes
+ * its label / help / error rhythm from these pieces, and all visual values
+ * resolve through theme tokens — no hardcoded status colours live here or in
+ * any field that uses this shell.
  *
- * Every field component composes its label / help / error rhythm from these
- * pieces so that spacing, typography, and status colours are identical across
- * text, integer, checkbox, select, timestamp, password, relationship, json,
- * image/file, and combobox fields. All visual values resolve through theme
- * tokens — `text-muted-foreground`, `text-destructive`, `text-warning`, and the
- * radius/typography tokens the underlying primitives consume. No hardcoded
- * status colours live here or in any field that uses this shell.
- *
- * These parts carry stable `data-slot` names (`field`, `field-label`,
- * `field-help`, `field-error`, `field-warning`, `field-value`) so a plain-CSS
- * restyle can target them, and every part merges a caller `className` via `cn`.
+ * These parts carry stable `data-slot` names so a plain-CSS restyle can target
+ * them, and every part merges a caller `className` via `cn`.
  */
 
 export interface FieldRootProps extends React.HTMLAttributes<HTMLDivElement> {

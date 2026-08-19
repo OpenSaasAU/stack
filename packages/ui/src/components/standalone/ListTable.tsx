@@ -71,9 +71,6 @@ export interface ListTableProps {
 }
 
 /**
- * Standalone table component for displaying list data
- * Can be embedded in any custom page
- *
  * @example
  * ```tsx
  * <ListTable
@@ -120,12 +117,10 @@ export function ListTable({
     options: fieldOptions?.[fieldName],
   })
 
-  // Determine which columns to show
   const displayColumns =
     columns ||
     Object.keys(fieldTypes).filter((key) => !['password', 'createdAt', 'updatedAt'].includes(key))
 
-  // Sort items if needed
   const sortedItems = [...items]
   if (sortBy && sortable) {
     sortedItems.sort((a, b) => {

@@ -3,12 +3,6 @@ import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '../lib/utils.js'
 
-/**
- * Status badge primitive (issue #709). Every intent variant resolves through a
- * theme token — `success`, `warning`, and `destructive` render published /
- * draft / error states with NO hardcoded status colours. Radius comes from the
- * `--radius` token (`rounded-md`) and typography from `font-sans`.
- */
 const badgeVariants = cva(
   'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-sans text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {

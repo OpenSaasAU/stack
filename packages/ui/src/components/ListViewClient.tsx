@@ -92,8 +92,7 @@ export interface ListViewClientProps {
   /**
    * Serializable per-field filter metadata (from the core engine's
    * `collectFilterSuggestions`) that drives the Filter builder's field /
-   * operator / value pickers. Carries no functions, so it is safe to pass to
-   * this client component. When empty, the builder shows only free-text search.
+   * operator / value pickers. When empty, the builder shows only free-text search.
    */
   filterSuggestions?: FilterFieldSuggestion[]
   /**
@@ -127,10 +126,6 @@ export interface ListViewClientProps {
   bulkActions?: SerializedBulkAction[]
 }
 
-/**
- * Client component for interactive list table
- * Handles sorting, pagination, and row interactions
- */
 export function ListViewClient({
   items,
   fieldTypes,
@@ -155,25 +150,19 @@ export function ListViewClient({
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
 
-  // Row selection (issue #733). The selection is keyed on the ACTIVE FILTER
-  // STATE: the `search` param is the filter engine's URL filter query (#730 —
-  // field-scoped tokens, comparisons, quoted values, bare-word free text), so
-  // changing ANY filter token changes `filterKey` and clears the accumulated id
-  // set, while page and sort changes keep it stable (selection persists while
-  // paging). Reads back empty under a different filter.
+  // Row selection (issue #733) is keyed on the active `search` filter query
+  // (the ADR-0017 filter engine's URL param, parsed server-side in `ListView`)
+  // — changing any filter token changes `filterKey` and clears the accumulated
+  // id set, while page/sort changes keep it stable so selection persists while
+  // paging. Reads back empty under a different filter.
   const filterKey = initialSearch ?? ''
   const selection = useRowSelection(listKey, filterKey)
 
-  // Selection is offered when ANY Bulk action exists: the built-in Delete
-  // (gated by static delete access) OR one or more custom Bulk actions declared
-  // for this list (issue #736). Widening the gate to `canDelete ||
-  // hasCustomBulkActions` means a list with only custom actions still turns
-  // selection on even when delete is denied.
   const hasCustomBulkActions = bulkActions.length > 0
   const selectionEnabled = canDelete || hasCustomBulkActions
   const canBulkDelete = canDelete && !!serverAction
-  // Custom actions dispatch through the same generic server action; without it
-  // they cannot run, so they are only rendered when it is wired.
+  // Custom actions dispatch through the generic `serverAction`; without it
+  // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
   // The "N of M deleted" report must outlive the table refresh: `router.refresh()`
@@ -194,7 +183,6 @@ export function ListViewClient({
     selection.togglePage(pageIds)
   }
 
-  // Determine which columns to show
   const displayColumns =
     columns ||
     Object.keys(fieldTypes).filter((key) => !['password', 'createdAt', 'updatedAt'].includes(key))
@@ -224,9 +212,8 @@ export function ListViewClient({
     router.push(`${basePath}/${urlKey}?${withPageSize(params).toString()}`)
   }
 
-  // Apply a Filter builder query: write it into the `?search=` URL param the
-  // filter engine consumes, preserving the active sort/pageSize and resetting to
-  // page 1. An empty query drops the param entirely (clears the filter).
+  // Writes a Filter builder query into the `?search=` URL param, resetting to
+  // page 1. An empty query drops the param (clears the filter).
   const applyQuery = (query: string) => {
     const params = new URLSearchParams()
     const trimmed = query.trim()
@@ -236,7 +223,7 @@ export function ListViewClient({
     if (sortBy) {
       params.set('sort', `${sortBy}:${sortOrder}`)
     }
-    params.set('page', '1') // Reset to page 1 on a new filter.
+    params.set('page', '1')
     const qs = withPageSize(params).toString()
     router.push(`${basePath}/${urlKey}${qs ? `?${qs}` : ''}`)
   }
@@ -265,8 +252,7 @@ export function ListViewClient({
     const result = await serverAction({ listKey, action: 'bulkDelete', ids })
     const { deleted, total } = parseBulkDeleteResult(result, ids.length)
 
-    // Persist the report before mutating the view, so it survives the remount the
-    // navigation below triggers and renders against the fresh list.
+    // Set before navigating so it isn't lost on the remount navigation triggers.
     setBulkStatus(`${deleted} of ${total} deleted`)
     selection.clear()
 
@@ -279,11 +265,8 @@ export function ListViewClient({
     router.push(buildPaginationUrl(1))
   }
 
-  // Run a custom Bulk action (issue #736). Mirrors the bulk-delete flow: one
-  // secured server round-trip dispatched by `key` over the selected ids, an
-  // outcome status line persisted so it survives the table refresh, selection
-  // cleared, then a reset to page 1 of the current filter. The handler runs
-  // server-side through the secured context — per-id denials are absorbed there,
+  // Runs a custom Bulk action (issue #736); mirrors `handleBulkDelete`'s
+  // round-trip/page-reset flow. Per-id denials are absorbed server-side and
   // never leaked here.
   const handleBulkAction = async (key: string) => {
     if (!serverAction) return
@@ -298,11 +281,7 @@ export function ListViewClient({
     router.push(buildPaginationUrl(1))
   }
 
-  /**
-   * The serialised field config for a column. Prefer the explicit `fields`
-   * prop; otherwise synthesise a minimal config from `fieldTypes` (and the
-   * relationship ref) so Cells still resolve via the field-type registry.
-   */
+  /** Resolves a column's field config: the explicit `fields` entry, or a synthesised fallback (see `fields` prop) plus the relationship ref. */
   const columnField = (column: string): SerializableFieldConfig => {
     if (fields?.[column]) return fields[column]
     const ref = relationshipRefs[column]
@@ -341,9 +320,8 @@ export function ListViewClient({
 
   return (
     <div className="space-y-4">
-      {/* Filter builder (issue #731) — constructs the `?search=` filter query the
-          engine consumes. Keyed on the active query so it remounts (and re-reads
-          the URL) whenever the applied filter changes. */}
+      {/* Keyed on the active query so it remounts (and re-reads the URL) whenever
+          the applied filter changes (issue #731). */}
       <FilterBuilder
         key={initialSearch ?? ''}
         suggestions={filterSuggestions}
@@ -351,8 +329,8 @@ export function ListViewClient({
         onApply={applyQuery}
       />
 
-      {/* Bulk-action result ("N of M deleted"). Lives here (always mounted) so
-          it survives the selection clearing after a delete. */}
+      {/* Always mounted (outside the selection bar) so the report survives the
+          selection clearing after a bulk action. */}
       {bulkStatus && (
         <div
           data-slot="selection-status"
@@ -363,7 +341,6 @@ export function ListViewClient({
         </div>
       )}
 
-      {/* Selection bar — visible only while rows are selected. */}
       {selectionEnabled && (
         <RowSelectionBar
           count={selection.selectedCount}
@@ -383,7 +360,6 @@ export function ListViewClient({
         />
       )}
 
-      {/* Table */}
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -401,8 +377,6 @@ export function ListViewClient({
               {displayColumns.map((column) => {
                 const field = columnField(column)
                 const numeric = isCountAlignedColumn(field)
-                // Virtual and to-one relationship columns have no orderable
-                // column, so they expose no sort affordance (issue #732).
                 const sortable = isSortableColumn(field)
                 return (
                   <TableHead
@@ -516,7 +490,6 @@ export function ListViewClient({
         </Table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm tabular-nums text-muted-foreground">

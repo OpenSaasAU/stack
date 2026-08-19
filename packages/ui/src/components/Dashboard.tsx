@@ -12,10 +12,6 @@ export interface DashboardProps {
   basePath?: string
 }
 
-/**
- * Dashboard landing page showing all available lists
- * Server Component
- */
 export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
   const lists = Object.keys(config.lists || {})
 
@@ -25,8 +21,6 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   const standardLists = lists.filter((listKey) => !config.lists[listKey]?.isSingleton)
   const singletonLists = lists.filter((listKey) => config.lists[listKey]?.isSingleton)
 
-  // Get counts for the standard lists only. Singletons don't show a count, so
-  // there's no need to call count() for them here.
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
       try {
@@ -95,8 +89,6 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
         </div>
       ) : null}
 
-      {/* Settings section — singletons present a "Configure" affordance instead
-          of a misleading "N items" count. */}
       {singletonLists.length > 0 && (
         <div className={standardLists.length > 0 ? 'mt-12' : ''}>
           <div className="mb-4 flex items-center gap-2">
@@ -151,8 +143,6 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {/* Singletons have a single record (no create), so they're
-                  excluded here — only standard lists get a "Create" quick-action. */}
               {standardLists.map((listKey) => {
                 const urlKey = getUrlKey(listKey)
                 return (

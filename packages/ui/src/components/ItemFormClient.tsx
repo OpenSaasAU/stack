@@ -49,8 +49,6 @@ function toSubmitResult(result: unknown, deniedMessage: string): ItemFormSubmitR
 }
 
 /**
- * Client component for the AdminUI item form.
- *
  * Shares the form state/transform/error/pending logic with the standalone
  * forms via `useItemForm`; this component only adapts submission to the
  * AdminUI server action + router navigation, and adds the delete flow.
@@ -122,14 +120,12 @@ export function ItemFormClient({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* General Error */}
       {generalError && (
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4">
           <p className="text-sm font-medium">{generalError}</p>
         </div>
       )}
 
-      {/* Form Fields */}
       <div className="space-y-6">
         {editableFields.map(([fieldName, fieldConfig]) => (
           <FieldRenderer
@@ -150,7 +146,6 @@ export function ItemFormClient({
         ))}
       </div>
 
-      {/* Form Actions */}
       <div className="flex items-center justify-between pt-6 border-t border-border">
         <div className="flex gap-3">
           <Button type="submit" disabled={busy} className="gap-2">
@@ -172,7 +167,6 @@ export function ItemFormClient({
           </Button>
         </div>
 
-        {/* Delete Button (Edit Mode Only; suppressed for singletons) */}
         {mode === 'edit' && itemId && canDelete && (
           <Button
             type="button"
@@ -185,7 +179,6 @@ export function ItemFormClient({
         )}
       </div>
 
-      {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showDeleteConfirm}
         title="Delete Item"

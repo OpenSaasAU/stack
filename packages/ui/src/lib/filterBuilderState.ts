@@ -64,9 +64,6 @@ export function queryToState(
         continue
       }
     }
-    // Bare word, unknown field, unsupported operator, or empty value: keep it as
-    // free text so it survives the round-trip (the engine would treat it as free
-    // text anyway).
     freeTokens.push(token)
   }
 

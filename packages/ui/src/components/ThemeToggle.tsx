@@ -16,7 +16,6 @@ export interface ThemeToggleProps {
   className?: string
 }
 
-// Cycle order for the single-button control: light → dark → system → light.
 const NEXT_CHOICE: Record<ThemeChoice, ThemeChoice> = {
   light: 'dark',
   dark: 'system',

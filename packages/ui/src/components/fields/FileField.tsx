@@ -21,9 +21,7 @@ export interface FileFieldProps {
 }
 
 /**
- * File upload field with drag-and-drop support
- *
- * Stores File objects in form state. The actual upload happens server-side
+ * Stores File objects in form state — the actual upload happens server-side
  * during form submission via field hooks.
  */
 export function FileField({
@@ -42,8 +40,6 @@ export function FileField({
 
   const handleFileSelect = useCallback(
     (file: File) => {
-      // Store File object in form state
-      // Upload will happen server-side during form submission
       onChange(file)
     },
     [onChange],
@@ -88,7 +84,6 @@ export function FileField({
     onChange(null)
   }, [onChange])
 
-  // Determine if value is File or FileMetadata
   // Use duck typing instead of instanceof to support SSR
   const isFile =
     value &&
@@ -97,7 +92,6 @@ export function FileField({
     typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
   const isFileMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
-  // Read-only mode
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
@@ -133,7 +127,6 @@ export function FileField({
     )
   }
 
-  // Edit mode
   return (
     <FieldRoot>
       {label && (
@@ -143,7 +136,6 @@ export function FileField({
       )}
 
       {isFile || isFileMetadata ? (
-        // File selected/uploaded - show file info
         <div className="flex items-center gap-2 p-3 border rounded-md">
           <Check className="h-4 w-4 text-success" />
           <div className="flex-1 min-w-0">
@@ -177,7 +169,6 @@ export function FileField({
           </Button>
         </div>
       ) : (
-        // No file - show upload area
         <>
           <div
             className={`

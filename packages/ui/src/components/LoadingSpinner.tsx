@@ -5,10 +5,6 @@ export interface LoadingSpinnerProps {
   className?: string
 }
 
-/**
- * Loading spinner component
- * Used to indicate loading states
- */
 export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) {
   const sizeClasses = {
     sm: 'h-4 w-4 border-2',

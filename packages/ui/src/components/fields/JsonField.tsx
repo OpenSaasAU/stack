@@ -34,11 +34,9 @@ export function JsonField({
   formatted = true,
   helpText,
 }: JsonFieldProps) {
-  // Track the string being edited separately from the prop value
   const [editingValue, setEditingValue] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | undefined>()
 
-  // Compute the display value - either what's being edited or the prop value
   const displayValue = useMemo(() => {
     if (editingValue !== null) {
       return editingValue
@@ -55,9 +53,7 @@ export function JsonField({
   const handleChange = (text: string) => {
     setEditingValue(text)
 
-    // Try to parse and update value
     if (text.trim() === '') {
-      // Empty string - treat as null/undefined
       onChange(undefined)
       setParseError(undefined)
       return
@@ -68,7 +64,7 @@ export function JsonField({
       onChange(parsed)
       setParseError(undefined)
     } catch (e) {
-      // Invalid JSON - set error but don't update value
+      // Invalid JSON: leave the last valid value uncommitted instead of clobbering it.
       if (e instanceof Error) {
         setParseError(`Invalid JSON: ${e.message}`)
       } else {
@@ -78,7 +74,6 @@ export function JsonField({
   }
 
   const handleBlur = () => {
-    // Clear editing state on blur
     setEditingValue(null)
   }
 

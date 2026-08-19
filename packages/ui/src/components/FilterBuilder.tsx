@@ -96,15 +96,12 @@ function initialValueForSource(_source: FilterValueSource): string {
 }
 
 /**
- * Filter builder input UI (issue #731, part of #728; layered on the #730 filter
- * engine / ADR-0017).
- *
  * Constructs the admin list's `?search=` filter query from a friendly UI —
  * structured field/operator/value rows plus a free-text box — and produces the
- * exact grammar the engine already consumes (`serializeFilterQuery`). It never
- * invents a parallel filter path: the applied query flows through the same URL
- * param the secured `context.db` reads server-side, so filtering can only ever
- * narrow, never widen, what a session may see.
+ * exact grammar the filter engine already consumes (`serializeFilterQuery`,
+ * ADR-0017). It never invents a parallel filter path: the applied query flows
+ * through the same URL param the secured `context.db` reads server-side, so
+ * filtering can only ever narrow, never widen, what a session may see.
  *
  * Available fields, operators and value suggestions are derived entirely from
  * the serializable {@link FilterFieldSuggestion}s (each field's self-contained

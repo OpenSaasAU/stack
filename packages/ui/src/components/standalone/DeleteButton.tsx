@@ -35,9 +35,6 @@ export interface DeleteButtonProps {
 }
 
 /**
- * Standalone delete button with confirmation dialog
- * Can be embedded in any custom page
- *
  * @example
  * ```tsx
  * <DeleteButton

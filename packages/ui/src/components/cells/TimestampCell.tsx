@@ -17,10 +17,6 @@ function toDate(value: unknown): Date | null {
   return null
 }
 
-/**
- * Timestamp Cell — renders a humanly-formatted local date/time. Slot:
- * `cell-timestamp`.
- */
 export function TimestampCell({ value }: CellComponentProps) {
   const date = toDate(value)
   if (date === null) {

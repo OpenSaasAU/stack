@@ -24,21 +24,13 @@ export type PresetDefinition = {
 }
 
 /**
- * Preset theme catalog (re-curated for the token vocabulary — issue #707).
+ * Preset theme catalog (issue #707).
  *
- * - `modern` (default) — the restrained, Linear-class direction: low-chroma
- *   neutral surfaces, one saturated brand color used sparingly, the gradient
- *   pair as garnish, quiet muted text, softer radius. It is the SINGLE SOURCE
- *   for the raw `--color-*-light` / `--color-*-dark` defaults in
- *   `styles/globals.css`: the `generate:css` codegen emits that `:root` block
- *   from these values (a test enforces the two are in sync), so they can never
- *   drift. It deliberately omits `radius`/`shadows` and inherits the stylesheet
- *   defaults rather than duplicating them.
- * - `classic` — flat and enterprise-safe: blue primary, no gradient (the pair
- *   collapses to a single color), squared-off radius, and elevation removed
- *   (shadows `none`) so hierarchy comes from crisp borders alone.
- * - `neon` — the high-chroma cyan / purple / pink personality preserved: pink
- *   primary, purple accent, a cyan→pink signature gradient, rounder radius.
+ * `modern` (default) is the SINGLE SOURCE for the raw `--color-*-light` /
+ * `--color-*-dark` defaults in `styles/globals.css`: the `generate:css`
+ * codegen emits that `:root` block from these values (a test enforces the two
+ * stay in sync), so it deliberately omits `radius`/`shadows` and inherits the
+ * stylesheet defaults rather than duplicating them.
  *
  * Values are any valid CSS color string (ADR-0015) — the compiler never parses
  * them, it emits them verbatim.
@@ -99,8 +91,6 @@ export const presetThemes: Record<ThemePreset, PresetDefinition> = {
       gradientFrom: 'oklch(0.62 0.19 264)',
       gradientTo: 'oklch(0.68 0.18 320)',
     },
-    // radius + shadows inherited from styles/globals.css. The colors above are
-    // the source the stylesheet's `--color-*` defaults are generated from.
   },
   classic: {
     // Squared-off corners and no elevation — hierarchy from borders alone.
@@ -235,11 +225,7 @@ function isProduction(): boolean {
   return typeof process !== 'undefined' && process.env?.NODE_ENV === 'production'
 }
 
-/**
- * Dev-mode guard for the clean break on the color value format. Fires a
- * `console.warn` when a color override is a bare HSL triplet, telling the
- * developer to wrap it in `hsl(...)`. Silent in production.
- */
+/** Dev-only warning when a color override is a bare HSL triplet (the old shadcn format) — silent in production. */
 function warnOnBareTriplet(tokenKey: string, value: string): void {
   if (isProduction()) return
   if (BARE_HSL_TRIPLET.test(value.trim())) {

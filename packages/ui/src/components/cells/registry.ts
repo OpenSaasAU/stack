@@ -8,11 +8,9 @@ import { TimestampCell } from './TimestampCell.js'
 import { RelationshipCell } from './RelationshipCell.js'
 
 /**
- * Props every Cell component receives. A Cell is the list-table rendering of
- * one field's value (see `CONTEXT.md` — "Cell"). Props are deliberately
- * serialisable — `value` is the JSON-safe, access-filtered field value and
- * `field` is the serialised field config — so Cells stay drop-in for the
- * server-driven list view.
+ * Props every Cell component receives — the list-table rendering of one
+ * field's value (see `CONTEXT.md` — "Cell"). Kept serialisable so Cells stay
+ * drop-in for the server-driven list view.
  */
 export type CellComponentProps = {
   /** The access-filtered, JSON-serialisable field value for this row. */
@@ -33,10 +31,10 @@ export type CellComponentProps = {
 export type CellComponent = ComponentType<CellComponentProps>
 
 /**
- * Registry mapping field types to their default Cell components — the
- * field-type layer of the resolution chain. Mirrors `fieldComponentRegistry`
- * for form fields; extend it with {@link registerCellComponent} exactly the
- * same way a third-party field registers its form component.
+ * Registry mapping field types to their default Cell components. Mirrors
+ * `fieldComponentRegistry` for form fields; extend it with
+ * {@link registerCellComponent} exactly the same way a third-party field
+ * registers its form component.
  */
 const cellComponentRegistry: Record<string, CellComponent> = {
   text: TextCell,
@@ -55,18 +53,12 @@ const cellComponentRegistry: Record<string, CellComponent> = {
  * Register a default Cell component for a field type. A third-party field
  * package calls this to make its values render correctly in tables, exactly as
  * it calls `registerFieldComponent` for its form component.
- *
- * @param fieldType - The field type identifier
- * @param component - A Cell component accepting {@link CellComponentProps}
  */
 export function registerCellComponent(fieldType: string, component: CellComponent): void {
   cellComponentRegistry[fieldType] = component
 }
 
-/**
- * Get the Cell component registered for a field type, or `undefined` when none
- * is registered (the caller falls back to plain text).
- */
+/** Cell component registered for `fieldType`, or `undefined` (the caller falls back to plain text). */
 export function getCellComponent(fieldType: string): CellComponent | undefined {
   return cellComponentRegistry[fieldType]
 }

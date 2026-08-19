@@ -25,7 +25,7 @@ export interface ItemFormProps {
   mode: 'create' | 'edit'
   itemId?: string
   basePath?: string
-  // Server action can return any shape depending on the list item type
+  // See AdminUIProps.serverAction for why this is Promise<unknown>.
   serverAction: (input: ServerActionInput) => Promise<unknown>
 }
 
@@ -129,8 +129,7 @@ export function buildDetailsItemData(
  * Edit-mode item view whose layout is DERIVED from the list shape (issue #734):
  * scalar/to-one fields (and picker-demoted relationships) in a details card
  * with the existing whole-form Save/Cancel, and each to-many relationship as a
- * read-only Relationship table. The arrangement follows from the number of
- * tables — one → two-column split, several → stacked.
+ * read-only Relationship table.
  */
 async function ItemViewLayoutView({
   context,
@@ -153,13 +152,10 @@ async function ItemViewLayoutView({
 }) {
   const urlKey = getUrlKey(listKey)
 
-  // One secured read: details relationships one level deep, each Relationship
-  // table nested-included (bounded by `take`, issue #752) so its cells resolve.
-  // Access control on the include means only access-visible rows/fields are
-  // returned. The full access-scoped total for each table's "showing N of M"
-  // footer comes from a filtered `_count` in the SAME read — folding each
-  // related list's own `query` access into the count so a denied related list
-  // never leaks a true total (mirrors the list view's #732 count columns).
+  // One secured read: {@link buildItemViewInclude} bounds each table's nested
+  // include, and the filtered `_count` below is fetched in the SAME call so
+  // {@link readAccessScopedTotal} never leaks a denied list's true total
+  // (mirrors the list view's #732 count columns).
   const include: Record<string, unknown> = { ...buildItemViewInclude(listConfig, config, layout) }
   const countSelect = await buildRelationshipCountSelect(
     listConfig,
@@ -247,9 +243,7 @@ async function ItemViewLayoutView({
         config={config}
         section={section}
         rows={rows}
-        // M for "showing N of M": the access-scoped total from `_count`, falling
-        // back to the bounded row count when the related list is denied (0) or
-        // uncounted — never a leak of a denied list's true total.
+        // M for "showing N of M" — see {@link readAccessScopedTotal}.
         total={readAccessScopedTotal(countPayload, section.fieldName, rows.length)}
         basePath={basePath}
         context={context}
@@ -288,10 +282,6 @@ async function ItemViewLayoutView({
   )
 }
 
-/**
- * Item form component - create or edit an item
- * Server Component that fetches data and sets up actions
- */
 export async function ItemForm({
   context,
   config,
@@ -337,11 +327,9 @@ export async function ItemForm({
     }
   }
 
-  // Fetch item data if in edit mode
   let itemData: Record<string, unknown> = {}
   if (mode === 'edit' && itemId) {
     try {
-      // Fetch item with relationships included
       const includeRelationships = buildRelationshipInclude(listConfig)
       const delegate = context.db[getDbKey(listKey)]
       if (delegate?.findUnique) {
@@ -375,8 +363,7 @@ export async function ItemForm({
     }
   }
 
-  // Fetch relationship options, serialize field configs, and transform the
-  // record into client-ready form data (shared with the singleton editor).
+  // Also used by SingletonView so both editors serialize identically.
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
@@ -392,7 +379,6 @@ export async function ItemForm({
         title={`${mode === 'create' ? 'Create' : 'Edit'} ${formatListName(listKey)}`}
       />
 
-      {/* Form */}
       <div className="bg-card border border-border rounded-lg p-6">
         <ItemFormClient
           listKey={listKey}

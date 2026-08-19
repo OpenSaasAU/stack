@@ -33,7 +33,6 @@ export function PasswordField({
   showConfirm = true,
   helpText,
 }: PasswordFieldProps) {
-  // Check if value is the isSet object
   const isSetObject = typeof value === 'object' && value !== null && 'isSet' in value
   const isPasswordSet = isSetObject ? value.isSet : false
 
@@ -51,7 +50,6 @@ export function PasswordField({
     )
   }
 
-  // If not changing password and it's set, show the button
   if (!isChangingPassword && isSetObject) {
     return (
       <FieldRoot>
@@ -81,7 +79,6 @@ export function PasswordField({
     setPasswordValue('')
     setConfirmValue('')
     setShowPassword(false)
-    // Reset to the isSet object
     if (isSetObject) {
       onChange(value)
     }
@@ -89,7 +86,6 @@ export function PasswordField({
 
   const handlePasswordChange = (newValue: string) => {
     setPasswordValue(newValue)
-    // Update the parent with the actual password string
     onChange(newValue || undefined)
   }
 

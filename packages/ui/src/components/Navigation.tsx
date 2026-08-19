@@ -98,10 +98,6 @@ export function NavLink({ href, active = false, icon, count, children }: NavLink
   )
 }
 
-/**
- * Navigation sidebar showing all lists
- * Server Component
- */
 export function Navigation({
   context,
   config,
@@ -120,8 +116,7 @@ export function Navigation({
 
   return (
     <nav className="sticky top-0 flex h-screen w-64 flex-col border-r border-border bg-card">
-      {/* Header — a restrained solid wordmark. The gradient pair is reserved for
-          the dashboard signature moment, so the brand text stays a solid token. */}
+      {/* Solid wordmark — same gradient-reservation rule as NavLink's active state. */}
       <div className="border-b border-border p-6">
         <Link href={basePath} className="block">
           <h1 className="font-heading text-xl font-bold tracking-tight text-foreground">
@@ -130,7 +125,6 @@ export function Navigation({
         </Link>
       </div>
 
-      {/* Navigation Links */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-1">
           <NavLink

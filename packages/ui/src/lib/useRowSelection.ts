@@ -141,10 +141,8 @@ function writeIds(storageKey: string, filterKey: string, ids: readonly string[])
 /**
  * Manage row selection for one list view, persisted per `filterKey`.
  *
- * @param listKey - The list being viewed (namespaces the persisted set).
- * @param filterKey - A stable string identifying the active filter. Changing it
- *   reads the selection back as empty; page and sort changes must NOT change it,
- *   so the selection persists while paging.
+ * `filterKey` must NOT change on page/sort changes — only when the filter
+ * itself changes — since changing it reads the selection back as empty.
  */
 export function useRowSelection(listKey: string, filterKey: string): RowSelection {
   const storageKey = storageKeyFor(listKey)

@@ -20,20 +20,10 @@ export const AVATAR_TONES: readonly string[] = [
   'bg-secondary text-secondary-foreground',
 ]
 
-/**
- * Derive up to two uppercase initials from a label.
- *
- * - Two or more words → first letter of the first and last word (e.g.
- *   "Ada Lovelace" → "AL").
- * - One word → its first two letters (e.g. "opensaas" → "OP").
- * - Empty / whitespace-only → "?" so the bubble never renders blank.
- *
- * Non-letter leading characters (an emoji, a digit) are kept as-is after
- * upper-casing, matching how a person scanning the column would read them.
- */
 export function getInitials(label: string): string {
   const words = label.trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return '?'
+  // Spread (not indexing) throughout so a multi-byte character (e.g. an emoji) isn't split mid-codepoint.
   if (words.length === 1) {
     return [...words[0]].slice(0, 2).join('').toUpperCase()
   }

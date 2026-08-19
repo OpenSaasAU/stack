@@ -68,7 +68,6 @@ export function ComboboxField({
     ? (resolveLabel(value) ?? items.find((item) => item.id === value)?.label)
     : undefined
 
-  // Read mode
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">

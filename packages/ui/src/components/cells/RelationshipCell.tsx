@@ -7,8 +7,8 @@ import type { CellComponentProps } from './registry.js'
 
 /**
  * One related row's `{ id, label }`. The label is normally resolved server-side
- * via the shared label seam (`getItemLabel`); the raw-record fallback
- * (`name` → `title` → `label` → `id`) covers callers that pass unresolved rows.
+ * via the shared label seam (`getItemLabel`); the fallback here covers callers
+ * that pass unresolved rows.
  */
 interface RelatedRef {
   id: string | null
@@ -33,18 +33,11 @@ function EmptyDash() {
 }
 
 /**
- * Relationship Cell (issue #732):
- *
- * - **To-many** (`field.many`) renders the access-visible related COUNT — a
- *   right-aligned tabular number the list view resolves via the secured query's
- *   filtered `_count`, so it only ever counts rows the session may see. Slot:
- *   `cell-relationship-count`.
- * - **To-one** renders the related row's Item label, linked to its edit page
- *   when the field's `ref` (and `basePath`) resolve a URL. Slot:
- *   `cell-relationship`.
- *
- * A to-many value is normally the resolved count (a number); an array of
- * resolved refs is tolerated as a fallback (its length is the count).
+ * Relationship Cell (issue #732). To-many renders the related COUNT — resolved
+ * server-side via the secured query's filtered `_count`, so it only ever counts
+ * rows the session may see; an array of refs is tolerated as a fallback (its
+ * length is the count). To-one renders the related row's Item label, linked to
+ * its edit page when the field's `ref` resolves a URL.
  */
 export function RelationshipCell({ value, field, basePath = '/admin' }: CellComponentProps) {
   if (field.many === true) {

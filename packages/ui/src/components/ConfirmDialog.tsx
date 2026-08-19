@@ -21,10 +21,6 @@ export interface ConfirmDialogProps {
   variant?: 'danger' | 'warning'
 }
 
-/**
- * Reusable confirmation dialog component
- * Used for destructive actions like delete
- */
 export function ConfirmDialog({
   isOpen,
   title,
