@@ -1,7 +1,3 @@
-/**
- * Wizard engine for multi-step feature implementation flows
- */
-
 import type { Feature, WizardSession, SessionStorage, FeatureQuestion } from '../types.js'
 import { getFeature } from '../features/catalog.js'
 import { FeatureGenerator } from '../generators/feature-generator.js'
@@ -9,9 +5,6 @@ import { FeatureGenerator } from '../generators/feature-generator.js'
 export class WizardEngine {
   private sessions: SessionStorage = {}
 
-  /**
-   * Start a new feature implementation wizard
-   */
   async startFeature(featureId: string): Promise<{
     content: Array<{ type: string; text: string }>
   }> {
@@ -74,9 +67,6 @@ ${firstQuestion}
     }
   }
 
-  /**
-   * Process an answer and move to next question or complete the wizard
-   */
   async answerQuestion(
     sessionId: string,
     answer: string | boolean | string[],
@@ -97,7 +87,6 @@ ${firstQuestion}
 
     const currentQ = session.feature.questions[session.currentQuestionIndex]
 
-    // Validate answer
     const validation = this.validateAnswer(answer, currentQ)
     if (!validation.valid) {
       return {
@@ -110,11 +99,9 @@ ${firstQuestion}
       }
     }
 
-    // Store answer
     session.answers[currentQ.id] = answer
     session.updatedAt = new Date()
 
-    // Check for follow-up questions
     if (currentQ.followUp) {
       const shouldAskFollowUp =
         currentQ.followUp.if === answer ||
@@ -133,16 +120,13 @@ ${firstQuestion}
       }
     }
 
-    // Move to next question
     session.currentQuestionIndex++
 
-    // Check if complete
     if (session.currentQuestionIndex >= session.feature.questions.length) {
       session.isComplete = true
       return this.generateFeatureImplementation(session)
     }
 
-    // Render next question
     const nextQ = session.feature.questions[session.currentQuestionIndex]
     const questionNum = session.currentQuestionIndex + 1
     const progressBar = this.renderProgressBar(questionNum, session.feature.questions.length)
@@ -157,9 +141,6 @@ ${firstQuestion}
     }
   }
 
-  /**
-   * Handle follow-up question answers
-   */
   async answerFollowUp(
     sessionId: string,
     answer: string,
@@ -181,20 +162,16 @@ ${firstQuestion}
     const currentQ = session.feature.questions[session.currentQuestionIndex]
     const followUpKey = `${currentQ.id}_followup`
 
-    // Store follow-up answer
     session.followUpAnswers[followUpKey] = answer
     session.updatedAt = new Date()
 
-    // Move to next question
     session.currentQuestionIndex++
 
-    // Check if complete
     if (session.currentQuestionIndex >= session.feature.questions.length) {
       session.isComplete = true
       return this.generateFeatureImplementation(session)
     }
 
-    // Render next question
     const nextQ = session.feature.questions[session.currentQuestionIndex]
     const questionNum = session.currentQuestionIndex + 1
     const progressBar = this.renderProgressBar(questionNum, session.feature.questions.length)
@@ -209,9 +186,6 @@ ${firstQuestion}
     }
   }
 
-  /**
-   * Generate the complete feature implementation
-   */
   private async generateFeatureImplementation(session: WizardSession): Promise<{
     content: Array<{ type: string; text: string }>
   }> {
@@ -290,9 +264,6 @@ For more help, see the docs at https://stack.opensaas.au/
     }
   }
 
-  /**
-   * Create a new wizard session
-   */
   private createSession(sessionId: string, feature: Feature): WizardSession {
     return {
       id: sessionId,
@@ -307,16 +278,10 @@ For more help, see the docs at https://stack.opensaas.au/
     }
   }
 
-  /**
-   * Generate a unique session ID
-   */
   private generateSessionId(): string {
     return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   }
 
-  /**
-   * Render a question for the user
-   */
   private renderQuestion(
     question: FeatureQuestion,
     session: WizardSession,
@@ -342,9 +307,6 @@ For more help, see the docs at https://stack.opensaas.au/
     return rendered
   }
 
-  /**
-   * Validate an answer against question requirements
-   */
   private validateAnswer(
     answer: string | boolean | string[],
     question: FeatureQuestion,
@@ -385,18 +347,12 @@ For more help, see the docs at https://stack.opensaas.au/
     return { valid: true }
   }
 
-  /**
-   * Render a progress bar
-   */
   private renderProgressBar(current: number, total: number): string {
     const filled = Math.round((current / total) * 10)
     const empty = 10 - filled
     return '▓'.repeat(filled) + '░'.repeat(empty)
   }
 
-  /**
-   * Format an answer for display
-   */
   private formatAnswer(answer: string | boolean | string[]): string {
     if (typeof answer === 'boolean') {
       return answer ? 'Yes' : 'No'
@@ -407,16 +363,10 @@ For more help, see the docs at https://stack.opensaas.au/
     return answer
   }
 
-  /**
-   * Get session by ID (for debugging/testing)
-   */
   getSession(sessionId: string): WizardSession | undefined {
     return this.sessions[sessionId]
   }
 
-  /**
-   * Clear completed sessions (cleanup)
-   */
   clearCompletedSessions(): void {
     Object.keys(this.sessions).forEach((id) => {
       if (this.sessions[id].isComplete) {

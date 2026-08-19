@@ -1,10 +1,3 @@
-/**
- * KeystoneJS Config Introspector
- *
- * Loads keystone.config.ts using jiti and extracts list definitions.
- * KeystoneJS → OpenSaaS migration is mostly 1:1.
- */
-
 import path from 'path'
 import fs from 'fs-extra'
 import { createJiti } from 'jiti'
@@ -33,16 +26,12 @@ export interface KeystoneSchema {
 }
 
 export class KeystoneIntrospector {
-  /**
-   * Introspect a KeystoneJS config file
-   */
   async introspect(
     cwd: string,
     configPath: string = 'keystone.config.ts',
   ): Promise<IntrospectedSchema> {
     const fullPath = path.isAbsolute(configPath) ? configPath : path.join(cwd, configPath)
 
-    // Try alternative paths
     const paths = [fullPath, path.join(cwd, 'keystone.ts'), path.join(cwd, 'keystone.config.js')]
 
     let foundPath: string | undefined
@@ -66,7 +55,6 @@ export class KeystoneIntrospector {
         console.warn(`⚠️  ${warning}`)
       }
 
-      // Use jiti to load TypeScript config
       const jiti = createJiti(import.meta.url, {
         interopDefault: true,
         moduleCache: false,
@@ -81,7 +69,6 @@ export class KeystoneIntrospector {
 
       const keystoneSchema = this.parseConfig(config)
 
-      // Convert KeystoneSchema to IntrospectedSchema
       return this.convertToIntrospectedSchema(keystoneSchema)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -89,9 +76,6 @@ export class KeystoneIntrospector {
     }
   }
 
-  /**
-   * Parse the loaded KeystoneJS config object
-   */
   private parseConfig(config: unknown): KeystoneSchema {
     const result: KeystoneSchema = {
       lists: [],
@@ -103,7 +87,6 @@ export class KeystoneIntrospector {
 
     const configObj = config as Record<string, unknown>
 
-    // Extract database config
     if (configObj.db && typeof configObj.db === 'object' && configObj.db !== null) {
       const db = configObj.db as Record<string, unknown>
       result.db = {
@@ -112,7 +95,6 @@ export class KeystoneIntrospector {
       }
     }
 
-    // Extract lists
     if (configObj.lists && typeof configObj.lists === 'object' && configObj.lists !== null) {
       for (const [name, listDef] of Object.entries(configObj.lists)) {
         const list = this.parseList(name, listDef)
@@ -123,9 +105,6 @@ export class KeystoneIntrospector {
     return result
   }
 
-  /**
-   * Parse a single list definition
-   */
   private parseList(name: string, listDef: unknown): KeystoneList {
     const list: KeystoneList = {
       name,
@@ -138,7 +117,6 @@ export class KeystoneIntrospector {
 
     const listDefObj = listDef as Record<string, unknown>
 
-    // Extract fields
     if (listDefObj.fields && typeof listDefObj.fields === 'object' && listDefObj.fields !== null) {
       for (const [fieldName, fieldDef] of Object.entries(listDefObj.fields)) {
         const field = this.parseField(fieldName, fieldDef)
@@ -157,9 +135,6 @@ export class KeystoneIntrospector {
     return list
   }
 
-  /**
-   * Parse a single field definition
-   */
   private parseField(name: string, fieldDef: unknown): KeystoneField {
     // KeystoneJS fields are objects with a type property or function results
     let type = 'unknown'
@@ -168,7 +143,6 @@ export class KeystoneIntrospector {
     if (typeof fieldDef === 'object' && fieldDef !== null) {
       const fieldDefObj = fieldDef as Record<string, unknown>
 
-      // Check for common field type patterns
       if (typeof fieldDefObj.type === 'string') {
         type = fieldDefObj.type
       } else if (typeof fieldDefObj._type === 'string') {
@@ -184,7 +158,6 @@ export class KeystoneIntrospector {
         }
       }
 
-      // Extract common options
       if (fieldDefObj.validation !== undefined) options.validation = fieldDefObj.validation
       if (fieldDefObj.defaultValue !== undefined) options.defaultValue = fieldDefObj.defaultValue
       if (fieldDefObj.isRequired !== undefined) options.isRequired = fieldDefObj.isRequired
@@ -195,9 +168,6 @@ export class KeystoneIntrospector {
     return { name, type, options }
   }
 
-  /**
-   * Convert KeystoneSchema to IntrospectedSchema format
-   */
   private convertToIntrospectedSchema(keystoneSchema: KeystoneSchema): IntrospectedSchema {
     const models: IntrospectedModel[] = keystoneSchema.lists.map((list) => {
       const fields: IntrospectedField[] = list.fields.map((field) => {
@@ -247,9 +217,6 @@ export class KeystoneIntrospector {
     }
   }
 
-  /**
-   * Map KeystoneJS field type to OpenSaaS equivalent
-   */
   mapKeystoneTypeToOpenSaas(keystoneType: string): { type: string; import: string } {
     // KeystoneJS → OpenSaaS is mostly 1:1
     const mappings: Record<string, { type: string; import: string }> = {
@@ -266,9 +233,7 @@ export class KeystoneIntrospector {
       // Storage field types (from @opensaas/stack-storage)
       image: { type: 'image', import: 'image' },
       file: { type: 'file', import: 'file' },
-      // Virtual/computed fields
       virtual: { type: 'virtual', import: 'virtual' },
-      // Other field types
       calendarDay: { type: 'timestamp', import: 'timestamp' },
     }
 
@@ -276,9 +241,6 @@ export class KeystoneIntrospector {
     return mappings[lower] || { type: 'text', import: 'text' }
   }
 
-  /**
-   * Get warnings for unsupported features
-   */
   getWarnings(schema: IntrospectedSchema): string[] {
     const warnings: string[] = []
     const hasFileOrImageFields = schema.models.some((model) =>
@@ -291,21 +253,18 @@ export class KeystoneIntrospector {
       model.fields.some((field) => field.type.toLowerCase() === 'float'),
     )
 
-    // Add storage configuration reminder if file/image fields are present
     if (hasFileOrImageFields) {
       warnings.push(
         "Your schema uses file/image fields - you'll need to configure storage providers in your OpenSaaS config",
       )
     }
 
-    // Add virtual field migration reminder
     if (hasVirtualFields) {
       warnings.push(
         "Your schema uses virtual() fields — you'll need to manually migrate these. OpenSaaS Stack has no GraphQL: replace graphql.field({ resolve }) with hooks: { resolveOutput } and declare the field type. See the migration guide or invoke the migrate-virtual-fields skill.",
       )
     }
 
-    // Add float field migration reminder
     if (hasFloatFields) {
       warnings.push(
         'Your schema uses float() fields - these will be mapped to decimal() (a decimal.js Decimal, not a JS number). Review precision/rounding.',

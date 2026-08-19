@@ -1,18 +1,8 @@
-/**
- * Prisma Schema Introspector
- *
- * Parses prisma/schema.prisma and extracts structured information
- * about models, fields, relationships, and enums.
- */
-
 import fs from 'fs-extra'
 import path from 'path'
 import type { IntrospectedSchema, IntrospectedModel, IntrospectedField } from '../types.js'
 
 export class PrismaIntrospector {
-  /**
-   * Introspect a Prisma schema file
-   */
   async introspect(
     cwd: string,
     schemaPath: string = 'prisma/schema.prisma',
@@ -32,21 +22,14 @@ export class PrismaIntrospector {
     }
   }
 
-  /**
-   * Extract database provider from datasource block
-   */
   private extractProvider(schema: string): string {
     const match = schema.match(/datasource\s+\w+\s*\{[^}]*provider\s*=\s*"(\w+)"/)
     return match ? match[1] : 'unknown'
   }
 
-  /**
-   * Extract all model definitions
-   */
   private extractModels(schema: string): IntrospectedModel[] {
     const models: IntrospectedModel[] = []
 
-    // Match model blocks
     const modelRegex = /model\s+(\w+)\s*\{([^}]+)\}/g
     let match
 
@@ -68,9 +51,6 @@ export class PrismaIntrospector {
     return models
   }
 
-  /**
-   * Extract fields from a model body
-   */
   private extractFields(body: string): IntrospectedField[] {
     const fields: IntrospectedField[] = []
     const lines = body.split('\n')
@@ -78,7 +58,6 @@ export class PrismaIntrospector {
     for (const line of lines) {
       const trimmed = line.trim()
 
-      // Skip empty lines, comments, and model-level attributes
       if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
         continue
       }
@@ -92,9 +71,6 @@ export class PrismaIntrospector {
     return fields
   }
 
-  /**
-   * Parse a single field line
-   */
   private parseFieldLine(line: string): IntrospectedField | null {
     // Basic field pattern: name Type modifiers attributes
     // Examples:
@@ -104,16 +80,13 @@ export class PrismaIntrospector {
     //   posts     Post[]
     //   author    User     @relation(fields: [authorId], references: [id])
 
-    // Remove comments
     const withoutComment = line.split('//')[0].trim()
 
-    // Match field name and type
     const fieldMatch = withoutComment.match(/^(\w+)\s+(\w+)(\?)?(\[\])?(.*)$/)
     if (!fieldMatch) return null
 
     const [, name, rawType, optional, isList, rest] = fieldMatch
 
-    // Skip if this looks like an index or other non-field line
     if (['@@', 'index', 'unique'].some((kw) => name.startsWith(kw))) {
       return null
     }
@@ -143,7 +116,6 @@ export class PrismaIntrospector {
       field.defaultValue = rest.substring(startIdx, endIdx)
     }
 
-    // Extract native type attribute (e.g. `@db.Decimal(10, 2)`)
     const nativeTypeMatch = rest.match(/@db\.(\w+)(?:\(([^)]*)\))?/)
     if (nativeTypeMatch) {
       const [, nativeName, nativeArgs] = nativeTypeMatch
@@ -158,12 +130,10 @@ export class PrismaIntrospector {
       }
     }
 
-    // Extract relation
     const relationMatch = rest.match(/@relation\(([^)]+)\)/)
     if (relationMatch) {
       const relationBody = relationMatch[1]
 
-      // Parse relation parts
       const fieldsMatch = relationBody.match(/fields:\s*\[([^\]]+)\]/)
       const referencesMatch = relationBody.match(/references:\s*\[([^\]]+)\]/)
       const nameMatch = relationBody.match(/name:\s*"([^"]+)"/) || relationBody.match(/"([^"]+)"/)
@@ -179,13 +149,9 @@ export class PrismaIntrospector {
     return field
   }
 
-  /**
-   * Extract enum definitions
-   */
   private extractEnums(schema: string): Array<{ name: string; values: string[] }> {
     const enums: Array<{ name: string; values: string[] }> = []
 
-    // Match enum blocks
     const enumRegex = /enum\s+(\w+)\s*\{([^}]+)\}/g
     let match
 
@@ -204,9 +170,6 @@ export class PrismaIntrospector {
     return enums
   }
 
-  /**
-   * Map Prisma type to OpenSaaS field type
-   */
   mapPrismaTypeToOpenSaas(prismaType: string): { type: string; import: string } {
     const mappings: Record<string, { type: string; import: string }> = {
       String: { type: 'text', import: 'text' },
@@ -223,13 +186,9 @@ export class PrismaIntrospector {
     return mappings[prismaType] || { type: 'text', import: 'text' }
   }
 
-  /**
-   * Get warnings for unsupported features
-   */
   getWarnings(schema: IntrospectedSchema): string[] {
     const warnings: string[] = []
 
-    // Check for unsupported types
     for (const model of schema.models) {
       for (const field of model.fields) {
         if (field.type === 'Bytes') {
@@ -245,8 +204,7 @@ export class PrismaIntrospector {
       }
     }
 
-    // Check for composite IDs
-    // This would require checking for @@id in the original schema
+    // Known limit: composite IDs (@@id) are not checked for or warned about.
 
     return warnings
   }

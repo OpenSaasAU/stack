@@ -1,10 +1,3 @@
-/**
- * Next.js Project Introspector
- *
- * Detects Next.js version, auth libraries, database libraries,
- * and other project characteristics.
- */
-
 import path from 'path'
 import fs from 'fs-extra'
 
@@ -20,9 +13,6 @@ export interface NextjsAnalysis {
 }
 
 export class NextjsIntrospector {
-  /**
-   * Analyze a Next.js project
-   */
   async introspect(cwd: string): Promise<NextjsAnalysis> {
     const packageJsonPath = path.join(cwd, 'package.json')
 
@@ -45,29 +35,19 @@ export class NextjsIntrospector {
       existingDependencies: this.getAllDependencies(pkg),
     }
 
-    // Detect auth library
     analysis.authLibrary = this.detectAuthLibrary(pkg)
-
-    // Detect database library
     analysis.databaseLibrary = this.detectDatabaseLibrary(pkg)
 
     return analysis
   }
 
-  /**
-   * Get Next.js version from package.json
-   */
   private getNextVersion(pkg: Record<string, unknown>): string {
     const deps = pkg.dependencies as Record<string, string> | undefined
     const devDeps = pkg.devDependencies as Record<string, string> | undefined
     const version = deps?.next || devDeps?.next || 'unknown'
-    // Strip semver prefixes like ^ or ~
     return version.replace(/^[\^~]/, '')
   }
 
-  /**
-   * Detect if project uses app router, pages router, or both
-   */
   private async detectRouterType(cwd: string): Promise<'app' | 'pages' | 'both' | 'unknown'> {
     const hasApp =
       (await fs.pathExists(path.join(cwd, 'app'))) ||
@@ -82,34 +62,22 @@ export class NextjsIntrospector {
     return 'unknown'
   }
 
-  /**
-   * Check if project uses TypeScript
-   */
   private async hasTypeScript(cwd: string): Promise<boolean> {
     return await fs.pathExists(path.join(cwd, 'tsconfig.json'))
   }
 
-  /**
-   * Check if package.json has a dependency
-   */
   private hasDependency(pkg: Record<string, unknown>, name: string): boolean {
     const deps = pkg.dependencies as Record<string, string> | undefined
     const devDeps = pkg.devDependencies as Record<string, string> | undefined
     return !!(deps?.[name] || devDeps?.[name])
   }
 
-  /**
-   * Get all dependencies
-   */
   private getAllDependencies(pkg: Record<string, unknown>): string[] {
     const deps = pkg.dependencies as Record<string, string> | undefined
     const devDeps = pkg.devDependencies as Record<string, string> | undefined
     return [...Object.keys(deps || {}), ...Object.keys(devDeps || {})]
   }
 
-  /**
-   * Detect auth library being used
-   */
   private detectAuthLibrary(pkg: Record<string, unknown>): string | undefined {
     const authLibraries = [
       { name: 'next-auth', dep: 'next-auth' },
@@ -130,9 +98,6 @@ export class NextjsIntrospector {
     return undefined
   }
 
-  /**
-   * Detect database library being used
-   */
   private detectDatabaseLibrary(pkg: Record<string, unknown>): string | undefined {
     const dbLibraries = [
       { name: 'prisma', dep: '@prisma/client' },
@@ -153,9 +118,6 @@ export class NextjsIntrospector {
     return undefined
   }
 
-  /**
-   * Get migration recommendations based on analysis
-   */
   getRecommendations(analysis: NextjsAnalysis): string[] {
     const recommendations: string[] = []
 
@@ -186,9 +148,6 @@ export class NextjsIntrospector {
     return recommendations
   }
 
-  /**
-   * Get warnings for potential issues
-   */
   getWarnings(analysis: NextjsAnalysis): string[] {
     const warnings: string[] = []
 

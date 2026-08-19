@@ -11,7 +11,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { StackMCPServer } from './stack-mcp-server.js'
 
-// Tool definitions
 const TOOLS: Tool[] = [
   {
     name: 'opensaas_implement_feature',
@@ -232,9 +231,6 @@ const TOOLS: Tool[] = [
   },
 ]
 
-/**
- * Create and start the MCP server
- */
 export async function startMCPServer() {
   const server = new Server(
     {
@@ -250,12 +246,10 @@ export async function startMCPServer() {
 
   const stackServer = new StackMCPServer()
 
-  // Register tool list handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: TOOLS }
   })
 
-  // Register tool call handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params
 
@@ -337,15 +331,13 @@ export async function startMCPServer() {
     }
   })
 
-  // Periodic cleanup
   setInterval(
     () => {
       stackServer.cleanup()
     },
     1000 * 60 * 15,
-  ) // Every 15 minutes
+  )
 
-  // Start server
   const transport = new StdioServerTransport()
   await server.connect(transport)
 

@@ -24,12 +24,6 @@ import {
 } from '@opensaas/stack-core'
 import type { FieldConfigValidationError, NeedsClosureError } from '@opensaas/stack-core'
 
-/**
- * Format field self-containment errors into a friendly, multi-line message.
- * Each violation names the list, field, and the contract method it omits, so
- * a misimplemented (often third-party) field is actionable at a glance rather
- * than surfacing as a deep generator stack trace.
- */
 export function formatFieldValidationErrors(errors: FieldConfigValidationError[]): string {
   const lines = errors.map((error) => {
     const location = error.listKey ? `${error.listKey}.${error.fieldKey}` : error.fieldKey
@@ -63,7 +57,6 @@ export async function generateCommand() {
   const cwd = process.cwd()
   const configPath = path.join(cwd, 'opensaas.config.ts')
 
-  // Check if config exists
   if (!fs.existsSync(configPath)) {
     console.error(chalk.red('❌ Error: opensaas.config.ts not found in current directory'))
     console.error(chalk.gray('   Please run this command from your project root'))
@@ -80,22 +73,18 @@ export async function generateCommand() {
     // `alias: undefined`, which is identical to omitting the option.
     const { alias, warnings: aliasWarnings } = resolveTsconfigAlias(cwd)
 
-    // Load config using jiti (supports TypeScript)
     const jiti = createJiti(cwd, {
       interopDefault: true,
       alias,
     })
 
-    // Config may be async (if plugins are present)
-    // jiti.import() returns a module object with 'default' export
-    // We need to manually extract the default export since interopDefault doesn't work with async exports
+    // jiti's `interopDefault` doesn't unwrap an async `default` export, so it
+    // must be extracted manually here (config may be a Promise when plugins
+    // are present).
     const module = (await jiti.import(configPath)) as { default: Promise<OpenSaasConfig> }
     const configOrPromise = module.default
-
-    // Resolve the config if it's a Promise (from plugin execution)
     let config = await Promise.resolve(configOrPromise)
 
-    // Log plugin count if plugins are present
     if (config.plugins && config.plugins.length > 0) {
       spinner.text = `Loading configuration with ${config.plugins.length} plugin(s)...`
     }
@@ -105,12 +94,11 @@ export async function generateCommand() {
       console.log(chalk.yellow(`⚠️  ${warning}`))
     }
 
-    // Execute beforeGenerate hooks if plugins are present
     if (config.plugins && config.plugins.length > 0) {
       const pluginSpinner = ora('Running plugin beforeGenerate hooks...').start()
 
       try {
-        // Import plugin engine (avoid circular dependency)
+        // Dynamic import avoids a circular dependency with the plugin engine.
         const { executeBeforeGenerateHooks } =
           await import('@opensaas/stack-core/config/plugin-engine')
         config = await executeBeforeGenerateHooks(config)
@@ -121,9 +109,6 @@ export async function generateCommand() {
       }
     }
 
-    // Validate field self-containment up front, before any generation runs.
-    // A misimplemented field surfaces a clear, per-field message here rather
-    // than throwing deep inside schema/type generation.
     const validationSpinner = ora('Validating field configuration...').start()
     const fieldErrors = validateConfigFields(config)
     if (fieldErrors.length > 0) {
@@ -146,7 +131,6 @@ export async function generateCommand() {
     }
     needsSpinner.succeed(chalk.green('Declared dependencies valid'))
 
-    // Generate Prisma schema, types, and context
     // Captured here so the (optional) Node build step, which runs after
     // `prisma generate` outside this try block, knows where the bundle lives.
     let opensaasDir = ''
@@ -192,24 +176,20 @@ export async function generateCommand() {
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
 
-      // Execute afterGenerate hooks if plugins are present
       if (config.plugins && config.plugins.length > 0) {
         const afterGenSpinner = ora('Running plugin afterGenerate hooks...').start()
 
         try {
-          // Read generated files
           const generatedFiles = {
             prismaSchema: fs.readFileSync(prismaSchemaPath, 'utf-8'),
             types: fs.readFileSync(typesPath, 'utf-8'),
             context: fs.readFileSync(contextPath, 'utf-8'),
           }
 
-          // Execute afterGenerate hooks
           const { executeAfterGenerateHooks } =
             await import('@opensaas/stack-core/config/plugin-engine')
           const modifiedFiles = await executeAfterGenerateHooks(config, generatedFiles)
 
-          // Write back modified files
           if (modifiedFiles.prismaSchema !== generatedFiles.prismaSchema) {
             fs.writeFileSync(prismaSchemaPath, modifiedFiles.prismaSchema)
           }
@@ -220,7 +200,6 @@ export async function generateCommand() {
             fs.writeFileSync(contextPath, modifiedFiles.context)
           }
 
-          // Write any additional files plugins generated
           for (const [filename, content] of Object.entries(modifiedFiles)) {
             if (!['prismaSchema', 'types', 'context'].includes(filename)) {
               const filePath = path.join(paths.opensaasDir, filename)
@@ -236,7 +215,6 @@ export async function generateCommand() {
         }
       }
 
-      // Format Prisma schema
       const formatSpinner = ora('Formatting Prisma schema...').start()
       try {
         execSync('npx prisma format', {
@@ -264,7 +242,6 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // Run Prisma generate to create the Prisma client
     const prismaSpinner = ora('Generating Prisma client...').start()
     try {
       execSync('npx prisma generate', {

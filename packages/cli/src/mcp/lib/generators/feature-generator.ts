@@ -1,10 +1,7 @@
 /**
- * Feature generator - Generates code, config, and documentation for features
- *
- * Emitted code must match the current stack APIs. Canonical references:
- * - examples/starter-auth (authPlugin, access helpers, lib/auth wiring)
- * - examples/file-upload-demo (storage config, file/image fields)
- * - examples/rag-openai-chatbot and examples/rag-ollama-demo (ragPlugin, searchable)
+ * Generates code, config, and docs for features. Emitted code must match the
+ * current stack APIs — see examples/starter-auth, examples/file-upload-demo,
+ * and examples/rag-openai-chatbot / examples/rag-ollama-demo for references.
  */
 
 import type { Feature, FeatureImplementation, GeneratedFile } from '../types.js'
@@ -33,9 +30,6 @@ export class FeatureGenerator {
     private followUpAnswers: Record<string, string | boolean | string[]>,
   ) {}
 
-  /**
-   * Generate complete feature implementation
-   */
   generate(): FeatureImplementation {
     const featureType = this.feature.id
 
@@ -55,9 +49,6 @@ export class FeatureGenerator {
     }
   }
 
-  /**
-   * Generate authentication feature
-   */
   private generateAuthentication(): FeatureImplementation {
     const authMethods = this.answers['auth-methods'] as string[]
     const hasRoles = this.answers['user-roles'] as boolean
@@ -167,7 +158,6 @@ export default config({
 
     const files: GeneratedFile[] = []
 
-    // Better-auth server instance
     files.push({
       path: 'lib/auth.ts',
       language: 'typescript',
@@ -197,7 +187,6 @@ export const GET = auth.handler
 export const POST = auth.handler`,
     })
 
-    // Auth API route
     files.push({
       path: 'app/api/auth/[...all]/route.ts',
       language: 'typescript',
@@ -303,7 +292,6 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 `,
     })
 
-    // Sign-in page
     files.push({
       path: 'app/sign-in/page.tsx',
       language: 'tsx',
@@ -341,7 +329,6 @@ export default function SignInPage() {
 }`,
     })
 
-    // Sign-up page
     if (hasPassword) {
       files.push({
         path: 'app/sign-up/page.tsx',
@@ -366,7 +353,6 @@ export default function SignUpPage() {
 }`,
       })
 
-      // Forgot-password page
       files.push({
         path: 'app/forgot-password/page.tsx',
         language: 'tsx',
@@ -390,7 +376,7 @@ export default function ForgotPasswordPage() {
 }`,
       })
 
-      // Reset-password page (target of the reset email link)
+      // Target of the password-reset email link
       files.push({
         path: 'app/reset-password/page.tsx',
         language: 'tsx',
@@ -416,7 +402,6 @@ export default async function ResetPasswordPage({
       })
     }
 
-    // Access control helpers
     files.push({
       path: 'lib/access-control.ts',
       language: 'typescript',
@@ -444,7 +429,6 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
   session ? { userId: { equals: session.userId } } : false`,
     })
 
-    // Environment variables
     const envVars: Record<string, string> = {
       DATABASE_URL: 'file:./dev.db',
       BETTER_AUTH_SECRET: '<generate-with-openssl-rand-base64-32>',
@@ -462,7 +446,6 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
       envVars.GITHUB_CLIENT_SECRET = '<your-github-client-secret>'
     }
 
-    // Next steps
     const nextSteps = [
       'Install dependencies: `pnpm add @opensaas/stack-auth @prisma/adapter-better-sqlite3`',
       'Merge the config updates into your `opensaas.config.ts`',
@@ -475,7 +458,6 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
       `Visit http://localhost:3000/${hasPassword ? 'sign-up' : 'sign-in'} to test authentication`,
     ].filter(Boolean) as string[]
 
-    // Dev guide section
     const devGuideSection = `## Authentication Feature
 
 This project uses Better-auth (via \`@opensaas/stack-auth\`) with:
@@ -544,9 +526,6 @@ const currentUser = session
     }
   }
 
-  /**
-   * Generate blog feature
-   */
   private generateBlog(): FeatureImplementation {
     const contentEditor = this.answers['content-editor'] as string
     const hasStatus = this.answers['post-status'] as boolean
@@ -557,7 +536,6 @@ const currentUser = session
     const hasCategories = taxonomy.includes('Categories')
     const hasTags = taxonomy.includes('Tags')
 
-    // Build Post fields
     const fields = [
       'title: text({ validation: { isRequired: true } })',
       "slug: text({ validation: { isRequired: true }, isIndexed: 'unique' })",
@@ -701,7 +679,6 @@ ${useTiptap ? "import { richText } from '@opensaas/stack-tiptap/fields'" : ''}
 
     const files: GeneratedFile[] = []
 
-    // Blog list page
     files.push({
       path: 'app/blog/page.tsx',
       language: 'tsx',
@@ -739,7 +716,6 @@ export default async function BlogPage() {
 }`,
     })
 
-    // Blog post page
     files.push({
       path: 'app/blog/[slug]/page.tsx',
       language: 'tsx',
@@ -824,16 +800,12 @@ ${taxonomy.length > 0 ? `- ${taxonomy.join(' and ')} for organization` : ''}
     }
   }
 
-  /**
-   * Generate comments feature
-   */
   private generateComments(): FeatureImplementation {
     const targets = (this.answers['comment-targets'] as string[]) || ['Posts']
     const nestedReplies = this.answers['nested-replies'] as boolean
     const moderation = this.answers['moderation'] as string
     const requiresApproval = moderation === 'Require admin approval'
 
-    // Build one relationship per commentable list (Posts → Post, Products → Product)
     const targetLists = targets
       .filter((t) => t !== 'Other')
       .map((t) => (t.endsWith('s') ? t.slice(0, -1) : t))
@@ -952,9 +924,6 @@ Threaded comments on: ${targetLists.join(', ')}
     }
   }
 
-  /**
-   * Generate file upload feature
-   */
   private generateFileUpload(): FeatureImplementation {
     const provider = this.answers['storage-provider'] as string
     const associations = (this.answers['file-associations'] as string[]) || []
@@ -1084,9 +1053,6 @@ Storage provider: ${provider}
     }
   }
 
-  /**
-   * Generate semantic search feature
-   */
   private generateSemanticSearch(): FeatureImplementation {
     const searchableContent = (this.answers['searchable-content'] as string[]) || ['Posts']
     const embeddingProvider = this.answers['embedding-provider'] as string
