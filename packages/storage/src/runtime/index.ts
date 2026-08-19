@@ -181,8 +181,7 @@ export async function uploadImage(
   })
 
   let transformations:
-    | Record<string, { url: string; width: number; height: number; size: number }>
-    | undefined
+    Record<string, { url: string; width: number; height: number; size: number }> | undefined
   if (options?.transformations) {
     transformations = await processImageTransformations(
       buffer,
