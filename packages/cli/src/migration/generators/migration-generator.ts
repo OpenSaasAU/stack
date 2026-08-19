@@ -764,7 +764,6 @@ ${accessHelpers}${configBody}
       'prisma',
     ]
 
-    // Database adapter deps
     switch (dbProvider) {
       case 'postgresql':
         deps.push('@prisma/adapter-pg', 'pg', '@types/pg')
@@ -778,7 +777,6 @@ ${accessHelpers}${configBody}
         break
     }
 
-    // Auth deps
     if (useAuth) {
       deps.push('@opensaas/stack-auth', 'better-auth')
     }
@@ -786,9 +784,6 @@ ${accessHelpers}${configBody}
     return deps
   }
 
-  /**
-   * Generate additional files if needed
-   */
   private generateAdditionalFiles(
     answers: Record<string, unknown>,
     dbProvider: string,
@@ -805,10 +800,8 @@ ${accessHelpers}${configBody}
       description: string
     }> = []
 
-    // Generate .env.example
     const envVars: string[] = ['# Database']
 
-    // Database URL based on provider
     switch (dbProvider) {
       case 'postgresql':
         envVars.push('DATABASE_URL="postgresql://user:password@localhost:5432/mydb"')
@@ -855,9 +848,6 @@ ${accessHelpers}${configBody}
     return files
   }
 
-  /**
-   * Generate next steps
-   */
   private generateSteps(useAuth: boolean, dbProvider: string): string[] {
     const steps = [
       'Save the generated config to `opensaas.config.ts`',
