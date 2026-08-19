@@ -12,7 +12,7 @@ export interface SingletonViewProps {
   config: OpenSaasConfig
   listKey: string
   basePath?: string
-  // Server action can return any shape depending on the list item type
+  // See AdminUIProps.serverAction for why this is Promise<unknown>.
   serverAction: (input: ServerActionInput) => Promise<unknown>
 }
 
@@ -39,8 +39,6 @@ export interface SingletonViewProps {
  * An update-denied singleton still renders the edit form (the happy path), but
  * the save fails gracefully: the server action's `update` access check returns
  * a denied envelope, which `ItemFormClient` surfaces as an error.
- *
- * Server Component that fetches data and sets up actions.
  */
 export async function SingletonView({
   context,
@@ -63,10 +61,8 @@ export async function SingletonView({
     )
   }
 
-  // Resolve the singleton record. `get()` auto-creates with field defaults when
-  // absent (the default), so a record is the common case. It returns null when
-  // either `autoCreate: false` with no row yet, OR `query` access is denied —
-  // these are indistinguishable here, so we disambiguate via access below.
+  // Resolve the singleton record; see the docblock above for what a null
+  // `get()` means and how the branches below disambiguate it.
   let record: Record<string, unknown> | null = null
   try {
     const delegate = context.db[getDbKey(listKey)]
@@ -78,8 +74,7 @@ export async function SingletonView({
   }
 
   if (!record) {
-    // A null `get()` is ambiguous (autoCreate:false-empty vs query-denied).
-    // Evaluate operation access to choose the safe affordance.
+    // Disambiguate via operation-level access (see docblock).
     const accessArgs = { session: context.session, context }
     const canQuery = await isOperationPotentiallyAllowed(
       listConfig.access?.operation,
@@ -87,8 +82,6 @@ export async function SingletonView({
       accessArgs,
     )
 
-    // Query denied → the session cannot read this singleton at all. Show a
-    // friendly message; never an editable/create form.
     if (!canQuery) {
       return (
         <div className="p-8 max-w-4xl">
@@ -102,8 +95,6 @@ export async function SingletonView({
       )
     }
 
-    // Query allowed but no row → an `autoCreate: false` singleton. Offer a
-    // create-on-first-save form only when `create` is actually permitted.
     const canCreate = await isOperationPotentiallyAllowed(
       listConfig.access?.operation,
       'create',
@@ -123,10 +114,9 @@ export async function SingletonView({
       )
     }
 
-    // Create-on-first-save: render the form in create mode with an empty record.
-    // The save goes through the existing `serverAction` create path; core
-    // assigns the singleton `id` (always `1`) and enforces the single-record
-    // constraint, so the form sends only the user-entered field data.
+    // Core assigns the singleton `id` (always `1`) and enforces the
+    // single-record constraint on create, so the form sends only the
+    // user-entered field data.
     const {
       serializableFields: createFields,
       initialData: createInitialData,
@@ -142,7 +132,6 @@ export async function SingletonView({
           title={`Create ${formatListName(listKey)}`}
         />
 
-        {/* Create-on-first-save form */}
         <div className="bg-card border border-border rounded-lg p-6">
           <ItemFormClient
             listKey={listKey}
@@ -173,14 +162,12 @@ export async function SingletonView({
 
   return (
     <div className="p-8 max-w-4xl">
-      {/* A singleton has no list view, so link back to the dashboard. */}
       <PageHeader
         backHref={basePath}
         backLabel="Back to dashboard"
         title={`Edit ${formatListName(listKey)}`}
       />
 
-      {/* Form */}
       <div className="bg-card border border-border rounded-lg p-6">
         <ItemFormClient
           listKey={listKey}

@@ -112,7 +112,6 @@ export function RelationshipManager({
   }))
   const availableItems = searchResults.filter((item) => !selectedIds.includes(item.id))
 
-  // Read mode
   if (mode === 'read') {
     return (
       <FieldRoot mode="read" data-slot="relationship-manager" className={classNames?.root}>
@@ -142,7 +141,6 @@ export function RelationshipManager({
         {label}
       </FieldLabel>
 
-      {/* Selected Items Table */}
       {selectedItems.length > 0 ? (
         <div
           data-slot="relationship-manager-frame"
@@ -200,7 +198,6 @@ export function RelationshipManager({
         </div>
       )}
 
-      {/* Action Buttons */}
       <div
         data-slot="relationship-manager-actions"
         className={cn('flex gap-2', classNames?.actions)}
@@ -238,9 +235,6 @@ export function RelationshipManager({
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
-
-        {/* Note: "Create New" functionality would require additional props for the related list's fields
-            and form rendering logic. For now, we'll leave it as a placeholder or implement in a future iteration */}
       </div>
 
       {error && <FieldError className={cn('mt-2', classNames?.error)}>{error}</FieldError>}

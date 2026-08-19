@@ -34,10 +34,6 @@ export interface PreparedItemForm {
   relationshipData: Record<string, Array<{ id: string; label: string }>>
 }
 
-/**
- * Build the `include` object needed to hydrate relationship fields when
- * fetching an item for editing.
- */
 export function buildRelationshipInclude(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
@@ -66,11 +62,7 @@ export async function prepareItemForm(
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
 ): Promise<PreparedItemForm> {
-  // Fetch a bounded window of relationship options for all relationship
-  // fields via the relationship-options read primitive — this replaces an
-  // unbounded `findMany({})` per field with a scalar-only, take-limited
-  // fetch that always unions the item's currently-selected id(s) so their
-  // label renders even outside the window.
+  // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   const relationshipFields = Object.entries(listConfig.fields).filter(
     ([, fieldConfig]) => (fieldConfig as { type: string }).type === 'relationship',
@@ -100,11 +92,8 @@ export async function prepareItemForm(
     if (result) relationshipData[result[0]] = [...result[1]]
   }
 
-  // Serialize field configs to remove non-serializable properties
   const serializableFields = serializeFieldConfigs(listConfig.fields)
 
-  // Transform relationship data in itemData from objects to IDs for form
-  // Also apply valueForClientSerialization transformation
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     const fieldConfigAny = fieldConfig as {
@@ -115,15 +104,12 @@ export async function prepareItemForm(
     if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
       const value = formData[fieldName]
       if (fieldConfigAny.many && Array.isArray(value)) {
-        // Many relationship: extract IDs from array of objects
         formData[fieldName] = value.map((item: Record<string, unknown>) => item.id as string)
       } else if (value && typeof value === 'object' && 'id' in value) {
-        // Single relationship: extract ID from object
         formData[fieldName] = (value as Record<string, unknown>).id as string
       }
     }
 
-    // Apply valueForClientSerialization if defined
     if (
       fieldConfigAny.ui?.valueForClientSerialization &&
       typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
@@ -135,7 +121,6 @@ export async function prepareItemForm(
     }
   }
 
-  // JSON round-trip ensures only serializable data crosses the client boundary
   const initialData = jsonSafeClone(formData)
 
   return { serializableFields, initialData, relationshipData }

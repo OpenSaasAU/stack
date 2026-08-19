@@ -3,10 +3,7 @@ import type { SelectOption } from '@opensaas/stack-core/fields'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 
-/**
- * Serializable field config for client components
- * Strips out functions and non-serializable properties
- */
+/** The client-safe projection of a `FieldConfig` — see {@link serializeFieldConfig}. */
 export type SerializableFieldConfig = {
   type: string
   label?: string
@@ -45,49 +42,40 @@ export type SerializableFieldConfig = {
 }
 
 /**
- * Extract only serializable properties from a single field config
- * Removes functions (getZodSchema, getPrismaType, getTypeScriptType)
- * and non-serializable properties (access, hooks, typePatch, valueForClientSerialization)
+ * Omits functions (getZodSchema, getPrismaType, getTypeScriptType) and
+ * non-serializable properties (access, hooks, typePatch, valueForClientSerialization).
  */
 export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {
   const config: SerializableFieldConfig = {
     type: fieldConfig.type,
   }
 
-  // Process ui options, excluding the valueForClientSerialization function
   if (fieldConfig.ui) {
     const { valueForClientSerialization: _valueForClientSerialization, ...serializableUi } =
       fieldConfig.ui
     config.ui = serializableUi
   }
 
-  // Extract label if present
   if ('label' in fieldConfig && fieldConfig.label !== undefined) {
     config.label = fieldConfig.label as string
   }
 
-  // Extract validation if present
   if ('validation' in fieldConfig && fieldConfig.validation !== undefined) {
     config.validation = fieldConfig.validation as SerializableFieldConfig['validation']
   }
 
-  // Extract options for select fields (including additive per-option ui.variant)
   if ('options' in fieldConfig && fieldConfig.options !== undefined) {
     config.options = fieldConfig.options as Array<SelectOption>
   }
 
-  // Extract many for relationship fields
   if ('many' in fieldConfig && fieldConfig.many !== undefined) {
     config.many = fieldConfig.many as boolean
   }
 
-  // Extract ref for relationship fields
   if ('ref' in fieldConfig && fieldConfig.ref !== undefined) {
     config.ref = fieldConfig.ref as string
   }
 
-  // Extract the virtual flag so the client can suppress sort affordances for
-  // computed fields (issue #732).
   if ('virtual' in fieldConfig && fieldConfig.virtual === true) {
     config.virtual = true
   }
@@ -95,11 +83,7 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   return config
 }
 
-/**
- * Extract only serializable properties from field configs
- * Removes functions (getZodSchema, getPrismaType, getTypeScriptType)
- * and non-serializable properties (access, hooks, typePatch)
- */
+/** Same as {@link serializeFieldConfig}, applied to every field in a list's fields map. */
 export function serializeFieldConfigs(
   fields: Record<string, FieldConfig>,
 ): Record<string, SerializableFieldConfig> {

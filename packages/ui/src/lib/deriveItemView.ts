@@ -86,30 +86,20 @@ export interface ItemViewLayout {
  */
 const DEFAULT_EXCLUDED_COLUMNS = new Set(['password', 'createdAt', 'updatedAt'])
 
-/** Read an array of strings from an unknown config value, else `undefined`. */
 function readStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
     ? (value as string[])
     : undefined
 }
 
-/**
- * Read a positive-integer row bound (`ui.itemView.take`) from an unknown config
- * value, falling back to {@link DEFAULT_ITEM_VIEW_TAKE} for anything that is not
- * a positive integer (missing, zero, negative, fractional, or non-numeric) so a
- * malformed override can never disable the bound.
- */
+/** Falls back to {@link DEFAULT_ITEM_VIEW_TAKE} for anything not a positive integer, so a malformed override can't disable the bound. */
 function readPositiveInteger(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0
     ? value
     : DEFAULT_ITEM_VIEW_TAKE
 }
 
-/**
- * Read a to-many relationship's item-view overrides off its serialisable `ui`
- * config without casting: `ui.itemView` is `unknown` (index-signature) so each
- * property is narrowed at runtime.
- */
+/** `ui.itemView` is `unknown` (index-signature), so each property is narrowed at runtime instead of cast. */
 function readRelationshipItemView(field: FieldConfig): {
   displayMode: 'table' | 'picker'
   columns?: string[]
@@ -151,16 +141,11 @@ function isDisconnectable(
   return backRefField.db?.isNullable !== false
 }
 
-/** Whether a field config is a to-many relationship. */
 function isToManyRelationship(field: FieldConfig): boolean {
   return field.type === 'relationship' && 'many' in field && field.many === true
 }
 
-/**
- * The default columns for a related list's Relationship table: the list's own
- * column curation (`ui.listView.initialColumns`, else all non-system fields),
- * with the back-reference to the parent removed.
- */
+/** The related list's own column curation (`ui.listView.initialColumns`, else all non-system fields), minus the back-reference to the parent. */
 function defaultColumnsFor(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   relatedListConfig: ListConfig<any> | undefined,
@@ -173,11 +158,7 @@ function defaultColumnsFor(
   return curated.filter((column) => column !== backReferenceField)
 }
 
-/**
- * Reorder sections by the list's `ui.itemView.order` (by relationship field
- * name). Listed fields come first in that order; unlisted sections keep their
- * relative (declaration) order after them.
- */
+/** Reorder sections by `ui.itemView.order`; unlisted sections keep their declaration order after the listed ones. */
 function applyOrder(
   sections: RelationshipTableSection[],
   order: string[] | undefined,

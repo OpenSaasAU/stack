@@ -24,9 +24,6 @@ export interface FieldRendererProps {
   serverAction?: (input: ServerActionInput) => Promise<unknown>
 }
 
-/**
- * Internal component that receives the resolved Component
- */
 function FieldRendererInner({
   Component,
   fieldName,
@@ -52,7 +49,6 @@ function FieldRendererInner({
       ? ((fieldConfig as Record<string, unknown>).validation as Record<string, unknown>).isRequired
       : false
 
-  // Build props based on field type
   const baseProps = {
     name: fieldName,
     value,
@@ -64,7 +60,6 @@ function FieldRendererInner({
     mode,
   }
 
-  // Derive field-type-specific props from data-presence checks — no branching on fieldConfig.type.
   const specificProps: Record<string, unknown> = buildFallbackUIProps(
     fieldConfig,
     relationshipItems,
@@ -74,7 +69,6 @@ function FieldRendererInner({
     serverAction,
   )
 
-  // Pass through any UI options from fieldConfig.ui (excluding component and fieldType)
   if (fieldConfig.ui) {
     const {
       component: _component,
@@ -83,9 +77,8 @@ function FieldRendererInner({
       ...uiOptions
     } = fieldConfig.ui
     Object.assign(specificProps, uiOptions)
-    // Surface the field's help/description text to the component as `helpText`
-    // (rendered through the shared field-shell `FieldHelp`). Config exposes this
-    // as `ui.description` (Keystone-aligned); the component prop is `helpText`.
+    // Config exposes help/description text as `ui.description` (Keystone-aligned);
+    // the component prop is `helpText`.
     if (description !== undefined && specificProps.helpText === undefined) {
       specificProps.helpText = description
     }
@@ -109,12 +102,10 @@ function buildFallbackUIProps(
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {}
 
-  // Select options — only present on select fields
   if (fieldConfig.options) {
     props.options = fieldConfig.options
   }
 
-  // Relationship props — only present on relationship fields
   if (fieldConfig.ref) {
     const [relatedListName] = fieldConfig.ref.split('.')
     props.relatedListKey = getUrlKey(relatedListName ?? '')
@@ -132,24 +123,15 @@ function buildFallbackUIProps(
   return props
 }
 
-/**
- * Factory component that renders the appropriate field type
- * based on the field configuration and component registry
- */
 export function FieldRenderer(props: FieldRendererProps) {
   const { fieldName, fieldConfig, mode = 'edit' } = props
 
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
 
-  // Skip rendering ID and timestamp fields in forms
   if (mode === 'edit' && ['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
     return null
   }
 
-  // Get component from:
-  // 1. Per-field component override (ui.component)
-  // 2. Custom field type override (ui.fieldType) - uses global registry
-  // 3. Default field type (fieldConfig.type) - uses global registry
   const Component =
     fieldConfig.ui?.component ||
     (fieldConfig.ui?.fieldType
@@ -166,10 +148,8 @@ export function FieldRenderer(props: FieldRendererProps) {
     )
   }
 
-  // A virtual field is computed and never writable — force read-only
-  // presentation regardless of the requested mode (issue #821). This is a
-  // display-only guard: it never skips rendering (unlike id/createdAt/
-  // updatedAt above), it just never offers an editable input.
+  // Virtual fields are computed and unwritable — force read-only regardless of
+  // requested mode (issue #821; see `VirtualField`'s defence-in-depth doc).
   const effectiveMode = fieldConfig.virtual ? 'read' : mode
 
   return <FieldRendererInner {...props} mode={effectiveMode} Component={Component} />

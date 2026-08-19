@@ -24,10 +24,8 @@ export interface ImageFieldProps {
 }
 
 /**
- * Image upload field with preview, drag-and-drop, and transformation support
- *
- * Stores File objects in form state with client-side preview. The actual upload
- * happens server-side during form submission via field hooks.
+ * Stores File objects in form state with a client-side preview — the actual
+ * upload happens server-side during form submission via field hooks.
  */
 export function ImageField({
   name,
@@ -48,12 +46,10 @@ export function ImageField({
 
   const handleFileSelect = useCallback(
     (file: File) => {
-      // Validate file is an image
       if (!file.type.startsWith('image/')) {
         return
       }
 
-      // Generate client-side preview
       if (showPreview) {
         const reader = new FileReader()
         reader.onload = (e) => {
@@ -62,8 +58,6 @@ export function ImageField({
         reader.readAsDataURL(file)
       }
 
-      // Store File object in form state
-      // Upload will happen server-side during form submission
       onChange(file)
     },
     [onChange, showPreview],
@@ -109,7 +103,6 @@ export function ImageField({
     setPreviewUrl(null)
   }, [onChange])
 
-  // Determine if value is File or ImageMetadata
   // Use duck typing instead of instanceof to support SSR
   const isFile =
     value &&

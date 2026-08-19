@@ -1,9 +1,6 @@
 import type { AccessContext, FieldAccess, OperationAccess, Session } from '@opensaas/stack-core'
 import { checkFieldAccess } from '@opensaas/stack-core/internal'
 
-/**
- * The names of the operation-level access checks we evaluate in the UI.
- */
 export type OperationAccessName = 'query' | 'create' | 'update' | 'delete'
 
 /**
@@ -21,14 +18,9 @@ export type OperationAccessName = 'query' | 'create' | 'update' | 'delete'
  * permitted" — the actual operation still runs through the access engine, which
  * re-applies the filter. This helper only decides which affordance to render.
  *
- * Access functions are user-defined and may throw (e.g. they assume a session
- * shape that anonymous requests don't have). A throw is treated as **denied** —
- * the safest outcome, so a misbehaving access function never exposes an
- * editable/create form to a session that might not be allowed.
- *
- * No access function configured for the operation is also treated as denied,
- * matching the core engine's deny-by-default (`checkAccess` returns `false`
- * when `accessControl` is undefined).
+ * Access functions are user-defined and may throw. A throw is treated as
+ * **denied** — the safest outcome, so a misbehaving access function never
+ * exposes an editable/create form to a session that might not be allowed.
  */
 export async function isOperationPotentiallyAllowed(
   access: OperationAccess | undefined,
@@ -42,7 +34,6 @@ export async function isOperationPotentiallyAllowed(
   try {
     const result = await accessControl({
       session: args.session,
-      // The access engine passes the same context through to the function.
       context: args.context,
     })
     // `false` denies; `true` or a filter object both mean "potentially allowed".

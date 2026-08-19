@@ -45,10 +45,7 @@ export interface AdminUIProps {
 }
 
 /**
- * Main AdminUI component - complete admin interface with routing
- * Server Component
- *
- * Handles routing based on params array:
+ * Routes based on `params`:
  * - [] → Dashboard
  * - [list] → ListView (or SingletonView when the list is `isSingleton`)
  * - [list, 'create'] → ItemForm (create)
@@ -71,30 +68,20 @@ export async function AdminUI({
     )
   }
 
-  // Parse route from params
   const [urlSegment, action] = params
-
-  // Convert URL segment (kebab-case) to PascalCase listKey
   const listKey = urlSegment ? getListKeyFromUrl(urlSegment) : undefined
-
-  // Determine current path for navigation highlighting
   const currentPath = deriveCurrentPath(params)
 
-  // Route to appropriate component
   let content: React.ReactNode
 
   if (!listKey) {
-    // Dashboard
     content = <Dashboard context={context} config={config} basePath={basePath} />
   } else if (config.lists[listKey]?.isSingleton && action) {
     // A singleton has a single record edited at its bare [list] route, so the
     // create/id sub-routes (`[list, 'create']` / `[list, id]`) don't apply.
-    // Redirect them to the bare editor so old links keep working. This runs
-    // before the create/edit ItemForm branches; non-singleton routing below is
-    // unchanged.
+    // Redirect them to the bare editor so old links keep working.
     redirect(`${basePath}/${getUrlKey(listKey)}`)
   } else if (action === 'create') {
-    // Create form
     content = (
       <ItemForm
         context={context}
@@ -106,7 +93,7 @@ export async function AdminUI({
       />
     )
   } else if (action && action !== 'create') {
-    // Edit form (action is the item ID)
+    // `action` is the item ID here.
     content = (
       <ItemForm
         context={context}
@@ -119,8 +106,6 @@ export async function AdminUI({
       />
     )
   } else if (config.lists[listKey]?.isSingleton) {
-    // Singleton editor: a singleton has a single record, so its bare [list]
-    // route renders a single-record editor instead of a list table.
     content = (
       <SingletonView
         context={context}
@@ -131,7 +116,6 @@ export async function AdminUI({
       />
     )
   } else {
-    // List view
     const search = typeof searchParams.search === 'string' ? searchParams.search : undefined
     const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1
     // Optional `?pageSize=` override (Keystone-style). When absent, ListView's
@@ -191,14 +175,12 @@ export async function AdminUI({
     fallback = <ListViewSkeleton />
   }
 
-  // Generate theme styles if custom theme is configured
   const themeStyles = config.ui?.theme ? compileTheme(config.ui.theme) : null
 
-  // Access-scoped nav counts for opted-in lists (issue #735). Runs zero queries
-  // when no list sets `ui.navCount`, so existing apps pay nothing; each count is
-  // fetched through the secured `context.db`, reflecting only what this session
-  // may see. Skipped entirely when the chrome slot is supplied (ADR-0021) —
-  // host-owned chrome resolves its own counts, so this avoids paying twice.
+  // Access-scoped nav counts for opted-in lists (issue #735). Zero queries when
+  // no list sets `ui.navCount`; each count goes through the secured
+  // `context.db`. Skipped when `navigation` is supplied — see that prop's doc
+  // (ADR-0021).
   const navCounts = navigation ? undefined : await resolveNavCounts(context, config)
 
   const sidebar = navigation ?? (

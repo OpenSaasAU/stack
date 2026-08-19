@@ -4,12 +4,6 @@ import * as React from 'react'
 import { Check, Minus } from 'lucide-react'
 import type { CellComponentProps } from './registry.js'
 
-/**
- * Checkbox Cell — renders a mark rather than raw text: a check for `true`, a
- * muted dash for `false`. The boolean is preserved as an accessible name
- * (`Yes`/`No`) so screen readers and tests can read the state. Slot:
- * `cell-checkbox`.
- */
 export function CheckboxCell({ value }: CellComponentProps) {
   if (value) {
     return (

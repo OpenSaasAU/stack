@@ -41,7 +41,6 @@ export function RelationshipField({
   listKey,
   serverAction,
 }: RelationshipFieldProps) {
-  // Delegate to specialized components based on cardinality
   if (many) {
     return (
       <RelationshipManager

@@ -11,8 +11,6 @@ export interface VirtualFieldProps {
 }
 
 /**
- * Format a resolved virtual value for read-only display.
- *
  * A virtual field may declare any `outputType` (e.g. `Decimal`, a plain
  * object) and crosses the server/client boundary through a JSON round-trip,
  * so a non-primitive value must be stringified rather than rendered via
