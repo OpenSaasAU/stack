@@ -554,6 +554,26 @@ describe('ListViewClient', () => {
       expect(screen.getByText('Username')).toBeInTheDocument()
       expect(screen.getByText('Secret')).toBeInTheDocument()
     })
+
+    it('shows a fieldTypes column with no entry in a partial fields map (does not drop it)', () => {
+      const items = [{ id: '1', username: 'john', views: 100, secret: 'hash...' }]
+
+      render(
+        <ListViewClient
+          {...defaultProps}
+          items={items}
+          fieldTypes={{ username: 'text', views: 'integer', secret: 'password' }}
+          // `fields` covers only `secret` — `username`/`views` have no entry
+          // at all, not even an implicit `undefined`, matching a caller that
+          // only supplies richer metadata for the columns that need it.
+          fields={{ secret: { type: 'password', ui: { listView: { defaultColumn: false } } } }}
+        />,
+      )
+
+      expect(screen.getByText('Username')).toBeInTheDocument()
+      expect(screen.getByText('Views')).toBeInTheDocument()
+      expect(screen.queryByText('Secret')).not.toBeInTheDocument()
+    })
   })
 
   describe('edit links', () => {

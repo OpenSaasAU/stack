@@ -15,7 +15,7 @@ import {
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
-import { computeDefaultColumns } from '../../lib/defaultColumns.js'
+import { isDefaultColumnField } from '../../lib/defaultColumns.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -61,11 +61,14 @@ export interface ListTableProps {
    */
   fieldOptions?: Record<string, Array<SelectOption>>
   /**
-   * Serialised per-field config, keyed by field name (issue #1018). When
-   * supplied, an explicit `columns` list absent, the default columns are
-   * curated off each field's own `ui.listView.defaultColumn` declaration
-   * (see `computeDefaultColumns`) instead of showing every `fieldTypes` key.
-   * Omit when you have no field config to hand — every column shows.
+   * Serialised per-field config, keyed by field name (issue #1018), used only
+   * for default-column curation — not for cell rendering, which always
+   * synthesises from `fieldTypes`/`relationshipRefs`/`fieldOptions` (see
+   * `getFieldConfig`). When supplied, an explicit `columns` list absent, a
+   * column is excluded only if its entry here declares
+   * `ui.listView.defaultColumn: false` (see `isDefaultColumnField`); a column
+   * missing an entry — including every column when `fields` is omitted
+   * entirely — has nothing to curate by, so it defaults to shown.
    */
   fields?: Record<string, SerializableFieldConfig>
   basePath?: string
@@ -128,11 +131,12 @@ export function ListTable({
   })
 
   // Absent an explicit `columns` list, curate off each field's own declared
-  // `ui.listView.defaultColumn` (issue #1018) when `fields` metadata was
-  // supplied; with no `fields` at all there's nothing to curate by, so every
-  // column shows.
+  // `ui.listView.defaultColumn` (issue #1018). The column set comes from
+  // `fieldTypes` (not `Object.keys(fields)`), since `fields` may cover only
+  // a subset of columns — one missing from it has no declaration to curate
+  // by, so it defaults to shown, same as when `fields` is omitted entirely.
   const displayColumns =
-    columns || (fields ? computeDefaultColumns(fields) : Object.keys(fieldTypes))
+    columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
 
   const sortedItems = [...items]
   if (sortBy && sortable) {

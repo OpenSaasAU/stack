@@ -24,7 +24,7 @@ import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
-import { computeDefaultColumns } from '../lib/defaultColumns.js'
+import { isDefaultColumnField } from '../lib/defaultColumns.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 
@@ -70,9 +70,13 @@ export interface ListViewClientProps {
   fieldTypes: Record<string, string>
   /**
    * Serialised per-field config, keyed by field name. Drives Cell resolution
-   * (per-field override, select option variants, relationship ref). Optional so
-   * callers that only have `fieldTypes` still render via the field-type
-   * registry; a minimal config is synthesised from `fieldTypes` when absent.
+   * (per-field override, select option variants, relationship ref) and, absent
+   * an explicit `columns` list, default-column curation (issue #1018, see
+   * `isDefaultColumnField`). Optional, and may cover only a subset of
+   * `fieldTypes`' keys — `columnField` below synthesises a fallback per-column
+   * for cell rendering, and a column missing an entry here has no
+   * `ui.listView.defaultColumn` declaration to curate by, so it defaults to
+   * shown, the same as when `fields` is omitted entirely.
    */
   fields?: Record<string, SerializableFieldConfig>
   relationshipRefs: Record<string, string>
@@ -185,13 +189,16 @@ export function ListViewClient({
   }
 
   // Absent an explicit `columns` list, curate off each field's own declared
-  // `ui.listView.defaultColumn` (issue #1018) via the same shared function
-  // `deriveItemView.ts`'s server-side layout helper uses — no field name/type
-  // matching here. When `fields` metadata isn't supplied at all (a caller
-  // with only `fieldTypes`), there is nothing to curate by, so every column
-  // shows.
+  // `ui.listView.defaultColumn` (issue #1018) — the same declaration
+  // `deriveItemView.ts`'s server-side layout helper reads, no field
+  // name/type matching here. The column set itself still comes from
+  // `fieldTypes` (not `Object.keys(fields)`): `fields` may cover only a
+  // subset of columns (`columnField` above synthesises a fallback for any
+  // column missing from it), and a column absent from `fields` has no
+  // declaration to curate by, so it defaults to shown — same as when
+  // `fields` is omitted entirely.
   const displayColumns =
-    columns || (fields ? computeDefaultColumns(fields) : Object.keys(fieldTypes))
+    columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
 
   // Items are already sorted by the server via orderBy; no in-memory sort needed.
 
