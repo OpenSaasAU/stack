@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { deriveItemViewLayout, DEFAULT_ITEM_VIEW_TAKE } from '../../src/lib/deriveItemView.js'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { password } from '@opensaas/stack-core/fields'
 
 /**
  * Build a minimal config whose lists/fields carry just enough shape for the
@@ -356,13 +357,14 @@ describe('deriveItemViewLayout', () => {
     expect(section.columns).toEqual(['name'])
   })
 
-  it('excludes a password-typed related-list column by type, regardless of its name', () => {
+  it('excludes a real password() field from related-list default columns via its declared flag (#1018)', () => {
     const config = makeConfig({
       Team: {
         fields: { members: { type: 'relationship', ref: 'Member', many: true } },
       },
       Member: {
-        fields: { name: { type: 'text' }, secret: { type: 'password' } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test fixture, not typed against Member's TypeInfo
+        fields: { name: { type: 'text' }, secret: password() as any },
       },
     })
 
@@ -370,17 +372,75 @@ describe('deriveItemViewLayout', () => {
     expect(section.columns).toEqual(['name'])
   })
 
-  it('does not exclude a related-list column merely named password if it is not password-typed', () => {
+  it('does not exclude a related-list column merely named or typed password with no declared flag', () => {
     const config = makeConfig({
       Team: {
         fields: { members: { type: 'relationship', ref: 'Member', many: true } },
       },
       Member: {
-        fields: { name: { type: 'text' }, password: { type: 'text' } },
+        // A hand-rolled 'password'-typed field with no ui.listView declaration
+        // is no longer excluded by type alone — curation is flag-based only.
+        fields: {
+          name: { type: 'text' },
+          password: { type: 'text' },
+          secret: { type: 'password' },
+        },
       },
     })
 
     const [section] = deriveItemViewLayout(config, 'Team').sections
-    expect(section.columns).toEqual(['name', 'password'])
+    expect(section.columns).toEqual(['name', 'password', 'secret'])
+  })
+
+  it('excludes a related-list field declaring ui.listView.defaultColumn: false, whatever its name', () => {
+    const config = makeConfig({
+      Team: {
+        fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+      },
+      Member: {
+        fields: {
+          name: { type: 'text' },
+          internalScore: { type: 'integer', ui: { listView: { defaultColumn: false } } },
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.columns).toEqual(['name'])
+  })
+
+  it("excludes the related list's structural createdAt/updatedAt columns, identified by its own timestamp config", () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db', timestamps: true },
+      lists: {
+        Team: {
+          fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+        },
+        Member: {
+          fields: {
+            name: { type: 'text' },
+            createdAt: { type: 'timestamp' },
+            updatedAt: { type: 'timestamp' },
+          },
+        },
+      },
+    }
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.columns).toEqual(['name'])
+  })
+
+  it("does not exclude a related-list field literally named createdAt when the list's timestamps are off", () => {
+    const config = makeConfig({
+      Team: {
+        fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+      },
+      Member: {
+        fields: { name: { type: 'text' }, createdAt: { type: 'text' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.columns).toEqual(['name', 'createdAt'])
   })
 })

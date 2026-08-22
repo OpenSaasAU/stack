@@ -37,6 +37,10 @@ export type SerializableFieldConfig = {
     fieldType?: string
     /** Help / description text surfaced to the field component as `helpText`. */
     description?: string
+    /** Whether this field belongs in a list's DEFAULT column set (issue #1018) — see `BaseFieldConfig.ui.listView`. */
+    listView?: {
+      defaultColumn?: boolean
+    }
     [key: string]: unknown
   }
 }

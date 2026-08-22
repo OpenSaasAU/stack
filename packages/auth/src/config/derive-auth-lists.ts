@@ -195,7 +195,17 @@ function withCredentialAccess(
   field: FieldConfig,
 ): FieldConfig {
   if (!registry[modelKey]?.has(fieldKey)) return field
-  return { ...field, access: DENY_READ }
+  return {
+    ...field,
+    access: DENY_READ,
+    // Curated out of the admin's default table columns too (issue #1018),
+    // via the same declared flag as everything else — a read-denied column
+    // would otherwise render permanently empty rather than simply absent.
+    ui: {
+      ...field.ui,
+      listView: { ...field.ui?.listView, defaultColumn: false },
+    },
+  }
 }
 
 /**

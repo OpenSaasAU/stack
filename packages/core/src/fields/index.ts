@@ -972,6 +972,13 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
     },
     ui: {
       ...options?.ui,
+      // Excluded from default admin table columns (issue #1018) — declared
+      // via the flag rather than matched by field type/name, so an app can
+      // still opt a real password field back in with `ui.listView.defaultColumn: true`.
+      listView: {
+        defaultColumn: false,
+        ...options?.ui?.listView,
+      },
       valueForClientSerialization: ({ value }) => ({ isSet: !!value }),
     },
     hooks: {

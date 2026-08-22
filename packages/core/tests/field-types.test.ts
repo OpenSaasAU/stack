@@ -856,6 +856,27 @@ describe('Field Types', () => {
         )
       })
     })
+
+    describe('ui.listView.defaultColumn (issue #1018)', () => {
+      test('is excluded from default admin table columns by default', () => {
+        const field = password()
+
+        expect(field.ui?.listView?.defaultColumn).toBe(false)
+      })
+
+      test('can be opted back into default columns explicitly', () => {
+        const field = password({ ui: { listView: { defaultColumn: true } } })
+
+        expect(field.ui?.listView?.defaultColumn).toBe(true)
+      })
+
+      test('preserves other caller-supplied ui options', () => {
+        const field = password({ ui: { description: 'Account password' } })
+
+        expect(field.ui?.description).toBe('Account password')
+        expect(field.ui?.listView?.defaultColumn).toBe(false)
+      })
+    })
   })
 
   describe('select field', () => {

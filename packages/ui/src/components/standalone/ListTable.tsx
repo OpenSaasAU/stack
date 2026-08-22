@@ -15,6 +15,7 @@ import {
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
+import { isDefaultColumnField } from '../../lib/defaultColumns.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -59,6 +60,17 @@ export interface ListTableProps {
    * neutral badge, same as before this option existed.
    */
   fieldOptions?: Record<string, Array<SelectOption>>
+  /**
+   * Serialised per-field config, keyed by field name (issue #1018), used only
+   * for default-column curation — not for cell rendering, which always
+   * synthesises from `fieldTypes`/`relationshipRefs`/`fieldOptions` (see
+   * `getFieldConfig`). When supplied, an explicit `columns` list absent, a
+   * column is excluded only if its entry here declares
+   * `ui.listView.defaultColumn: false` (see `isDefaultColumnField`); a column
+   * missing an entry — including every column when `fields` is omitted
+   * entirely — has nothing to curate by, so it defaults to shown.
+   */
+  fields?: Record<string, SerializableFieldConfig>
   basePath?: string
   columns?: string[]
   onRowClick?: (item: Record<string, unknown>) => void
@@ -90,6 +102,7 @@ export function ListTable({
   fieldTypes,
   relationshipRefs,
   fieldOptions,
+  fields,
   basePath = '/admin',
   columns,
   onRowClick,
@@ -117,11 +130,13 @@ export function ListTable({
     options: fieldOptions?.[fieldName],
   })
 
+  // Absent an explicit `columns` list, curate off each field's own declared
+  // `ui.listView.defaultColumn` (issue #1018). The column set comes from
+  // `fieldTypes` (not `Object.keys(fields)`), since `fields` may cover only
+  // a subset of columns — one missing from it has no declaration to curate
+  // by, so it defaults to shown, same as when `fields` is omitted entirely.
   const displayColumns =
-    columns ||
-    Object.keys(fieldTypes).filter(
-      (key) => fieldTypes[key] !== 'password' && !['createdAt', 'updatedAt'].includes(key),
-    )
+    columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
 
   const sortedItems = [...items]
   if (sortBy && sortable) {
