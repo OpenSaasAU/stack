@@ -1218,7 +1218,15 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('requests a to-many count in place of its rows', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', _count: { comments: 7 } }])
+      // The relation is still named in the include, fetched with the SAME
+      // real rows a `fields`-and-`count` request would get (never a
+      // synthetic `take: 0`, which would make field-visibility's read-access
+      // check see a permanently-empty relation) — see projectMcpResult's doc
+      // comment. The rows themselves are simply never added to
+      // `fieldSelection`, so they never reach the projected output.
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', comments: [{ text: 'hi' }], _count: { comments: 7 } },
+      ])
 
       const data = await callQuery('list_post_query', {
         fields: { comments: { count: true } },
@@ -1226,7 +1234,7 @@ describe('MCP Handler — fields projection (#851)', () => {
 
       expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          include: { _count: { select: { comments: true } } },
+          include: { comments: { take: 5 }, _count: { select: { comments: true } } },
         }),
       )
       const result = JSON.parse(data.result.content[0].text)
@@ -1367,9 +1375,29 @@ describe('MCP Handler — fields projection (#851)', () => {
       expect(data.result.content[0].text).toContain('bogusField')
     })
 
-    it('does not expose a relation count when the relationship field itself denies read access', async () => {
+    it('names a count-only relation in the include with real rows (never a synthetic take: 0) so field-visibility can evaluate its own read access against the true value', async () => {
       mockPrisma.post.findMany.mockResolvedValue([
         { id: '1', restrictedComments: [{ text: 'hi' }], _count: { restrictedComments: 3 } },
+      ])
+
+      await callQuery('list_post_query', { fields: { restrictedComments: { count: true } } })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({ restrictedComments: { take: 5 } }),
+        }),
+      )
+    })
+
+    // This mocked harness bypasses the real `filterReadableFields`, so it
+    // can only simulate the outcome (a denied relation key absent from the
+    // row `context.db` returns) rather than exercise the real per-row
+    // access check — see `mcp-fields-projection-access.test.ts`'s
+    // "suppresses a relation count denied by the relationship field's own
+    // access" for the end-to-end version through the real pipeline.
+    it('suppresses a count whose relation key is absent from the row (what a field-visibility denial produces)', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', _count: { restrictedComments: 3 } }, // no `restrictedComments` key
       ])
 
       const data = await callQuery('list_post_query', {

@@ -415,7 +415,6 @@ async function handleCrudTool(
     switch (operation) {
       case 'query': {
         let projection: Awaited<ReturnType<typeof resolveFieldsProjection>> | undefined
-        let listConfig: OpenSaasConfig['lists'][string] | undefined
         if (args.fields !== undefined) {
           const listEntry = Object.entries(config.lists).find(
             ([listKey]) => getDbKey(listKey) === dbKey,
@@ -423,8 +422,7 @@ async function handleCrudTool(
           if (!listEntry) {
             return createErrorResponse(`Unknown list for tool: ${dbKey}`, id)
           }
-          const [listKey, resolvedListConfig] = listEntry
-          listConfig = resolvedListConfig
+          const [listKey, listConfig] = listEntry
           try {
             projection = await resolveFieldsProjection(
               args.fields,
@@ -450,18 +448,9 @@ async function handleCrudTool(
           ...(projection?.include ? { include: projection.include } : {}),
         })
 
-        let items
-        if (projection && listConfig) {
-          const resolvedProjection = projection
-          const resolvedFields = listConfig.fields
-          items = await Promise.all(
-            result.map((item: Record<string, unknown>) =>
-              projectMcpResult(item, resolvedProjection, resolvedFields, context.session, context),
-            ),
-          )
-        } else {
-          items = result
-        }
+        const items = projection
+          ? result.map((item: Record<string, unknown>) => projectMcpResult(item, projection))
+          : result
 
         return createSuccessResponse(
           {
