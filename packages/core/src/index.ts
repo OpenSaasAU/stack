@@ -50,7 +50,7 @@ export type {
 } from './context/index.js'
 
 // Naming utilities (documented public helpers; used for URLs and db keys)
-export { getDbKey, getUrlKey, getListKeyFromUrl } from './lib/case-utils.js'
+export { getDbKey, getUrlKey, getListKeyFromUrl, resolveListKeyFromUrl } from './lib/case-utils.js'
 
 // Label seam — resolves the field that represents a row as a single label
 // (projection) and reads it off a row (render). Used by the admin UI for

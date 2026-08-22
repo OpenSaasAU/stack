@@ -93,10 +93,15 @@ function convertField(
  * Per ADR-0013, ships closed — no access is set here. See
  * `packages/auth/CLAUDE.md` ("Access control on Auth lists") for how an app
  * grants access to a table this produces.
+ *
+ * @param tableMap - Physical table name for `db.map` (`@@map`), when the list
+ *   key had to change case to satisfy the PascalCase convention and would
+ *   otherwise rename the live table (issue #991).
  */
 export function convertTableToList(
   tableName: string,
   tableSchema: BetterAuthTableSchema,
+  tableMap?: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): ListConfig<any> {
   const fields: Record<string, FieldConfig> = {}
@@ -122,7 +127,7 @@ export function convertTableToList(
     }
   }
 
-  return list({ fields })
+  return list({ fields, ...(tableMap ? { db: { map: tableMap } } : {}) })
 }
 
 /**
@@ -188,14 +193,27 @@ export function convertBetterAuthSchema(
     // A base-model remap always wins: it reflects the actual configured list
     // key for that model, whereas `tableSchema.modelName`/the table name are
     // just how the provider plugin happens to describe its own extension.
-    const listKey =
-      resolveBaseModelKey(tableName, baseModelKeys) ||
-      tableSchema.modelName ||
-      toPascalCase(tableName)
-    lists[listKey] = convertTableToList(tableName, tableSchema)
+    const baseModelKey = resolveBaseModelKey(tableName, baseModelKeys)
+    // Plugin `modelName`s are camelCase; PascalCase for the list key and
+    // preserve the original as `db.map` so the live table is unaffected.
+    const pascalModelName = tableSchema.modelName && capitalizeFirst(tableSchema.modelName)
+    const listKey = baseModelKey || pascalModelName || toPascalCase(tableName)
+    const tableMap =
+      !baseModelKey && pascalModelName !== tableSchema.modelName ? tableSchema.modelName : undefined
+    lists[listKey] = convertTableToList(tableName, tableSchema, tableMap)
   }
 
   return lists
+}
+
+/**
+ * Uppercase the first character only, preserving the rest verbatim — unlike
+ * {@link toPascalCase}, which also lowercases every character after a
+ * separator and would mangle an already-camelCase `modelName`'s internal
+ * word boundaries (`oauthApplication` -> `Oauthapplication`).
+ */
+function capitalizeFirst(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 function toPascalCase(str: string): string {

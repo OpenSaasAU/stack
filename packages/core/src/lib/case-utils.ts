@@ -40,3 +40,29 @@ export function getUrlKey(listKey: string): string {
 export function getListKeyFromUrl(urlSegment: string): string {
   return kebabToPascal(urlSegment)
 }
+
+/**
+ * Resolves a URL segment back to the list key that produced it, by checking
+ * each candidate key against `getUrlKey` — the same helper that builds the
+ * URL — rather than reconstructing a key by string transformation the way
+ * `getListKeyFromUrl` does. That reconstruction is lossy for any list key
+ * that isn't strict PascalCase (e.g. a camelCase key from a derived list),
+ * so this is the config-aware resolver route lookups should use instead.
+ *
+ * Returns `undefined` when no candidate key's URL matches — callers render
+ * their usual "not found" state rather than treating this as an error.
+ * Throws if more than one candidate key produces the same URL segment: that
+ * is a configuration error (two list keys collide once case-folded to a
+ * URL) and must be reported, not resolved by silently picking one.
+ */
+export function resolveListKeyFromUrl(urlSegment: string, listKeys: string[]): string | undefined {
+  const matches = listKeys.filter((listKey) => getUrlKey(listKey) === urlSegment)
+
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous list URL "${urlSegment}": list keys ${matches.map((key) => `"${key}"`).join(', ')} all resolve to this URL. Rename these lists so their URLs are unique.`,
+    )
+  }
+
+  return matches[0]
+}

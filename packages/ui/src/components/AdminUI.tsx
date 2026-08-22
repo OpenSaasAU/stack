@@ -9,9 +9,9 @@ import { DashboardSkeleton, ItemFormSkeleton, ListViewSkeleton } from './Skeleto
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
-  getListKeyFromUrl,
   getUrlKey,
   OpenSaasConfig,
+  resolveListKeyFromUrl,
   resolveNavCounts,
 } from '@opensaas/stack-core'
 import { compileTheme } from '../lib/theme.js'
@@ -69,7 +69,12 @@ export async function AdminUI({
   }
 
   const [urlSegment, action] = params
-  const listKey = urlSegment ? getListKeyFromUrl(urlSegment) : undefined
+  // Falls back to the raw segment when it resolves to no configured list, so
+  // the existing "not found" branches below (which key off `config.lists`)
+  // still render instead of silently taking the Dashboard/root path.
+  const listKey = urlSegment
+    ? (resolveListKeyFromUrl(urlSegment, Object.keys(config.lists)) ?? urlSegment)
+    : undefined
   const currentPath = deriveCurrentPath(params)
 
   let content: React.ReactNode
