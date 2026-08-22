@@ -1,5 +1,55 @@
 # @opensaas/stack-cli
 
+## 0.40.0
+
+### Minor Changes
+
+- [#1017](https://github.com/OpenSaasAU/stack/pull/1017) [`b30fa61`](https://github.com/OpenSaasAU/stack/commit/b30fa6135a6acca8c9be99fbdf5ffa7faab1959f) Thanks [@{](https://github.com/{)! - Let an application declare model-level indexes (`db.indexes`) on the derived auth lists (`User`/`Session`/`Account`/`Verification`/`RateLimit`).
+
+  Each per-model block in `authPlugin()` now accepts `indexes`, in the same shape as a list's own `db.indexes`:
+
+  ```typescript
+  authPlugin({
+    // Adopt a live constraint's real name instead of Prisma's derived one.
+   indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+    session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
+    // Extend a derived column into a composite index.
+    verification: {
+      indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+    },
+  })
+  ```
+
+  An entry covering a column the stack already derives an index for (e.g. `User.email`) suppresses that derived index for that column and emits only the app's entry, rather than erroring — the application's declaration wins (ADR-0035). Suppression is per-column: every other derived index on the model is unaffected.
+
+  This also fixes a related generator gap: a list's `db.indexes` can now reference `createdAt`/`updatedAt` even when the list has no explicit field for them and relies on `db.timestamps` for the auto-injected columns (previously only a list with an explicitly declared `createdAt`/`updatedAt` field could be indexed on it).
+
+- [#1003](https://github.com/OpenSaasAU/stack/pull/1003) [`9de43c8`](https://github.com/OpenSaasAU/stack/commit/9de43c80c8ef996dc6f08f68f7c1d8451aa0f10e) Thanks [@borisno2](https://github.com/borisno2)! - Add `context.withSession(session)` — a sibling to `sudo()` for the other axis. It derives a `StackContext` that reuses the receiver's already-resolved config, client (including a transaction client — a call inside `context.transaction()` stays in that transaction), and storage, but carries a substituted session, so access control and hooks run against the new session as normal.
+
+  This closes a gap for callers that are legitimately authorised but arrive without the session a list `validate` hook expects — an unattended dispatcher, a service principal, or a job runner:
+
+  ```typescript
+  // Runs with the job owner's session so hooks see the right identity, while
+  // still going through the normal access control checks for that session.
+  const asOwner = context.withSession(job.ownerSession)
+  await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done' } })
+
+  // Drop to anonymous
+  const anonymous = context.withSession(null)
+  ```
+
+  `withSession` grants no authority of its own — the derived context can do exactly what any context built with that session directly could do. It's orthogonal to `sudo()`: `context.withSession(s).sudo()` and `context.sudo().withSession(s)` are equivalent, since `withSession` preserves the receiver's sudo state instead of resetting it.
+
+  The generated `Context<TSession>` type (`.opensaas/types.ts`) now includes `withSession: (session: TSession | null) => Context<TSession>` alongside `sudo`, so the method is typed in application code — run `opensaas generate` (or `pnpm generate`) to pick it up.
+
+### Patch Changes
+
+- [#967](https://github.com/OpenSaasAU/stack/pull/967) [`ca20d45`](https://github.com/OpenSaasAU/stack/commit/ca20d458e969f964bb792331c9ec181314093431) Thanks [@borisno2](https://github.com/borisno2)! - Clean up stale/restating comments in migration, MCP, and commands source per CLAUDE.md's Comments rule. No behavior changes.
+
+- [#968](https://github.com/OpenSaasAU/stack/pull/968) [`026489c`](https://github.com/OpenSaasAU/stack/commit/026489c8fe34aaf1a29a93a882d4a57cca42bce0) Thanks [@borisno2](https://github.com/borisno2)! - Clean up restating/duplicated comments in `packages/cli/src/generator/` per the CLAUDE.md Comments rule. No behavior change.
+- Updated dependencies [[`8e6707a`](https://github.com/OpenSaasAU/stack/commit/8e6707adcca9d7e062bc1747ec79a29082c09ef9), [`afd1a60`](https://github.com/OpenSaasAU/stack/commit/afd1a60a6ddaa558bf14887e45fa1c007e6669b0), [`b30fa61`](https://github.com/OpenSaasAU/stack/commit/b30fa6135a6acca8c9be99fbdf5ffa7faab1959f), [`16da817`](https://github.com/OpenSaasAU/stack/commit/16da8176114826d18d6747d27abedf75de6c3262), [`51ae299`](https://github.com/OpenSaasAU/stack/commit/51ae299b7624f97e890f85b3075c62d8e114cec2), [`f85c7d1`](https://github.com/OpenSaasAU/stack/commit/f85c7d1b92e76d5e8ae090f93c0ff94e0d6c36c1), [`0f2e12a`](https://github.com/OpenSaasAU/stack/commit/0f2e12a69710e759d8749b8536fd5b31836226e9), [`05c747a`](https://github.com/OpenSaasAU/stack/commit/05c747a18284ac769860f751a660b72591570571), [`0b5b51e`](https://github.com/OpenSaasAU/stack/commit/0b5b51e52787ea9e945206a109a7a56dc38e78e5), [`4ce64b4`](https://github.com/OpenSaasAU/stack/commit/4ce64b4f9868eca0f34cc0676e46440b3d8f16ce), [`48d2762`](https://github.com/OpenSaasAU/stack/commit/48d27626dfb636c481301116e46c826ef3156124), [`9de43c8`](https://github.com/OpenSaasAU/stack/commit/9de43c80c8ef996dc6f08f68f7c1d8451aa0f10e), [`52dfdd2`](https://github.com/OpenSaasAU/stack/commit/52dfdd2c051aa2f4b4cbd96a459213c34c3bf85c)]:
+  - @opensaas/stack-core@0.40.0
+
 ## 0.39.2
 
 ### Patch Changes

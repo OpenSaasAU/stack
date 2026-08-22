@@ -1,5 +1,156 @@
 # @opensaas/stack-auth
 
+## 0.40.0
+
+### Minor Changes
+
+- [#1015](https://github.com/OpenSaasAU/stack/pull/1015) [`72c4ba3`](https://github.com/OpenSaasAU/stack/commit/72c4ba30e9f53762988a822bb7ead7eae0db270c) Thanks [@borisno2](https://github.com/borisno2)! - Bump the `better-auth` dev dependency to `1.7.1` and move the peer range off the stale `^1.3.29` floor to `^1.4.0` (the release line where better-auth's `index: true` flags — the basis for [#937](https://github.com/OpenSaasAU/stack/issues/937)'s index emission — first shipped; below it the generated schema silently omitted indexes better-auth itself declares).
+
+  **New required `account.issuer` column.** better-auth 1.7 adds a required `issuer` column to its `account` model. Because `deriveAuthLists` derives the Auth lists from better-auth's own `getAuthTables()` ([#987](https://github.com/OpenSaasAU/stack/issues/987)/[#997](https://github.com/OpenSaasAU/stack/issues/997)), this column now appears in the generated schema automatically — no code change was needed, only verification against real generated output. Existing projects upgrading to `better-auth@^1.7` will see a **new NOT NULL column** on their `account` table and need a backfill for existing rows. Following better-auth's own `createLocalAccountIssuer`/`createOAuthAccountIssuer` helpers (`@better-auth/core/db`):
+
+  ```sql
+  -- PostgreSQL / SQLite (|| is string concatenation on both)
+  UPDATE "Account" SET issuer = 'local:' || "providerId" WHERE issuer IS NULL AND "providerId" = 'credential';
+  UPDATE "Account" SET issuer = 'local:oauth:' || "providerId" WHERE issuer IS NULL AND "providerId" != 'credential';
+
+  -- MySQL (|| is logical OR by default, NOT concatenation — use CONCAT instead)
+  UPDATE `Account` SET issuer = CONCAT('local:', providerId) WHERE issuer IS NULL AND providerId = 'credential';
+  UPDATE `Account` SET issuer = CONCAT('local:oauth:', providerId) WHERE issuer IS NULL AND providerId != 'credential';
+  ```
+
+  `"Account"`/`` `Account` `` above is the stack's own greenfield default table name — substitute your project's actual (and, on Postgres, schema-qualified) table name if you renamed it via `authPlugin({ account: { tableName } })` or adopted an existing install with `adoptBetterAuthTables({ useBetterAuthTableNames: true })` (physical table `account`, commonly under a non-`public` schema).
+
+  URL-encode `providerId` if it can contain characters outside `[A-Za-z0-9_-]`. If you configured a custom OIDC provider with its own issuer URL, use that provider's real issuer instead of the synthetic `local:oauth:` value.
+
+  **The new `@@unique([issuer, accountId])` constraint is not yet emitted.** better-auth 1.7 also declares this composite unique index at the table level, but the stack only derives _field_-level `unique`/`index` flags today — table-level index derivation is [#985](https://github.com/OpenSaasAU/stack/issues/985), which hasn't landed. This is deliberately out of scope here (per [#986](https://github.com/OpenSaasAU/stack/issues/986)'s own triage note: build on [#985](https://github.com/OpenSaasAU/stack/issues/985) once it lands, don't duplicate it). When it does land, make sure your backfilled `issuer` values don't collide on `(issuer, accountId)` for any account, or the constraint will fail to apply.
+
+  **Breaking (MCP plugin users only): `@better-auth/mcp` is now a separate package.** better-auth 1.7 split the `mcp` plugin out of `better-auth/plugins` into its own package, rebuilt on the OAuth Provider RFC 8707/9728 resource model. `@opensaas/stack-auth/plugins` now re-exports `mcp` from `@better-auth/mcp` (added as an optional peer — install it if you use MCP). The plugin also now **requires** a `resource` option:
+
+  ```typescript
+  import { mcp } from '@opensaas/stack-auth/plugins'
+  import { jwt } from 'better-auth/plugins'
+
+  authPlugin({
+    betterAuthPlugins: [
+      // The OAuth Provider mcp() is built on issues JWT-based access tokens
+      // and requires better-auth's own jwt() plugin registered alongside it —
+      // omitting it throws `BetterAuthError: jwt_config` at init.
+      jwt(),
+      mcp({
+        loginPage: '/sign-in',
+        // The page where a user approves/denies an MCP client's requested
+        // scopes — also required as of better-auth 1.7.
+        consentPage: '/consent',
+        // RFC 8707/9728 canonical resource identifier — required as of
+        // better-auth 1.7. Must match your `mcp.basePath`. HTTP is only
+        // accepted on loopback hosts.
+        resource: `${process.env.BETTER_AUTH_URL}/api/mcp`,
+      }),
+    ],
+  })
+  ```
+
+  better-auth 1.7's MCP plugin also declares a substantially different OAuth table set — the old `oauthApplication`/`oauthAccessToken`/`oauthConsent` three became seven tables (`oauthClient`/`oauthAccessToken`/`oauthConsent`/`oauthRefreshToken`/`oauthResource`/`oauthClientResource`/`oauthClientAssertion`). Since the derivation is schema-driven this needed no code changes, but if you have the MCP plugin enabled, running `pnpm generate` will produce a significantly different Prisma schema for these tables (new/renamed models, and `Session` gains reverse relations to the two token tables that now reference it). Review the diff and migrate your database accordingly.
+
+  **Workspace-wide: pins `@better-auth/utils` to `0.5.0` via a root `pnpm.overrides`.** better-auth 1.7.1's own published packages disagree on this transitive dependency — `better-auth` pins it at exactly `0.4.2` while `better-call` (used by `@better-auth/core`, `@better-auth/oauth-provider`, and `@better-auth/mcp`) requires `^0.5.0` — so pnpm resolves two separate physical instances of `@better-auth/core` depending on which peer chain a given package sits in. That split is invisible at runtime but breaks TypeScript: `jwt()` (from `better-auth/plugins`) and `mcp()` (from `@better-auth/mcp`) end up typed against different `@better-auth/core` instances, so `betterAuthPlugins: [jwt(), mcp(...)]` fails to type-check with a `BetterAuthPlugin` structural-mismatch error even though both plugins are otherwise correctly configured. The override forces one instance workspace-wide. If you hit the same error in your own app, add the equivalent override to your own `package.json`.
+
+  Also fixes two `deriveAuthLists` gaps surfaced by the MCP plugin's expanded schema:
+
+  - the scalar-field builder now threads a static `defaultValue` through for `number`-typed fields (`integer()`/`bigInt()`), matching the existing `string`/`boolean` behavior (e.g. `oauthResource.policyVersion`, which defaults to `1`)
+  - a plugin table that declares only one of `createdAt`/`updatedAt` upstream (several of the new OAuth tables declare `createdAt` alone) is no longer silently dropped — it derives as an ordinary required column instead. Previously any model with an asymmetric timestamp pair had the field skipped entirely with no replacement, which crashed the first real write that supplied it (better-auth's own OAuth Provider does this at `betterAuth()` init time, seeding an `oauthResource` row)
+
+- [#1019](https://github.com/OpenSaasAU/stack/pull/1019) [`77b7314`](https://github.com/OpenSaasAU/stack/commit/77b731452f24045995a1d3a2ffede0246d5743d3) Thanks [@borisno2](https://github.com/borisno2)! - Extend the ADR-0036 credential field read-deny from the four base Auth models to better-auth plugin tables, and add a `credentialFields` config option for plugins the stack doesn't seed a set for.
+
+  The following fields now ship field-level `read`-denied, on top of the existing `Session.token`/`Verification.value`/`Account.password`/`accessToken`/`refreshToken`/`idToken`:
+
+  - `oauthClient.clientSecret`, `oauthAccessToken.token`, `oauthRefreshToken.token` (the `mcp`/oauth-provider plugin)
+  - `twoFactor.secret`, `twoFactor.backupCodes` (`twoFactor()`)
+
+  An application opening one of these lists (e.g. declaring `OauthClient` under its own `lists` to grant access) no longer also exposes the credential column — same behavior as the existing base-model deny, `sudo()` still reads it.
+
+  For a plugin the stack has no seeded credential set for, mark a field yourself:
+
+  ```typescript
+  authPlugin({
+    betterAuthPlugins: [passkey()],
+    credentialFields: { passkey: ['publicKey'] },
+  })
+  ```
+
+  `credentialFields` is additive only — it can add fields to any model (including a seeded one) but can never unmark a seeded field. An entry naming a field missing from a model your app actually derives throws at config time; an entry for a model your app doesn't derive is a no-op.
+
+- [#1017](https://github.com/OpenSaasAU/stack/pull/1017) [`b30fa61`](https://github.com/OpenSaasAU/stack/commit/b30fa6135a6acca8c9be99fbdf5ffa7faab1959f) Thanks [@{](https://github.com/{)! - Let an application declare model-level indexes (`db.indexes`) on the derived auth lists (`User`/`Session`/`Account`/`Verification`/`RateLimit`).
+
+  Each per-model block in `authPlugin()` now accepts `indexes`, in the same shape as a list's own `db.indexes`:
+
+  ```typescript
+  authPlugin({
+    // Adopt a live constraint's real name instead of Prisma's derived one.
+   indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+    session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
+    // Extend a derived column into a composite index.
+    verification: {
+      indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+    },
+  })
+  ```
+
+  An entry covering a column the stack already derives an index for (e.g. `User.email`) suppresses that derived index for that column and emits only the app's entry, rather than erroring — the application's declaration wins (ADR-0035). Suppression is per-column: every other derived index on the model is unaffected.
+
+  This also fixes a related generator gap: a list's `db.indexes` can now reference `createdAt`/`updatedAt` even when the list has no explicit field for them and relies on `db.timestamps` for the auto-injected columns (previously only a list with an explicitly declared `createdAt`/`updatedAt` field could be indexed on it).
+
+- [#1005](https://github.com/OpenSaasAU/stack/pull/1005) [`b67fdd1`](https://github.com/OpenSaasAU/stack/commit/b67fdd10d678f9fd209259b063186db9f9aaf20a) Thanks [@borisno2](https://github.com/borisno2)! - Better-auth plugin tables (e.g. the MCP plugin's `oauthApplication`/`oauthAccessToken`/`oauthConsent`) are now derived through the same registry as the four base Auth models, instead of a separate converter that dropped every reference to a bare column. Reference fields now become real `relationship()` foreign keys with the correct `onDelete` cascade, index, uniqueness and nullability, closing a data-integrity defect where deleting a user left their OAuth rows orphaned (neither the database nor better-auth's own `deleteUser` cleaned them up). Plugin-table scalar fields now also honour `fieldName` column maps and `index: true`, and list keys are PascalCased with `db.map` restoring the original physical table name. A reference whose target field isn't the target's `id` (e.g. `oauthAccessToken.clientId` → `oauthApplication.clientId`) is left as a plain scalar column, since `relationship()` only supports `id`-based foreign keys.
+
+  No config changes are required — `authPlugin()`/`getAuthLists()` are unchanged. If your app already had an MCP-enabled config generated with an older version, regenerate and diff your schema: the OAuth tables' `userId` columns gain a foreign key, cascade and index they didn't have before.
+
+- [#1013](https://github.com/OpenSaasAU/stack/pull/1013) [`49687ea`](https://github.com/OpenSaasAU/stack/commit/49687eaf8ad80696d62e2616ba3dfef992985282) Thanks [@borisno2](https://github.com/borisno2)! - BREAKING (pre-1.0): The derived auth lists' credential-bearing fields now ship with a field-level `read` deny, so opening operation-level access to a list no longer exposes them:
+
+  - `Session.token`
+  - `Verification.value`
+  - `Account.password`
+  - `Account.accessToken`
+  - `Account.refreshToken`
+  - `Account.idToken`
+
+  A denied field is stripped from a returned row, not an error — a `context.db` read on an opened list still succeeds and returns every other field, including a `findUnique` lookup that selects the row **by** the denied field itself (e.g. `context.db.session.findUnique({ where: { token } })` still finds the session; the returned `token` comes back stripped). Naming a denied field in `findMany`'s (or `count`'s) `where`/`orderBy` is different: the existing predicate-time read-access check (`validateQueryFieldReadAccess`) throws a `ValidationError` there instead, the same as it already does for any other field-level `read` deny. `sudo()` bypasses both — it's the supported path for an application with a genuine need. Sign-in, session refresh, email verification, and password reset are unaffected — better-auth's own flows write through the raw Prisma adapter, bypassing access control entirely.
+
+  If your application opens one of these lists today and deliberately reads one of these fields through `context.db` — a returned row, a `findMany`/`count` predicate, or a `findUnique` selector — switch that access to `context.sudo().db...`. See ADR-0036.
+
+### Patch Changes
+
+- [#1020](https://github.com/OpenSaasAU/stack/pull/1020) [`8e6707a`](https://github.com/OpenSaasAU/stack/commit/8e6707adcca9d7e062bc1747ec79a29082c09ef9) Thanks [@borisno2](https://github.com/borisno2)! - Read-denied credential fields (ADR-0036) now also declare `ui.listView.defaultColumn: false`, so they're curated out of the admin's default table columns instead of rendering as permanently empty columns.
+
+- [#997](https://github.com/OpenSaasAU/stack/pull/997) [`ed6ffcd`](https://github.com/OpenSaasAU/stack/commit/ed6ffcd5cc2b471ea680f75f108596ee6b87d083) Thanks [@borisno2](https://github.com/borisno2)! - `deriveAuthLists` now derives the Auth lists (User/Session/Account/Verification/RateLimit) from better-auth's own `getAuthTables()` output instead of a hand-written transcription, closing the drift class behind [#935](https://github.com/OpenSaasAU/stack/issues/935)/[#937](https://github.com/OpenSaasAU/stack/issues/937)/[#921](https://github.com/OpenSaasAU/stack/issues/921)/[#986](https://github.com/OpenSaasAU/stack/issues/986). Generated schema output is unchanged for existing projects — no migration needed.
+
+- [#972](https://github.com/OpenSaasAU/stack/pull/972) [`08c3787`](https://github.com/OpenSaasAU/stack/commit/08c3787a46ead83bbc6a3730dae4d89598fba1b2) Thanks [@borisno2](https://github.com/borisno2)! - Clean up comments in `packages/auth/src` per the CLAUDE.md Comments rule — removed restating/duplicated comments, kept public-API TSDoc and footgun/external-constraint warnings. No behavior changes.
+
+- [#996](https://github.com/OpenSaasAU/stack/pull/996) [`cfd366c`](https://github.com/OpenSaasAU/stack/commit/cfd366ccb62c3a858a95d0df859984c08e3b3a5f) Thanks [@borisno2](https://github.com/borisno2)! - Add a test that compares the derived Auth lists against better-auth's own `getAuthTables()` definitions, failing the build on future upstream schema drift instead of relying on a human to notice.
+
+- [#990](https://github.com/OpenSaasAU/stack/pull/990) [`37d7905`](https://github.com/OpenSaasAU/stack/commit/37d7905b9b5126e7d7826469af467775f4daab34) Thanks [@borisno2](https://github.com/borisno2)! - The derived `Session.user` / `Account.user` foreign keys are now indexed (`isIndexed: true`, was `false`), and `Verification.identifier` is now indexed too — matching the three indexes better-auth itself declares (`session_userId_idx`, `account_userId_idx`, `verification_identifier_idx`). `prisma migrate diff` against a real better-auth install no longer reads these as three dropped indexes, and `Session`/`Account` lookups by `userId` are no longer unindexed.
+
+  **Migration note:** existing projects will see a migration on their next `prisma migrate dev`/`db push` adding the three indexes.
+
+- [#989](https://github.com/OpenSaasAU/stack/pull/989) [`9cc6f8d`](https://github.com/OpenSaasAU/stack/commit/9cc6f8dcb0ed2958c39da9e7648a7a462c10264a) Thanks [@borisno2](https://github.com/borisno2)! - Fix `Session.user`/`Account.user` foreign key generating a `user` physical column instead of `userId`, mismatching better-auth's own schema and breaking clean-diff adoption (ADR-0007). An explicit `fields: { userId: ... }` override is unaffected.
+
+  **Migration note:** existing greenfield projects need to rename the column on `Session` and `Account` (e.g. `ALTER TABLE "Session" RENAME COLUMN "user" TO "userId";` and the same for `Account`) to match the new generated schema.
+
+- [#1002](https://github.com/OpenSaasAU/stack/pull/1002) [`48d2762`](https://github.com/OpenSaasAU/stack/commit/48d27626dfb636c481301116e46c826ef3156124) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin UI URL round-trip for a list keyed with anything other than strict PascalCase (issue [#991](https://github.com/OpenSaasAU/stack/issues/991)). `getListKeyFromUrl` reconstructs a list key by string transformation, which is lossy for a non-PascalCase key — a real example is a better-auth plugin's derived list (e.g. `oauthApplication`, from the `mcp` plugin's OAuth tables). Such a list appeared in navigation but its own link resolved to a key that did not exist in `config.lists`, rendering "List not found".
+
+  `@opensaas/stack-core` adds `resolveListKeyFromUrl(urlSegment, listKeys)` alongside the existing `getListKeyFromUrl`, which is unchanged and still exported. The new resolver matches a URL segment against the config's actual list keys via `getUrlKey` — the same helper that builds the URL — instead of reconstructing one, so route lookup and URL generation cannot drift apart. It returns `undefined` for a segment matching no list (so callers keep rendering their existing "not found" state), and throws if two distinct list keys would produce the same URL segment.
+
+  ```typescript
+  import { resolveListKeyFromUrl } from '@opensaas/stack-core'
+
+  resolveListKeyFromUrl('oauth-application', Object.keys(config.lists)) // 'oauthApplication'
+  resolveListKeyFromUrl('does-not-exist', Object.keys(config.lists)) // undefined
+  ```
+
+  `@opensaas/stack-ui`'s `AdminUI` now uses `resolveListKeyFromUrl` for its route resolution, fixing the broken link for any such list.
+
+  `@opensaas/stack-auth`'s `convertBetterAuthSchema` now PascalCases a better-auth plugin's camelCase `modelName` when deriving a list key (`oauthApplication` → `OauthApplication`, `rateLimit` → `RateLimit`), matching the repo's PascalCase list-key convention and fixing the same round-trip bug at the source for these lists.
+
+  **Schema-affecting for `@opensaas/stack-auth` users with a better-auth plugin that declares extra tables** (e.g. `mcp`'s OAuth tables, or `rateLimit.storage: 'database'` with no `modelName` remap configured): the generated Prisma **model name** changes to match the new PascalCase list key. The physical **table name** does not change — the previous camelCase name is preserved via `db.map` (`@@map`) — so `prisma db push` / `prisma migrate dev` sees a model rename, not a table rename, and `context.db.oauthApplication` (the camelCase db accessor) keeps working unchanged. Regenerate (`pnpm generate`) and re-run your migration/push step after upgrading.
+
 ## 0.39.2
 
 ## 0.39.1

@@ -1,5 +1,42 @@
 # @opensaas/stack-ui
 
+## 0.40.0
+
+### Minor Changes
+
+- [#1020](https://github.com/OpenSaasAU/stack/pull/1020) [`8e6707a`](https://github.com/OpenSaasAU/stack/commit/8e6707adcca9d7e062bc1747ec79a29082c09ef9) Thanks [@borisno2](https://github.com/borisno2)! - Replace the admin UI's hardcoded `password`/`createdAt`/`updatedAt` default-column exclusion with curation driven by each field's declared `ui.listView.defaultColumn` (issue [#1018](https://github.com/OpenSaasAU/stack/issues/1018)). The list view, related-list tables, and the `ListTable` standalone component now share one implementation (`computeDefaultColumns`) instead of three independent name/type-matching copies, and a list's structural `createdAt`/`updatedAt` timestamp columns are identified from its own timestamp configuration rather than by name.
+
+  **Behavior change:** an application field literally named (or typed) `password`, `createdAt`, or `updatedAt` that does NOT declare `ui.listView.defaultColumn: false` — and isn't your list's actual auto-timestamp column — is no longer hidden from default admin columns purely by name/type match. Real password fields (built with `password()`) and real system timestamps are unaffected; they're excluded via the declared flag instead.
+
+  `ListTable` gains an optional `fields?: Record<string, SerializableFieldConfig>` prop to supply this curation metadata; without it (as before), every `fieldTypes` column shows absent an explicit `columns` list.
+
+- [#1016](https://github.com/OpenSaasAU/stack/pull/1016) [`98465a5`](https://github.com/OpenSaasAU/stack/commit/98465a553178d8ff8b6dbb0c7fe413965646debf) Thanks [@borisno2](https://github.com/borisno2)! - Password columns are now identified by field type, not field name, across the list view, standalone `ListTable`, and item-view Relationship tables. A field declared `secret: password()` is now excluded from default columns even though it isn't named `password`; a field merely named `password` (e.g. `password: text()`) is no longer excluded unless it is actually a `password()` field.
+
+  A `password` Cell is now registered in the cell registry, so a password-typed column shown via an explicit `columns` prop renders a fixed `••••••••` mask instead of the raw value.
+
+  BREAKING (shipped as minor — pre-1.0 packages ship breaking changes as minor): the unused `getFieldDisplayValue` export has been removed from `@opensaas/stack-ui`. It had no callers in the rendering path — Cells render each field type directly — so nothing in this package depended on it; a consumer importing it directly should port to a project-local formatter.
+
+### Patch Changes
+
+- [#971](https://github.com/OpenSaasAU/stack/pull/971) [`dfdca11`](https://github.com/OpenSaasAU/stack/commit/dfdca11490a29490a6dc4961a07f8e75675c75a7) Thanks [@borisno2](https://github.com/borisno2)! - Remove comments that restated the line below them or duplicated rationale already stated elsewhere in `packages/ui/src`. No behavior changes.
+
+- [#1002](https://github.com/OpenSaasAU/stack/pull/1002) [`48d2762`](https://github.com/OpenSaasAU/stack/commit/48d27626dfb636c481301116e46c826ef3156124) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin UI URL round-trip for a list keyed with anything other than strict PascalCase (issue [#991](https://github.com/OpenSaasAU/stack/issues/991)). `getListKeyFromUrl` reconstructs a list key by string transformation, which is lossy for a non-PascalCase key — a real example is a better-auth plugin's derived list (e.g. `oauthApplication`, from the `mcp` plugin's OAuth tables). Such a list appeared in navigation but its own link resolved to a key that did not exist in `config.lists`, rendering "List not found".
+
+  `@opensaas/stack-core` adds `resolveListKeyFromUrl(urlSegment, listKeys)` alongside the existing `getListKeyFromUrl`, which is unchanged and still exported. The new resolver matches a URL segment against the config's actual list keys via `getUrlKey` — the same helper that builds the URL — instead of reconstructing one, so route lookup and URL generation cannot drift apart. It returns `undefined` for a segment matching no list (so callers keep rendering their existing "not found" state), and throws if two distinct list keys would produce the same URL segment.
+
+  ```typescript
+  import { resolveListKeyFromUrl } from '@opensaas/stack-core'
+
+  resolveListKeyFromUrl('oauth-application', Object.keys(config.lists)) // 'oauthApplication'
+  resolveListKeyFromUrl('does-not-exist', Object.keys(config.lists)) // undefined
+  ```
+
+  `@opensaas/stack-ui`'s `AdminUI` now uses `resolveListKeyFromUrl` for its route resolution, fixing the broken link for any such list.
+
+  `@opensaas/stack-auth`'s `convertBetterAuthSchema` now PascalCases a better-auth plugin's camelCase `modelName` when deriving a list key (`oauthApplication` → `OauthApplication`, `rateLimit` → `RateLimit`), matching the repo's PascalCase list-key convention and fixing the same round-trip bug at the source for these lists.
+
+  **Schema-affecting for `@opensaas/stack-auth` users with a better-auth plugin that declares extra tables** (e.g. `mcp`'s OAuth tables, or `rateLimit.storage: 'database'` with no `modelName` remap configured): the generated Prisma **model name** changes to match the new PascalCase list key. The physical **table name** does not change — the previous camelCase name is preserved via `db.map` (`@@map`) — so `prisma db push` / `prisma migrate dev` sees a model rename, not a table rename, and `context.db.oauthApplication` (the camelCase db accessor) keeps working unchanged. Regenerate (`pnpm generate`) and re-run your migration/push step after upgrading.
+
 ## 0.39.2
 
 ## 0.39.1

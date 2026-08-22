@@ -1,5 +1,155 @@
 # @opensaas/stack-core
 
+## 0.40.0
+
+### Minor Changes
+
+- [#1020](https://github.com/OpenSaasAU/stack/pull/1020) [`8e6707a`](https://github.com/OpenSaasAU/stack/commit/8e6707adcca9d7e062bc1747ec79a29082c09ef9) Thanks [@borisno2](https://github.com/borisno2)! - Add `ui.listView.defaultColumn` to field config — a declared, presentation-only flag (default `true`) controlling whether a field belongs in a list/related-list table's default column set. Naming a field explicitly in `ui.listView.initialColumns` or a relationship's `ui.itemView.columns` always shows it regardless of this flag.
+
+  ```typescript
+  fields: {
+    internalScore: integer({ ui: { listView: { defaultColumn: false } } }),
+  }
+  ```
+
+  `password()` now sets this flag to `false` by default instead of the admin UI matching on field type — a password field can opt back into default columns with `ui: { listView: { defaultColumn: true } } }`.
+
+- [#1011](https://github.com/OpenSaasAU/stack/pull/1011) [`afd1a60`](https://github.com/OpenSaasAU/stack/commit/afd1a60a6ddaa558bf14887e45fa1c007e6669b0) Thanks [@borisno2](https://github.com/borisno2)! - `OperationAccess.create` now throws `InvalidCreateAccessResultError` when the rule returns anything other than `true`/`false` — most notably a Prisma filter, which previously fell through the `create` access check unrecognised and was silently treated as a full allow (both the top-level write pipeline and nested-create paths were affected).
+
+  Create has no existing row to scope a filter against, so a filter can no longer be honoured here:
+
+  ```typescript
+  // Before: type-checked, read as row-scoped, actually allowed everyone
+  create: ({ session }) => ({ ownerId: { equals: session.userId } })
+
+  // Now throws InvalidCreateAccessResultError. Scope ownership in a hook instead:
+  hooks: {
+    resolveInput: async ({ resolvedData, context, operation }) => {
+      if (operation === 'create') {
+        return { ...resolvedData, ownerId: context.session?.userId }
+      }
+      return resolvedData
+    },
+  },
+  access: {
+    operation: {
+      create: ({ session }) => !!session, // boolean only
+    },
+  },
+  ```
+
+  `create: () => false` still denies via Silent failure as before; only a non-boolean result now throws.
+
+- [#984](https://github.com/OpenSaasAU/stack/pull/984) [`51ae299`](https://github.com/OpenSaasAU/stack/commit/51ae299b7624f97e890f85b3075c62d8e114cec2) Thanks [@borisno2](https://github.com/borisno2)! - Extend `isIndexed` to `integer`, `timestamp`, and `select`, matching `text`, `decimal`, `bigInt`, `calendarDay`, and `relationship`.
+
+  ```typescript
+  fields: {
+    rank: integer({ isIndexed: true }),
+    publishedAt: timestamp({ isIndexed: true }),
+    status: select({
+      options: [{ label: 'Draft', value: 'draft' }],
+      isIndexed: 'unique',
+    }),
+  }
+  ```
+
+  `isIndexed: true` generates a block-level `@@index([field])`; `isIndexed: 'unique'` generates an inline `@unique`. `select` supports both under the default string column and a native-enum column (`db: { type: 'enum' }`). No field type's default indexing behavior changes — an existing config generates the same schema as before.
+
+- [#1007](https://github.com/OpenSaasAU/stack/pull/1007) [`4ce64b4`](https://github.com/OpenSaasAU/stack/commit/4ce64b4f9868eca0f34cc0676e46440b3d8f16ce) Thanks [@borisno2](https://github.com/borisno2)! - The derived MCP `query` tool now accepts an optional `fields` projection — the wire form of the runtime's existing fragment field selection — so an assistant can select scalars and nested relation fields (with `where`/`orderBy`/`take`/`skip`, and a to-many's row count) in a single call instead of following a foreign key with a second one. Omitting `fields` is unchanged, a bare read exactly as before.
+
+  ```json
+  {
+    "name": "list_post_query",
+    "arguments": {
+      "fields": {
+        "title": true,
+        "author": { "fields": { "name": true } },
+        "comments": {
+          "fields": { "text": true },
+          "where": { "approved": { "equals": true } },
+          "take": 5,
+          "count": true
+        }
+      }
+    }
+  }
+  ```
+
+  The generated tool schema enumerates two levels of each list's own fields and relations, per session, and refuses (as an `isError` tool result, never a protocol error) anything it doesn't advertise — an unknown field, or a relation named a third level deep. See the ADR (`docs/adr/0033-mcp-tools-advertise-a-bounded-projection.md`) for the full design.
+
+  **Behaviour change:** `tools/list` is now evaluated per session. A list whose operation-level `query` access denies the session outright no longer appears in the tool listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it. Previously every list's tools were listed regardless of session.
+
+- [#1002](https://github.com/OpenSaasAU/stack/pull/1002) [`48d2762`](https://github.com/OpenSaasAU/stack/commit/48d27626dfb636c481301116e46c826ef3156124) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin UI URL round-trip for a list keyed with anything other than strict PascalCase (issue [#991](https://github.com/OpenSaasAU/stack/issues/991)). `getListKeyFromUrl` reconstructs a list key by string transformation, which is lossy for a non-PascalCase key — a real example is a better-auth plugin's derived list (e.g. `oauthApplication`, from the `mcp` plugin's OAuth tables). Such a list appeared in navigation but its own link resolved to a key that did not exist in `config.lists`, rendering "List not found".
+
+  `@opensaas/stack-core` adds `resolveListKeyFromUrl(urlSegment, listKeys)` alongside the existing `getListKeyFromUrl`, which is unchanged and still exported. The new resolver matches a URL segment against the config's actual list keys via `getUrlKey` — the same helper that builds the URL — instead of reconstructing one, so route lookup and URL generation cannot drift apart. It returns `undefined` for a segment matching no list (so callers keep rendering their existing "not found" state), and throws if two distinct list keys would produce the same URL segment.
+
+  ```typescript
+  import { resolveListKeyFromUrl } from '@opensaas/stack-core'
+
+  resolveListKeyFromUrl('oauth-application', Object.keys(config.lists)) // 'oauthApplication'
+  resolveListKeyFromUrl('does-not-exist', Object.keys(config.lists)) // undefined
+  ```
+
+  `@opensaas/stack-ui`'s `AdminUI` now uses `resolveListKeyFromUrl` for its route resolution, fixing the broken link for any such list.
+
+  `@opensaas/stack-auth`'s `convertBetterAuthSchema` now PascalCases a better-auth plugin's camelCase `modelName` when deriving a list key (`oauthApplication` → `OauthApplication`, `rateLimit` → `RateLimit`), matching the repo's PascalCase list-key convention and fixing the same round-trip bug at the source for these lists.
+
+  **Schema-affecting for `@opensaas/stack-auth` users with a better-auth plugin that declares extra tables** (e.g. `mcp`'s OAuth tables, or `rateLimit.storage: 'database'` with no `modelName` remap configured): the generated Prisma **model name** changes to match the new PascalCase list key. The physical **table name** does not change — the previous camelCase name is preserved via `db.map` (`@@map`) — so `prisma db push` / `prisma migrate dev` sees a model rename, not a table rename, and `context.db.oauthApplication` (the camelCase db accessor) keeps working unchanged. Regenerate (`pnpm generate`) and re-run your migration/push step after upgrading.
+
+- [#1003](https://github.com/OpenSaasAU/stack/pull/1003) [`9de43c8`](https://github.com/OpenSaasAU/stack/commit/9de43c80c8ef996dc6f08f68f7c1d8451aa0f10e) Thanks [@borisno2](https://github.com/borisno2)! - Add `context.withSession(session)` — a sibling to `sudo()` for the other axis. It derives a `StackContext` that reuses the receiver's already-resolved config, client (including a transaction client — a call inside `context.transaction()` stays in that transaction), and storage, but carries a substituted session, so access control and hooks run against the new session as normal.
+
+  This closes a gap for callers that are legitimately authorised but arrive without the session a list `validate` hook expects — an unattended dispatcher, a service principal, or a job runner:
+
+  ```typescript
+  // Runs with the job owner's session so hooks see the right identity, while
+  // still going through the normal access control checks for that session.
+  const asOwner = context.withSession(job.ownerSession)
+  await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done' } })
+
+  // Drop to anonymous
+  const anonymous = context.withSession(null)
+  ```
+
+  `withSession` grants no authority of its own — the derived context can do exactly what any context built with that session directly could do. It's orthogonal to `sudo()`: `context.withSession(s).sudo()` and `context.sudo().withSession(s)` are equivalent, since `withSession` preserves the receiver's sudo state instead of resetting it.
+
+  The generated `Context<TSession>` type (`.opensaas/types.ts`) now includes `withSession: (session: TSession | null) => Context<TSession>` alongside `sudo`, so the method is typed in application code — run `opensaas generate` (or `pnpm generate`) to pick it up.
+
+### Patch Changes
+
+- [#1017](https://github.com/OpenSaasAU/stack/pull/1017) [`b30fa61`](https://github.com/OpenSaasAU/stack/commit/b30fa6135a6acca8c9be99fbdf5ffa7faab1959f) Thanks [@{](https://github.com/{)! - Let an application declare model-level indexes (`db.indexes`) on the derived auth lists (`User`/`Session`/`Account`/`Verification`/`RateLimit`).
+
+  Each per-model block in `authPlugin()` now accepts `indexes`, in the same shape as a list's own `db.indexes`:
+
+  ```typescript
+  authPlugin({
+    // Adopt a live constraint's real name instead of Prisma's derived one.
+   indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+    session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
+    // Extend a derived column into a composite index.
+    verification: {
+      indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+    },
+  })
+  ```
+
+  An entry covering a column the stack already derives an index for (e.g. `User.email`) suppresses that derived index for that column and emits only the app's entry, rather than erroring — the application's declaration wins (ADR-0035). Suppression is per-column: every other derived index on the model is unaffected.
+
+  This also fixes a related generator gap: a list's `db.indexes` can now reference `createdAt`/`updatedAt` even when the list has no explicit field for them and relies on `db.timestamps` for the auto-injected columns (previously only a list with an explicitly declared `createdAt`/`updatedAt` field could be indexed on it).
+
+- [#983](https://github.com/OpenSaasAU/stack/pull/983) [`16da817`](https://github.com/OpenSaasAU/stack/commit/16da8176114826d18d6747d27abedf75de6c3262) Thanks [@borisno2](https://github.com/borisno2)! - Fix `HashedPassword.toJSON()` returning the raw bcrypt hash, so `JSON.stringify` of a row (e.g. a server→client prop, `Response.json()`, an MCP tool response) no longer leaks the stored hash for a `password()` field.
+
+  `toJSON()` now returns `{ isSet: boolean }`, matching the redaction the admin UI already applies via `valueForClientSerialization`. `toString()`, `valueOf()`, `[Symbol.toPrimitive]`, and `==` comparison against the hash are unchanged. If you parse `JSON.stringify`'d rows and read the password field as a string, update that code to read `.isSet` instead — this is a visible output/type change on `HashedPassword.toJSON()`, though the field's read access remains the application's to configure (unchanged).
+
+- [#999](https://github.com/OpenSaasAU/stack/pull/999) [`f85c7d1`](https://github.com/OpenSaasAU/stack/commit/f85c7d1b92e76d5e8ae090f93c0ff94e0d6c36c1) Thanks [@borisno2](https://github.com/borisno2)! - MCP derived CRUD tool and custom tool failures (access denial, thrown engine/database errors, input schema validation) now return a successful JSON-RPC response with `result.isError: true` instead of a JSON-RPC `error` object, so the calling model can see and recover from them. Genuine protocol failures (unknown method, malformed request, unknown tool name) are unchanged. Note: the wire shape of tool failures changes — a consumer asserting on the old `error` shape will need to update.
+
+- [#1006](https://github.com/OpenSaasAU/stack/pull/1006) [`0f2e12a`](https://github.com/OpenSaasAU/stack/commit/0f2e12a69710e759d8749b8536fd5b31836226e9) Thanks [@borisno2](https://github.com/borisno2)! - `relationship({ ref: 'ListName' })` list-only refs now accept `db.foreignKey: { map: '...' }` to rename the foreign key column. The boolean form (`true`/`false`) is still rejected there since ownership is implicit on a list-only ref.
+
+- [#1004](https://github.com/OpenSaasAU/stack/pull/1004) [`05c747a`](https://github.com/OpenSaasAU/stack/commit/05c747a18284ac769860f751a660b72591570571) Thanks [@borisno2](https://github.com/borisno2)! - Fix a nested create/update/delete through a list-only ref's synthetic reverse relation (`from_<List>_<field>`) silently bypassing the target list's hooks and validation. It now runs the same pipeline a declared relationship field's nested write gets. Under `sudo()`, an undeclared key that isn't a synthetic reverse relation is now refused rather than passed through unchecked.
+
+- [#1000](https://github.com/OpenSaasAU/stack/pull/1000) [`0b5b51e`](https://github.com/OpenSaasAU/stack/commit/0b5b51e52787ea9e945206a109a7a56dc38e78e5) Thanks [@borisno2](https://github.com/borisno2)! - Fix `P2002` unique-constraint errors losing per-field detail under Prisma 7 driver adapters (`@prisma/adapter-pg`, PGlite), where `meta.target` is left empty. The error handler now recovers the violated columns and constraint name from the adapter's error shape, and a new `uniqueConstraintOf(error)` helper exposes this to callers of `context.db.*` directly. Unique-violation messages under driver adapters change from the generic fallback back to field-specific text.
+
+- [#1001](https://github.com/OpenSaasAU/stack/pull/1001) [`52dfdd2`](https://github.com/OpenSaasAU/stack/commit/52dfdd2c051aa2f4b4cbd96a459213c34c3bf85c) Thanks [@borisno2](https://github.com/borisno2)! - Fix `include` on a to-one relationship throwing `PrismaClientValidationError` when the related list's `query` access resolves to a filter (Prisma only accepts a nested `where` on a to-many include). The relation is now fetched and access-scoped via a batched existence check instead, returning `null` for an excluded related row rather than throwing — a caller relying on the previous exception, or whose types assumed a non-null relation, should re-check nullability.
+
 ## 0.39.2
 
 ### Patch Changes

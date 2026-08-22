@@ -1,5 +1,11 @@
 # @opensaas/stack-rag
 
+## 0.40.0
+
+### Patch Changes
+
+- [#970](https://github.com/OpenSaasAU/stack/pull/970) [`fa1819b`](https://github.com/OpenSaasAU/stack/commit/fa1819b0a71b5f21175e6e87d64dd6b398255a8a) Thanks [@borisno2](https://github.com/borisno2)! - Clean up comments in `packages/rag/src` per the CLAUDE.md Comments rule — removed restatement and stale narration, kept public-API TSDoc, external-constraint notes, and genuine footgun warnings. No behavior changes.
+
 ## 0.39.2
 
 ## 0.39.1
