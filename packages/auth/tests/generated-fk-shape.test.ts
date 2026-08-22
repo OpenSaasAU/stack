@@ -5,6 +5,7 @@ import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
 import { generatePrismaSchema } from '@opensaas/stack-cli/generator/prisma'
 import { authPlugin } from '../src/config/plugin.js'
+import { adoptBetterAuthTables } from '../src/config/adopt-better-auth-tables.js'
 
 /**
  * Resolve a config through plugin `init` (via `config()`) and each plugin's
@@ -33,8 +34,8 @@ function modelBlock(schema: string, modelName: string): string {
   return schema.slice(start, end === -1 ? undefined : end + 2)
 }
 
-describe('generated auth schema — Session/Account user FK mirrors better-auth (issue #679/#753)', () => {
-  it('emits onDelete: Cascade and omits @@index on Session.user and Account.user', async () => {
+describe('generated auth schema — Session/Account/Verification mirror better-auth (issue #679/#753/#937)', () => {
+  it('emits onDelete: Cascade, a userId @map, and @@index([userId]) on Session.user and Account.user', async () => {
     const schema = await generateSchema({
       db: { provider: 'sqlite' },
       plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
@@ -50,18 +51,33 @@ describe('generated auth schema — Session/Account user FK mirrors better-auth 
       // column alignment.
       expect(block).toContain('@relation(onDelete: Cascade, fields: [userId], references: [id])')
 
-      // (b) No separate FK index is emitted — parity with better-auth, which
-      // ships no @@index([userId]). This is deliberate (ADR-0007), not a
-      // regression; catching a re-introduced index here flags drift.
-      expect(block).not.toContain('@@index([userId])')
+      // (b) The FK column maps to better-auth's own `userId` column name,
+      // not the generator's Keystone-parity default of the field name
+      // (`user`) — see issue #935.
+      expect(block).toContain('@map("userId")')
+
+      // (c) The FK index is emitted, matching better-auth's own
+      // `session_userId_idx` / `account_userId_idx` — see issue #937 and
+      // ADR-0007. It is never emitted against the wrong field name.
+      expect(block).toContain('@@index([userId])')
       expect(block).not.toContain('@@index([user])')
     }
   })
 
+  it('emits @@index([identifier]) on Verification', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'Verification')
+    expect(block).toContain('@@index([identifier])')
+  })
+
   it('still emits the default @@index for a non-auth relationship FK', async () => {
-    // Contrast case: the generic FK-index path is untouched. Only the auth
-    // user relations opt out (via isIndexed: false); an ordinary app
-    // relationship keeps the default Keystone-parity @@index.
+    // Contrast case: the generic FK-index path is untouched by the
+    // auth-specific FK/index shape above.
     const schema = await generateSchema({
       db: { provider: 'sqlite' },
       plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
@@ -77,6 +93,64 @@ describe('generated auth schema — Session/Account user FK mirrors better-auth 
 
     const widget = modelBlock(schema, 'Widget')
     expect(widget).toContain('@@index([ownerId])')
+  })
+})
+
+describe('generated auth schema — adopted index names match better-auth exactly (issue #937)', () => {
+  it('derives session_userId_idx / account_userId_idx / verification_identifier_idx under adoptBetterAuthTables()', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {},
+    })
+
+    // No explicit `map:` is set on these auto FK/scalar indexes — Prisma's own
+    // implicit naming convention (<mapped table>_<mapped column>_idx) is what
+    // has to line up with better-auth's migrator-assigned names, so assert
+    // against the raw @@index lines rather than a `map:` argument.
+    const session = modelBlock(schema, 'AuthSession')
+    expect(session).toContain('@@map("session")')
+    expect(session).toContain('@@index([userId])')
+
+    const account = modelBlock(schema, 'AuthAccount')
+    expect(account).toContain('@@map("account")')
+    expect(account).toContain('@@index([userId])')
+
+    const verification = modelBlock(schema, 'AuthVerification')
+    expect(verification).toContain('@@map("verification")')
+    expect(verification).toContain('@@index([identifier])')
+  })
+
+  it('still indexes all three columns under the default adoptBetterAuthTables() (Auth-prefixed physical tables)', async () => {
+    // Without useBetterAuthTableNames, the physical table stays the prefixed
+    // model name (@@map("AuthSession"), not better-auth's own lowercase
+    // "session") — the index name won't match better-auth's naming
+    // convention here, but the columns must still be indexed regardless of
+    // table naming.
+    const schema = await generateSchema({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          ...adoptBetterAuthTables(),
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {},
+    })
+
+    for (const model of ['AuthSession', 'AuthAccount']) {
+      const block = modelBlock(schema, model)
+      expect(block).toContain(`@@map("${model}")`)
+      expect(block).toContain('@@index([userId])')
+    }
+
+    const verification = modelBlock(schema, 'AuthVerification')
+    expect(verification).toContain('@@index([identifier])')
   })
 })
 
