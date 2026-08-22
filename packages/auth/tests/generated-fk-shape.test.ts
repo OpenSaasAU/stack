@@ -536,6 +536,28 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
     }
   })
 
+  it('suppresses the derived FK index on a relationship field, not just scalars', async () => {
+    // A relationship field's own generator defaults its FK index to indexed
+    // whenever isIndexed is *omitted* (unlike a scalar field) — suppression
+    // must set isIndexed: false explicitly, or the derived @@index([userId])
+    // survives and collides with the app's own named entry.
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          session: { indexes: [{ fields: ['user'], name: 'session_user_idx' }] },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'Session')
+    expect(block).toContain('@@index([userId], map: "session_user_idx")')
+    // The derived, unnamed @@index([userId]) must not also survive alongside it.
+    expect(block).not.toContain('@@index([userId])')
+  })
+
   it("resolves the entry's field key through the model's own column map (@map)", async () => {
     const schema = await generateSchema({
       db: { provider: 'sqlite' },

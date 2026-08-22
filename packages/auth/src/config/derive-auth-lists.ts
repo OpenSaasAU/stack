@@ -326,11 +326,16 @@ function buildForeignKeyField(
   const isRequired = upstream.required ?? true
   const columnName = upstream.fieldName ?? fieldKey
   const onDelete = mapOnDelete(references.onDelete ?? 'cascade')
-  const isIndexed = suppressIndex ? undefined : scalarIsIndexed(upstream)
+  // A relationship field's own generator defaults its FK index to indexed
+  // (true) whenever `isIndexed` is *omitted*, unlike a scalar field — so
+  // suppression can't just drop the property here the way `buildScalarField`
+  // does; it must set `isIndexed: false` explicitly to actually turn the
+  // derived index off.
+  const isIndexed = suppressIndex ? (false as const) : scalarIsIndexed(upstream)
 
   return relationship({
     ref: `${targetListKey}.${reverseFieldName}`,
-    ...(isIndexed ? { isIndexed } : {}),
+    ...(isIndexed !== undefined ? { isIndexed } : {}),
     db: {
       isNullable: !isRequired,
       foreignKey: { map: columnName },
