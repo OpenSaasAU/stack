@@ -2,15 +2,15 @@
 
 A signed-in-but-not-yet-onboarded session — an anonymous Better Auth session
 mid-signup, say — has a real `session.userId` but no row yet for whatever your
-access rules normally key off (an `Account`, an `Organization`, a `Profile`).
-A filter like `{ accountId: { equals: session.data.accountId } }` can't
+access rules normally key off (an `Organization`, a `Workspace`, a `Profile`).
+A filter like `{ workspaceId: { equals: session.data.workspaceId } }` can't
 resolve, because the thing it scopes to doesn't exist yet. The tempting
 workaround is to drop to `sudo()` and re-implement ownership by hand:
 
 ```typescript
 const ctx = getSudoContext(session)
 const project = await ctx.db.project.findUnique({ where: { id: projectId } })
-if (project?.account?.id !== derivedAccountId) throw forbidden() // manual, not the access layer
+if (project?.workspace?.id !== derivedWorkspaceId) throw forbidden() // manual, not the access layer
 ```
 
 This inverts Stack's usual posture. Filter-based access **fails closed** — a
@@ -27,39 +27,45 @@ same fail-closed guarantee as the rest of the access layer.
 ## The running example
 
 One `opensaas.config.ts`, three lists, in the shape a real signup-to-first-write
-flow takes:
+flow takes. The example assumes `authPlugin()` with its defaults — a `User`
+list is the auth identity `session.userId` names (see the [Authentication
+guide](/docs/how-to/authentication) if you haven't set that up yet):
 
-- **`Account`** — created once, during signup. Owned by the auth identity via
-  a `user` relationship.
-- **`Project`** — created after signup, owned indirectly through `Account`.
+- **`Workspace`** — created once, during signup. Owned by the auth identity
+  via an `owner` relationship. Deliberately not named `Account`: that's the
+  auth plugin's own default list for OAuth/credential accounts, and reusing
+  the name collides with it the moment `authPlugin()` is in the config.
+- **`Project`** — created after signup, owned indirectly through `Workspace`.
 - **`Template`** — existing rows the caller picks from when creating a
   `Project`; ownership can't be forced, only checked.
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
+import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
+  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
   // ...
   lists: {
-    Account: list({
+    Workspace: list({
       fields: {
         name: text({ validation: { isRequired: true } }),
-        user: relationship({ ref: 'AuthUser' }),
-        projects: relationship({ ref: 'Project.account', many: true }),
+        owner: relationship({ ref: 'User' }),
+        projects: relationship({ ref: 'Project.workspace', many: true }),
       },
     }),
     Project: list({
       fields: {
         name: text({ validation: { isRequired: true } }),
-        account: relationship({ ref: 'Account.projects' }),
+        workspace: relationship({ ref: 'Workspace.projects' }),
         template: relationship({ ref: 'Template' }),
       },
     }),
     Template: list({
       fields: {
         name: text({ validation: { isRequired: true } }),
-        account: relationship({ ref: 'Account' }),
+        workspace: relationship({ ref: 'Workspace' }),
       },
     }),
   },
@@ -70,23 +76,23 @@ export default config({
 
 Key the filter off the identity the session actually carries — `userId` —
 and traverse the relationship graph to reach the row you care about, rather
-than keying off a field (`session.data.accountId`) that's only populated once
-onboarding finishes:
+than keying off a field (`session.data.workspaceId`) that's only populated
+once onboarding finishes:
 
 ```typescript
-Account: list({
+Workspace: list({
   // ...
   access: {
     operation: {
       query: ({ session }) =>
-        session ? { user: { id: { equals: session.userId } } } : false,
+        session ? { owner: { id: { equals: session.userId } } } : false,
     },
   },
 }),
 ```
 
 The same traversal composes across hops. `Project` doesn't carry a `userId`
-column at all — it reaches the session through `Account`:
+column at all — it reaches the session through `Workspace`:
 
 ```typescript
 Project: list({
@@ -95,20 +101,20 @@ Project: list({
     operation: {
       query: ({ session }) =>
         session
-          ? { account: { user: { id: { equals: session.userId } } } }
+          ? { workspace: { owner: { id: { equals: session.userId } } } }
           : false,
     },
   },
 }),
 ```
 
-This resolves correctly **whether or not the `Account` row exists yet**. Before
-signup completes there's no `Account` row with a matching `user.id`, so the
-filter matches nothing — the fail-closed outcome you want, produced by the
-filter itself, no derived field required. Compare that to keying off
-`session.data.accountId`: that field simply isn't there yet, and the filter
-can't be built at all — the actual root of the problem this page opened with.
-It was a session-shape choice, not a limit in the access layer.
+This resolves correctly **whether or not the `Workspace` row exists yet**.
+Before signup completes there's no `Workspace` row with a matching
+`owner.id`, so the filter matches nothing — the fail-closed outcome you want,
+produced by the filter itself, no derived field required. Compare that to
+keying off `session.data.workspaceId`: that field simply isn't there yet, and
+the filter can't be built at all — the actual root of the problem this page
+opened with. It was a session-shape choice, not a limit in the access layer.
 
 ## Deny explicitly when there's no session
 
@@ -120,10 +126,10 @@ unconditionally is the mistake to avoid:
 // ❌ Looks equivalent, isn't. Every access rule reasons about the shape of
 // its OWN filter — nothing evaluates `session.userId` for you and swaps in
 // `false` when it's missing.
-query: ({ session }) => ({ user: { id: { equals: session?.userId } } })
+query: ({ session }) => ({ owner: { id: { equals: session?.userId } } })
 
 // ✅ Deny outright when there's no session to scope to.
-query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false)
+query: ({ session }) => (session ? { owner: { id: { equals: session.userId } } } : false)
 ```
 
 An access rule returning a filter is scoping rows for an identity — an
@@ -144,7 +150,7 @@ operation, and it must **overwrite** the owner field from the session rather
 than check a client-supplied one:
 
 ```typescript
-Account: list({
+Workspace: list({
   // ...
   access: {
     operation: {
@@ -154,17 +160,17 @@ Account: list({
   hooks: {
     resolveInput: ({ resolvedData, context }) => ({
       ...resolvedData,
-      // Whatever the client sent for `user` is discarded — this is the
+      // Whatever the client sent for `owner` is discarded — this is the
       // whole point. A client-supplied owner id is irrelevant, not merely
       // rejected: there's nothing left to reject.
-      user: { connect: { id: context.session!.userId } },
+      owner: { connect: { id: context.session!.userId } },
     }),
   },
 }),
 ```
 
 `Project`'s ownership is one hop further — its owner is the caller's
-_account_, which by now exists. Look it up through the same access-scoped
+_workspace_, which by now exists. Look it up through the same access-scoped
 `context.db` read used for querying (never `sudo()` — a scoped read that
 finds nothing is itself the fail-closed signal you want), and force the
 connection the same way:
@@ -179,17 +185,17 @@ Project: list({
   },
   hooks: {
     resolveInput: async ({ resolvedData, context }) => {
-      const account = await context.db.account.findFirst({
-        where: { user: { id: { equals: context.session!.userId } } },
+      const workspace = await context.db.workspace.findFirst({
+        where: { owner: { id: { equals: context.session!.userId } } },
       })
-      if (!account) return resolvedData // no account yet — validate below rejects it
-      return { ...resolvedData, account: { connect: { id: account.id } } }
+      if (!workspace) return resolvedData // no workspace yet — validate below rejects it
+      return { ...resolvedData, workspace: { connect: { id: workspace.id } } }
     },
   },
 }),
 ```
 
-Overwriting, not validating, is what makes a forged `account`/`user` id in
+Overwriting, not validating, is what makes a forged `workspace`/`owner` id in
 the request body inert. A rule that instead compared the supplied id against
 the session and rejected a mismatch is still trusting the client for the
 _matching_ case — one dropped comparison anywhere in that logic and the check
@@ -213,17 +219,20 @@ Project: list({
       /* ...as above... */
     },
     validate: async ({ resolvedData, context, addValidationError }) => {
-      if (!resolvedData.account) {
-        addValidationError('Complete account setup before creating a project')
+      if (!resolvedData.workspace) {
+        addValidationError('Complete workspace setup before creating a project')
         return
       }
       const templateId = resolvedData.template?.connect?.id
       if (!templateId) return
       const template = await context.db.template.findFirst({
-        where: { id: { equals: templateId }, account: { id: { equals: resolvedData.account.connect.id } } },
+        where: {
+          id: { equals: templateId },
+          workspace: { id: { equals: resolvedData.workspace.connect.id } },
+        },
       })
       if (!template) {
-        addValidationError('Selected template does not belong to your account')
+        addValidationError('Selected template does not belong to your workspace')
       }
     },
   },
@@ -232,10 +241,10 @@ Project: list({
 
 Two failure modes are covered by the same hook, because `resolveInput` runs
 first (per the [hook execution order](/docs/concepts/hooks#hook-execution-order))
-and `validate` sees its result: no account yet (the `resolveInput` above
-leaves `resolvedData.account` unset when the lookup fails) and an
-account-mismatched template. Both are expressed as access-layer denials — an
-`addValidationError` call, not a `sudo()` read followed by a hand-rolled
+and `validate` sees its result: no workspace yet (the `resolveInput` above
+leaves `resolvedData.workspace` unset when the lookup fails) and a
+workspace-mismatched template. Both are expressed as access-layer denials —
+an `addValidationError` call, not a `sudo()` read followed by a hand-rolled
 `if`.
 
 ## `context.withSession()` substitutes the session without elevating
@@ -257,9 +266,9 @@ async function finishOnboarding(
   job: { ownerSession: Session; name: string },
 ) {
   const asOwner = context.withSession(job.ownerSession)
-  // Same Account.resolveInput as above forces `user` from asOwner.session —
-  // the job can't create an Account owned by anyone but job.ownerSession.
-  return asOwner.db.account.create({ data: { name: job.name } })
+  // Same Workspace.resolveInput as above forces `owner` from asOwner.session —
+  // the job can't create a Workspace owned by anyone but job.ownerSession.
+  return asOwner.db.workspace.create({ data: { name: job.name } })
 }
 ```
 
@@ -284,13 +293,15 @@ as this other, legitimate identity" — not "bypass the rule" — is what keeps
 `sudo()` read returns fields a normal read for that session would have
 stripped, not just rows a normal read would have filtered out. It's still the
 correct tool for a check that is legitimately global and never a fact about
-the requesting session's own rows — for example, confirming an `Account` name
-is unique platform-wide during signup, when the caller's own `query` access
-would only ever let them see their own account:
+the requesting session's own rows — for example, confirming a `Workspace`
+name is unique platform-wide during signup, when the caller's own `query`
+access would only ever let them see their own workspace:
 
 ```typescript
-async function isAccountNameTaken(context: StackContext, name: string) {
-  const existing = await context.sudo().db.account.findFirst({ where: { name: { equals: name } } })
+async function isWorkspaceNameTaken(context: StackContext, name: string) {
+  const existing = await context
+    .sudo()
+    .db.workspace.findFirst({ where: { name: { equals: name } } })
   return !!existing // only the boolean crosses back — never the row itself
 }
 ```
