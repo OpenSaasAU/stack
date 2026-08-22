@@ -192,6 +192,37 @@ Key points:
   optimistically at write time, unchanged. See ADR-0028 and the hooks concept
   doc.
 
+#### Substituting a session (`context.withSession`, #980)
+
+`context.withSession(session)` sits beside `sudo()` on the other axis:
+`sudo()` keeps the session and drops access control; `withSession()` keeps
+access control (and hooks) and swaps the session. It reuses the receiver's
+already-resolved config, client (including a transaction client — a call
+inside `context.transaction()` stays in that transaction), and storage.
+
+```typescript
+// An unattended dispatcher running a committed intent, or any job runner
+// that is legitimately authorised but arrives without the session a list's
+// validate hook wants to see in `args.context.session`.
+async function dispatchJob(context: StackContext, job: { ownerSession: Session }) {
+  const asOwner = context.withSession(job.ownerSession)
+  await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done' } })
+}
+```
+
+**`withSession` grants no authority of its own.** It is not an
+authorisation — the derived context can do exactly what any context built
+with that session directly could do; access rules still evaluate against
+the new session. The application decides who may call it.
+
+**Orthogonal to `sudo()`.** `context.withSession(s).sudo()` and
+`context.sudo().withSession(s)` are equivalent — both elevated and both
+carrying `s`. `withSession` preserves the receiver's sudo state rather than
+resetting it: called on an already-sudo context it stays sudo, called on a
+plain context it does not grant sudo.
+
+`withSession(null)` is a legitimate way to drop to an anonymous context.
+
 ### Generators (`src/generator/`)
 
 - `prisma.ts` - Generates `prisma/schema.prisma` from config

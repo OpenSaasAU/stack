@@ -40,6 +40,7 @@ function getContext<TConfig extends OpenSaasConfig, TPrisma extends PrismaClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context
+  withSession: (session: Session) => Context
   _isSudo: boolean
 }
 ```
@@ -260,6 +261,26 @@ const adminContext = context.sudo()
 
 // Can access all records regardless of access rules
 const allPosts = await adminContext.db.post.findMany()
+```
+
+##### `withSession()`
+
+Creates a new context carrying a different session, reusing this context's config and client (including a transaction client — a call inside `context.transaction()` stays in that transaction) and storage. Access control and hooks run normally against the new session.
+
+**Type:** `(session: Session) => Context`
+
+**Important:** This is not an authorization — it substitutes who hooks and access control see, it does not change what they decide. The derived context can do exactly what any context built with that session directly could do. It's orthogonal to `sudo()`: `context.withSession(s).sudo()` and `context.sudo().withSession(s)` are equivalent, since `withSession()` preserves the receiver's sudo state.
+
+**Example:**
+
+```typescript
+// An unattended job runner that is legitimately authorised but arrives
+// without the session a list's validate hook expects to see.
+const asOwner = context.withSession(job.ownerSession)
+await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done' } })
+
+// Drop to anonymous
+const anonymous = context.withSession(null)
 ```
 
 ##### `_isSudo`
