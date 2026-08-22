@@ -417,7 +417,7 @@ fields: {
 
 ### Silent Failures
 
-When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a JSON-RPC error ("Access denied or record not found") that deliberately does not distinguish between a missing record and denied access.
+When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a successful tool result marked `isError: true` ("Access denied or record not found") that deliberately does not distinguish between a missing record and denied access — this is a recoverable tool failure, not a JSON-RPC protocol error, so the calling model can see it and adjust its request.
 
 ### Session Fields over MCP
 
