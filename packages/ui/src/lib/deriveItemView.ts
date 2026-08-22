@@ -80,11 +80,11 @@ export interface ItemViewLayout {
 }
 
 /**
- * Related-list columns that are never shown by default, mirroring the list
- * view's own default curation (`ListViewClient`): system timestamp columns and
- * password fields.
+ * System timestamp columns never shown by default, mirroring the list view's
+ * own default curation (`ListViewClient`). Password fields are excluded
+ * separately, by type rather than name (see {@link defaultColumnsFor}).
  */
-const DEFAULT_EXCLUDED_COLUMNS = new Set(['password', 'createdAt', 'updatedAt'])
+const DEFAULT_EXCLUDED_COLUMNS = new Set(['createdAt', 'updatedAt'])
 
 function readStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
@@ -154,7 +154,10 @@ function defaultColumnsFor(
   if (!relatedListConfig) return []
   const curated =
     relatedListConfig.ui?.listView?.initialColumns ??
-    Object.keys(relatedListConfig.fields).filter((key) => !DEFAULT_EXCLUDED_COLUMNS.has(key))
+    Object.keys(relatedListConfig.fields).filter(
+      (key) =>
+        relatedListConfig.fields[key]?.type !== 'password' && !DEFAULT_EXCLUDED_COLUMNS.has(key),
+    )
   return curated.filter((column) => column !== backReferenceField)
 }
 

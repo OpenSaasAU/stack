@@ -355,4 +355,32 @@ describe('deriveItemViewLayout', () => {
     expect(section.backReferenceField).toBeUndefined()
     expect(section.columns).toEqual(['name'])
   })
+
+  it('excludes a password-typed related-list column by type, regardless of its name', () => {
+    const config = makeConfig({
+      Team: {
+        fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+      },
+      Member: {
+        fields: { name: { type: 'text' }, secret: { type: 'password' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.columns).toEqual(['name'])
+  })
+
+  it('does not exclude a related-list column merely named password if it is not password-typed', () => {
+    const config = makeConfig({
+      Team: {
+        fields: { members: { type: 'relationship', ref: 'Member', many: true } },
+      },
+      Member: {
+        fields: { name: { type: 'text' }, password: { type: 'text' } },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'Team').sections
+    expect(section.columns).toEqual(['name', 'password'])
+  })
 })

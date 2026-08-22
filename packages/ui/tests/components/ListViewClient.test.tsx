@@ -505,6 +505,31 @@ describe('ListViewClient', () => {
     })
   })
 
+  describe('column filtering', () => {
+    it('should exclude password-typed columns by default regardless of field name', () => {
+      const items = [{ id: '1', username: 'john', secret: 'hash...' }]
+
+      render(
+        <ListViewClient
+          {...defaultProps}
+          items={items}
+          fieldTypes={{ username: 'text', secret: 'password' }}
+        />,
+      )
+
+      expect(screen.getByText('Username')).toBeInTheDocument()
+      expect(screen.queryByText('Secret')).not.toBeInTheDocument()
+    })
+
+    it('should not exclude a field merely named password if it is not password-typed', () => {
+      const items = [{ id: '1', password: 'plain text field' }]
+
+      render(<ListViewClient {...defaultProps} items={items} fieldTypes={{ password: 'text' }} />)
+
+      expect(screen.getByText('Password')).toBeInTheDocument()
+    })
+  })
+
   describe('edit links', () => {
     it('should link to correct edit page', () => {
       render(<ListViewClient {...defaultProps} />)

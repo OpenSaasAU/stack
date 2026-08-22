@@ -6,6 +6,7 @@ import { TimestampCell } from '../../src/components/cells/TimestampCell.js'
 import { CheckboxCell } from '../../src/components/cells/CheckboxCell.js'
 import { RelationshipCell } from '../../src/components/cells/RelationshipCell.js'
 import { TextCell } from '../../src/components/cells/TextCell.js'
+import { PasswordCell } from '../../src/components/cells/PasswordCell.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
 
 const statusField: SerializableFieldConfig = {
@@ -152,5 +153,18 @@ describe('TextCell', () => {
   it('renders a dash for empty values', () => {
     render(<TextCell value="" field={{ type: 'text' }} fieldName="t" />)
     expect(screen.getByText('-')).toBeInTheDocument()
+  })
+})
+
+describe('PasswordCell', () => {
+  it('renders a fixed mask regardless of the raw value', () => {
+    render(<PasswordCell value="hunter2" field={{ type: 'password' }} fieldName="password" />)
+    const cell = screen.getByText('••••••••')
+    expect(cell).toHaveAttribute('data-slot', 'cell-password')
+  })
+
+  it('does not depend on any serialisation of value — an empty/null value still masks', () => {
+    render(<PasswordCell value={null} field={{ type: 'password' }} fieldName="password" />)
+    expect(screen.getByText('••••••••')).toBeInTheDocument()
   })
 })

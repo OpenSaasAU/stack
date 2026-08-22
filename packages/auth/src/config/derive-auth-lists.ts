@@ -24,7 +24,7 @@ import {
 import { getAuthTables } from 'better-auth/db'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
-import type { ListConfig, FieldConfig, ListIndex } from '@opensaas/stack-core'
+import type { ListConfig, FieldConfig, ListIndex, FieldAccess } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
@@ -100,6 +100,26 @@ const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
 
 /** Carried via list-level `db.timestamps` (see `listDb`) rather than as ordinary derived fields. */
 const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
+
+/**
+ * Fields that hold a live, presentable credential — reading the value is
+ * equivalent to holding it (session hijack, account takeover, replaying an
+ * OAuth token) — rather than merely identifying a row. Keyed by better-auth's
+ * own model/field keys, not the app's list/column names, so the deny holds
+ * under `modelName` and column `fields` remapping alike (ADR-0036).
+ */
+const CREDENTIAL_FIELDS: Partial<Record<BaseModelKey, readonly string[]>> = {
+  session: ['token'],
+  verification: ['value'],
+  account: ['password', 'accessToken', 'refreshToken', 'idToken'],
+}
+
+const DENY_READ: FieldAccess = { read: () => false }
+
+function withCredentialAccess(modelKey: string, fieldKey: string, field: FieldConfig): FieldConfig {
+  if (!CREDENTIAL_FIELDS[modelKey as BaseModelKey]?.includes(fieldKey)) return field
+  return { ...field, access: DENY_READ }
+}
 
 /**
  * Whether a model declares BOTH `createdAt` and `updatedAt` upstream — the
@@ -556,17 +576,25 @@ export function deriveAuthLists(
           // relation can't express without pointing Prisma at the wrong
           // column. Left as a plain scalar column, same as pre-consolidation
           // behavior (issue #992).
-          ;(scalarFields[modelKey] ??= {})[fieldKey] = buildScalarField(
+          ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+            modelKey,
             fieldKey,
-            upstream,
-            claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+            buildScalarField(
+              fieldKey,
+              upstream,
+              claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+            ),
           )
         }
       } else {
-        ;(scalarFields[modelKey] ??= {})[fieldKey] = buildScalarField(
+        ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+          modelKey,
           fieldKey,
-          upstream,
-          claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+          buildScalarField(
+            fieldKey,
+            upstream,
+            claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+          ),
         )
       }
     }

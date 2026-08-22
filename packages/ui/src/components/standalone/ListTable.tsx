@@ -119,7 +119,9 @@ export function ListTable({
 
   const displayColumns =
     columns ||
-    Object.keys(fieldTypes).filter((key) => !['password', 'createdAt', 'updatedAt'].includes(key))
+    Object.keys(fieldTypes).filter(
+      (key) => fieldTypes[key] !== 'password' && !['createdAt', 'updatedAt'].includes(key),
+    )
 
   const sortedItems = [...items]
   if (sortBy && sortable) {

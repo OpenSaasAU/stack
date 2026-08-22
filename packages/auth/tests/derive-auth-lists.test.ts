@@ -457,6 +457,83 @@ describe('deriveAuthLists - RateLimit list (rateLimit.storage === "database")', 
   })
 })
 
+describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue #981)', () => {
+  it('denies read on Session.token, Verification.value, and the Account credential fields', async () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    const denied: Array<[string, string]> = [
+      ['Session', 'token'],
+      ['Verification', 'value'],
+      ['Account', 'password'],
+      ['Account', 'accessToken'],
+      ['Account', 'refreshToken'],
+      ['Account', 'idToken'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      expect(field.access?.read).toBeTypeOf('function')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+      expect(await field.access!.read!({} as any)).toBe(false)
+    }
+  })
+
+  it('leaves identifying fields open — session/account metadata and every User field', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    const open: Array<[string, string]> = [
+      ['Session', 'ipAddress'],
+      ['Session', 'userAgent'],
+      ['Session', 'expiresAt'],
+      ['Account', 'providerId'],
+      ['Account', 'accountId'],
+      ['Account', 'scope'],
+      ['Verification', 'identifier'],
+      ['Verification', 'expiresAt'],
+      ['User', 'name'],
+      ['User', 'email'],
+    ]
+
+    for (const [listKey, fieldKey] of open) {
+      expect(lists[listKey].fields[fieldKey].access).toBeUndefined()
+    }
+  })
+
+  it('keys the deny to the better-auth model/field, surviving a modelName + column remap', () => {
+    const models: NormalizedAuthModels = {
+      user: { modelName: 'AuthUser', fields: {} },
+      session: { modelName: 'AuthSession', fields: { token: 'session_token' } },
+      account: { modelName: 'AuthAccount', fields: { password: 'password_hash' } },
+      verification: { modelName: 'AuthVerification', fields: { value: 'verification_value' } },
+    }
+
+    const { lists } = deriveAuthLists(models)
+
+    expect(lists.AuthSession.fields.token.access?.read).toBeTypeOf('function')
+    expect(lists.AuthSession.fields.token.db?.map).toBe('session_token')
+    expect(lists.AuthAccount.fields.password.access?.read).toBeTypeOf('function')
+    expect(lists.AuthAccount.fields.password.db?.map).toBe('password_hash')
+    expect(lists.AuthVerification.fields.value.access?.read).toBeTypeOf('function')
+    expect(lists.AuthVerification.fields.value.db?.map).toBe('verification_value')
+  })
+
+  it('does not add access to fields that already have none, beyond the credential set', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    // Every other scalar/relationship field across the four base lists stays access-less.
+    const nonCredentialFields = [
+      ...Object.entries(lists.Session.fields).filter(([k]) => k !== 'token'),
+      ...Object.entries(lists.Account.fields).filter(
+        ([k]) => !['password', 'accessToken', 'refreshToken', 'idToken'].includes(k),
+      ),
+      ...Object.entries(lists.Verification.fields).filter(([k]) => k !== 'value'),
+    ]
+    for (const [, field] of nonCredentialFields) {
+      expect(field.access).toBeUndefined()
+    }
+  })
+})
+
 describe('deriveAuthLists - extendUserList', () => {
   it('adds custom fields to the derived user list', () => {
     const { lists } = deriveAuthLists(

@@ -397,7 +397,7 @@ The auth plugin automatically generates the following lists:
 - `id` (String, auto-generated)
 - `userId` (String, foreign key to User)
 - `expiresAt` (DateTime)
-- `token` (String, unique)
+- `token` (String, unique — **read-denied**, see below)
 - `ipAddress` (String, optional)
 - `userAgent` (String, optional)
 - `createdAt` (DateTime, auto)
@@ -411,10 +411,10 @@ Stores OAuth provider information and password hashes:
 - `userId` (String, foreign key to User)
 - `accountId` (String, provider-specific user ID)
 - `providerId` (String, e.g., 'github', 'google')
-- `accessToken` (String, optional)
-- `refreshToken` (String, optional)
+- `accessToken` (String, optional — **read-denied**, see below)
+- `refreshToken` (String, optional — **read-denied**, see below)
 - `expiresAt` (DateTime, optional)
-- `password` (String, optional, hashed)
+- `password` (String, optional, hashed — **read-denied**, see below)
 - `createdAt` (DateTime, auto)
 - `updatedAt` (DateTime, auto)
 
@@ -424,10 +424,46 @@ Stores email verification and password reset tokens:
 
 - `id` (String, auto-generated)
 - `identifier` (String, email address)
-- `value` (String, token)
+- `value` (String, token — **read-denied**, see below)
 - `expiresAt` (DateTime)
 - `createdAt` (DateTime, auto)
 - `updatedAt` (DateTime, auto)
+
+### Credential fields are read-denied (ADR-0036)
+
+`Session.token`, `Verification.value`, and `Account.password`/`accessToken`/`refreshToken`/`idToken`
+hold live, presentable credentials — reading one is equivalent to holding it (session hijack, account
+takeover, replaying an OAuth token). The plugin sets a field-level `read` deny on each of them when it
+derives the list, so granting operation-level access to a list (e.g. `access: { session: { operation:
+{ query: () => true } } }` for a "your active sessions" screen) does **not** also expose the token
+column — the field is silently stripped from a returned row, the same as any other field-level read
+denial, and the rest of the row is returned normally.
+
+Naming a denied field in `findMany`'s (or `count`'s) `where`/`orderBy` is different: that's rejected
+up front with a `ValidationError` rather than silently stripped, the same as any other field-level
+`read` deny. A `findUnique` lookup is not — its `where` only unique-selects the row, so
+`context.db.session.findUnique({ where: { token } })` still finds and returns the session, just with
+`token` stripped from the result like any other read.
+
+`sudo()` bypasses both — it is the supported path for an application with a genuine need:
+
+```typescript
+// An admin tool that must inspect a live session token, filter sessions BY
+// token, or an auth implementation verifying a password hash — all bypass
+// the deny deliberately.
+const session = await context.sudo().db.session.findUnique({ where: { token } })
+session.token // present
+```
+
+The deny is keyed to better-auth's own model/field, not the app's list key or column name, so it
+still applies after a `modelName` remap (`session: { modelName: 'AuthSession' }`) or a column
+override (`session: { fields: { token: 'session_token' } } }`). Every other Auth list field —
+identifiers, timestamps, `ipAddress`/`userAgent`, `providerId`/`accountId`, every `User` field — stays
+open to whatever operation-level access you grant.
+
+Better-auth's own sign-in/sign-up/session-refresh/password-reset flows are unaffected: they write and
+read through the raw Prisma adapter, never through the access-controlled `context.db` these denies
+gate.
 
 ### RateLimit
 

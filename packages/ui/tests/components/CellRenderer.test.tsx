@@ -75,6 +75,13 @@ describe('CellRenderer resolution priority', () => {
     expect(cell).toHaveTextContent('3')
   })
 
+  it('resolves a password-typed field to the masked Cell, ignoring the raw value', () => {
+    const field: SerializableFieldConfig = { type: 'password' }
+    render(<CellRenderer value="raw-hash-value" field={field} fieldName="password" />)
+    expect(screen.getByText('••••••••')).toBeInTheDocument()
+    expect(screen.queryByText('raw-hash-value')).not.toBeInTheDocument()
+  })
+
   it('4. unknown / third-party types without a registered Cell fall back to plain text', () => {
     const field: SerializableFieldConfig = { type: 'someUnregisteredThirdPartyType' }
     render(<CellRenderer value="raw value" field={field} fieldName="f" />)

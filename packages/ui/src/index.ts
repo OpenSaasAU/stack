@@ -68,6 +68,7 @@ export {
   SelectCell,
   TimestampCell,
   RelationshipCell,
+  PasswordCell,
   AvatarLabelCell,
   CellRenderer,
   cellComponentRegistry,
@@ -148,13 +149,7 @@ export type {
 } from './components/standalone/index.js'
 
 // Utility functions
-export {
-  cn,
-  formatListName,
-  formatFieldName,
-  getFieldDisplayValue,
-  isNumericField,
-} from './lib/utils.js'
+export { cn, formatListName, formatFieldName, isNumericField } from './lib/utils.js'
 
 // Relationship-options read primitive (re-exported from @opensaas/stack-core)
 export { getRelationshipOptions } from './lib/getRelationshipOptions.js'
