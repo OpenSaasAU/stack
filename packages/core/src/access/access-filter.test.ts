@@ -672,4 +672,77 @@ describe('resolveToOneAccessVisibility (issue #974)', () => {
       ids: new Set(['u1']),
     })
   })
+
+  it('sends each id in its own type, not stringified — a singleton relation target has an Int id (ADR-0004)', async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: 1 }])
+    const context: AccessContext = {
+      session: null,
+      _isSudo: false,
+      _resolveOutputChain: [],
+      prisma: { settings: { findMany } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
+    } as any
+    const tree = {
+      filters: {
+        settings: {
+          kind: 'scoped' as const,
+          relatedListName: 'Settings',
+          accessWhere: { id: { equals: 1 } },
+        },
+      },
+      nested: {},
+    }
+
+    const resolved = await resolveToOneAccessVisibility([{ id: 'p1', settings: { id: 1 } }], tree, {
+      session: null,
+      context,
+    })
+
+    // The id sent to Prisma is the number `1`, not the string `"1"` — an
+    // Int `id` column rejects a string value the same way a to-one `where`
+    // used to be rejected before this fix.
+    expect(findMany).toHaveBeenCalledWith({
+      where: { AND: [{ id: { equals: 1 } }, { id: { in: [1] } }] },
+      select: { id: true },
+    })
+    expect(resolved.filters.settings).toEqual({ kind: 'visible', ids: new Set(['1']) })
+  })
+
+  it('resolves independent filters concurrently rather than one await at a time', async () => {
+    const order: string[] = []
+    const deferred = (name: string, ms: number) =>
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => {
+              order.push(name)
+              resolve([])
+            }, ms),
+          ),
+      )
+    const ownerFindMany = deferred('owner', 20)
+    const categoryFindMany = deferred('category', 5)
+    const context: AccessContext = {
+      session: null,
+      _isSudo: false,
+      _resolveOutputChain: [],
+      prisma: { owner: { findMany: ownerFindMany }, category: { findMany: categoryFindMany } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
+    } as any
+    const tree = {
+      filters: {
+        owner: { kind: 'scoped' as const, relatedListName: 'Owner', accessWhere: {} },
+        category: { kind: 'scoped' as const, relatedListName: 'Category', accessWhere: {} },
+      },
+      nested: {},
+    }
+    const items = [{ id: 'p1', owner: { id: 'u1' }, category: { id: 'c1' } }]
+
+    await resolveToOneAccessVisibility(items, tree, { session: null, context })
+
+    // The faster (category) call finishes before the slower (owner) one
+    // that was STARTED first — proving both ran concurrently rather than
+    // the second waiting on the first to settle.
+    expect(order).toEqual(['category', 'owner'])
+  })
 })

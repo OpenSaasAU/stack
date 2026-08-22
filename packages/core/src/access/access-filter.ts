@@ -306,39 +306,48 @@ export async function resolveToOneAccessVisibility(
 ): Promise<ToOneAccessVisibilityTree> {
   const resolved = emptyToOneAccessVisibilityTree()
 
-  for (const [key, entry] of Object.entries(tree.filters)) {
+  // Every entry here is independent of every other — different relation key,
+  // different query (or none) — so they run concurrently rather than one
+  // await at a time.
+  const filterWork = Object.entries(tree.filters).map(async ([key, entry]) => {
     if (entry.kind === 'denied') {
       resolved.filters[key] = { kind: 'denied' }
-      continue
+      return
     }
 
-    const ids = new Set<string>()
+    // Keyed by the id's own string form for de-duplication, but the VALUE
+    // preserved is the id exactly as fetched — a related list can carry a
+    // non-string id (e.g. an `Int` singleton id, ADR-0004), and sending a
+    // stringified id to Prisma for an `Int` column raises the same
+    // `PrismaClientValidationError` class this fix exists to close.
+    const idsById = new Map<string, unknown>()
     for (const item of items) {
       if (!item || typeof item !== 'object') continue
       const value = (item as Record<string, unknown>)[key]
       if (value && typeof value === 'object' && 'id' in value) {
-        ids.add(String((value as Record<string, unknown>).id))
+        const rawId = (value as Record<string, unknown>).id
+        idsById.set(String(rawId), rawId)
       }
     }
 
-    if (ids.size === 0) {
+    if (idsById.size === 0) {
       resolved.filters[key] = { kind: 'visible', ids: new Set() }
-      continue
+      return
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic model access by list name, mirroring the rest of the read pipeline
     const model = (args.context.prisma as any)[getDbKey(entry.relatedListName)]
     const visibleRows = await model.findMany({
-      where: { AND: [entry.accessWhere, { id: { in: [...ids] } }] },
+      where: { AND: [entry.accessWhere, { id: { in: [...idsById.values()] } }] },
       select: { id: true },
     })
     const visibleIds = new Set<string>(
       Array.isArray(visibleRows) ? visibleRows.map((row: { id: unknown }) => String(row.id)) : [],
     )
     resolved.filters[key] = { kind: 'visible', ids: visibleIds }
-  }
+  })
 
-  for (const [key, nestedTree] of Object.entries(tree.nested)) {
+  const nestedWork = Object.entries(tree.nested).map(async ([key, nestedTree]) => {
     const nestedItems: unknown[] = []
     for (const item of items) {
       if (!item || typeof item !== 'object') continue
@@ -347,7 +356,9 @@ export async function resolveToOneAccessVisibility(
       else if (value && typeof value === 'object') nestedItems.push(value)
     }
     resolved.nested[key] = await resolveToOneAccessVisibility(nestedItems, nestedTree, args)
-  }
+  })
+
+  await Promise.all([...filterWork, ...nestedWork])
 
   return resolved
 }
