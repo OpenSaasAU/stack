@@ -244,6 +244,32 @@ describe('convertTableToList', () => {
 
     expect(listConfig.access).toBeUndefined()
   })
+
+  it('sets db.map to the given tableMap', () => {
+    const tableSchema = {
+      modelName: 'OauthApplication',
+      fields: {
+        clientId: { type: 'string' },
+      },
+    }
+
+    const listConfig = convertTableToList('oauthApplication', tableSchema, 'oauthApplication')
+
+    expect(listConfig.db?.map).toBe('oauthApplication')
+  })
+
+  it('sets no db.map when tableMap is omitted', () => {
+    const tableSchema = {
+      modelName: 'TestTable',
+      fields: {
+        name: { type: 'string' },
+      },
+    }
+
+    const listConfig = convertTableToList('test_table', tableSchema)
+
+    expect(listConfig.db).toBeUndefined()
+  })
 })
 
 describe('convertBetterAuthSchema', () => {
@@ -369,6 +395,73 @@ describe('convertBetterAuthSchema', () => {
     const lists = convertBetterAuthSchema(schema, { user: 'AuthUser' })
 
     expect(lists).toHaveProperty('OauthApplication')
+  })
+
+  it('PascalCases a camelCase plugin modelName and maps the table back to it (issue #991)', () => {
+    // The real MCP plugin declares its OAuth tables with a camelCase
+    // `modelName` (e.g. `oauthApplication`), unlike the other fixtures in
+    // this file which pass an already-PascalCase `modelName` by convention.
+    const schema = {
+      oauthApplication: {
+        modelName: 'oauthApplication',
+        fields: {
+          clientId: { type: 'string', required: true },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema)
+
+    expect(lists).toHaveProperty('OauthApplication')
+    expect(lists).not.toHaveProperty('oauthApplication')
+    expect(lists.OauthApplication.db?.map).toBe('oauthApplication')
+  })
+
+  it('PascalCases a camelCase rateLimit modelName with no baseModelKeys remap (issue #991)', () => {
+    const schema = {
+      rateLimit: {
+        modelName: 'rateLimit',
+        fields: {
+          key: { type: 'string' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema)
+
+    expect(lists).toHaveProperty('RateLimit')
+    expect(lists.RateLimit.db?.map).toBe('rateLimit')
+  })
+
+  it('sets no db.map when a plugin modelName is already PascalCase', () => {
+    const schema = {
+      passkey: {
+        modelName: 'Passkey',
+        fields: {
+          publicKey: { type: 'string' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema)
+
+    expect(lists).toHaveProperty('Passkey')
+    expect(lists.Passkey.db?.map).toBeUndefined()
+  })
+
+  it('does not map the table when a baseModelKeys remap is used instead', () => {
+    const schema = {
+      user: {
+        modelName: 'user',
+        fields: {
+          isAnonymous: { type: 'boolean' },
+        },
+      },
+    }
+
+    const lists = convertBetterAuthSchema(schema, { user: 'AuthUser' })
+
+    expect(lists.AuthUser.db?.map).toBeUndefined()
   })
 
   it('should convert complex schema with multiple field types', () => {

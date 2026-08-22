@@ -7,6 +7,7 @@ import {
   getDbKey,
   getUrlKey,
   getListKeyFromUrl,
+  resolveListKeyFromUrl,
 } from './case-utils.js'
 
 describe('Case Conversion Utilities', () => {
@@ -94,6 +95,37 @@ describe('Case Conversion Utilities', () => {
       expect(getListKeyFromUrl('user')).toBe('User')
       expect(getListKeyFromUrl('auth-user')).toBe('AuthUser')
       expect(getListKeyFromUrl('blog-post')).toBe('BlogPost')
+    })
+  })
+
+  describe('resolveListKeyFromUrl', () => {
+    it('resolves a PascalCase list key from its URL segment', () => {
+      expect(resolveListKeyFromUrl('blog-post', ['User', 'BlogPost'])).toBe('BlogPost')
+    })
+
+    it('resolves a camelCase list key (e.g. a derived plugin list) from its URL segment', () => {
+      // getListKeyFromUrl('oauth-application') would reconstruct 'OauthApplication',
+      // which isn't a key in this list — that's the bug this resolver fixes.
+      expect(resolveListKeyFromUrl('oauth-application', ['oauthApplication'])).toBe(
+        'oauthApplication',
+      )
+    })
+
+    it('returns undefined for a URL segment matching no list key', () => {
+      expect(resolveListKeyFromUrl('does-not-exist', ['User', 'BlogPost'])).toBeUndefined()
+    })
+
+    it('throws when two distinct list keys produce the same URL segment', () => {
+      expect(() =>
+        resolveListKeyFromUrl('oauth-application', ['oauthApplication', 'OauthApplication']),
+      ).toThrow(/Ambiguous list URL/)
+    })
+
+    it('is derived from getUrlKey, so it cannot drift from how URLs are built', () => {
+      const listKeys = ['User', 'AuthUser', 'BlogPost', 'oauthApplication']
+      for (const listKey of listKeys) {
+        expect(resolveListKeyFromUrl(getUrlKey(listKey), listKeys)).toBe(listKey)
+      }
     })
   })
 
