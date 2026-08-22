@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import * as z from 'zod'
 import { createMcpHandlers } from '../src/mcp/handler.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 import type { AccessContext } from '../src/access/types.js'
 import type { McpSession, McpSessionProvider } from '../src/mcp/types.js'
 import { HashedPassword } from '../src/utils/password.js'
+import {
+  AccessScopeDepthExceededError,
+  RelationFilterAccessDeniedError,
+} from '../src/access/errors.js'
 
 describe('MCP Handler', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -546,10 +551,12 @@ describe('MCP Handler', () => {
       })
 
       const response = await handlers.POST(request)
-      expect(response.status).toBe(400)
+      expect(response.status).toBe(200)
 
       const data = await response.json()
-      expect(data.error.message).toContain('Access denied')
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('Access denied')
     })
   })
 
@@ -637,6 +644,109 @@ describe('MCP Handler', () => {
       const data = await response.json()
       expect(data.error.message).toContain('Unknown tool')
     })
+
+    it('should return a custom tool input schema validation failure as a tool result', async () => {
+      const configWithCustomTools = {
+        ...config,
+        lists: {
+          Post: {
+            ...config.lists.Post,
+            mcp: {
+              customTools: [
+                {
+                  name: 'publishPost',
+                  description: 'Publish a post',
+                  inputSchema: z.object({ postId: z.string() }),
+                  handler: vi.fn(),
+                },
+              ],
+            },
+          },
+        },
+      }
+
+      const handlers = createMcpHandlers({
+        config: configWithCustomTools,
+        getSession: mockGetSession,
+        getContext,
+      })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'publishPost',
+            arguments: {},
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('Invalid params')
+    })
+
+    it('should return a thrown custom tool error as a tool result', async () => {
+      const configWithCustomTools = {
+        ...config,
+        lists: {
+          Post: {
+            ...config.lists.Post,
+            mcp: {
+              customTools: [
+                {
+                  name: 'publishPost',
+                  description: 'Publish a post',
+                  inputSchema: {
+                    type: 'object' as const,
+                    properties: { postId: { type: 'string' } },
+                  },
+                  handler: vi.fn(async () => {
+                    throw new Error('cannot publish an already-published post')
+                  }),
+                },
+              ],
+            },
+          },
+        },
+      }
+
+      const handlers = createMcpHandlers({
+        config: configWithCustomTools,
+        getSession: mockGetSession,
+        getContext,
+      })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'publishPost',
+            arguments: { postId: 'post-123' },
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('cannot publish an already-published post')
+    })
   })
 
   describe('error handling', () => {
@@ -704,10 +814,74 @@ describe('MCP Handler', () => {
       })
 
       const response = await handlers.POST(request)
-      expect(response.status).toBe(400)
+      expect(response.status).toBe(200)
 
       const data = await response.json()
-      expect(data.error.message).toContain('Database error')
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('Database error')
+    })
+
+    it('should return a relation-filter access-denial error as a tool result naming the relation and related list', async () => {
+      mockPrisma.post.findMany.mockRejectedValue(
+        new RelationFilterAccessDeniedError('Post', 'author', 'User'),
+      )
+
+      const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'list_post_query',
+            arguments: { where: { author: { is: {} } } },
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('Post.author')
+      expect(data.result.content[0].text).toContain('User')
+    })
+
+    it('should return a depth-exceeded error as a tool result worded as a cost refusal', async () => {
+      mockPrisma.post.findMany.mockRejectedValue(
+        new AccessScopeDepthExceededError('Post', 'author', 3),
+      )
+
+      const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'list_post_query',
+            arguments: {},
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('Post.author')
+      expect(data.result.content[0].text).toContain('cost limit')
     })
   })
 
