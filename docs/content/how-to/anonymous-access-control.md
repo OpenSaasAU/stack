@@ -39,13 +39,33 @@ guide](/docs/how-to/authentication) if you haven't set that up yet):
 - **`Template`** — existing rows the caller picks from when creating a
   `Project`; ownership can't be forced, only checked.
 
+The auth `User` list ships with no operation-level access by default (ADR-0013
+— see [Access control: closed by
+default](/docs/how-to/authentication#access-control-closed-by-default)). Every
+`owner: { connect: { id: … } }` below needs self-only `query` access granted
+on `User`, because a nested `connect` is gated by read access on its target
+list (see [Nested `connect` is gated by the owning relationship field's
+access](/docs/concepts/access-control#nested-connect-is-gated-by-the-owning-relationship-fields-access))
+— without it, every `Workspace` create in this guide would be denied:
+
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
-  plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+  plugins: [
+    authPlugin({
+      emailAndPassword: { enabled: true },
+      access: {
+        user: {
+          operation: {
+            query: ({ session }) => (session ? { id: { equals: session.userId } } : false),
+          },
+        },
+      },
+    }),
+  ],
   // ...
   lists: {
     Workspace: list({
@@ -115,6 +135,25 @@ produced by the filter itself, no derived field required. Compare that to
 keying off `session.data.workspaceId`: that field simply isn't there yet, and
 the filter can't be built at all — the actual root of the problem this page
 opened with. It was a session-shape choice, not a limit in the access layer.
+
+`Template` needs the identical treatment — without a `query` rule it denies
+by default, and the `validate` hook a later section adds (a scoped
+`context.db.template.findFirst(...)` lookup) would find nothing for
+_any_ caller, template ownership notwithstanding:
+
+```typescript
+Template: list({
+  // ...
+  access: {
+    operation: {
+      query: ({ session }) =>
+        session
+          ? { workspace: { owner: { id: { equals: session.userId } } } }
+          : false,
+    },
+  },
+}),
+```
 
 ## Deny explicitly when there's no session
 
