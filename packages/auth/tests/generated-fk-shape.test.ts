@@ -3,6 +3,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
+import { mcp } from 'better-auth/plugins'
 import { generatePrismaSchema } from '@opensaas/stack-cli/generator/prisma'
 import { authPlugin } from '../src/config/plugin.js'
 import { adoptBetterAuthTables } from '../src/config/adopt-better-auth-tables.js'
@@ -220,6 +221,112 @@ describe('generated auth schema — tableName independent of modelName (issue #8
       // install using its own default table names.
       expect(block).toContain(`@@map("${table}")`)
     }
+  })
+})
+
+describe('generated MCP plugin OAuth schema gets real foreign keys and cascades (issue #992)', () => {
+  it('emits onDelete: Cascade, a userId @map, and @@index([userId]) on every OAuth table’s user relation', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+        }),
+      ],
+      lists: {},
+    })
+
+    for (const model of ['OauthApplication', 'OauthAccessToken', 'OauthConsent']) {
+      const block = modelBlock(schema, model)
+      expect(block).toContain('@relation(onDelete: Cascade, fields: [userId], references: [id])')
+      expect(block).toContain('@map("userId")')
+      expect(block).toContain('@@index([userId])')
+    }
+  })
+
+  it('maps each OAuth table to its camelCase physical table name via @@map', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+        }),
+      ],
+      lists: {},
+    })
+
+    expect(modelBlock(schema, 'OauthApplication')).toContain('@@map("oauthApplication")')
+    expect(modelBlock(schema, 'OauthAccessToken')).toContain('@@map("oauthAccessToken")')
+    expect(modelBlock(schema, 'OauthConsent')).toContain('@@map("oauthConsent")')
+  })
+
+  it('leaves the non-PK clientId reference (oauthAccessToken/oauthConsent -> oauthApplication.clientId) as an indexed plain column, not a relation', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+        }),
+      ],
+      lists: {},
+    })
+
+    for (const model of ['OauthAccessToken', 'OauthConsent']) {
+      const block = modelBlock(schema, model)
+      expect(block).toMatch(/clientId\s+String\s/)
+      expect(block).not.toContain('clientId  OauthApplication')
+      expect(block).toContain('@@index([clientId])')
+    }
+  })
+
+  it('adds a reverse collection on User for every OAuth table, leaving Session/Account/Verification unchanged', async () => {
+    const withMcp = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+        }),
+      ],
+      lists: {},
+    })
+    const withoutMcp = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    const user = modelBlock(withMcp, 'User')
+    expect(user).toContain('oauthApplications')
+    expect(user).toContain('oauthAccessTokens')
+    expect(user).toContain('oauthConsents')
+
+    for (const model of ['Session', 'Account', 'Verification']) {
+      expect(modelBlock(withMcp, model)).toBe(modelBlock(withoutMcp, model))
+    }
+  })
+
+  it('generates a required, non-nullable userId FK on OauthConsent (required upstream), and an optional one on OauthApplication (optional upstream)', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+        }),
+      ],
+      lists: {},
+    })
+
+    const consent = modelBlock(schema, 'OauthConsent')
+    expect(consent).toMatch(/userId\s+String\s/)
+    expect(consent).not.toMatch(/userId\s+String\?/)
+
+    const application = modelBlock(schema, 'OauthApplication')
+    expect(application).toMatch(/userId\s+String\?/)
   })
 })
 

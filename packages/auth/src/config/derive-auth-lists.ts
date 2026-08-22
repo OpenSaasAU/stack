@@ -3,9 +3,13 @@
  * plugin/runtime concerns. Reads better-auth's own resolved table
  * definitions (`getAuthTables`, re-exported from `better-auth/db`) rather
  * than hand-transcribing them, so the Auth lists cannot silently drift from
- * what better-auth itself declares (issue #987). See `packages/auth/CLAUDE.md`
- * ("Deriving Auth lists from better-auth config") for the full behavior and
- * examples.
+ * what better-auth itself declares (issue #987). This single derivation also
+ * covers better-auth *plugin* tables (e.g. the MCP plugin's OAuth tables) —
+ * `getAuthTables` merges a plugin's own `schema` into its result when
+ * `options.plugins` is populated, so one registry and one field-derivation
+ * pass cover base models and plugin tables alike (issue #992). See
+ * `packages/auth/CLAUDE.md` ("Deriving Auth lists from better-auth config")
+ * for the full behavior and examples.
  */
 
 import { list } from '@opensaas/stack-core'
@@ -18,7 +22,7 @@ import {
   relationship,
 } from '@opensaas/stack-core/fields'
 import { getAuthTables } from 'better-auth/db'
-import type { BetterAuthOptions } from 'better-auth'
+import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
@@ -26,12 +30,15 @@ import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
 
 /**
- * The derived Auth list set together with the keys each list was placed under.
- * Keys are surfaced separately so callers (plugin add-vs-extend logic, runtime
- * user-key resolution) don't have to re-derive them.
+ * The derived Auth list set together with the keys each of the five base
+ * better-auth models was placed under. Keys are surfaced separately so
+ * callers (plugin add-vs-extend logic, runtime user-key resolution) don't
+ * have to re-derive them. Better-auth *plugin* tables (e.g. `oauthApplication`)
+ * are derived alongside these but aren't named here — their keys are only
+ * needed internally, to resolve a reference target, and by callers that just
+ * want every derived list (`Object.keys(lists)`).
  */
 export type DerivedAuthLists = {
-  /** Derived list keys, one per better-auth model. */
   keys: {
     user: string
     session: string
@@ -40,25 +47,33 @@ export type DerivedAuthLists = {
     /** Only present when a `RateLimit` list was derived (`rateLimit.storage === 'database'`). */
     rateLimit?: string
   }
-  /** The derived list configs, keyed by their derived list keys. */
+  /** The derived list configs, keyed by their derived list keys — base models and plugin tables alike. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   lists: Record<string, ListConfig<any>>
 }
 
-/** better-auth's own fixed model keys — independent of the stack's list-key overrides (`modelName`). */
-type ModelKey = 'user' | 'session' | 'account' | 'verification' | 'rateLimit'
-
-const CORE_MODEL_ORDER: ModelKey[] = ['user', 'session', 'account', 'verification']
+/** better-auth's own fixed base model keys — independent of the stack's list-key overrides (`modelName`). Every other key `getAuthTables` returns is a plugin table. */
+type BaseModelKey = 'user' | 'session' | 'account' | 'verification' | 'rateLimit'
+const BASE_MODEL_KEYS: readonly BaseModelKey[] = [
+  'user',
+  'session',
+  'account',
+  'verification',
+  'rateLimit',
+]
 
 /**
- * Declared field order for each derived list, independent of the order
- * `getAuthTables` happens to return fields in. Prisma doesn't care about
- * field order, but pinning it keeps the generated schema stable across this
- * change (and future better-auth releases) instead of reshuffling on every
- * regenerate — the reverse relations (`user.sessions`/`user.accounts`) are
- * appended after these, in the order their owning model is processed below.
+ * Declared field order for each of the five base models, independent of the
+ * order `getAuthTables` happens to return fields in. Prisma doesn't care
+ * about field order, but pinning it keeps the generated schema stable across
+ * this change (and future better-auth releases) instead of reshuffling on
+ * every regenerate — the reverse relations (`user.sessions`/`user.accounts`)
+ * are appended after these, in the order their owning model is processed
+ * below. A plugin table has no entry here — `assembleFields` falls back to
+ * upstream field order for any model this table doesn't list, which is every
+ * plugin table.
  */
-const FIELD_ORDER: Record<ModelKey, string[]> = {
+const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
   user: ['name', 'email', 'emailVerified', 'image'],
   session: ['token', 'expiresAt', 'ipAddress', 'userAgent', 'user'],
   account: [
@@ -86,9 +101,9 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
  * `references` declares only the child→parent link, never a name for the
  * parent's reverse collection. Derived by pluralizing the child model's own
  * key, which reproduces every current name; override here for a collision or
- * a bad pluralization, one entry per better-auth model key.
+ * a bad pluralization, one entry per better-auth model key (base or plugin).
  */
-const REVERSE_RELATION_NAME_OVERRIDES: Partial<Record<ModelKey, string>> = {}
+const REVERSE_RELATION_NAME_OVERRIDES: Partial<Record<string, string>> = {}
 
 function pluralize(word: string): string {
   if (/[sxz]$|[cs]h$/.test(word)) return `${word}es`
@@ -96,7 +111,7 @@ function pluralize(word: string): string {
   return `${word}s`
 }
 
-function reverseRelationName(modelKey: ModelKey): string {
+function reverseRelationName(modelKey: string): string {
   return REVERSE_RELATION_NAME_OVERRIDES[modelKey] ?? pluralize(modelKey)
 }
 
@@ -122,6 +137,24 @@ const ON_DELETE_ACTIONS: Record<string, string> = {
 
 function mapOnDelete(action: string): string {
   return ON_DELETE_ACTIONS[action] ?? 'Cascade'
+}
+
+/**
+ * PascalCase a better-auth `modelName`, preserving internal word boundaries.
+ * Base models never go through this — their list key is always the
+ * configured `modelName` as-is (see `buildModelRegistry`) — only plugin
+ * tables do, since better-auth plugins declare camelCase (`oauthApplication`)
+ * or snake_case (`oauth_application`) model names and list keys must be
+ * PascalCase (issue #991).
+ */
+function pascalCaseModelName(modelName: string): string {
+  if (/[_-]/.test(modelName)) {
+    return modelName
+      .split(/[_-]/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join('')
+  }
+  return modelName.charAt(0).toUpperCase() + modelName.slice(1)
 }
 
 function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefined {
@@ -190,9 +223,21 @@ function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldCo
             db,
           })
     default:
-      throw new Error(
-        `deriveAuthLists: unsupported better-auth field type "${upstream.type}" for field "${fieldKey}"`,
+      // better-auth's `DBFieldType` also allows `json`, `string[]`/`number[]`,
+      // and an enum array — none of which any built-in plugin (MCP, admin,
+      // organization, two-factor, ...) or the four base models actually use
+      // today. Warn and fall back to a plain `text()` column rather than
+      // throwing, so an app config that happens to hit this still generates
+      // (matching the pre-consolidation plugin-table converter's behavior)
+      // instead of crashing the whole `config()`/`generate` pipeline.
+      console.warn(
+        `[stack-auth] Unknown better-auth field type "${upstream.type}" for field "${fieldKey}", defaulting to text field`,
       )
+      return text({
+        ...(isRequired ? { validation: { isRequired: true as const } } : {}),
+        ...(isIndexed ? { isIndexed } : {}),
+        db,
+      })
   }
 }
 
@@ -205,6 +250,12 @@ function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldCo
  * relationship field name instead, reintroducing issue #935), requiredness
  * and `onDelete` come from `references`, and the FK index/uniqueness mirror
  * better-auth's own `index`/`unique` flags (ADR-0007).
+ *
+ * Only called for a reference whose target field is the target's `id` — see
+ * the field-derivation loop in {@link deriveAuthLists} for the non-PK case
+ * (e.g. better-auth's own oidc-provider schema references
+ * `oauthApplication.clientId`, not its `id`), which `relationship()` cannot
+ * express and stays a plain scalar column instead.
  */
 function buildForeignKeyField(
   fieldKey: string,
@@ -239,14 +290,16 @@ function buildForeignKeyField(
 }
 
 /**
- * Build the list-level `db` config (`timestamps` + `@@map` + `@@schema`) for a
- * derived list.
+ * Build the list-level `db` config (`timestamps` + `@@map` + `@@schema`) for
+ * a derived base-model list.
  *
  * `timestamps` is a per-model input, not hardcoded: better-auth's adapter
  * writes `createdAt`/`updatedAt` on every user/session/account/verification
  * row, so those four opt back into auto-timestamps now that they're OFF by
  * default (ADR-0004). The `RateLimit` model has neither column upstream, so
- * it passes `false`.
+ * it passes `false`. Plugin tables don't go through this — see the "Out of
+ * scope" note on `deriveAuthLists` about not adding fields/behavior
+ * better-auth doesn't declare a JS-level default for.
  */
 function listDb(
   model: NormalizedAuthModelConfig,
@@ -266,8 +319,16 @@ function betterAuthModelOptions(model: NormalizedAuthModelConfig): {
   return { fields: model.fields }
 }
 
-/** The options object fed to `getAuthTables` — carries only the per-model column overrides the app configured. */
-function buildBetterAuthTableOptions(models: NormalizedAuthModels): BetterAuthOptions {
+/**
+ * The options object fed to `getAuthTables` — carries the per-model column
+ * overrides the app configured, plus the app's better-auth plugins so their
+ * own `schema` (base-model extensions and standalone plugin tables alike)
+ * merges into the same resolved table set (issue #992).
+ */
+function buildBetterAuthTableOptions(
+  models: NormalizedAuthModels,
+  plugins: BetterAuthPlugin[],
+): BetterAuthOptions {
   return {
     user: betterAuthModelOptions(models.user),
     session: betterAuthModelOptions(models.session),
@@ -276,35 +337,33 @@ function buildBetterAuthTableOptions(models: NormalizedAuthModels): BetterAuthOp
     ...(models.rateLimit
       ? { rateLimit: { storage: 'database' as const, ...betterAuthModelOptions(models.rateLimit) } }
       : {}),
+    ...(plugins.length ? { plugins } : {}),
   }
 }
 
-function emptyByModel<T>(): Record<ModelKey, Record<string, T>> {
-  return { user: {}, session: {}, account: {}, verification: {}, rateLimit: {} }
-}
+/** A resolved better-auth table definition, as `getAuthTables` returns it (base model or plugin table alike). */
+type ResolvedTable = { modelName: string; fields: Record<string, DBFieldAttribute> }
 
 /**
- * Derive the OpenSaaS Auth lists from the resolved better-auth model config.
+ * The model registry: every better-auth model key (base or plugin) mapped to
+ * its derived list key. Built in one pass over `getAuthTables`' full result,
+ * before any field is derived — reference resolution needs a target's
+ * derived list key, and a reference can cross from a plugin table to a base
+ * model, from a plugin table to another plugin table, or (for the base
+ * models themselves) to another base model, so the whole set has to be known
+ * up front rather than resolved lazily per model.
  *
- * Per ADR-0013 the derived lists ship **closed** (no permissive operation
- * access) unless the application supplies access via `accessConfig` (the
- * `authPlugin({ access: … })` passthrough, keyed by better-auth model name) or,
- * for the user list specifically, `userConfig.access` (`extendUserList.access`,
- * which takes precedence — see {@link AuthAccessConfig}).
- *
- * A fifth `RateLimit` list is included only when `models.rateLimit` is
- * present (i.e. `rateLimit.storage === 'database'`).
- *
- * @param models - Resolved better-auth per-model config (modelName + field column maps)
- * @param userConfig - Extra User-list fields/access/hooks supplied via `extendUserList`
- * @param accessConfig - App-authored access for each Auth list, keyed by better-auth model name
- * @returns The derived list keys and the Auth list configs keyed by those keys
+ * Base models keep their existing behavior: the list key is exactly the
+ * configured `modelName` (already assumed PascalCase by convention, not
+ * re-cased here). A plugin table's list key is PascalCased from its resolved
+ * `modelName` (issue #991) — `getAuthTables` always resolves a plugin
+ * table's `modelName` (defaulting to its own schema key when the plugin
+ * doesn't set one), so this is never applied to an empty string.
  */
-export function deriveAuthLists(
+function buildModelRegistry(
+  tables: Record<string, ResolvedTable>,
   models: NormalizedAuthModels,
-  userConfig: ExtendUserListConfig = {},
-  accessConfig: AuthAccessConfig = {},
-): DerivedAuthLists {
+): { keys: DerivedAuthLists['keys']; registry: Map<string, string> } {
   const keys: DerivedAuthLists['keys'] = {
     user: models.user.modelName,
     session: models.session.modelName,
@@ -313,43 +372,110 @@ export function deriveAuthLists(
     ...(models.rateLimit ? { rateLimit: models.rateLimit.modelName } : {}),
   }
 
-  const modelOrder: ModelKey[] = models.rateLimit
-    ? [...CORE_MODEL_ORDER, 'rateLimit']
-    : CORE_MODEL_ORDER
-  const tables = getAuthTables(buildBetterAuthTableOptions(models))
+  const registry = new Map<string, string>()
+  for (const baseKey of BASE_MODEL_KEYS) {
+    const listKey = keys[baseKey]
+    if (listKey) registry.set(baseKey, listKey)
+  }
 
-  const scalarFields = emptyByModel<FieldConfig>()
-  const foreignKeyFields = emptyByModel<RelationshipField>()
-  const reverseRelationFields = emptyByModel<RelationshipField>()
+  for (const modelKey of Object.keys(tables)) {
+    if (registry.has(modelKey)) continue
+    registry.set(modelKey, pascalCaseModelName(tables[modelKey].modelName))
+  }
 
-  for (const modelKey of modelOrder) {
-    const upstreamFields = tables[modelKey]?.fields ?? {}
+  return { keys, registry }
+}
+
+/**
+ * Derive the OpenSaaS Auth lists from the resolved better-auth model config —
+ * the four base models, an optional database-backed `RateLimit`, and any
+ * table a better-auth plugin declares in its own `schema` (issue #992).
+ *
+ * Per ADR-0013 every derived list ships **closed** (no permissive operation
+ * access) unless the application supplies access via `accessConfig` (the
+ * `authPlugin({ access: … })` passthrough, keyed by better-auth model name) or,
+ * for the user list specifically, `userConfig.access` (`extendUserList.access`,
+ * which takes precedence — see {@link AuthAccessConfig}). Plugin tables have no
+ * `access` passthrough at all — an app that needs to grant access declares the
+ * list itself under the same derived key so this function's field-only merge
+ * (in `authPlugin`'s add-vs-extend loop) leaves the app's own access standing.
+ *
+ * A fifth `RateLimit` list is included only when `models.rateLimit` is
+ * present (i.e. `rateLimit.storage === 'database'`).
+ *
+ * @param models - Resolved better-auth per-model config (modelName + field column maps)
+ * @param userConfig - Extra User-list fields/access/hooks supplied via `extendUserList`
+ * @param accessConfig - App-authored access for each base Auth list, keyed by better-auth model name
+ * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`), whose own
+ *   `schema` (base-model extensions and standalone plugin tables) is derived alongside the base models
+ * @returns The derived base-model list keys and every derived list config (base models and plugin tables)
+ */
+export function deriveAuthLists(
+  models: NormalizedAuthModels,
+  userConfig: ExtendUserListConfig = {},
+  accessConfig: AuthAccessConfig = {},
+  plugins: BetterAuthPlugin[] = [],
+): DerivedAuthLists {
+  const tables = getAuthTables(buildBetterAuthTableOptions(models, plugins)) as Record<
+    string,
+    ResolvedTable
+  >
+  const { keys, registry } = buildModelRegistry(tables, models)
+
+  const scalarFields: Record<string, Record<string, FieldConfig>> = {}
+  const foreignKeyFields: Record<string, Record<string, RelationshipField>> = {}
+  const reverseRelationFields: Record<string, Record<string, RelationshipField>> = {}
+
+  for (const modelKey of Object.keys(tables)) {
+    const upstreamFields = tables[modelKey].fields
     for (const [fieldKey, upstream] of Object.entries(upstreamFields)) {
       if (TIMESTAMP_FIELDS.has(fieldKey)) continue
 
       if (upstream.references) {
-        const targetModelKey = upstream.references.model as ModelKey
-        const targetListKey = keys[targetModelKey]
+        const targetModelKey = upstream.references.model
+        const targetListKey = registry.get(targetModelKey)
         if (!targetListKey) {
           throw new Error(
-            `deriveAuthLists: "${modelKey}.${fieldKey}" references unknown model "${upstream.references.model}"`,
+            `deriveAuthLists: "${modelKey}.${fieldKey}" references unknown model "${targetModelKey}"`,
           )
         }
 
-        const relationFieldKey = relationshipFieldName(fieldKey)
-        const reverseName = reverseRelationName(modelKey)
-        foreignKeyFields[modelKey][relationFieldKey] = buildForeignKeyField(
-          fieldKey,
-          upstream,
-          targetListKey,
-          reverseName,
-        )
-        reverseRelationFields[targetModelKey][reverseName] = relationship({
-          ref: `${keys[modelKey]}.${relationFieldKey}`,
-          many: true,
-        })
+        if (upstream.references.field === 'id') {
+          const relationFieldKey = relationshipFieldName(fieldKey)
+          const reverseName = reverseRelationName(modelKey)
+          if (reverseRelationFields[targetModelKey]?.[reverseName]) {
+            // The reverse name is derived from the *model* (pluralized), not
+            // the field — two id-referencing FKs on the same model targeting
+            // the same model would collapse onto one reverse field and
+            // silently produce an ambiguous/incorrect relation. Fail loudly;
+            // resolve via `REVERSE_RELATION_NAME_OVERRIDES`.
+            throw new Error(
+              `deriveAuthLists: "${modelKey}" has more than one reference to "${targetModelKey}" ` +
+                `resolving to the same reverse relation name "${reverseName}" — add an override to ` +
+                `REVERSE_RELATION_NAME_OVERRIDES in derive-auth-lists.ts`,
+            )
+          }
+          ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = buildForeignKeyField(
+            fieldKey,
+            upstream,
+            targetListKey,
+            reverseName,
+          )
+          ;(reverseRelationFields[targetModelKey] ??= {})[reverseName] = relationship({
+            ref: `${registry.get(modelKey)}.${relationFieldKey}`,
+            many: true,
+          })
+        } else {
+          // relationship() always references the target's `id` column —
+          // better-auth's own oidc-provider schema (the MCP plugin's OAuth
+          // tables) references oauthApplication.clientId instead, which a
+          // relation can't express without pointing Prisma at the wrong
+          // column. Left as a plain scalar column, same as pre-consolidation
+          // behavior (issue #992).
+          ;(scalarFields[modelKey] ??= {})[fieldKey] = buildScalarField(fieldKey, upstream)
+        }
       } else {
-        scalarFields[modelKey][fieldKey] = buildScalarField(fieldKey, upstream)
+        ;(scalarFields[modelKey] ??= {})[fieldKey] = buildScalarField(fieldKey, upstream)
       }
     }
   }
@@ -362,16 +488,18 @@ export function deriveAuthLists(
    * ones in the order `getAuthTables` returned them, so a field a future
    * better-auth release adds — the exact drift class this derivation exists
    * to close (#986) — still reaches the generated schema; it just lands at
-   * the end of the model until `FIELD_ORDER` is updated to place it.
+   * the end of the model until `FIELD_ORDER` is updated to place it. A
+   * plugin table has no `FIELD_ORDER` entry at all, so every one of its
+   * fields lands in upstream order.
    */
-  function assembleFields(modelKey: ModelKey): Record<string, FieldConfig> {
+  function assembleFields(modelKey: string): Record<string, FieldConfig> {
     const fields: Record<string, FieldConfig> = {}
     const remaining = new Map([
-      ...Object.entries(scalarFields[modelKey]),
-      ...Object.entries(foreignKeyFields[modelKey]),
+      ...Object.entries(scalarFields[modelKey] ?? {}),
+      ...Object.entries(foreignKeyFields[modelKey] ?? {}),
     ])
 
-    for (const fieldKey of FIELD_ORDER[modelKey]) {
+    for (const fieldKey of FIELD_ORDER[modelKey as BaseModelKey] ?? []) {
       const field = remaining.get(fieldKey)
       if (field) {
         fields[fieldKey] = field
@@ -416,6 +544,22 @@ export function deriveAuthLists(
       fields: assembleFields('rateLimit'),
       db: listDb(models.rateLimit, false),
       access: accessConfig.rateLimit,
+    })
+  }
+
+  const baseKeysPresent = new Set<string>(['user', 'session', 'account', 'verification'])
+  if (models.rateLimit) baseKeysPresent.add('rateLimit')
+
+  for (const modelKey of Object.keys(tables)) {
+    if (baseKeysPresent.has(modelKey)) continue
+
+    const listKey = registry.get(modelKey)
+    if (!listKey) continue // unreachable: buildModelRegistry registers every table key
+
+    const physicalName = tables[modelKey].modelName
+    lists[listKey] = list({
+      fields: assembleFields(modelKey),
+      ...(listKey !== physicalName ? { db: { map: physicalName } } : {}),
     })
   }
 

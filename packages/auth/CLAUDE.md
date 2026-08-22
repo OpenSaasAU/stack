@@ -67,15 +67,20 @@ config({
 
 ### Deriving Auth lists from better-auth config
 
-The four Auth lists are **derived** from better-auth's own resolved table
-definitions, not hand-transcribed. The pure derivation lives in
-`src/config/derive-auth-lists.ts` (`deriveAuthLists`), which `getAuthLists`
-and the plugin's add-vs-extend logic consume. It calls `getAuthTables`
+The four Auth lists, the conditional `RateLimit` fifth, and every table a
+better-auth plugin declares in its own `schema` (e.g. the `mcp` plugin's
+`oauthApplication`/`oauthAccessToken`/`oauthConsent`) are all **derived**
+from better-auth's own resolved table definitions, not hand-transcribed. The
+pure derivation lives in `src/config/derive-auth-lists.ts` (`deriveAuthLists`),
+which `getAuthLists` and the plugin's `init` consume. It calls `getAuthTables`
 (re-exported from `better-auth/db` — the same function better-auth's own
 Kysely migrator, schema generator, and adapter base use to build their
-schemas) and translates the result into stack list configs, so the Auth
+schemas), passing the app's `betterAuthPlugins` through as `options.plugins`
+so a plugin's own schema (a standalone table, or a schema extension of a base
+model like the `anonymous` plugin's `user.isAnonymous`) is already merged
+into the result — and translates it into stack list configs, so the Auth
 lists cannot silently drift from what better-auth itself declares (issue
-#987, ADR-0033):
+#987, ADR-0033, ADR-0034):
 
 - per-model `modelName`/`fields` (the developer's own `authPlugin({ user:
 {...}, session: {...} })` config, already normalized) pass straight
@@ -102,9 +107,20 @@ lists cannot silently drift from what better-auth itself declares (issue
   (its FK declaration is one-directional) and is derived by pluralizing the
   child model's own key, with a documented override map in
   `derive-auth-lists.ts` for a collision or bad pluralization
+- a **plugin table**'s list key is PascalCased from better-auth's resolved
+  `modelName` (`oauthApplication` → `OauthApplication`), with `db.map` set
+  back to the original whenever the case changed; its scalar/FK fields go
+  through the exact same derivation as a base model's, including the reverse
+  relation onto whichever list it references (base or another plugin table).
+  A reference whose target field isn't the target's `id` (better-auth's own
+  oidc-provider schema does this — `oauthAccessToken.clientId` references
+  `oauthApplication.clientId`, not its `id`) stays a plain scalar column,
+  since `relationship()` can only express an `id`-based FK. Plugin tables
+  ship closed like the base models, with no `access` passthrough at all —
+  see ADR-0034 and "Access control on Auth lists" below
 
-With no `modelName`/`tableName`/`fields` overrides the list/table shape is
-otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
+With no `modelName`/`tableName`/`fields` overrides the base list/table shape
+is otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
 field shapes, no table `@@map`).
 
 ```typescript
@@ -156,12 +172,12 @@ reason — "who is this session" must not depend on the application's User
 access policy. `sudo` is a plain second argument, not a method on `context`
 (`AccessContext`) itself — see `packages/core/CLAUDE.md`.
 
-`convertBetterAuthSchema`/`convertTableToList` (`src/server/schema-converter.ts`),
-which handle additional tables a better-auth plugin's own schema declares
-(e.g. OAuth client tables from the `mcp` plugin), also ship closed — there is
-no `access` passthrough for them; an app that needs to grant access declares
-the list itself under the same derived key so the plugin's field-only extend
-path merges in (its own access then stands, same as any other `extendList`).
+Better-auth plugin tables (e.g. OAuth client tables from the `mcp` plugin)
+are derived by the same `deriveAuthLists` — not a separate converter, since
+ADR-0034 — and also ship closed: there is no `access` passthrough for them;
+an app that needs to grant access declares the list itself under the same
+derived key so the plugin's field-only extend path merges in (its own access
+then stands, same as any other `extendList`).
 
 ### Schema placement (relocatable Auth lists)
 
