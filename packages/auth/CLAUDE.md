@@ -179,6 +179,30 @@ an app that needs to grant access declares the list itself under the same
 derived key so the plugin's field-only extend path merges in (its own access
 then stands, same as any other `extendList`).
 
+### Credential fields are read-denied independent of operation access (ADR-0036)
+
+Operation-level access is all-or-nothing at the list, not the column — so
+the deny above (list-level) isn't the whole story for the six
+credential-bearing fields (`Session.token`, `Verification.value`,
+`Account.password`/`accessToken`/`refreshToken`/`idToken`): `deriveAuthLists`
+sets a field-level `access: { read: () => false }` on each of them
+unconditionally, independent of whatever `accessConfig` an app supplies.
+Opening `query` on `Session` for a "your active sessions" screen no longer
+also exposes `token` — the field is stripped from the result (the ordinary
+field-access-denial behavior), the row itself still returns.
+
+The deny is applied in the scalar-field derivation loop
+(`withCredentialAccess` in `derive-auth-lists.ts`), keyed by better-auth's
+own model/field key (`CREDENTIAL_FIELDS`) — not the app's list key or
+column `db.map` — so it survives a `modelName` remap or a `fields` column
+override. `sudo()` still reads these fields, unaffected: this is the
+supported path for a genuine need (an admin tool, or an app's own auth code
+verifying a password hash via `HashedPassword.compare()`). See
+`packages/core/CLAUDE.md`'s "Access Control Execution Flow" for how a
+field-level `read` denial is enforced, and ADR-0036 for why this list is
+exactly these six fields and not, say, `Account.providerId` or
+`Session.ipAddress` (identifying, not authenticating — left open).
+
 ### Schema placement (relocatable Auth lists)
 
 A plugin-level `schema` option places all generated Auth lists in a non-`public`
