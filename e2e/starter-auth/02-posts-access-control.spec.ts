@@ -150,8 +150,12 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('textarea[name="content"]', 'Content')
       await page.click('button[type="submit"]')
 
-      // Should show error about duplicate slug
-      await expect(page.locator('text="A record with this value already exists"')).toBeVisible({
+      // Should show a field-specific error naming the violated column, not the
+      // generic fallback (Prisma 7 driver adapters don't populate meta.target
+      // directly — see issue #979).
+      await expect(
+        page.locator('text="Slug must be unique. The value you entered is already in use."'),
+      ).toBeVisible({
         timeout: 5000,
       })
     })

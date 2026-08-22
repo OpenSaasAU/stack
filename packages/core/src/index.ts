@@ -64,6 +64,14 @@ export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-coun
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
 
+// Resolves which columns (and, where recoverable, which named constraint) a
+// caught P2002 unique-constraint violation hit — normalising Prisma 7 driver
+// adapters' undocumented error shape to the documented `meta.target` one, so
+// a caller of `context.db.*` never needs to reach into adapter internals
+// (see issue #979).
+export { uniqueConstraintOf } from './lib/prisma-errors.js'
+export type { UniqueConstraintInfo } from './lib/prisma-errors.js'
+
 // Thrown by a read when a caller-supplied `include` names a relation nested
 // deeper than the Access Filter can scope (see ADR-0022). Distinct from
 // `ValidationError` — this is the engine refusing to return unscoped data, not
