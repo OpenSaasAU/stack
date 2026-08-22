@@ -6,6 +6,7 @@ import { CheckboxCell } from './CheckboxCell.js'
 import { SelectCell } from './SelectCell.js'
 import { TimestampCell } from './TimestampCell.js'
 import { RelationshipCell } from './RelationshipCell.js'
+import { PasswordCell } from './PasswordCell.js'
 
 /**
  * Props every Cell component receives — the list-table rendering of one
@@ -47,6 +48,7 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   select: SelectCell,
   timestamp: TimestampCell,
   relationship: RelationshipCell,
+  password: PasswordCell,
 }
 
 /**

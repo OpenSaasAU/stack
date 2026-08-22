@@ -449,6 +449,23 @@ describe('ListTable', () => {
       expect(screen.queryByText('Password')).not.toBeInTheDocument()
     })
 
+    it('should exclude a password-typed field regardless of its name', () => {
+      const items = [{ id: '1', username: 'john', secret: 'hash...' }]
+
+      render(<ListTable items={items} fieldTypes={{ username: 'text', secret: 'password' }} />)
+
+      expect(screen.getByText('Username')).toBeInTheDocument()
+      expect(screen.queryByText('Secret')).not.toBeInTheDocument()
+    })
+
+    it('should not exclude a field merely named password if it is not password-typed', () => {
+      const items = [{ id: '1', password: 'plain text field' }]
+
+      render(<ListTable items={items} fieldTypes={{ password: 'text' }} />)
+
+      expect(screen.getByText('Password')).toBeInTheDocument()
+    })
+
     it('should exclude createdAt and updatedAt by default', () => {
       const items = [
         {
