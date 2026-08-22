@@ -90,13 +90,22 @@ export function createVerificationList(): ListConfig<any> {
  * @param models - Resolved better-auth model config; defaults to the better-auth defaults
  * @param accessConfig - App-authored access for each base Auth list, keyed by better-auth model name
  * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`)
+ * @param credentialFieldsConfig - App-authored additions to the credential-field read-deny
+ *   (`authPlugin({ credentialFields })`), keyed by better-auth model key
  */
 export function getAuthLists(
   userConfig?: ExtendUserListConfig,
   models: NormalizedAuthModels = DEFAULT_MODELS,
   accessConfig?: AuthAccessConfig,
   plugins?: BetterAuthPlugin[],
+  credentialFieldsConfig?: Record<string, string[]>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
-  return deriveAuthLists(models, userConfig || {}, accessConfig || {}, plugins || []).lists
+  return deriveAuthLists(
+    models,
+    userConfig || {},
+    accessConfig || {},
+    plugins || [],
+    credentialFieldsConfig || {},
+  ).lists
 }

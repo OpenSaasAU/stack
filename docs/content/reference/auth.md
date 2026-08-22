@@ -310,6 +310,19 @@ authPlugin({
 
 The auth plugin automatically converts Better Auth plugin schemas to OpenSaaS lists.
 
+### `credentialFields`
+
+Mark additional better-auth model fields as credentials, so they ship field-level read-denied
+alongside the stack's own seeded set. See [Credential fields are read-denied](#credential-fields-are-read-denied-adr-0036)
+below for the full contract and the seeded set.
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [passkey()],
+  credentialFields: { passkey: ['publicKey'] },
+})
+```
+
 ### `betterAuthOptions`
 
 Escape hatch for any better-auth option the stack doesn't model as its own config field. Deep-merged into the options `createAuth()` builds, applied **last** — a plain-object value at a given key merges recursively with what the stack already set there (so a nested addition like `session.cookieCache` adds alongside the stack's own `session.expiresIn`/`updateAge` rather than replacing them), and on a genuine key collision `betterAuthOptions` wins. Arrays and any other value type replace the stack's value outright.
@@ -438,6 +451,35 @@ derives the list, so granting operation-level access to a list (e.g. `access: { 
 { query: () => true } } }` for a "your active sessions" screen) does **not** also expose the token
 column — the field is silently stripped from a returned row, the same as any other field-level read
 denial, and the rest of the row is returned normally.
+
+The same deny covers **better-auth plugin table** credential fields for the plugins the stack has
+first-class support for — plugin tables derive through the identical field-derivation pass as the
+base models (ADR-0034):
+
+| Model (better-auth key) | Field(s)                | Plugin                 |
+| ----------------------- | ----------------------- | ---------------------- |
+| `oauthClient`           | `clientSecret`          | `mcp` / oauth-provider |
+| `oauthAccessToken`      | `token`                 | `mcp` / oauth-provider |
+| `oauthRefreshToken`     | `token`                 | `mcp` / oauth-provider |
+| `twoFactor`             | `secret`, `backupCodes` | `twoFactor()`          |
+
+For any other plugin, mark a field as a credential yourself via `credentialFields` — keyed by
+better-auth's own **model key** (not the derived list key) and naming better-auth's own **field
+keys** (not mapped column names). It is strictly additive: it can mark further fields, but can never
+unmark one of the fields above.
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [passkey()],
+  credentialFields: {
+    passkey: ['publicKey'],
+  },
+})
+```
+
+An entry naming a field that doesn't exist on a model your app actually derives (the plugin is
+registered) throws at config time, naming the model and field; an entry for a model your app doesn't
+derive at all (the plugin isn't registered) is a silent no-op.
 
 Naming a denied field in `findMany`'s (or `count`'s) `where`/`orderBy` is different: that's rejected
 up front with a `ValidationError` rather than silently stripped, the same as any other field-level

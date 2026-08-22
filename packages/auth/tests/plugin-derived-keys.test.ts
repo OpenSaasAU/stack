@@ -209,6 +209,45 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     // ...or its access config.
     expect(authUser.access?.operation?.query).toBe(userQuery)
   })
+
+  it('keeps a plugin-table credential field read-denied even when the app redeclares that list and field (issue #1014)', async () => {
+    // An app opening a plugin-derived list the documented way (declaring the
+    // list itself under the derived key) merges in via extendList — field
+    // additions win over the app's own field of the same key (core's
+    // extendList spreads `extension.fields` last), so the derived,
+    // read-denied clientSecret must survive even though the app also
+    // declares a `clientSecret` field on its own `OauthClient` list.
+    const mcpBetterAuthPlugin = {
+      id: 'test-mcp',
+      schema: {
+        oauthClient: {
+          fields: {
+            clientSecret: { type: 'string' as const, required: false },
+            name: { type: 'string' as const, required: false },
+          },
+        },
+      },
+    }
+
+    const result = await config({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ betterAuthPlugins: [mcpBetterAuthPlugin] })],
+      lists: {
+        OauthClient: list({
+          fields: { clientSecret: text() },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+
+    const oauthClient = result.lists.OauthClient
+    expect(oauthClient.fields.clientSecret.access?.read).toBeTypeOf('function')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+    expect(await oauthClient.fields.clientSecret.access!.read!({} as any)).toBe(false)
+    // The app's own access survives (extendList never forwards access).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- access control parameters are runtime values
+    expect(oauthClient.access?.operation?.query?.({} as any)).toBe(true)
+  })
 })
 
 describe('authPlugin - runtime user-key resolution', () => {

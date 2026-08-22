@@ -394,6 +394,39 @@ export type AuthConfig = {
   access?: AuthAccessConfig
 
   /**
+   * Mark additional better-auth model fields as credentials, so they ship
+   * field-level read-denied like the stack's own seeded set (ADR-0036) — the
+   * six base-model fields plus, as of issue #1014, the `mcp`/oauth-provider
+   * plugin's `oauthClient.clientSecret`/`oauthAccessToken.token`/
+   * `oauthRefreshToken.token` and `twoFactor()`'s `twoFactor.secret`/
+   * `backupCodes`. Use this for a better-auth plugin the stack doesn't seed a
+   * credential set for.
+   *
+   * Keyed by better-auth's own **model key** (e.g. `'twoFactor'`,
+   * `'oauthClient'` — not the derived list key, so it stays remap-proof), each
+   * naming better-auth **field keys** (not mapped column names).
+   *
+   * Strictly additive: an entry can mark further fields as credentials, but
+   * can never unmark one of the stack's seeded fields — omitting or emptying
+   * a seeded model's list here leaves that model's seeded deny standing. An
+   * entry naming a field that doesn't exist on a model the app actually
+   * derives (has that plugin registered) throws, naming the model and field;
+   * an entry for a model the app doesn't derive at all is a silent no-op.
+   * An entry naming an id-referencing relationship field (e.g. an FK ending
+   * `Id`) also throws — that field derives to a `relationship()`, never a
+   * scalar column, so a deny registered against it could never apply.
+   *
+   * @example
+   * ```typescript
+   * authPlugin({
+   *   betterAuthPlugins: [passkey()],
+   *   credentialFields: { passkey: ['publicKey'] },
+   * })
+   * ```
+   */
+  credentialFields?: Record<string, string[]>
+
+  /**
    * Additional Better Auth plugins to enable
    * Allows integrating any Better Auth plugin (MCP, 2FA, etc.)
    *
