@@ -307,6 +307,29 @@ describe('Field Types', () => {
         expect(prismaType.type).toBe('Int')
         expect(prismaType.modifiers).toBe('@db.BigInt')
       })
+
+      test('isIndexed: true requests a block-level index', () => {
+        const field = integer({ isIndexed: true })
+        const prismaType = field.getPrismaType('rank')
+
+        expect(prismaType.index).toBe(true)
+      })
+
+      test("isIndexed: 'unique' generates @unique modifier", () => {
+        const field = integer({ isIndexed: 'unique' })
+        const prismaType = field.getPrismaType('rank')
+
+        expect(prismaType.modifiers).toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
+      })
+
+      test('no isIndexed generates neither modifier nor index', () => {
+        const field = integer()
+        const prismaType = field.getPrismaType('rank')
+
+        expect(prismaType.modifiers).not.toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
+      })
     })
 
     describe('getTypeScriptType', () => {
@@ -679,6 +702,29 @@ describe('Field Types', () => {
         expect(prismaType.type).toBe('DateTime')
         expect(prismaType.modifiers).toContain('@db.Timestamptz')
       })
+
+      test('isIndexed: true requests a block-level index', () => {
+        const field = timestamp({ isIndexed: true })
+        const prismaType = field.getPrismaType('publishedAt')
+
+        expect(prismaType.index).toBe(true)
+      })
+
+      test("isIndexed: 'unique' generates @unique modifier", () => {
+        const field = timestamp({ isIndexed: 'unique' })
+        const prismaType = field.getPrismaType('publishedAt')
+
+        expect(prismaType.modifiers).toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
+      })
+
+      test('no isIndexed generates neither modifier nor index', () => {
+        const field = timestamp()
+        const prismaType = field.getPrismaType('publishedAt')
+
+        expect(prismaType.modifiers).not.toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
+      })
     })
 
     describe('getTypeScriptType', () => {
@@ -904,6 +950,52 @@ describe('Field Types', () => {
 
         expect(prismaType.type).toBe('String')
         expect(prismaType.modifiers).toBe(' @default("draft")')
+      })
+
+      test('isIndexed: true requests a block-level index on the default string column', () => {
+        const field = select({
+          options: [{ label: 'Draft', value: 'draft' }],
+          isIndexed: true,
+        })
+        const prismaType = field.getPrismaType('status')
+
+        expect(prismaType.type).toBe('String')
+        expect(prismaType.index).toBe(true)
+      })
+
+      test("isIndexed: 'unique' generates @unique on the default string column", () => {
+        const field = select({
+          options: [{ label: 'Draft', value: 'draft' }],
+          isIndexed: 'unique',
+        })
+        const prismaType = field.getPrismaType('status')
+
+        expect(prismaType.modifiers).toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
+      })
+
+      test('isIndexed: true requests a block-level index on a native-enum column', () => {
+        const field = select({
+          options: [{ label: 'Draft', value: 'draft' }],
+          db: { type: 'enum' },
+          isIndexed: true,
+        })
+        const prismaType = field.getPrismaType('status', undefined, 'Post')
+
+        expect(prismaType.type).toBe('PostStatus')
+        expect(prismaType.index).toBe(true)
+      })
+
+      test("isIndexed: 'unique' generates @unique on a native-enum column", () => {
+        const field = select({
+          options: [{ label: 'Draft', value: 'draft' }],
+          db: { type: 'enum' },
+          isIndexed: 'unique',
+        })
+        const prismaType = field.getPrismaType('status', undefined, 'Post')
+
+        expect(prismaType.modifiers).toContain('@unique')
+        expect(prismaType.index).toBeUndefined()
       })
     })
 
