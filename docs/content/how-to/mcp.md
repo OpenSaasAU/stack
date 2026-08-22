@@ -39,6 +39,7 @@ In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin:
 import { config, list } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 
 export default config({
   plugins: [
@@ -46,6 +47,10 @@ export default config({
       emailAndPassword: { enabled: true },
       // Add MCP plugin to Better Auth
       betterAuthPlugins: [
+        // better-auth 1.7's mcp() is built on the OAuth Provider, which
+        // issues JWT-based access tokens and requires better-auth's own
+        // jwt() plugin registered alongside it.
+        jwt(),
         mcp({
           loginPage: '/sign-in',
           // Canonical protected-resource identifier (RFC 8707/9728) —

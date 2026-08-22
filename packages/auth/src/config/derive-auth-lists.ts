@@ -101,6 +101,24 @@ const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
 const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
 
 /**
+ * Whether a model declares BOTH `createdAt` and `updatedAt` upstream — the
+ * only shape `db.timestamps: true` can express, since it always emits both
+ * columns together (`resolveListTimestamps` in the Prisma generator). The
+ * four base models always satisfy this. A better-auth plugin table is not
+ * guaranteed to: the MCP plugin's OAuth tables (better-auth 1.7, issue #992)
+ * include several with only `createdAt` (e.g. `oauthAccessToken`,
+ * `oauthRefreshToken`, `oauthClientResource`) — those fall through to the
+ * general field-derivation loop below instead, so `createdAt` alone is still
+ * derived as an ordinary scalar column rather than silently dropped (which
+ * previously crashed a real write the moment better-auth's own adapter tried
+ * to set it — see `oauthResource`'s seeded row in the MCP OAuth cascade e2e
+ * test).
+ */
+function hasSymmetricTimestamps(upstreamFields: Record<string, DBFieldAttribute>): boolean {
+  return 'createdAt' in upstreamFields && 'updatedAt' in upstreamFields
+}
+
+/**
  * The reverse relation field name a foreign key implies on its target model
  * (e.g. `User.sessions`) has no source in better-auth's metadata at all —
  * `references` declares only the child→parent link, never a name for the
@@ -438,8 +456,16 @@ export function deriveAuthLists(
 
   for (const modelKey of Object.keys(tables)) {
     const upstreamFields = tables[modelKey].fields
+    // Base models always carry `db.timestamps: true` below regardless of
+    // this check; a plugin table only skips createdAt/updatedAt here when it
+    // declares both (so db.timestamps: true, set further down, can stand in
+    // for them) — otherwise they fall through and derive as ordinary scalar
+    // columns instead of being silently dropped.
+    const skipTimestampFields =
+      (BASE_MODEL_KEYS as readonly string[]).includes(modelKey) ||
+      hasSymmetricTimestamps(upstreamFields)
     for (const [fieldKey, upstream] of Object.entries(upstreamFields)) {
-      if (TIMESTAMP_FIELDS.has(fieldKey)) continue
+      if (TIMESTAMP_FIELDS.has(fieldKey) && skipTimestampFields) continue
 
       if (upstream.references) {
         const targetModelKey = upstream.references.model
@@ -567,9 +593,18 @@ export function deriveAuthLists(
     if (!listKey) continue // unreachable: buildModelRegistry registers every table key
 
     const physicalName = tables[modelKey].modelName
+    const timestamps = hasSymmetricTimestamps(tables[modelKey].fields)
+    const mapNeeded = listKey !== physicalName
     lists[listKey] = list({
       fields: assembleFields(modelKey),
-      ...(listKey !== physicalName ? { db: { map: physicalName } } : {}),
+      ...(timestamps || mapNeeded
+        ? {
+            db: {
+              ...(timestamps ? { timestamps: true as const } : {}),
+              ...(mapNeeded ? { map: physicalName } : {}),
+            },
+          }
+        : {}),
     })
   }
 

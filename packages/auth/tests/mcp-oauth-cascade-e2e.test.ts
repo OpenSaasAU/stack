@@ -53,17 +53,34 @@ function configSource(): string {
   return `import { config } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'http://localhost:3000/api/mcp' })],
+      // better-auth 1.7's mcp() is built on the OAuth Provider, which issues
+      // JWT-based access tokens and requires better-auth's own jwt() plugin
+      // to be registered alongside it (throws BetterAuthError: jwt_config
+      // otherwise) — see @better-auth/mcp's own usage example.
+      betterAuthPlugins: [
+        jwt(),
+        mcp({ loginPage: '/sign-in', resource: 'http://localhost:3000/api/mcp' }),
+      ],
       // Not modelled by AuthConfig — passed through verbatim so /delete-user
       // deletes immediately instead of requiring an email-verification
       // round trip (see packages/auth/CLAUDE.md, "betterAuthOptions").
-      betterAuthOptions: { user: { deleteUser: { enabled: true } } },
+      // baseURL is explicit rather than relying on the BETTER_AUTH_URL env
+      // var: better-auth 1.7's OAuth Provider needs a resolvable URL to build
+      // its own endpoint/issuer URLs during init, and this test constructs
+      // \`auth\` in-process via createAuth() (not through the CLI subprocess
+      // that does see BETTER_AUTH_URL), so the auto-detected origin would be
+      // undefined here.
+      betterAuthOptions: {
+        baseURL: 'http://localhost:3000',
+        user: { deleteUser: { enabled: true } },
+      },
     }),
   ],
   db: {
@@ -142,7 +159,7 @@ async function cleanupProject(dir: string): Promise<void> {
 describe.skipIf(!prerequisitesPresent)(
   'MCP plugin OAuth tables cascade on user deletion — live end-to-end (issue #992)',
   () => {
-    it('deleting a user via better-auth’s own /delete-user removes their OAuth applications, access tokens and consents; another user’s rows survive', async () => {
+    it('deleting a user via better-auth’s own /delete-user removes their OAuth clients, access tokens and consents; another user’s rows survive', async () => {
       const dir = await setupProject()
       try {
         const { auth, context } = await createAuthInstanceForProject(dir)
@@ -170,37 +187,44 @@ describe.skipIf(!prerequisitesPresent)(
 
         // OAuth rows are created through the raw Prisma client — these lists
         // ship closed (ADR-0013), and this is the same path better-auth's own
-        // OAuth flows write through in production.
+        // OAuth flows write through in production. better-auth 1.7's OAuth
+        // Provider (issue #986) splits what the pre-1.7 MCP plugin modelled
+        // as a single "application" with embedded access/refresh tokens into
+        // oauthClient (the registered client) plus a standalone
+        // oauthAccessToken (no more combined access+refresh token row).
         for (const [suffix, userId] of [
           ['deleted', deletedUserId],
           ['survivor', survivorUserId],
         ]) {
-          await prisma.oauthApplication.create({
+          await prisma.oauthClient.create({
             data: {
               name: `App ${suffix}`,
               clientId: `client-${suffix}`,
-              redirectUrls: 'http://localhost/callback',
-              type: 'web',
+              redirectUris: 'http://localhost/callback',
               userId,
             },
           })
           await prisma.oauthAccessToken.create({
             data: {
-              accessToken: `access-${suffix}`,
-              refreshToken: `refresh-${suffix}`,
-              accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
-              refreshTokenExpiresAt: new Date(Date.now() + 7_200_000),
+              token: `access-${suffix}`,
               clientId: `client-${suffix}`,
               scopes: 'openid',
+              expiresAt: new Date(Date.now() + 3_600_000),
+              // oauthAccessToken declares createdAt but not updatedAt
+              // upstream, so it derives as an ordinary required column with
+              // no DB-level default (see hasSymmetricTimestamps in
+              // derive-auth-lists.ts) — better-auth's own adapter always
+              // supplies it explicitly, so this raw-Prisma seed must too.
+              createdAt: new Date(),
               userId,
             },
           })
           await prisma.oauthConsent.create({
-            data: { clientId: `client-${suffix}`, scopes: 'openid', consentGiven: true, userId },
+            data: { clientId: `client-${suffix}`, scopes: 'openid', userId },
           })
         }
 
-        expect(await prisma.oauthApplication.count()).toBe(2)
+        expect(await prisma.oauthClient.count()).toBe(2)
         expect(await prisma.oauthAccessToken.count()).toBe(2)
         expect(await prisma.oauthConsent.count()).toBe(2)
 
@@ -214,9 +238,7 @@ describe.skipIf(!prerequisitesPresent)(
 
         // No orphans: every row belonging to the deleted user is gone via the
         // database cascade, not just the user row itself.
-        expect(
-          await prisma.oauthApplication.findFirst({ where: { userId: deletedUserId } }),
-        ).toBeNull()
+        expect(await prisma.oauthClient.findFirst({ where: { userId: deletedUserId } })).toBeNull()
         expect(
           await prisma.oauthAccessToken.findFirst({ where: { userId: deletedUserId } }),
         ).toBeNull()
@@ -225,7 +247,7 @@ describe.skipIf(!prerequisitesPresent)(
         // The other user's rows are untouched — the cascade is scoped to the
         // deleted user's own foreign key, not a wholesale table wipe.
         expect(await prisma.user.findUnique({ where: { id: survivorUserId } })).not.toBeNull()
-        expect(await prisma.oauthApplication.count()).toBe(1)
+        expect(await prisma.oauthClient.count()).toBe(1)
         expect(await prisma.oauthAccessToken.count()).toBe(1)
         expect(await prisma.oauthConsent.count()).toBe(1)
 

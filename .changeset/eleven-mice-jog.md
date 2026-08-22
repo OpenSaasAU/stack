@@ -22,9 +22,14 @@ URL-encode `providerId` if it can contain characters outside `[A-Za-z0-9_-]`. If
 
 ```typescript
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 
 authPlugin({
   betterAuthPlugins: [
+    // The OAuth Provider mcp() is built on issues JWT-based access tokens
+    // and requires better-auth's own jwt() plugin registered alongside it —
+    // omitting it throws `BetterAuthError: jwt_config` at init.
+    jwt(),
     mcp({
       loginPage: '/sign-in',
       // RFC 8707/9728 canonical resource identifier — required as of
@@ -38,4 +43,7 @@ authPlugin({
 
 better-auth 1.7's MCP plugin also declares a substantially different OAuth table set — the old `oauthApplication`/`oauthAccessToken`/`oauthConsent` three became seven tables (`oauthClient`/`oauthAccessToken`/`oauthConsent`/`oauthRefreshToken`/`oauthResource`/`oauthClientResource`/`oauthClientAssertion`). Since the derivation is schema-driven this needed no code changes, but if you have the MCP plugin enabled, running `pnpm generate` will produce a significantly different Prisma schema for these tables (new/renamed models, and `Session` gains reverse relations to the two token tables that now reference it). Review the diff and migrate your database accordingly.
 
-Also fixes `deriveAuthLists`'s scalar-field builder to thread a static `defaultValue` through for `number`-typed fields (`integer()`/`bigInt()`), matching the existing `string`/`boolean` behavior — surfaced by the MCP plugin's expanded schema, which now includes number fields with static defaults (e.g. `oauthResource.policyVersion`).
+Also fixes two `deriveAuthLists` gaps surfaced by the MCP plugin's expanded schema:
+
+- the scalar-field builder now threads a static `defaultValue` through for `number`-typed fields (`integer()`/`bigInt()`), matching the existing `string`/`boolean` behavior (e.g. `oauthResource.policyVersion`, which defaults to `1`)
+- a plugin table that declares only one of `createdAt`/`updatedAt` upstream (several of the new OAuth tables declare `createdAt` alone) is no longer silently dropped — it derives as an ordinary required column instead. Previously any model with an asymmetric timestamp pair had the field skipped entirely with no replacement, which crashed the first real write that supplied it (better-auth's own OAuth Provider does this at `betterAuth()` init time, seeding an `oauthResource` row)

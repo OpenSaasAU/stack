@@ -2,6 +2,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 import type { AccessControl } from '@opensaas/stack-core'
 import { z } from 'zod'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
@@ -40,6 +41,10 @@ export default config({
     authPlugin({
       emailAndPassword: { enabled: true },
       betterAuthPlugins: [
+        // better-auth 1.7's mcp() is built on the OAuth Provider, which
+        // issues JWT-based access tokens and requires better-auth's own
+        // jwt() plugin registered alongside it.
+        jwt(),
         mcp({
           loginPage: '/sign-in',
           // RFC 8707/9728 canonical resource identifier — must match the
