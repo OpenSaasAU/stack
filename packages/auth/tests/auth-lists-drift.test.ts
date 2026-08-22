@@ -10,9 +10,11 @@ import type { NormalizedAuthModels } from '../src/config/types.js'
 /**
  * Drift detector for issue #988: reads better-auth's own resolved table
  * definitions (`getAuthTables`) and compares them against `deriveAuthLists`'
- * output, so an upstream schema change that the hand-written derivation
- * doesn't mirror fails this suite instead of waiting for a human to notice
- * (as #921/#935/#937/#981/#986 all were).
+ * output — column name, index presence, uniqueness, field presence,
+ * requiredness, references, scalar type, and static default values — so an
+ * upstream schema change that the hand-written derivation doesn't mirror
+ * fails this suite instead of waiting for a human to notice (as
+ * #921/#935/#937/#981/#986 all were).
  *
  * Deliberately out of scope (see the issue body): fields the stack adds that
  * better-auth doesn't declare (timestamps, access blocks, extendUserList
@@ -42,6 +44,28 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
 
 function normalizeOnDelete(action: string): string {
   return action.replace(/\s+/g, '').toLowerCase()
+}
+
+/**
+ * The Prisma scalar type a correctly-derived field should carry for a given
+ * better-auth field type. `undefined` means "not modeled by any field in
+ * these lists" (json/array types don't appear on user/session/account/
+ * verification/rateLimit) — the caller skips the comparison in that case
+ * rather than treating it as a mismatch.
+ */
+function expectedPrismaType(upstream: DBFieldAttribute): string | undefined {
+  switch (upstream.type) {
+    case 'string':
+      return 'String'
+    case 'boolean':
+      return 'Boolean'
+    case 'date':
+      return 'DateTime'
+    case 'number':
+      return upstream.bigint ? 'BigInt' : 'Int'
+    default:
+      return undefined
+  }
 }
 
 /** Narrows a derived list's field to a `RelationshipField` — the shape the FK-bridged comparison reads. */
@@ -109,6 +133,30 @@ function compareScalarField(
       dimension: 'uniqueness',
       detail: `better-auth unique=${upstreamUnique} vs derived isIndexed='unique' is ${isUnique}`,
     })
+  }
+
+  const expectedType = expectedPrismaType(upstream)
+  if (expectedType !== undefined && prismaType.type !== expectedType) {
+    divergences.push({
+      model,
+      field: fieldKey,
+      dimension: 'scalar type',
+      detail: `better-auth type "${upstream.type}"${upstream.bigint ? ' (bigint)' : ''} expects Prisma "${expectedType}" vs derived "${prismaType.type}"`,
+    })
+  }
+
+  // Only a static, non-function default is comparable — better-auth's
+  // function-valued defaults (e.g. `createdAt: () => new Date()`) are applied
+  // at write time, not modeled as a derived field's own `defaultValue`.
+  if (typeof upstream.defaultValue !== 'function' && upstream.defaultValue !== undefined) {
+    if (derived.defaultValue !== upstream.defaultValue) {
+      divergences.push({
+        model,
+        field: fieldKey,
+        dimension: 'default value',
+        detail: `better-auth defaultValue=${JSON.stringify(upstream.defaultValue)} vs derived defaultValue=${JSON.stringify(derived.defaultValue)}`,
+      })
+    }
   }
 }
 
