@@ -1,4 +1,5 @@
-import type { FieldConfig, ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import type { DatabaseConfig, FieldConfig, ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { computeDefaultColumns, withStructuralTimestampDefaults } from './defaultColumns.js'
 
 /**
  * The container arrangement of an item view, DERIVED from the number of
@@ -79,13 +80,6 @@ export interface ItemViewLayout {
   arrangement: ItemViewArrangement
 }
 
-/**
- * System timestamp columns never shown by default, mirroring the list view's
- * own default curation (`ListViewClient`). Password fields are excluded
- * separately, by type rather than name (see {@link defaultColumnsFor}).
- */
-const DEFAULT_EXCLUDED_COLUMNS = new Set(['createdAt', 'updatedAt'])
-
 function readStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
     ? (value as string[])
@@ -145,18 +139,24 @@ function isToManyRelationship(field: FieldConfig): boolean {
   return field.type === 'relationship' && 'many' in field && field.many === true
 }
 
-/** The related list's own column curation (`ui.listView.initialColumns`, else all non-system fields), minus the back-reference to the parent. */
+/**
+ * The related list's own column curation, minus the back-reference to the
+ * parent: `ui.listView.initialColumns` when set, else every field whose own
+ * `ui.listView.defaultColumn` declaration holds (issue #1018) — including
+ * the list's structural `createdAt`/`updatedAt` timestamp columns, excluded
+ * via {@link withStructuralTimestampDefaults} rather than by name.
+ */
 function defaultColumnsFor(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   relatedListConfig: ListConfig<any> | undefined,
   backReferenceField: string | undefined,
+  dbConfig: DatabaseConfig | undefined,
 ): string[] {
   if (!relatedListConfig) return []
   const curated =
     relatedListConfig.ui?.listView?.initialColumns ??
-    Object.keys(relatedListConfig.fields).filter(
-      (key) =>
-        relatedListConfig.fields[key]?.type !== 'password' && !DEFAULT_EXCLUDED_COLUMNS.has(key),
+    computeDefaultColumns(
+      withStructuralTimestampDefaults(relatedListConfig.fields, relatedListConfig, dbConfig),
     )
   return curated.filter((column) => column !== backReferenceField)
 }
@@ -214,7 +214,8 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
         ref,
         relatedListKey,
         backReferenceField,
-        columns: overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField),
+        columns:
+          overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db),
         take: overrides.take,
         sumColumns: overrides.sum ?? [],
         removeAction: overrides.removeAction,

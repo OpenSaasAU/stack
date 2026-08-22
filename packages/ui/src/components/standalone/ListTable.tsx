@@ -15,6 +15,7 @@ import {
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
+import { computeDefaultColumns } from '../../lib/defaultColumns.js'
 
 /**
  * Per-part `classNames` slots for `ListTable` (issue #709). Each slot is merged
@@ -59,6 +60,14 @@ export interface ListTableProps {
    * neutral badge, same as before this option existed.
    */
   fieldOptions?: Record<string, Array<SelectOption>>
+  /**
+   * Serialised per-field config, keyed by field name (issue #1018). When
+   * supplied, an explicit `columns` list absent, the default columns are
+   * curated off each field's own `ui.listView.defaultColumn` declaration
+   * (see `computeDefaultColumns`) instead of showing every `fieldTypes` key.
+   * Omit when you have no field config to hand — every column shows.
+   */
+  fields?: Record<string, SerializableFieldConfig>
   basePath?: string
   columns?: string[]
   onRowClick?: (item: Record<string, unknown>) => void
@@ -90,6 +99,7 @@ export function ListTable({
   fieldTypes,
   relationshipRefs,
   fieldOptions,
+  fields,
   basePath = '/admin',
   columns,
   onRowClick,
@@ -117,11 +127,12 @@ export function ListTable({
     options: fieldOptions?.[fieldName],
   })
 
+  // Absent an explicit `columns` list, curate off each field's own declared
+  // `ui.listView.defaultColumn` (issue #1018) when `fields` metadata was
+  // supplied; with no `fields` at all there's nothing to curate by, so every
+  // column shows.
   const displayColumns =
-    columns ||
-    Object.keys(fieldTypes).filter(
-      (key) => fieldTypes[key] !== 'password' && !['createdAt', 'updatedAt'].includes(key),
-    )
+    columns || (fields ? computeDefaultColumns(fields) : Object.keys(fieldTypes))
 
   const sortedItems = [...items]
   if (sortBy && sortable) {

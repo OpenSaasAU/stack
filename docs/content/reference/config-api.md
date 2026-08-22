@@ -703,6 +703,7 @@ UI-specific configuration passed to field components.
 - `component?: React.Component` - Custom field component
 - `fieldType?: string` - Reference to globally registered field type
 - `valueForClientSerialization?: (args) => unknown` - Transform value before sending to browser
+- `listView?: { defaultColumn?: boolean }` - Whether this field belongs in a list/related-list table's default column set (default `true`). Naming the field explicitly in `ui.listView.initialColumns` or a relationship's `ui.itemView.columns` always shows it regardless of this flag. **Presentation only** — it does not affect who can read the field; use `access.read` for that.
 
 ---
 

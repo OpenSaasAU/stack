@@ -505,8 +505,42 @@ describe('ListViewClient', () => {
     })
   })
 
-  describe('column filtering', () => {
-    it('should exclude password-typed columns by default regardless of field name', () => {
+  describe('column filtering (issue #1018)', () => {
+    it('excludes a field whose fields metadata declares ui.listView.defaultColumn: false', () => {
+      const items = [{ id: '1', username: 'john', secret: 'hash...' }]
+
+      render(
+        <ListViewClient
+          {...defaultProps}
+          items={items}
+          fieldTypes={{ username: 'text', secret: 'password' }}
+          fields={{
+            username: { type: 'text' },
+            secret: { type: 'password', ui: { listView: { defaultColumn: false } } },
+          }}
+        />,
+      )
+
+      expect(screen.getByText('Username')).toBeInTheDocument()
+      expect(screen.queryByText('Secret')).not.toBeInTheDocument()
+    })
+
+    it('shows a field with no declaration, even one named or typed password', () => {
+      const items = [{ id: '1', password: 'plain text field' }]
+
+      render(
+        <ListViewClient
+          {...defaultProps}
+          items={items}
+          fieldTypes={{ password: 'text' }}
+          fields={{ password: { type: 'text' } }}
+        />,
+      )
+
+      expect(screen.getByText('Password')).toBeInTheDocument()
+    })
+
+    it('shows every column when no fields metadata is supplied at all', () => {
       const items = [{ id: '1', username: 'john', secret: 'hash...' }]
 
       render(
@@ -518,15 +552,7 @@ describe('ListViewClient', () => {
       )
 
       expect(screen.getByText('Username')).toBeInTheDocument()
-      expect(screen.queryByText('Secret')).not.toBeInTheDocument()
-    })
-
-    it('should not exclude a field merely named password if it is not password-typed', () => {
-      const items = [{ id: '1', password: 'plain text field' }]
-
-      render(<ListViewClient {...defaultProps} items={items} fieldTypes={{ password: 'text' }} />)
-
-      expect(screen.getByText('Password')).toBeInTheDocument()
+      expect(screen.getByText('Secret')).toBeInTheDocument()
     })
   })
 

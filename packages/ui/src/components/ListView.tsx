@@ -4,6 +4,7 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
+import { withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
@@ -339,6 +340,13 @@ export async function ListView({
     listKey,
   )
 
+  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
+  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
+  // when no explicit `columns` is configured) curates off the same declared
+  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
+  // logic needed on the client.
+  const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
+
   return (
     <div className="p-8">
       <PageHeader
@@ -357,12 +365,12 @@ export async function ListView({
       <ListViewClient
         items={serializedItems || []}
         fieldTypes={Object.fromEntries(
-          Object.entries(listConfig.fields).map(([key, field]) => [
+          Object.entries(displayFields).map(([key, field]) => [
             key,
             (field as { type: string }).type,
           ]),
         )}
-        fields={serializeFieldConfigs(listConfig.fields)}
+        fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
         columns={columns}
         initialSort={activeSort}

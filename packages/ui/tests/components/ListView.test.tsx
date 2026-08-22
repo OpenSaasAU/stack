@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
-import { text, relationship, select, virtual } from '@opensaas/stack-core/fields'
+import { text, relationship, select, virtual, timestamp } from '@opensaas/stack-core/fields'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
@@ -494,5 +494,45 @@ describe('ListView to-one relationship label filter (issue #749 / #916)', () => 
     const expectedWhere = { author: { is: { name: { contains: 'Ada' } } } }
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }))
     expect(count).toHaveBeenCalledWith({ where: expectedWhere })
+  })
+})
+
+describe('ListView default-column curation (issue #1018)', () => {
+  it("bakes ui.listView.defaultColumn: false into createdAt/updatedAt when the list's timestamps resolve enabled", async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db', timestamps: true },
+      lists: {
+        Post: list({
+          fields: { title: text(), createdAt: timestamp(), updatedAt: timestamp() },
+        }),
+      },
+    }
+    const context = makeContext({
+      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+    })
+
+    const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
+    const props = findListViewClientProps(tree)
+
+    expect(props.fields?.createdAt?.ui?.listView?.defaultColumn).toBe(false)
+    expect(props.fields?.updatedAt?.ui?.listView?.defaultColumn).toBe(false)
+    expect(props.fields?.title?.ui?.listView?.defaultColumn).toBeUndefined()
+  })
+
+  it("leaves a field literally named createdAt alone when the list's timestamps are not enabled", async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', url: 'file:./test.db' },
+      lists: {
+        Post: list({ fields: { title: text(), createdAt: text() } }),
+      },
+    }
+    const context = makeContext({
+      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+    })
+
+    const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
+    const props = findListViewClientProps(tree)
+
+    expect(props.fields?.createdAt?.ui?.listView?.defaultColumn).toBeUndefined()
   })
 })

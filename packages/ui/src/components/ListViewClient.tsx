@@ -24,6 +24,7 @@ import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { computeDefaultColumns } from '../lib/defaultColumns.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 
@@ -183,11 +184,14 @@ export function ListViewClient({
     selection.togglePage(pageIds)
   }
 
+  // Absent an explicit `columns` list, curate off each field's own declared
+  // `ui.listView.defaultColumn` (issue #1018) via the same shared function
+  // `deriveItemView.ts`'s server-side layout helper uses — no field name/type
+  // matching here. When `fields` metadata isn't supplied at all (a caller
+  // with only `fieldTypes`), there is nothing to curate by, so every column
+  // shows.
   const displayColumns =
-    columns ||
-    Object.keys(fieldTypes).filter(
-      (key) => fieldTypes[key] !== 'password' && !['createdAt', 'updatedAt'].includes(key),
-    )
+    columns || (fields ? computeDefaultColumns(fields) : Object.keys(fieldTypes))
 
   // Items are already sorted by the server via orderBy; no in-memory sort needed.
 

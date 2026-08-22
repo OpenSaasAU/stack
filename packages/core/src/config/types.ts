@@ -592,6 +592,32 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      */
     description?: string
     /**
+     * Whether this field belongs in a list/related-list table's DEFAULT
+     * column set (issue #1018) — the columns shown when nothing explicitly
+     * names them (`ui.listView.initialColumns` on the list, or a
+     * relationship's own `ui.itemView.columns`). Naming the field explicitly
+     * in either of those always shows it regardless of this flag; it governs
+     * only what appears absent an explicit column list.
+     *
+     * This is a PRESENTATION default, not an access control — a field can be
+     * read-denied and still default to `true` here (it simply renders empty
+     * for a viewer who can't read it), and setting this to `false` hides a
+     * column without restricting who can read the underlying value. The
+     * field-level `access.read` deny remains the only real boundary.
+     *
+     * @default true
+     *
+     * @example Hide an internal field from default table views without denying read access
+     * ```typescript
+     * fields: {
+     *   internalScore: integer({ ui: { listView: { defaultColumn: false } } }),
+     * }
+     * ```
+     */
+    listView?: {
+      defaultColumn?: boolean
+    }
+    /**
      * Transform field value before sending to client (browser)
      * Useful for sensitive fields (e.g., passwords) or complex data structures
      * that shouldn't be serialized in their raw form
@@ -1018,8 +1044,10 @@ export type RelationshipItemViewConfig = {
    * The related list's fields to show as Relationship-table columns, in order.
    *
    * When omitted, the columns default to the related list's own column
-   * curation (`ui.listView.initialColumns`, else all non-system fields) minus
-   * the back-reference field that points at the parent record.
+   * curation (`ui.listView.initialColumns`, else every field whose own
+   * `ui.listView.defaultColumn` declaration holds — see {@link
+   * BaseFieldConfig.ui}) minus the back-reference field that points at the
+   * parent record.
    *
    * @example
    * ```typescript
@@ -2277,14 +2305,16 @@ export interface BulkAction {
  * `ui.listView`.
  *
  * When omitted, the admin UI falls back to its existing defaults: every
- * non-system field is shown as a column and no default sort is applied.
+ * field whose own `ui.listView.defaultColumn` declaration holds is shown as
+ * a column (see {@link BaseFieldConfig.ui}) and no default sort is applied.
  */
 export type ListViewUIConfig = {
   /**
    * The fields to show as columns in the list table, in order.
    *
    * Drives both the column **selection** and their **order**. When omitted,
-   * all non-system fields are shown (current default behaviour).
+   * every field whose own `ui.listView.defaultColumn` declaration holds is
+   * shown (current default behaviour).
    *
    * @example
    * ```typescript

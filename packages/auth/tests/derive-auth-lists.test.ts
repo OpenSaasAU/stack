@@ -480,6 +480,27 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
     }
   })
 
+  it('also curates read-denied credential fields out of the admin default columns (issue #1018)', async () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    const denied: Array<[string, string]> = [
+      ['Session', 'token'],
+      ['Verification', 'value'],
+      ['Account', 'password'],
+      ['Account', 'accessToken'],
+      ['Account', 'refreshToken'],
+      ['Account', 'idToken'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      expect(field.ui?.listView?.defaultColumn).toBe(false)
+    }
+
+    // A non-credential field is left with no ui.listView declaration at all.
+    expect(lists.Session.fields.ipAddress.ui?.listView).toBeUndefined()
+  })
+
   it('leaves identifying fields open — session/account metadata and every User field', () => {
     const { lists } = deriveAuthLists(defaultModels)
 
@@ -557,6 +578,7 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       expect(field.access?.read).toBeTypeOf('function')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
       expect(await field.access!.read!({} as any)).toBe(false)
+      expect(field.ui?.listView?.defaultColumn).toBe(false)
     }
   })
 
@@ -578,6 +600,7 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       expect(field.access?.read).toBeTypeOf('function')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
       expect(await field.access!.read!({} as any)).toBe(false)
+      expect(field.ui?.listView?.defaultColumn).toBe(false)
     }
   })
 
