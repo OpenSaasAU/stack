@@ -359,6 +359,18 @@ const context = createContext<typeof prisma>(config, prisma, session)
 - Uses context for all operations (access control enforced); writes are validated by the normal `context.db` pipeline (field Zod schemas, hooks, access control)
 - Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
 - Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control
+- The derived `query` tool accepts an optional `fields` projection (`packages/core/src/mcp/projection.ts`) — the wire form of a fragment field selection, translated into a `context.db` `include` so the ordinary read pipeline (access scoping, `needs` folding, the depth cap) applies with no parallel read path. The generated schema enumerates two fixed levels of each list's vocabulary, per session; `tools/list` itself is per-session as a result (ADR-0033)
+
+### The MCP `query` Tool's `fields` Projection (ADR-0033)
+
+An optional `fields` argument on the derived `query` tool narrows (or widens, up to two levels) what a read returns, in the wire form of a fragment field selection: `{ scalarField: true, relation: { fields: {...} } }`. A to-many relation additionally accepts `where`/`orderBy`/`take`/`skip` and a `count`. Omitting `fields` is unchanged — a bare read, per ADR-0024.
+
+`projection.ts` does the work in two passes, both walking the same per-session vocabulary (`relatedListIfVisible`):
+
+- `generateFieldsProjectionSchema` builds the JSON Schema advertised on `tools/list` — a relation whose target list denies this session's operation-level `query` access, or has `mcp.enabled: false`, is omitted from the vocabulary entirely, not merely left unusable.
+- `resolveFieldsProjection` validates a caller's `fields` against that same vocabulary and translates it into a plain `context.db` `include` (deliberately NOT the fragment `query:` argument — going through the ordinary caller-`include` path is what gets `buildAccessScopedInclude`'s nested-`where` AND-fold, the to-one existence check, and the depth cap for free; the trade-off is that every computed field at a traversed level still computes server-side, same as any other `include`-based read, even one the projection didn't select — only the wire response is narrowed). Throws `McpProjectionRefusedError` (caught in the handler and turned into an `isError` tool result, never a JSON-RPC error) naming what was asked for and what's available on any mismatch.
+
+A to-many's `count` is resolved separately via Prisma's `_count.select`, access-scoped by ANDing the related list's `query` access with any caller `where` on that same relation (mirroring, but not reusing, `relationship-count.ts`'s `_count` scoping — that module's own helper isn't exported and was built for a different feature, issue #732's admin list view).
 
 ### With Third-Party Field Packages
 

@@ -928,3 +928,353 @@ describe('MCP Handler', () => {
     })
   })
 })
+
+// Coverage for issue #851 / ADR-0033: the `query` tool's `fields` projection
+// argument, its generated per-session schema, and `tools/list` becoming
+// per-session. Uses the same lightweight mocked-`context.db` harness as the
+// suite above — these tests exercise the MCP-layer translation (schema
+// shape, `fields` → `include` translation, response projection) rather than
+// the real access-control engine, which is covered separately in
+// `mcp-fields-projection-access.test.ts` against a real `getContext`.
+describe('MCP Handler — fields projection (#851)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockPrisma: any
+  let config: OpenSaasConfig
+  let getContext: (session?: { userId: string }) => AccessContext
+  let mockGetSession: McpSessionProvider
+
+  beforeEach(() => {
+    mockPrisma = {
+      user: { findMany: vi.fn() },
+      comment: { findMany: vi.fn() },
+      post: { findMany: vi.fn() },
+      secret: { findMany: vi.fn() },
+      draft: { findMany: vi.fn() },
+      category: { findMany: vi.fn() },
+    }
+
+    config = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      mcp: { enabled: true, basePath: '/api/mcp' },
+      lists: {
+        User: {
+          fields: {
+            name: { type: 'text' },
+            email: { type: 'text' },
+          },
+          access: { operation: { query: () => true } },
+        },
+        Comment: {
+          fields: {
+            text: { type: 'text' },
+            approved: { type: 'checkbox' },
+            post: { type: 'relationship', ref: 'Post.comments' },
+          },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' },
+            content: { type: 'text' },
+            author: { type: 'relationship', ref: 'User' },
+            comments: { type: 'relationship', ref: 'Comment.post', many: true },
+            secretInfo: { type: 'relationship', ref: 'Secret' },
+            draftRef: { type: 'relationship', ref: 'Draft' },
+          },
+          access: { operation: { query: () => true } },
+        },
+        // Denies query access outright — must vanish from `tools/list` as a
+        // tool owner AND from `Post`'s `fields` schema as a relation target.
+        Secret: {
+          fields: { value: { type: 'text' } },
+          access: { operation: { query: () => false } },
+        },
+        // MCP-disabled — same double omission as `Secret`, different cause.
+        Draft: {
+          fields: { title: { type: 'text' } },
+          access: { operation: { query: () => true } },
+          mcp: { enabled: false },
+        },
+        // Self-referential — the schema must terminate at depth 2 rather
+        // than recursing forever.
+        Category: {
+          fields: {
+            name: { type: 'text' },
+            parent: { type: 'relationship', ref: 'Category.children' },
+            children: { type: 'relationship', ref: 'Category.parent', many: true },
+          },
+          access: { operation: { query: () => true } },
+        },
+      },
+    }
+
+    getContext = vi.fn((session?: { userId: string }) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      db: mockPrisma as any,
+      session: session || null,
+      prisma: mockPrisma,
+    }))
+
+    mockGetSession = vi.fn(async () => ({ userId: 'user-123' }))
+  })
+
+  async function listTools() {
+    const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+    const request = new Request('http://localhost/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+    const response = await handlers.POST(request)
+    const data = await response.json()
+    return data.result.tools as Array<{ name: string; inputSchema: Record<string, unknown> }>
+  }
+
+  async function callQuery(
+    name: string,
+    args: Record<string, unknown>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<any> {
+    const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+    const request = new Request('http://localhost/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      }),
+    })
+    const response = await handlers.POST(request)
+    return response.json()
+  }
+
+  describe('generated `fields` schema on tools/list', () => {
+    it('advertises scalars as booleans and relations as nested selectors', async () => {
+      const tools = await listTools()
+      const postQuery = tools.find((t) => t.name === 'list_post_query')!
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fieldsSchema = (postQuery.inputSchema.properties as any).fields
+
+      expect(fieldsSchema.properties.title).toMatchObject({ type: 'boolean' })
+      expect(fieldsSchema.properties.content).toMatchObject({ type: 'boolean' })
+
+      // To-one: nested `fields` only, required, no where/orderBy/take/skip/count.
+      expect(fieldsSchema.properties.author.required).toEqual(['fields'])
+      const authorFields = fieldsSchema.properties.author.properties.fields.properties
+      expect(authorFields.name).toMatchObject({ type: 'boolean' })
+      expect(authorFields.email).toMatchObject({ type: 'boolean' })
+      expect(fieldsSchema.properties.author.properties.where).toBeUndefined()
+
+      // To-many: fields optional, plus where/orderBy/take/skip/count.
+      expect(fieldsSchema.properties.comments.required).toBeUndefined()
+      const commentFields = fieldsSchema.properties.comments.properties.fields.properties
+      expect(commentFields.text).toMatchObject({ type: 'boolean' })
+      expect(commentFields.approved).toMatchObject({ type: 'boolean' })
+      expect(fieldsSchema.properties.comments.properties.where).toBeDefined()
+      expect(fieldsSchema.properties.comments.properties.orderBy).toBeDefined()
+      expect(fieldsSchema.properties.comments.properties.take).toBeDefined()
+      expect(fieldsSchema.properties.comments.properties.skip).toBeDefined()
+      expect(fieldsSchema.properties.comments.properties.count).toEqual({
+        type: 'boolean',
+        description: expect.any(String),
+      })
+    })
+
+    it('omits a relation whose target list denies query access', async () => {
+      const tools = await listTools()
+      const postQuery = tools.find((t) => t.name === 'list_post_query')!
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fieldsSchema = (postQuery.inputSchema.properties as any).fields
+      expect(fieldsSchema.properties.secretInfo).toBeUndefined()
+    })
+
+    it('omits a relation whose target list has mcp.enabled: false', async () => {
+      const tools = await listTools()
+      const postQuery = tools.find((t) => t.name === 'list_post_query')!
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fieldsSchema = (postQuery.inputSchema.properties as any).fields
+      expect(fieldsSchema.properties.draftRef).toBeUndefined()
+    })
+
+    it('terminates a self-referential relationship at depth 2 (no relation fields at level 2)', async () => {
+      const tools = await listTools()
+      const categoryQuery = tools.find((t) => t.name === 'list_category_query')!
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fieldsSchema = (categoryQuery.inputSchema.properties as any).fields
+
+      const parentFields = fieldsSchema.properties.parent.properties.fields.properties
+      expect(Object.keys(parentFields)).toEqual(['name'])
+      expect(parentFields.name).toMatchObject({ type: 'boolean' })
+
+      const childrenFields = fieldsSchema.properties.children.properties.fields.properties
+      expect(Object.keys(childrenFields)).toEqual(['name'])
+      expect(childrenFields.name).toMatchObject({ type: 'boolean' })
+    })
+  })
+
+  describe('tools/list is per-session', () => {
+    it('omits all four CRUD tools for a list whose query access denies the session', async () => {
+      const tools = await listTools()
+      const toolNames = tools.map((t) => t.name)
+      expect(toolNames).not.toContain('list_secret_query')
+      expect(toolNames).not.toContain('list_secret_create')
+      expect(toolNames).not.toContain('list_secret_update')
+      expect(toolNames).not.toContain('list_secret_delete')
+    })
+
+    it('omits all four CRUD tools for a list with mcp.enabled: false', async () => {
+      const tools = await listTools()
+      const toolNames = tools.map((t) => t.name)
+      expect(toolNames).not.toContain('list_draft_query')
+    })
+  })
+
+  describe('query dispatch with `fields`', () => {
+    it('selects only scalar fields, issuing no `include`', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Hello', content: 'World' }])
+
+      const data = await callQuery('list_post_query', { fields: { title: true } })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.not.objectContaining({ include: expect.anything() }),
+      )
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ title: 'Hello' }])
+    })
+
+    it('selects a to-one relation with nested fields', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', title: 'Hello', author: { id: 'u1', name: 'Ada', email: 'ada@example.com' } },
+      ])
+
+      const data = await callQuery('list_post_query', {
+        fields: { title: true, author: { fields: { name: true } } },
+      })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ include: { author: true } }),
+      )
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ title: 'Hello', author: { name: 'Ada' } }])
+    })
+
+    it('honours nested where/orderBy/take/skip on a to-many relation, applying the default take ceiling when omitted', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
+
+      await callQuery('list_post_query', {
+        fields: {
+          comments: {
+            fields: { text: true },
+            where: { approved: { equals: true } },
+            orderBy: { text: 'asc' },
+            skip: 2,
+          },
+        },
+      })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            comments: {
+              where: { approved: { equals: true } },
+              orderBy: { text: 'asc' },
+              take: 5,
+              skip: 2,
+            },
+          },
+        }),
+      )
+    })
+
+    it('clamps a nested take above the hard cap', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
+
+      await callQuery('list_post_query', {
+        fields: { comments: { fields: { text: true }, take: 9999 } },
+      })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { comments: { take: 50 } },
+        }),
+      )
+    })
+
+    it('requests a to-many count in place of its rows', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', _count: { comments: 7 } }])
+
+      const data = await callQuery('list_post_query', {
+        fields: { comments: { count: true } },
+      })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { _count: { select: { comments: true } } },
+        }),
+      )
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ comments: 7 }])
+    })
+
+    it('requests a to-many count alongside its rows', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', comments: [{ text: 'hi' }], _count: { comments: 7 } },
+      ])
+
+      const data = await callQuery('list_post_query', {
+        fields: { comments: { fields: { text: true }, count: true } },
+      })
+
+      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            comments: { take: 5 },
+            _count: { select: { comments: true } },
+          },
+        }),
+      )
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ comments: { items: [{ text: 'hi' }], count: 7 } }])
+    })
+
+    it('refuses an unadvertised field name as an isError tool result', async () => {
+      const data = await callQuery('list_post_query', { fields: { madeUpField: true } })
+
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('madeUpField')
+    })
+
+    it('refuses a relation named two levels deep as an isError tool result', async () => {
+      const data = await callQuery('list_post_query', {
+        fields: { comments: { fields: { post: true } } },
+      })
+
+      expect(data.error).toBeUndefined()
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('post')
+    })
+
+    it('refuses a relation field selected with `true` instead of a selector object', async () => {
+      const data = await callQuery('list_post_query', { fields: { author: true } })
+
+      expect(data.result.isError).toBe(true)
+    })
+
+    it('refuses a scalar field selected with a non-true value', async () => {
+      const data = await callQuery('list_post_query', { fields: { title: 'yes' } })
+
+      expect(data.result.isError).toBe(true)
+    })
+
+    it('refuses a relation whose target list denies query access', async () => {
+      const data = await callQuery('list_post_query', {
+        fields: { secretInfo: { fields: { value: true } } },
+      })
+
+      expect(data.result.isError).toBe(true)
+    })
+  })
+})

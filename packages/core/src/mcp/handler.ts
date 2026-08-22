@@ -1,9 +1,17 @@
 import * as z from 'zod'
-import type { OpenSaasConfig, FieldConfig, McpCustomTool } from '../config/types.js'
+import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+import { checkAccess } from '../access/engine.js'
 import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { McpSession, McpSessionProvider } from './types.js'
+import { generateFieldSchemas } from './field-schema.js'
+import {
+  McpProjectionRefusedError,
+  generateFieldsProjectionSchema,
+  projectMcpResult,
+  resolveFieldsProjection,
+} from './projection.js'
 
 /**
  * Context session type accepted by the generated getContext factory.
@@ -120,7 +128,8 @@ export function createMcpHandlers(options: {
       }
 
       if (body.method === 'tools/list') {
-        return handleToolsList(config, body.id)
+        const context = await getContext(toContextSession(session))
+        return await handleToolsList(config, context, body.id)
       }
 
       if (body.method === 'tools/call') {
@@ -195,90 +204,23 @@ function handleInitialize(_params?: any, id?: number | string): Response {
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
-function fieldToJsonSchema(fieldName: string, fieldConfig: any): Record<string, unknown> {
-  const baseSchema: Record<string, unknown> = {}
-
-  switch (fieldConfig.type) {
-    case 'text':
-    case 'password':
-      baseSchema.type = 'string'
-      if (fieldConfig.validation?.length) {
-        if (fieldConfig.validation.length.min)
-          baseSchema.minLength = fieldConfig.validation.length.min
-        if (fieldConfig.validation.length.max)
-          baseSchema.maxLength = fieldConfig.validation.length.max
-      }
-      break
-    case 'integer':
-      baseSchema.type = 'number'
-      if (fieldConfig.validation?.min !== undefined) baseSchema.minimum = fieldConfig.validation.min
-      if (fieldConfig.validation?.max !== undefined) baseSchema.maximum = fieldConfig.validation.max
-      break
-    case 'checkbox':
-      baseSchema.type = 'boolean'
-      break
-    case 'timestamp':
-      baseSchema.type = 'string'
-      baseSchema.format = 'date-time'
-      break
-    case 'select':
-      baseSchema.type = 'string'
-      if (fieldConfig.options) {
-        baseSchema.enum = fieldConfig.options.map((opt: { value: string }) => opt.value)
-      }
-      break
-    case 'relationship':
-      baseSchema.type = 'object'
-      baseSchema.properties = {
-        connect: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-      }
-      break
-    default:
-      baseSchema.type = 'string'
-  }
-
-  return baseSchema
-}
-
-function generateFieldSchemas(
-  fields: Record<string, FieldConfig>,
-  operation: 'create' | 'update',
-): {
-  properties: Record<string, unknown>
-  required: string[]
-} {
-  const properties: Record<string, unknown> = {}
-  const required: string[] = []
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
-
-    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
-
-    if (
-      operation === 'create' &&
-      'validation' in fieldConfig &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
-      (fieldConfig.validation as any)?.isRequired
-    ) {
-      required.push(fieldName)
-    }
-  }
-
-  return { properties, required }
-}
-
-function handleToolsList(config: OpenSaasConfig, id?: number | string): Response {
+async function handleToolsList(
+  config: OpenSaasConfig,
+  context: AccessContext,
+  id?: number | string,
+): Promise<Response> {
   const tools: McpTool[] = []
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     if (listConfig.mcp?.enabled === false) continue
+
+    // A session denied operation-level `query` outright sees none of this
+    // list's tools, nor any relation entry elsewhere pointing at it as a
+    // target (`relatedListIfVisible` in projection.ts applies the identical
+    // check there) — ADR-0033.
+    const queryAccess = listConfig.access?.operation?.query
+    const accessResult = await checkAccess(queryAccess, { session: context.session, context })
+    if (accessResult === false) continue
 
     const dbKey = getDbKey(listKey)
     const defaultTools = config.mcp?.defaultTools || {
@@ -296,6 +238,12 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
     }
 
     if (enabledTools.read) {
+      const fieldsSchema = await generateFieldsProjectionSchema(
+        listConfig,
+        config,
+        context.session,
+        context,
+      )
       tools.push({
         name: `list_${dbKey}_query`,
         description: `Query ${listKey} records with optional filters`,
@@ -306,6 +254,7 @@ function handleToolsList(config: OpenSaasConfig, id?: number | string): Response
             take: { type: 'number', description: 'Number of records to return (max 100)' },
             skip: { type: 'number', description: 'Number of records to skip' },
             orderBy: { type: 'object', description: 'Sort order' },
+            fields: fieldsSchema,
           },
         },
       })
@@ -463,20 +412,53 @@ async function handleCrudTool(
     let result: any
 
     switch (operation) {
-      case 'query':
+      case 'query': {
+        let projection: Awaited<ReturnType<typeof resolveFieldsProjection>> | undefined
+        if (args.fields !== undefined) {
+          const listEntry = Object.entries(config.lists).find(
+            ([listKey]) => getDbKey(listKey) === dbKey,
+          )
+          if (!listEntry) {
+            return createErrorResponse(`Unknown list for tool: ${dbKey}`, id)
+          }
+          const [listKey, listConfig] = listEntry
+          try {
+            projection = await resolveFieldsProjection(
+              args.fields,
+              listKey,
+              listConfig,
+              config,
+              context.session,
+              context,
+            )
+          } catch (error) {
+            if (error instanceof McpProjectionRefusedError) {
+              return createErrorResultResponse(error.message, id)
+            }
+            throw error
+          }
+        }
+
         result = await context.db[dbKey].findMany({
           where: args.where,
           take: Math.min(args.take || 10, 100),
           skip: args.skip,
           orderBy: args.orderBy,
+          ...(projection?.include ? { include: projection.include } : {}),
         })
+
+        const items = projection
+          ? result.map((item: Record<string, unknown>) => projectMcpResult(item, projection))
+          : result
+
         return createSuccessResponse(
           {
-            items: result,
-            count: result.length,
+            items,
+            count: items.length,
           },
           id,
         )
+      }
 
       case 'create':
         result = await context.db[dbKey].create({

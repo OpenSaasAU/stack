@@ -279,6 +279,7 @@ The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase for
   orderBy?: Record<string, 'asc' | 'desc'>,
   take?: number,
   skip?: number,
+  fields?: Record<string, any>, // Projection — see "Selecting Related Data" below
 }
 ```
 
@@ -291,6 +292,39 @@ The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase for
   "take": 10
 }
 ```
+
+#### Selecting Related Data with `fields`
+
+By default `query` returns a record's own scalar and virtual fields — never its relations, matching how `context.db` reads behave. Reaching a relation without `fields` means following its foreign key with a second `query` call.
+
+The optional `fields` argument lets the assistant select relation data in the same call, without paying for a full `include` (every column of every touched relation) when it only needed a couple of fields:
+
+```json
+{
+  "fields": {
+    "title": true,
+    "author": {
+      "fields": { "name": true, "email": true }
+    },
+    "comments": {
+      "fields": { "text": true },
+      "where": { "approved": { "equals": true } },
+      "orderBy": { "createdAt": "desc" },
+      "take": 5,
+      "count": true
+    }
+  }
+}
+```
+
+- **Scalars and virtuals** are selected with `true`.
+- **A to-one relation** (`author` above) takes a nested `fields` only.
+- **A to-many relation** (`comments` above) additionally accepts `where`, `orderBy`, `take`, and `skip`, scoped exactly like the equivalent `context.db` read — a nested `take` defaults to 5 when omitted and is clamped to a hard cap of 50, since nested pagination multiplies with the root `take`.
+- **A to-many's row count** can be requested with `count: true`, in place of its rows (omit `fields` on that relation) or alongside them.
+
+The generated tool schema enumerates exactly **two levels** of each list's own vocabulary — the list's own fields, and for each relation, the related list's own scalar/virtual fields. A relation named at that second level is not itself selectable further; reaching past it is a second `query` call, the same round-trip the bare-read default already assumes. This is what keeps the schema finite against a self-referential relationship (e.g. a `Category` with `parent`/`children`) and what makes an unadvertised request rare: naming a field the schema doesn't enumerate, or nesting a relation a third level deep, is refused as an `isError` tool result naming what was asked for — never served on a best-effort basis, and never a JSON-RPC protocol error.
+
+The schema is generated **per session**: a relation whose related list denies this session's operation-level `query` access, or has `mcp.enabled: false`, is omitted from the vocabulary entirely — the same rule that governs whether a list gets tools at all (see "Access Control" below). Field-level `read` access cannot be evaluated at schema-generation time (it needs a fetched row), so it still applies only when the read actually runs, exactly as it does everywhere else.
 
 ### Create Tool
 
@@ -370,6 +404,10 @@ The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase for
 ## Access Control
 
 All MCP tools respect your existing access control rules defined in `opensaas.config.ts`.
+
+### Tool Listing Is Per-Session
+
+`tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner.
 
 ### Operation-Level Access
 
