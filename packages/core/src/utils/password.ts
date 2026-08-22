@@ -67,9 +67,11 @@ export class HashedPassword {
     return this.hash
   }
 
-  // JSON.stringify calls this when present, so the hash serializes as a plain string.
-  toJSON(): string {
-    return this.hash
+  // JSON.stringify calls this when present, so this is the serialize-for-output
+  // redaction point — never return the hash here. toString()/valueOf()/
+  // Symbol.toPrimitive stay unredacted for internal string/compare use.
+  toJSON(): { isSet: boolean } {
+    return { isSet: !!this.hash }
   }
 
   valueOf(): string {
