@@ -773,6 +773,34 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('categoryId   String? @map("category")')
     })
 
+    it('should honour db.foreignKey.map to rename a list-only relationship foreign key column', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Category: {
+            fields: {
+              name: text(),
+            },
+          },
+          Post: {
+            fields: {
+              title: text(),
+              category: relationship({
+                ref: 'Category',
+                db: { foreignKey: { map: 'category_id' } },
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('categoryId   String? @map("category_id")')
+    })
+
     it('should generate a required FK column and relation field with db.isNullable: false', () => {
       const config: OpenSaasConfig = {
         db: {

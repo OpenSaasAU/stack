@@ -1136,13 +1136,20 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       isNullable?: boolean
       /**
-       * Controls foreign key placement and column name for bidirectional relationships
-       * Can be a boolean or an object with a map property
-       * Only valid on single (non-many) relationships
-       * Cannot be true on both sides of a one-to-one relationship
+       * Controls foreign key placement and column name.
+       * Can be a boolean or an object with a map property.
+       * Only valid on single (non-many) relationships.
+       * Cannot be true on both sides of a one-to-one relationship.
        *
-       * When a boolean, defaults the foreign key column name to the field name
-       * When an object with map, uses the provided column name
+       * The boolean form (the "which side owns the foreign key" sense) is only
+       * meaningful on a bidirectional ref (`ref: 'ListName.fieldName'`) — a
+       * list-only ref (`ref: 'ListName'`) always owns the foreign key, so a
+       * boolean here is rejected. The `{ map }` form (the column-name sense)
+       * works on both: it renames the foreign key column without changing
+       * ownership.
+       *
+       * When a boolean, defaults the foreign key column name to the field name.
+       * When an object with map, uses the provided column name.
        *
        * @example
        * ```typescript
@@ -1165,6 +1172,14 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * Account: list({
        *   fields: {
        *     user: relationship({ ref: 'User.account' }) // No foreign key on this side
+       *   }
+       * })
+       *
+       * // List-only ref: rename the foreign key column (ownership is implicit)
+       * Post: list({
+       *   fields: {
+       *     category: relationship({ ref: 'Category', db: { foreignKey: { map: 'category_id' } } })
+       *     // Generates: categoryId String? @map("category_id")
        *   }
        * })
        * ```
