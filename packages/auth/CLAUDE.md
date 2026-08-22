@@ -67,22 +67,41 @@ config({
 
 ### Deriving Auth lists from better-auth config
 
-The four Auth lists are **derived** from the better-auth model config the
-developer writes — not hardcoded. The pure derivation lives in
+The four Auth lists are **derived** from better-auth's own resolved table
+definitions, not hand-transcribed. The pure derivation lives in
 `src/config/derive-auth-lists.ts` (`deriveAuthLists`), which `getAuthLists`
-and the plugin's add-vs-extend logic consume:
+and the plugin's add-vs-extend logic consume. It calls `getAuthTables`
+(re-exported from `better-auth/db` — the same function better-auth's own
+Kysely migrator, schema generator, and adapter base use to build their
+schemas) and translates the result into stack list configs, so the Auth
+lists cannot silently drift from what better-auth itself declares (issue
+#987, ADR-0033):
 
-- per-model `modelName` → list key (and Prisma model name)
-- per-model `tableName` → table `@@map`, **independent of `modelName`**
-  (defaults to `modelName` when it differs from the better-auth default,
-  otherwise unset — i.e. unchanged output when `tableName` isn't set)
-- per-model `fields` (better-auth field → column) → field-level `@map`
-- the `user` relationship foreign key always maps to better-auth's own
-  `userId` column (an explicit `userId` column override takes precedence),
-  and carries an index and `onDelete: Cascade`, matching a live better-auth
-  database on all three dimensions (ADR-0007)
+- per-model `modelName`/`fields` (the developer's own `authPlugin({ user:
+  {...}, session: {...} })` config, already normalized) pass straight
+  through to `getAuthTables` as its own options object, so an override path
+  (`adoptBetterAuthTables`, a renamed model, a remapped column) is inherited
+  for free rather than re-implemented as a parallel normalization
+- `modelName` → list key (and Prisma model name); `tableName` → table
+  `@@map`, **independent of `modelName`** (defaults to `modelName` when it
+  differs from the better-auth default, otherwise unset — i.e. unchanged
+  output when `tableName` isn't set)
+- every scalar field's type, nullability, uniqueness, index, column map, and
+  static default value are read from better-auth's own field metadata (a
+  fixed type-mapping table: `string`→`text()`, `boolean`→`checkbox()`,
+  `date`→`timestamp()`, `number`→`integer()`/`bigInt()` depending on
+  better-auth's own `bigint` flag) — not hand-authored per field
+- the `user` relationship foreign key maps to better-auth's own resolved
+  column name (`userId` by default; an explicit `fields.userId` override
+  takes precedence), and its index/uniqueness and `onDelete` action are read
+  from better-auth's own `index`/`unique`/`references.onDelete`, matching a
+  live better-auth database on all three dimensions (ADR-0007, ADR-0033)
 - relationship refs between the Auth lists follow the derived keys
-  (e.g. `Session.user → AuthUser.sessions`)
+  (e.g. `Session.user → AuthUser.sessions`) — the reverse relation name
+  itself (`sessions`/`accounts`) has no source in better-auth's metadata
+  (its FK declaration is one-directional) and is derived by pluralizing the
+  child model's own key, with a documented override map in
+  `derive-auth-lists.ts` for a collision or bad pluralization
 
 With no `modelName`/`tableName`/`fields` overrides the list/table shape is
 otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
