@@ -65,6 +65,10 @@ export const navigation: NavItem[] = [
             title: 'Write a Plugin',
             href: '/docs/how-to/write-a-plugin',
           },
+          {
+            title: 'Anonymous & Pre-Account Access',
+            href: '/docs/how-to/anonymous-access-control',
+          },
         ],
       },
       {
