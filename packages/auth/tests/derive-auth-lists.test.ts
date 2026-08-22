@@ -659,6 +659,27 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       deriveAuthLists(defaultModels, {}, {}, [], { passkey: ['publicKey'] }),
     ).not.toThrow()
   })
+
+  it('throws, naming the model and field, when credentialFields names an id-referencing relationship field', () => {
+    // An id-referencing field (references.field === 'id') derives to a
+    // relationship(), never a scalar — withCredentialAccess only ever runs on
+    // the scalar-field path, so a deny registered against one would silently
+    // never apply. Reject the config instead of accepting a no-op.
+    const plugin = {
+      id: 'test-fk-credential',
+      schema: {
+        widget: {
+          fields: {
+            ownerId: { type: 'string' as const, references: { model: 'user', field: 'id' } },
+          },
+        },
+      },
+    }
+
+    expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin], { widget: ['ownerId'] })).toThrow(
+      /widget\.ownerId.*relationship field.*"user\.id"/,
+    )
+  })
 })
 
 describe('deriveAuthLists - extendUserList', () => {

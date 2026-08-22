@@ -165,9 +165,21 @@ function buildCredentialFieldRegistry(
     const table = tables[modelKey]
     if (!table) continue // model not derived (plugin unused) -> silent no-op
     for (const fieldKey of fields) {
-      if (!(fieldKey in table.fields)) {
+      const upstream = table.fields[fieldKey]
+      if (!upstream) {
         throw new Error(
           `deriveAuthLists: credentialFields names "${modelKey}.${fieldKey}", but "${modelKey}" has no field "${fieldKey}"`,
+        )
+      }
+      // An id-referencing field derives to a relationship() (see the
+      // `references.field === 'id'` branch below), never a scalar field —
+      // withCredentialAccess is only ever applied on the scalar-field path,
+      // so a deny registered against one would silently never apply. Fail
+      // loudly instead of accepting a config that has no effect.
+      if (upstream.references?.field === 'id') {
+        throw new Error(
+          `deriveAuthLists: credentialFields names "${modelKey}.${fieldKey}", but "${fieldKey}" is a ` +
+            `relationship field (references "${upstream.references.model}.id"), not a scalar credential column`,
         )
       }
     }

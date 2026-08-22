@@ -412,6 +412,9 @@ export type AuthConfig = {
    * entry naming a field that doesn't exist on a model the app actually
    * derives (has that plugin registered) throws, naming the model and field;
    * an entry for a model the app doesn't derive at all is a silent no-op.
+   * An entry naming an id-referencing relationship field (e.g. an FK ending
+   * `Id`) also throws — that field derives to a `relationship()`, never a
+   * scalar column, so a deny registered against it could never apply.
    *
    * @example
    * ```typescript
