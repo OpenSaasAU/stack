@@ -23,7 +23,7 @@ const defaultModels: NormalizedAuthModels = {
 describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
   it('derives every MCP OAuth table under a PascalCase key, mapped back to its camelCase physical table', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
 
     expect(Object.keys(lists).sort()).toEqual([
@@ -46,7 +46,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
   it('generates a real relationship (not a bare column) for a PK-targeting reference (userId -> user.id)', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
     const userField = lists.OauthClient.fields.user
 
@@ -59,7 +59,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
   it('carries the referential action from `onDelete: cascade` through to the generated relation', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
     const userField = lists.OauthClient.fields.user
     const extend = userField.db?.extendPrismaSchema
@@ -97,7 +97,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
   it('leaves a non-PK-targeting reference as a plain scalar column (clientId -> oauthClient.clientId)', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
     const clientId = lists.OauthAccessToken.fields.clientId
 
@@ -110,7 +110,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
   it('adds a reverse relation on the target base list for every plugin-table reference to it, with no name collisions', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
 
     expect(lists.User.fields.oauthClients).toMatchObject({
@@ -151,7 +151,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
   it('ships plugin-table lists closed — no access control', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
 
     expect(lists.OauthClient.access).toBeUndefined()
@@ -261,7 +261,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
       verification: { modelName: 'AuthVerification', fields: {} },
     }
     const { lists } = deriveAuthLists(remappedModels, {}, {}, [
-      mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' }),
+      mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
 
     expect(lists.OauthClient.fields.user.ref).toBe('AuthUser.oauthClients')

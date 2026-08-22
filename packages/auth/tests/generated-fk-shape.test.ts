@@ -258,7 +258,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
+          betterAuthPlugins: [
+            mcp({
+              loginPage: '/sign-in',
+              consentPage: '/consent',
+              resource: 'https://example.com/mcp',
+            }),
+          ],
         }),
       ],
       lists: {},
@@ -278,7 +284,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
+          betterAuthPlugins: [
+            mcp({
+              loginPage: '/sign-in',
+              consentPage: '/consent',
+              resource: 'https://example.com/mcp',
+            }),
+          ],
         }),
       ],
       lists: {},
@@ -295,7 +307,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
+          betterAuthPlugins: [
+            mcp({
+              loginPage: '/sign-in',
+              consentPage: '/consent',
+              resource: 'https://example.com/mcp',
+            }),
+          ],
         }),
       ],
       lists: {},
@@ -315,7 +333,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
+          betterAuthPlugins: [
+            mcp({
+              loginPage: '/sign-in',
+              consentPage: '/consent',
+              resource: 'https://example.com/mcp',
+            }),
+          ],
         }),
       ],
       lists: {},
@@ -351,7 +375,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
+          betterAuthPlugins: [
+            mcp({
+              loginPage: '/sign-in',
+              consentPage: '/consent',
+              resource: 'https://example.com/mcp',
+            }),
+          ],
         }),
       ],
       lists: {},

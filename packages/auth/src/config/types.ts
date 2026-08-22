@@ -368,9 +368,11 @@ export type AuthConfig = {
    * @example
    * ```typescript
    * import { mcp } from '@opensaas/stack-auth/plugins'
+   * import { jwt } from 'better-auth/plugins'
    *
    * betterAuthPlugins: [
-   *   mcp({ loginPage: '/sign-in' })
+   *   jwt(), // required alongside mcp() since better-auth 1.7
+   *   mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://your-app.com/api/mcp' })
    * ]
    * ```
    */

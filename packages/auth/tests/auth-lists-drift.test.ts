@@ -440,7 +440,11 @@ describe('derived better-auth plugin tables match better-auth’s own table defi
     verification: { modelName: 'Verification', fields: {} },
   }
 
-  const plugin = mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })
+  const plugin = mcp({
+    loginPage: '/sign-in',
+    consentPage: '/consent',
+    resource: 'https://example.com/mcp',
+  })
   const upstreamTables = getAuthTables({ plugins: [plugin] })
   const { keys, lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
   const pluginModelToListKey: Record<string, string> = {

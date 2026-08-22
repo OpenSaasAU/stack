@@ -296,6 +296,9 @@ authPlugin({
     jwt(),
     mcp({
       loginPage: '/sign-in',
+      // The page where a user approves/denies an MCP client's requested
+      // scopes — also required since better-auth 1.7's MCP plugin.
+      consentPage: '/consent',
       // Canonical protected-resource identifier (RFC 8707/9728) — required
       // since better-auth 1.7's MCP plugin. Must match `mcp.basePath` below.
       resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
@@ -690,6 +693,7 @@ export default config({
         jwt(),
         mcp({
           loginPage: '/sign-in',
+          consentPage: '/consent',
           resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
         }),
       ],

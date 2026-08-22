@@ -36,6 +36,9 @@ authPlugin({
     jwt(),
     mcp({
       loginPage: '/sign-in',
+      // The page where a user approves/denies an MCP client's requested
+      // scopes — also required as of better-auth 1.7.
+      consentPage: '/consent',
       // RFC 8707/9728 canonical resource identifier — required as of
       // better-auth 1.7. Must match your `mcp.basePath`. HTTP is only
       // accepted on loopback hosts.
@@ -46,6 +49,8 @@ authPlugin({
 ```
 
 better-auth 1.7's MCP plugin also declares a substantially different OAuth table set — the old `oauthApplication`/`oauthAccessToken`/`oauthConsent` three became seven tables (`oauthClient`/`oauthAccessToken`/`oauthConsent`/`oauthRefreshToken`/`oauthResource`/`oauthClientResource`/`oauthClientAssertion`). Since the derivation is schema-driven this needed no code changes, but if you have the MCP plugin enabled, running `pnpm generate` will produce a significantly different Prisma schema for these tables (new/renamed models, and `Session` gains reverse relations to the two token tables that now reference it). Review the diff and migrate your database accordingly.
+
+**Workspace-wide: pins `@better-auth/utils` to `0.5.0` via a root `pnpm.overrides`.** better-auth 1.7.1's own published packages disagree on this transitive dependency — `better-auth` pins it at exactly `0.4.2` while `better-call` (used by `@better-auth/core`, `@better-auth/oauth-provider`, and `@better-auth/mcp`) requires `^0.5.0` — so pnpm resolves two separate physical instances of `@better-auth/core` depending on which peer chain a given package sits in. That split is invisible at runtime but breaks TypeScript: `jwt()` (from `better-auth/plugins`) and `mcp()` (from `@better-auth/mcp`) end up typed against different `@better-auth/core` instances, so `betterAuthPlugins: [jwt(), mcp(...)]` fails to type-check with a `BetterAuthPlugin` structural-mismatch error even though both plugins are otherwise correctly configured. The override forces one instance workspace-wide. If you hit the same error in your own app, add the equivalent override to your own `package.json`.
 
 Also fixes two `deriveAuthLists` gaps surfaced by the MCP plugin's expanded schema:
 

@@ -52,11 +52,12 @@ Pre-built forms (client components). Each takes **server action** props (not an
 - `mcp` - re-exported from the optional `@better-auth/mcp` peer (better-auth
   1.7 split it out of `better-auth/plugins`) for OAuth authentication with AI
   assistants. Its `resource` option (the RFC 8707/9728 canonical
-  protected-resource URL) is required as of that split, and it now needs
-  better-auth's own `jwt()` plugin (from `better-auth/plugins`, unaffected by
-  the `@better-auth/mcp` split) registered alongside it — the OAuth Provider
-  `mcp()` is built on issues JWT-based access tokens and throws
-  `BetterAuthError: jwt_config` at init without it. See the
+  protected-resource URL) and `consentPage` (where a user approves/denies an
+  MCP client's requested scopes) are both required as of that split, and it
+  now needs better-auth's own `jwt()` plugin (from `better-auth/plugins`,
+  unaffected by the `@better-auth/mcp` split) registered alongside it — the
+  OAuth Provider `mcp()` is built on issues JWT-based access tokens and
+  throws `BetterAuthError: jwt_config` at init without it. See the
   `betterAuthPlugins` example in the root `CLAUDE.md`'s MCP section.
 
 ## Architecture Patterns

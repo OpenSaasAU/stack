@@ -66,7 +66,7 @@ export default config({
       // otherwise) — see @better-auth/mcp's own usage example.
       betterAuthPlugins: [
         jwt(),
-        mcp({ loginPage: '/sign-in', resource: 'http://localhost:3000/api/mcp' }),
+        mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'http://localhost:3000/api/mcp' }),
       ],
       // Not modelled by AuthConfig — passed through verbatim so /delete-user
       // deletes immediately instead of requiring an email-verification

@@ -625,7 +625,7 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 
 1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`)
 2. Core runtime derives CRUD tools for each list (query, create, update, delete) at request time
-3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter` session provider
+3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter` session provider
 4. All tools respect existing access control rules
 5. Custom tools can be added per-list via `mcp.customTools` (Zod or JSON Schema inputSchema); plugins can register global tools via `registerMcpTool`
 
