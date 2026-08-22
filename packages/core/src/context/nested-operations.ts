@@ -1233,9 +1233,15 @@ export async function processNestedOperations(
       // synthetic back-relation a list-only `ref` generates on this list
       // (`from_<List>_<field>`, #978). Resolved, it is processed exactly like a
       // nested write through the declared field that owns it; unresolved, it
-      // is left untouched (a non-sudo write never reaches here with such a key
-      // at all — filterWritableFields already refused it — and sudo only lets
-      // a resolvable synthetic key through, per the same #978 fix there).
+      // is left untouched. This is NOT solely a sudo path: a multi-column
+      // field's raw per-part columns (e.g. `m_url`/`m_size`, #789) are ALSO
+      // undeclared from this list's `fieldConfigs` perspective and reach here
+      // on every write, sudo or not — `filterWritableFields` already
+      // recognises and gates those via its own `splitColumnOwners` map before
+      // its undeclared-key branch, and this function has no such map to tell
+      // them apart from a genuinely-unrecognised key, so it must not throw
+      // here. A genuinely unrecognised key under sudo is refused instead by
+      // `filterWritableFields`'s own resolution attempt, one level up.
       const synthetic = resolveSyntheticReverseRelation(fieldName, parentListName, config)
       if (!synthetic) {
         processed[fieldName] = value
