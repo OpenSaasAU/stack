@@ -3,6 +3,7 @@ import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
 import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
+import { ValidationError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { generateFieldSchemas } from './field-schema.js'
@@ -414,6 +415,7 @@ async function handleCrudTool(
     switch (operation) {
       case 'query': {
         let projection: Awaited<ReturnType<typeof resolveFieldsProjection>> | undefined
+        let listConfig: OpenSaasConfig['lists'][string] | undefined
         if (args.fields !== undefined) {
           const listEntry = Object.entries(config.lists).find(
             ([listKey]) => getDbKey(listKey) === dbKey,
@@ -421,7 +423,8 @@ async function handleCrudTool(
           if (!listEntry) {
             return createErrorResponse(`Unknown list for tool: ${dbKey}`, id)
           }
-          const [listKey, listConfig] = listEntry
+          const [listKey, resolvedListConfig] = listEntry
+          listConfig = resolvedListConfig
           try {
             projection = await resolveFieldsProjection(
               args.fields,
@@ -432,7 +435,7 @@ async function handleCrudTool(
               context,
             )
           } catch (error) {
-            if (error instanceof McpProjectionRefusedError) {
+            if (error instanceof McpProjectionRefusedError || error instanceof ValidationError) {
               return createErrorResultResponse(error.message, id)
             }
             throw error
@@ -447,9 +450,18 @@ async function handleCrudTool(
           ...(projection?.include ? { include: projection.include } : {}),
         })
 
-        const items = projection
-          ? result.map((item: Record<string, unknown>) => projectMcpResult(item, projection))
-          : result
+        let items
+        if (projection && listConfig) {
+          const resolvedProjection = projection
+          const resolvedFields = listConfig.fields
+          items = await Promise.all(
+            result.map((item: Record<string, unknown>) =>
+              projectMcpResult(item, resolvedProjection, resolvedFields, context.session, context),
+            ),
+          )
+        } else {
+          items = result
+        }
 
         return createSuccessResponse(
           {

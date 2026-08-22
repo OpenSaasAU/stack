@@ -968,6 +968,9 @@ describe('MCP Handler — fields projection (#851)', () => {
           fields: {
             text: { type: 'text' },
             approved: { type: 'checkbox' },
+            // Field-level read denied — used to prove a nested `where`/
+            // `orderBy` can't name a field this session cannot read.
+            internalNote: { type: 'text', access: { read: () => false } },
             post: { type: 'relationship', ref: 'Post.comments' },
           },
           access: { operation: { query: () => true } },
@@ -978,6 +981,15 @@ describe('MCP Handler — fields projection (#851)', () => {
             content: { type: 'text' },
             author: { type: 'relationship', ref: 'User' },
             comments: { type: 'relationship', ref: 'Comment.post', many: true },
+            // Field-level read denied on the RELATIONSHIP FIELD ITSELF —
+            // distinct from a related list's operation-level access — used
+            // to prove `count` can't bypass it.
+            restrictedComments: {
+              type: 'relationship',
+              ref: 'Comment',
+              many: true,
+              access: { read: () => false },
+            },
             secretInfo: { type: 'relationship', ref: 'Secret' },
             draftRef: { type: 'relationship', ref: 'Draft' },
           },
@@ -1320,6 +1332,52 @@ describe('MCP Handler — fields projection (#851)', () => {
       })
       expect(badCount.result.isError).toBe(true)
       expect(badCount.result.content[0].text).toContain('count')
+    })
+
+    it('refuses a negative nested take rather than allowing reverse-pagination to bypass the row cap', async () => {
+      const data = await callQuery('list_post_query', {
+        fields: { comments: { fields: { text: true }, take: -100000 } },
+      })
+
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('take')
+      expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+    })
+
+    it('refuses a nested where naming a field-level-denied field on the related list', async () => {
+      const data = await callQuery('list_post_query', {
+        fields: {
+          comments: { fields: { text: true }, where: { internalNote: { equals: 'x' } } },
+        },
+      })
+
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('internalNote')
+      expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+    })
+
+    it('refuses a nested orderBy naming an undeclared field on the related list', async () => {
+      const data = await callQuery('list_post_query', {
+        fields: {
+          comments: { fields: { text: true }, orderBy: { bogusField: 'asc' } },
+        },
+      })
+
+      expect(data.result.isError).toBe(true)
+      expect(data.result.content[0].text).toContain('bogusField')
+    })
+
+    it('does not expose a relation count when the relationship field itself denies read access', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', restrictedComments: [{ text: 'hi' }], _count: { restrictedComments: 3 } },
+      ])
+
+      const data = await callQuery('list_post_query', {
+        fields: { restrictedComments: { count: true } },
+      })
+
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ id: '1' }])
     })
   })
 })

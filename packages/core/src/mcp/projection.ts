@@ -1,6 +1,8 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
+import { checkFieldAccess } from '../access/field-access.js'
+import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
 import type { FieldSelection } from '../query/index.js'
 import { pickFields } from '../query/index.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
@@ -316,6 +318,36 @@ export async function resolveFieldsProjection(
     if (entry.count !== undefined && typeof entry.count !== 'boolean') {
       throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.count" must be a boolean.`)
     }
+    if (entry.take !== undefined && (entry.take as number) < 0) {
+      throw new McpProjectionRefusedError(
+        `"${listKey}.${fieldName}.take" must not be negative (nested reverse pagination isn't supported).`,
+      )
+    }
+
+    // A nested `where`/`orderBy` names fields on the RELATED list — validate
+    // them the same way the root read path validates the root list's own
+    // `where`/`orderBy` (#912/#915), or a session could infer a field-level-
+    // denied related field's value from which rows come back, their order,
+    // or (via `count`, below) how many there are.
+    if (entry.where !== undefined || entry.orderBy !== undefined) {
+      validateQueryKeys({
+        where: entry.where,
+        orderBy: entry.orderBy,
+        listConfig: related.listConfig,
+        listName: related.listName,
+        config,
+        isSudo: false,
+      })
+      await validateQueryFieldReadAccess({
+        where: entry.where,
+        orderBy: entry.orderBy,
+        listConfig: related.listConfig,
+        listName: related.listName,
+        session,
+        context,
+        isSudo: false,
+      })
+    }
 
     const nestedFieldsArg = entry.fields
     const wantsCount = many && entry.count === true
@@ -401,17 +433,38 @@ export async function resolveFieldsProjection(
   }
 }
 
-/** Project one raw (already access-checked and field-visibility-filtered) result row down to a resolved `fields` projection, folding in any requested relation counts from Prisma's `_count`. */
-export function projectMcpResult(
+/**
+ * Project one raw (already access-checked and field-visibility-filtered)
+ * result row down to a resolved `fields` projection, folding in any
+ * requested relation counts from Prisma's `_count`.
+ *
+ * `_count` is not a declared field, so field-visibility (`filterReadableFields`)
+ * never applies the relationship field's own field-level `read` access to it
+ * the way it already does for the relation's rows — this function is where
+ * that check has to happen instead, per row, before a count is ever emitted.
+ * A relation whose rows a denied field never reveals must not reveal its
+ * count either.
+ */
+export async function projectMcpResult(
   rawItem: Record<string, unknown>,
   resolved: ResolvedFieldsProjection,
-): Record<string, unknown> {
+  fieldConfigs: Record<string, FieldConfig>,
+  session: Session | null,
+  context: AccessContext,
+): Promise<Record<string, unknown>> {
   const picked = pickFields(rawItem, resolved.fieldSelection) as Record<string, unknown>
   const rawCounts = rawItem._count
   const counts =
     rawCounts && typeof rawCounts === 'object' ? (rawCounts as Record<string, unknown>) : {}
 
   for (const [key, mode] of resolved.countRequests) {
+    const canReadRelation = await checkFieldAccess(fieldConfigs[key]?.access, 'read', {
+      session,
+      context,
+      item: rawItem,
+    })
+    if (!canReadRelation) continue
+
     const count = typeof counts[key] === 'number' ? (counts[key] as number) : 0
     picked[key] = mode === 'only' ? count : { items: picked[key], count }
   }
