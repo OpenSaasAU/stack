@@ -223,6 +223,18 @@ describe.skipIf(!prerequisitesPresent)(
         expect(typeof sudoSessions[0].token).toBe('string')
         expect(sudoSessions[0].token!.length).toBeGreaterThan(0)
 
+        // Naming a denied field in findMany's where/orderBy is rejected up
+        // front by the predicate-time read-access check, not silently
+        // stripped (findUnique's `where` isn't walked by that check at all —
+        // it only unique-selects the row, so it still returns the row with
+        // `token` stripped from the output, same as any other read).
+        await expect(
+          context.db.session.findMany({ where: { token: sudoSessions[0].token } }),
+        ).rejects.toThrow()
+        await expect(
+          context.sudo().db.session.findMany({ where: { token: sudoSessions[0].token } }),
+        ).resolves.not.toHaveLength(0)
+
         // --- password reset: exercises Verification.value end-to-end ---
 
         const resetReq = await auth.api.requestPasswordReset({

@@ -421,15 +421,22 @@ hold live, presentable credentials — reading one is equivalent to holding it (
 takeover, replaying an OAuth token). The plugin sets a field-level `read` deny on each of them when it
 derives the list, so granting operation-level access to a list (e.g. `access: { session: { operation:
 { query: () => true } } }` for a "your active sessions" screen) does **not** also expose the token
-column — the field is silently stripped from the result, the same as any other field-level read
+column — the field is silently stripped from a returned row, the same as any other field-level read
 denial, and the rest of the row is returned normally.
 
-`sudo()` still reads all six fields — it is the supported path for an application with a genuine need:
+Naming a denied field in `findMany`'s (or `count`'s) `where`/`orderBy` is different: that's rejected
+up front with a `ValidationError` rather than silently stripped, the same as any other field-level
+`read` deny. A `findUnique` lookup is not — its `where` only unique-selects the row, so
+`context.db.session.findUnique({ where: { token } })` still finds and returns the session, just with
+`token` stripped from the result like any other read.
+
+`sudo()` bypasses both — it is the supported path for an application with a genuine need:
 
 ```typescript
-// An admin tool that must inspect a live session token, or an auth
-// implementation verifying a password hash — both bypass the deny deliberately.
-const session = await context.sudo().db.session.findUnique({ where: { id } })
+// An admin tool that must inspect a live session token, filter sessions BY
+// token, or an auth implementation verifying a password hash — all bypass
+// the deny deliberately.
+const session = await context.sudo().db.session.findUnique({ where: { token } })
 session.token // present
 ```
 

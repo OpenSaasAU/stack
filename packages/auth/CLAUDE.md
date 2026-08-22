@@ -188,16 +188,26 @@ credential-bearing fields (`Session.token`, `Verification.value`,
 sets a field-level `access: { read: () => false }` on each of them
 unconditionally, independent of whatever `accessConfig` an app supplies.
 Opening `query` on `Session` for a "your active sessions" screen no longer
-also exposes `token` — the field is stripped from the result (the ordinary
-field-access-denial behavior), the row itself still returns.
+also exposes `token` — the field is stripped from a returned row (the
+ordinary field-access-denial behavior), the row itself still returns. This
+holds even for a `findUnique` lookup that selects the row BY the denied
+field (`context.db.session.findUnique({ where: { token } })` still finds
+the session; `token` just comes back stripped) — `findUnique`'s `where` is
+a unique selector, not a predicate the read-access check walks. Naming the
+field in `findMany`'s (or `count`'s) `where`/`orderBy` instead takes the
+predicate-time path (`validateQueryFieldReadAccess` in
+`packages/core/src/access/query-validation.ts`) and throws a
+`ValidationError` up front rather than stripping anything; `sudo()` is
+required for that shape too, not only for reading the column back off a
+row fetched another way.
 
 The deny is applied in the scalar-field derivation loop
 (`withCredentialAccess` in `derive-auth-lists.ts`), keyed by better-auth's
 own model/field key (`CREDENTIAL_FIELDS`) — not the app's list key or
 column `db.map` — so it survives a `modelName` remap or a `fields` column
-override. `sudo()` still reads these fields, unaffected: this is the
-supported path for a genuine need (an admin tool, or an app's own auth code
-verifying a password hash via `HashedPassword.compare()`). See
+override. `sudo()` still reads these fields either way, unaffected: this is
+the supported path for a genuine need (an admin tool, or an app's own auth
+code verifying a password hash via `HashedPassword.compare()`). See
 `packages/core/CLAUDE.md`'s "Access Control Execution Flow" for how a
 field-level `read` denial is enforced, and ADR-0036 for why this list is
 exactly these six fields and not, say, `Account.providerId` or
