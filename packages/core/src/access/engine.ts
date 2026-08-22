@@ -1,5 +1,6 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
-import type { OpenSaasConfig, ListConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
+import { getSyntheticFieldName } from '../fields/index.js'
 
 /**
  * Access engine — operation-level access control and shared helpers.
@@ -43,6 +44,53 @@ export function getRelatedListConfig(
   }
 
   return { listName, listConfig }
+}
+
+/** A synthetic reverse relation, resolved back to the declared field that owns it. */
+export interface SyntheticReverseRelation {
+  sourceListName: string
+  sourceFieldName: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
+  sourceFieldConfig: RelationshipField<any>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  sourceListConfig: ListConfig<any>
+}
+
+/**
+ * Resolve a candidate data key as the synthetic back-relation a list-only
+ * `ref` (`ref: 'ListName'`, no target field) generates on its target model —
+ * Prisma requires an opposite field there, but the config never declares one,
+ * so it never appears in `parentListName`'s own `fields`. Reuses
+ * `getSyntheticFieldName` (the same construction `getPrismaRelation` emits the
+ * schema with) rather than re-deriving the `from_<List>_<field>` format by
+ * string parsing, so the two cannot drift (#978).
+ *
+ * Returns the declared relationship field that owns the relation — the write
+ * pipeline treats a resolved synthetic key exactly like a nested write through
+ * that field, so it runs the same hooks/access/recovery machinery a declared
+ * relationship field gets. Returns `null` when `fieldName` isn't one of these
+ * on `parentListName` (a genuinely unknown key, or a bidirectional relation's
+ * ref, which never synthesizes a back-relation).
+ */
+export function resolveSyntheticReverseRelation(
+  fieldName: string,
+  parentListName: string,
+  config: OpenSaasConfig,
+): SyntheticReverseRelation | null {
+  for (const [sourceListName, sourceListConfig] of Object.entries(config.lists)) {
+    for (const [sourceFieldName, sourceFieldConfig] of Object.entries(sourceListConfig.fields)) {
+      if (sourceFieldConfig.type !== 'relationship') continue
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
+      const rel = sourceFieldConfig as RelationshipField<any>
+      // Only a list-only ref ('ListName', no '.fieldName') synthesizes a
+      // back-relation — a bidirectional ref's other side is a real field.
+      const refParts = rel.ref.split('.')
+      if (refParts.length !== 1 || refParts[0] !== parentListName) continue
+      if (getSyntheticFieldName(sourceListName, sourceFieldName) !== fieldName) continue
+      return { sourceListName, sourceFieldName, sourceFieldConfig: rel, sourceListConfig }
+    }
+  }
+  return null
 }
 
 export async function checkAccess<T = Record<string, unknown>>(

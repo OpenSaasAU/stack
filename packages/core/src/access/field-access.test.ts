@@ -712,3 +712,81 @@ describe('filterWritableFields', () => {
     expect(filtered.author).toEqual({ connect: { id: 'user-1' } })
   })
 })
+
+// ── #978: under sudo, only a synthetic reverse-relation key is a recognised
+// undeclared key — anything else is refused, even under sudo ──────────────
+
+describe('filterWritableFields — #978 tightened sudo undeclared-key guard', () => {
+  // A minimal config: Account is the target of ChargeRequest's list-only ref
+  // (`ref: 'Account'`, no field named on Account), so the generator
+  // synthesizes `from_ChargeRequest_account` on Account.
+  const config = {
+    db: { provider: 'sqlite', url: 'file:./dev.db' },
+    lists: {
+      Account: { fields: { name: { type: 'text' } } },
+      ChargeRequest: {
+        fields: {
+          kind: { type: 'text' },
+          account: { type: 'relationship', ref: 'Account' },
+        },
+      },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any
+
+  it('passes a synthetic reverse-relation key through under sudo, when config/listName are supplied', async () => {
+    const fieldConfigs = { name: { type: 'text' } }
+    const data = {
+      name: 'Acme',
+      from_ChargeRequest_account: { create: { kind: 'DEPOSIT' } },
+    }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+      session: null,
+      item: { id: 'a1' },
+      context: sudoContext(),
+      inputData: data,
+      listName: 'Account',
+      config,
+    })
+
+    expect(filtered).toHaveProperty('name', 'Acme')
+    expect(filtered).toHaveProperty('from_ChargeRequest_account')
+  })
+
+  it('throws on a genuinely unknown key under sudo, when config/listName are supplied', async () => {
+    const fieldConfigs = { name: { type: 'text' } }
+    const data = {
+      name: 'Acme',
+      totallyBogusKey: 'value',
+    }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        item: { id: 'a1' },
+        context: sudoContext(),
+        inputData: data,
+        listName: 'Account',
+        config,
+      }),
+    ).rejects.toThrow(/totallyBogusKey/)
+  })
+
+  it('keeps the pre-#978 blanket sudo passthrough when config/listName are omitted', async () => {
+    // Pins the fallback direct unit tests above (e.g. "passes undeclared data
+    // keys through under sudo") rely on: with no config to resolve a synthetic
+    // key against, any undeclared key still passes through under sudo.
+    const fieldConfigs = { name: { type: 'text' } }
+    const data = { name: 'Acme', totallyBogusKey: 'value' }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+      session: null,
+      item: { id: 'a1' },
+      context: sudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('totallyBogusKey', 'value')
+  })
+})

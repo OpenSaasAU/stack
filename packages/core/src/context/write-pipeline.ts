@@ -330,6 +330,8 @@ async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
     inputData: input,
+    listName,
+    config,
   })
 
   // ── Phase 5.5: process nested relationship operations ───────────────────────
