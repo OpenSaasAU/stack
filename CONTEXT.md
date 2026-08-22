@@ -38,6 +38,10 @@ _Avoid_: auto-include, default include, unqualified read
 The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further (ADR-0026). This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it.
 _Avoid_: deep include, nested expansion, relation tree
 
+**Projection**:
+A caller's statement of which fields it wants back, at each level it names — the reciprocal of One hop, which says how far naming reaches. A projection may be narrower than a Bare read as easily as wider, since it selects the row's own fields too, and what it selects is what gets computed. Where a projection crosses a trust boundary the reachable vocabulary is published ahead of the request and anything outside it is refused, so a caller can tell what it may ask for without asking.
+_Avoid_: select (that names an ORM feature this codebase does not honour), include, field mask
+
 **Computed field**:
 A field whose value is produced rather than read straight from storage — one with no column of its own, or one that transforms what its column holds. It is produced only where the read is going to return it, and it sees the row's stored columns and its own declared dependencies, never another computed field's value. Reaching for one finds nothing there, so no two computed fields can depend on the order they were declared in.
 _Avoid_: virtual field (that names one kind, not the category), derived field, resolver
