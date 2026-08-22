@@ -2,6 +2,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 import type { AccessControl } from '@opensaas/stack-core'
 import { z } from 'zod'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
@@ -39,7 +40,21 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        // better-auth 1.7's mcp() is built on the OAuth Provider, which
+        // issues JWT-based access tokens and requires better-auth's own
+        // jwt() plugin registered alongside it.
+        jwt(),
+        mcp({
+          loginPage: '/sign-in',
+          // Not implemented in this demo — a real project needs a page here
+          // for users to approve/deny an MCP client's requested scopes.
+          consentPage: '/consent',
+          // RFC 8707/9728 canonical resource identifier — must match the
+          // `mcp.basePath` below. HTTP is accepted only on loopback hosts.
+          resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
+      ],
       extendUserList: {
         fields: {
           posts: relationship({
