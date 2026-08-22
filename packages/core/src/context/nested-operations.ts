@@ -1,6 +1,11 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext, FieldAccess } from '../access/types.js'
-import { checkAccess, filterWritableFields, getRelatedListConfig } from '../access/index.js'
+import {
+  checkAccess,
+  filterWritableFields,
+  getRelatedListConfig,
+  resolveSyntheticReverseRelation,
+} from '../access/index.js'
 import { checkFieldAccess } from '../access/field-access.js'
 import {
   executeResolveInput,
@@ -279,6 +284,8 @@ async function processNestedCreate(
           session: context.session,
           context,
           inputData: item,
+          listName: relatedListName,
+          config,
         },
       )
 
@@ -590,6 +597,8 @@ async function processNestedUpdate(
           item: originalItem,
           context,
           inputData: updateData,
+          listName: relatedListName,
+          config,
         },
       )
 
@@ -1194,26 +1203,61 @@ export async function processNestedOperations(
   const processed: Record<string, unknown> = {}
 
   for (const [fieldName, value] of Object.entries(data)) {
+    if (value === null || value === undefined) {
+      processed[fieldName] = value
+      continue
+    }
+
     const fieldConfig = fieldConfigs[fieldName]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    let relatedListConfig: ListConfig<any>
+    let resolvedListName: string
+    let owningFieldAccess: FieldAccess | undefined
 
-    if (!isRelationshipField(fieldConfig) || value === null || value === undefined) {
+    if (isRelationshipField(fieldConfig)) {
+      const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
+      const relatedConfig = getRelatedListConfig(relationshipField.ref, config)
+      if (!relatedConfig) {
+        processed[fieldName] = value
+        continue
+      }
+
+      const { listName: relatedListName, listConfig } = relatedConfig
+      resolvedListName = relatedListName || findListName(listConfig, config)
+      relatedListConfig = listConfig
+      // The owning relationship field's field-level access, for the #588 gate
+      // in verifyConnectReachable.
+      owningFieldAccess = fieldConfig.access
+    } else if (!fieldConfig) {
+      // Not a field the parent's config declares — check whether it names the
+      // synthetic back-relation a list-only `ref` generates on this list
+      // (`from_<List>_<field>`, #978). Resolved, it is processed exactly like a
+      // nested write through the declared field that owns it; unresolved, it
+      // is left untouched. This is NOT solely a sudo path: a multi-column
+      // field's raw per-part columns (e.g. `m_url`/`m_size`, #789) are ALSO
+      // undeclared from this list's `fieldConfigs` perspective and reach here
+      // on every write, sudo or not — `filterWritableFields` already
+      // recognises and gates those via its own `splitColumnOwners` map before
+      // its undeclared-key branch, and this function has no such map to tell
+      // them apart from a genuinely-unrecognised key, so it must not throw
+      // here. A genuinely unrecognised key under sudo is refused instead by
+      // `filterWritableFields`'s own resolution attempt, one level up.
+      const synthetic = resolveSyntheticReverseRelation(fieldName, parentListName, config)
+      if (!synthetic) {
+        processed[fieldName] = value
+        continue
+      }
+
+      resolvedListName = synthetic.sourceListName
+      relatedListConfig = synthetic.sourceListConfig
+      // There is no parent-side field here (unlike the declared-relationship
+      // branch above) — the FK-owning field genuinely IS the one the source
+      // list declares, so its access is the owning-field gate.
+      owningFieldAccess = synthetic.sourceFieldConfig.access
+    } else {
       processed[fieldName] = value
       continue
     }
-
-    const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
-    const relatedConfig = getRelatedListConfig(relationshipField.ref, config)
-    if (!relatedConfig) {
-      processed[fieldName] = value
-      continue
-    }
-
-    const { listName: relatedListName, listConfig: relatedListConfig } = relatedConfig
-    const resolvedListName = relatedListName || findListName(relatedListConfig, config)
-
-    // The owning relationship field's field-level access, for the #588 gate
-    // in verifyConnectReachable.
-    const owningFieldAccess = fieldConfig.access
 
     processed[fieldName] = await processFieldNestedOps(
       fieldName,

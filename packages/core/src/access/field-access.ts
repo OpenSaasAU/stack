@@ -1,10 +1,12 @@
 import type { Session, AccessContext } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
+import type { OpenSaasConfig } from '../config/types.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
+import { resolveSyntheticReverseRelation } from './engine.js'
 
 /**
  * Marks a throw caused by touching {@link createPoisonedItem}'s `item`, as
@@ -196,6 +198,17 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
     inputData?: Record<string, unknown>
+    /**
+     * The list being written and the full config — used ONLY to recognise a
+     * synthetic reverse-relation key (`from_<List>_<field>`, #978) among the
+     * undeclared keys sudo would otherwise pass through unchecked. Both
+     * production call sites (the write pipeline, nested-operations) supply
+     * these; a direct unit test that omits them keeps the pre-#978 sudo
+     * behaviour of passing any undeclared key through, since it has no config
+     * to resolve a synthetic key against.
+     */
+    listName?: string
+    config?: OpenSaasConfig
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
@@ -286,10 +299,29 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
     // an undeclared key to pass through lets a non-sudo caller drive ungated
     // nested writes on undeclared back-relations. Mirror Keystone's
-    // GraphQL-schema behaviour and reject it. `sudo` is the single trusted
-    // bypass, so undeclared keys still pass through under sudo.
+    // GraphQL-schema behaviour and reject it.
     if (!fieldConfig) {
       if (isSudo) {
+        // #978 — sudo bypasses ACCESS CONTROL, not the hooks/validation a
+        // recognised relation is entitled to. A synthetic reverse-relation key
+        // (a list-only ref's back-relation) is handed to the caller unchanged
+        // so processNestedOperations can run its target list's full pipeline,
+        // exactly as it would for a declared relationship field. Any other
+        // undeclared key has no such route to hooks — passing it straight to
+        // Prisma is the same silent-bypass shape this issue closed for
+        // relations, so it is refused even under sudo. `listName`/`config`
+        // are omitted only by direct unit tests of this function, which keep
+        // the pre-#978 blanket sudo passthrough since they have no config to
+        // resolve a synthetic key against.
+        if (args.listName && args.config) {
+          const synthetic = resolveSyntheticReverseRelation(fieldName, args.listName, args.config)
+          if (!synthetic) {
+            throw new ValidationError([
+              `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
+                `Undeclared data keys are rejected, even under sudo.`,
+            ])
+          }
+        }
         filtered[fieldName] = value
         continue
       }

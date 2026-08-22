@@ -1395,6 +1395,18 @@ function computeManyToManyRelationName(
   return undefined
 }
 
+/**
+ * The name Prisma generation synthesizes for the back-relation a list-only
+ * `ref` (`ref: 'ListName'`, no target field) creates on its target model —
+ * Prisma requires an opposite field, and the config never declares one.
+ * Exported so runtime nested-write resolution (`resolveSyntheticReverseRelation`
+ * in `access/engine.ts`) can recognise the same name rather than re-deriving
+ * the format by string parsing (#978).
+ */
+export function getSyntheticFieldName(listKey: string, fieldName: string): string {
+  return `from_${listKey}_${fieldName}`
+}
+
 function getPrismaRelation(
   field: RelationshipField,
   fieldName: string,
@@ -1407,7 +1419,7 @@ function getPrismaRelation(
   // Synthetic back-relation for list-only refs (Prisma requires an opposite field)
   let backRelation: PrismaRelationResult['backRelation']
   if (!targetField) {
-    const syntheticFieldName = `from_${listKey}_${fieldName}`
+    const syntheticFieldName = getSyntheticFieldName(listKey, fieldName)
     const relationName = field.db?.relationName ?? `${listKey}_${fieldName}`
     backRelation = {
       targetList,
