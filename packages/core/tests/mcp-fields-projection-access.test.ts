@@ -113,7 +113,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     })
 
     const result = JSON.parse(data.result.content[0].text)
-    expect(result.items).toEqual([{ title: 'Hi', author: null }])
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi', author: null }])
   })
 
   it('AND-combines a nested to-many where with the related list’s own access filter', async () => {
@@ -149,7 +149,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     })
 
     const result = JSON.parse(data.result.content[0].text)
-    expect(result.items).toEqual([{ title: 'Hi' }])
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
   })
 
   it('running a selected computed field folds its declared `needs`, and the count reflects the access-scoped rows', async () => {
@@ -167,7 +167,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     })
 
     const result = JSON.parse(data.result.content[0].text)
-    expect(result.items).toEqual([{ commentCount: 1 }])
+    expect(result.items).toEqual([{ id: 'p1', commentCount: 1 }])
 
     // `needs` folded `comments` into the include even though the caller's
     // own `fields` never named it.

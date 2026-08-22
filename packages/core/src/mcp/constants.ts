@@ -5,8 +5,15 @@
  * A relation named at level 2 is not itself selectable further — reaching
  * past it is a second tool call, the same round-trip a bare read already
  * assumes. Deliberately shallower than `READ_INCLUDE_MAX_DEPTH` (5) so no
- * schema-conforming request can reach the engine's depth refusal, and fixed
- * (not configurable) — see ADR-0033 and ADR-0026's position on the depth cap.
+ * schema-conforming request can reach the engine's depth refusal.
+ *
+ * Fixed (not configurable) by design (ADR-0033, ADR-0026's position on the
+ * depth cap) — `generateFieldsProjectionSchema` and `resolveFieldsProjection`
+ * (`projection.ts`) are hand-written for exactly this depth (one loop over
+ * the root list's fields, one nested loop over a relation's), not driven by
+ * this value at runtime. It exists so the depth has one documented, tested
+ * name rather than an unexplained "2" in two places; changing it is a
+ * deliberate rewrite of both functions, not a config knob.
  */
 export const MCP_FIELDS_SCHEMA_DEPTH = 2
 

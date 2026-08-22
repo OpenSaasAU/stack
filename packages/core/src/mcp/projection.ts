@@ -11,6 +11,36 @@ function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
 }
 
 /**
+ * `id`/`createdAt`/`updatedAt` are added to every list automatically and
+ * excluded from `listConfig.fields` (CLAUDE.md's "System Fields"), so they
+ * need their own selector entries at every level a `fields` projection can
+ * name fields — a scalar-only loop over `listConfig.fields` would otherwise
+ * never advertise or accept them. `id` is additionally forced into every
+ * `FieldSelection` this module builds (`withId`, below), never left to the
+ * caller: a record projected down to none of its own identifying columns
+ * cannot be the target of a follow-up `update`/`delete` call.
+ */
+function systemFieldProperties(): Record<string, unknown> {
+  return {
+    id: {
+      type: 'boolean',
+      description: 'Include the "id" field (always returned regardless of selection)',
+    },
+    createdAt: scalarSelectorSchema('createdAt'),
+    updatedAt: scalarSelectorSchema('updatedAt'),
+  }
+}
+
+function isSystemFieldName(name: string): name is 'id' | 'createdAt' | 'updatedAt' {
+  return name === 'id' || name === 'createdAt' || name === 'updatedAt'
+}
+
+/** Force `id` into a field selection being built for one level of a `fields` projection — see `systemFieldProperties`'s doc comment. */
+function withId(selection: Record<string, unknown>): Record<string, unknown> {
+  return { ...selection, id: true }
+}
+
+/**
  * Thrown when a `query` tool's `fields` argument names something the
  * generated projection schema does not advertise — an unknown field, a
  * relation two levels deeper than enumerated, or the wrong shape for what
@@ -85,7 +115,7 @@ export async function generateFieldsProjectionSchema(
   session: Session | null,
   context: AccessContext,
 ): Promise<Record<string, unknown>> {
-  const properties: Record<string, unknown> = {}
+  const properties: Record<string, unknown> = systemFieldProperties()
 
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     if (!isRelationshipField(fieldConfig)) {
@@ -96,7 +126,7 @@ export async function generateFieldsProjectionSchema(
     const related = await relatedListIfVisible(fieldConfig, config, session, context)
     if (!related) continue
 
-    const level2Properties: Record<string, unknown> = {}
+    const level2Properties: Record<string, unknown> = systemFieldProperties()
     for (const [relFieldName, relFieldConfig] of Object.entries(related.listConfig.fields)) {
       if (isRelationshipField(relFieldConfig)) continue
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
@@ -201,11 +231,23 @@ export async function resolveFieldsProjection(
   }
 
   const include: Record<string, unknown> = {}
-  const fieldSelection: Record<string, unknown> = {}
+  // `id` is always projected back, whether or not the caller asked for it —
+  // see `systemFieldProperties`'s doc comment.
+  const fieldSelection: Record<string, unknown> = { id: true }
   const countRequests = new Map<string, 'only' | 'alongside'>()
   let hasIncludeEntries = false
 
   for (const [fieldName, rawValue] of Object.entries(fieldsArg as Record<string, unknown>)) {
+    if (isSystemFieldName(fieldName)) {
+      if (rawValue !== true) {
+        throw new McpProjectionRefusedError(
+          `"${listKey}.${fieldName}" is a scalar — select it with \`true\`, not ${JSON.stringify(rawValue)}.`,
+        )
+      }
+      fieldSelection[fieldName] = true
+      continue
+    }
+
     const fieldConfig = listConfig.fields[fieldName]
     if (!fieldConfig) {
       throw new McpProjectionRefusedError(
@@ -250,6 +292,31 @@ export async function resolveFieldsProjection(
       }
     }
 
+    // Type-check each key before it reaches Prisma — a malformed value here
+    // would otherwise only surface as an opaque Prisma error out of the
+    // `context.db` call below, instead of a clear refusal naming the shape
+    // that was expected (mirrors `access-filter.ts`'s `asEntryObject`).
+    if (entry.where !== undefined && (entry.where === null || typeof entry.where !== 'object')) {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.where" must be an object.`)
+    }
+    if (
+      entry.orderBy !== undefined &&
+      (entry.orderBy === null || typeof entry.orderBy !== 'object')
+    ) {
+      throw new McpProjectionRefusedError(
+        `"${listKey}.${fieldName}.orderBy" must be an object or an array of objects.`,
+      )
+    }
+    if (entry.take !== undefined && typeof entry.take !== 'number') {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.take" must be a number.`)
+    }
+    if (entry.skip !== undefined && typeof entry.skip !== 'number') {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.skip" must be a number.`)
+    }
+    if (entry.count !== undefined && typeof entry.count !== 'boolean') {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.count" must be a boolean.`)
+    }
+
     const nestedFieldsArg = entry.fields
     const wantsCount = many && entry.count === true
 
@@ -271,12 +338,14 @@ export async function resolveFieldsProjection(
       for (const [relFieldName, relValue] of Object.entries(
         nestedFieldsArg as Record<string, unknown>,
       )) {
-        const relFieldConfig = related.listConfig.fields[relFieldName]
-        if (!relFieldConfig || isRelationshipField(relFieldConfig)) {
-          throw new McpProjectionRefusedError(
-            `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
-              `are not selectable two levels deep; issue a second query for that.`,
-          )
+        if (!isSystemFieldName(relFieldName)) {
+          const relFieldConfig = related.listConfig.fields[relFieldName]
+          if (!relFieldConfig || isRelationshipField(relFieldConfig)) {
+            throw new McpProjectionRefusedError(
+              `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
+                `are not selectable two levels deep; issue a second query for that.`,
+            )
+          }
         }
         if (relValue !== true) {
           throw new McpProjectionRefusedError(
@@ -297,7 +366,7 @@ export async function resolveFieldsProjection(
       }
       include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
       hasIncludeEntries = true
-      fieldSelection[fieldName] = { _type: 'fragment', _fields: nestedSelection }
+      fieldSelection[fieldName] = { _type: 'fragment', _fields: withId(nestedSelection) }
     }
 
     if (wantsCount) {

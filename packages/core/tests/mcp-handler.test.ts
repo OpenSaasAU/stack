@@ -1104,12 +1104,15 @@ describe('MCP Handler — fields projection (#851)', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fieldsSchema = (categoryQuery.inputSchema.properties as any).fields
 
+      // Only scalars (plus the always-present system fields) — no `parent`/
+      // `children` at this depth, which is what actually terminates the
+      // self-reference.
       const parentFields = fieldsSchema.properties.parent.properties.fields.properties
-      expect(Object.keys(parentFields)).toEqual(['name'])
+      expect(Object.keys(parentFields).sort()).toEqual(['createdAt', 'id', 'name', 'updatedAt'])
       expect(parentFields.name).toMatchObject({ type: 'boolean' })
 
       const childrenFields = fieldsSchema.properties.children.properties.fields.properties
-      expect(Object.keys(childrenFields)).toEqual(['name'])
+      expect(Object.keys(childrenFields).sort()).toEqual(['createdAt', 'id', 'name', 'updatedAt'])
       expect(childrenFields.name).toMatchObject({ type: 'boolean' })
     })
   })
@@ -1141,7 +1144,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         expect.not.objectContaining({ include: expect.anything() }),
       )
       const result = JSON.parse(data.result.content[0].text)
-      expect(result.items).toEqual([{ title: 'Hello' }])
+      expect(result.items).toEqual([{ id: '1', title: 'Hello' }])
     })
 
     it('selects a to-one relation with nested fields', async () => {
@@ -1157,7 +1160,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         expect.objectContaining({ include: { author: true } }),
       )
       const result = JSON.parse(data.result.content[0].text)
-      expect(result.items).toEqual([{ title: 'Hello', author: { name: 'Ada' } }])
+      expect(result.items).toEqual([{ id: '1', title: 'Hello', author: { id: 'u1', name: 'Ada' } }])
     })
 
     it('honours nested where/orderBy/take/skip on a to-many relation, applying the default take ceiling when omitted', async () => {
@@ -1215,7 +1218,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         }),
       )
       const result = JSON.parse(data.result.content[0].text)
-      expect(result.items).toEqual([{ comments: 7 }])
+      expect(result.items).toEqual([{ id: '1', comments: 7 }])
     })
 
     it('requests a to-many count alongside its rows', async () => {
@@ -1236,7 +1239,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         }),
       )
       const result = JSON.parse(data.result.content[0].text)
-      expect(result.items).toEqual([{ comments: { items: [{ text: 'hi' }], count: 7 } }])
+      expect(result.items).toEqual([{ id: '1', comments: { items: [{ text: 'hi' }], count: 7 } }])
     })
 
     it('refuses an unadvertised field name as an isError tool result', async () => {
@@ -1275,6 +1278,48 @@ describe('MCP Handler — fields projection (#851)', () => {
       })
 
       expect(data.result.isError).toBe(true)
+    })
+
+    it('always returns id, even when the projection never names it', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Hello' }])
+
+      const data = await callQuery('list_post_query', { fields: { title: true } })
+
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ id: '1', title: 'Hello' }])
+    })
+
+    it('accepts id/createdAt/updatedAt as explicitly selectable system fields', async () => {
+      mockPrisma.post.findMany.mockResolvedValue([
+        { id: '1', title: 'Hello', createdAt: 't1', updatedAt: 't2' },
+      ])
+
+      const data = await callQuery('list_post_query', {
+        fields: { id: true, createdAt: true, updatedAt: true },
+      })
+
+      const result = JSON.parse(data.result.content[0].text)
+      expect(result.items).toEqual([{ id: '1', createdAt: 't1', updatedAt: 't2' }])
+    })
+
+    it('refuses a malformed nested where/take/orderBy/skip/count with a clear message rather than an opaque Prisma error', async () => {
+      const badWhere = await callQuery('list_post_query', {
+        fields: { comments: { fields: { text: true }, where: 'not-an-object' } },
+      })
+      expect(badWhere.result.isError).toBe(true)
+      expect(badWhere.result.content[0].text).toContain('where')
+
+      const badTake = await callQuery('list_post_query', {
+        fields: { comments: { fields: { text: true }, take: 'lots' } },
+      })
+      expect(badTake.result.isError).toBe(true)
+      expect(badTake.result.content[0].text).toContain('take')
+
+      const badCount = await callQuery('list_post_query', {
+        fields: { comments: { count: 'yes' } },
+      })
+      expect(badCount.result.isError).toBe(true)
+      expect(badCount.result.content[0].text).toContain('count')
     })
   })
 })
