@@ -298,7 +298,7 @@ authPlugin({
       loginPage: '/sign-in',
       // Canonical protected-resource identifier (RFC 8707/9728) — required
       // since better-auth 1.7's MCP plugin. Must match `mcp.basePath` below.
-      resource: `${process.env.APP_URL}/api/mcp`,
+      resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
     }),
     // Add other Better Auth plugins here
   ],
@@ -688,7 +688,10 @@ export default config({
       betterAuthPlugins: [
         // better-auth 1.7's mcp() requires the jwt() plugin alongside it.
         jwt(),
-        mcp({ loginPage: '/sign-in', resource: `${process.env.APP_URL}/api/mcp` }),
+        mcp({
+          loginPage: '/sign-in',
+          resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
       ],
     }),
   ],

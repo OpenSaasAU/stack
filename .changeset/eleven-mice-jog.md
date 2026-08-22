@@ -7,12 +7,16 @@ Bump the `better-auth` dev dependency to `1.7.1` and move the peer range off the
 **New required `account.issuer` column.** better-auth 1.7 adds a required `issuer` column to its `account` model. Because `deriveAuthLists` derives the Auth lists from better-auth's own `getAuthTables()` (#987/#997), this column now appears in the generated schema automatically — no code change was needed, only verification against real generated output. Existing projects upgrading to `better-auth@^1.7` will see a **new NOT NULL column** on their `account` table and need a backfill for existing rows. Following better-auth's own `createLocalAccountIssuer`/`createOAuthAccountIssuer` helpers (`@better-auth/core/db`):
 
 ```sql
--- Local (email/password) accounts
+-- PostgreSQL / SQLite (|| is string concatenation on both)
 UPDATE "Account" SET issuer = 'local:' || "providerId" WHERE issuer IS NULL AND "providerId" = 'credential';
-
--- OAuth/social accounts without their own OIDC issuer (github, google-without-oidc, etc.)
 UPDATE "Account" SET issuer = 'local:oauth:' || "providerId" WHERE issuer IS NULL AND "providerId" != 'credential';
+
+-- MySQL (|| is logical OR by default, NOT concatenation — use CONCAT instead)
+UPDATE `Account` SET issuer = CONCAT('local:', providerId) WHERE issuer IS NULL AND providerId = 'credential';
+UPDATE `Account` SET issuer = CONCAT('local:oauth:', providerId) WHERE issuer IS NULL AND providerId != 'credential';
 ```
+
+`"Account"`/`` `Account` `` above is the stack's own greenfield default table name — substitute your project's actual (and, on Postgres, schema-qualified) table name if you renamed it via `authPlugin({ account: { tableName } })` or adopted an existing install with `adoptBetterAuthTables({ useBetterAuthTableNames: true })` (physical table `account`, commonly under a non-`public` schema).
 
 URL-encode `providerId` if it can contain characters outside `[A-Za-z0-9_-]`. If you configured a custom OIDC provider with its own issuer URL, use that provider's real issuer instead of the synthetic `local:oauth:` value.
 
