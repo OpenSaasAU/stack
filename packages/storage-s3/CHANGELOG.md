@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-s3
 
+## 0.40.0
+
+### Patch Changes
+
+- [#973](https://github.com/OpenSaasAU/stack/pull/973) [`8f76533`](https://github.com/OpenSaasAU/stack/commit/8f765333e3067c741c69f535927cc82115c60ed1) Thanks [@borisno2](https://github.com/borisno2)! - Comment cleanup only, no behavior change: removed restating/narration comments, kept TSDoc on public config options and field builders, and kept external API/behavior constraint notes (Prisma, S3, Vercel Blob, Keystone parity, Next.js SSR, Zod).
+
 ## 0.39.2
 
 ## 0.39.1
