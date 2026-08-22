@@ -14,6 +14,7 @@ export type {
 // Operation-level access primitives and shared ref-parsing helper.
 export {
   checkAccess,
+  checkCreateAccess,
   mergeFilters,
   isBoolean,
   isPrismaFilter,
@@ -64,5 +65,7 @@ export { AccessScopeDepthExceededError } from './errors.js'
 export { ResolveOutputCycleError } from './errors.js'
 // Thrown when a field-level access control function returns a non-boolean result.
 export { InvalidFieldAccessResultError } from './errors.js'
+// Thrown when operation-level `create` access control returns a non-boolean result (#1009).
+export { InvalidCreateAccessResultError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
 export { RelationFilterAccessDeniedError } from './errors.js'

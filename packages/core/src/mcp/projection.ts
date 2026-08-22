@@ -1,7 +1,6 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
-import { checkFieldAccess } from '../access/field-access.js'
 import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
 import type { FieldSelection } from '../query/index.js'
 import { pickFields } from '../query/index.js'
@@ -183,6 +182,26 @@ export type ResolvedFieldsProjection = {
   include: Record<string, unknown> | undefined
   fieldSelection: FieldSelection<unknown>
   countRequests: Map<string, 'only' | 'alongside'>
+}
+
+/**
+ * Build the `context.db` include entry for a to-many relation's own rows —
+ * shared by a `fields`-selected relation and a count-only one (the latter
+ * fetches identically, just never adds the key to `fieldSelection`, so the
+ * rows reach field-visibility's access check but never the caller).
+ */
+function buildManyIncludeEntry(
+  many: boolean,
+  entry: Record<string, unknown>,
+): Record<string, unknown> | true {
+  if (!many) return true
+  const includeEntry: Record<string, unknown> = {}
+  if (entry.where !== undefined) includeEntry.where = entry.where
+  if (entry.orderBy !== undefined) includeEntry.orderBy = entry.orderBy
+  const requestedTake = entry.take !== undefined ? Number(entry.take) : MCP_NESTED_TAKE_DEFAULT
+  includeEntry.take = Math.min(requestedTake, MCP_NESTED_TAKE_MAX)
+  if (entry.skip !== undefined) includeEntry.skip = entry.skip
+  return includeEntry
 }
 
 /** Access-scoped `_count.select` entry for one to-many relation: the related list's `query` access ANDed with any caller `where` on that same relation — mirrors how `buildAccessScopedInclude` scopes the relation's own rows (`andWhere`), since Prisma's `_count` is a sibling key that walk does not itself touch. */
@@ -387,18 +406,25 @@ export async function resolveFieldsProjection(
         nestedSelection[relFieldName] = true
       }
 
-      const includeEntry: Record<string, unknown> = {}
-      if (many) {
-        if (entry.where !== undefined) includeEntry.where = entry.where
-        if (entry.orderBy !== undefined) includeEntry.orderBy = entry.orderBy
-        const requestedTake =
-          entry.take !== undefined ? Number(entry.take) : MCP_NESTED_TAKE_DEFAULT
-        includeEntry.take = Math.min(requestedTake, MCP_NESTED_TAKE_MAX)
-        if (entry.skip !== undefined) includeEntry.skip = entry.skip
-      }
-      include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
+      include[fieldName] = buildManyIncludeEntry(many, entry)
       hasIncludeEntries = true
       fieldSelection[fieldName] = { _type: 'fragment', _fields: withId(nestedSelection) }
+    } else if (wantsCount) {
+      // Count-only (no `fields`): still name the relation in the include,
+      // with the SAME rows a `fields`-and-`count` request would fetch —
+      // never a synthetic zero-row placeholder. Field-visibility's read-
+      // access check for the relationship field runs against whatever the
+      // include actually fetched (`accessItem: workingItem`); a rule that
+      // inspects the relation's own value (e.g. `item.comments.length`)
+      // would see a permanently-empty array under `take: 0` regardless of
+      // the true content, which is wrong in the opposite direction from
+      // what this whole mechanism exists to prevent. The rows themselves
+      // never reach the caller — `fieldSelection` has no entry for this key
+      // — only the access decision `filterReadableFields` made against them
+      // does, read off in `projectMcpResult` below via whether the key
+      // survived into the filtered result.
+      include[fieldName] = buildManyIncludeEntry(many, entry)
+      hasIncludeEntries = true
     }
 
     if (wantsCount) {
@@ -440,30 +466,28 @@ export async function resolveFieldsProjection(
  *
  * `_count` is not a declared field, so field-visibility (`filterReadableFields`)
  * never applies the relationship field's own field-level `read` access to it
- * the way it already does for the relation's rows — this function is where
- * that check has to happen instead, per row, before a count is ever emitted.
- * A relation whose rows a denied field never reveals must not reveal its
- * count either.
+ * the way it already does for the relation's rows. Rather than re-deriving
+ * that decision here — which would mean evaluating the field's access rule
+ * a second time against `rawItem`, a row `filterReadableFields` may have
+ * already stripped OTHER fields from, risking a different answer than the
+ * canonical one it computed against the true raw row — `resolveFieldsProjection`
+ * names every counted relation in the include (even a count-only one, with
+ * `take: 0`) purely so the ordinary pipeline makes that decision once, at the
+ * right place. A count is emitted only for a relation whose key survived
+ * into `rawItem`; one field-visibility dropped is a relation whose count
+ * must stay hidden too.
  */
-export async function projectMcpResult(
+export function projectMcpResult(
   rawItem: Record<string, unknown>,
   resolved: ResolvedFieldsProjection,
-  fieldConfigs: Record<string, FieldConfig>,
-  session: Session | null,
-  context: AccessContext,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   const picked = pickFields(rawItem, resolved.fieldSelection) as Record<string, unknown>
   const rawCounts = rawItem._count
   const counts =
     rawCounts && typeof rawCounts === 'object' ? (rawCounts as Record<string, unknown>) : {}
 
   for (const [key, mode] of resolved.countRequests) {
-    const canReadRelation = await checkFieldAccess(fieldConfigs[key]?.access, 'read', {
-      session,
-      context,
-      item: rawItem,
-    })
-    if (!canReadRelation) continue
+    if (!(key in rawItem)) continue
 
     const count = typeof counts[key] === 'number' ? (counts[key] as number) : 0
     picked[key] = mode === 'only' ? count : { items: picked[key], count }

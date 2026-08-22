@@ -1,6 +1,7 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import { getSyntheticFieldName } from '../fields/index.js'
+import { InvalidCreateAccessResultError } from './errors.js'
 
 /**
  * Access engine — operation-level access control and shared helpers.
@@ -109,6 +110,37 @@ export async function checkAccess<T = Record<string, unknown>>(
   const result = await accessControl(args)
 
   return result
+}
+
+/**
+ * Evaluate operation-level `create` access. The single evaluator shared by the
+ * write pipeline's top-level create and the nested-create path — both must
+ * reject the same way, or the two drift again (#1009).
+ *
+ * Unlike `checkAccess` (which `query`/`update`/`delete` call directly and which
+ * legitimately returns a filter for them to re-check against a row), create
+ * has no existing row and no way to test a filter against input data. A rule
+ * that returns anything other than a strict boolean — most notably a filter,
+ * which type-checks against the shared `AccessControl` signature and reads as
+ * though it scopes the create — throws `InvalidCreateAccessResultError`
+ * rather than being silently treated as an allow. See that error's doc,
+ * ADR-0022, and ADR-0030.
+ */
+export async function checkCreateAccess<T = Record<string, unknown>>(
+  listKey: string,
+  accessControl: AccessControl<T> | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext
+  },
+): Promise<boolean> {
+  const result = await checkAccess(accessControl, args)
+
+  if (isBoolean(result)) {
+    return result
+  }
+
+  throw new InvalidCreateAccessResultError(listKey, result)
 }
 
 export function mergeFilters(

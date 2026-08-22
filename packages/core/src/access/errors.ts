@@ -99,7 +99,7 @@ export class RelationFilterAccessDeniedError extends Error {
   }
 }
 
-function describeFieldAccessResult(result: unknown): string {
+function describeAccessResult(result: unknown): string {
   if (result === null) return 'null'
   if (result === undefined) return 'undefined'
   if (typeof result === 'object') return 'an object (e.g. a Prisma filter)'
@@ -135,7 +135,7 @@ export class InvalidFieldAccessResultError extends Error {
   constructor(operation: 'read' | 'create' | 'update', result: unknown) {
     super(
       `Field-level access control for operation "${operation}" returned ` +
-        `${describeFieldAccessResult(result)}, not a boolean. Field access is a per-field ` +
+        `${describeAccessResult(result)}, not a boolean. Field access is a per-field ` +
         `visibility decision — it must return true or false, and (unlike operation-level access) ` +
         `cannot scope which rows are affected. If you meant to restrict access based on the row or ` +
         `the write payload, evaluate the condition yourself and return a boolean, e.g. ` +
@@ -143,5 +143,45 @@ export class InvalidFieldAccessResultError extends Error {
     )
     this.name = 'InvalidFieldAccessResultError'
     this.operation = operation
+  }
+}
+
+/**
+ * Thrown when operation-level `create` access control returns anything other
+ * than a strict `boolean`. `OperationAccess['create']` is typed as
+ * `AccessControl`, which also accepts a `PrismaFilter` — the shape
+ * `query`/`update`/`delete` legitimately use to scope which rows an
+ * operation may touch (see ADR-0001). Create has none of that to scope: there
+ * is no existing row, and — unlike update/delete, which re-check a returned
+ * filter against the target via `findFirst` — no equivalent re-check is
+ * possible against data that doesn't exist in the database yet.
+ *
+ * A filter-returning `create` rule type-checks (the shared `AccessControl`
+ * type admits it) and reads as though it scopes the create. Before this it
+ * fell through a check that only tested `=== false` and was silently treated
+ * as a full allow. This is the same defect shape ADR-0030 closed for
+ * field-level access, resolved the same way per ADR-0022 (an engine that
+ * cannot compute a scope must deny, never pass through) — a loud, distinct
+ * failure rather than a wider `null`/`[]` Silent failure, because this is a
+ * config bug, not an access denial.
+ *
+ * Deliberately does not expose the offending result as a public field, for
+ * the same reason as `InvalidFieldAccessResultError`: there is no
+ * concretely-typed shape to give it, and the root CLAUDE.md forbids exposing
+ * `unknown`/`any` as part of a package's external API.
+ */
+export class InvalidCreateAccessResultError extends Error {
+  public listKey: string
+
+  constructor(listKey: string, result: unknown) {
+    super(
+      `Operation-level "create" access control for "${listKey}" returned ` +
+        `${describeAccessResult(result)}, not a boolean. Create cannot be row-scoped — there is no ` +
+        `existing row, and no input data is available to test a filter against here. Return a ` +
+        `boolean from create access, or move the ownership check into a \`resolveInput\` or ` +
+        `\`validate\` hook, where the input data is in scope.`,
+    )
+    this.name = 'InvalidCreateAccessResultError'
+    this.listKey = listKey
   }
 }

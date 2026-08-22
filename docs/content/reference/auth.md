@@ -286,10 +286,23 @@ Add Better Auth plugins for additional functionality:
 ```typescript
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 
 authPlugin({
   betterAuthPlugins: [
-    mcp({ loginPage: '/sign-in' }),
+    // better-auth 1.7's mcp() is built on the OAuth Provider, which issues
+    // JWT-based access tokens and requires better-auth's own jwt() plugin
+    // registered alongside it.
+    jwt(),
+    mcp({
+      loginPage: '/sign-in',
+      // The page where a user approves/denies an MCP client's requested
+      // scopes — also required since better-auth 1.7's MCP plugin.
+      consentPage: '/consent',
+      // Canonical protected-resource identifier (RFC 8707/9728) — required
+      // since better-auth 1.7's MCP plugin. Must match `mcp.basePath` below.
+      resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
+    }),
     // Add other Better Auth plugins here
   ],
 })
@@ -705,12 +718,21 @@ To enable Model Context Protocol support with Better Auth authentication:
 ```typescript
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 
 export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        // better-auth 1.7's mcp() requires the jwt() plugin alongside it.
+        jwt(),
+        mcp({
+          loginPage: '/sign-in',
+          consentPage: '/consent',
+          resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
+      ],
     }),
   ],
   mcp: {

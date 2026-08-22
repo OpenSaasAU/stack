@@ -2,6 +2,7 @@ import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { AccessContext, PrismaClientLike } from '../access/types.js'
 import {
   checkAccess,
+  checkCreateAccess,
   mergeFilters,
   filterReadableFields,
   filterWritableFields,
@@ -562,8 +563,9 @@ async function runDeletePath(args: {
  * Create strategy for {@link WriteStrategy}.
  *
  * Axis 1: checks `create` access with no existing row; a filter result
- * proceeds with no re-check (unlike update/delete). Enforces the
- * singleton-create constraint even under sudo.
+ * throws `InvalidCreateAccessResultError` rather than proceeding unchecked —
+ * create has no row to re-check a filter against, unlike update/delete
+ * (#1009). Enforces the singleton-create constraint even under sudo.
  * Axis 2: runs all input phases.
  * Axis 3: `model.create({ data })`, prepending `id: 1` for singleton lists.
  */
@@ -590,11 +592,11 @@ export function createWriteStrategy(
       }
 
       if (!context._isSudo) {
-        const accessResult = await checkAccess(listConfig.access?.operation?.create, {
+        const allowed = await checkCreateAccess(listName, listConfig.access?.operation?.create, {
           session: context.session,
           context,
         })
-        if (accessResult === false) {
+        if (!allowed) {
           return { status: 'denied' }
         }
       }

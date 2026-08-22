@@ -1506,6 +1506,18 @@ export interface TypeInfo<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type OperationAccess<T = any> = {
   query?: AccessControl<T>
+  /**
+   * Shares `AccessControl`'s signature (so a filter still type-checks here),
+   * but at runtime `create` accepts a `boolean` result only. There is no
+   * existing row to scope with a filter, and — unlike `update`/`delete`,
+   * which re-check a returned filter against the target row via
+   * `findFirst` — no equivalent re-check exists for a row that doesn't exist
+   * in the database yet. A rule that returns a filter (or any other
+   * non-boolean) throws `InvalidCreateAccessResultError` rather than being
+   * treated as an allow (see #1009, ADR-0022, ADR-0030). To scope create by
+   * ownership, evaluate the condition in a `resolveInput`/`validate` hook,
+   * where the input data is in scope.
+   */
   create?: AccessControl<T>
   update?: AccessControl<T>
   delete?: AccessControl<T>

@@ -3,6 +3,7 @@ import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
 import { checkFieldAccess } from '../src/access/field-access.js'
+import { InvalidCreateAccessResultError } from '../src/access/errors.js'
 
 /**
  * Mock Prisma Client for testing
@@ -213,6 +214,70 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         }),
       ).rejects.toThrow('Access denied: Cannot create related item')
+    })
+
+    // #1009: a nested `create` rule returning a filter reads as though it
+    // scopes the create, but the nested-create path (like the top-level one)
+    // has no existing row to re-check that filter against. Before this fix
+    // the check only tested `=== false`, so a filter fell through the nested
+    // path exactly like the top-level one and was silently treated as allow.
+    it('should throw when nested create access control returns a Prisma filter', async () => {
+      const testConfig = config({
+        db: {
+          provider: 'postgresql',
+          url: 'postgresql://localhost:5432/test',
+        },
+        lists: {
+          User: list({
+            fields: {
+              name: text(),
+              email: text(),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                // Looks like it scopes the nested create by owner. Cannot be
+                // honoured here — there is no row yet.
+                create: () => ({ ownerId: { equals: 'someone' } }),
+              },
+            },
+          }),
+          Post: list({
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts' }),
+            },
+            access: {
+              operation: {
+                query: () => true,
+                update: () => true,
+              },
+            },
+          }),
+        },
+      })
+
+      mockPrisma.post.findUnique.mockResolvedValue({
+        id: '1',
+        title: 'Original Title',
+      })
+
+      const context = getContext(await testConfig, mockPrisma, null)
+
+      await expect(
+        context.db.post.update({
+          where: { id: '1' },
+          data: {
+            title: 'Updated Title',
+            author: {
+              create: {
+                name: 'John',
+                email: 'john@example.com',
+              },
+            },
+          },
+        }),
+      ).rejects.toThrow(InvalidCreateAccessResultError)
     })
 
     it('should apply field-level access control to nested create', async () => {

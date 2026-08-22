@@ -54,6 +54,27 @@ async function buildTestConfig() {
           title: text(),
           author: relationship({ ref: 'User' }),
           comments: relationship({ ref: 'Comment.post', many: true }),
+          // Field-level read denied on the RELATIONSHIP FIELD itself —
+          // distinct from a related list's operation-level access.
+          restrictedComments: relationship({
+            ref: 'Comment',
+            many: true,
+            access: { read: () => false },
+          }),
+          // Field-level read access that depends on the relation's OWN
+          // fetched value — proves the count mechanism doesn't corrupt that
+          // value with a synthetic empty array to make the check cheaper.
+          commentsVisibleIfEmpty: relationship({
+            ref: 'Comment',
+            many: true,
+            access: {
+              read: ({ item }) => {
+                const value = (item as { commentsVisibleIfEmpty?: unknown[] })
+                  .commentsVisibleIfEmpty
+                return Array.isArray(value) ? value.length === 0 : true
+              },
+            },
+          }),
           secret: text({ access: { read: () => false } }),
           commentCount: virtual({
             type: 'number',
@@ -173,5 +194,57 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // own `fields` never named it.
     const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
     expect(callArgs.include.comments).toBeDefined()
+  })
+
+  it('suppresses a relation count denied by the relationship field’s own access, through the real field-visibility pass', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+    // The real pipeline's `filterReadableFields` runs before `projectMcpResult`
+    // ever sees this row: it evaluates `restrictedComments`'s field-level
+    // `access.read` against the TRUE raw row below and strips the key
+    // entirely (denied), so `_count.restrictedComments` survives in the raw
+    // Prisma row but the relation key itself does not.
+    mockPrisma.post.findMany.mockResolvedValue([
+      { id: 'p1', title: 'Hi', restrictedComments: [], _count: { restrictedComments: 4 } },
+    ])
+
+    const data = await callPostQuery(testConfig, mockPrisma, {
+      fields: { title: true, restrictedComments: { count: true } },
+    })
+
+    const result = JSON.parse(data.result.content[0].text)
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
+  })
+
+  it('evaluates a value-dependent field-level access rule against the relation’s TRUE fetched rows, not a synthetic empty placeholder', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+    // `commentsVisibleIfEmpty`'s own access rule denies read when the
+    // relation actually has rows. A `take: 0` "cheap" fetch would make
+    // field-visibility see an empty array regardless of the truth and
+    // wrongly GRANT access here — asserting the count is suppressed proves
+    // the real (non-empty) rows reached the access check.
+    mockPrisma.post.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        title: 'Hi',
+        commentsVisibleIfEmpty: [{ id: 'c1', text: 'nice' }],
+        _count: { commentsVisibleIfEmpty: 1 },
+      },
+    ])
+
+    const data = await callPostQuery(testConfig, mockPrisma, {
+      fields: { title: true, commentsVisibleIfEmpty: { count: true } },
+    })
+
+    const result = JSON.parse(data.result.content[0].text)
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
+
+    // Real rows were fetched (access-scoped by Comment's own operation-level
+    // query access, folded in the same way any other named relation is) —
+    // never a synthetic `take: 0` placeholder.
+    const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
+    expect(callArgs.include.commentsVisibleIfEmpty).toMatchObject({ take: 5 })
+    expect(callArgs.include.commentsVisibleIfEmpty.take).not.toBe(0)
   })
 })

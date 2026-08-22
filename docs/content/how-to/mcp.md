@@ -39,13 +39,29 @@ In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin:
 import { config, list } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
+import { jwt } from 'better-auth/plugins'
 
 export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
       // Add MCP plugin to Better Auth
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        // better-auth 1.7's mcp() is built on the OAuth Provider, which
+        // issues JWT-based access tokens and requires better-auth's own
+        // jwt() plugin registered alongside it.
+        jwt(),
+        mcp({
+          loginPage: '/sign-in',
+          // The page where a user approves/denies an MCP client's requested
+          // scopes — also required since better-auth 1.7's MCP plugin.
+          consentPage: '/consent',
+          // Canonical protected-resource identifier (RFC 8707/9728) —
+          // required since better-auth 1.7's MCP plugin, and must match
+          // `mcp.basePath` below. HTTP is only accepted on loopback hosts.
+          resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
+      ],
     }),
   ],
 
