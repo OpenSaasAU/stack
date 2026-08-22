@@ -65,6 +65,7 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
     // `userId` column name, not the generator's Keystone-parity default
     // (issue #935)
     expect(lists.Session.fields.user.db?.foreignKey).toEqual({ map: 'userId' })
+    expect(lists.Account.fields.user.db?.foreignKey).toEqual({ map: 'userId' })
   })
 
   it('opts every auth list into auto-timestamps', () => {

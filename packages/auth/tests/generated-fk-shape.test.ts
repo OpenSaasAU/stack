@@ -169,6 +169,10 @@ describe('generated auth schema — required columns mirror better-auth (issue #
       expect(block).not.toMatch(/userId\s+String\?/)
       expect(block).toMatch(/user\s+User\s+@relation/)
       expect(block).not.toMatch(/user\s+User\?/)
+
+      // The physical column must be userId, not the Keystone-parity default
+      // of the relationship field name ("user") — issue #935.
+      expect(block).not.toContain('@map("user")')
     }
   })
 
