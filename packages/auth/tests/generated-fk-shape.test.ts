@@ -3,7 +3,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
-import { mcp } from 'better-auth/plugins'
+import { mcp } from '@better-auth/mcp'
 import { generatePrismaSchema } from '@opensaas/stack-cli/generator/prisma'
 import { authPlugin } from '../src/config/plugin.js'
 import { adoptBetterAuthTables } from '../src/config/adopt-better-auth-tables.js'
@@ -94,6 +94,33 @@ describe('generated auth schema — Session/Account/Verification mirror better-a
 
     const widget = modelBlock(schema, 'Widget')
     expect(widget).toContain('@@index([ownerId])')
+  })
+})
+
+describe('generated auth schema — account.issuer (better-auth 1.7, issue #986)', () => {
+  it('emits a required, non-nullable issuer column on Account, positioned after providerId', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'Account')
+    expect(block).toMatch(/issuer\s+String\s/)
+    expect(block).not.toMatch(/issuer\s+String\?/)
+
+    // FIELD_ORDER groups issuer with accountId/providerId — the fields that
+    // together form better-auth's table-level @@unique([issuer, accountId]),
+    // which this derivation does not yet emit (blocked on #985's table-level
+    // db.indexes derivation).
+    const providerIdLine = block.indexOf('providerId')
+    const issuerLine = block.indexOf('issuer')
+    expect(providerIdLine).toBeGreaterThan(-1)
+    expect(issuerLine).toBeGreaterThan(providerIdLine)
+
+    // Not yet emitted — see the migration note in the auth package's
+    // CHANGELOG and issue #985.
+    expect(block).not.toContain('@@unique([issuer, accountId])')
   })
 })
 
@@ -231,13 +258,13 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
         }),
       ],
       lists: {},
     })
 
-    for (const model of ['OauthApplication', 'OauthAccessToken', 'OauthConsent']) {
+    for (const model of ['OauthClient', 'OauthAccessToken', 'OauthConsent']) {
       const block = modelBlock(schema, model)
       expect(block).toContain('@relation(onDelete: Cascade, fields: [userId], references: [id])')
       expect(block).toContain('@map("userId")')
@@ -251,24 +278,24 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
         }),
       ],
       lists: {},
     })
 
-    expect(modelBlock(schema, 'OauthApplication')).toContain('@@map("oauthApplication")')
+    expect(modelBlock(schema, 'OauthClient')).toContain('@@map("oauthClient")')
     expect(modelBlock(schema, 'OauthAccessToken')).toContain('@@map("oauthAccessToken")')
     expect(modelBlock(schema, 'OauthConsent')).toContain('@@map("oauthConsent")')
   })
 
-  it('leaves the non-PK clientId reference (oauthAccessToken/oauthConsent -> oauthApplication.clientId) as an indexed plain column, not a relation', async () => {
+  it('leaves the non-PK clientId reference (oauthAccessToken/oauthConsent -> oauthClient.clientId) as an indexed plain column, not a relation', async () => {
     const schema = await generateSchema({
       db: { provider: 'sqlite' },
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
         }),
       ],
       lists: {},
@@ -277,18 +304,18 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
     for (const model of ['OauthAccessToken', 'OauthConsent']) {
       const block = modelBlock(schema, model)
       expect(block).toMatch(/clientId\s+String\s/)
-      expect(block).not.toContain('clientId  OauthApplication')
+      expect(block).not.toContain('clientId  OauthClient')
       expect(block).toContain('@@index([clientId])')
     }
   })
 
-  it('adds a reverse collection on User for every OAuth table, leaving Session/Account/Verification unchanged', async () => {
+  it('adds a reverse collection on User for every OAuth table referencing it, and on Session for the two token tables that also reference it, leaving Account/Verification unchanged', async () => {
     const withMcp = await generateSchema({
       db: { provider: 'sqlite' },
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
         }),
       ],
       lists: {},
@@ -300,33 +327,42 @@ describe('generated MCP plugin OAuth schema gets real foreign keys and cascades 
     })
 
     const user = modelBlock(withMcp, 'User')
-    expect(user).toContain('oauthApplications')
+    expect(user).toContain('oauthClients')
     expect(user).toContain('oauthAccessTokens')
+    expect(user).toContain('oauthRefreshTokens')
     expect(user).toContain('oauthConsents')
 
-    for (const model of ['Session', 'Account', 'Verification']) {
+    // oauthAccessToken.sessionId / oauthRefreshToken.sessionId both reference
+    // session.id (unlike better-auth's pre-1.7 MCP schema, which had no
+    // session-scoped OAuth tables at all) — Session gains reverse collections
+    // for both, Account/Verification stay untouched by the MCP plugin.
+    const session = modelBlock(withMcp, 'Session')
+    expect(session).toContain('oauthAccessTokens')
+    expect(session).toContain('oauthRefreshTokens')
+
+    for (const model of ['Account', 'Verification']) {
       expect(modelBlock(withMcp, model)).toBe(modelBlock(withoutMcp, model))
     }
   })
 
-  it('generates a required, non-nullable userId FK on OauthConsent (required upstream), and an optional one on OauthApplication (optional upstream)', async () => {
+  it('generates a required, non-nullable userId FK on OauthRefreshToken (required upstream), and an optional one on OauthClient (optional upstream)', async () => {
     const schema = await generateSchema({
       db: { provider: 'sqlite' },
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true },
-          betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+          betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })],
         }),
       ],
       lists: {},
     })
 
-    const consent = modelBlock(schema, 'OauthConsent')
-    expect(consent).toMatch(/userId\s+String\s/)
-    expect(consent).not.toMatch(/userId\s+String\?/)
+    const refreshToken = modelBlock(schema, 'OauthRefreshToken')
+    expect(refreshToken).toMatch(/userId\s+String\s/)
+    expect(refreshToken).not.toMatch(/userId\s+String\?/)
 
-    const application = modelBlock(schema, 'OauthApplication')
-    expect(application).toMatch(/userId\s+String\?/)
+    const client = modelBlock(schema, 'OauthClient')
+    expect(client).toMatch(/userId\s+String\?/)
   })
 })
 

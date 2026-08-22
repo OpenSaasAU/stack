@@ -79,6 +79,11 @@ const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
   account: [
     'accountId',
     'providerId',
+    // `issuer` (better-auth 1.7+, issue #986) groups with accountId/providerId
+    // as the account's identity fields — together the table-level
+    // `@@unique([issuer, accountId])` better-auth declares (not yet emitted;
+    // blocked on #985's table-level `db.indexes` derivation).
+    'issuer',
     'user',
     'accessToken',
     'refreshToken',
@@ -210,18 +215,23 @@ function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldCo
     }
     case 'date':
       return timestamp({ ...(isIndexed ? { isIndexed } : {}), db })
-    case 'number':
+    case 'number': {
+      const staticDefault =
+        typeof upstream.defaultValue === 'function' ? undefined : upstream.defaultValue
       return upstream.bigint
         ? bigInt({
             ...(isRequired ? { validation: { isRequired: true as const } } : {}),
             ...(isIndexed ? { isIndexed } : {}),
+            ...(staticDefault !== undefined ? { defaultValue: staticDefault as number } : {}),
             db,
           })
         : integer({
             ...(isRequired ? { validation: { isRequired: true as const } } : {}),
             ...(isIndexed ? { isIndexed } : {}),
+            ...(staticDefault !== undefined ? { defaultValue: staticDefault as number } : {}),
             db,
           })
+    }
     default:
       // better-auth's `DBFieldType` also allows `json`, `string[]`/`number[]`,
       // and an enum array — none of which any built-in plugin (MCP, admin,

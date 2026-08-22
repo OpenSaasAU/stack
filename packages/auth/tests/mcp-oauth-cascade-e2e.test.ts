@@ -59,7 +59,7 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [mcp({ loginPage: '/sign-in', resource: 'http://localhost:3000/api/mcp' })],
       // Not modelled by AuthConfig — passed through verbatim so /delete-user
       // deletes immediately instead of requiring an email-verification
       // round trip (see packages/auth/CLAUDE.md, "betterAuthOptions").

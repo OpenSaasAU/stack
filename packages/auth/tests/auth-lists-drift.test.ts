@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getAuthTables } from 'better-auth/db'
-import { mcp } from 'better-auth/plugins'
+import { mcp } from '@better-auth/mcp'
 import type { BetterAuthOptions } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
 import type { FieldConfig } from '@opensaas/stack-core'
@@ -38,11 +38,13 @@ type Divergence = {
 const FK_BRIDGE: Record<string, Record<string, string>> = {
   session: { userId: 'user' },
   account: { userId: 'user' },
-  // The MCP plugin's OAuth tables (issue #992) — `clientId` is deliberately
-  // NOT bridged here: it references oauthApplication.clientId, not its `id`,
-  // so it stays a plain scalar column and is compared via `compareScalarField`.
-  oauthApplication: { userId: 'user' },
-  oauthAccessToken: { userId: 'user' },
+  // The MCP plugin's OAuth tables (issue #992) — `clientId`/`resourceId` are
+  // deliberately NOT bridged here: they reference oauthClient.clientId /
+  // oauthResource.identifier, not an `id`, so they stay plain scalar columns
+  // and are compared via `compareScalarField`.
+  oauthClient: { userId: 'user' },
+  oauthRefreshToken: { userId: 'user', sessionId: 'session' },
+  oauthAccessToken: { userId: 'user', sessionId: 'session', refreshId: 'refresh' },
   oauthConsent: { userId: 'user' },
 }
 
@@ -157,10 +159,17 @@ function compareScalarField(
     })
   }
 
-  // Only a static, non-function default is comparable — better-auth's
-  // function-valued defaults (e.g. `createdAt: () => new Date()`) are applied
-  // at write time, not modeled as a derived field's own `defaultValue`.
-  if (typeof upstream.defaultValue !== 'function' && upstream.defaultValue !== undefined) {
+  // Only a static, non-function default on a modeled type is comparable —
+  // better-auth's function-valued defaults (e.g. `createdAt: () => new
+  // Date()`) are applied at write time, not modeled as a derived field's own
+  // `defaultValue`; a type this derivation doesn't model at all (`json`,
+  // `string[]`, ...) falls back to `text()` (see `expectedType` above), which
+  // can't faithfully carry that type's own default either.
+  if (
+    expectedType !== undefined &&
+    typeof upstream.defaultValue !== 'function' &&
+    upstream.defaultValue !== undefined
+  ) {
     if (derived.defaultValue !== upstream.defaultValue) {
       divergences.push({
         model,
@@ -431,12 +440,16 @@ describe('derived better-auth plugin tables match better-auth’s own table defi
     verification: { modelName: 'Verification', fields: {} },
   }
 
-  const plugin = mcp({ loginPage: '/sign-in' })
+  const plugin = mcp({ loginPage: '/sign-in', resource: 'https://example.com/mcp' })
   const upstreamTables = getAuthTables({ plugins: [plugin] })
   const { keys, lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
   const pluginModelToListKey: Record<string, string> = {
-    oauthApplication: 'OauthApplication',
+    oauthClient: 'OauthClient',
+    oauthClientAssertion: 'OauthClientAssertion',
+    oauthClientResource: 'OauthClientResource',
     oauthAccessToken: 'OauthAccessToken',
+    oauthRefreshToken: 'OauthRefreshToken',
+    oauthResource: 'OauthResource',
     oauthConsent: 'OauthConsent',
   }
   const listKeys = { ...keys, ...pluginModelToListKey }

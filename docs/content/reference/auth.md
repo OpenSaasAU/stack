@@ -289,7 +289,12 @@ import { mcp } from '@opensaas/stack-auth/plugins'
 
 authPlugin({
   betterAuthPlugins: [
-    mcp({ loginPage: '/sign-in' }),
+    mcp({
+      loginPage: '/sign-in',
+      // Canonical protected-resource identifier (RFC 8707/9728) — required
+      // since better-auth 1.7's MCP plugin. Must match `mcp.basePath` below.
+      resource: `${process.env.APP_URL}/api/mcp`,
+    }),
     // Add other Better Auth plugins here
   ],
 })
@@ -674,7 +679,9 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        mcp({ loginPage: '/sign-in', resource: `${process.env.APP_URL}/api/mcp` }),
+      ],
     }),
   ],
   mcp: {

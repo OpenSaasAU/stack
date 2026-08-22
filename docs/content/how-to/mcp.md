@@ -45,7 +45,15 @@ export default config({
     authPlugin({
       emailAndPassword: { enabled: true },
       // Add MCP plugin to Better Auth
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        mcp({
+          loginPage: '/sign-in',
+          // Canonical protected-resource identifier (RFC 8707/9728) —
+          // required since better-auth 1.7's MCP plugin, and must match
+          // `mcp.basePath` below. HTTP is only accepted on loopback hosts.
+          resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
+      ],
     }),
   ],
 

@@ -367,7 +367,7 @@ export type AuthConfig = {
    *
    * @example
    * ```typescript
-   * import { mcp } from 'better-auth/plugins'
+   * import { mcp } from '@opensaas/stack-auth/plugins'
    *
    * betterAuthPlugins: [
    *   mcp({ loginPage: '/sign-in' })

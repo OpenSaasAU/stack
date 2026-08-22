@@ -49,7 +49,11 @@ Pre-built forms (client components). Each takes **server action** props (not an
 
 ### Plugins (`src/plugins/index.ts`)
 
-- Better-auth MCP plugin for OAuth authentication with AI assistants
+- `mcp` - re-exported from the optional `@better-auth/mcp` peer (better-auth
+  1.7 split it out of `better-auth/plugins`) for OAuth authentication with AI
+  assistants. Its `resource` option (the RFC 8707/9728 canonical
+  protected-resource URL) is required as of that split — see the
+  `betterAuthPlugins` example in the root `CLAUDE.md`'s MCP section.
 
 ## Architecture Patterns
 
@@ -69,7 +73,11 @@ config({
 
 The four Auth lists, the conditional `RateLimit` fifth, and every table a
 better-auth plugin declares in its own `schema` (e.g. the `mcp` plugin's
-`oauthApplication`/`oauthAccessToken`/`oauthConsent`) are all **derived**
+`oauthClient`/`oauthAccessToken`/`oauthConsent`/`oauthRefreshToken`/
+`oauthResource`/`oauthClientResource`/`oauthClientAssertion` — better-auth
+1.7 split the plugin into `@better-auth/mcp` and rebuilt it on the OAuth
+Provider RFC 8707/9728 resource model, a wider table set than the pre-1.7
+`oauthApplication`/`oauthAccessToken`/`oauthConsent` three) are all **derived**
 from better-auth's own resolved table definitions, not hand-transcribed. The
 pure derivation lives in `src/config/derive-auth-lists.ts` (`deriveAuthLists`),
 which `getAuthLists` and the plugin's `init` consume. It calls `getAuthTables`
@@ -108,13 +116,13 @@ lists cannot silently drift from what better-auth itself declares (issue
   child model's own key, with a documented override map in
   `derive-auth-lists.ts` for a collision or bad pluralization
 - a **plugin table**'s list key is PascalCased from better-auth's resolved
-  `modelName` (`oauthApplication` → `OauthApplication`), with `db.map` set
+  `modelName` (`oauthClient` → `OauthClient`), with `db.map` set
   back to the original whenever the case changed; its scalar/FK fields go
   through the exact same derivation as a base model's, including the reverse
   relation onto whichever list it references (base or another plugin table).
   A reference whose target field isn't the target's `id` (better-auth's own
   oidc-provider schema does this — `oauthAccessToken.clientId` references
-  `oauthApplication.clientId`, not its `id`) stays a plain scalar column,
+  `oauthClient.clientId`, not its `id`) stays a plain scalar column,
   since `relationship()` can only express an `id`-based FK. Plugin tables
   ship closed like the base models, with no `access` passthrough at all —
   see ADR-0034 and "Access control on Auth lists" below

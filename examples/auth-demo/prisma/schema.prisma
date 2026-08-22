@@ -37,15 +37,15 @@ model User {
 }
 
 model Session {
-  id        String    @id @default(cuid())
-  token     String    @unique
-  expiresAt DateTime?
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
   ipAddress String?
   userAgent String?
-  userId    String?   @map("user")
-  user      User?     @relation(fields: [userId], references: [id])
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
+  userId    String   @map("userId")
+  user      User     @relation(onDelete: Cascade, fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([userId])
 }
@@ -54,6 +54,7 @@ model Account {
   id                    String    @id @default(cuid())
   accountId             String
   providerId            String
+  issuer                String
   accessToken           String?
   refreshToken          String?
   accessTokenExpiresAt  DateTime?
@@ -61,8 +62,8 @@ model Account {
   scope                 String?
   idToken               String?
   password              String?
-  userId                String?   @map("user")
-  user                  User?     @relation(fields: [userId], references: [id])
+  userId                String    @map("userId")
+  user                  User      @relation(onDelete: Cascade, fields: [userId], references: [id])
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @default(now()) @updatedAt
 
@@ -70,10 +71,12 @@ model Account {
 }
 
 model Verification {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   identifier String
   value      String
-  expiresAt  DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @default(now()) @updatedAt
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([identifier])
 }

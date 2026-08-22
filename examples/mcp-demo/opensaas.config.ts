@@ -39,7 +39,14 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      betterAuthPlugins: [mcp({ loginPage: '/sign-in' })],
+      betterAuthPlugins: [
+        mcp({
+          loginPage: '/sign-in',
+          // RFC 8707/9728 canonical resource identifier — must match the
+          // `mcp.basePath` below. HTTP is accepted only on loopback hosts.
+          resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
+        }),
+      ],
       extendUserList: {
         fields: {
           posts: relationship({
