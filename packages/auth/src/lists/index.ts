@@ -1,4 +1,5 @@
 import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
+import type { BetterAuthPlugin } from 'better-auth'
 import type { AuthAccessConfig, NormalizedAuthModels } from '../config/types.js'
 import { deriveAuthLists } from '../config/derive-auth-lists.js'
 
@@ -77,7 +78,9 @@ export function createVerificationList(): ListConfig<any> {
 }
 
 /**
- * Get all auth lists required by better-auth.
+ * Get all auth lists required by better-auth — the four base models, an
+ * optional database-backed `RateLimit`, and any table a better-auth plugin
+ * declares in its own `schema` (issue #992).
  *
  * Derives the Auth lists from the resolved better-auth model config. When no
  * `models` are supplied (or none carry overrides), the result is the historical
@@ -85,13 +88,15 @@ export function createVerificationList(): ListConfig<any> {
  *
  * @param userConfig - Extra User-list fields/access/hooks (from `extendUserList`)
  * @param models - Resolved better-auth model config; defaults to the better-auth defaults
- * @param accessConfig - App-authored access for each Auth list, keyed by better-auth model name
+ * @param accessConfig - App-authored access for each base Auth list, keyed by better-auth model name
+ * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`)
  */
 export function getAuthLists(
   userConfig?: ExtendUserListConfig,
   models: NormalizedAuthModels = DEFAULT_MODELS,
   accessConfig?: AuthAccessConfig,
+  plugins?: BetterAuthPlugin[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
-  return deriveAuthLists(models, userConfig || {}, accessConfig || {}).lists
+  return deriveAuthLists(models, userConfig || {}, accessConfig || {}, plugins || []).lists
 }

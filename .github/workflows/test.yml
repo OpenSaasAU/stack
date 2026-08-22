@@ -107,6 +107,15 @@ jobs:
         env:
           RUN_RATE_LIMIT_E2E: '1'
 
+      # Live proof that deleting a user via better-auth's own /delete-user
+      # cascades through the MCP plugin's OAuth tables (issue #992) instead of
+      # orphaning them. Same offline toolchain/pattern as the guards above.
+      # Opt-in via RUN_MCP_OAUTH_CASCADE_E2E. See packages/auth/tests/mcp-oauth-cascade-e2e.test.ts.
+      - name: Run MCP OAuth cascade-on-delete e2e guard
+        run: pnpm --filter @opensaas/stack-auth test mcp-oauth-cascade-e2e
+        env:
+          RUN_MCP_OAUTH_CASCADE_E2E: '1'
+
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
 

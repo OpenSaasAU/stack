@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getAuthTables } from 'better-auth/db'
+import { mcp } from 'better-auth/plugins'
 import type { BetterAuthOptions } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
 import type { FieldConfig } from '@opensaas/stack-core'
@@ -37,6 +38,12 @@ type Divergence = {
 const FK_BRIDGE: Record<string, Record<string, string>> = {
   session: { userId: 'user' },
   account: { userId: 'user' },
+  // The MCP plugin's OAuth tables (issue #992) — `clientId` is deliberately
+  // NOT bridged here: it references oauthApplication.clientId, not its `id`,
+  // so it stays a plain scalar column and is compared via `compareScalarField`.
+  oauthApplication: { userId: 'user' },
+  oauthAccessToken: { userId: 'user' },
+  oauthConsent: { userId: 'user' },
 }
 
 /** better-auth writes these on every row; the derived lists opt in via list-level `db.timestamps` rather than a per-field entry. */
@@ -95,13 +102,18 @@ function compareScalarField(
   const isUnique = prismaType.modifiers?.includes('@unique') ?? false
   const isIndexed = prismaType.index === true
 
+  // Base models always declare an explicit `fieldName`; a plugin table
+  // doesn't have to (`getAuthTables` merges plugin schema fields verbatim,
+  // with no per-field defaulting) — an unset `fieldName` means the column IS
+  // the field key, same as `scalarFieldDb` in `derive-auth-lists.ts` assumes.
+  const upstreamColumn = upstream.fieldName ?? fieldKey
   const derivedColumn = derived.db?.map ?? fieldKey
-  if (derivedColumn !== upstream.fieldName) {
+  if (derivedColumn !== upstreamColumn) {
     divergences.push({
       model,
       field: fieldKey,
       dimension: 'column name',
-      detail: `better-auth column "${upstream.fieldName}" vs derived map "${derivedColumn}"`,
+      detail: `better-auth column "${upstreamColumn}" vs derived map "${derivedColumn}"`,
     })
   }
 
@@ -178,14 +190,16 @@ function compareForeignKeyField(
     return
   }
 
+  // See the same `fieldName ?? fieldKey` note in `compareScalarField` above.
+  const upstreamColumn = upstream.fieldName ?? upstreamFieldKey
   const foreignKey = derived.db?.foreignKey
   const derivedColumn = typeof foreignKey === 'object' ? foreignKey.map : undefined
-  if (derivedColumn !== upstream.fieldName) {
+  if (derivedColumn !== upstreamColumn) {
     divergences.push({
       model,
       field: upstreamFieldKey,
       dimension: 'column name',
-      detail: `better-auth column "${upstream.fieldName}" vs derived FK map "${derivedColumn}"`,
+      detail: `better-auth column "${upstreamColumn}" vs derived FK map "${derivedColumn}"`,
     })
   }
 
@@ -406,5 +420,44 @@ describe('derived RateLimit list matches better-auth’s database-backed rateLim
     )
 
     expect(divergences, JSON.stringify(divergences, null, 2)).toEqual([])
+  })
+})
+
+describe('derived better-auth plugin tables match better-auth’s own table definitions (issue #992)', () => {
+  const defaultModels: NormalizedAuthModels = {
+    user: { modelName: 'User', fields: {} },
+    session: { modelName: 'Session', fields: {} },
+    account: { modelName: 'Account', fields: {} },
+    verification: { modelName: 'Verification', fields: {} },
+  }
+
+  const plugin = mcp({ loginPage: '/sign-in' })
+  const upstreamTables = getAuthTables({ plugins: [plugin] })
+  const { keys, lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+  const pluginModelToListKey: Record<string, string> = {
+    oauthApplication: 'OauthApplication',
+    oauthAccessToken: 'OauthAccessToken',
+    oauthConsent: 'OauthConsent',
+  }
+  const listKeys = { ...keys, ...pluginModelToListKey }
+
+  const divergences: Divergence[] = []
+  for (const model of Object.keys(pluginModelToListKey)) {
+    const listKey = pluginModelToListKey[model]
+    compareModel(model, upstreamTables[model].fields, lists[listKey].fields, listKeys, divergences)
+  }
+
+  const unexpected = divergences.filter(
+    (d) => !KNOWN_EXCEPTIONS.some((known) => exceptionKey(known) === exceptionKey(d)),
+  )
+
+  it('has no unexpected divergences from better-auth’s MCP plugin OAuth tables', () => {
+    expect(unexpected, JSON.stringify(unexpected, null, 2)).toEqual([])
+  })
+
+  it('derives every OAuth table under a PascalCase key', () => {
+    for (const listKey of Object.values(pluginModelToListKey)) {
+      expect(lists).toHaveProperty(listKey)
+    }
   })
 })
