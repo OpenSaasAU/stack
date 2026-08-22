@@ -3,6 +3,7 @@ import { createMcpHandlers } from '../src/mcp/handler.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 import type { AccessContext } from '../src/access/types.js'
 import type { McpSession, McpSessionProvider } from '../src/mcp/types.js'
+import { HashedPassword } from '../src/utils/password.js'
 
 describe('MCP Handler', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -358,6 +359,41 @@ describe('MCP Handler', () => {
 
       const result = JSON.parse(data.result.content[0].text)
       expect(result.items[0].occurredAtMs).toBe('9007199254740993')
+    })
+
+    // Regression test (issue #965): the response's JSON.stringify replacer runs
+    // AFTER toJSON, so it can't intercept a HashedPassword that leaks its hash
+    // from toJSON — the redaction has to live in HashedPassword itself.
+    it('should not leak a bcrypt hash for a password field in the query response', async () => {
+      const hash = '$2b$04$q5yvruv7NaUYCQvV.UGzf.92.dpteicGq5MoSHYNWqzIm.bsIIJrW'
+      const mockResults = [{ id: '1', title: 'Post 1', password: new HashedPassword(hash) }]
+      mockPrisma.post.findMany.mockResolvedValue(mockResults)
+
+      const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
+
+      const request = new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'list_post_query',
+            arguments: { where: {}, take: 10 },
+          },
+        }),
+      })
+
+      const response = await handlers.POST(request)
+      expect(response.status).toBe(200)
+
+      const data = await response.json()
+      const responseBody = data.result.content[0].text
+      expect(responseBody).not.toContain(hash)
+
+      const result = JSON.parse(responseBody)
+      expect(result.items[0].password).toEqual({ isSet: true })
     })
 
     it('should execute create operation', async () => {

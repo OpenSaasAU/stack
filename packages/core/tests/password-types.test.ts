@@ -143,4 +143,32 @@ describe('Password Field Type Safety', () => {
       expect(await passwordField.compare('test')).toBe(false)
     }
   })
+
+  it('should redact the password field when a read row is JSON.stringify-ed', async () => {
+    const readableConfig = config({
+      db: { provider: 'sqlite' },
+      lists: {
+        User: list({
+          fields: {
+            email: text({ validation: { isRequired: true } }),
+            password: password({ validation: { isRequired: true } }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+    const readablePrismaClient = {
+      user: {
+        ...mockPrismaClient.user,
+        findFirst: mockPrismaClient.user.findUnique,
+      },
+    } as unknown as PrismaClient
+    const context = getContext(await readableConfig, readablePrismaClient, null)
+
+    const user = await context.db.user.findUnique({ where: { id: '1' } })
+
+    const serialized = JSON.stringify(user)
+    expect(serialized).not.toContain('$2a$10$hashedpassword')
+    expect(JSON.parse(serialized).password).toEqual({ isSet: true })
+  })
 })

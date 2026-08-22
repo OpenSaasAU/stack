@@ -930,7 +930,10 @@ function formatCalendarDay(value: unknown): string | null | undefined {
  * ```
  *
  * **Important Notes:**
- * - Password fields are excluded from read operations by default in access control
+ * - Password field values are redacted to `{ isSet: boolean }` on serialization
+ *   (`JSON.stringify`, the admin UI). Field-level `read` access is not denied by
+ *   default — configure `access.field.read` if the raw value should never reach
+ *   `context.db` callers at all.
  * - Always use the `compare()` method to verify passwords - never compare strings directly
  * - The password field value has type `HashedPassword` which extends string with compare()
  * - Empty strings and undefined values are skipped (not hashed) to allow partial updates

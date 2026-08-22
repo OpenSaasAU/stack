@@ -161,12 +161,26 @@ describe('Password Utilities', () => {
       expect(`Password: ${wrapped}`).toBe(`Password: ${hash}`)
     })
 
-    it('should serialize to JSON correctly', async () => {
+    it('should redact the hash when serialized to JSON', async () => {
       const hash = await hashPassword('test')
       const wrapped = new HashedPassword(hash)
 
+      expect(JSON.stringify(wrapped)).toBe(JSON.stringify({ isSet: true }))
+
       const json = JSON.stringify({ password: wrapped })
-      expect(json).toBe(JSON.stringify({ password: hash }))
+      expect(json).toBe(JSON.stringify({ password: { isSet: true } }))
+      expect(json).not.toContain(hash)
+    })
+
+    it('should keep returning the raw hash from string-coercion surfaces', async () => {
+      const hash = await hashPassword('test')
+      const wrapped = new HashedPassword(hash)
+
+      expect(wrapped.toString()).toBe(hash)
+      expect(wrapped.valueOf()).toBe(hash)
+      expect(String(wrapped)).toBe(hash)
+      expect(`${wrapped}`).toBe(hash)
+      expect(wrapped == hash).toBe(true)
     })
 
     it('should work with valueOf', async () => {
