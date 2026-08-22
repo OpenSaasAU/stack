@@ -440,3 +440,4 @@ expect(post).toBe(null)
 - **[Hooks System](/docs/concepts/hooks)** - Add data transformation
 - **[Field Types](/docs/concepts/field-types)** - Explore field options
 - **[Context API](/docs/reference/context-api)** - Full context reference
+- **[Anonymous & Pre-Account Access](/docs/how-to/anonymous-access-control)** - Keep pre-account and anonymous flows on the access-scoped context instead of `sudo()`
