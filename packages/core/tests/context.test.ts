@@ -895,6 +895,180 @@ describe('getContext', () => {
         const created = result as { created: boolean; fieldErrors?: Record<string, string> }
         expect(created.fieldErrors?.title).toBeDefined()
       })
+
+      // Prisma 7 driver adapters (verified against @prisma/adapter-pg and PGlite,
+      // issue #979) leave `meta.target` undefined and put the equivalent data at
+      // `meta.driverAdapterError.cause` instead, as free-text-adjacent structured
+      // data rather than the documented shape.
+      describe('P2002 under Prisma 7 driver adapters (issue #979)', () => {
+        it('produces per-field errors for a composite unique violation', async () => {
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2002',
+            meta: {
+              modelName: 'Post',
+              driverAdapterError: {
+                name: 'DriverAdapterError',
+                cause: {
+                  originalCode: '23505',
+                  originalMessage:
+                    'duplicate key value violates unique constraint "post_title_content_key"',
+                  kind: 'UniqueConstraintViolation',
+                  constraint: { fields: ['title', 'content'] },
+                },
+              },
+            },
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup', content: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          expect(result).toMatchObject({ created: false })
+          const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+          expect(created.fieldErrors?.title).toBeDefined()
+          expect(created.fieldErrors?.content).toBeDefined()
+        })
+
+        it('produces a field error for a single-column unique violation', async () => {
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2002',
+            meta: {
+              modelName: 'Post',
+              driverAdapterError: {
+                cause: {
+                  originalMessage:
+                    'duplicate key value violates unique constraint "post_title_key"',
+                  constraint: { fields: ['title'] },
+                },
+              },
+            },
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+          expect(created.fieldErrors?.title).toBeDefined()
+        })
+
+        it('strips quotes so a camelCase column is keyed correctly (not left quoted)', async () => {
+          // Postgres quotes an identifier in `constraint.fields` only when it
+          // needed quoting — a camelCase column arrives as `"authorId"`. A naive
+          // fix that skips stripping would key fieldErrors by the literal string
+          // `"authorId"` (quotes included), missing the real field name.
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2002',
+            meta: {
+              driverAdapterError: {
+                cause: {
+                  originalMessage:
+                    'duplicate key value violates unique constraint "post_authorId_key"',
+                  constraint: { fields: ['"authorId"'] },
+                },
+              },
+            },
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+          expect(created.fieldErrors).toEqual({ authorId: 'This value is already in use' })
+        })
+
+        it('leaves an already-populated meta.target unaffected (existing path still wins)', async () => {
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2002',
+            meta: {
+              target: ['title'],
+              // Present but must be ignored — meta.target already answers the question.
+              driverAdapterError: {
+                cause: {
+                  originalMessage: 'duplicate key value violates unique constraint "other_key"',
+                  constraint: { fields: ['content'] },
+                },
+              },
+            },
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+          expect(created.fieldErrors).toEqual({ title: 'This title is already in use' })
+        })
+
+        it('falls back to the generic message (not a throw) when nothing is recoverable', async () => {
+          mockPrisma.post.create.mockRejectedValue({ code: 'P2002', meta: {} })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          expect(result).toEqual({
+            created: false,
+            error: 'A record with this value already exists',
+            fieldErrors: {},
+          })
+        })
+
+        it('leaves a non-P2002 Prisma error unaffected', async () => {
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2025',
+            meta: { driverAdapterError: { cause: { constraint: { fields: ['title'] } } } },
+            message: 'Record to update not found',
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(config, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          expect(result).toEqual({
+            created: false,
+            error: 'Record to update not found',
+            fieldErrors: {},
+          })
+        })
+      })
     })
 
     describe('relationshipOptions', () => {

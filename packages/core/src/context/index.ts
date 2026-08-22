@@ -14,6 +14,7 @@ import {
 import type { DeclaredOnlyTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
+import { uniqueConstraintOf } from '../lib/prisma-errors.js'
 import type { PrismaClientLike } from '../access/types.js'
 import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
 import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
@@ -215,10 +216,12 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
 
     // P2002 is Prisma's unique constraint violation code.
     if (prismaError.code === 'P2002') {
-      const target = prismaError.meta?.target
+      const constraintInfo = uniqueConstraintOf(prismaError)
+      const target = constraintInfo?.fields
+      const constraintName = constraintInfo?.constraintName
       const fieldErrors: Record<string, string> = {}
 
-      if (target && Array.isArray(target)) {
+      if (target && target.length > 0) {
         for (const fieldName of target) {
           const fieldConfig = listConfig.fields[fieldName]
           const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
@@ -235,10 +238,16 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
           `${fieldLabels} must be unique. The value you entered is already in use.`,
           fieldErrors,
           prismaError.code,
+          constraintName,
         )
       }
 
-      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
+      return new DatabaseError(
+        'A record with this value already exists',
+        {},
+        prismaError.code,
+        constraintName,
+      )
     }
 
     return new DatabaseError(
