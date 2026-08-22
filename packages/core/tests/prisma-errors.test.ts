@@ -36,12 +36,39 @@ const singleColumnDriverAdapterError = {
   },
 }
 
+// This shape is read directly out of @prisma/adapter-better-sqlite3's own
+// error-mapping source (its SQLITE_CONSTRAINT_UNIQUE branch), not hand-invented:
+// `constraint.fields` comes unquoted (SQLite has no Postgres-style identifier
+// quoting), and `originalMessage` ("UNIQUE constraint failed: Post.slug") has no
+// quoted constraint name for the regex to recover.
+const sqliteDriverAdapterError = {
+  code: 'P2002',
+  meta: {
+    modelName: 'Post',
+    driverAdapterError: {
+      name: 'DriverAdapterError',
+      cause: {
+        originalCode: 'SQLITE_CONSTRAINT_UNIQUE',
+        originalMessage: 'UNIQUE constraint failed: Post.slug',
+        kind: 'UniqueConstraintViolation',
+        constraint: { fields: ['slug'] },
+      },
+    },
+  },
+}
+
 describe('uniqueConstraintOf', () => {
   it('resolves fields and constraint name from a composite driver-adapter P2002', () => {
     expect(uniqueConstraintOf(compositeDriverAdapterError)).toEqual({
       fields: ['tenantId', 'slug'],
       constraintName: 'thing_tenant_slug_key',
     })
+  })
+
+  it('resolves fields (no constraint name) from a SQLite driver-adapter P2002', () => {
+    // SQLite's error text carries no quoted constraint name, so this must
+    // degrade to fields-only rather than leaving an empty/garbage name.
+    expect(uniqueConstraintOf(sqliteDriverAdapterError)).toEqual({ fields: ['slug'] })
   })
 
   it('resolves a single-column driver-adapter P2002', () => {
