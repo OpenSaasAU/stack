@@ -61,6 +61,20 @@ async function buildTestConfig() {
             many: true,
             access: { read: () => false },
           }),
+          // Field-level read access that depends on the relation's OWN
+          // fetched value — proves the count mechanism doesn't corrupt that
+          // value with a synthetic empty array to make the check cheaper.
+          commentsVisibleIfEmpty: relationship({
+            ref: 'Comment',
+            many: true,
+            access: {
+              read: ({ item }) => {
+                const value = (item as { commentsVisibleIfEmpty?: unknown[] })
+                  .commentsVisibleIfEmpty
+                return Array.isArray(value) ? value.length === 0 : true
+              },
+            },
+          }),
           secret: text({ access: { read: () => false } }),
           commentCount: virtual({
             type: 'number',
@@ -200,5 +214,37 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
 
     const result = JSON.parse(data.result.content[0].text)
     expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
+  })
+
+  it('evaluates a value-dependent field-level access rule against the relation’s TRUE fetched rows, not a synthetic empty placeholder', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+    // `commentsVisibleIfEmpty`'s own access rule denies read when the
+    // relation actually has rows. A `take: 0` "cheap" fetch would make
+    // field-visibility see an empty array regardless of the truth and
+    // wrongly GRANT access here — asserting the count is suppressed proves
+    // the real (non-empty) rows reached the access check.
+    mockPrisma.post.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        title: 'Hi',
+        commentsVisibleIfEmpty: [{ id: 'c1', text: 'nice' }],
+        _count: { commentsVisibleIfEmpty: 1 },
+      },
+    ])
+
+    const data = await callPostQuery(testConfig, mockPrisma, {
+      fields: { title: true, commentsVisibleIfEmpty: { count: true } },
+    })
+
+    const result = JSON.parse(data.result.content[0].text)
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
+
+    // Real rows were fetched (access-scoped by Comment's own operation-level
+    // query access, folded in the same way any other named relation is) —
+    // never a synthetic `take: 0` placeholder.
+    const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
+    expect(callArgs.include.commentsVisibleIfEmpty).toMatchObject({ take: 5 })
+    expect(callArgs.include.commentsVisibleIfEmpty.take).not.toBe(0)
   })
 })

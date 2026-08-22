@@ -184,6 +184,26 @@ export type ResolvedFieldsProjection = {
   countRequests: Map<string, 'only' | 'alongside'>
 }
 
+/**
+ * Build the `context.db` include entry for a to-many relation's own rows —
+ * shared by a `fields`-selected relation and a count-only one (the latter
+ * fetches identically, just never adds the key to `fieldSelection`, so the
+ * rows reach field-visibility's access check but never the caller).
+ */
+function buildManyIncludeEntry(
+  many: boolean,
+  entry: Record<string, unknown>,
+): Record<string, unknown> | true {
+  if (!many) return true
+  const includeEntry: Record<string, unknown> = {}
+  if (entry.where !== undefined) includeEntry.where = entry.where
+  if (entry.orderBy !== undefined) includeEntry.orderBy = entry.orderBy
+  const requestedTake = entry.take !== undefined ? Number(entry.take) : MCP_NESTED_TAKE_DEFAULT
+  includeEntry.take = Math.min(requestedTake, MCP_NESTED_TAKE_MAX)
+  if (entry.skip !== undefined) includeEntry.skip = entry.skip
+  return includeEntry
+}
+
 /** Access-scoped `_count.select` entry for one to-many relation: the related list's `query` access ANDed with any caller `where` on that same relation — mirrors how `buildAccessScopedInclude` scopes the relation's own rows (`andWhere`), since Prisma's `_count` is a sibling key that walk does not itself touch. */
 async function accessScopedCountEntry(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
@@ -386,27 +406,24 @@ export async function resolveFieldsProjection(
         nestedSelection[relFieldName] = true
       }
 
-      const includeEntry: Record<string, unknown> = {}
-      if (many) {
-        if (entry.where !== undefined) includeEntry.where = entry.where
-        if (entry.orderBy !== undefined) includeEntry.orderBy = entry.orderBy
-        const requestedTake =
-          entry.take !== undefined ? Number(entry.take) : MCP_NESTED_TAKE_DEFAULT
-        includeEntry.take = Math.min(requestedTake, MCP_NESTED_TAKE_MAX)
-        if (entry.skip !== undefined) includeEntry.skip = entry.skip
-      }
-      include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
+      include[fieldName] = buildManyIncludeEntry(many, entry)
       hasIncludeEntries = true
       fieldSelection[fieldName] = { _type: 'fragment', _fields: withId(nestedSelection) }
     } else if (wantsCount) {
       // Count-only (no `fields`): still name the relation in the include,
-      // fetching zero rows, purely so the ordinary read pipeline evaluates
-      // the relationship FIELD's own field-level `read` access for it the
-      // same way it would for any other relation — `projectMcpResult` below
-      // then reads that decision off whether the key survived, rather than
-      // re-deriving it itself against a row `filterReadableFields` may have
-      // already stripped other fields from.
-      include[fieldName] = { take: 0 }
+      // with the SAME rows a `fields`-and-`count` request would fetch —
+      // never a synthetic zero-row placeholder. Field-visibility's read-
+      // access check for the relationship field runs against whatever the
+      // include actually fetched (`accessItem: workingItem`); a rule that
+      // inspects the relation's own value (e.g. `item.comments.length`)
+      // would see a permanently-empty array under `take: 0` regardless of
+      // the true content, which is wrong in the opposite direction from
+      // what this whole mechanism exists to prevent. The rows themselves
+      // never reach the caller — `fieldSelection` has no entry for this key
+      // — only the access decision `filterReadableFields` made against them
+      // does, read off in `projectMcpResult` below via whether the key
+      // survived into the filtered result.
+      include[fieldName] = buildManyIncludeEntry(many, entry)
       hasIncludeEntries = true
     }
 
