@@ -200,6 +200,14 @@ access control (and hooks) and swaps the session. It reuses the receiver's
 already-resolved config, client (including a transaction client — a call
 inside `context.transaction()` stays in that transaction), and storage.
 
+Like `sudo()` (and unlike `transaction()`), plugin runtime services are
+**rebuilt, not reused** — `plugin.runtime(context, sudo)` factories are
+re-run so any plugin service that closes over the session (e.g. an auth
+plugin's "who is this session" lookup) binds to the _new_ one rather than
+staying stale. A hot loop calling `withSession()` per iteration re-runs
+every plugin's `runtime()` each time; batch via a shared derived context
+where the loop body doesn't need a different session per iteration.
+
 ```typescript
 // An unattended dispatcher running a committed intent, or any job runner
 // that is legitimately authorised but arrives without the session a list's
