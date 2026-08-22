@@ -996,6 +996,50 @@ describe('getContext', () => {
           expect(created.fieldErrors).toEqual({ authorId: 'This value is already in use' })
         })
 
+        it('humanizes a camelCase field name in the message instead of running words together', async () => {
+          // Before this fix, `target` was always empty under a driver adapter, so
+          // this label-formatting path never ran for a camelCase column. Recovering
+          // real column names makes it reachable — verify it reads as words, not
+          // "tenantid".
+          const camelCaseConfig: OpenSaasConfig = {
+            ...config,
+            lists: {
+              ...config.lists,
+              Post: {
+                ...config.lists.Post,
+                fields: { ...config.lists.Post.fields, tenantSlug: { type: 'text' } },
+              },
+            },
+          }
+          mockPrisma.post.create.mockRejectedValue({
+            code: 'P2002',
+            meta: {
+              driverAdapterError: {
+                cause: {
+                  originalMessage:
+                    'duplicate key value violates unique constraint "post_tenantSlug_key"',
+                  constraint: { fields: ['"tenantSlug"'] },
+                },
+              },
+            },
+          })
+          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+
+          const context = await getContext(camelCaseConfig, mockPrisma, { userId: 'u1' })
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'createRelated',
+            data: { title: 'Dup' },
+            field: 'author',
+            parentId: 'u1',
+          })
+
+          const created = result as { created: boolean; fieldErrors?: Record<string, string> }
+          expect(created.fieldErrors).toEqual({
+            tenantSlug: 'This tenant slug is already in use',
+          })
+        })
+
         it('leaves an already-populated meta.target unaffected (existing path still wins)', async () => {
           mockPrisma.post.create.mockRejectedValue({
             code: 'P2002',

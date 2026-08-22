@@ -203,6 +203,14 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
+// A camelCase field name (e.g. a relationship's `tenantId` foreign key) needs
+// its word boundary split before title-casing, or it reads as one run-together
+// word ("Tenantid") in a user-facing unique-constraint message.
+function humanizeFieldName(fieldName: string): string {
+  const spaced = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
   if (
@@ -216,38 +224,30 @@ function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
 
     // P2002 is Prisma's unique constraint violation code.
     if (prismaError.code === 'P2002') {
-      const constraintInfo = uniqueConstraintOf(prismaError)
-      const target = constraintInfo?.fields
-      const constraintName = constraintInfo?.constraintName
+      const target = uniqueConstraintOf(prismaError)?.fields
       const fieldErrors: Record<string, string> = {}
 
       if (target && target.length > 0) {
         for (const fieldName of target) {
           const fieldConfig = listConfig.fields[fieldName]
-          const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
 
           if (fieldConfig) {
-            fieldErrors[fieldName] = `This ${label.toLowerCase()} is already in use`
+            fieldErrors[fieldName] =
+              `This ${humanizeFieldName(fieldName).toLowerCase()} is already in use`
           } else {
             fieldErrors[fieldName] = `This value is already in use`
           }
         }
 
-        const fieldLabels = target.map((f) => f.charAt(0).toUpperCase() + f.slice(1)).join(', ')
+        const fieldLabels = target.map(humanizeFieldName).join(', ')
         return new DatabaseError(
           `${fieldLabels} must be unique. The value you entered is already in use.`,
           fieldErrors,
           prismaError.code,
-          constraintName,
         )
       }
 
-      return new DatabaseError(
-        'A record with this value already exists',
-        {},
-        prismaError.code,
-        constraintName,
-      )
+      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
     }
 
     return new DatabaseError(

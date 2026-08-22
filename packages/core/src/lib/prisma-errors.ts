@@ -19,7 +19,15 @@ function stripIdentifierQuotes(field: string): string {
 export interface UniqueConstraintInfo {
   /** Column names covered by the violated constraint, quote-stripped. */
   fields: string[]
-  /** The violated constraint's name, when recoverable from the error. */
+  /**
+   * The violated constraint's name, when recoverable from the error.
+   *
+   * Known limit: this is parsed out of Postgres' English-locale error text
+   * (`cause.originalMessage`) — the adapter exposes no structured field for
+   * it. A server running under a non-English `lc_messages` locale will not
+   * match, leaving this `undefined` while `fields` (structured data) still
+   * resolves correctly.
+   */
   constraintName?: string
 }
 
