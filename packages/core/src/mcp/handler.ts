@@ -1,6 +1,7 @@
 import * as z from 'zod'
 import type { OpenSaasConfig, FieldConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 
@@ -482,7 +483,7 @@ async function handleCrudTool(
           data: args.data,
         })
         if (!result) {
-          return createErrorResponse(
+          return createErrorResultResponse(
             'Failed to create record. Access denied or validation failed.',
             id,
           )
@@ -495,7 +496,7 @@ async function handleCrudTool(
           data: args.data,
         })
         if (!result) {
-          return createErrorResponse(
+          return createErrorResultResponse(
             'Failed to update record. Access denied or record not found.',
             id,
           )
@@ -507,7 +508,7 @@ async function handleCrudTool(
           where: args.where,
         })
         if (!result) {
-          return createErrorResponse(
+          return createErrorResultResponse(
             'Failed to delete record. Access denied or record not found.',
             id,
           )
@@ -518,7 +519,13 @@ async function handleCrudTool(
         return createErrorResponse(`Unknown operation: ${operation}`, id)
     }
   } catch (error) {
-    return createErrorResponse(
+    if (
+      error instanceof AccessScopeDepthExceededError ||
+      error instanceof RelationFilterAccessDeniedError
+    ) {
+      return createErrorResultResponse(error.message, id)
+    }
+    return createErrorResultResponse(
       'Operation failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
       id,
     )
@@ -550,20 +557,7 @@ async function handleCustomTool(
   if (isZodSchema(customTool.inputSchema)) {
     const parsed = customTool.inputSchema.safeParse(args)
     if (!parsed.success) {
-      return new Response(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: id ?? null,
-          error: {
-            code: -32602,
-            message: `Invalid params: ${parsed.error.message}`,
-          },
-        }),
-        {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      )
+      return createErrorResultResponse(`Invalid params: ${parsed.error.message}`, id)
     }
     input = parsed.data
   }
@@ -578,7 +572,7 @@ async function handleCustomTool(
 
     return createSuccessResponse(result, id)
   } catch (error) {
-    return createErrorResponse(
+    return createErrorResultResponse(
       'Custom tool execution failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
       id,
     )
@@ -597,15 +591,18 @@ function mcpJsonReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value
 }
 
+function toToolContent(data: unknown): { type: 'text'; text: string }[] {
+  const text = typeof data === 'string' ? data : JSON.stringify(data, mcpJsonReplacer, 2)
+  return [{ type: 'text', text }]
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Response data structure is flexible per MCP protocol
 function createSuccessResponse(data: any, id?: number | string): Response {
   return new Response(
     JSON.stringify({
       jsonrpc: '2.0',
       id: id ?? null,
-      result: {
-        content: [{ type: 'text', text: JSON.stringify(data, mcpJsonReplacer, 2) }],
-      },
+      result: { content: toToolContent(data) },
     }),
     {
       headers: { 'Content-Type': 'application/json' },
@@ -613,6 +610,28 @@ function createSuccessResponse(data: any, id?: number | string): Response {
   )
 }
 
+/**
+ * A dispatched tool that failed — access denial, a thrown engine/database
+ * error, or custom-tool input validation. This is a successful JSON-RPC
+ * response (HTTP 200, no `error` member): the model that called the tool
+ * needs to see the failure in `result` to have any chance of correcting its
+ * request, whereas a JSON-RPC `error` object is a protocol-level failure a
+ * host may never surface back to it.
+ */
+function createErrorResultResponse(message: string, id?: number | string): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: id ?? null,
+      result: { content: toToolContent(message), isError: true },
+    }),
+    {
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
+}
+
+/** Genuine JSON-RPC protocol failures — unknown method, malformed request, unknown tool name. */
 function createErrorResponse(message: string, id?: number | string): Response {
   return new Response(
     JSON.stringify({
