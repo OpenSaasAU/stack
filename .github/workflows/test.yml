@@ -116,6 +116,19 @@ jobs:
         env:
           RUN_MCP_OAUTH_CASCADE_E2E: '1'
 
+      # Live proof that the derived auth lists' credential-bearing fields
+      # (Session.token, Verification.value, Account.password/accessToken/
+      # refreshToken/idToken) are stripped from an opened context.db read,
+      # remain readable under sudo(), and that sign-up/sign-in/session-refresh/
+      # password-reset are unaffected (issue #981, ADR-0036). Same offline
+      # toolchain/pattern as the guards above. Opt-in via
+      # RUN_CREDENTIAL_DENY_E2E. See
+      # packages/auth/tests/credential-field-read-deny-e2e.test.ts.
+      - name: Run credential-field read-deny e2e guard
+        run: pnpm --filter @opensaas/stack-auth test credential-field-read-deny-e2e
+        env:
+          RUN_CREDENTIAL_DENY_E2E: '1'
+
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
 

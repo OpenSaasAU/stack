@@ -54,6 +54,10 @@ export default config({
         }),
         password: password({
           validation: { isRequired: true },
+          // The hash is never needed on an ordinary read path — an auth
+          // implementation calls `.compare()` through its own `context.sudo()`
+          // read instead (see ADR-0036 in the OpenSaaS Stack repo).
+          access: { read: () => false },
         }),
         posts: relationship({
           ref: 'Post.author',
