@@ -1535,10 +1535,12 @@ export function relationship<
       )
     }
 
-    if (refParts.length === 1) {
+    if (refParts.length === 1 && typeof options.db.foreignKey === 'boolean') {
       throw new Error(
-        'db.foreignKey can only be used on bidirectional relationships (ref: "ListName.fieldName"). ' +
-          'List-only refs (ref: "ListName") always create foreign keys automatically.',
+        'db.foreignKey cannot be a boolean on list-only refs (ref: "ListName"). ' +
+          'List-only refs always create foreign keys automatically, so the ownership sense of ' +
+          'db.foreignKey is meaningless here. Use db.foreignKey: { map: "columnName" } to rename ' +
+          'the foreign key column instead.',
       )
     }
   }
