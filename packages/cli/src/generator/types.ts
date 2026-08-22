@@ -1153,7 +1153,7 @@ function generateContextType(_config: OpenSaasConfig): string {
 
   lines.push('/**')
   lines.push(' * Full context type with server action capabilities and virtual field typing')
-  lines.push(' * Extends BaseContext and adds serverAction and sudo methods')
+  lines.push(' * Extends BaseContext and adds serverAction, sudo, and withSession methods')
   lines.push(
     ' * Use this type in server actions and components that need full context capabilities',
   )
@@ -1163,6 +1163,7 @@ function generateContextType(_config: OpenSaasConfig): string {
   )
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
   lines.push('  sudo: () => Context<TSession>')
+  lines.push('  withSession: (session: TSession | null) => Context<TSession>')
   lines.push('}')
 
   return lines.join('\n')

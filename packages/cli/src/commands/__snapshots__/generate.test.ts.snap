@@ -388,12 +388,13 @@ export interface BaseContext<TSession extends OpensaasSession = OpensaasSession>
 
 /**
  * Full context type with server action capabilities and virtual field typing
- * Extends BaseContext and adds serverAction and sudo methods
+ * Extends BaseContext and adds serverAction, sudo, and withSession methods
  * Use this type in server actions and components that need full context capabilities
  */
 export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
+  withSession: (session: TSession | null) => Context<TSession>
 }"
 `;
 
@@ -513,12 +514,13 @@ export interface BaseContext<TSession extends OpensaasSession = OpensaasSession>
 
 /**
  * Full context type with server action capabilities and virtual field typing
- * Extends BaseContext and adds serverAction and sudo methods
+ * Extends BaseContext and adds serverAction, sudo, and withSession methods
  * Use this type in server actions and components that need full context capabilities
  */
 export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context<TSession>
+  withSession: (session: TSession | null) => Context<TSession>
 }"
 `;
 

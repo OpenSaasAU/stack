@@ -304,7 +304,8 @@ interface TransactionCapable<TPrisma> {
  *
  * Exposes the secured `db` delegate plus the session, raw `prisma`, storage,
  * plugin services, the generic `serverAction` handler, `sudo()` (bypasses access
- * control but still runs hooks), and `transaction()` (interactive, hook-firing
+ * control but still runs hooks), `withSession()` (substitutes the session but
+ * still runs access control), and `transaction()` (interactive, hook-firing
  * transaction). All access-checked operations run their list/field hooks.
  */
 export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
@@ -340,6 +341,23 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
     options?: TransactionOptions,
   ) => Promise<T>
   sudo: () => StackContext<TPrisma>
+  /**
+   * Derive a context identical to this one except for its session, reusing
+   * the already-resolved config and this context's own client (including a
+   * transaction client — a call inside `context.transaction()` stays in that
+   * transaction) and storage.
+   *
+   * **This is not an authorisation.** It substitutes who hooks and access
+   * control see; it does not change what they decide. The derived context
+   * can do exactly what any context built with `session` directly could
+   * do — access rules still evaluate against the new session. The caller is
+   * responsible for deciding who may invoke this.
+   *
+   * Orthogonal to `sudo()`: `withSession(s)` preserves the receiver's sudo
+   * state (elevated stays elevated), so `context.withSession(s).sudo()` and
+   * `context.sudo().withSession(s)` are equivalent.
+   */
+  withSession: (session: Session | null) => StackContext<TPrisma>
   _isSudo: boolean
 }
 
@@ -776,6 +794,22 @@ export function getContext<
     )
   }
 
+  // Substitutes the session; access control and hooks still run against it
+  // (orthogonal to `sudo`, so the receiver's sudo state is preserved).
+  function withSession(newSession: Session | null): StackContext<TPrisma> {
+    return getContext(
+      config,
+      prisma,
+      newSession,
+      context.storage,
+      _isSudo,
+      undefined,
+      // ADR-0028: a write issued from inside an owned transaction (e.g.
+      // `tx.withSession(s).db.x.create()`) must still defer to that owner.
+      context._transactionOwner,
+    )
+  }
+
   // Interactive, hook-firing transaction (#614). See the `transaction` doc on
   // `StackContext` above for the atomicity/isolation/retry contract.
   //
@@ -842,6 +876,7 @@ export function getContext<
     plugins: context.plugins,
     serverAction,
     sudo,
+    withSession,
     transaction,
     _isSudo,
   }
