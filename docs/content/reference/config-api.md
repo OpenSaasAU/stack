@@ -412,9 +412,22 @@ AuthVerification: list({
 // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
 ```
 
+**`createdAt`/`updatedAt` are valid even with no declared field.** An entry may name either as long as the list's auto-timestamps (`db.timestamps`, global or per-list) are enabled for that column — the auto-injected column has no `@map` of its own, so the field name and column name coincide:
+
+```typescript
+Verification: list({
+  fields: { identifier: text() },
+  db: {
+    timestamps: true, // no explicit createdAt field
+    indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+  },
+})
+// Generates: @@index([identifier, createdAt(sort: Desc)])
+```
+
 **Errors at `pnpm generate` time** (each names the list and the entry):
 
-- An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship.
+- An entry naming a field the list doesn't have (unless it's `createdAt`/`updatedAt` and auto-timestamps are enabled for that column — see above), a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship.
 - An entry whose `fields` array is empty.
 - A single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes — the error names both the field/`isIndexed` and the entry, since either one should be removed rather than both left producing the same constraint.
 
