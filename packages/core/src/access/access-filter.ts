@@ -9,6 +9,7 @@ import {
   resolveQueryField,
   walkWhereReadAccess,
 } from './query-validation.js'
+import { getDbKey } from '../lib/case-utils.js'
 
 /**
  * Access Filter — phase 1 of the two-phase read (pre-query).
@@ -34,6 +35,26 @@ import {
  * named a nested `include` there too. A relation nobody named never has its
  * list's `query` access evaluated at all — there is no separate "build the
  * whole tree, then reconcile against what was asked for" pass to walk it.
+ *
+ * **To-one relations are scoped after the query, not inside it (issue #974).**
+ * Prisma accepts a nested `where` on an `include` entry only for a to-**many**
+ * relation; the same shape on a to-**one** relation raises
+ * `PrismaClientValidationError`. So for a to-one relation whose related
+ * list's `query` access resolves to a filter, `buildAccessScopedInclude`
+ * does NOT attach that filter as `where` — it fetches the row unscoped and
+ * records the filter in the returned `toOneAccessFilters` tree instead.
+ * `resolveToOneAccessVisibility` (below) turns that tree into the set of
+ * related ids the session may actually see, via ONE batched `id IN (...)`
+ * existence check per (relation, nesting level) across every row in the
+ * read — never a per-row query, and never a hand-rolled evaluation of the
+ * access filter (it is handed to Prisma exactly as `checkAccess` produced
+ * it). `field-visibility.ts`'s `filterReadableFields` is where the result
+ * actually becomes `null` for a row the check excludes — see its module doc.
+ * A to-one relation whose related list's `query` access is `true` (no
+ * filter) or `false` (denied outright) needs no existence check at all: the
+ * former is left as `true` in `include`, unchanged from before; the latter
+ * is recorded as `{ kind: 'denied' }`, and `field-visibility.ts` forces the
+ * key to `null` without ever asking Prisma for it.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -81,6 +102,38 @@ function andWhere(
   return accessWhere ?? callerWhere
 }
 
+/** One to-one relation's recorded access filter, or an outright denial — see the module doc's "To-one relations" section. */
+export type ToOneAccessFilterEntry =
+  { kind: 'scoped'; relatedListName: string; accessWhere: PrismaFilter } | { kind: 'denied' }
+
+/**
+ * Which to-one relations, at which nesting level of an `include`, need a
+ * post-query existence check rather than a Prisma-side `where` — because
+ * their related list's `query` access resolved to a filter (`kind: 'scoped'`)
+ * or a denial (`kind: 'denied'`) and Prisma cannot express either as a nested
+ * `where` on a to-one include. `resolveToOneAccessVisibility` consumes this
+ * tree; `filterReadableFields` (`field-visibility.ts`) applies its result.
+ */
+export type ToOneAccessFilterTree = {
+  /** To-one relation keys at THIS level needing a post-query check. */
+  filters: Record<string, ToOneAccessFilterEntry>
+  /** Per-key trees for relations present in the include for other reasons, whose own nested include may contain further to-one filters. */
+  nested: Record<string, ToOneAccessFilterTree>
+}
+
+export function emptyToOneAccessFilterTree(): ToOneAccessFilterTree {
+  return { filters: {}, nested: {} }
+}
+
+function isToOneAccessFilterTreeEmpty(tree: ToOneAccessFilterTree): boolean {
+  return Object.keys(tree.filters).length === 0 && Object.keys(tree.nested).length === 0
+}
+
+/** Whether a relationship field is to-one (at most one related row) rather than to-many. */
+function isToOneRelationship(fieldConfig: FieldConfig): boolean {
+  return !('many' in fieldConfig && fieldConfig.many === true)
+}
+
 /**
  * Build the access-scoped `include` for exactly the relations a read
  * requested, recursing only into branches `requestedInclude` itself names.
@@ -92,14 +145,21 @@ function andWhere(
  * - A declared relationship whose related list's `query` access denies it
  *   (`=== false`) → dropped entirely, no matter what the request asked for
  *   nested beneath it (#566): the caller chooses *which* relations, access
- *   control chooses *whether* and *with what filter*.
- * - Otherwise → the access `where` is AND-combined with any caller-supplied
- *   nested `where` (never replaced — the other half of #566), a
- *   caller-supplied `take` rides through unchanged (#752), and — the "One
- *   hop" rule (ADR-0026) — nested relations are scoped ONLY if
- *   `requestedInclude` itself named a nested `include` here. A bare relation
- *   (or one with no nested `include`) fetches its own columns and stops: no
- *   recursive call, no access evaluation on anything beneath it.
+ *   control chooses *whether* and *with what filter*. For a to-one relation
+ *   this denial is also recorded in `toOneAccessFilters` (`kind: 'denied'`),
+ *   so `filterReadableFields` can still surface an explicit `null` for it
+ *   (issue #974) rather than an absent key.
+ * - Otherwise, for a to-**many** relation → the access `where` is
+ *   AND-combined with any caller-supplied nested `where` (never replaced —
+ *   the other half of #566), and a caller-supplied `take` rides through
+ *   unchanged (#752). For a to-**one** relation → the access filter (if any)
+ *   is recorded in `toOneAccessFilters` instead of attached as `where`,
+ *   because Prisma only accepts a nested `where` on a to-many include
+ *   (issue #974) — the entry itself never carries a `where` for a to-one key.
+ * - Either way — the "One hop" rule (ADR-0026) — nested relations are scoped
+ *   ONLY if `requestedInclude` itself named a nested `include` here. A bare
+ *   relation (or one with no nested `include`) fetches its own columns and
+ *   stops: no recursive call, no access evaluation on anything beneath it.
  *
  * **Depth is a cost limit, not a cycle guard (ADR-0026).** A `requestedInclude`
  * is always a finite literal — the caller's own object, or
@@ -120,13 +180,14 @@ export async function buildAccessScopedInclude(
   config: OpenSaasConfig,
   listKey: string,
   depth: number = 0,
-): Promise<Record<string, unknown>> {
+): Promise<{ include: Record<string, unknown>; toOneAccessFilters: ToOneAccessFilterTree }> {
   const requestedKeys = Object.keys(requestedInclude)
   if (depth >= READ_INCLUDE_MAX_DEPTH && requestedKeys.length > 0) {
     throw new AccessScopeDepthExceededError(listKey, requestedKeys[0], depth)
   }
 
   const result: Record<string, unknown> = {}
+  const toOneAccessFilters = emptyToOneAccessFilterTree()
 
   for (const [relationName, requestedValue] of Object.entries(requestedInclude)) {
     const fieldConfig = fieldConfigs[relationName]
@@ -141,6 +202,8 @@ export async function buildAccessScopedInclude(
     const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
     if (!relatedConfig) continue
 
+    const isToOne = isToOneRelationship(fieldConfig)
+
     const queryAccess = relatedConfig.listConfig.access?.operation?.query
     const accessResult = await checkAccess(queryAccess, {
       session: args.session,
@@ -148,16 +211,19 @@ export async function buildAccessScopedInclude(
     })
 
     if (accessResult === false) {
+      if (isToOne) {
+        toOneAccessFilters.filters[relationName] = { kind: 'denied' }
+      }
       continue
     }
 
     const accessWhere = typeof accessResult === 'object' ? accessResult : undefined
     const requestedEntry = asEntryObject(requestedValue)
-    const mergedWhere = andWhere(accessWhere, requestedEntry?.where)
 
     let nestedInclude: Record<string, unknown> | undefined
+    let nestedToOneFilters: ToOneAccessFilterTree | undefined
     if (requestedEntry?.include) {
-      nestedInclude = await buildAccessScopedInclude(
+      const nested = await buildAccessScopedInclude(
         requestedEntry.include,
         relatedConfig.listConfig.fields,
         args,
@@ -165,17 +231,125 @@ export async function buildAccessScopedInclude(
         relatedConfig.listName,
         depth + 1,
       )
+      nestedInclude = nested.include
+      nestedToOneFilters = nested.toOneAccessFilters
     }
 
     const entry: { where?: PrismaFilter; include?: Record<string, unknown>; take?: number } = {}
-    if (mergedWhere) entry.where = mergedWhere
+    if (isToOne) {
+      if (accessWhere) {
+        toOneAccessFilters.filters[relationName] = {
+          kind: 'scoped',
+          relatedListName: relatedConfig.listName,
+          accessWhere,
+        }
+      }
+    } else {
+      const mergedWhere = andWhere(accessWhere, requestedEntry?.where)
+      if (mergedWhere) entry.where = mergedWhere
+      if (requestedEntry?.take !== undefined) entry.take = requestedEntry.take
+    }
     if (nestedInclude && Object.keys(nestedInclude).length > 0) entry.include = nestedInclude
-    if (requestedEntry?.take !== undefined) entry.take = requestedEntry.take
+    if (nestedToOneFilters && !isToOneAccessFilterTreeEmpty(nestedToOneFilters)) {
+      toOneAccessFilters.nested[relationName] = nestedToOneFilters
+    }
 
     result[relationName] = Object.keys(entry).length > 0 ? entry : true
   }
 
-  return result
+  return { include: result, toOneAccessFilters }
+}
+
+/** One to-one relation's resolved post-query visibility — see `resolveToOneAccessVisibility`. */
+export type ToOneVisibility = { kind: 'denied' } | { kind: 'visible'; ids: ReadonlySet<string> }
+
+/** The resolved counterpart to {@link ToOneAccessFilterTree}, produced by `resolveToOneAccessVisibility`. */
+export type ToOneAccessVisibilityTree = {
+  filters: Record<string, ToOneVisibility>
+  nested: Record<string, ToOneAccessVisibilityTree>
+}
+
+export function emptyToOneAccessVisibilityTree(): ToOneAccessVisibilityTree {
+  return { filters: {}, nested: {} }
+}
+
+/**
+ * Resolve a `ToOneAccessFilterTree` against the RAW rows Prisma already
+ * fetched (unscoped for the flagged to-one relations — see
+ * `buildAccessScopedInclude`) into the set of related ids the session may
+ * actually see, one batched `id IN (...)` existence check per (relation,
+ * nesting level) across every row in `items` — never once per row.
+ *
+ * For each `filters` entry at a level:
+ * - `kind: 'denied'` → carried straight through; no query, nothing to check.
+ * - `kind: 'scoped'` → every id present at this key across ALL of `items` is
+ *   collected first (an empty set skips the query entirely — nothing to
+ *   check), then ONE `findMany` through the RAW `prisma` client (not
+ *   `context.db`, which would re-evaluate the same access-control function a
+ *   second time) asks which of those ids also satisfy `accessWhere` — the
+ *   exact `PrismaFilter` `checkAccess` already produced, handed to Prisma
+ *   unmodified rather than interpreted by hand.
+ *
+ * Recurses into `nested` by flattening the related items reached through
+ * each key across every row in `items` (a to-many hop contributes every one
+ * of its rows; a to-one hop contributes its single row, if any) into the
+ * next level's own `items` array, so a to-one relation nested arbitrarily
+ * deep is still resolved with one batched query per node, not per parent row.
+ */
+export async function resolveToOneAccessVisibility(
+  items: readonly unknown[],
+  tree: ToOneAccessFilterTree,
+  args: {
+    session: Session | null
+    context: AccessContext
+  },
+): Promise<ToOneAccessVisibilityTree> {
+  const resolved = emptyToOneAccessVisibilityTree()
+
+  for (const [key, entry] of Object.entries(tree.filters)) {
+    if (entry.kind === 'denied') {
+      resolved.filters[key] = { kind: 'denied' }
+      continue
+    }
+
+    const ids = new Set<string>()
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      const value = (item as Record<string, unknown>)[key]
+      if (value && typeof value === 'object' && 'id' in value) {
+        ids.add(String((value as Record<string, unknown>).id))
+      }
+    }
+
+    if (ids.size === 0) {
+      resolved.filters[key] = { kind: 'visible', ids: new Set() }
+      continue
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic model access by list name, mirroring the rest of the read pipeline
+    const model = (args.context.prisma as any)[getDbKey(entry.relatedListName)]
+    const visibleRows = await model.findMany({
+      where: { AND: [entry.accessWhere, { id: { in: [...ids] } }] },
+      select: { id: true },
+    })
+    const visibleIds = new Set<string>(
+      Array.isArray(visibleRows) ? visibleRows.map((row: { id: unknown }) => String(row.id)) : [],
+    )
+    resolved.filters[key] = { kind: 'visible', ids: visibleIds }
+  }
+
+  for (const [key, nestedTree] of Object.entries(tree.nested)) {
+    const nestedItems: unknown[] = []
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      const value = (item as Record<string, unknown>)[key]
+      if (Array.isArray(value)) nestedItems.push(...value)
+      else if (value && typeof value === 'object') nestedItems.push(value)
+    }
+    resolved.nested[key] = await resolveToOneAccessVisibility(nestedItems, nestedTree, args)
+  }
+
+  return resolved
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildAccessScopedInclude } from './access-filter.js'
+import { buildAccessScopedInclude, resolveToOneAccessVisibility } from './access-filter.js'
 import { AccessScopeDepthExceededError } from './errors.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
@@ -22,6 +22,14 @@ import type { AccessContext } from './types.js'
  * relation the request doesn't name never has its list's `query` access
  * invoked, and naming a relation fetches its own columns and stops (the "One
  * hop" rule) at every level, not just the root.
+ *
+ * The scenarios in this file build every chain relation as to-MANY
+ * (`rel(ref, true)`), so `where`-in-`include` keeps meaning what it always
+ * has here — the walk-depth/caller-directed logic under test is arity-
+ * agnostic. The to-one-specific behavior this function grew for issue #974
+ * (a `where` on a to-one include is not something Prisma accepts, so it's
+ * recorded in `toOneAccessFilters` instead and resolved post-query by
+ * `resolveToOneAccessVisibility`) has its own dedicated describe blocks below.
  */
 
 // A relationship field pointing at another list.
@@ -71,10 +79,10 @@ function chainConfig(count: number): {
     const listName = `L${i}`
     const fields: Record<string, FieldConfig> = { name: { type: 'text' } as FieldConfig }
     if (i < count - 1) {
-      fields.next = rel(`L${i + 1}.prev`)
+      fields.next = rel(`L${i + 1}.prev`, true)
     }
     if (i > 0) {
-      fields.prev = rel(`L${i - 1}.next`)
+      fields.prev = rel(`L${i - 1}.next`, true)
     }
     const filter = { ownerId: { equals: listName } }
     const queryFn = vi.fn(i === 0 ? () => true : () => filter)
@@ -139,7 +147,7 @@ describe('buildAccessScopedInclude — caller-directed walk (ADR-0026)', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
     } as any as OpenSaasConfig
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { b: true },
       config.lists.A.fields,
       { session: null, context: makeContext() },
@@ -155,7 +163,7 @@ describe('buildAccessScopedInclude — caller-directed walk (ADR-0026)', () => {
   it("fetches a named relation's own columns and stops — does not auto-expand its subtree (One hop)", async () => {
     const { config, queryFns } = chainConfig(4) // L0 → L1 → L2 → L3
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { next: true },
       config.lists.L0.fields,
       { session: null, context: makeContext() },
@@ -175,7 +183,7 @@ describe('buildAccessScopedInclude — caller-directed walk (ADR-0026)', () => {
   it('scopes a nested path at every level the request names it', async () => {
     const { config, queryFns } = chainConfig(4) // L0 → L1 → L2 → L3
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { next: { include: { next: { include: { next: true } } } } },
       config.lists.L0.fields,
       { session: null, context: makeContext() },
@@ -215,7 +223,7 @@ describe('buildAccessScopedInclude — caller-directed walk (ADR-0026)', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
     } as any as OpenSaasConfig
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { b: { include: { c: { include: { a: true } } } } },
       config.lists.A.fields,
       { session: null, context: makeContext() },
@@ -253,7 +261,7 @@ describe('buildAccessScopedInclude — caller take on a to-many relation (issue 
   it('preserves the take and AND-combines it with the access where', async () => {
     const config = scopedConfig()
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { posts: { take: 10 } },
       config.lists.User.fields,
       { session: null, context: makeContext() },
@@ -276,7 +284,7 @@ describe('buildAccessScopedInclude — caller take on a to-many relation (issue 
     const config = scopedConfig()
     config.lists.Post.access = { operation: { query: () => false } }
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { posts: { take: 10 } },
       config.lists.User.fields,
       { session: null, context: makeContext() },
@@ -342,7 +350,7 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
     // Outer `next` (hop 1) + nestedInclude(HOPS_AT_CAP - 1) = HOPS_AT_CAP hops total — right at the boundary.
     const requested = { next: nestedInclude(HOPS_AT_CAP - 1) }
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       requested,
       config.lists.L0.fields,
       { session: null, context: makeContext() },
@@ -373,7 +381,7 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
     const chainLength = HOPS_AT_CAP + 3
     const { config } = chainConfig(chainLength)
 
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       {},
       config.lists.L0.fields,
       { session: null, context: makeContext() },
@@ -397,7 +405,7 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
 
     // An arbitrary (non-declared-relationship) key passed through unchanged —
     // access control does not govern keys it doesn't recognize as relationships.
-    const include = await buildAccessScopedInclude(
+    const { include } = await buildAccessScopedInclude(
       { someUnrelatedKey: true },
       config.lists.Leaf.fields,
       { session: null, context: makeContext() },
@@ -405,5 +413,263 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
       'Leaf',
     )
     expect(include).toEqual({ someUnrelatedKey: true })
+  })
+})
+
+/**
+ * Regression coverage for issue #974: Prisma accepts a nested `where` on an
+ * `include` entry only for a to-many relation — the same shape on a to-one
+ * relation raises `PrismaClientValidationError`. `buildAccessScopedInclude`
+ * must never attach one for a to-one relation, whatever its related list's
+ * `query` access resolves to; the scoping information goes into
+ * `toOneAccessFilters` instead.
+ */
+describe('buildAccessScopedInclude — to-one relations record a post-query filter, not `where` (issue #974)', () => {
+  function ownerConfig(queryAccess: unknown): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite' },
+      lists: {
+        Child: {
+          fields: { name: { type: 'text' } as FieldConfig, owner: rel('Owner') },
+          access: { operation: { query: () => true } },
+        },
+        Owner: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: queryAccess } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+  }
+
+  it('records the access filter instead of attaching `where` when the related list scopes by a filter', async () => {
+    const config = ownerConfig(() => ({ id: { equals: 'u1' } }))
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { owner: true },
+      config.lists.Child.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Child',
+    )
+
+    // The Prisma-bound include never carries a `where` on this to-one key —
+    // Prisma would reject it.
+    expect(include).toEqual({ owner: true })
+    expect(toOneAccessFilters).toEqual({
+      filters: {
+        owner: { kind: 'scoped', relatedListName: 'Owner', accessWhere: { id: { equals: 'u1' } } },
+      },
+      nested: {},
+    })
+  })
+
+  it('leaves a to-one relation whose related list is fully open untouched — no filter recorded, no extra query later', async () => {
+    const config = ownerConfig(() => true)
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { owner: true },
+      config.lists.Child.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Child',
+    )
+
+    expect(include).toEqual({ owner: true })
+    expect(toOneAccessFilters).toEqual({ filters: {}, nested: {} })
+  })
+
+  it('drops a to-one relation whose related list denies query access outright, and records the denial', async () => {
+    const config = ownerConfig(() => false)
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { owner: true },
+      config.lists.Child.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Child',
+    )
+
+    // Never asked of Prisma at all — same as before this fix.
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: { owner: { kind: 'denied' } }, nested: {} })
+  })
+
+  it('records a to-one filter nested inside another relation the caller explicitly included', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        GrandChild: {
+          fields: { name: { type: 'text' } as FieldConfig, child: rel('Child') },
+          access: { operation: { query: () => true } },
+        },
+        Child: {
+          fields: { name: { type: 'text' } as FieldConfig, owner: rel('Owner') },
+          access: { operation: { query: () => true } },
+        },
+        Owner: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => ({ id: { equals: 'u1' } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { child: { include: { owner: true } } },
+      config.lists.GrandChild.fields,
+      { session: null, context: makeContext() },
+      config,
+      'GrandChild',
+    )
+
+    expect(include).toEqual({ child: { include: { owner: true } } })
+    expect(toOneAccessFilters).toEqual({
+      filters: {},
+      nested: {
+        child: {
+          filters: {
+            owner: {
+              kind: 'scoped',
+              relatedListName: 'Owner',
+              accessWhere: { id: { equals: 'u1' } },
+            },
+          },
+          nested: {},
+        },
+      },
+    })
+  })
+})
+
+describe('resolveToOneAccessVisibility (issue #974)', () => {
+  function makeVisibilityContext(findMany: ReturnType<typeof vi.fn>): AccessContext {
+    return {
+      session: null,
+      _isSudo: false,
+      _resolveOutputChain: [],
+      prisma: { owner: { findMany } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
+    } as any
+  }
+
+  it('passes a denied filter straight through with no query', async () => {
+    const findMany = vi.fn()
+    const context = makeVisibilityContext(findMany)
+
+    const resolved = await resolveToOneAccessVisibility(
+      [{ id: 'c1' }],
+      { filters: { owner: { kind: 'denied' } }, nested: {} },
+      { session: null, context },
+    )
+
+    expect(resolved).toEqual({ filters: { owner: { kind: 'denied' } }, nested: {} })
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('skips the query when no row carries a value at the scoped key', async () => {
+    const findMany = vi.fn()
+    const context = makeVisibilityContext(findMany)
+    const tree = {
+      filters: {
+        owner: {
+          kind: 'scoped' as const,
+          relatedListName: 'Owner',
+          accessWhere: { id: { equals: 'u1' } },
+        },
+      },
+      nested: {},
+    }
+
+    const resolved = await resolveToOneAccessVisibility([{ id: 'c1', owner: null }], tree, {
+      session: null,
+      context,
+    })
+
+    expect(resolved).toEqual({
+      filters: { owner: { kind: 'visible', ids: new Set() } },
+      nested: {},
+    })
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('batches every row into ONE existence check, through the raw Prisma client, using the exact access filter', async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: 'u1' }, { id: 'u2' }])
+    const context = makeVisibilityContext(findMany)
+    const tree = {
+      filters: {
+        owner: {
+          kind: 'scoped' as const,
+          relatedListName: 'Owner',
+          accessWhere: { studioId: { equals: 's1' } },
+        },
+      },
+      nested: {},
+    }
+    const items = [
+      { id: 'c1', owner: { id: 'u1' } },
+      { id: 'c2', owner: { id: 'u2' } },
+      { id: 'c3', owner: { id: 'u3' } }, // excluded by the mocked response below
+      { id: 'c4', owner: null }, // contributes no id
+    ]
+
+    const resolved = await resolveToOneAccessVisibility(items, tree, { session: null, context })
+
+    // One call, not one per row.
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany).toHaveBeenCalledWith({
+      where: { AND: [{ studioId: { equals: 's1' } }, { id: { in: ['u1', 'u2', 'u3'] } }] },
+      select: { id: true },
+    })
+    expect(resolved.filters.owner).toEqual({ kind: 'visible', ids: new Set(['u1', 'u2']) })
+  })
+
+  it('recurses into nested trees, flattening rows reached through a to-many hop into one batch', async () => {
+    const ownerFindMany = vi.fn().mockResolvedValue([{ id: 'u1' }])
+    const context: AccessContext = {
+      session: null,
+      _isSudo: false,
+      _resolveOutputChain: [],
+      prisma: { owner: { findMany: ownerFindMany } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
+    } as any
+    const tree = {
+      filters: {},
+      nested: {
+        children: {
+          filters: {
+            owner: {
+              kind: 'scoped' as const,
+              relatedListName: 'Owner',
+              accessWhere: { id: { equals: 'u1' } },
+            },
+          },
+          nested: {},
+        },
+      },
+    }
+    const items = [
+      {
+        id: 'p1',
+        children: [
+          { id: 'c1', owner: { id: 'u1' } },
+          { id: 'c2', owner: { id: 'u9' } },
+        ],
+      },
+      { id: 'p2', children: [{ id: 'c3', owner: { id: 'u1' } }] },
+    ]
+
+    const resolved = await resolveToOneAccessVisibility(items, tree, { session: null, context })
+
+    // Every child across BOTH parents resolved in one batched call.
+    expect(ownerFindMany).toHaveBeenCalledTimes(1)
+    expect(ownerFindMany).toHaveBeenCalledWith({
+      where: { AND: [{ id: { equals: 'u1' } }, { id: { in: ['u1', 'u9'] } }] },
+      select: { id: true },
+    })
+    expect(resolved.nested.children.filters.owner).toEqual({
+      kind: 'visible',
+      ids: new Set(['u1']),
+    })
   })
 })

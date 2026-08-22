@@ -155,7 +155,7 @@ describe('Relationship Access Control', () => {
         // Test that buildAccessScopedInclude excludes the denied relationship
         const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const include = await buildAccessScopedInclude(
+        const { include } = await buildAccessScopedInclude(
           { author: true },
           config.lists.Post.fields,
           {
@@ -323,7 +323,7 @@ describe('Relationship Access Control', () => {
         // Test that buildAccessScopedInclude creates the right where clause
         const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const include = await buildAccessScopedInclude(
+        const { include } = await buildAccessScopedInclude(
           { posts: true },
           config.lists.User.fields,
           {
@@ -492,7 +492,7 @@ describe('Relationship Access Control', () => {
         // Test that buildAccessScopedInclude creates session-based where clause
         const { buildAccessScopedInclude } = await import('../src/access/index.js')
 
-        const include = await buildAccessScopedInclude(
+        const { include } = await buildAccessScopedInclude(
           { posts: true },
           config.lists.User.fields,
           {

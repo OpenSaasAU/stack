@@ -36,6 +36,15 @@ export {
   buildAccessScopedInclude,
   buildAccessScopedWhere,
   stripVirtualFieldsFromInclude,
+  resolveToOneAccessVisibility,
+  emptyToOneAccessFilterTree,
+  emptyToOneAccessVisibilityTree,
+} from './access-filter.js'
+export type {
+  ToOneAccessFilterTree,
+  ToOneAccessFilterEntry,
+  ToOneAccessVisibilityTree,
+  ToOneVisibility,
 } from './access-filter.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
