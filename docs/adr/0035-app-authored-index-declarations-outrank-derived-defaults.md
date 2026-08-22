@@ -6,7 +6,7 @@ When an application declares a model-level index on a derived auth list and that
 
 ## Context
 
-"Auth lists derive from better-auth's own table definitions" (ADR-0033) established that the auth lists derive their shape from better-auth's own table definitions rather than a hand-maintained mirror. Emitting the indexes better-auth declares (#937) followed from that: each derived scalar field carries `isIndexed: true` / `isIndexed: 'unique'` mapped from the upstream `index` / `unique` flags. `User.email` is therefore `@unique` with a Prisma-derived constraint name, automatically and unconditionally.
+ADR-0033 established that the auth lists derive their shape from better-auth's own table definitions rather than a hand-maintained mirror. Emitting the indexes better-auth declares (#937) followed from that: each derived scalar field carries `isIndexed: true` / `isIndexed: 'unique'` mapped from the upstream `index` / `unique` flags. `User.email` is therefore `@unique` with a Prisma-derived constraint name, automatically and unconditionally.
 
 Separately, the generator rejects a `db.indexes` entry that duplicates a column a field-level `isIndexed` already indexes. That guard is correct for a list the application wrote: both declarations are the author's, one of them is redundant, and erroring is cheaper than silently picking a winner.
 
@@ -29,4 +29,4 @@ In both cases the app knows something the stack cannot: what the live database a
 - **Suppression is per-column, not per-list.** An app entry covering `email` suppresses the derived `isIndexed` on `email` only; every other derived index on that list still emits. An app declaring a composite `(identifier, createdAt)` suppresses the derived single-column index on `identifier` — which is the intent, since the composite serves the same lookups.
 - **The application can now emit a schema better-auth would not.** Suppressing a derived `unique` in favour of a non-unique entry is expressible, and would break better-auth's own assumptions. This is accepted: the seam exists for apps adopting a live database, and an app that lies about its live database gets the schema it described. The failure surfaces at `migrate diff` against the real table, which is where it belongs.
 - **The rule is scoped to derived lists.** For lists the application declares itself, the existing collision error stands unchanged — there is no derived declaration to yield, so both entries are the author's and the error is still the right call.
-- **Plugin-derived tables are not covered.** They carry no app-facing config surface to declare indexes through ("Plugin tables derive through the same registry as the base auth models", ADR-0034); extending this seam to them is separate work.
+- **Plugin-derived tables are not covered.** They carry no app-facing config surface to declare indexes through (ADR-0034); extending this seam to them is separate work.

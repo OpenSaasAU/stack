@@ -10,7 +10,7 @@ A field on a plugin-derived list that holds a **live, presentable credential** �
 
 What it does not do is give the application any granularity once it says so. A list's access carries `operation` only — there is no `fields` member on `ListAccessControl`, and field-level access is declared on the field builder at declaration time, inside the plugin. So the grant is all-or-nothing: an application that wants an ordinary "your active sessions" screen (device, IP, last seen) must open `query` on the whole session list, and thereby expose the session token too.
 
-That exposure is not theoretical or confined to `context.db`. The admin list view renders unregistered field types through a plain text Cell, and its default-column curation excludes a hardcoded set of *names*. A credential column is neither excluded nor masked, so opening the list renders live bearer tokens as visible table columns.
+That exposure is not theoretical or confined to `context.db`. The admin list view renders unregistered field types through a plain text Cell, and its default-column curation excludes a hardcoded set of _names_. A credential column is neither excluded nor masked, so opening the list renders live bearer tokens as visible table columns.
 
 So the safe configuration is not merely undocumented — it is **unexpressible**. The application cannot say "readable, except the token column" through any seam that exists.
 
