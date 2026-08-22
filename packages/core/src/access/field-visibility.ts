@@ -7,6 +7,8 @@ import { ResolveOutputCycleError } from './errors.js'
 import type { DeclaredOnlyTree } from './declared-dependencies.js'
 import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
 import type { FieldSelectionScope } from '../query/index.js'
+import type { ToOneAccessVisibilityTree } from './access-filter.js'
+import { emptyToOneAccessVisibilityTree } from './access-filter.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -36,6 +38,22 @@ import { buildDbDelegate } from '../context/index.js'
  * Phase 1 (pre-query row/relation scoping) lives in `access-filter.ts`. See
  * `docs/adr/0001-access-control-is-a-two-phase-read.md` and the access-control
  * glossary in `CONTEXT.md`.
+ *
+ * **To-one relation nulling (issue #974).** A to-one relation whose related
+ * list's `query` access resolves to a filter cannot be scoped by Prisma's own
+ * `where` (it only accepts one on a to-many include — see the "To-one
+ * relations" section of `access-filter.ts`'s module doc), so
+ * `buildAccessScopedInclude` fetches it unscoped and hands this module a
+ * `ToOneAccessVisibilityTree` — already resolved, via one batched existence
+ * check per relation across the whole read, by
+ * `resolveToOneAccessVisibility`. This module is where that resolution
+ * actually becomes the caller-visible `null`: a `kind: 'denied'` key is
+ * forced to `null` even though it was never fetched at all (the key is
+ * absent from `workingItem`), and a `kind: 'visible'` key's fetched row is
+ * nulled out unless its id survived the existence check — in both branches,
+ * before any field-level access check or `resolveOutput` hook runs, so the
+ * rest of the pipeline sees exactly what a denied to-one read has always
+ * meant elsewhere: `null`, never a thrown error.
  */
 
 type ResolveOutputHookRuntime = (args: {
@@ -193,6 +211,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // The fragment scope this level was reached under (ADR-0027, see module doc
   // above), and the same tree one level down for each nested relation.
   selection?: FieldSelectionScope,
+  // Resolved to-one existence checks at THIS level (issue #974, see module
+  // doc above), and the same tree one level down for each nested relation —
+  // regardless of that relation's own arity, since a filtered to-one can sit
+  // beneath a to-many hop.
+  toOneVisibility: ToOneAccessVisibilityTree = emptyToOneAccessVisibilityTree(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -286,6 +309,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // unrestricted — matching what naming a relation without narrowing it
       // further has always meant.
       const nestedSelection = selection?.nested[fieldName]
+      // This relation's own resolved to-one visibility, if
+      // `buildAccessScopedInclude` flagged anything beneath it (issue #974).
+      // Falls back to empty — the common case for a relation with no
+      // filtered to-one anywhere in its own nested include.
+      const nestedToOneVisibility =
+        toOneVisibility.nested[fieldName] ?? emptyToOneAccessVisibilityTree()
+      // This key's OWN to-one existence check, if `fieldName` itself is a
+      // filtered to-one relation (as opposed to one further down its tree).
+      const toOneEntry = toOneVisibility.filters[fieldName]
 
       if (relatedConfig) {
         if (Array.isArray(value)) {
@@ -300,20 +332,28 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 relatedConfig.listName,
                 nestedDeclaredOnly,
                 nestedSelection,
+                nestedToOneVisibility,
               ),
             ),
           )
         } else if (typeof value === 'object') {
-          filtered[fieldName] = await filterReadableFields(
-            value as Record<string, unknown>,
-            relatedConfig.listConfig.fields,
-            args,
-            config,
-            depth + 1,
-            relatedConfig.listName,
-            nestedDeclaredOnly,
-            nestedSelection,
-          )
+          const relatedId = (value as Record<string, unknown>).id
+          const isVisible =
+            !toOneEntry || toOneEntry.kind !== 'visible' || toOneEntry.ids.has(String(relatedId))
+
+          filtered[fieldName] = isVisible
+            ? await filterReadableFields(
+                value as Record<string, unknown>,
+                relatedConfig.listConfig.fields,
+                args,
+                config,
+                depth + 1,
+                relatedConfig.listName,
+                nestedDeclaredOnly,
+                nestedSelection,
+                nestedToOneVisibility,
+              )
+            : null
         }
       } else {
         filtered[fieldName] = value
@@ -339,6 +379,31 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     } else {
       accessDeniedKeys.add(fieldName)
     }
+  }
+
+  // To-one relations `buildAccessScopedInclude` denied outright (issue #974)
+  // were never asked of Prisma at all, so `fieldName` has no entry in
+  // `workingItem` and the loop above never visits it. Force it present as an
+  // explicit `null` here — matching what a denied single-record read means
+  // everywhere else in the context — rather than leaving the key silently
+  // absent.
+  for (const [fieldName, entry] of Object.entries(toOneVisibility.filters)) {
+    if (entry.kind !== 'denied') continue
+    if (fieldName in filtered || fieldName in workingItem) continue
+    if (selection?.fields && !selection.fields.has(fieldName)) continue
+
+    const fieldConfig = fieldConfigs[fieldName]
+    const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
+      ...args,
+      item: workingItem,
+    })
+
+    if (!canRead) {
+      accessDeniedKeys.add(fieldName)
+      continue
+    }
+
+    filtered[fieldName] = null
   }
 
   // The item a virtual field's hook sees: stored columns and fetched

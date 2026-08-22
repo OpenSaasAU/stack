@@ -278,12 +278,20 @@ describe('Singleton Lists', () => {
         featuredAuthorId: 'a1',
         featuredAuthor: { id: 'a1', name: 'Ann' },
       })
+      // `featuredAuthor` is to-one, so Prisma cannot scope it with a nested
+      // `where` (#974) — it's fetched unscoped, then this batched existence
+      // check decides whether it survives.
+      relPrisma.author.findMany.mockResolvedValue([{ id: 'a1' }])
 
       const context = getContext(relConfig, relPrisma, null)
       const result = await context.db.homePage.get({ include: { featuredAuthor: true } })
 
       const call = relPrisma.homePage.findFirst.mock.calls[0][0]
-      expect(call.include.featuredAuthor).toEqual({ where: { published: { equals: true } } })
+      expect(call.include.featuredAuthor).toBe(true)
+      expect(relPrisma.author.findMany).toHaveBeenCalledWith({
+        where: { AND: [{ published: { equals: true } }, { id: { in: ['a1'] } }] },
+        select: { id: true },
+      })
       expect(result?.featuredAuthor).toEqual({ id: 'a1', name: 'Ann' })
     })
   })

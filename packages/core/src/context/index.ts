@@ -10,8 +10,10 @@ import {
   foldDeclaredDependencies,
   validateQueryKeys,
   validateQueryFieldReadAccess,
+  resolveToOneAccessVisibility,
+  emptyToOneAccessFilterTree,
 } from '../access/index.js'
-import type { DeclaredOnlyTree } from '../access/index.js'
+import type { DeclaredOnlyTree, ToOneAccessFilterTree } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import type { PrismaClientLike } from '../access/types.js'
@@ -924,6 +926,12 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
  * `undefined` for every non-fragment path: a caller `include` (sudo or not)
  * and a bare read both mean "compute every field," matching what they
  * already fetch.
+ *
+ * Also returns `toOneAccessFilters` — the to-one relations `buildAccessScopedInclude`
+ * flagged as needing a post-query existence check rather than a Prisma-side
+ * `where` (issue #974). Only the non-sudo caller-include path can produce a
+ * non-empty tree: it's the only path that evaluates a related list's `query`
+ * access at all. The fragment and sudo paths always return an empty tree.
  */
 async function resolveReadInclude(
   callerInclude: Record<string, unknown> | undefined,
@@ -937,6 +945,7 @@ async function resolveReadInclude(
   include: Record<string, unknown> | undefined
   declaredOnly: DeclaredOnlyTree
   selection: FieldSelectionScope | undefined
+  toOneAccessFilters: ToOneAccessFilterTree
 }> {
   if (fragmentFields !== undefined) {
     const fragmentInclude = buildInclude(fragmentFields) ?? undefined
@@ -949,27 +958,27 @@ async function resolveReadInclude(
       [listName],
       selection,
     )
-    return { ...folded, selection }
+    return { ...folded, selection, toOneAccessFilters: emptyToOneAccessFilterTree() }
   }
 
   if (context._isSudo) {
     const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
-    return { ...folded, selection: undefined }
+    return { ...folded, selection: undefined, toOneAccessFilters: emptyToOneAccessFilterTree() }
   }
 
   const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
   if (!folded.include) {
-    return { ...folded, selection: undefined }
+    return { ...folded, selection: undefined, toOneAccessFilters: emptyToOneAccessFilterTree() }
   }
 
-  const include = await buildAccessScopedInclude(
+  const { include, toOneAccessFilters } = await buildAccessScopedInclude(
     folded.include,
     listConfig.fields,
     { session: context.session, context },
     config,
     listName,
   )
-  return { include, declaredOnly: folded.declaredOnly, selection: undefined }
+  return { include, declaredOnly: folded.declaredOnly, selection: undefined, toOneAccessFilters }
 }
 
 function createFindUnique<TPrisma extends PrismaClientLike>(
@@ -1026,7 +1035,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection } = await resolveReadInclude(
+    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
       args.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1056,6 +1065,14 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       return null
     }
 
+    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
+    // actually survive their related list's `query` access (issue #974) —
+    // one batched existence check per relation, before field visibility runs.
+    const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
+      session: context.session,
+      context,
+    })
+
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await filterReadableFields(
       item,
@@ -1069,6 +1086,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       listName,
       declaredOnly,
       selection,
+      toOneVisibility,
     )
 
     if (fragment) {
@@ -1178,7 +1196,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection } = await resolveReadInclude(
+    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
       args?.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1202,6 +1220,15 @@ function createFindMany<TPrisma extends PrismaClientLike>(
       include,
     })
 
+    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
+    // actually survive their related list's `query` access (issue #974) —
+    // ONE batched existence check per relation across every row in `items`,
+    // before field visibility runs on any of them.
+    const toOneVisibility = await resolveToOneAccessVisibility(items, toOneAccessFilters, {
+      session: context.session,
+      context,
+    })
+
     // Pass sudo flag through context to skip field-level access checks
     const filtered = await Promise.all(
       items.map((item: Record<string, unknown>) =>
@@ -1217,6 +1244,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           listName,
           declaredOnly,
           selection,
+          toOneVisibility,
         ),
       ),
     )
@@ -1501,7 +1529,7 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection } = await resolveReadInclude(
+    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
       args?.include,
       fragment ? fragment._fields : undefined,
       listName,
@@ -1519,6 +1547,13 @@ function createGet<TPrisma extends PrismaClientLike>(
     })
 
     if (item) {
+      // Resolve which of the to-one relations flagged by `toOneAccessFilters`
+      // actually survive their related list's `query` access (issue #974).
+      const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
+        session: context.session,
+        context,
+      })
+
       const filtered = await filterReadableFields(
         item,
         listConfig.fields,
@@ -1531,6 +1566,7 @@ function createGet<TPrisma extends PrismaClientLike>(
         listName,
         declaredOnly,
         selection,
+        toOneVisibility,
       )
       if (fragment) {
         return pickFields(filtered, fragment._fields)

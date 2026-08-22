@@ -2194,7 +2194,7 @@ describe('getContext', () => {
           }
         }
 
-        it('findUnique inside a resolveOutput hook row-scopes the relation instead of dropping the where', async () => {
+        it('findUnique inside a resolveOutput hook still fetches the relation, unscoped at the Prisma level (#974)', async () => {
           let innerIncludeSeen: unknown
           const hookConfig = configWithResolveOutputProbe({ post: true }, (include) => {
             innerIncludeSeen = include
@@ -2206,9 +2206,11 @@ describe('getContext', () => {
           const context = await getContext(hookConfig, relPrisma, null)
           await context.db.author.findUnique({ where: { id: 'a1' } })
 
-          // `post` is still fetched (not dropped) but now carries Post's own
-          // query-access `where` — it is no longer a bare, unscoped `true`.
-          expect(innerIncludeSeen).toEqual({ post: { where: { status: { equals: 'published' } } } })
+          // `post` is still fetched (not dropped). It carries no `where` — Post
+          // is a to-one relation here, and Prisma rejects a `where` on a to-one
+          // include (#974); Post's own access filter is enforced afterward via
+          // a batched existence check instead (see access-filter.test.ts).
+          expect(innerIncludeSeen).toEqual({ post: true })
         })
 
         it('findMany inside a resolveOutput hook scopes the relation but does not auto-expand its nested include', async () => {
@@ -2227,10 +2229,10 @@ describe('getContext', () => {
           await context.db.author.findMany()
 
           // The caller's own nested selection (`post.include.author`) is honoured
-          // as-is (access control does not auto-descend further here), while
-          // `post` itself picks up its access `where`.
+          // as-is (access control does not auto-descend further here). `post`
+          // itself carries no `where` — see the findUnique test above (#974).
           expect(innerIncludeSeen).toEqual({
-            post: { where: { status: { equals: 'published' } }, include: { author: true } },
+            post: { include: { author: true } },
           })
         })
       })
@@ -2289,7 +2291,7 @@ describe('getContext', () => {
           expect(chainPrisma.c0.findMany).not.toHaveBeenCalled()
         })
 
-        it('still returns correctly row-scoped data for the same include one hop shallower', async () => {
+        it('still applies row-scoping at the deepest hop for the same include one hop shallower', async () => {
           const chainLength = READ_INCLUDE_MAX_DEPTH + 1
           const chainConfig: OpenSaasConfig = {
             db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -2300,7 +2302,20 @@ describe('getContext', () => {
           for (let i = 0; i < chainLength; i++) {
             chainPrisma[`c${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
           }
-          chainPrisma.c0.findMany.mockResolvedValue([])
+
+          // Every hop here is to-one (no `many: true`), so none of them can
+          // carry a `where` on the Prisma include (#974) — the chain comes
+          // back unscoped at the Prisma level, one nested object per hop, and
+          // row-scoping is enforced afterward via a batched existence check
+          // per hop instead.
+          let deepestItem: Record<string, unknown> = { id: `id${chainLength - 1}`, name: 'leaf' }
+          for (let i = chainLength - 2; i >= 0; i--) {
+            deepestItem = { id: `id${i}`, name: 'x', next: deepestItem }
+          }
+          chainPrisma.c0.findMany.mockResolvedValue([deepestItem])
+          for (let i = 1; i < chainLength; i++) {
+            chainPrisma[`c${i}`].findMany.mockResolvedValue([{ id: `id${i}` }])
+          }
 
           const context = await getContext(chainConfig, chainPrisma, null)
 
@@ -2308,13 +2323,27 @@ describe('getContext', () => {
             include: { next: nestedCallerInclude(READ_INCLUDE_MAX_DEPTH - 1) },
           })
 
-          // Walk the built include down to the last list — it must carry that
-          // list's own access `where`, proving row scoping, not just "no throw".
+          // Walk the built include down to the last list — no hop carries a
+          // `where` (they are all to-one).
           let entry = chainPrisma.c0.findMany.mock.calls[0][0].include.next
           for (let i = 1; i < READ_INCLUDE_MAX_DEPTH; i++) {
+            expect(entry.where).toBeUndefined()
             entry = entry.include.next
           }
-          expect(entry.where).toEqual({ ownerId: { equals: `C${READ_INCLUDE_MAX_DEPTH}` } })
+          expect(entry.where).toBeUndefined()
+
+          // The deepest hop's own existence check still carries that list's
+          // access filter — row scoping reaches all the way down, just not
+          // through the Prisma `include` itself.
+          expect(chainPrisma[`c${READ_INCLUDE_MAX_DEPTH}`].findMany).toHaveBeenCalledWith({
+            where: {
+              AND: [
+                { ownerId: { equals: `C${READ_INCLUDE_MAX_DEPTH}` } },
+                { id: { in: [`id${READ_INCLUDE_MAX_DEPTH}`] } },
+              ],
+            },
+            select: { id: true },
+          })
         })
       })
 
