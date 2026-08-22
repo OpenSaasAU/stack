@@ -27,3 +27,5 @@ Concretely:
 - This absorbs #994 (which had specified the same FK fix against list-only refs, before ADR-0033 shipped the base models' bidirectional-ref convention) — the FK column name is controllable on a bidirectional ref already, so #994's premise (list-only refs as the only viable shape) no longer applies, and its fix is superseded by this consolidation rather than landed separately.
 
 See issue #992 for the full triage history, including the confirmed orphaning and the correction that bidirectional refs were viable all along.
+
+Because plugin tables derive through this same registry and scalar-field-derivation pass, they are also in scope for ADR-0036's credential field read-deny — see that ADR (as amended by issue #1014) for the plugin-table credential set and the `credentialFields` seam.

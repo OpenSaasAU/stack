@@ -107,17 +107,82 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
  * OAuth token) — rather than merely identifying a row. Keyed by better-auth's
  * own model/field keys, not the app's list/column names, so the deny holds
  * under `modelName` and column `fields` remapping alike (ADR-0036).
+ *
+ * Covers the four base models plus every better-auth plugin table the stack
+ * has first-class support for (ADR-0034's registry of known plugins) — the
+ * `mcp`/oauth-provider plugin's client secret and token columns, and
+ * `twoFactor()`'s encrypted secret/backup codes (issue #1014). An app can
+ * mark further fields via `authPlugin({ credentialFields })`, merged in by
+ * {@link buildCredentialFieldRegistry} — this constant is never mutated.
  */
-const CREDENTIAL_FIELDS: Partial<Record<BaseModelKey, readonly string[]>> = {
+const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
   session: ['token'],
   verification: ['value'],
   account: ['password', 'accessToken', 'refreshToken', 'idToken'],
+  oauthClient: ['clientSecret'],
+  oauthAccessToken: ['token'],
+  oauthRefreshToken: ['token'],
+  twoFactor: ['secret', 'backupCodes'],
 }
 
 const DENY_READ: FieldAccess = { read: () => false }
 
-function withCredentialAccess(modelKey: string, fieldKey: string, field: FieldConfig): FieldConfig {
-  if (!CREDENTIAL_FIELDS[modelKey as BaseModelKey]?.includes(fieldKey)) return field
+/** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
+type CredentialFieldRegistry = Record<string, ReadonlySet<string>>
+
+/**
+ * Merges the stack-seeded {@link CREDENTIAL_FIELDS} with an app's
+ * `authPlugin({ credentialFields })`, then validates every entry against the
+ * models actually being derived (`tables`, keyed by better-auth model key).
+ *
+ * Additive only: an app entry can add fields to a model — including a
+ * stack-seeded one — but nothing can remove a seeded field, so a config that
+ * omits or empties a seeded model's list leaves that model's seeded deny
+ * standing.
+ *
+ * A field named on a model that isn't in `tables` at all (a plugin the app
+ * doesn't use) is a silent no-op — the entry simply never matches anything.
+ * A field named on a model that IS in `tables` but doesn't declare that field
+ * throws, naming the model and field, since that is a config mistake the app
+ * would otherwise never learn about (the deny would just never fire).
+ */
+function buildCredentialFieldRegistry(
+  tables: Record<string, ResolvedTable>,
+  appConfig: Record<string, string[]>,
+): CredentialFieldRegistry {
+  const merged = new Map<string, Set<string>>()
+  for (const [modelKey, fields] of Object.entries(CREDENTIAL_FIELDS)) {
+    merged.set(modelKey, new Set(fields))
+  }
+  for (const [modelKey, fields] of Object.entries(appConfig)) {
+    const set = merged.get(modelKey) ?? new Set<string>()
+    for (const fieldKey of fields) set.add(fieldKey)
+    merged.set(modelKey, set)
+  }
+
+  const registry: CredentialFieldRegistry = {}
+  for (const [modelKey, fields] of merged) {
+    const table = tables[modelKey]
+    if (!table) continue // model not derived (plugin unused) -> silent no-op
+    for (const fieldKey of fields) {
+      if (!(fieldKey in table.fields)) {
+        throw new Error(
+          `deriveAuthLists: credentialFields names "${modelKey}.${fieldKey}", but "${modelKey}" has no field "${fieldKey}"`,
+        )
+      }
+    }
+    registry[modelKey] = fields
+  }
+  return registry
+}
+
+function withCredentialAccess(
+  registry: CredentialFieldRegistry,
+  modelKey: string,
+  fieldKey: string,
+  field: FieldConfig,
+): FieldConfig {
+  if (!registry[modelKey]?.has(fieldKey)) return field
   return { ...field, access: DENY_READ }
 }
 
@@ -493,6 +558,9 @@ function buildModelRegistry(
  * @param accessConfig - App-authored access for each base Auth list, keyed by better-auth model name
  * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`), whose own
  *   `schema` (base-model extensions and standalone plugin tables) is derived alongside the base models
+ * @param credentialFieldsConfig - App-authored additions to the credential-field read-deny
+ *   (`authPlugin({ credentialFields })`), keyed by better-auth model key. Additive only — see
+ *   {@link buildCredentialFieldRegistry}.
  * @returns The derived base-model list keys and every derived list config (base models and plugin tables)
  */
 export function deriveAuthLists(
@@ -500,12 +568,14 @@ export function deriveAuthLists(
   userConfig: ExtendUserListConfig = {},
   accessConfig: AuthAccessConfig = {},
   plugins: BetterAuthPlugin[] = [],
+  credentialFieldsConfig: Record<string, string[]> = {},
 ): DerivedAuthLists {
   const tables = getAuthTables(buildBetterAuthTableOptions(models, plugins)) as Record<
     string,
     ResolvedTable
   >
   const { keys, registry } = buildModelRegistry(tables, models)
+  const credentialRegistry = buildCredentialFieldRegistry(tables, credentialFieldsConfig)
 
   // Only the five base models carry an app-authored `db.indexes` passthrough
   // (`AuthModelConfig.indexes`) — plugin tables have no per-model config
@@ -577,6 +647,7 @@ export function deriveAuthLists(
           // column. Left as a plain scalar column, same as pre-consolidation
           // behavior (issue #992).
           ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+            credentialRegistry,
             modelKey,
             fieldKey,
             buildScalarField(
@@ -588,6 +659,7 @@ export function deriveAuthLists(
         }
       } else {
         ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+          credentialRegistry,
           modelKey,
           fieldKey,
           buildScalarField(

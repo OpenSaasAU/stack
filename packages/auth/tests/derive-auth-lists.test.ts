@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { mcp } from '@better-auth/mcp'
+import { twoFactor } from 'better-auth/plugins'
 import { deriveAuthLists } from '../src/config/derive-auth-lists.js'
 import type { NormalizedAuthModels } from '../src/config/types.js'
 
@@ -531,6 +533,131 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
     for (const [, field] of nonCredentialFields) {
       expect(field.access).toBeUndefined()
     }
+  })
+})
+
+describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', () => {
+  const mcpPlugin = mcp({
+    loginPage: '/sign-in',
+    consentPage: '/consent',
+    resource: 'https://example.com/mcp',
+  })
+
+  it('denies read on the mcp/oauth-provider credential fields', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [mcpPlugin])
+
+    const denied: Array<[string, string]> = [
+      ['OauthClient', 'clientSecret'],
+      ['OauthAccessToken', 'token'],
+      ['OauthRefreshToken', 'token'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      expect(field.access?.read).toBeTypeOf('function')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+      expect(await field.access!.read!({} as any)).toBe(false)
+    }
+  })
+
+  it('leaves identifying oauth-provider fields open', () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [mcpPlugin])
+
+    expect(lists.OauthClient.fields.name.access).toBeUndefined()
+    expect(lists.OauthClient.fields.uri.access).toBeUndefined()
+    expect(lists.OauthClient.fields.clientId.access).toBeUndefined()
+    expect(lists.OauthAccessToken.fields.scopes.access).toBeUndefined()
+    expect(lists.OauthAccessToken.fields.expiresAt.access).toBeUndefined()
+  })
+
+  it('denies read on twoFactor.secret and twoFactor.backupCodes', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [twoFactor()])
+
+    for (const fieldKey of ['secret', 'backupCodes']) {
+      const field = lists.TwoFactor.fields[fieldKey]
+      expect(field.access?.read).toBeTypeOf('function')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+      expect(await field.access!.read!({} as any)).toBe(false)
+    }
+  })
+
+  it('leaves twoFactor.verified open, and twoFactor.userId open despite carrying returned: false upstream', () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [twoFactor()])
+
+    expect(lists.TwoFactor.fields.verified.access).toBeUndefined()
+    // userId is a relationship field (references user.id), not a scalar —
+    // it's never routed through the credential-deny path at all.
+    expect(lists.TwoFactor.fields.user.access).toBeUndefined()
+  })
+
+  it('survives a plugin-table modelName + column remap', () => {
+    const plugin = {
+      id: 'test-remap',
+      schema: {
+        widget: {
+          modelName: 'Gadget',
+          fields: {
+            apiKey: { type: 'string' as const, required: true, fieldName: 'api_key' },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin], {
+      widget: ['apiKey'],
+    })
+
+    expect(lists.Gadget.fields.apiKey.access?.read).toBeTypeOf('function')
+    expect(lists.Gadget.fields.apiKey.db?.map).toBe('api_key')
+  })
+
+  it('authPlugin({ credentialFields }) marks an additional field on a synthetic plugin table', async () => {
+    const plugin = {
+      id: 'test-passkey',
+      schema: {
+        passkey: {
+          fields: {
+            publicKey: { type: 'string' as const, required: true },
+            deviceType: { type: 'string' as const, required: true },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin], {
+      passkey: ['publicKey'],
+    })
+
+    expect(await lists.Passkey.fields.publicKey.access!.read!({} as never)).toBe(false)
+    expect(lists.Passkey.fields.deviceType.access).toBeUndefined()
+  })
+
+  it('cannot unmark a stack-seeded credential field', async () => {
+    // An empty (or omitted) field list for a seeded model must not remove its
+    // seeded deny — credentialFields is additive-only.
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [], { session: [] })
+
+    expect(await lists.Session.fields.token.access!.read!({} as never)).toBe(false)
+  })
+
+  it('throws, naming the model and field, when credentialFields names a field missing from a derived model', () => {
+    const plugin = {
+      id: 'test-typo',
+      schema: {
+        widget: { fields: { apiKey: { type: 'string' as const } } },
+      },
+    }
+
+    expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin], { widget: ['apiKye'] })).toThrow(
+      /widget\.apiKye.*no field "apiKye"/,
+    )
+  })
+
+  it('is a silent no-op when credentialFields names a model that is not derived at all', () => {
+    // No plugin registers `passkey` here, so `tables` never contains it.
+    expect(() =>
+      deriveAuthLists(defaultModels, {}, {}, [], { passkey: ['publicKey'] }),
+    ).not.toThrow()
   })
 })
 

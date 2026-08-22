@@ -195,13 +195,11 @@ then stands, same as any other `extendList`).
 ### Credential fields are read-denied independent of operation access (ADR-0036)
 
 Operation-level access is all-or-nothing at the list, not the column — so
-the deny above (list-level) isn't the whole story for the six
-credential-bearing fields (`Session.token`, `Verification.value`,
-`Account.password`/`accessToken`/`refreshToken`/`idToken`): `deriveAuthLists`
-sets a field-level `access: { read: () => false }` on each of them
-unconditionally, independent of whatever `accessConfig` an app supplies.
-Opening `query` on `Session` for a "your active sessions" screen no longer
-also exposes `token` — the field is stripped from a returned row (the
+the deny above (list-level) isn't the whole story for a credential-bearing
+field: `deriveAuthLists` sets a field-level `access: { read: () => false }`
+on each one unconditionally, independent of whatever `accessConfig` an app
+supplies. Opening `query` on `Session` for a "your active sessions" screen no
+longer also exposes `token` — the field is stripped from a returned row (the
 ordinary field-access-denial behavior), the row itself still returns. This
 holds even for a `findUnique` lookup that selects the row BY the denied
 field (`context.db.session.findUnique({ where: { token } })` still finds
@@ -214,17 +212,51 @@ predicate-time path (`validateQueryFieldReadAccess` in
 required for that shape too, not only for reading the column back off a
 row fetched another way.
 
+This is not a closed list of six base-model fields — it also covers **plugin
+table** credential fields the stack has first-class support for (ADR-0034),
+since a plugin table derives through the same scalar-field derivation pass:
+
+| Model (better-auth key) | Field(s)                                             | Source                 |
+| ----------------------- | ---------------------------------------------------- | ---------------------- |
+| `session`               | `token`                                              | base                   |
+| `verification`          | `value`                                              | base                   |
+| `account`               | `password`, `accessToken`, `refreshToken`, `idToken` | base                   |
+| `oauthClient`           | `clientSecret`                                       | `mcp` / oauth-provider |
+| `oauthAccessToken`      | `token`                                              | `mcp` / oauth-provider |
+| `oauthRefreshToken`     | `token`                                              | `mcp` / oauth-provider |
+| `twoFactor`             | `secret`, `backupCodes`                              | `twoFactor()`          |
+
 The deny is applied in the scalar-field derivation loop
-(`withCredentialAccess` in `derive-auth-lists.ts`), keyed by better-auth's
-own model/field key (`CREDENTIAL_FIELDS`) — not the app's list key or
-column `db.map` — so it survives a `modelName` remap or a `fields` column
-override. `sudo()` still reads these fields either way, unaffected: this is
-the supported path for a genuine need (an admin tool, or an app's own auth
+(`withCredentialAccess` in `derive-auth-lists.ts`), against a registry built
+by `buildCredentialFieldRegistry` — the stack-seeded `CREDENTIAL_FIELDS` table
+above merged with an app's `authPlugin({ credentialFields })` — keyed by
+better-auth's own model/field key, not the app's list key or column `db.map`,
+so it survives a `modelName` remap or a `fields` column override either way.
+`credentialFields` (`Record<better-auth model key, field key[]>`) is how an
+app marks a credential field on a better-auth plugin the stack doesn't seed a
+set for; it is **additive only** — it can add fields to any model, including a
+seeded one, but can never unmark a seeded field. An entry naming a field
+absent from a model the app actually derives (that plugin is registered)
+throws, naming the model and field; an entry for a model the app doesn't
+derive at all is a silent no-op:
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [passkey()],
+  credentialFields: { passkey: ['publicKey'] },
+})
+```
+
+`sudo()` still reads every one of these fields either way, unaffected: this
+is the supported path for a genuine need (an admin tool, or an app's own auth
 code verifying a password hash via `HashedPassword.compare()`). See
 `packages/core/CLAUDE.md`'s "Access Control Execution Flow" for how a
-field-level `read` denial is enforced, and ADR-0036 for why this list is
-exactly these six fields and not, say, `Account.providerId` or
-`Session.ipAddress` (identifying, not authenticating — left open).
+field-level `read` denial is enforced, and ADR-0036 for why the rule is about
+whether reading the value confers a live credential, not, say,
+`Account.providerId` or `Session.ipAddress` (identifying, not authenticating
+— left open) — and it does not condition on better-auth's own storage mode
+(`storeTokens`/`storeClientSecret`) or `returned: false` flag, which is
+neither a reliable nor a complete signal (see ADR-0036).
 
 ### Schema placement (relocatable Auth lists)
 

@@ -51,6 +51,7 @@ export function authPlugin(config: AuthConfig): Plugin {
         normalized.models,
         normalized.access,
         normalized.betterAuthPlugins,
+        normalized.credentialFields,
       )
 
       // Base models are always the first entries in `authLists` (see
