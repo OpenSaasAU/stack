@@ -153,6 +153,7 @@ integer(options?: {
     min?: number
     max?: number
   }
+  isIndexed?: boolean | 'unique'
   ui?: {
     [key: string]: unknown
   }
@@ -198,6 +199,28 @@ Default value when creating new items.
 
 ```typescript
 score: integer({ defaultValue: 0 })
+```
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+
+**Example:**
+
+```typescript
+rank: integer({
+  isIndexed: true,
+})
 ```
 
 #### Database Type
@@ -629,6 +652,7 @@ import { timestamp } from '@opensaas/stack-core/fields'
 
 timestamp(options?: {
   defaultValue?: { kind: 'now' } | Date
+  isIndexed?: boolean | 'unique'
   ui?: {
     [key: string]: unknown
   }
@@ -658,6 +682,30 @@ createdAt: timestamp({
 })
 
 publishedAt: timestamp()
+```
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+
+`timestamp` does not default to indexed — an explicit `isIndexed: true` is required, even for a field commonly used as a sort key, so an existing config's generated schema never changes without an intentional edit.
+
+**Example:**
+
+```typescript
+publishedAt: timestamp({
+  isIndexed: true,
+})
 ```
 
 #### Database Type
@@ -951,6 +999,7 @@ select(options: {
     isRequired?: boolean
   }
   defaultValue?: string
+  isIndexed?: boolean | 'unique'
   ui?: {
     displayMode?: 'select' | 'segmented-control' | 'radio'
     [key: string]: unknown
@@ -1018,6 +1067,29 @@ UI component to use for selection.
 - `'select'` - Dropdown select menu
 - `'segmented-control'` - Button group (good for 2-4 options)
 - `'radio'` - Radio button group
+
+##### `isIndexed`
+
+Database index configuration.
+
+**Type:** `boolean | 'unique'`
+
+**Values:**
+
+- `true` - Create non-unique index for faster queries
+- `'unique'` - Create unique index (enforces uniqueness)
+- `false` or omitted - No index
+
+`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. Well-defined under both the default string column and a native-enum column (`db: { type: 'enum' }`).
+
+**Example:**
+
+```typescript
+status: select({
+  options: [/* ... */],
+  isIndexed: true,
+})
+```
 
 #### Database Type
 

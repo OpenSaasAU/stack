@@ -1176,6 +1176,9 @@ describe('Prisma Schema Generator', () => {
               label: text({ isIndexed: true }),
               amount: decimal({ isIndexed: true }),
               takenOn: calendarDay({ isIndexed: true }),
+              count: integer({ isIndexed: true }),
+              recordedAt: timestamp({ isIndexed: true }),
+              status: select({ options: [{ label: 'Open', value: 'open' }], isIndexed: true }),
             },
           },
         },
@@ -1186,6 +1189,33 @@ describe('Prisma Schema Generator', () => {
       expect(schema).toContain('@@index([label])')
       expect(schema).toContain('@@index([amount])')
       expect(schema).toContain('@@index([takenOn])')
+      expect(schema).toContain('@@index([count])')
+      expect(schema).toContain('@@index([recordedAt])')
+      expect(schema).toContain('@@index([status])')
+      expect(schema).not.toMatch(/\s@index\b/)
+    })
+
+    it('should generate @@index for a select with a native-enum column', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          Post: {
+            fields: {
+              status: select({
+                options: [{ label: 'Open', value: 'open' }],
+                db: { type: 'enum' },
+                isIndexed: true,
+              }),
+            },
+          },
+        },
+      }
+
+      const schema = generatePrismaSchema(config)
+
+      expect(schema).toContain('@@index([status])')
       expect(schema).not.toMatch(/\s@index\b/)
     })
 

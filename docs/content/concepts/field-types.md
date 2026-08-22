@@ -58,6 +58,9 @@ fields: {
     },
     defaultValue: 0,
   }),
+  rank: integer({
+    isIndexed: true,
+  }),
 }
 ```
 
@@ -67,6 +70,7 @@ fields: {
 - `validation.min`: Minimum value
 - `validation.max`: Maximum value
 - `defaultValue`: Default integer value
+- `isIndexed`: Boolean or `'unique'` for indexing
 
 ### BigInt Field
 
@@ -221,6 +225,9 @@ fields: {
   updatedAt: timestamp({
     db: { updatedAt: true }, // Auto-update on changes
   }),
+  scheduledAt: timestamp({
+    isIndexed: true,
+  }),
 }
 ```
 
@@ -228,6 +235,7 @@ fields: {
 
 - `defaultValue.kind`: `'now'` for current timestamp
 - `db.updatedAt`: Boolean - auto-update on record changes
+- `isIndexed`: Boolean or `'unique'` for indexing (not indexed by default)
 
 ### Calendar Day Field
 
@@ -377,6 +385,10 @@ fields: {
       displayMode: 'select', // or 'radio', 'segmented-control'
     },
   }),
+  category: select({
+    options: [{ label: 'News', value: 'news' }],
+    isIndexed: true,
+  }),
 }
 ```
 
@@ -386,6 +398,7 @@ fields: {
 - `defaultValue`: Default selected value
 - `validation.isRequired`: Boolean
 - `ui.displayMode`: `'select'` | `'radio'` | `'segmented-control'`
+- `isIndexed`: Boolean or `'unique'` for indexing — well-defined under both the default string column and a native-enum column (`db: { type: 'enum' }`)
 
 ### Relationship Field
 

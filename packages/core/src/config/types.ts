@@ -844,6 +844,7 @@ export type IntegerField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
     min?: number
     max?: number
   }
+  isIndexed?: boolean | 'unique'
 }
 
 export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
@@ -885,6 +886,7 @@ export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
 export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
+  isIndexed?: boolean | 'unique'
 }
 
 export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
@@ -989,6 +991,7 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
   validation?: {
     isRequired?: boolean
   }
+  isIndexed?: boolean | 'unique'
   ui?: {
     displayMode?: 'select' | 'segmented-control' | 'radio'
   }

@@ -229,9 +229,16 @@ export function integer<
         modifiers += ` @map("${db.map}")`
       }
 
+      // Unique modifier — non-unique index routes through `index` below,
+      // same as `text()`'s getPrismaType.
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      }
+
       return {
         type: 'Int',
         modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {
@@ -657,9 +664,16 @@ export function timestamp<
         modifiers += ` @map("${db.map}")`
       }
 
+      // Unique modifier — non-unique index routes through `index` below,
+      // same as `text()`'s getPrismaType.
+      if (options?.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      }
+
       return {
         type: 'DateTime',
         modifiers: modifiers.trimStart() || undefined,
+        index: options?.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {
@@ -1129,10 +1143,17 @@ export function select<
           modifiers += ` @map("${options.db.map}")`
         }
 
+        // Unique modifier — non-unique index routes through `index` below,
+        // same as `text()`'s getPrismaType.
+        if (options.isIndexed === 'unique') {
+          modifiers += ' @unique'
+        }
+
         return {
           type: enumName,
           modifiers: modifiers || undefined,
           enumValues: options.options.map((opt) => opt.value),
+          index: options.isIndexed === true ? true : undefined,
         }
       }
 
@@ -1146,9 +1167,14 @@ export function select<
         modifiers += ` @map("${options.db.map}")`
       }
 
+      if (options.isIndexed === 'unique') {
+        modifiers += ' @unique'
+      }
+
       return {
         type: 'String',
         modifiers: modifiers || undefined,
+        index: options.isIndexed === true ? true : undefined,
       }
     },
     getTypeScriptType: () => {
