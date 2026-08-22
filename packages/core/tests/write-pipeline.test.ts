@@ -6,6 +6,7 @@ import {
   deleteWriteStrategy,
 } from '../src/context/write-pipeline.js'
 import { ValidationError } from '../src/hooks/index.js'
+import { InvalidCreateAccessResultError } from '../src/access/errors.js'
 import { text } from '../src/fields/index.js'
 import type { OpenSaasConfig, ListConfig } from '../src/config/types.js'
 import type { AccessContext, PrismaClientLike } from '../src/access/types.js'
@@ -284,6 +285,34 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
     })
 
     expect(result).toBeNull()
+    expect(post.create).not.toHaveBeenCalled()
+    expect(events).not.toContain('list:beforeOperation')
+    expect(events).not.toContain('list:resolveInput')
+  })
+
+  // #1009: a `create` rule returning a filter reads as though it scopes the
+  // create, but create has no existing row to re-check that filter against
+  // (unlike update/delete, which do). Before this fix the only test was
+  // `=== false`, so a filter fell through and was silently treated as allow.
+  it('create: access control returning a filter throws InvalidCreateAccessResultError, before DB and before beforeOperation', async () => {
+    const { prisma, post } = makeFakePrisma()
+    const listConfig = makeListConfig({
+      operationAccess: { create: () => ({ authorId: 'someone' }) },
+    })
+    const context = makeContext()
+
+    await expect(
+      runWritePipeline({
+        listName: 'Post',
+        listConfig,
+        prisma,
+        context,
+        config: makeConfig(listConfig),
+        inputData: { title: 'hi' },
+        strategy: createWriteStrategy('Post', listConfig, context),
+      }),
+    ).rejects.toThrow(InvalidCreateAccessResultError)
+
     expect(post.create).not.toHaveBeenCalled()
     expect(events).not.toContain('list:beforeOperation')
     expect(events).not.toContain('list:resolveInput')

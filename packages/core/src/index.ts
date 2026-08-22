@@ -91,6 +91,14 @@ export { ResolveOutputCycleError } from './access/index.js'
 // validation failure.
 export { InvalidFieldAccessResultError } from './access/index.js'
 
+// Thrown by the write pipeline's create strategy and by the nested-create
+// path when operation-level `create` access returns anything other than a
+// strict boolean (see #1009, ADR-0022, and ADR-0030). A filter — the shape
+// `query`/`update`/`delete` legitimately return — cannot be honoured on
+// create: there is no existing row and no way to test it against input data,
+// so it is refused loudly rather than silently treated as a full allow.
+export { InvalidCreateAccessResultError } from './access/index.js'
+
 // Thrown by a read when a caller-supplied `where` filters on a relation whose
 // related list denies operation-level `query` access outright (see #916 and
 // ADR-0022). Distinct from `ValidationError` for the same reason as

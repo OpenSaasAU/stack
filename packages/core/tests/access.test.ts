@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   checkAccess,
+  checkCreateAccess,
   mergeFilters,
   checkFieldAccess,
   filterReadableFields,
@@ -8,6 +9,7 @@ import {
   isBoolean,
   isPrismaFilter,
 } from '../src/access/index.js'
+import { InvalidCreateAccessResultError } from '../src/access/errors.js'
 import type { AccessControl, FieldAccess, AccessContext } from '../src/access/types.js'
 import { ValidationError } from '../src/hooks/index.js'
 
@@ -109,6 +111,87 @@ describe('Access Control', () => {
         item,
         context: mockContext,
       })
+    })
+  })
+
+  /**
+   * #1009: `checkAccess`'s `AccessControl` return type also admits a
+   * `PrismaFilter` — the shape `query`/`update`/`delete` legitimately use to
+   * scope which rows an operation may touch. `create` has no row to re-check
+   * a filter against, so `checkCreateAccess` (the evaluator both create paths
+   * share) must reject anything that isn't a strict boolean instead of
+   * silently treating it as an allow.
+   */
+  describe('checkCreateAccess', () => {
+    it('denies (returns false) when no access control is defined', async () => {
+      const result = await checkCreateAccess('Post', undefined, {
+        session: null,
+        context: mockContext,
+      })
+
+      expect(result).toBe(false)
+    })
+
+    it('returns true when access control allows', async () => {
+      const accessControl: AccessControl = vi.fn(async () => true)
+
+      const result = await checkCreateAccess('Post', accessControl, {
+        session: null,
+        context: mockContext,
+      })
+
+      expect(result).toBe(true)
+    })
+
+    it('returns false when access control denies', async () => {
+      const accessControl: AccessControl = vi.fn(async () => false)
+
+      const result = await checkCreateAccess('Post', accessControl, {
+        session: null,
+        context: mockContext,
+      })
+
+      expect(result).toBe(false)
+    })
+
+    it('throws InvalidCreateAccessResultError, naming the list, when access control returns a filter', async () => {
+      const accessControl: AccessControl = vi.fn(async () => ({ ownerId: { equals: 'u1' } }))
+
+      await expect(
+        checkCreateAccess('Post', accessControl, {
+          session: { userId: 'u1' },
+          context: mockContext,
+        }),
+      ).rejects.toThrow(InvalidCreateAccessResultError)
+
+      try {
+        await checkCreateAccess('Post', accessControl, {
+          session: { userId: 'u1' },
+          context: mockContext,
+        })
+        expect.unreachable()
+      } catch (err) {
+        expect(err).toBeInstanceOf(InvalidCreateAccessResultError)
+        expect((err as InvalidCreateAccessResultError).listKey).toBe('Post')
+        expect((err as Error).message).toContain('Post')
+        expect((err as Error).message).toContain('boolean')
+      }
+    })
+
+    it('throws InvalidCreateAccessResultError when access control returns undefined', async () => {
+      const accessControl = vi.fn(async () => undefined) as unknown as AccessControl
+
+      await expect(
+        checkCreateAccess('Post', accessControl, { session: null, context: mockContext }),
+      ).rejects.toThrow(InvalidCreateAccessResultError)
+    })
+
+    it('throws InvalidCreateAccessResultError when access control returns a string', async () => {
+      const accessControl = vi.fn(async () => 'nope') as unknown as AccessControl
+
+      await expect(
+        checkCreateAccess('Post', accessControl, { session: null, context: mockContext }),
+      ).rejects.toThrow(InvalidCreateAccessResultError)
     })
   })
 
