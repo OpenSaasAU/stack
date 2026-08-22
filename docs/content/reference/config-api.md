@@ -441,11 +441,32 @@ access: {
 
 #### Properties
 
-Each operation accepts an `AccessControl` function that returns:
+`query`, `update`, and `delete` accept an `AccessControl` function that returns:
 
 - `true` - Allow access
 - `false` - Deny access
 - `PrismaFilter` - Prisma where clause to filter accessible records
+
+**`create` accepts a `boolean` result only** — `true` or `false`. It shares
+`AccessControl`'s type (so a filter still type-checks), but there is no
+existing row for `create` to scope with a filter, and — unlike `update`/
+`delete`, which re-check a returned filter against the target row — no
+equivalent re-check is possible for a row that doesn't exist yet. A `create`
+rule that returns a filter (or any other non-boolean) throws
+`InvalidCreateAccessResultError` rather than being silently treated as an
+allow. To scope who may create a row by ownership, evaluate the condition in
+a `resolveInput` or `validate` hook, where the input data is in scope:
+
+```typescript
+hooks: {
+  resolveInput: async ({ resolvedData, context, operation }) => {
+    if (operation === 'create') {
+      return { ...resolvedData, ownerId: context.session?.userId }
+    }
+    return resolvedData
+  },
+},
+```
 
 **Type:** `AccessControl<T>`
 
@@ -472,6 +493,9 @@ update: ({ session, item }) => session?.userId === item.authorId
 query: ({ session }) => ({
   authorId: { equals: session?.userId },
 })
+
+// Boolean only — create cannot be scoped by a filter
+create: ({ session }) => !!session
 ```
 
 ---

@@ -2,6 +2,7 @@ import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js
 import type { AccessContext, FieldAccess } from '../access/types.js'
 import {
   checkAccess,
+  checkCreateAccess,
   filterWritableFields,
   getRelatedListConfig,
   resolveSyntheticReverseRelation,
@@ -210,12 +211,12 @@ async function processNestedCreate(
     itemsArray.map(async (item, index) => {
       if (!context._isSudo) {
         const createAccess = relatedListConfig.access?.operation?.create
-        const accessResult = await checkAccess(createAccess, {
+        const allowed = await checkCreateAccess(relatedListName, createAccess, {
           session: context.session,
           context,
         })
 
-        if (accessResult === false) {
+        if (!allowed) {
           throw new Error('Access denied: Cannot create related item')
         }
       }
