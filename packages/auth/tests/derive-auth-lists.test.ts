@@ -61,9 +61,9 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
 
     expect(lists.User.fields.name.db?.map).toBeUndefined()
     expect(lists.Session.fields.token.db?.map).toBeUndefined()
-    // FK column not overridden -> the helper still pins it to userId, since
-    // the generator's own Keystone-parity default would otherwise map the
-    // column to the relationship field name ("user") — issue #935.
+    // FK column not overridden -> still defaults to better-auth's own
+    // `userId` column name, not the generator's Keystone-parity default
+    // (issue #935)
     expect(lists.Session.fields.user.db?.foreignKey).toEqual({ map: 'userId' })
     expect(lists.Account.fields.user.db?.foreignKey).toEqual({ map: 'userId' })
   })
@@ -82,12 +82,18 @@ describe('deriveAuthLists - default behaviour (no overrides)', () => {
   })
 })
 
-describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679)', () => {
-  it('disables the default FK index on Session.user and Account.user', () => {
+describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679/#937)', () => {
+  it('indexes the user FK on Session.user and Account.user, matching better-auth', () => {
     const { lists } = deriveAuthLists(defaultModels)
 
-    expect(lists.Session.fields.user.isIndexed).toBe(false)
-    expect(lists.Account.fields.user.isIndexed).toBe(false)
+    expect(lists.Session.fields.user.isIndexed).toBe(true)
+    expect(lists.Account.fields.user.isIndexed).toBe(true)
+  })
+
+  it('indexes Verification.identifier, matching better-auth', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+
+    expect(lists.Verification.fields.identifier.isIndexed).toBe(true)
   })
 
   it('does not touch isIndexed on the email/token unique fields', () => {

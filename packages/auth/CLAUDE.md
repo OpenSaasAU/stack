@@ -77,15 +77,16 @@ and the plugin's add-vs-extend logic consume:
   (defaults to `modelName` when it differs from the better-auth default,
   otherwise unset — i.e. unchanged output when `tableName` isn't set)
 - per-model `fields` (better-auth field → column) → field-level `@map`
-- the `user` relationship foreign key always maps to a `userId` column
-  (mirroring better-auth's own column, not the generator's Keystone-parity
-  default of the relationship field name) — a `userId` column override
-  in `fields` replaces that default, exactly like any other field `@map`
+- the `user` relationship foreign key always maps to better-auth's own
+  `userId` column (an explicit `userId` column override takes precedence),
+  and carries an index and `onDelete: Cascade`, matching a live better-auth
+  database on all three dimensions (ADR-0007)
 - relationship refs between the Auth lists follow the derived keys
   (e.g. `Session.user → AuthUser.sessions`)
 
-With no `modelName`/`tableName`/`fields` overrides the output is unchanged
-(`User`/`Session`/`Account`/`Verification`, original field shapes, no `@@map`).
+With no `modelName`/`tableName`/`fields` overrides the list/table shape is
+otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
+field shapes, no table `@@map`).
 
 ```typescript
 // Adopt an existing better-auth installation (Auth lists ≠ app User)

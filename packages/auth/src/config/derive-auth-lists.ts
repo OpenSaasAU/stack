@@ -76,25 +76,22 @@ function fieldDb(fieldName: string, fields: Record<string, string>): { map: stri
 /**
  * Build the `db` config for a `user` relationship (`Session.user` /
  * `Account.user`), honouring a `userId` column override from the better-auth
- * `fields` map and mirroring better-auth's own FK shape: no separate FK index
- * — the index is applied at the field level via `isIndexed: false` —
- * `onDelete: Cascade`, a required (non-nullable) foreign key, and a `userId`
- * column, since better-auth's adapter always writes a `userId` column on
- * every session/account row it creates. The column map is set unconditionally
- * (defaulting to `userId`) rather than only when `fields.userId` is
- * configured, since the generator's own Keystone-parity default would
- * otherwise map the column to the relationship field name (`user`) — the
- * wrong column for a database better-auth itself wrote to. This means a
- * generated Auth schema diffs clean against a live better-auth database on
- * all four dimensions instead of showing a spurious index drop, a
- * referential-action change, a `DROP NOT NULL`, and a column rename (issues
- * #679, #863, #935).
+ * `fields` map and mirroring better-auth's own FK shape: the physical column
+ * defaults to `userId` (better-auth's own column name, rather than the
+ * generator's Keystone-parity default of the field name `user`), `onDelete:
+ * Cascade`, and a required (non-nullable) foreign key, since better-auth's
+ * adapter always writes a `userId` on every session/account row it creates.
+ * This means a generated Auth schema diffs clean against a live better-auth
+ * database on all three dimensions instead of showing a spurious column
+ * rename, a referential-action change, and a `DROP NOT NULL` (issues #679,
+ * #863, #935). The FK index itself is set on the relationship field
+ * (`isIndexed: true` in `createSessionList`/`createAccountList`), matching
+ * better-auth's own `userId` index — see ADR-0007.
  */
 function userRelationshipDb(fields: Record<string, string>): NonNullable<RelationshipField['db']> {
-  const column = fields.userId ?? 'userId'
   return {
     isNullable: false,
-    foreignKey: { map: column },
+    foreignKey: { map: fields.userId ?? 'userId' },
     extendPrismaSchema: ({ fkLine, relationLine }) => ({
       fkLine,
       relationLine: relationLine.replace('@relation(', '@relation(onDelete: Cascade, '),
@@ -159,7 +156,7 @@ function createSessionList(
       userAgent: text({ db: fieldDb('userAgent', f) }),
       user: relationship({
         ref: `${keys.user}.sessions`,
-        isIndexed: false,
+        isIndexed: true,
         db: userRelationshipDb(f),
       }),
     },
@@ -182,7 +179,7 @@ function createAccountList(
       providerId: text({ validation: { isRequired: true }, db: fieldDb('providerId', f) }),
       user: relationship({
         ref: `${keys.user}.accounts`,
-        isIndexed: false,
+        isIndexed: true,
         db: userRelationshipDb(f),
       }),
       accessToken: text({ db: fieldDb('accessToken', f) }),
@@ -207,7 +204,11 @@ function createVerificationList(
   const f = model.fields
   return list({
     fields: {
-      identifier: text({ validation: { isRequired: true }, db: fieldDb('identifier', f) }),
+      identifier: text({
+        validation: { isRequired: true },
+        isIndexed: true,
+        db: fieldDb('identifier', f),
+      }),
       value: text({ validation: { isRequired: true }, db: fieldDb('value', f) }),
       expiresAt: timestamp({
         db: { isNullable: false, ...fieldDb('expiresAt', f) },
