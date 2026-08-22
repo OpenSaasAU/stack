@@ -24,7 +24,7 @@ import {
 import { getAuthTables } from 'better-auth/db'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
-import type { ListConfig, FieldConfig, FieldAccess } from '@opensaas/stack-core'
+import type { ListConfig, FieldConfig, ListIndex, FieldAccess } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
@@ -82,7 +82,8 @@ const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
     // `issuer` (better-auth 1.7+, issue #986) groups with accountId/providerId
     // as the account's identity fields — together the table-level
     // `@@unique([issuer, accountId])` better-auth declares (not yet emitted;
-    // blocked on #985's table-level `db.indexes` derivation).
+    // blocked on #986 reading better-auth's own table-level `indexes` through
+    // the app-supplied `db.indexes` passthrough #985 adds).
     'issuer',
     'user',
     'accessToken',
@@ -207,6 +208,25 @@ function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefine
 }
 
 /**
+ * The OpenSaaS field keys an app-supplied `db.indexes` entry (ADR-0035)
+ * claims on this model — every field named in any entry's `fields` array,
+ * regardless of that entry's own arity or uniqueness. A claimed column's
+ * derived `isIndexed` (from better-auth's own `unique`/`index` flags) is
+ * suppressed so only the app's entry is emitted; suppression is per-column,
+ * so a composite entry claiming `identifier` leaves every other derived
+ * index on the model untouched.
+ */
+function claimedIndexFields(indexes: ListIndex[]): Set<string> {
+  const claimed = new Set<string>()
+  for (const index of indexes) {
+    for (const fieldRef of index.fields) {
+      claimed.add(typeof fieldRef === 'string' ? fieldRef : fieldRef.field)
+    }
+  }
+  return claimed
+}
+
+/**
  * `db.isNullable` is set explicitly from `required` rather than left to each
  * field builder's own default — `timestamp()` in particular defaults nullable
  * off of whether it carries a `now()` default, not off requiredness, so
@@ -226,9 +246,13 @@ function scalarFieldDb(
   }
 }
 
-function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldConfig {
+function buildScalarField(
+  fieldKey: string,
+  upstream: DBFieldAttribute,
+  suppressIndex: boolean,
+): FieldConfig {
   const isRequired = upstream.required ?? true
-  const isIndexed = scalarIsIndexed(upstream)
+  const isIndexed = suppressIndex ? undefined : scalarIsIndexed(upstream)
   const db = scalarFieldDb(fieldKey, upstream)
 
   switch (upstream.type) {
@@ -310,6 +334,7 @@ function buildForeignKeyField(
   upstream: DBFieldAttribute,
   targetListKey: string,
   reverseFieldName: string,
+  suppressIndex: boolean,
 ): RelationshipField {
   const references = upstream.references
   if (!references) {
@@ -321,11 +346,16 @@ function buildForeignKeyField(
   const isRequired = upstream.required ?? true
   const columnName = upstream.fieldName ?? fieldKey
   const onDelete = mapOnDelete(references.onDelete ?? 'cascade')
-  const isIndexed = scalarIsIndexed(upstream)
+  // A relationship field's own generator defaults its FK index to indexed
+  // (true) whenever `isIndexed` is *omitted*, unlike a scalar field — so
+  // suppression can't just drop the property here the way `buildScalarField`
+  // does; it must set `isIndexed: false` explicitly to actually turn the
+  // derived index off.
+  const isIndexed = suppressIndex ? (false as const) : scalarIsIndexed(upstream)
 
   return relationship({
     ref: `${targetListKey}.${reverseFieldName}`,
-    ...(isIndexed ? { isIndexed } : {}),
+    ...(isIndexed !== undefined ? { isIndexed } : {}),
     db: {
       isNullable: !isRequired,
       foreignKey: { map: columnName },
@@ -352,12 +382,14 @@ function buildForeignKeyField(
 function listDb(
   model: NormalizedAuthModelConfig,
   timestamps: boolean,
-): { timestamps?: true; map?: string; schema?: string } {
+): { timestamps?: true; map?: string; schema?: string; indexes?: ListIndex[] } {
   const schema = model.schema
+  const indexes = model.indexes
   return {
     ...(timestamps ? { timestamps: true as const } : {}),
     ...(model.tableName !== undefined ? { map: model.tableName } : {}),
     ...(schema !== undefined ? { schema } : {}),
+    ...(indexes && indexes.length > 0 ? { indexes } : {}),
   }
 }
 
@@ -451,7 +483,12 @@ function buildModelRegistry(
  * A fifth `RateLimit` list is included only when `models.rateLimit` is
  * present (i.e. `rateLimit.storage === 'database'`).
  *
- * @param models - Resolved better-auth per-model config (modelName + field column maps)
+ * Each base model's `indexes` (`AuthModelConfig.indexes`) carries through to
+ * the derived list's `db.indexes` unchanged, and suppresses this function's
+ * own derived field-level `isIndexed` for any column an entry names — the
+ * application's declaration wins over a derived default (ADR-0035).
+ *
+ * @param models - Resolved better-auth per-model config (modelName + field column maps + app-supplied indexes)
  * @param userConfig - Extra User-list fields/access/hooks supplied via `extendUserList`
  * @param accessConfig - App-authored access for each base Auth list, keyed by better-auth model name
  * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`), whose own
@@ -469,6 +506,16 @@ export function deriveAuthLists(
     ResolvedTable
   >
   const { keys, registry } = buildModelRegistry(tables, models)
+
+  // Only the five base models carry an app-authored `db.indexes` passthrough
+  // (`AuthModelConfig.indexes`) — plugin tables have no per-model config
+  // block to declare them through (deliberately out of scope, see the issue
+  // brief). Computed once per model rather than per field.
+  const claimedFieldsByModel: Partial<Record<BaseModelKey, Set<string>>> = {}
+  for (const baseKey of BASE_MODEL_KEYS) {
+    const model = models[baseKey]
+    if (model) claimedFieldsByModel[baseKey] = claimedIndexFields(model.indexes ?? [])
+  }
 
   const scalarFields: Record<string, Record<string, FieldConfig>> = {}
   const foreignKeyFields: Record<string, Record<string, RelationshipField>> = {}
@@ -516,6 +563,7 @@ export function deriveAuthLists(
             upstream,
             targetListKey,
             reverseName,
+            claimedFieldsByModel[modelKey as BaseModelKey]?.has(relationFieldKey) ?? false,
           )
           ;(reverseRelationFields[targetModelKey] ??= {})[reverseName] = relationship({
             ref: `${registry.get(modelKey)}.${relationFieldKey}`,
@@ -531,14 +579,22 @@ export function deriveAuthLists(
           ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
             modelKey,
             fieldKey,
-            buildScalarField(fieldKey, upstream),
+            buildScalarField(
+              fieldKey,
+              upstream,
+              claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+            ),
           )
         }
       } else {
         ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
           modelKey,
           fieldKey,
-          buildScalarField(fieldKey, upstream),
+          buildScalarField(
+            fieldKey,
+            upstream,
+            claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+          ),
         )
       }
     }

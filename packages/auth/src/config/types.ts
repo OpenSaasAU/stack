@@ -1,4 +1,4 @@
-import type { ListConfig } from '@opensaas/stack-core'
+import type { ListConfig, ListIndex } from '@opensaas/stack-core'
 import type { BetterAuthOptions, BetterAuthPlugin, User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
@@ -244,6 +244,38 @@ export type AuthModelConfig = {
    * ```
    */
   schema?: string
+  /**
+   * App-authored model-level `@@unique`/`@@index` constraints for this auth
+   * model, in the same shape as a list's own {@link ListConfig.db} `indexes`
+   * (core's {@link ListIndex}). Entries name this model's own OpenSaaS field
+   * keys (e.g. `identifier`, `createdAt` on `verification`) — the same names
+   * used in this model's `fields` column map — not raw database column names.
+   *
+   * The stack already derives some indexes from better-auth's own table
+   * definitions (e.g. `User.email` is `@unique`). When an entry here covers a
+   * column that also carries a derived index, the derived index is
+   * suppressed for that column and only this entry is emitted — the
+   * application's declaration wins (ADR-0035). This is what makes adopting a
+   * live database's real constraint name, or extending a derived column into
+   * a composite index, expressible.
+   *
+   * @example Adopt a live `user.email` unique constraint under its real name
+   * ```typescript
+   * authPlugin({
+   *   user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+   * })
+   * ```
+   *
+   * @example Extend a derived index into a composite (per-identifier resend cooldown)
+   * ```typescript
+   * authPlugin({
+   *   verification: {
+   *     indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+   *   },
+   * })
+   * ```
+   */
+  indexes?: ListIndex[]
 }
 
 export type AuthConfig = {
@@ -491,6 +523,8 @@ export type NormalizedAuthModelConfig = {
   tableName?: string
   fields: Record<string, string>
   schema?: string
+  /** App-authored `db.indexes` entries for this model (see {@link AuthModelConfig.indexes}). Defaults to `[]`. */
+  indexes?: ListIndex[]
 }
 
 /**

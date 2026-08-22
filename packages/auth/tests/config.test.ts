@@ -252,6 +252,8 @@ describe('normalizeAuthConfig', () => {
         modelName: 'RateLimit',
         tableName: undefined,
         fields: {},
+        schema: undefined,
+        indexes: [],
       })
     })
 
@@ -279,6 +281,7 @@ describe('normalizeAuthConfig', () => {
         tableName: 'rate_limit',
         fields: { key: 'limit_key' },
         schema: 'auth',
+        indexes: [],
       })
     })
 

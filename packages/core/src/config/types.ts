@@ -2005,6 +2005,12 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * the bad field too — no entry is ever silently dropped or emitted as
      * invalid Prisma.
      *
+     * `createdAt`/`updatedAt` are a valid entry even when the list has no
+     * matching declared field — an entry may name either as long as the
+     * list's auto-timestamps (`db.timestamps`, global or per-list) are
+     * enabled for that column, since the auto-injected column has no `@map`
+     * of its own and its Prisma field name is exactly `createdAt`/`updatedAt`.
+     *
      * @example One audition per student per production (composite unique)
      * ```typescript
      * Audition: list({
