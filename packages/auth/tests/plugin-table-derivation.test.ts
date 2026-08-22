@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mcp } from 'better-auth/plugins'
 import { deriveAuthLists } from '../src/config/derive-auth-lists.js'
 import type { NormalizedAuthModels } from '../src/config/types.js'
@@ -184,6 +184,46 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin])).toThrow(
       /widget\.ownerId.*references unknown model "nonexistentModel"/,
     )
+  })
+
+  it('throws a clear error instead of silently colliding when two id-references on the same table target the same model', () => {
+    const plugin = {
+      id: 'test-reverse-collision',
+      schema: {
+        widget: {
+          modelName: 'widget',
+          fields: {
+            ownerId: { type: 'string', references: { model: 'user', field: 'id' } },
+            reviewerId: { type: 'string', references: { model: 'user', field: 'id' } },
+          },
+        },
+      },
+    }
+
+    expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin])).toThrow(
+      /"widget" has more than one reference to "user".*"widgets"/,
+    )
+  })
+
+  it('falls back to a text() column with a warning for a better-auth field type this derivation does not model (e.g. json)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const plugin = {
+        id: 'test-unsupported-type',
+        schema: {
+          widget: { modelName: 'widget', fields: { metadata: { type: 'json' } } },
+        },
+      }
+
+      const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+
+      expect(lists.Widget.fields.metadata.type).toBe('text')
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Unknown better-auth field type "json"'),
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('merges a plugin schema extension of a base model directly into that base list, without a separate table', () => {

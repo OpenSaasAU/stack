@@ -223,9 +223,21 @@ function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldCo
             db,
           })
     default:
-      throw new Error(
-        `deriveAuthLists: unsupported better-auth field type "${upstream.type}" for field "${fieldKey}"`,
+      // better-auth's `DBFieldType` also allows `json`, `string[]`/`number[]`,
+      // and an enum array — none of which any built-in plugin (MCP, admin,
+      // organization, two-factor, ...) or the four base models actually use
+      // today. Warn and fall back to a plain `text()` column rather than
+      // throwing, so an app config that happens to hit this still generates
+      // (matching the pre-consolidation plugin-table converter's behavior)
+      // instead of crashing the whole `config()`/`generate` pipeline.
+      console.warn(
+        `[stack-auth] Unknown better-auth field type "${upstream.type}" for field "${fieldKey}", defaulting to text field`,
       )
+      return text({
+        ...(isRequired ? { validation: { isRequired: true as const } } : {}),
+        ...(isIndexed ? { isIndexed } : {}),
+        db,
+      })
   }
 }
 
@@ -431,6 +443,18 @@ export function deriveAuthLists(
         if (upstream.references.field === 'id') {
           const relationFieldKey = relationshipFieldName(fieldKey)
           const reverseName = reverseRelationName(modelKey)
+          if (reverseRelationFields[targetModelKey]?.[reverseName]) {
+            // The reverse name is derived from the *model* (pluralized), not
+            // the field — two id-referencing FKs on the same model targeting
+            // the same model would collapse onto one reverse field and
+            // silently produce an ambiguous/incorrect relation. Fail loudly;
+            // resolve via `REVERSE_RELATION_NAME_OVERRIDES`.
+            throw new Error(
+              `deriveAuthLists: "${modelKey}" has more than one reference to "${targetModelKey}" ` +
+                `resolving to the same reverse relation name "${reverseName}" — add an override to ` +
+                `REVERSE_RELATION_NAME_OVERRIDES in derive-auth-lists.ts`,
+            )
+          }
           ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = buildForeignKeyField(
             fieldKey,
             upstream,
