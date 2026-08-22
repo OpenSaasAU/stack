@@ -54,6 +54,13 @@ async function buildTestConfig() {
           title: text(),
           author: relationship({ ref: 'User' }),
           comments: relationship({ ref: 'Comment.post', many: true }),
+          // Field-level read denied on the RELATIONSHIP FIELD itself —
+          // distinct from a related list's operation-level access.
+          restrictedComments: relationship({
+            ref: 'Comment',
+            many: true,
+            access: { read: () => false },
+          }),
           secret: text({ access: { read: () => false } }),
           commentCount: virtual({
             type: 'number',
@@ -173,5 +180,25 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // own `fields` never named it.
     const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
     expect(callArgs.include.comments).toBeDefined()
+  })
+
+  it('suppresses a relation count denied by the relationship field’s own access, through the real field-visibility pass', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+    // The real pipeline's `filterReadableFields` runs before `projectMcpResult`
+    // ever sees this row: it evaluates `restrictedComments`'s field-level
+    // `access.read` against the TRUE raw row below and strips the key
+    // entirely (denied), so `_count.restrictedComments` survives in the raw
+    // Prisma row but the relation key itself does not.
+    mockPrisma.post.findMany.mockResolvedValue([
+      { id: 'p1', title: 'Hi', restrictedComments: [], _count: { restrictedComments: 4 } },
+    ])
+
+    const data = await callPostQuery(testConfig, mockPrisma, {
+      fields: { title: true, restrictedComments: { count: true } },
+    })
+
+    const result = JSON.parse(data.result.content[0].text)
+    expect(result.items).toEqual([{ id: 'p1', title: 'Hi' }])
   })
 })

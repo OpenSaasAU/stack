@@ -1,7 +1,6 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
-import { checkFieldAccess } from '../access/field-access.js'
 import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
 import type { FieldSelection } from '../query/index.js'
 import { pickFields } from '../query/index.js'
@@ -399,6 +398,16 @@ export async function resolveFieldsProjection(
       include[fieldName] = Object.keys(includeEntry).length > 0 ? includeEntry : true
       hasIncludeEntries = true
       fieldSelection[fieldName] = { _type: 'fragment', _fields: withId(nestedSelection) }
+    } else if (wantsCount) {
+      // Count-only (no `fields`): still name the relation in the include,
+      // fetching zero rows, purely so the ordinary read pipeline evaluates
+      // the relationship FIELD's own field-level `read` access for it the
+      // same way it would for any other relation — `projectMcpResult` below
+      // then reads that decision off whether the key survived, rather than
+      // re-deriving it itself against a row `filterReadableFields` may have
+      // already stripped other fields from.
+      include[fieldName] = { take: 0 }
+      hasIncludeEntries = true
     }
 
     if (wantsCount) {
@@ -440,30 +449,28 @@ export async function resolveFieldsProjection(
  *
  * `_count` is not a declared field, so field-visibility (`filterReadableFields`)
  * never applies the relationship field's own field-level `read` access to it
- * the way it already does for the relation's rows — this function is where
- * that check has to happen instead, per row, before a count is ever emitted.
- * A relation whose rows a denied field never reveals must not reveal its
- * count either.
+ * the way it already does for the relation's rows. Rather than re-deriving
+ * that decision here — which would mean evaluating the field's access rule
+ * a second time against `rawItem`, a row `filterReadableFields` may have
+ * already stripped OTHER fields from, risking a different answer than the
+ * canonical one it computed against the true raw row — `resolveFieldsProjection`
+ * names every counted relation in the include (even a count-only one, with
+ * `take: 0`) purely so the ordinary pipeline makes that decision once, at the
+ * right place. A count is emitted only for a relation whose key survived
+ * into `rawItem`; one field-visibility dropped is a relation whose count
+ * must stay hidden too.
  */
-export async function projectMcpResult(
+export function projectMcpResult(
   rawItem: Record<string, unknown>,
   resolved: ResolvedFieldsProjection,
-  fieldConfigs: Record<string, FieldConfig>,
-  session: Session | null,
-  context: AccessContext,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   const picked = pickFields(rawItem, resolved.fieldSelection) as Record<string, unknown>
   const rawCounts = rawItem._count
   const counts =
     rawCounts && typeof rawCounts === 'object' ? (rawCounts as Record<string, unknown>) : {}
 
   for (const [key, mode] of resolved.countRequests) {
-    const canReadRelation = await checkFieldAccess(fieldConfigs[key]?.access, 'read', {
-      session,
-      context,
-      item: rawItem,
-    })
-    if (!canReadRelation) continue
+    if (!(key in rawItem)) continue
 
     const count = typeof counts[key] === 'number' ? (counts[key] as number) : 0
     picked[key] = mode === 'only' ? count : { items: picked[key], count }
