@@ -1,0 +1,31 @@
+# Auth lists derive from better-auth's own table definitions, not a hand-written mirror
+
+Status: accepted
+
+`deriveAuthLists` (`packages/auth/src/config/derive-auth-lists.ts`) used to hand-write the four core Auth lists (plus the conditional `rateLimit` fifth) — every field, its column map, its type, its nullability, its index — as a manual transcription of better-auth's own schema. That transcription drifted repeatedly and silently: the FK column mapped to the wrong name (#935), three indexes better-auth declares were never emitted (#937), constraint names couldn't be adopted (#921), and a minor upstream release could add a required column no one noticed (#986). Each was found by a human reading better-auth's compiled output, not by a test.
+
+## Decision
+
+`deriveAuthLists` now reads better-auth's own resolved table definitions — `getAuthTables`, re-exported from `better-auth/db` — and translates them into stack list configs, instead of transcribing them by hand. `getAuthTables` is exactly what better-auth's own Kysely migrator, schema generator, and adapter base consume to build their schemas, so reading it directly means the Auth lists cannot disagree with what better-auth itself will do.
+
+Concretely:
+
+- **Per-model config passes straight through.** The app's existing `modelName`/`fields` overrides (already normalized into `NormalizedAuthModels`) are fed to `getAuthTables` as its own options object — the same shape it already accepts — so an override path (`adoptBetterAuthTables`, a renamed model, a remapped column) is inherited for free rather than re-implemented as a parallel normalization.
+- **Scalar fields derive their type, nullability, uniqueness, index, column map, and static default from better-auth's field metadata**, via a fixed type-mapping table (`string`→`text()`, `boolean`→`checkbox()`, `date`→`timestamp()`, `number`→`integer()` or `bigInt()` depending on the `bigint` flag) rather than per-field hand-authored calls.
+- **The foreign key (`Session.user`/`Account.user`) is built from better-auth's `references` metadata** — target model, `onDelete`, requiredness, index/uniqueness — rather than a hardcoded `Cascade`/`userId`. `db.isNullable`, and the FK column map, are always set explicitly (never left to a field builder's own default), since `validation.isRequired` alone doesn't affect the Prisma column (the exact footgun that caused #935 the first time) and an unconditional map is what stops the generator's Keystone-parity default from silently taking over.
+- **List keys are PascalCased independently of the table name.** better-auth's own `modelName`/table keys are camelCase (`rateLimit`, and any plugin-contributed table); the derived list key is never taken from them verbatim.
+- **`createdAt`/`updatedAt` stay list-level**, via the existing `db.timestamps` option — they are not derived as ordinary fields, matching today's behavior.
+- **The reverse relation name (`User.sessions`/`User.accounts`) is the one thing genuinely not in better-auth's metadata.** better-auth's `references` is one-directional (the child declares the link; nothing upstream names the parent's reverse collection), so it's derived by pluralizing the child model's own key, with a documented override map for a collision or a bad pluralization — none needed yet.
+- **The generated Prisma schema field order is pinned explicitly**, independent of the order `getAuthTables` happens to return fields in. Prisma doesn't care about field order, but reshuffling the schema's field order on every regenerate (or on every better-auth upgrade, since object key order is not part of `getAuthTables`'s contract) would be pure diff noise for a project already tracking the schema in version control.
+- **Intentional divergences from upstream get a single, documented, and empty-by-default list** in `derive-auth-lists.ts`. The one case once assumed to need it — `rateLimit.lastRequest` as `bigInt()` rather than `integer()`, to avoid a millisecond-epoch overflow — turned out to already be what better-auth's own `bigint: true` flag asks for. It was never a divergence, just the hand-written mirror independently landing on the correct answer; an entry only belongs in this list when derivation would produce something upstream is actually wrong about.
+
+`deriveAuthLists`'s existing return contract (`{ keys, lists }`) is unchanged, so everything downstream of it (the plugin's add-vs-extend logic, runtime user-key resolution, `createUserList`/`createSessionList`/etc. in `src/lists/index.ts`) is unaffected.
+
+## Consequences
+
+- The generated schema for a bare `authPlugin()` (and under `adoptBetterAuthTables()`, per-model overrides, and the database-backed rate limiter) is unchanged from today's post-#935/#937 output — verified by the existing `generated-fk-shape.test.ts` and `auth-lists-drift.test.ts` suites passing unmodified.
+- The drift test added for #988 (`auth-lists-drift.test.ts`) remains valuable under derivation: it is now the regression net proving the derived output still matches `getAuthTables`, and the place a future intentional divergence would need to be justified against.
+- **This supersedes [ADR-0007](0007-auth-plugin-mirrors-better-auth-and-adopts-existing-tables.md)'s bullet on the auth user FK shape** (`userRelationshipDb`, "the auth user FK mirrors better-auth's exact shape"). That bullet described mirroring the FK shape by hand-encoding better-auth's known values; the shape itself is unchanged, but the mechanism producing it is now `getAuthTables`, not a hand-transcription. ADR-0007's other decisions (relocatable schema, adopt semantics, the app's `User` staying separate from the auth identity, `rateLimit` as a conditional fifth model) are untouched by this change.
+- Out of scope: plugin-contributed tables (`oauthApplication`/etc.) still derive via the separate `convertBetterAuthSchema` converter, which this change does not touch or consolidate with (tracked separately — see #991 on the two converters' list-key casing).
+
+See issue #987 for the full triage history, including the FK-translation spike that de-risked this change before it was written.
