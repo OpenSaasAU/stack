@@ -78,7 +78,7 @@ lists cannot silently drift from what better-auth itself declares (issue
 #987, ADR-0033):
 
 - per-model `modelName`/`fields` (the developer's own `authPlugin({ user:
-  {...}, session: {...} })` config, already normalized) pass straight
+{...}, session: {...} })` config, already normalized) pass straight
   through to `getAuthTables` as its own options object, so an override path
   (`adoptBetterAuthTables`, a renamed model, a remapped column) is inherited
   for free rather than re-implemented as a parallel normalization

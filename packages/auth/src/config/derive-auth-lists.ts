@@ -170,16 +170,25 @@ function buildScalarField(fieldKey: string, upstream: DBFieldAttribute): FieldCo
       const staticDefault =
         typeof upstream.defaultValue === 'function' ? undefined : upstream.defaultValue
       return checkbox({
+        ...(isIndexed ? { isIndexed } : {}),
         ...(staticDefault !== undefined ? { defaultValue: staticDefault as boolean } : {}),
         db,
       })
     }
     case 'date':
-      return timestamp({ db })
+      return timestamp({ ...(isIndexed ? { isIndexed } : {}), db })
     case 'number':
       return upstream.bigint
-        ? bigInt({ ...(isRequired ? { validation: { isRequired: true as const } } : {}), db })
-        : integer({ ...(isRequired ? { validation: { isRequired: true as const } } : {}), db })
+        ? bigInt({
+            ...(isRequired ? { validation: { isRequired: true as const } } : {}),
+            ...(isIndexed ? { isIndexed } : {}),
+            db,
+          })
+        : integer({
+            ...(isRequired ? { validation: { isRequired: true as const } } : {}),
+            ...(isIndexed ? { isIndexed } : {}),
+            db,
+          })
     default:
       throw new Error(
         `deriveAuthLists: unsupported better-auth field type "${upstream.type}" for field "${fieldKey}"`,
@@ -345,12 +354,34 @@ export function deriveAuthLists(
     }
   }
 
+  /**
+   * `FIELD_ORDER` only pins the position of fields it names — it is never
+   * the source of truth for *which* fields exist. Every key derived from
+   * `tables[modelKey].fields` above (scalar or foreign-key) is emitted here
+   * regardless of whether `FIELD_ORDER` lists it, appended after the pinned
+   * ones in the order `getAuthTables` returned them, so a field a future
+   * better-auth release adds — the exact drift class this derivation exists
+   * to close (#986) — still reaches the generated schema; it just lands at
+   * the end of the model until `FIELD_ORDER` is updated to place it.
+   */
   function assembleFields(modelKey: ModelKey): Record<string, FieldConfig> {
     const fields: Record<string, FieldConfig> = {}
+    const remaining = new Map([
+      ...Object.entries(scalarFields[modelKey]),
+      ...Object.entries(foreignKeyFields[modelKey]),
+    ])
+
     for (const fieldKey of FIELD_ORDER[modelKey]) {
-      const field = foreignKeyFields[modelKey][fieldKey] ?? scalarFields[modelKey][fieldKey]
-      if (field) fields[fieldKey] = field
+      const field = remaining.get(fieldKey)
+      if (field) {
+        fields[fieldKey] = field
+        remaining.delete(fieldKey)
+      }
     }
+    for (const [fieldKey, field] of remaining) {
+      fields[fieldKey] = field
+    }
+
     Object.assign(fields, reverseRelationFields[modelKey])
     return fields
   }
