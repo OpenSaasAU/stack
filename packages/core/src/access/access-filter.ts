@@ -58,7 +58,13 @@ import { getDbKey } from '../lib/case-utils.js'
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
-type IncludeEntryObject = { where?: PrismaFilter; include?: Record<string, unknown>; take?: number }
+type IncludeEntryObject = {
+  where?: PrismaFilter
+  include?: Record<string, unknown>
+  take?: number
+  orderBy?: PrismaFilter | PrismaFilter[]
+  skip?: number
+}
 
 /** A plain object — excludes `null` and arrays, which `typeof x === 'object'` alone would admit. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -72,16 +78,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * own type before trusting it, rather than casting the whole value wholesale.
  *
  * A numeric `take` on a to-many relation include (a caller-supplied row bound,
- * issue #752) is carried through: it only ever NARROWS the fetched rows and can
- * never widen past the access `where`, so preserving it is access-neutral.
+ * issue #752), and a caller-supplied `orderBy`/`skip` (#851), are carried
+ * through the same way: none of the three can ever widen the result past the
+ * access `where` — they only narrow or reorder rows the access filter already
+ * admits — so preserving them is access-neutral.
  */
 function asEntryObject(value: unknown): IncludeEntryObject | null {
   if (!isPlainObject(value)) return null
-  const { where, include, take } = value
+  const { where, include, take, orderBy, skip } = value
   const entry: IncludeEntryObject = {}
   if (isPlainObject(where)) entry.where = where
   if (isPlainObject(include)) entry.include = include
   if (typeof take === 'number') entry.take = take
+  if (isPlainObject(orderBy) || Array.isArray(orderBy)) {
+    entry.orderBy = orderBy as PrismaFilter | PrismaFilter[]
+  }
+  if (typeof skip === 'number') entry.skip = skip
   return entry
 }
 
@@ -235,7 +247,7 @@ export async function buildAccessScopedInclude(
       nestedToOneFilters = nested.toOneAccessFilters
     }
 
-    const entry: { where?: PrismaFilter; include?: Record<string, unknown>; take?: number } = {}
+    const entry: IncludeEntryObject = {}
     if (isToOne) {
       if (accessWhere) {
         toOneAccessFilters.filters[relationName] = {
@@ -248,6 +260,8 @@ export async function buildAccessScopedInclude(
       const mergedWhere = andWhere(accessWhere, requestedEntry?.where)
       if (mergedWhere) entry.where = mergedWhere
       if (requestedEntry?.take !== undefined) entry.take = requestedEntry.take
+      if (requestedEntry?.orderBy !== undefined) entry.orderBy = requestedEntry.orderBy
+      if (requestedEntry?.skip !== undefined) entry.skip = requestedEntry.skip
     }
     if (nestedInclude && Object.keys(nestedInclude).length > 0) entry.include = nestedInclude
     if (nestedToOneFilters && !isToOneAccessFilterTreeEmpty(nestedToOneFilters)) {
