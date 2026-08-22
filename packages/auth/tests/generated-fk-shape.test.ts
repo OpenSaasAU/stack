@@ -111,15 +111,16 @@ describe('generated auth schema — account.issuer (better-auth 1.7, issue #986)
 
     // FIELD_ORDER groups issuer with accountId/providerId — the fields that
     // together form better-auth's table-level @@unique([issuer, accountId]),
-    // which this derivation does not yet emit (blocked on #985's table-level
-    // db.indexes derivation).
+    // which this derivation does not yet emit (blocked on #986 reading
+    // better-auth's own table-level `indexes` option; #985 only lands the
+    // app-supplied `db.indexes` passthrough, exercised below).
     const providerIdLine = block.indexOf('providerId')
     const issuerLine = block.indexOf('issuer')
     expect(providerIdLine).toBeGreaterThan(-1)
     expect(issuerLine).toBeGreaterThan(providerIdLine)
 
     // Not yet emitted — see the migration note in the auth package's
-    // CHANGELOG and issue #985.
+    // CHANGELOG and issue #986.
     expect(block).not.toContain('@@unique([issuer, accountId])')
   })
 })
@@ -474,5 +475,154 @@ describe('generated RateLimit schema mirrors better-auth exactly (issue #909)', 
     })
 
     expect(schema).toContain('model RateLimit')
+  })
+})
+
+describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
+  it('emits a composite index on Verification and suppresses the derived single-column index on identifier', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          verification: {
+            indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+          },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'Verification')
+    expect(block).toContain('@@index([identifier, createdAt(sort: Desc)])')
+    // The derived single-column index on identifier is suppressed — only the
+    // composite survives (ADR-0035).
+    expect(block).not.toContain('@@index([identifier])')
+  })
+
+  it('adopts a live named unique constraint on User.email, suppressing the derived inline @unique', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'User')
+    expect(block).toContain('@@unique([email], map: "user_email_key")')
+    expect(block).not.toMatch(/email\s+String\s+@unique/)
+  })
+
+  it('suppresses per-column only — every other derived index on the model still emits', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+        }),
+      ],
+      lists: {},
+    })
+
+    // Session/Account's derived FK index on the User relation is untouched —
+    // suppression only ever applies to the column(s) an app entry names.
+    for (const model of ['Session', 'Account']) {
+      expect(modelBlock(schema, model)).toContain('@@index([userId])')
+    }
+  })
+
+  it("resolves the entry's field key through the model's own column map (@map)", async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          verification: {
+            fields: { identifier: 'ident_col' },
+            indexes: [{ fields: ['identifier'] }],
+          },
+        }),
+      ],
+      lists: {},
+    })
+
+    const block = modelBlock(schema, 'Verification')
+    // db.indexes names the OpenSaaS field key, not the mapped column name —
+    // Prisma's @@index references the field, independent of its own @map.
+    expect(block).toContain('@map("ident_col")')
+    expect(block).toContain('@@index([identifier])')
+  })
+
+  it('#921: user.email and session.token both round-trip under adopted constraint names', async () => {
+    const schema = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [
+        authPlugin({
+          emailAndPassword: { enabled: true },
+          user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+          session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
+        }),
+      ],
+      lists: {},
+    })
+
+    const user = modelBlock(schema, 'User')
+    expect(user).toContain('@@unique([email], map: "user_email_key")')
+    expect(user).not.toMatch(/email\s+String\s+@unique/)
+
+    const session = modelBlock(schema, 'Session')
+    expect(session).toContain('@@unique([token], map: "session_token_key")')
+    expect(session).not.toMatch(/token\s+String\s+@unique/)
+  })
+
+  it('fails generation naming the model, the entry, and the bad field for an unknown field', async () => {
+    await expect(
+      generateSchema({
+        db: { provider: 'sqlite' },
+        plugins: [
+          authPlugin({
+            emailAndPassword: { enabled: true },
+            verification: { indexes: [{ fields: ['doesNotExist'] }] },
+          }),
+        ],
+        lists: {},
+      }),
+    ).rejects.toThrow(/Verification.*references unknown field "doesNotExist"/)
+  })
+
+  it('names the remapped list key when modelName overrides the derived key', async () => {
+    await expect(
+      generateSchema({
+        db: { provider: 'sqlite' },
+        plugins: [
+          authPlugin({
+            emailAndPassword: { enabled: true },
+            verification: {
+              modelName: 'AuthVerification',
+              indexes: [{ fields: ['doesNotExist'] }],
+            },
+          }),
+        ],
+        lists: {},
+      }),
+    ).rejects.toThrow(/AuthVerification.*references unknown field "doesNotExist"/)
+  })
+
+  it('leaves existing auth-list derivation unchanged when no indexes are configured', async () => {
+    const withIndexes = await generateSchema({
+      db: { provider: 'sqlite' },
+      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+      lists: {},
+    })
+
+    for (const model of ['User', 'Session', 'Account', 'Verification']) {
+      expect(modelBlock(withIndexes, model)).not.toContain('@@unique([')
+      expect(modelBlock(withIndexes, model)).not.toContain('@@index([identifier, ')
+    }
   })
 })

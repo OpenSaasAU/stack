@@ -38,6 +38,7 @@ function normalizeModelConfig(
     tableName,
     fields: config?.fields || {},
     schema: config?.schema ?? defaultSchema,
+    indexes: config?.indexes ?? [],
   }
 }
 

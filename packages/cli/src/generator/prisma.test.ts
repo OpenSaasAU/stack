@@ -1653,6 +1653,60 @@ describe('Prisma Schema Generator', () => {
       })
     })
 
+    describe('createdAt/updatedAt via auto-timestamps, with no declared field (#985)', () => {
+      it('resolves createdAt when the list has db.timestamps enabled, even though no field declares it', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            Verification: {
+              fields: { identifier: text() },
+              db: { timestamps: true, indexes: [{ fields: ['identifier', 'createdAt'] }] },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@index([identifier, createdAt])')
+        expect(schema).toContain('createdAt DateTime @default(now())')
+      })
+
+      it('resolves updatedAt the same way, and honours a sort direction on it', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            Post: {
+              fields: { title: text() },
+              db: {
+                timestamps: true,
+                indexes: [{ fields: ['title', { field: 'updatedAt', sort: 'desc' }] }],
+              },
+            },
+          },
+        }
+
+        const schema = generatePrismaSchema(config)
+
+        expect(schema).toContain('@@index([title, updatedAt(sort: Desc)])')
+      })
+
+      it('still throws referencing unknown field when db.timestamps is not enabled for that column', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'sqlite' },
+          lists: {
+            Post: {
+              fields: { title: text() },
+              db: { indexes: [{ fields: ['title', 'createdAt'] }] },
+            },
+          },
+        }
+
+        expect(() => generatePrismaSchema(config)).toThrow(
+          /db\.indexes\[0\].*on list "Post".*references unknown field "createdAt"/,
+        )
+      })
+    })
+
     it('throws naming the list and entry for an empty fields array', () => {
       const config: OpenSaasConfig = {
         db: { provider: 'sqlite' },

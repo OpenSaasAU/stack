@@ -103,6 +103,12 @@ function getFieldIndex(
  * Prisma-level field name is unaffected by `db.map`), or the owning foreign
  * key column (`<field>Id`) for a relationship field.
  *
+ * `createdAt`/`updatedAt` resolve directly to their own column name when the
+ * list's auto-timestamps are enabled for that column (`resolveListTimestamps`)
+ * even though neither is a declared field in that case — the auto-injected
+ * column carries no `@map` of its own, so the field name and column name
+ * coincide (issue #985).
+ *
  * Throws a descriptive, generate-time error (naming the list, the index
  * entry, and the bad field) rather than silently dropping the entry or
  * emitting invalid Prisma, for every case that has no single column to
@@ -115,12 +121,19 @@ function resolveIndexFieldColumn(
   relationResults: Map<string, PrismaRelationResult>,
   entryDescription: string,
   fieldRef: ListIndex['fields'][number],
+  autoTimestampColumns: { createdAt: boolean; updatedAt: boolean },
 ): { column: string; sort?: 'asc' | 'desc' } {
   const fieldName = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
   const sort = typeof fieldRef === 'string' ? undefined : fieldRef.sort
 
   const fieldConfig = listConfig.fields[fieldName]
   if (!fieldConfig) {
+    if (
+      (fieldName === 'createdAt' && autoTimestampColumns.createdAt) ||
+      (fieldName === 'updatedAt' && autoTimestampColumns.updatedAt)
+    ) {
+      return { column: fieldName, sort }
+    }
     throw new Error(
       `${entryDescription} on list "${listName}" references unknown field "${fieldName}"`,
     )
@@ -229,6 +242,7 @@ function generateModelIndexLines(
   listConfig: ListConfig<TypeInfo>,
   relationResults: Map<string, PrismaRelationResult>,
   fieldLevelIndexColumns: Map<string, FieldLevelIndexColumn>,
+  autoTimestampColumns: { createdAt: boolean; updatedAt: boolean },
 ): string[] {
   const indexes = listConfig.db?.indexes
   if (!indexes || indexes.length === 0) return []
@@ -243,7 +257,14 @@ function generateModelIndexLines(
     }
 
     const resolved = index.fields.map((fieldRef) =>
-      resolveIndexFieldColumn(listName, listConfig, relationResults, entryDescription, fieldRef),
+      resolveIndexFieldColumn(
+        listName,
+        listConfig,
+        relationResults,
+        entryDescription,
+        fieldRef,
+        autoTimestampColumns,
+      ),
     )
 
     if (resolved.length === 1) {
@@ -537,6 +558,7 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
         listConfig,
         relationResults,
         collectFieldLevelIndexColumns(listName, listConfig, relationResults),
+        timestamps,
       ),
     )
 

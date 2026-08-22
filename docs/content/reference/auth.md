@@ -360,7 +360,7 @@ authPlugin({
 
 Derivation keys off `storage` alone, not `enabled` — `{ enabled: false, storage: 'database' }` still produces the `RateLimit` list, since better-auth still expects the table regardless of whether the limiter is currently active (`enabled` is routinely environment-driven, and tying the generated schema to it would make dev and prod schemas differ).
 
-`rateLimit` also carries the same adoption knobs as the other four models — `modelName`, `fields`, `tableName`, `schema` — so an app with an existing database-backed limiter table can adopt it rather than being forced into a new one:
+`rateLimit` also carries the same adoption knobs as the other four models — `modelName`, `fields`, `tableName`, `schema`, `indexes` — so an app with an existing database-backed limiter table can adopt it rather than being forced into a new one:
 
 ```typescript
 authPlugin({
@@ -374,6 +374,8 @@ authPlugin({
 ```
 
 Setting `storage` via the `betterAuthOptions.rateLimit` passthrough is rejected — it has schema consequences (deriving the `RateLimit` list) a passthrough can't also apply to the generated Prisma schema. Other `betterAuthOptions.rateLimit` keys (`customRules`, `customStorage`) still pass through and merge with `enabled`/`window`/`max` as usual.
+
+Every per-model block — `user` / `session` / `account` / `verification` / `rateLimit` — also accepts `indexes`, using the same entry shape as a list's own [`db.indexes`](/docs/reference/config-api#dbindexes): app-authored model-level `@@unique`/`@@index` constraints, naming this model's own field keys. An entry covering a column the stack already derives an index for (e.g. `User.email`) suppresses that derived index and emits only the app's entry — see [Adopting a live constraint name or adding your own index](/docs/how-to/authentication#adopting-a-live-constraint-name-or-adding-your-own-index-indexes) for the full explanation and examples.
 
 ## Auto-Generated Lists
 

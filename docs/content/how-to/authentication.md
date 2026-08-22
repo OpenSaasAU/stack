@@ -1125,6 +1125,46 @@ existed: the table name follows `modelName` whenever it differs from the
 better-auth default, so a renamed-table install (the `adoptBetterAuthTables()`
 default from the previous section) keeps working without any changes.
 
+### Adopting a live constraint name or adding your own index (`indexes`)
+
+Each per-model block (`user`/`session`/`account`/`verification`/`rateLimit`)
+also accepts `indexes`, in the same shape as a list's own `db.indexes` (see
+the [`db.indexes` reference](/docs/reference/config-api#dbindexes)) — entries
+name the model's own field keys, not raw column names.
+
+The stack already derives some indexes from better-auth's own table
+definitions — `User.email` and `Session.token` are unique, for example. If
+your live database's constraint has a different name than the one Prisma
+would derive, adopting it under its real name is a generate-clean diff away:
+
+```typescript
+authPlugin({
+  user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
+  session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
+})
+```
+
+An entry covering a column the stack already derives an index for **replaces**
+that derived index rather than erroring — your declaration wins. This is the
+opposite of `db.indexes` on a list you declare yourself, where a collision
+with a field's own `isIndexed` is a config-time error: here, one of the two
+declarations is derived, so there's nothing of yours to remove.
+
+The same seam lets you extend a derived column into a composite index — e.g.
+a per-identifier resend-cooldown check on the verification table:
+
+```typescript
+authPlugin({
+  verification: {
+    indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+  },
+})
+```
+
+This suppresses the derived single-column index on `identifier` in favor of
+the composite, which serves the same lookups. Suppression is per-column: every
+other index the stack derives for that model is unaffected.
+
 ### Linking your app User to the Auth identity
 
 Because the Auth identity (`AuthUser`) and your domain `User` are separate
