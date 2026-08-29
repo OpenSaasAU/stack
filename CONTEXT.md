@@ -62,6 +62,18 @@ _Avoid_: filtered total, partial value, true value
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
 _Avoid_: access error, permission error
 
+**Engine stamp**:
+A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage.
+_Avoid_: query tag, session token, middleware context
+
+**Unsafe surface**:
+The deliberately unsecured ORM client, reached under a name that states the bypass. It carries neither access control nor hooks, and it stamps the queries it builds as intentionally unscoped, so a bypass is an audited act rather than an absence indistinguishable from a mistake. Better-auth's own flows and vector search run here by design (ADR-0013, ADR-0038); a query bearing no stamp at all belongs to neither surface and is refused.
+_Avoid_: raw client, escape hatch, prisma passthrough
+
+**Terminal operation**:
+The operation that executes a built-up query and the only place a read or write is secured — it resolves operation-level access, merges the access filter, and applies Field Visibility to what comes back. The query itself is an immutable value that can be composed anywhere; nothing about it is enforced until a terminal runs it. Silent failure lives here, which is why the terminals stay the engine's and are never delegated to the ORM (ADR-0039).
+_Avoid_: executor, query runner, resolver
+
 **Write Pipeline**:
 The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
 _Avoid_: operation handler, mutation service
