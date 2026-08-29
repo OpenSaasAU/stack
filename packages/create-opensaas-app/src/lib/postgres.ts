@@ -17,7 +17,7 @@ import type { PackageJsonLike } from './package-json.js'
  * (`examples/rag-openai-chatbot`) so the repo carries a single version of each.
  */
 const PG_DEPS = {
-  '@prisma/adapter-pg': '^7.8.0',
+  '@prisma/adapter-pg': '^7.9.1',
   pg: '^8.20.0',
 } as const
 

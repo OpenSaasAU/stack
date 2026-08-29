@@ -14,6 +14,15 @@ updates:
           - '@aws-sdk/*'
           - '@smithy/*'
 
+      # The Prisma CLI, client, and driver adapters are released in lockstep and
+      # expect matching versions of each other. Bumped individually they resolve
+      # to mismatched versions across the workspace, which breaks generate and
+      # the example builds. Keep them in one PR.
+      prisma:
+        patterns:
+          - 'prisma'
+          - '@prisma/*'
+
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
