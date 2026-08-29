@@ -67,7 +67,7 @@ A mark the access engine puts on every query it builds, and the only thing the O
 _Avoid_: query tag, session token, middleware context
 
 **Unsafe surface**:
-The deliberately unsecured ORM client, reached under a name that states the bypass. It carries neither access control nor hooks, and it stamps the queries it builds as intentionally unscoped, so a bypass is an audited act rather than an absence indistinguishable from a mistake. Better-auth's own flows and vector search run here by design (ADR-0013, ADR-0038); a query bearing no stamp at all belongs to neither surface and is refused.
+The deliberately unsecured ORM client, reached under a name that states the bypass. It carries neither access control nor hooks, and it stamps the ORM queries it builds as intentionally unscoped, so a bypass is an audited act rather than an absence indistinguishable from a mistake. Better-auth's own flows and vector search run here by design (ADR-0013, ADR-0038); an ORM query bearing no stamp at all belongs to neither surface and is refused. **Raw SQL is outside this entirely** — raw plans never reach the tripwire, so they are neither stamped nor refusable, and scoping them is the caller's alone.
 _Avoid_: raw client, escape hatch, prisma passthrough
 
 **Terminal operation**:
