@@ -114,6 +114,14 @@ _Avoid_: legacy mode, compatibility flag, migration mode
 
 ### Code generation
 
+**Contract module**:
+The TypeScript `defineContract` source the generator emits from `opensaas.config.ts` — the replacement for the generated Prisma schema, and the single declared source of truth for the database's shape. It is **standalone and fully literal**: it imports nothing from the app config, so the builder's purity rules (no env, clock, random, or side effects; no functions, class instances or `Date`) hold by construction rather than by discipline. No PSL is emitted alongside it (ADR-0040).
+_Avoid_: generated schema, schema.prisma, contract source
+
+**Contract artifacts**:
+The `contract.json` + `contract.d.ts` pair that `prisma contract emit` produces from the Contract module. Both are committed and diffable, emission is byte-deterministic, and the type artifact carries what the stack used to derive by hand — read and write field shapes, per-field nullability and codec, the domain-to-column mapping, and the relation graph with cardinality. They are generated: changing them means changing the Contract module and re-emitting.
+_Avoid_: contract file, emitted schema, generated types
+
 **Generated bundle**:
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
 _Avoid_: generated context, output dir, .opensaas folder
