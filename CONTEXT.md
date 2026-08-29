@@ -62,6 +62,18 @@ _Avoid_: filtered total, partial value, true value
 The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
 _Avoid_: access error, permission error
 
+**Engine stamp**:
+A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage.
+_Avoid_: query tag, session token, middleware context
+
+**Unsafe surface**:
+The deliberately unsecured ORM client, reached under a name that states the bypass. It carries neither access control nor hooks, and it stamps the queries it builds as intentionally unscoped, so a bypass is an audited act rather than an absence indistinguishable from a mistake. Better-auth's own flows and vector search run here by design (ADR-0013, ADR-0038); a query bearing no stamp at all belongs to neither surface and is refused.
+_Avoid_: raw client, escape hatch, prisma passthrough
+
+**Terminal operation**:
+The operation that executes a built-up query and the only place a read or write is secured — it resolves operation-level access, merges the access filter, and applies Field Visibility to what comes back. The query itself is an immutable value that can be composed anywhere; nothing about it is enforced until a terminal runs it. Silent failure lives here, which is why the terminals stay the engine's and are never delegated to the ORM (ADR-0039).
+_Avoid_: executor, query runner, resolver
+
 **Write Pipeline**:
 The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
 _Avoid_: operation handler, mutation service
@@ -101,6 +113,14 @@ An opt-in generator setting that makes schema output follow Keystone 6 conventio
 _Avoid_: legacy mode, compatibility flag, migration mode
 
 ### Code generation
+
+**Contract module**:
+The TypeScript `defineContract` source the generator emits from `opensaas.config.ts` — the replacement for the generated Prisma schema, and the single declared source of truth for the database's shape. It is **standalone and fully literal**: it imports nothing from the app config, so the builder's purity rules (no env, clock, random, or side effects; no functions, class instances or `Date`) hold by construction rather than by discipline. No PSL is emitted alongside it (ADR-0040).
+_Avoid_: generated schema, schema.prisma, contract source
+
+**Contract artifacts**:
+The `contract.json` + `contract.d.ts` pair that `prisma contract emit` produces from the Contract module. Both are committed and diffable, emission is byte-deterministic, and the type artifact carries what the stack used to derive by hand — read and write field shapes, per-field nullability and codec, the domain-to-column mapping, and the relation graph with cardinality. They are generated: changing them means changing the Contract module and re-emitting.
+_Avoid_: contract file, emitted schema, generated types
 
 **Generated bundle**:
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
