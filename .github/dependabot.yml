@@ -4,6 +4,15 @@ updates:
     directory: '/'
     schedule:
       interval: 'daily'
+    groups:
+      # The AWS SDK v3 packages are released in lockstep and share internal
+      # @aws-sdk/* and @smithy/* dependencies. Bumped individually they resolve
+      # to mismatched versions of those shared packages, which breaks the
+      # storage-s3 build. Keep them in one PR.
+      aws-sdk:
+        patterns:
+          - '@aws-sdk/*'
+          - '@smithy/*'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
