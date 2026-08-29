@@ -90,7 +90,7 @@ describe('toPostgresPackageJson', () => {
   })
 
   it('adds the Postgres adapter and pg driver at the monorepo versions', () => {
-    expect(result.dependencies?.['@prisma/adapter-pg']).toBe('^7.8.0')
+    expect(result.dependencies?.['@prisma/adapter-pg']).toBe('^7.9.1')
     expect(result.dependencies?.['pg']).toBe('^8.20.0')
     expect(result.devDependencies?.['@types/pg']).toBe('^8.18.0')
   })
