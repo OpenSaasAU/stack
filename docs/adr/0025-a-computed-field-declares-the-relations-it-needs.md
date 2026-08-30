@@ -22,3 +22,10 @@ Value semantics are **session-relative, with no escape**. A dependency the sessi
 - **The failure mode for an undeclared relation is unchanged, and still silent.** This gives authors a way out of ADR-0024's degradation; it does not detect that they need one. The type-level constraint narrows the gap by rejecting a misspelled or non-relation declaration at compile time, which is the half of the typing work that carries correctness weight; narrowing the hook's `item` so a declared relation is non-optional is ergonomics on top.
 - **Every field type gains the option**, third-party ones included, and the generation-time closure check walks all fields rather than only virtuals.
 - **ADR-0024 stands unchanged.** A bare read still returns scalars; declarations do not add relations to what a caller receives. This ADR only gives a field a way to see data it names, on the same access terms as everyone else.
+- **ADR-0024 stands unchanged.** A bare read still returns scalars; declarations do not add relations to what a caller receives. This ADR only gives a field a way to see data it names, on the same access terms as everyone else.
+
+## Amendment — the cycle guard is this ADR's (ADR-0043)
+
+ADR-0026 re-pointed the relationship-graph cycle guard: once nothing walks the graph unprompted, a caller's `include` is a finite literal and cannot cycle, so the only thing left that can is a declaration closure — which the engine folds in rather than the caller writing. [ADR-0043](0043-bare-read-and-one-hop-become-the-orms-not-ours.md) withdraws ADR-0026, and the guard's record comes here rather than going with it, because a guard belongs with the thing it guards.
+
+The guard runs at generation time and again, defensively, at runtime. **Its comment must describe declaration closures, not the graph walk.** ADR-0026 named the hazard of leaving it otherwise and the hazard is unchanged: a guard annotated against a walk that no longer exists reads as dead code, and deleting it takes the live protection with it.
