@@ -23,7 +23,7 @@ The first pass of a read, run before the database is hit. Uses operation-level a
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
-The second pass of a read, run on the returned rows. Removes fields the session cannot read and produces the value of every computed field the read is going to return. A field the read will not return does no work here at all — neither its read check nor its computation — so this phase costs what the read asked for rather than what the list happens to define. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
+The second pass of a read, run on the returned rows. Removes fields the session cannot read and produces the value of every computed field the read is going to return — so a computed field on a Bare read arrives from here, not from the query. A field the read will not return does no work here at all — neither its read check nor its computation — so this phase costs what the read asked for rather than what the list happens to define. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
 _Avoid_: result filter, output filter, field stripper
 
 **Resolve chain**:
@@ -31,16 +31,16 @@ The sequence of `resolveOutput` hooks a read has entered on the way to a value �
 _Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recursion depth
 
 **Bare read**:
-A read that names no relations — no `include`, no fragment `query`. It returns the row's own columns and its virtual fields, never its relations, matching what the underlying ORM does with the same call (ADR-0024). The rule holds for every read: single, many, and singleton, whether or not access control is being bypassed. Related data is always something a read asks for, so a call site's shape is readable from the call site.
+A read that names no relations. It returns the row's own columns and never its relations — the ORM's own behaviour for the same call, not something this codebase adds (ADR-0043). Computed fields come back on top of it, from Field Visibility. The rule holds for every read: single, many, and singleton, whether or not access control is being bypassed. Related data is always something a read asks for, so a call site's shape is readable from the call site.
 _Avoid_: auto-include, default include, unqualified read
 
 **One hop**:
-The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further (ADR-0026). This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it.
+The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further. This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it. The ORM enforces it (ADR-0043), and it holds for every relation a caller can name: where the ORM could not reach one, the field is refused at generation rather than the rule gaining an exception. How far a caller may reach is a separate cost limit, refused loudly.
 _Avoid_: deep include, nested expansion, relation tree
 
 **Projection**:
 A caller's statement of which fields it wants back, at each level it names — the reciprocal of One hop, which says how far naming reaches. A projection may be narrower than a Bare read as easily as wider, since it selects the row's own fields too, and what it selects is what gets computed. Where a projection crosses a trust boundary the reachable vocabulary is published ahead of the request and anything outside it is refused, so a caller can tell what it may ask for without asking.
-_Avoid_: select (that names an ORM feature this codebase does not honour), include, field mask
+_Avoid_: include, field mask. (`select` is the ORM's spelling of this term, honoured exactly — the word is fine; what it names is narrower than the term.)
 
 **Computed field**:
 A field whose value is produced rather than read straight from storage — one with no column of its own, or one that transforms what its column holds. It is produced only where the read is going to return it, and it sees the row's stored columns and its own declared dependencies, never another computed field's value. Reaching for one finds nothing there, so no two computed fields can depend on the order they were declared in.
