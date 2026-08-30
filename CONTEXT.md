@@ -59,7 +59,7 @@ A computed field's value reflects exactly the rows the reading session may see, 
 _Avoid_: filtered total, partial value, true value
 
 **Silent failure**:
-The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist".
+The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist". A denial is atomic with the result it replaces — a caller never receives part of a read that was refused, which is why a read arrives whole rather than a row at a time (see Terminal operation).
 _Avoid_: access error, permission error
 
 **Engine stamp**:
@@ -71,8 +71,8 @@ The deliberately unsecured ORM client, reached under a name that states the bypa
 _Avoid_: raw client, escape hatch, prisma passthrough
 
 **Terminal operation**:
-The operation that executes a built-up query and the only place a read or write is secured — it resolves operation-level access, merges the access filter, and applies Field Visibility to what comes back. The query itself is an immutable value that can be composed anywhere; nothing about it is enforced until a terminal runs it. Silent failure lives here, which is why the terminals stay the engine's and are never delegated to the ORM (ADR-0039).
-_Avoid_: executor, query runner, resolver
+The operation that executes a built-up query and the only place a read or write is secured — it resolves operation-level access, merges the access filter, and applies Field Visibility to what comes back. The query itself is an immutable value that can be composed anywhere; nothing about it is enforced until a terminal runs it. Silent failure lives here, which is why the terminals stay the engine's and are never delegated to the ORM (ADR-0039). A terminal yields its rows all at once and never one at a time, so a refusal — including one raised part-way through securing the rows — reaches the caller before any row does; bounding a large read is the caller's job, and a read that must be consumed incrementally belongs on the Unsafe surface (ADR-0046).
+_Avoid_: executor, query runner, resolver, stream
 
 **Write Pipeline**:
 The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
