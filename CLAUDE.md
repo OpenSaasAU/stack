@@ -686,17 +686,20 @@ const context = await getContext({ userId: 'user-123' })
 const myPosts = await context.db.post.findMany()
 ```
 
-**Interactive transactions:** Use `context.transaction(async (txContext) => { … }, { isolationLevel })` to run several access-checked, hook-firing `context.db.*` operations atomically in one transaction. Unlike raw `prisma.$transaction` (which bypasses access control and hooks), `txContext.db.*` keeps the security/validation boundary. Pass `{ isolationLevel: 'Serializable' }` for concurrency-sensitive invariants (e.g. a capacity gate); serialization failures (Prisma `P2034`) propagate so the caller can retry. See ADR-0012 and `packages/core/CLAUDE.md`.
+**Interactive transactions:** Use `context.transaction(async (txContext) => { … })` to run several access-checked, hook-firing `context.db.*` operations atomically in one transaction. Unlike a raw transaction on the unsafe surface (which bypasses access control and hooks), `txContext.db.*` keeps the security/validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant (e.g. a capacity gate) is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.
 
 ```typescript
-const result = await context.transaction(
-  async (tx) => {
-    const count = await tx.db.booking.count({ where: { slotId } })
-    if (count >= capacity) return { booked: false }
-    return { booked: true, item: await tx.db.booking.create({ data: { slotId } }) }
-  },
-  { isolationLevel: 'Serializable' },
-)
+const result = await context.transaction(async (tx) => {
+  // Take the lock BEFORE counting. Every racer takes the same lock on the same
+  // parent row, so the count below cannot go stale under a concurrent booking.
+  // `null` here means denied or gone — either way there is no gate to run.
+  const slot = await tx.db.Slot.where({ id: slotId }).forUpdate().first()
+  if (!slot) return { booked: false }
+
+  const count = await tx.db.Booking.where({ slotId }).aggregate({ count: true })
+  if (count >= capacity) return { booked: false }
+  return { booked: true, item: await tx.db.Booking.create({ slotId }) }
+})
 ```
 
 **Prisma Client Constructor (Required for Prisma 7):**
