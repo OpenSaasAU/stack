@@ -19,7 +19,7 @@ A field-level `read` rule evaluated BEFORE the query runs, against a key named i
 _Avoid_: filter access check, where validation
 
 **Access Filter** (pre-query phase):
-The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. It scopes the relations a read asked for; it does not choose them (see Bare read). Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
+The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. It scopes the relations a read asked for, and leaves out one the session may not read at all when that can be decided without a row; otherwise it does not choose which relations a read fetches (see Bare read). Leaving one out is a saving, never the decision — Field Visibility checks every relation it is handed regardless (ADR-0044). Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
 _Avoid_: query builder, include builder
 
 **Field Visibility** (post-query phase):
