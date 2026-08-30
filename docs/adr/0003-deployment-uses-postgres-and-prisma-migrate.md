@@ -1,8 +1,34 @@
 # Local development uses SQLite + `db push`; production uses PostgreSQL + `prisma migrate`
 
+> **Amended 2026-08-30 by [What is the local dev loop and the provider story once SQLite is gone?](https://github.com/OpenSaasAU/stack/issues/1040)** (Prisma 8 map). **The title above is now false**: SQLite is not a supported provider, and `prisma db push` / `prisma migrate` no longer exist. The two-loop decision survives — it is re-axed from _provider_ onto _migration history_. Read the amendment below before the original decisions; everything in "Decisions" that names SQLite, `db push`, `prisma migrate`, or the generated `datasource` block is superseded by it.
+
+## Amendment: the split is re-axed onto history, not provider (Prisma 8)
+
+- **One provider.** Postgres everywhere — local, CI, production. `db.provider` survives as a config key with `'postgresql'` as its only accepted value, so the seam is still there if Prisma's SQLite target ever ships documented; it is a key that cannot currently be varied.
+- **The two loops survive, on a new axis.** Dev **reconciles** (`prisma contract emit` then `prisma db update` — the `db push` successor, which requires no migration history). Production **migrates** (`prisma migration plan` then `prisma db migrate`, graph edges keyed on contract hashes). The rationale is unchanged — fast disposable local iteration vs. safe reviewable production schema change — but it no longer rides on the provider differing between them.
+- **`pnpm db:push` is renamed `pnpm db:update`.** The old name would point developers at a deleted Prisma command. `pnpm generate` keeps its name and absorbs the `prisma contract emit` shell-out (ADR-0040).
+- **Local database: `prisma dev`, with a documented escape.** CLI-owned, PGlite-backed, no Docker and no Postgres install, which is what preserves the cold-clone claim. It **cannot install Postgres extensions**, accepts **one connection at a time**, and is unsupported on Windows for the Composer path — so anything needing an extension, real concurrency, or Windows sets `DATABASE_URL` at any Postgres the stack does not own. That escape is the single documented mechanism serving pgvector RAG, the e2e suite, CI, and Windows alike.
+- **CI does not run `prisma dev`.** Every job gets a Postgres **service container** (a pgvector-capable image where extensions are needed), replacing the `DATABASE_URL: 'file:./dev.db'` that is currently hardcoded in `test.yml`, `nightly.yml` and `release.yml`. This avoids both the single-connection limit under Playwright and `startPrismaDevServer()`, which Prisma explicitly documents as an unstable API. The one exception is the nightly cold-clone scaffolder job, whose whole purpose is exercising the two-command claim — see the verification gate below.
+- **The pooled/direct split survives as an environment convention, not as generated config.** Serverless Postgres still needs a direct connection for DDL, so `DIRECT_DATABASE_URL` stays documented — but the stack stops generating a `datasource` key carrying `env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL')`. Prisma 8's CLI takes the direct URL on its `--db` flag, and its generated scripts read the variable from the environment rather than from `.env`.
+- **`prismaClientConstructor` is deleted.** Prisma 8's config is `defineConfig({ contract, db: { connection } })` — there is no `PrismaClient` class handed to the app to wrap, so the option's whole reason (adapter selection) is gone. `create-opensaas-app`'s `--db postgres|sqlite` flag goes with it, along with the SQLite→Postgres rewrite path in `packages/create-opensaas-app/src/lib/postgres.ts`. **This leaves the db config with no extension point**, while ADR-0038's `beforeCompile` tripwire and Prisma 8 extension packs (pgvector) both need somewhere to be registered — that seat is deliberately _not_ named here, because it is a config-surface question rather than a provider one.
+- **All 13 examples and both scaffolding templates convert.** Eleven examples plus `starter` and `starter-auth` carry `@prisma/adapter-better-sqlite3`; `rag-openai-chatbot` is already `@prisma/adapter-pg`. Cutting the example set instead was rejected — which examples the stack demonstrates is a product decision, and making it as a side effect of a database migration is the wrong reason.
+- **RAG's provider split collapses; its query surface is untouched here.** `packages/rag/src/storage/sqlite-vss.ts` is deleted (its own header admits it is a JSON scan, not a vector query), and pgvector-backed examples require the escape hatch — they **cannot** run on `prisma dev`. Whether to adopt Prisma 8's first-party `@prisma/orm-extension-pgvector` and its typed `cosineDistance` builder, deleting `pgvector.ts`'s `$queryRawUnsafe` and its hand-rolled access filter, is left open: it interacts with ADR-0038's finding that raw SQL never reaches `beforeCompile` at all.
+
+### Verification gate
+
+The `prisma` CLI is broken outright at `8.0.0-rc.8` — every invocation, `prisma --version` included, fails with `Cannot read properties of undefined (reading 'needs')`, a version skew between `prisma@8.0.0-rc.8` and its pinned `@prisma/orm-toolchain@8.0.0-rc.4`. The runtime is unaffected. This amendment was therefore decided on documentation, and three specific claims have **never been observed working**:
+
+1. **The two-command cold start** — `create` to a running `dev` with no daemon to install. This is precisely the claim the loop is bought on.
+2. **`prisma db update`'s destructive-consent behaviour** — the interactive database-name prompt, and `--no-interactive --confirm <db>` in CI.
+3. **`startPrismaDevServer()`** — not load-bearing, given CI uses a service container, but it is the fallback if the container approach fails.
+
+Freezing the Prisma 8 spec requires re-running all three against a working CLI.
+
+## Original decisions (Prisma 7 era)
+
 Scaffolded apps default to SQLite with `prisma db push` for a zero-setup local loop, but production runs on PostgreSQL with versioned `prisma migrate` migrations. These are deliberately two different workflows, and the split is baked into the templates, the generated `prisma.config.ts`, and the deployment guide.
 
-## Decisions
+### Decisions (as originally recorded)
 
 - **Two database loops.** Local dev: SQLite + `db push` (fast, no migration history, disposable `dev.db`). Production: PostgreSQL + `prisma migrate dev` (authoring versioned migrations) and `prisma migrate deploy` (applying them). `db push` is **not** a supported path to production — it is diff-and-force with no history and risks data loss on schema change.
 - **Switching to Postgres is a documented one-time manual change** to the `db` block of `opensaas.config.ts` (provider `sqlite → postgresql`, driver adapter `PrismaBetterSqlite3 → PrismaPg`/`PrismaNeon`, install the adapter) plus `DATABASE_URL`. A scaffolder `--db postgres` flag was considered and deferred — the common journey is "develop on SQLite, switch once at deploy," so a one-time documented swap beats maintaining a second template/provider matrix.
@@ -12,6 +38,6 @@ Scaffolded apps default to SQLite with `prisma db push` for a zero-setup local l
 - **Pooled-adapter / direct-CLI connection split** (for serverless Postgres such as Neon). The running app's driver adapter connects with the **pooled** `DATABASE_URL`; the Prisma CLI (migrations) reads `prisma.config.ts`'s `datasource`, which is CLI-only, and uses a **direct** connection: `env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL')`. The fallback keeps SQLite/local untouched (no second URL needed). This replaces the older top-level `directUrl` in the `db` config, which does not apply in the driver-adapter model.
 - **Deployment is verified by a one-time manual maintainer runbook** (deploy `starter` and `starter-auth` to Vercel + Neon), not an automated CI deploy job — a CI deploy gate would need hosting/DB credentials as secrets and add recurring cost/flakiness for low marginal signal.
 
-## Why this is worth recording
+### Why this is worth recording
 
 A future reader will otherwise wonder why there are two database workflows, why `prisma.config.ts` points at a _direct_ URL while the application connects via a _pooled_ one, and why production deployment isn't gated in CI. Each is a deliberate trade-off (zero-setup local dev vs safe versioned production schema changes; serverless connection-pooling constraints; CI cost vs signal), and reversing any of them touches templates, generated config, and docs together.
