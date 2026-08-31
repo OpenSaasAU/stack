@@ -39,3 +39,11 @@ Access resolves **lazily, entirely in the terminal**. Builder methods are synchr
 - **ADR-0038 carried a false premise and is amended in place.** Raw SQL is not observable to `beforeCompile` either — raw plans arrive already lowered and bypass the hook entirely — so the tripwire cannot refuse a raw query, only ORM queries the engine did not build. The hybrid decision is unchanged (the extension seat loses the same capability), but this strengthens the case for renaming `context.prisma` to state its bypass.
 - **The engine stamp's `beforeCompile` read path is structurally supported but not empirically demonstrated.** The types and wiring carry it (`plan.meta.annotations` is populated at plan-build time, before the runtime calls the middleware chain), but no shipped Prisma middleware or test reads an annotation inside `beforeCompile` specifically — the canonical consumer reads in `beforeQuery`. Verify before relying on it.
 - **Everything here was reasoned against `8.0.0-rc.8`** (`prisma/orm@ca8fe14`). Two naming details already disagree between Prisma's docs and its source — `limit`/`offset` versus `take`/`skip`, and whether a schema namespace segment is required on the model accessor — so the method list above should be re-checked at GA.
+
+## Amendment — widen-and-strip drops its provenance tracking (ADR-0051)
+
+[ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) leaves the widen-and-strip decision above intact and changes both of its inputs.
+
+**What the engine widens for** is a lookup in a generation-time emitted table, not a walk of the config's relationship graph. It also now covers stored columns: exact selection is what opened that hole, so it is this record's to close.
+
+**How the addition is stripped** is a recursive set difference, `widened ∖ caller`, rather than the provenance tree the old fold maintained. Because `.select()` replaces rather than accumulates and selection is exact, both are explicit complete trees the engine constructed — which is the `{ selectedForQuery, hiddenColumns }` shape this record already cites Prisma for.
