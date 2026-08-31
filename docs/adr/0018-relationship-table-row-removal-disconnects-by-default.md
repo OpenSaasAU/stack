@@ -5,3 +5,5 @@ The edit view renders to-many relationships as inline-editable tables of the rel
 This is a deliberate deviation from the mock: anyone comparing the built UI to the design will wonder why ✕ doesn't delete — that default was rejected because a generic UI must not default to destruction.
 
 _Amended by ADR-0048: across an explicit junction list there is no disconnect. Removing an edge deletes the junction row, gated on that list's own delete access; the non-destructive principle is unchanged (removing an edge must not destroy an endpoint row), and `removeAction: 'delete'` still means "delete the far endpoint too"._
+
+_Amended by ADR-0050 for the other direction: **adding** an edge across an explicit junction list creates the junction row, gated on that list's own create access. `connect` is refused across a junction, because there it is a second write against a list with its own access rules rather than a foreign-key assignment. Removal and addition are now symmetric._
