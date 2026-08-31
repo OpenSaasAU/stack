@@ -63,12 +63,16 @@ The convention that an access-denied operation returns `null` (single) or `[]` (
 _Avoid_: access error, permission error
 
 **Engine stamp**:
-A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage.
+A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage. The mark is written inside the terminal, never at an application call site, and the tripwire that reads it is stack-owned rather than configured — the two are one component that is removed together or not at all (ADR-0049).
 _Avoid_: query tag, session token, middleware context
 
 **Unsafe surface**:
 The deliberately unsecured ORM client, reached under a name that states the bypass. It carries neither access control nor hooks, and it stamps the ORM queries it builds as intentionally unscoped, so a bypass is an audited act rather than an absence indistinguishable from a mistake. Better-auth's own flows and vector search run here by design (ADR-0013, ADR-0038); an ORM query bearing no stamp at all belongs to neither surface and is refused. **Raw SQL is outside this entirely** — raw plans never reach the tripwire, so they are neither stamped nor refusable, and scoping them is the caller's alone.
 _Avoid_: raw client, escape hatch, prisma passthrough
+
+**Extension pack**:
+A bundle of database capability — column types, codecs, typed operations — contributed by a package and named in `db.extensions` as an import descriptor (`{ name, from }`) rather than as a value, so the generated contract can import it itself. Declaring one is a contract-level act only: it makes `Vector(n)` a column type the schema can use, and does not install the Postgres extension, which stays the deployment's job. A pack may be declared by the application or contributed by a plugin that knows it needs one; a field whose type names a pack the config does not declare fails generation (ADR-0049).
+_Avoid_: preview feature, database extension, plugin, adapter
 
 **Terminal operation**:
 The operation that executes a built-up query and the only place a read or write is secured — it resolves operation-level access, merges the access filter, and applies Field Visibility to what comes back. The query itself is an immutable value that can be composed anywhere; nothing about it is enforced until a terminal runs it. Silent failure lives here, which is why the terminals stay the engine's and are never delegated to the ORM (ADR-0039). A terminal yields its rows all at once and never one at a time, so a refusal — including one raised part-way through securing the rows — reaches the caller before any row does; bounding a large read is the caller's job, and a read that must be consumed incrementally belongs on the Unsafe surface (ADR-0046).
