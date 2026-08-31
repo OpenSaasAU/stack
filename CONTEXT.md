@@ -63,7 +63,7 @@ The convention that an access-denied operation returns `null` (single) or `[]` (
 _Avoid_: access error, permission error
 
 **Engine stamp**:
-A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage. The mark is written inside the terminal, never at an application call site, and the tripwire that reads it is stack-owned rather than configured — the two are one component that is removed together or not at all (ADR-0048).
+A mark the access engine puts on every query it builds, and the only thing the ORM-level tripwire reads. It carries no session and no policy — it answers one question, "did this query come through the secured engine?", which is what lets a query the engine never saw be refused before it compiles (ADR-0038). Because it says nothing about _who_ is reading, scoping a query to a session stays an ordinary rebind and needs no ambient per-request storage. The mark is written inside the terminal, never at an application call site, and the tripwire that reads it is stack-owned rather than configured — the two are one component that is removed together or not at all (ADR-0049).
 _Avoid_: query tag, session token, middleware context
 
 **Unsafe surface**:
@@ -71,7 +71,7 @@ The deliberately unsecured ORM client, reached under a name that states the bypa
 _Avoid_: raw client, escape hatch, prisma passthrough
 
 **Extension pack**:
-A bundle of database capability — column types, codecs, typed operations — contributed by a package and named in `db.extensions` as an import descriptor (`{ name, from }`) rather than as a value, so the generated contract can import it itself. Declaring one is a contract-level act only: it makes `Vector(n)` a column type the schema can use, and does not install the Postgres extension, which stays the deployment's job. A pack may be declared by the application or contributed by a plugin that knows it needs one; a field whose type names a pack the config does not declare fails generation (ADR-0048).
+A bundle of database capability — column types, codecs, typed operations — contributed by a package and named in `db.extensions` as an import descriptor (`{ name, from }`) rather than as a value, so the generated contract can import it itself. Declaring one is a contract-level act only: it makes `Vector(n)` a column type the schema can use, and does not install the Postgres extension, which stays the deployment's job. A pack may be declared by the application or contributed by a plugin that knows it needs one; a field whose type names a pack the config does not declare fails generation (ADR-0049).
 _Avoid_: preview feature, database extension, plugin, adapter
 
 **Terminal operation**:
