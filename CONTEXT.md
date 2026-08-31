@@ -82,8 +82,12 @@ _Avoid_: executor, query runner, resolver, stream
 A `SELECT … FOR UPDATE` taken through the secured surface, reachable only on a transaction-bound builder because outside a transaction it is a silent no-op. It is the stack's concurrency gate now that no isolation level can be selected (ADR-0042): the contended parent row is locked as a **mutex token** — every racer takes the same token before reading the count it will branch on — rather than as protection for that row's own columns. The engine issues it as a second statement over the primary keys the scoped read returned, always ordered by primary key, so the locked set is provably a subset of the readable set and acquisition order is the same in every session (ADR-0047). A terminal never returns a row it did not lock.
 _Avoid_: pessimistic lock, select for update, transaction lock
 
+**Connect**:
+The only relationship spelling a write payload accepts (`author: { connect: { id } }`), legal **only on the field that owns the foreign key**. There it is engine-owned sugar for a **foreign-key assignment**, not a nested write: the terminal issues a reachability query for the target and then writes the scalar column, both statements carrying the engine stamp. Assigning `null` to the same field is its counterpart, and replaces what nested `disconnect` used to spell. It requires read/query access on the target row _and_ the owning relationship field's write access, so a foreign key can never become a probing oracle. On any non-FK-owning field — an inverse to-many, the non-owning side of a one-to-one, or a junction list — it is a **generation error**, because there it would be N secured writes against another list wearing one field's name (ADR-0050).
+_Avoid_: nested connect, link, attach
+
 **Write Pipeline**:
-The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → nested operations → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
+The single module that runs the canonical, secured write sequence (operation-level access → hooks → validation → writable-field filtering → relationship resolution → persistence → after-hooks → Field Visibility) for one create/update/delete. Operation-level access is resolved first, outside the transaction (#590) — a denied write short-circuits to `null` before any hook fires. Owns the phase order in one place; per-operation differences (target resolution, which input phases run, the database verb and returned row) are supplied by a per-operation strategy.
 _Avoid_: operation handler, mutation service
 
 **Hook Pipeline**:
@@ -91,16 +95,16 @@ The module that runs the transform+validate span of a write — list `resolveInp
 _Avoid_: validation service, input resolver
 
 **In-transaction hooks** (`beforeOperation` / `afterOperation`):
-Side-effect hooks that run _inside_ the write's database transaction and roll back with it — for work that must be atomic with the write (typically DB work through the transaction client). They fire per record written, including each nested record, so a record's side effects are identical whether it was written top-level or nested.
+Side-effect hooks that run _inside_ the write's database transaction and roll back with it — for work that must be atomic with the write (typically DB work through the transaction client). They fire once per record written. Since ADR-0050 removed nested relation input there is only one call shape, so hook parity across shapes is true by construction rather than by machinery.
 _Avoid_: operation hooks (ambiguous about the boundary)
 
 **Transaction-boundary hooks** (`beforeTransaction` / `afterTransaction`):
-Side-effect hooks that run _outside_ the write's database transaction, for non-transactional work (e.g. external API calls) that must not hold the transaction open. `beforeTransaction` runs before its write; `afterTransaction` runs when the outermost transaction the write participates in settles, and **always** runs — reporting whether that transaction committed or rolled back — so the pair forms a compensation bracket around the atomic write. Like the in-transaction hooks, they fire per list involved in the write (including nested lists).
+Side-effect hooks that run _outside_ the write's database transaction, for non-transactional work (e.g. external API calls) that must not hold the transaction open. `beforeTransaction` runs before its write; `afterTransaction` runs when the outermost transaction the write participates in settles, and **always** runs — reporting whether that transaction committed or rolled back — so the pair forms a compensation bracket around the atomic write. Like the in-transaction hooks, they fire per list involved in the write — since ADR-0050 that is exactly one list per write, and a caller writing several lists does so through **Transaction owner**'s `context.transaction()`, where each write brings its own bracket.
 _Avoid_: outer hooks, outbox hooks
 
 **Joined write**:
 A `context.db` write that runs inside a transaction it did not open, because the client it was handed exposes no way to open one. Arises both inside an interactive transaction and from a hook writing through the context it was given.
-_Avoid_: nested write (that means the relationship-payload sense), inner write
+_Avoid_: nested write (ADR-0050 removed that sense from the write surface; do not revive it here), inner write
 
 **Transaction owner**:
 The component that opened the transaction a write participates in, and so the only one that knows when it settles. A joined write's transaction-boundary hooks report the outcome its owner observed.

@@ -1,6 +1,8 @@
 # Nested writes run the full hook pipeline inside one transaction
 
-Status: accepted
+Status: superseded by [ADR-0050](0050-nested-relation-input-leaves-the-secured-write-surface.md)
+
+_ADR-0050 removes nested relation input from the secured write surface entirely, so the mechanism below has no remaining referent. This record is kept rather than withdrawn because its Considered Options is the surviving account of why full persistence decomposition was avoided — the argument ADR-0050 leans on. One consequence outlives the decision: **every write is still transactional**, on ADR-0050's grounds rather than the uniform-call-shape grounds stated here._
 
 To give nested relation writes the same side-effect hooks as top-level writes (issue #569), the Write Pipeline runs every written record's **full** hook pipeline — list- and field-level `beforeOperation`/`afterOperation`, not only `resolveInput`/`validate`/field-rules — for parent **and every nested** `create`/`update`/`delete`, and the whole operation runs inside **one** `prisma.$transaction` so parent and nested writes remain atomic. The transaction's interactive client is threaded through the pipeline as the persistence target, so all writes of one nested operation share the same transaction.
 

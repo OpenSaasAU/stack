@@ -40,6 +40,8 @@ Access resolves **lazily, entirely in the terminal**. Builder methods are synchr
 - **The engine stamp's `beforeCompile` read path is structurally supported but not empirically demonstrated.** The types and wiring carry it (`plan.meta.annotations` is populated at plan-build time, before the runtime calls the middleware chain), but no shipped Prisma middleware or test reads an annotation inside `beforeCompile` specifically — the canonical consumer reads in `beforeQuery`. Verify before relying on it.
 - **Everything here was reasoned against `8.0.0-rc.8`** (`prisma/orm@ca8fe14`). Two naming details already disagree between Prisma's docs and its source — `limit`/`offset` versus `take`/`skip`, and whether a schema namespace segment is required on the model accessor — so the method list above should be re-checked at GA.
 
+_Amended by [ADR-0050](0050-nested-relation-input-leaves-the-secured-write-surface.md): the write subset carries **no nested relation input**. A `create`/`update` payload holds scalars plus `connect`, which is engine-owned sugar for a foreign-key assignment (a reachability query and a scalar write, both stamped by the terminal) and not a nested write. `upsert`'s exclusion here — it cannot stage two hook chains against one atomic decision — is what the removal generalises._
+
 ## Amendment — widen-and-strip drops its provenance tracking (ADR-0051)
 
 [ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) leaves the widen-and-strip decision above intact and changes both of its inputs.
