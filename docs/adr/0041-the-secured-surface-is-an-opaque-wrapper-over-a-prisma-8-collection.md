@@ -41,3 +41,11 @@ Access resolves **lazily, entirely in the terminal**. Builder methods are synchr
 - **Everything here was reasoned against `8.0.0-rc.8`** (`prisma/orm@ca8fe14`). Two naming details already disagree between Prisma's docs and its source — `limit`/`offset` versus `take`/`skip`, and whether a schema namespace segment is required on the model accessor — so the method list above should be re-checked at GA.
 
 _Amended by [ADR-0050](0050-nested-relation-input-leaves-the-secured-write-surface.md): the write subset carries **no nested relation input**. A `create`/`update` payload holds scalars plus `connect`, which is engine-owned sugar for a foreign-key assignment (a reachability query and a scalar write, both stamped by the terminal) and not a nested write. `upsert`'s exclusion here — it cannot stage two hook chains against one atomic decision — is what the removal generalises._
+
+## Amendment — widen-and-strip drops its provenance tracking (ADR-0051)
+
+[ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) leaves the widen-and-strip decision above intact and changes both of its inputs.
+
+**What the engine widens for** is a lookup in a generation-time emitted table, not a walk of the config's relationship graph. It also now covers stored columns: exact selection is what opened that hole, so it is this record's to close.
+
+**How the addition is stripped** is a recursive set difference, `widened ∖ caller`, rather than the provenance tree the old fold maintained. Because `.select()` replaces rather than accumulates and selection is exact, both are explicit complete trees the engine constructed — which is the `{ selectedForQuery, hiddenColumns }` shape this record already cites Prisma for.

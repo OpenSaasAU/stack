@@ -36,3 +36,13 @@ This decision was reached when projection existed only on the fragment path. [AD
 One rejected option loses a reason without changing verdict. _Enforcing the no-computed-output rule only where skipping happens_ was rejected partly because "the same field would return a value under an `include` read and `undefined` under a fragment read" — a shape-varies-by-path fault that cannot arise once every path can project. The rejection stands on its remaining ground: a field's visible contract should not depend on whether some caller happened to narrow the read.
 
 This ADR is **not** a projection ADR, despite being read as one while [#1044](https://github.com/OpenSaasAU/stack/issues/1044) was open. Prisma 8 knows nothing about `resolveOutput`; there is no native behaviour here to defer to, and nothing in this decision is a candidate for the withdrawals ADR-0043 records.
+
+## Amendment — what a hook sees is now caller-independent (ADR-0051)
+
+[ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) narrows this record's "a hook sees the row's stored columns and its declared relations" to **its declared dependencies and the system fields**. With projection universal, "the row's stored columns" was whatever the caller happened to select, so a hook's view varied with the call site.
+
+This closes the other half of the accidental coupling named above. That paragraph shut the case where a hook worked only because _another field's_ declaration paid for the fetch; the caller's own projection could still pay for it. Now neither can. `needs` covers columns as well as relations, which is what makes the narrowing expressible.
+
+The no-computed-output rule is unchanged and subsumed: a resolved value was never in a dependency set.
+
+The selective-computation rule itself is untouched, and becomes the input to the emitted set — the engine widens for the union of the sets belonging to the fields it is about to compute, which is the fields that will be returned.

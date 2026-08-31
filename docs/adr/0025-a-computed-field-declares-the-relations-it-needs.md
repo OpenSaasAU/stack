@@ -28,3 +28,15 @@ Value semantics are **session-relative, with no escape**. A dependency the sessi
 ADR-0026 re-pointed the relationship-graph cycle guard: once nothing walks the graph unprompted, a caller's `include` is a finite literal and cannot cycle, so the only thing left that can is a declaration closure — which the engine folds in rather than the caller writing. [ADR-0043](0043-bare-read-and-one-hop-become-the-orms-not-ours.md) withdraws ADR-0026, and the guard's record comes here rather than going with it, because a guard belongs with the thing it guards.
 
 The guard runs at generation time and again, defensively, at runtime. **Its comment must describe declaration closures, not the graph walk.** ADR-0026 named the hazard of leaving it otherwise and the hazard is unchanged: a guard annotated against a walk that no longer exists reads as dead code, and deleting it takes the live protection with it.
+
+## Amendment — the closure is a one-hop set, and the guard is deleted (ADR-0051)
+
+[ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) changes three things here.
+
+**`needs` names stored columns as well as relations.** ADR-0041 makes `.select()` exact on every read, so a hook reading a sibling column no longer finds it there by default. The flat array is unchanged.
+
+**The closure is one hop and does not compose.** No computed field runs on a branch fetched purely to satisfy a declaration, so nothing on that branch declares anything further. The dotted-path rejection above rests on cost alone now — "a dependency of a dependency is pulled in by the next level's own declaration" is no longer true. The object form stays pre-authorised on the same terms; until it is adopted, two hops mean a privileged read inside the hook.
+
+**The cycle guard is deleted, deliberately.** With the fold non-transitive a cycle is unreachable by construction, so both arms of `validateNeedsClosureDepth` and the runtime `visitedLists` guard go. The amendment above warned that a guard annotated against a vanished hazard reads as dead code; that warning is honoured by removing the guard in the same record that removes the hazard, rather than leaving an assertion over an impossibility. ADR-0023's resolve-chain guard is a different guard and is untouched.
+
+One rule here is also inverted: a declaration now **outranks** a caller-facing field `read` denial, symmetrically for columns and relations. The consequence is stated in ADR-0051 — a declaration can surface a read-denied value, and that is owned by whoever writes it.

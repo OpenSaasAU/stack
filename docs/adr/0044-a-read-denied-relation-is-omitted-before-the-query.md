@@ -69,3 +69,13 @@ A future reader will see one classifier feeding a throw and an omission and reac
 - **ADR-0041's widen-and-strip is the same shape and stays as-is.** The engine widens for the `needs` closure and for field-access resolution and strips its additions; the pre-query omission narrows the include and never widens it, so the two compose without a new rule.
 - **Streaming is reopened, not settled.** ADR-0041 materialised every terminal deliberately, to avoid settling the two-phase read from the wrong ticket. With phase 2 confirmed to survive, per-row field visibility over a stream is structurally fine — but what silent failure means for a denied stream is a separate design question, and stays one. ADR-0043 hands it a second input: the include path materialises parent rows internally, so a streaming secured read would be genuinely incremental only on include-free reads. The pre-query omission recorded here removes work from a denied relation's subtree, which does not change that.
 - **Nothing here was verified against a running Prisma 8.** Like the rest of this migration's records it is reasoned against `8.0.0-rc.8`; unlike most of them it depends on no new ORM capability, which is the point.
+
+## Amendment — the declaration exemption is explicit (ADR-0051)
+
+The consequence above ("a relation fetched only to satisfy a `needs` declaration is fetched for a **field**, not for the caller, so a caller-facing `read` denial on the relationship field does not suppress it") cannot hold alongside this record's own rule unless the pre-query omission exempts such relations — otherwise the relation is never fetched and no hook can see it. The implementation agreed with neither half: `field-visibility.ts` had access denial beat the declaration outright.
+
+[ADR-0051](0051-declared-dependencies-are-an-emitted-one-hop-set.md) resolves it in favour of the consequence. **The pre-query omission exempts a relation in a live declared dependency set**, and the denial-beats-declaration precedence flips. The same rule holds for stored columns, which ADR-0051 makes declarable.
+
+Row scoping is untouched: the Access Filter still scopes what the relation returns, so the declaring field's value stays session-relative.
+
+Two spellings here are superseded: "the `needs` closure" is now the **declared dependency set** (one hop, non-transitive), and ADR-0041's strip is a set difference rather than tracked provenance.
