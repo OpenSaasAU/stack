@@ -79,7 +79,7 @@ A `SELECT … FOR UPDATE` taken through the secured surface, reachable only on a
 _Avoid_: pessimistic lock, select for update, transaction lock
 
 **Connect**:
-The only relationship spelling a write payload accepts (`author: { connect: { id } }`). It is engine-owned sugar for a **foreign-key assignment**, not a nested write: the terminal issues a reachability query for the target and then writes the scalar column, both statements carrying the engine stamp. It requires read/query access on the target row _and_ the owning relationship field's write access, so a foreign key can never become a probing oracle. It is refused across a junction list, where linking is a create on that list gated on its own access (ADR-0050).
+The only relationship spelling a write payload accepts (`author: { connect: { id } }`), legal **only on the field that owns the foreign key**. There it is engine-owned sugar for a **foreign-key assignment**, not a nested write: the terminal issues a reachability query for the target and then writes the scalar column, both statements carrying the engine stamp. Assigning `null` to the same field is its counterpart, and replaces what nested `disconnect` used to spell. It requires read/query access on the target row _and_ the owning relationship field's write access, so a foreign key can never become a probing oracle. On any non-FK-owning field — an inverse to-many, the non-owning side of a one-to-one, or a junction list — it is a **generation error**, because there it would be N secured writes against another list wearing one field's name (ADR-0050).
 _Avoid_: nested connect, link, attach
 
 **Write Pipeline**:
