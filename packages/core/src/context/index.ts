@@ -12,8 +12,13 @@ import {
   validateQueryFieldReadAccess,
   resolveToOneAccessVisibility,
   emptyToOneAccessFilterTree,
+  emptyCountAccessDenialTree,
 } from '../access/index.js'
-import type { DeclaredOnlyTree, ToOneAccessFilterTree } from '../access/index.js'
+import type {
+  DeclaredOnlyTree,
+  ToOneAccessFilterTree,
+  CountAccessDenialTree,
+} from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { uniqueConstraintOf } from '../lib/prisma-errors.js'
@@ -992,6 +997,7 @@ async function resolveReadInclude(
   declaredOnly: DeclaredOnlyTree
   selection: FieldSelectionScope | undefined
   toOneAccessFilters: ToOneAccessFilterTree
+  countDenials: CountAccessDenialTree
 }> {
   if (fragmentFields !== undefined) {
     const fragmentInclude = buildInclude(fragmentFields) ?? undefined
@@ -1006,37 +1012,64 @@ async function resolveReadInclude(
     )
 
     if (context._isSudo || !folded.include) {
-      return { ...folded, selection, toOneAccessFilters: emptyToOneAccessFilterTree() }
+      return {
+        ...folded,
+        selection,
+        toOneAccessFilters: emptyToOneAccessFilterTree(),
+        countDenials: emptyCountAccessDenialTree(),
+      }
     }
 
-    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+    const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
       folded.include,
       listConfig.fields,
       { session: context.session, context },
       config,
       listName,
     )
-    return { include, declaredOnly: folded.declaredOnly, selection, toOneAccessFilters }
+    return {
+      include,
+      declaredOnly: folded.declaredOnly,
+      selection,
+      toOneAccessFilters,
+      countDenials,
+    }
   }
 
   if (context._isSudo) {
     const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
-    return { ...folded, selection: undefined, toOneAccessFilters: emptyToOneAccessFilterTree() }
+    return {
+      ...folded,
+      selection: undefined,
+      toOneAccessFilters: emptyToOneAccessFilterTree(),
+      countDenials: emptyCountAccessDenialTree(),
+    }
   }
 
   const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
   if (!folded.include) {
-    return { ...folded, selection: undefined, toOneAccessFilters: emptyToOneAccessFilterTree() }
+    return {
+      ...folded,
+      selection: undefined,
+      toOneAccessFilters: emptyToOneAccessFilterTree(),
+      countDenials: emptyCountAccessDenialTree(),
+    }
   }
 
-  const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+  const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
     folded.include,
     listConfig.fields,
     { session: context.session, context },
     config,
     listName,
   )
-  return { include, declaredOnly: folded.declaredOnly, selection: undefined, toOneAccessFilters }
+  return {
+    include,
+    declaredOnly: folded.declaredOnly,
+    selection: undefined,
+    toOneAccessFilters,
+    countDenials,
+  }
 }
 
 function createFindUnique<TPrisma extends PrismaClientLike>(
@@ -1093,14 +1126,15 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
-      args.include,
-      fragment ? fragment._fields : undefined,
-      listName,
-      listConfig,
-      context,
-      config,
-    )
+    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+      await resolveReadInclude(
+        args.include,
+        fragment ? fragment._fields : undefined,
+        listName,
+        listConfig,
+        context,
+        config,
+      )
 
     // Virtual fields have no database column. Whichever path produced
     // `include` (fragment, access-controlled merge, or sudo passthrough), a
@@ -1145,6 +1179,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       declaredOnly,
       selection,
       toOneVisibility,
+      countDenials,
     )
 
     if (fragment) {
@@ -1254,14 +1289,15 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
-      args?.include,
-      fragment ? fragment._fields : undefined,
-      listName,
-      listConfig,
-      context,
-      config,
-    )
+    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+      await resolveReadInclude(
+        args?.include,
+        fragment ? fragment._fields : undefined,
+        listName,
+        listConfig,
+        context,
+        config,
+      )
 
     // Strips virtual keys from `include` before the Prisma call — see the
     // `createFindUnique` comment above for why (#628, ADR-0027).
@@ -1303,6 +1339,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           declaredOnly,
           selection,
           toOneVisibility,
+          countDenials,
         ),
       ),
     )
@@ -1587,14 +1624,15 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters } = await resolveReadInclude(
-      args?.include,
-      fragment ? fragment._fields : undefined,
-      listName,
-      listConfig,
-      context,
-      config,
-    )
+    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+      await resolveReadInclude(
+        args?.include,
+        fragment ? fragment._fields : undefined,
+        listName,
+        listConfig,
+        context,
+        config,
+      )
 
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
@@ -1625,6 +1663,7 @@ function createGet<TPrisma extends PrismaClientLike>(
         declaredOnly,
         selection,
         toOneVisibility,
+        countDenials,
       )
       if (fragment) {
         return pickFields(filtered, fragment._fields)

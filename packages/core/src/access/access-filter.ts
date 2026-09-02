@@ -5,14 +5,18 @@ import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import {
   AccessScopeDepthExceededError,
   RelationFilterAccessDeniedError,
+  UndeclaredCountKeyError,
   UndeclaredIncludeKeyError,
 } from './errors.js'
 import {
   LOGICAL_OPERATORS,
   RELATION_QUANTIFIERS,
   resolveQueryField,
+  validateQueryFieldReadAccess,
+  validateQueryKeys,
   walkWhereReadAccess,
 } from './query-validation.js'
+import { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
 import { getDbKey } from '../lib/case-utils.js'
 
 /**
@@ -71,10 +75,11 @@ import { getDbKey } from '../lib/case-utils.js'
  * it stands for (its owning list's `query` access, folded `where`, nested
  * recursion, depth), always as a to-many relation — a list-only ref has one
  * construction site and no arity branch. A key that resolves to neither a
- * declared relationship nor a synthetic one is **rejected** (`_count` is the
- * one allowlisted exception, scoped separately — see #1082's "Out of scope"),
- * restoring this module's own denial rule for the one key shape that used to
- * fail open.
+ * declared relationship nor a synthetic one is **rejected** (`_count` is
+ * handled separately, scoped per named relation rather than resolved as a
+ * single relationship key — see `buildAccessScopedCountSelect` below and
+ * issue #1087), restoring this module's own denial rule for the one key
+ * shape that used to fail open.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -167,6 +172,168 @@ function isToOneRelationship(fieldConfig: FieldConfig): boolean {
 }
 
 /**
+ * Which `_count.select` keys, at which nesting level of an `include`, were
+ * denied outright by their related list's `query` access — omitted from the
+ * `_count.select` sent to Prisma (issue #1087), so the row Prisma returns
+ * either lacks the key entirely or lacks a `_count` object at all. Consumed
+ * post-query by `filterReadableFields` (`field-visibility.ts`), which injects
+ * `0` for each — a count is a session-relative value, and `0` is what "no
+ * visible rows" means for it, never an absent key (mirroring the to-one
+ * `null` injection this module already does for issue #974, though a denied
+ * count needs no existence check: `0` requires no query at all).
+ */
+export type CountAccessDenialTree = {
+  /** `_count.select` keys denied at THIS level. */
+  keys: Set<string>
+  /** Per-relation trees for relations present in the include for other reasons, whose own nested include may contain a further `_count`. */
+  nested: Record<string, CountAccessDenialTree>
+}
+
+export function emptyCountAccessDenialTree(): CountAccessDenialTree {
+  return { keys: new Set(), nested: {} }
+}
+
+function isCountAccessDenialTreeEmpty(tree: CountAccessDenialTree): boolean {
+  return tree.keys.size === 0 && Object.keys(tree.nested).length === 0
+}
+
+/**
+ * Normalize a caller's `_count` include value to the `_count.select` map it
+ * names. `true` (Prisma's "count every relation" shorthand) expands to every
+ * DECLARED to-many relationship on this list — matching
+ * `buildRelationshipCountSelect`'s own scope (the admin list view), which
+ * also does not enumerate synthetic back-relations for this form; a synthetic
+ * key is still countable when the caller names it explicitly via `select`.
+ * Returns `null` for a shape that requests nothing countable (`false`, or an
+ * object with no usable `select`).
+ */
+function normalizeCountSelect(
+  requestedValue: unknown,
+  fieldConfigs: Record<string, FieldConfig>,
+): Record<string, unknown> | null {
+  if (requestedValue === true) {
+    const expanded: Record<string, unknown> = {}
+    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+      if (isToManyRelationshipField(fieldConfig)) expanded[fieldName] = true
+    }
+    return expanded
+  }
+  if (isPlainObject(requestedValue) && isPlainObject(requestedValue.select)) {
+    return requestedValue.select
+  }
+  return null
+}
+
+/**
+ * Scope a caller-supplied `_count` include value by each named relation's own
+ * `query` access — the `_count` counterpart to the rest of this module's
+ * relation scoping (issue #1087, closing the one key `buildAccessScopedInclude`
+ * used to allowlist through unscoped, #1082's "Out of scope").
+ *
+ * For each key in the caller's `_count.select` (or, for bare `_count: true`,
+ * every declared to-many relation — see `normalizeCountSelect`):
+ * - Not a declared to-many relationship and not a synthetic back-relation
+ *   (#1082 — always genuinely countable) → THROWN as
+ *   `UndeclaredCountKeyError`, matching `buildAccessScopedInclude`'s own
+ *   rejection for the ordinary walk. A declared to-many relationship whose
+ *   `ref` cannot be resolved is skipped instead, matching that same walk's
+ *   handling of a config-level dangling ref (not a caller error).
+ * - The related list's `query` access denies it (`=== false`) → omitted from
+ *   the select sent to Prisma and added to the returned `deniedKeys`, so
+ *   `filterReadableFields` can inject `0` post-query (a count is
+ *   session-relative; denial doesn't mean "no such relation").
+ * - Otherwise → the access filter (if any) is AND-combined with any
+ *   caller-supplied nested `where` at that key — reusing `andWhere`, never
+ *   replacing the caller's own condition (mirroring `buildAccessScopedInclude`
+ *   itself) — and that `where` is key- and read-access-validated against the
+ *   RELATED list via the same `validateQueryKeys`/`validateQueryFieldReadAccess`
+ *   primitives `createFindMany` already runs on a top-level `where` (#912/#915),
+ *   rather than a second, parallel predicate validator.
+ */
+async function buildAccessScopedCountSelect(
+  requestedValue: unknown,
+  fieldConfigs: Record<string, FieldConfig>,
+  args: { session: Session | null; context: AccessContext },
+  config: OpenSaasConfig,
+  listKey: string,
+): Promise<{ select: Record<string, unknown> | undefined; deniedKeys: Set<string> }> {
+  const requestedSelect = normalizeCountSelect(requestedValue, fieldConfigs)
+  const deniedKeys = new Set<string>()
+  if (!requestedSelect) return { select: undefined, deniedKeys }
+
+  const select: Record<string, unknown> = {}
+
+  for (const [key, entryValue] of Object.entries(requestedSelect)) {
+    // A caller can explicitly exclude a key from the `true`-expanded set the
+    // same way Prisma's own `select` excludes a field.
+    if (entryValue === false) continue
+
+    const fieldConfig = fieldConfigs[key]
+    const isDeclaredToMany = isToManyRelationshipField(fieldConfig)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    let relatedConfig: { listName: string; listConfig: ListConfig<any> } | null = null
+    if (isDeclaredToMany && fieldConfig && 'ref' in fieldConfig) {
+      relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
+    }
+    if (!relatedConfig && !isDeclaredToMany) {
+      const synthetic = resolveSyntheticReverseRelation(key, listKey, config)
+      if (synthetic) {
+        relatedConfig = {
+          listName: synthetic.sourceListName,
+          listConfig: synthetic.sourceListConfig,
+        }
+      }
+    }
+    if (!relatedConfig) {
+      // A declared to-many field whose `ref` didn't resolve is a config
+      // issue, not a caller error — skip it exactly like the ordinary
+      // include walk does for the same case.
+      if (isDeclaredToMany) continue
+      throw new UndeclaredCountKeyError(listKey, key)
+    }
+
+    const accessEntry = await resolveCountAccessEntryForList(relatedConfig.listConfig, args)
+
+    const requestedWhere =
+      isPlainObject(entryValue) && isPlainObject(entryValue.where)
+        ? (entryValue.where as Record<string, unknown>)
+        : undefined
+
+    if (requestedWhere) {
+      validateQueryKeys({
+        where: requestedWhere,
+        listConfig: relatedConfig.listConfig,
+        listName: relatedConfig.listName,
+        config,
+        isSudo: false,
+      })
+      await validateQueryFieldReadAccess({
+        where: requestedWhere,
+        listConfig: relatedConfig.listConfig,
+        listName: relatedConfig.listName,
+        session: args.session,
+        context: args.context,
+        isSudo: false,
+      })
+    }
+
+    if (accessEntry.kind === 'denied') {
+      deniedKeys.add(key)
+      continue
+    }
+
+    const scopedWhere = andWhere(
+      accessEntry.kind === 'scoped' ? accessEntry.where : undefined,
+      requestedWhere,
+    )
+    select[key] = scopedWhere ? { where: scopedWhere } : true
+  }
+
+  return { select: Object.keys(select).length > 0 ? select : undefined, deniedKeys }
+}
+
+/**
  * Build the access-scoped `include` for exactly the relations a read
  * requested, recursing only into branches `requestedInclude` itself names.
  *
@@ -175,8 +342,11 @@ function isToOneRelationship(fieldConfig: FieldConfig): boolean {
  *   control does not govern it; passed through unchanged (a virtual key is
  *   stripped later by `stripVirtualFieldsFromInclude`, #628).
  * - Not declared at all → resolved via `resolveSyntheticReverseRelation`
- *   (the synthetic-back-relation case above); `_count` is passed through
- *   unchanged (unscoped by design, see #1082's "Out of scope"); anything
+ *   (the synthetic-back-relation case above); `_count` is scoped by
+ *   `buildAccessScopedCountSelect` (issue #1087 — each named relation's own
+ *   `query` access, exactly like any other relation this walk scopes; a
+ *   denied one is recorded for `filterReadableFields` to inject `0` for,
+ *   post-query, since Prisma cannot be asked for a guaranteed `0`); anything
  *   else throws `UndeclaredIncludeKeyError` rather than reaching the
  *   database unscoped.
  * - A declared relationship whose related list's `query` access denies it
@@ -217,7 +387,11 @@ export async function buildAccessScopedInclude(
   config: OpenSaasConfig,
   listKey: string,
   depth: number = 0,
-): Promise<{ include: Record<string, unknown>; toOneAccessFilters: ToOneAccessFilterTree }> {
+): Promise<{
+  include: Record<string, unknown>
+  toOneAccessFilters: ToOneAccessFilterTree
+  countDenials: CountAccessDenialTree
+}> {
   const requestedKeys = Object.keys(requestedInclude)
   if (depth >= READ_INCLUDE_MAX_DEPTH && requestedKeys.length > 0) {
     throw new AccessScopeDepthExceededError(listKey, requestedKeys[0], depth)
@@ -225,6 +399,7 @@ export async function buildAccessScopedInclude(
 
   const result: Record<string, unknown> = {}
   const toOneAccessFilters = emptyToOneAccessFilterTree()
+  const countDenials = emptyCountAccessDenialTree()
 
   for (const [relationName, requestedValue] of Object.entries(requestedInclude)) {
     const fieldConfig = fieldConfigs[relationName]
@@ -245,10 +420,15 @@ export async function buildAccessScopedInclude(
       result[relationName] = requestedValue
       continue
     } else if (relationName === '_count') {
-      // Unscoped by design (#1082's "Out of scope") — a caller `_count`
-      // leaks related-row counts regardless of the related list's `query`
-      // access. Same bug class, its own fix, tracked separately.
-      result[relationName] = requestedValue
+      const { select, deniedKeys } = await buildAccessScopedCountSelect(
+        requestedValue,
+        fieldConfigs,
+        args,
+        config,
+        listKey,
+      )
+      if (select) result[relationName] = { select }
+      if (deniedKeys.size > 0) countDenials.keys = deniedKeys
       continue
     } else {
       const synthetic = resolveSyntheticReverseRelation(relationName, listKey, config)
@@ -279,6 +459,7 @@ export async function buildAccessScopedInclude(
 
     let nestedInclude: Record<string, unknown> | undefined
     let nestedToOneFilters: ToOneAccessFilterTree | undefined
+    let nestedCountDenials: CountAccessDenialTree | undefined
     if (requestedEntry?.include) {
       const nested = await buildAccessScopedInclude(
         requestedEntry.include,
@@ -290,6 +471,7 @@ export async function buildAccessScopedInclude(
       )
       nestedInclude = nested.include
       nestedToOneFilters = nested.toOneAccessFilters
+      nestedCountDenials = nested.countDenials
     }
 
     const entry: IncludeEntryObject = {}
@@ -312,11 +494,14 @@ export async function buildAccessScopedInclude(
     if (nestedToOneFilters && !isToOneAccessFilterTreeEmpty(nestedToOneFilters)) {
       toOneAccessFilters.nested[relationName] = nestedToOneFilters
     }
+    if (nestedCountDenials && !isCountAccessDenialTreeEmpty(nestedCountDenials)) {
+      countDenials.nested[relationName] = nestedCountDenials
+    }
 
     result[relationName] = Object.keys(entry).length > 0 ? entry : true
   }
 
-  return { include: result, toOneAccessFilters }
+  return { include: result, toOneAccessFilters, countDenials }
 }
 
 /** One to-one relation's resolved post-query visibility — see `resolveToOneAccessVisibility`. */

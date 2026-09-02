@@ -42,13 +42,19 @@ export {
   resolveToOneAccessVisibility,
   emptyToOneAccessFilterTree,
   emptyToOneAccessVisibilityTree,
+  emptyCountAccessDenialTree,
 } from './access-filter.js'
 export type {
   ToOneAccessFilterTree,
   ToOneAccessFilterEntry,
   ToOneAccessVisibilityTree,
   ToOneVisibility,
+  CountAccessDenialTree,
 } from './access-filter.js'
+// Access-scoped to-many relationship counts (admin list view, issue #732)
+// and the shared per-relation resolver `_count` scoping (issue #1087) reuses.
+export { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
+export type { CountAccessEntry } from './relationship-count.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — folding `needs` into an include without widening
@@ -71,3 +77,5 @@ export { InvalidCreateAccessResultError } from './errors.js'
 export { RelationFilterAccessDeniedError } from './errors.js'
 // Thrown when a caller `include` names a key that is neither declared, synthetic, nor `_count` (#1082).
 export { UndeclaredIncludeKeyError } from './errors.js'
+// Thrown when a caller `_count.select` names a key that is not a countable to-many relation (#1087).
+export { UndeclaredCountKeyError } from './errors.js'

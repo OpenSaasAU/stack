@@ -46,10 +46,32 @@ export function isToManyRelationshipField(field: FieldConfig | undefined): boole
 }
 
 /** The per-relation entry the count `_count.select` uses for one relationship. */
-type CountAccessEntry =
+export type CountAccessEntry =
   | { kind: 'all' } // related list fully readable → count every related row
   | { kind: 'scoped'; where: PrismaFilter } // count only rows matching the access filter
   | { kind: 'denied' } // related list not readable at all → count is always 0
+
+/**
+ * Resolve one related list's operation-level `query` access directly into the
+ * entry its `_count` select needs. The shared decision both
+ * `relationshipCountAccessEntry` below (field → related list, for this
+ * module's own admin-list-view and count-filter callers) and
+ * `access-filter.ts`'s caller-`_count` scoping (issue #1087, which already
+ * has the related list resolved — including a synthetic back-relation's,
+ * which has no field of its own on the counting list) build on.
+ */
+export async function resolveCountAccessEntryForList(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
+  args: CountArgs,
+): Promise<CountAccessEntry> {
+  const queryAccess = relatedListConfig.access?.operation?.query
+  const result = await checkAccess(queryAccess, { session: args.session, context: args.context })
+
+  if (result === false) return { kind: 'denied' }
+  if (typeof result === 'object') return { kind: 'scoped', where: result }
+  return { kind: 'all' }
+}
 
 /**
  * Resolve the related list's operation-level `query` access for one to-many
@@ -69,12 +91,7 @@ async function relationshipCountAccessEntry(
   const related = getRelatedListConfig(ref, config)
   if (!related) return null
 
-  const queryAccess = related.listConfig.access?.operation?.query
-  const result = await checkAccess(queryAccess, { session: args.session, context: args.context })
-
-  if (result === false) return { kind: 'denied' }
-  if (typeof result === 'object') return { kind: 'scoped', where: result }
-  return { kind: 'all' }
+  return resolveCountAccessEntryForList(related.listConfig, args)
 }
 
 /**

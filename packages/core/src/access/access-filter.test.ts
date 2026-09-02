@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildAccessScopedInclude, resolveToOneAccessVisibility } from './access-filter.js'
-import { AccessScopeDepthExceededError, UndeclaredIncludeKeyError } from './errors.js'
+import {
+  AccessScopeDepthExceededError,
+  UndeclaredCountKeyError,
+  UndeclaredIncludeKeyError,
+} from './errors.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
@@ -439,7 +443,7 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
     ).rejects.toThrow(UndeclaredIncludeKeyError)
   })
 
-  it('passes `_count` through unchanged even though it is undeclared (#1082 out of scope)', async () => {
+  it('a bare `_count: true` on a list with no to-many relations yields no `_count` key at all (#1087)', async () => {
     const config = {
       db: { provider: 'sqlite' },
       lists: {
@@ -458,7 +462,257 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
       config,
       'Leaf',
     )
-    expect(include).toEqual({ _count: true })
+    expect(include).toEqual({})
+  })
+})
+
+/**
+ * Regression coverage for issue #1087: a caller-supplied `_count` in
+ * `include` used to reach Prisma unscoped (#1082's "Out of scope" — the one
+ * key `buildAccessScopedInclude`'s own denial rule allowlisted through rather
+ * than rejecting or scoping). These tests pin the fix: each named relation's
+ * `_count.select` entry is scoped by that relation's own `query` access,
+ * exactly like the rest of this module scopes `include`, and a denied
+ * relation is recorded in `countDenials` for `filterReadableFields` to inject
+ * `0` for post-query (Prisma cannot be asked for a guaranteed `0`).
+ */
+describe('buildAccessScopedInclude — `_count` is scoped like any other relation (issue #1087)', () => {
+  function countConfig(postQuery: unknown): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite' },
+      lists: {
+        User: {
+          fields: {
+            name: { type: 'text' } as FieldConfig,
+            posts: rel('Post.author', true),
+            secrets: rel('Secret.owner', true),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: { title: { type: 'text' } as FieldConfig, author: rel('User.posts') },
+          access: { operation: { query: postQuery } },
+        },
+        Secret: {
+          fields: { body: { type: 'text' } as FieldConfig, owner: rel('User.secrets') },
+          access: { operation: { query: () => false } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+  }
+
+  it('a fully-readable relation counts unchanged', async () => {
+    const config = countConfig(() => true)
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: { select: { posts: true } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({ _count: { select: { posts: true } } })
+    expect(countDenials.keys.size).toBe(0)
+  })
+
+  it('folds the related list row filter into the count select', async () => {
+    const config = countConfig(() => ({ published: { equals: true } }))
+
+    const { include } = await buildAccessScopedInclude(
+      { _count: { select: { posts: true } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({
+      _count: { select: { posts: { where: { published: { equals: true } } } } },
+    })
+  })
+
+  it('AND-combines a caller-supplied nested `where` with the access filter, never replacing it', async () => {
+    const config = countConfig(() => ({ published: { equals: true } }))
+
+    const { include } = await buildAccessScopedInclude(
+      { _count: { select: { posts: { where: { title: { contains: 'foo' } } } } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({
+      _count: {
+        select: {
+          posts: {
+            where: {
+              AND: [{ published: { equals: true } }, { title: { contains: 'foo' } }],
+            },
+          },
+        },
+      },
+    })
+  })
+
+  it('omits a fully-denied relation from the select and records it in `countDenials`', async () => {
+    const config = countConfig(() => true)
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: { select: { posts: true, secrets: true } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({ _count: { select: { posts: true } } })
+    expect(countDenials.keys).toEqual(new Set(['secrets']))
+  })
+
+  it('a wholly-denied `_count.select` omits the `_count` key entirely, still recording the denial', async () => {
+    const config = countConfig(() => true)
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: { select: { secrets: true } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({})
+    expect(countDenials.keys).toEqual(new Set(['secrets']))
+  })
+
+  it('rejects a `_count.select` key that is not a countable to-many (undeclared)', async () => {
+    const config = countConfig(() => true)
+
+    await expect(
+      buildAccessScopedInclude(
+        { _count: { select: { nonsense: true } } },
+        config.lists.User.fields,
+        { session: null, context: makeContext() },
+        config,
+        'User',
+      ),
+    ).rejects.toThrow(UndeclaredCountKeyError)
+  })
+
+  it('rejects a `_count.select` key naming a scalar field', async () => {
+    const config = countConfig(() => true)
+
+    await expect(
+      buildAccessScopedInclude(
+        { _count: { select: { name: true } } },
+        config.lists.User.fields,
+        { session: null, context: makeContext() },
+        config,
+        'User',
+      ),
+    ).rejects.toThrow(UndeclaredCountKeyError)
+  })
+
+  it('rejects a `_count.select` key naming a to-one relationship', async () => {
+    const config = countConfig(() => true)
+
+    await expect(
+      buildAccessScopedInclude(
+        { _count: { select: { author: true } } },
+        config.lists.Post.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Post',
+      ),
+    ).rejects.toThrow(UndeclaredCountKeyError)
+  })
+
+  it('does not reject a `_count.select` key naming a synthetic back-relation (#1082)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Category: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' } as FieldConfig,
+            // A list-only ref: no `Category` field names it back, so schema
+            // generation synthesizes `from_Post_category` on Category.
+            category: rel('Category'),
+          },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      { _count: { select: { from_Post_category: true } } },
+      config.lists.Category.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Category',
+    )
+
+    expect(include).toEqual({ _count: { select: { from_Post_category: true } } })
+  })
+
+  it('`_count: true` expands to every declared to-many relation, scoped', async () => {
+    const config = countConfig(() => true)
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: true },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({ _count: { select: { posts: true } } })
+    expect(countDenials.keys).toEqual(new Set(['secrets']))
+  })
+
+  it('scopes `_count` nested inside an ordinary relation include, at that level', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Org: {
+          fields: { name: { type: 'text' } as FieldConfig, users: rel('User.org', true) },
+          access: { operation: { query: () => true } },
+        },
+        User: {
+          fields: {
+            name: { type: 'text' } as FieldConfig,
+            org: rel('Org.users'),
+            posts: rel('Post.author', true),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: { title: { type: 'text' } as FieldConfig, author: rel('User.posts') },
+          access: { operation: { query: () => ({ published: { equals: true } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      { users: { include: { _count: { select: { posts: true } } } } },
+      config.lists.Org.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Org',
+    )
+
+    expect(include).toEqual({
+      users: {
+        include: { _count: { select: { posts: { where: { published: { equals: true } } } } } },
+      },
+    })
   })
 })
 

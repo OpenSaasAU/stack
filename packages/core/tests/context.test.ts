@@ -2282,6 +2282,59 @@ describe('getContext', () => {
         expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
       })
 
+      it('caller `_count` folds the relation access where into the select (#1087)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([
+          { id: 'a1', name: 'Jo', _count: { posts: 3 } },
+        ])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        const result = await context.db.author.findMany({
+          include: { _count: { select: { posts: true } } },
+        })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        expect(call.include._count).toEqual({
+          select: { posts: { where: { status: { equals: 'published' } } } },
+        })
+        expect(result[0]._count).toEqual({ posts: 3 })
+      })
+
+      it('caller `_count` on a fully-denied relation is omitted from the select and returns 0 (#1087)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+
+        const context = await getContext(relConfig, relPrisma, null)
+        const result = await context.db.author.findMany({
+          include: { _count: { select: { posts: true, secrets: true } } },
+        })
+
+        const call = relPrisma.author.findMany.mock.calls[0][0]
+        // The denied `Secret` list is never asked to be counted...
+        expect(call.include._count).toEqual({
+          select: { posts: { where: { status: { equals: 'published' } } } },
+        })
+        // ...but the caller still sees an explicit `0`, never an absent key —
+        // a count is session-relative, and `0` is what "no visible rows" means.
+        expect(result[0]._count).toEqual({ secrets: 0 })
+      })
+
+      it('sudo `_count` is used as-is, unscoped (behaviour preserved)', async () => {
+        relPrisma.author.findMany.mockResolvedValue([
+          { id: 'a1', name: 'Jo', _count: { posts: 3, secrets: 7 } },
+        ])
+
+        const context = await getContext(relConfig, relPrisma, null).sudo()
+        const result = await context.db.author.findMany({
+          include: { _count: { select: { posts: true, secrets: true } } },
+        })
+
+        expect(relPrisma.author.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            include: { _count: { select: { posts: true, secrets: true } } },
+          }),
+        )
+        expect(result[0]._count).toEqual({ posts: 3, secrets: 7 })
+      })
+
       it('AND-combines a caller nested where with the relation access where', async () => {
         relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
