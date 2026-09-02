@@ -19,6 +19,9 @@ export default [
       '**/next-env.d.ts',
       '**/__generated__/**',
       '**/.design-sync/**',
+      // Research spikes under specs/ are throwaway scripts run against pre-release
+      // APIs and deliberately reach @internal surfaces; they are evidence, not shipped code.
+      'specs/**/spikes/**',
     ],
   },
   js.configs.recommended,

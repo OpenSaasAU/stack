@@ -1,0 +1,64 @@
+Collection class name: CollectionImpl  instanceof exported Collection: true
+own keys: [
+  'ctx',
+  'contract',
+  'modelName',
+  'tableName',
+  'namespaceId',
+  'state',
+  'registry',
+  'includeRefinementMode'
+]
+state present: true object
+state keys: [
+  'filters',
+  'includes',
+  'orderBy',
+  'cursor',
+  'distinct',
+  'distinctOn',
+  'selectedFields',
+  'limit',
+  'offset',
+  'variantName',
+  'annotations'
+]
+filters: 2 [ 'BinaryExpr', 'BinaryExpr' ]
+filters JSON: [
+  {
+    "kind": "binary",
+    "op": "eq",
+    "left": {
+      "kind": "column-ref",
+      "table": "Post",
+      "column": "authorId"
+    },
+    "right": {
+      "kind": "param-ref",
+      "value": "u1",
+      "codec": {
+        "codecId": "pg/text@1"
+      }
+    }
+  },
+  {
+    "kind": "binary",
+    "op": "eq",
+    "left": {
+      "kind": "column-ref",
+      "table": "Post",
+      "column": "published"
+    },
+    "right": {
+      "kind": "param-ref",
+      "value": true,
+      "codec": {
+        "codecId": "pg/bool@1"
+      }
+    }
+  }
+]
+orderBy: [{"kind":"order-by-item","expr":{"kind":"column-ref","table":"Post","column":"title"},"dir":"asc"}]  limit: 5  offset: undefined  selectedFields: undefined  includes: 0  annotations size: 0
+immutability: base state filters = 0  derived = 2
+frozen? false false
+exports of @prisma/orm-postgres/orm-client: Collection, GroupedCollection, all, and, createModelAccessor, emptyState, not, or, orm

@@ -15,3 +15,7 @@ The access-control engine is the project's defining feature, so CI's job is to k
 - _Building examples in CI_ or _running a published `npm create` e2e on every PR_ tests environment/registry state more than our code and is slow and flaky; both are better as nightly signals.
 
 These are recorded because a future reader will otherwise wonder why `dist` is excluded from tests, why `examples/*` aren't built in CI, and why coverage gates only part of `core`.
+
+## Amendment — the core suite runs against a real database (ADR-0057)
+
+[ADR-0057](0057-engine-tests-run-against-an-in-process-postgres-through-the-clients-construction-options.md) replaces the mocked Prisma delegate behind the coverage gate above. Prisma 8 exposes no per-model delegate to fake, so the security-critical paths are exercised against an in-process PGlite per Vitest worker, with the `DATABASE_URL` escape running the identical suite on a real Postgres. An **escape-only test** — one PGlite cannot exercise, such as the row-lock gate or vector search — skips visibly when the escape is unset, and CI always sets it, so the PR gate still covers it. The nightly cold-clone job from [#1040](https://github.com/OpenSaasAU/stack/issues/1040) is unchanged. The per-glob coverage ratchet stays and is re-baselined once when the corpus is rewritten by guarantee.

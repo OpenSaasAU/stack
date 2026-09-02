@@ -123,7 +123,7 @@ The component that opened the transaction a write participates in, and so the on
 _Avoid_: transaction opener, transaction root
 
 **Unowned join**:
-A joined write with no transaction owner — the stack did not open the enclosing transaction and cannot observe its settle, as when an application manages its own transaction or a test double cannot open one. Its `afterTransaction` reports optimistically at write time, the one case where the outcome is not a fact.
+A joined write with no transaction owner — the stack did not open the enclosing transaction and cannot observe its settle, as when an application manages its own transaction. Its `afterTransaction` reports optimistically at write time, the one case where the outcome is not a fact.
 _Avoid_: orphan write, detached write
 
 ### Migration & schema generation
@@ -153,6 +153,20 @@ _Avoid_: virtual field types, type overrides, generated types (that names the fi
 **Generated bundle**:
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — `context.ts` (the `getContext`/`config` factory, which constructs the ORM client from the committed `contract.json`), `types.ts`, `lists.ts` and `plugin-types.ts`. It carries no Prisma code: its runtime imports are npm packages plus that one JSON artifact, and its relative imports use explicit `.ts` extensions and never the host app's path aliases. It is erasable TypeScript by contract, so the host's bundler compiles it and plain Node loads it natively (ADR-0008, ADR-0054); there is no compiled twin. The bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches at runtime — and so drags into the load — is the app's.
 _Avoid_: generated context, output dir, .opensaas folder, node build, dist build, compiled bundle
+
+### Testing
+
+**Test context**:
+A real, fully secured context stood up for a test from a config object — the same engine, tripwire and terminals as production, over an in-process database — rather than a fake of the secured surface. It is the only double the stack offers for `context.db`; there is no in-memory imitation of the surface's guarantees (ADR-0057).
+_Avoid_: mock context, mocked db, fake prisma, mock delegate
+
+**Recording middleware**:
+A `beforeCompile` registered beside the engine's stamp in a test, capturing each compiled plan so a test can assert on the query the engine built — the merged Access Filter, the widened selection, the Engine stamp — without any seam on the secured surface. It observes and passes through; it never rewrites and never skips the tripwire.
+_Avoid_: plan spy, query interceptor, test seam
+
+**Escape-only test**:
+A test whose guarantee the in-process database cannot exercise — a Row lock under contention, vector search — and which runs only when the `DATABASE_URL` escape points at a real Postgres. It skips visibly otherwise; CI always sets the escape, so the PR gate still covers it.
+_Avoid_: integration test, CI-only test, real-db test
 
 ### Authentication
 

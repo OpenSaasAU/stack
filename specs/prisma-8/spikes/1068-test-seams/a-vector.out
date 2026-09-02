@@ -1,0 +1,30 @@
+-- CREATE EXTENSION vector on PGlite --
+   ok: [ { extversion: '0.8.1' } ]
+   raw cosine distance: 0.00853986601633272
+
+-- contract with Vector(3) column --
+   ok; Doc.embedding storage column: {"nativeType":"vector","codecId":"pg/vector@1","nullable":false,"typeParams":{"length":3}}
+   extensions in contract: ["pgvector"]
+
+-- control client dbUpdate with pgvector control descriptor --
+   FAILED: MIGRATION.CONTRACT_SPACE_LAYOUT_VIOLATION Contract-space layout violation detected The on-disk `/var/folders/v8/bzg8163x5jd3wjsmp4m5n2nr0000gn/T/mig-FXnaBA/` directory and your `extensions` declaration are not in agreement.
+- [declaredButUnmigrated] pgvector 
+
+-- control client dbUpdate WITHOUT pgvector control descriptor --
+   FAILED: CONTRACT.PACK_CONTRIBUTION_INVALID Column declares typeParams for nativeType "vector" but no expandNativeType hook is registered for codecId "pg/vector@1". Ensure the extension providing this codec is included in extensions.
+
+-- fallback: raw DDL for the vector column --
+   Doc columns: [
+  { column_name: 'id', udt_name: 'text' },
+  { column_name: 'title', udt_name: 'text' },
+  { column_name: 'embedding', udt_name: 'vector' }
+]
+   extension present after dbUpdate: [ { extname: 'vector' } ]
+
+-- ORM: create + cosineDistance query --
+   create -> {"id":"d1","title":"a","embedding":[1,2,3]}  embedding type: Array
+   field proxy methods on embedding: returnType, codec, buildAst, eq, neq, in, notIn, isNull, isNotNull, cosineDistance, cosineSimilarity
+   where(cosineDistance lt) -> [{"id":"d1","title":"a","embedding":[1,2,3]}]
+   orderBy(cosineDistance) -> [{"id":"d1","title":"a","embedding":[1,2,3]},{"id":"d2","title":"b","embedding":[-1,-2,-3]}]
+   select + cosineSimilarity FAILED: identifier.includes is not a function
+   raw sql lane FAILED: db.sql.query is not a function

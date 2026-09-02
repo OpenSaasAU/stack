@@ -1,0 +1,47 @@
+control client methods: options, stack, driver, familyInstance, frameworkComponents, initialized, defaultConnection
+
+dbUpdate plan (38ms): ok=true -> {"ok":true,"_value":{"mode":"plan","plan":{"operations":[{"id":"table.Post","label":"Create table \"Post\"","operationClass":"additive"},{"id":"table.User","label":"Create table \"User\"","operationClass":"additive"}],"preview":{"statements":[{"text":"CREATE TABLE \"public\".\"Post\" (\n  \"id\" text NOT NULL,\n  \"title\" text NOT NULL,\n  \"published\" bool NOT NULL,\n  \"authorId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)","language":"sql"},{"text":"CREATE TABLE \"public\".\"User\" (\n  \"id\" text NOT NULL,\n  \"name\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)","language":"sql"}]}},"destination":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"},"perSpace":[{"spaceId":"app","kind":"app","operations":[{"id":"table.Post","label":"Create table \"Post\"","operationClass":"additive"},{"id":"table.User","label":"Create table \"User\"","operationClass":"additive"}]}],"summary":"Planned 2 operation(s) across 1 space(s)"}}
+
+dbUpdate apply (50ms): ok=true -> {"ok":true,"_value":{"mode":"apply","plan":{"operations":[{"id":"table.Post","label":"Create table \"Post\"","operationClass":"additive"},{"id":"table.User","label":"Create table \"User\"","operationClass":"additive"}]},"destination":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"},"execution":{"operationsPlanned":2,"operationsExecuted":2},"marker":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"},"perSpace":[{"spaceId":"app","kind":"app","operations":[{"id":"table.Post","label":"Create table \"Post\"","operationClass":"additive"},{"id":"table.User","label":"Create table \"User\"","operationClass":"additive"}],"marker":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"}}],"summary":"Applied 2 operation(s) across 1 space(s), signature updated"}}
+
+dbInit apply (after update) (31ms): ok=true -> {"ok":true,"_value":{"mode":"apply","plan":{"operations":[]},"destination":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"},"execution":{"operationsPlanned":0,"operationsExecuted":0},"marker":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"},"perSpace":[{"spaceId":"app","kind":"app","operations":[],"marker":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4"}}],"summary":"Applied 0 operation(s) across 1 space(s), database signed"}}
+
+schemaVerify strict (11ms): ok=true -> {"ok":true,"summary":"Database schema satisfies contract","contract":{"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4","profileHash":"3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2"},"target":{"expected":"postgres","actual":"postgres"},"schema":{"issues":[],"warnings":{"issues":[]}},"meta":{"strict":true},"timings":{"total":0}}
+
+readMarker (2ms): ok=undefined -> {"storageHash":"6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4","profileHash":"3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2","contractJson":null,"canonicalVersion":null,"updatedAt":"2026-09-02T11:22:54.594Z","appTag":null,"meta":{},"invariants":[]}
+
+control total 133ms
+
+-- tables in PGlite now --
+[
+  { table_schema: 'prisma_contract', table_name: 'contract' },
+  { table_schema: 'prisma_contract', table_name: 'ledger' },
+  { table_schema: 'prisma_contract', table_name: 'marker' },
+  { table_schema: 'public', table_name: 'Post' },
+  { table_schema: 'public', table_name: 'User' }
+]
+[
+  { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
+  { column_name: 'title', data_type: 'text', is_nullable: 'NO' },
+  { column_name: 'published', data_type: 'boolean', is_nullable: 'NO' },
+  { column_name: 'authorId', data_type: 'text', is_nullable: 'NO' }
+]
+FKs: [
+  { conname: 'Post_id_not_null', pg_get_constraintdef: 'NOT NULL id' },
+  {
+    conname: 'Post_title_not_null',
+    pg_get_constraintdef: 'NOT NULL title'
+  },
+  {
+    conname: 'Post_published_not_null',
+    pg_get_constraintdef: 'NOT NULL published'
+  },
+  {
+    conname: 'Post_authorId_not_null',
+    pg_get_constraintdef: 'NOT NULL "authorId"'
+  },
+  { conname: 'Post_pkey', pg_get_constraintdef: 'PRIMARY KEY (id)' }
+]
+
+-- ORM against control-created schema (marker now present -> verifyMarker default passes) --
+{ id: 'p1', title: 't', published: true, authorId: 'u1' }

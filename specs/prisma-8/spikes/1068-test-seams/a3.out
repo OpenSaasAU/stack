@@ -1,0 +1,7 @@
+url, no warm-up, default verifyMarker                n=5 -> "TIMEOUT 8000ms" in 8003ms  server={"activeConnections":6,"queuedQueries":5,"maxConnections":10}
+url, WARM-UP query first                             n=5 -> [1,2,3,4,5] in 7ms  server={"activeConnections":5,"queuedQueries":0,"maxConnections":10}
+url, verifyMarker:false, no warm-up                  n=5 -> [1,2,3,4,5] in 7ms  server={"activeConnections":5,"queuedQueries":0,"maxConnections":10}
+pg Pool max=1, verifyMarker:false                    n=5 -> "ERROR Error: read ECONNRESET" in 1ms  server={"activeConnections":1,"queuedQueries":0,"maxConnections":1}
+pg Pool max=1, default verifyMarker, no warm-up      n=1 -> "TIMEOUT 8000ms" in 8002ms  server={"activeConnections":1,"queuedQueries":0,"maxConnections":1}
+pg Pool max=1, default verifyMarker, WARM-UP         n=5 -> [1,2,3,4,5] in 5ms  server={"activeConnections":1,"queuedQueries":0,"maxConnections":1}
+pg Pool max=2, default verifyMarker, no warm-up      n=5 -> "TIMEOUT 8000ms" in 8002ms  server={"activeConnections":2,"queuedQueries":1,"maxConnections":2}

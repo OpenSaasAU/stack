@@ -1,0 +1,63 @@
+-- verifyMarker default: first query triggers a marker read through the SAME fake client --
+
+-- where().all()  [first query: includes marker read] --
+   {"kind":"on(error)"}
+   {"kind":"on(error)"}
+   {"kind":"connect"}
+   {"kind":"query","text":"SELECT \"tables\".\"table_schema\" AS \"table_schema\" FROM \"information_schema\".\"tables\" WHERE (\"tables\".\"table_schema\" = $1 AND \"tables\".\"table_name\" = $2)","values":["prisma_contract","marker"],"hasTypes":true}
+   {"kind":"query","text":"select column_name\n         from information_schema.columns\n        where table_schema = 'prisma_contract'\n          and table_name = 'marker'","values":[],"hasTypes":true}
+   {"kind":"query","text":"SELECT \"marker\".\"core_hash\" AS \"core_hash\", \"marker\".\"profile_hash\" AS \"profile_hash\", \"marker\".\"contract_json\" AS \"contract_json\", \"marker\".\"canonical_version\" AS \"canonical_version\", \"marker\".\"updated_at\" AS \"updated_at\", \"marker\".\"app_tag\" AS \"app_tag\", \"marker\".\"meta\" AS \"meta\", \"marker\".\"invariants\" AS \"invariants\" FROM \"prisma_contract\".\"marker\" WHERE \"marker\".\"space\" = $1","values":["app"],"hasTypes":true}
+   {"kind":"query","text":"SELECT \"Post\".\"id\" AS \"id\", \"Post\".\"title\" AS \"title\", \"Post\".\"published\" AS \"published\", \"Post\".\"authorId\" AS \"authorId\" FROM \"public\".\"Post\" WHERE (\"Post\".\"authorId\" = $1 AND \"Post\".\"published\" = $2)","values":["u1",true],"hasTypes":true}
+   marker SQL seen: ["select column_name\n         from information_schema.columns\n        where table_schema = 'prisma_contract'\n          and table_name = 'marker'","SELECT \"marker\".\"core_hash\" AS \"core_hash\", \"marker\".\"profile_hash\" AS \"profile_hash\", \"marker\".\"contract_json\" AS \"contract_json\", \"marker\".\"canonical_version\" AS \"canonical_version\", \"marker\".\"updated_at\" AS \"updated_at\", \"marker\".\"app_tag\" AS \"app_tag\", \"marker\".\"meta\" AS \"meta\", \"marker\".\"invariants\" AS \"invariants\" FROM \"prisma_contract\".\"marker\" WHERE \"marker\".\"space\" = $1"]
+   rows -> [{"id":"p1","title":"hi","published":true,"authorId":"u1"}]
+
+-- create() --
+   {"kind":"query","text":"INSERT INTO \"public\".\"Post\" (\"id\", \"title\", \"published\", \"authorId\") VALUES ($1, $2, $3, $4) RETURNING \"Post\".\"id\", \"Post\".\"title\", \"Post\".\"published\", \"Post\".\"authorId\"","values":["p9","new",false,"u1"],"hasTypes":true}
+   created -> {"id":"p9","title":"new","published":false,"authorId":"u1"}
+
+-- where().update() --
+   {"kind":"query","text":"BEGIN","hasTypes":false}
+   {"kind":"query","text":"SELECT \"Post\".\"id\" AS \"id\" FROM \"public\".\"Post\" WHERE \"Post\".\"id\" = $1 LIMIT 1","values":["p9"],"hasTypes":true}
+   {"kind":"query","text":"UPDATE \"public\".\"Post\" SET \"published\" = $1 WHERE \"Post\".\"id\" = 'p9' RETURNING \"Post\".\"id\", \"Post\".\"title\", \"Post\".\"published\", \"Post\".\"authorId\"","values":[true],"hasTypes":true}
+   {"kind":"query","text":"COMMIT","hasTypes":false}
+   updated -> {"id":"p9","title":"new","published":true,"authorId":"u1"}
+
+-- where().delete() --
+   {"kind":"query","text":"BEGIN","hasTypes":false}
+   {"kind":"query","text":"SELECT \"Post\".\"id\" AS \"id\" FROM \"public\".\"Post\" WHERE \"Post\".\"id\" = $1 LIMIT 1","values":["p9"],"hasTypes":true}
+   {"kind":"query","text":"COMMIT","hasTypes":false}
+   delete -> null
+
+-- transaction(first) --
+   {"kind":"query","text":"BEGIN","hasTypes":false}
+   {"kind":"query","text":"SELECT \"Post\".\"id\" AS \"id\", \"Post\".\"title\" AS \"title\", \"Post\".\"published\" AS \"published\", \"Post\".\"authorId\" AS \"authorId\" FROM \"public\".\"Post\" WHERE \"Post\".\"id\" = $1 LIMIT 1","values":["p1"],"hasTypes":true}
+   {"kind":"query","text":"COMMIT","hasTypes":false}
+   tx -> {"id":"p1","title":"hi","published":true,"authorId":"u1"}
+
+-- decoding: are pg-text values decoded by the runtime? --
+   row.published="t" -> "t" (string)
+   row.published="true" -> "true" (string)
+   row.published=true -> true (boolean)
+   row.published=1 -> 1 (number)
+
+-- extra columns / missing columns --
+   extra col -> {"id":"p1","title":"hi","published":true,"authorId":"u1"}
+   missing cols -> THROWS Row missing projection alias "title"
+
+-- include (relation) against fake --
+
+-- include --
+   {"kind":"query","text":"SELECT \"User\".\"id\" AS \"id\", \"User\".\"name\" AS \"name\", (SELECT coalesce(json_agg(json_build_object('id', \"posts__rows\".\"id\", 'title', \"posts__rows\".\"title\", 'published', \"posts__rows\".\"published\", 'authorId', \"posts__rows\".\"authorId\")), json_build_array()) AS \"posts\" FROM (SELECT \"Post\".\"id\" AS \"id\", \"Post\".\"title\" AS \"title\", \"Post\".\"published\" AS \"published\", \"Post\".\"authorId\" AS \"authorId\" FROM \"public\".\"Post\" WHERE \"Post\".\"authorId\" = \"User\".\"id\") AS \"posts__rows\") AS \"posts\" FROM \"public\".\"User\"","values":[],"hasTypes":true}
+   -> [{"id":"u1","name":"alice","posts":[{"id":"p1","title":"hi","published":true,"authorId":"u1"}]}]
+
+-- minimal interface probe: which members did the driver touch? --
+   touched: has:totalCount, has:escapeIdentifier, has:escapeLiteral, on, connect, then, query
+
+-- verifyMarker: false -> no marker read at all --
+   rows -> [{"id":"p1","title":"hi","published":true,"authorId":"u1"}]
+
+-- verifyMarker:false where().all() --
+   {"kind":"on(error)"}
+   {"kind":"connect"}
+   {"kind":"query","text":"SELECT \"Post\".\"id\" AS \"id\", \"Post\".\"title\" AS \"title\", \"Post\".\"published\" AS \"published\", \"Post\".\"authorId\" AS \"authorId\" FROM \"public\".\"Post\" WHERE \"Post\".\"id\" = $1","values":["p1"],"hasTypes":true}
+   marker SQL seen: []
