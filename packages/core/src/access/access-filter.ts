@@ -11,7 +11,10 @@ import {
   LOGICAL_OPERATORS,
   RELATION_QUANTIFIERS,
   resolveQueryField,
+  validateQueryFieldReadAccess,
+  validateQueryKeys,
   walkWhereReadAccess,
+  type SyntheticRelationTarget,
 } from './query-validation.js'
 import { getDbKey } from '../lib/case-utils.js'
 
@@ -75,6 +78,20 @@ import { getDbKey } from '../lib/case-utils.js'
  * one allowlisted exception, scoped separately — see #1082's "Out of scope"),
  * restoring this module's own denial rule for the one key shape that used to
  * fail open.
+ *
+ * **A `where`/`orderBy` a caller nests inside an `include` entry is validated
+ * against the RELATED list, before it is AND-folded (issue #1092).** Before
+ * this, the AND-fold below merged a caller's nested `where` with the access
+ * filter and passed the result through unexamined — a key naming a field the
+ * session cannot read reached Prisma, a probing oracle over exactly the
+ * fields #915 exists to close one level up. `validateQueryKeys`/
+ * `validateQueryFieldReadAccess` (`query-validation.ts`, #912/#915) are
+ * reused as-is, called here against `relatedConfig` instead of the current
+ * list — the same two checks the top-level `where`/`orderBy` already gets.
+ * The one addition this position needs: an unresolved key is tried against
+ * `resolveSyntheticReverseRelation` (via `validateQueryKeys`'s
+ * `resolveSyntheticRelation` hook) before being rejected, so a nested
+ * predicate naming a synthetic back-relation resolves rather than throwing.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -276,6 +293,40 @@ export async function buildAccessScopedInclude(
 
     const accessWhere = typeof accessResult === 'object' ? accessResult : undefined
     const requestedEntry = asEntryObject(requestedValue)
+
+    // #1092 — a nested `where`/`orderBy` gets the same #912/#915 checks the
+    // top-level `where`/`orderBy` already gets, resolved against the RELATED
+    // list (`relatedConfig`) rather than the current one, and run only once
+    // the relation is known to be accessible at all (same ordering reason as
+    // the top-level checks: don't leak a field's name/read-gating status to a
+    // caller who has zero access to the relation to begin with).
+    const resolveSyntheticRelation = (
+      key: string,
+      fromListName: string,
+    ): SyntheticRelationTarget | null => {
+      const synthetic = resolveSyntheticReverseRelation(key, fromListName, config)
+      return synthetic
+        ? { listConfig: synthetic.sourceListConfig, listName: synthetic.sourceListName }
+        : null
+    }
+    validateQueryKeys({
+      where: requestedEntry?.where,
+      orderBy: requestedEntry?.orderBy,
+      listConfig: relatedConfig.listConfig,
+      listName: relatedConfig.listName,
+      config,
+      isSudo: false,
+      resolveSyntheticRelation,
+    })
+    await validateQueryFieldReadAccess({
+      where: requestedEntry?.where,
+      orderBy: requestedEntry?.orderBy,
+      listConfig: relatedConfig.listConfig,
+      listName: relatedConfig.listName,
+      session: args.session,
+      context: args.context,
+      isSudo: false,
+    })
 
     let nestedInclude: Record<string, unknown> | undefined
     let nestedToOneFilters: ToOneAccessFilterTree | undefined

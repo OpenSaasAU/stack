@@ -46,6 +46,20 @@ import { ValidationError } from '../hooks/index.js'
  * deliberately no second copy of either the shape-recognition or the
  * field-read check: `access-filter.ts` supplies the RELATED list at each
  * hop and calls back into the same primitives this module already owns.
+ *
+ * #1092 — `validateQueryKeys` is also the include-nested counterpart: a
+ * `where`/`orderBy` a caller nests inside an `include` entry gets the same
+ * #912 check, called by `buildAccessScopedInclude` against the RELATED list
+ * instead of the current one — no second key-existence walker for that
+ * position. `validateQueryFieldReadAccess` needs no equivalent call there:
+ * `checkKeyReadableOrThrow` already treats a key `resolveQueryField` cannot
+ * resolve as "already handled elsewhere" and skips it, which is exactly the
+ * synthetic-back-relation tolerance below needs — nothing to change. The one
+ * thing this position needs that the top-level `where`/`orderBy` never did:
+ * a key neither call resolves is tried against the optional
+ * `resolveSyntheticRelation` hook before being rejected, because a synthetic
+ * back-relation (#1082) is nameable in a nested predicate too. Every
+ * existing caller omits the hook, so top-level behavior is unchanged.
  */
 
 // Prisma's logical combinators for a WHERE clause — never field names.
@@ -67,6 +81,20 @@ export interface ResolvedQueryField {
   fieldConfig: any
   isRelationship: boolean
 }
+
+/**
+ * Where an unresolved key's nested predicate should recurse when it turns out
+ * to name a synthetic back-relation (#1082) rather than a declared field —
+ * the source list the back-relation stands for, NOT `getRelatedListConfig`'s
+ * target (a synthetic field carries no `ref` of its own to follow).
+ */
+export interface SyntheticRelationTarget {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>
+  listName: string
+}
+
+type ResolveSyntheticRelation = (key: string, listName: string) => SyntheticRelationTarget | null
 
 /**
  * Resolve a `where`/`orderBy` key against a list's declared fields.
@@ -133,22 +161,61 @@ function walkWhere(
   listName: string,
   config: OpenSaasConfig,
   isSudo: boolean,
+  resolveSyntheticRelation?: ResolveSyntheticRelation,
 ): void {
   if (where === null || typeof where !== 'object') return
 
   if (Array.isArray(where)) {
-    for (const entry of where) walkWhere(entry, listConfig, listName, config, isSudo)
+    for (const entry of where) {
+      walkWhere(entry, listConfig, listName, config, isSudo, resolveSyntheticRelation)
+    }
     return
   }
 
   for (const [key, value] of Object.entries(where as Record<string, unknown>)) {
     if (LOGICAL_OPERATORS.has(key)) {
-      walkWhere(value, listConfig, listName, config, isSudo)
+      walkWhere(value, listConfig, listName, config, isSudo, resolveSyntheticRelation)
       continue
     }
 
     const resolved = resolveQueryField(key, listConfig.fields)
     if (!resolved) {
+      const synthetic = resolveSyntheticRelation?.(key, listName)
+      if (synthetic) {
+        // A synthetic back-relation is always to-many (#1082's own
+        // construction site has no arity branch), so its nested value takes
+        // the same two shapes a declared to-many relationship's filter does
+        // — walk it exactly like the resolved-relationship branch below,
+        // against the synthetic's source list instead of `getRelatedListConfig`.
+        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+          const syntheticEntries = Object.entries(value as Record<string, unknown>)
+          const syntheticHasQuantifier = syntheticEntries.some(([k]) => RELATION_QUANTIFIERS.has(k))
+          if (syntheticHasQuantifier) {
+            for (const [quantifier, quantifierValue] of syntheticEntries) {
+              if (RELATION_QUANTIFIERS.has(quantifier)) {
+                walkWhere(
+                  quantifierValue,
+                  synthetic.listConfig,
+                  synthetic.listName,
+                  config,
+                  isSudo,
+                  resolveSyntheticRelation,
+                )
+              }
+            }
+          } else {
+            walkWhere(
+              value,
+              synthetic.listConfig,
+              synthetic.listName,
+              config,
+              isSudo,
+              resolveSyntheticRelation,
+            )
+          }
+        }
+        continue
+      }
       if (isSudo) continue
       rejectUndeclaredKey(listName, key, 'where')
     }
@@ -175,7 +242,14 @@ function walkWhere(
         // related list.
         for (const [quantifier, quantifierValue] of relationEntries) {
           if (RELATION_QUANTIFIERS.has(quantifier)) {
-            walkWhere(quantifierValue, related.listConfig, related.listName, config, isSudo)
+            walkWhere(
+              quantifierValue,
+              related.listConfig,
+              related.listName,
+              config,
+              isSudo,
+              resolveSyntheticRelation,
+            )
           }
         }
       } else {
@@ -185,7 +259,14 @@ function walkWhere(
         // whole value object IS the nested WHERE clause here — walk it
         // directly, or an undeclared key reached exactly this way (one hop
         // through a to-one relation) would pass through unchecked.
-        walkWhere(value, related.listConfig, related.listName, config, isSudo)
+        walkWhere(
+          value,
+          related.listConfig,
+          related.listName,
+          config,
+          isSudo,
+          resolveSyntheticRelation,
+        )
       }
     }
   }
@@ -198,17 +279,41 @@ function walkOrderBy(
   listName: string,
   config: OpenSaasConfig,
   isSudo: boolean,
+  resolveSyntheticRelation?: ResolveSyntheticRelation,
 ): void {
   if (orderBy === null || typeof orderBy !== 'object') return
 
   if (Array.isArray(orderBy)) {
-    for (const entry of orderBy) walkOrderBy(entry, listConfig, listName, config, isSudo)
+    for (const entry of orderBy) {
+      walkOrderBy(entry, listConfig, listName, config, isSudo, resolveSyntheticRelation)
+    }
     return
   }
 
   for (const [key, value] of Object.entries(orderBy as Record<string, unknown>)) {
     const resolved = resolveQueryField(key, listConfig.fields)
     if (!resolved) {
+      const synthetic = resolveSyntheticRelation?.(key, listName)
+      if (synthetic) {
+        // `{ relation: { _count: 'asc' } }` orders by an aggregate — no
+        // nested field name to resolve, matching the declared-relationship
+        // branch below.
+        if (
+          value !== null &&
+          typeof value === 'object' &&
+          !('_count' in (value as Record<string, unknown>))
+        ) {
+          walkOrderBy(
+            value,
+            synthetic.listConfig,
+            synthetic.listName,
+            config,
+            isSudo,
+            resolveSyntheticRelation,
+          )
+        }
+        continue
+      }
       if (isSudo) continue
       rejectUndeclaredKey(listName, key, 'orderBy')
     }
@@ -220,7 +325,16 @@ function walkOrderBy(
       if ('_count' in (value as Record<string, unknown>)) continue
 
       const related = getRelatedListConfig(resolved.fieldConfig.ref, config)
-      if (related) walkOrderBy(value, related.listConfig, related.listName, config, isSudo)
+      if (related) {
+        walkOrderBy(
+          value,
+          related.listConfig,
+          related.listName,
+          config,
+          isSudo,
+          resolveSyntheticRelation,
+        )
+      }
     }
   }
 }
@@ -231,6 +345,11 @@ function walkOrderBy(
  * Throws a `ValidationError` naming the list and the offending key on the
  * first undeclared key found. `isSudo` bypasses the check entirely, matching
  * the write path's `sudo` escape hatch.
+ *
+ * `resolveSyntheticRelation` is the include-nested position's own addition
+ * (#1092, see module doc comment) — omit it (every top-level `where`/`orderBy`
+ * caller does) and a key `resolveQueryField` can't resolve rejects exactly as
+ * before.
  */
 export function validateQueryKeys(args: {
   where?: unknown
@@ -240,10 +359,15 @@ export function validateQueryKeys(args: {
   listName: string
   config: OpenSaasConfig
   isSudo: boolean
+  resolveSyntheticRelation?: ResolveSyntheticRelation
 }): void {
-  const { where, orderBy, listConfig, listName, config, isSudo } = args
-  if (where !== undefined) walkWhere(where, listConfig, listName, config, isSudo)
-  if (orderBy !== undefined) walkOrderBy(orderBy, listConfig, listName, config, isSudo)
+  const { where, orderBy, listConfig, listName, config, isSudo, resolveSyntheticRelation } = args
+  if (where !== undefined) {
+    walkWhere(where, listConfig, listName, config, isSudo, resolveSyntheticRelation)
+  }
+  if (orderBy !== undefined) {
+    walkOrderBy(orderBy, listConfig, listName, config, isSudo, resolveSyntheticRelation)
+  }
 }
 
 /**
