@@ -14,6 +14,7 @@ import {
   validateQueryFieldReadAccess,
   validateQueryKeys,
   walkWhereReadAccess,
+  type ResolveSyntheticRelation,
   type SyntheticRelationTarget,
 } from './query-validation.js'
 import { getDbKey } from '../lib/case-utils.js'
@@ -100,8 +101,9 @@ import { getDbKey } from '../lib/case-utils.js'
  * below): scope it by THAT list's own `query` access and check its fields'
  * read access, recursing through every further hop. Skipping this for a
  * to-many entry would just move #1092's oracle one hop further out instead
- * of closing it — `buildAccessScopedWhere` is reused unchanged, called on
- * `requestedEntry.where` before the AND-fold.
+ * of closing it — `buildAccessScopedWhere` is called on `requestedEntry.where`
+ * before the AND-fold, with its own `resolveSyntheticRelation` param (below)
+ * so a synthetic key stays resolved at this deeper level too.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -354,6 +356,7 @@ export async function buildAccessScopedInclude(
             relatedConfig.listName,
             config,
             args,
+            resolveSyntheticRelation,
           )) as PrismaFilter)
         : requestedEntry?.where
 
@@ -531,6 +534,20 @@ export async function resolveToOneAccessVisibility(
  * caller can observe that an inaccessible related row exists (an `every`
  * that "should" pass instead fails), but never that row's field values,
  * which is the property this ticket exists to close.
+ *
+ * A quantifier's value of literal `null` (`is: null`/`isNot: null`, a to-one
+ * relation's existence check) is passed through untouched rather than folded:
+ * it names no fields to read-check or scope, and AND-folding an access filter
+ * into it would silently invert the caller's own predicate (see the inline
+ * comment at that branch).
+ *
+ * `resolveSyntheticRelation` (#1092/#1108) extends this to a key that
+ * resolves to a synthetic back-relation (#1082) rather than a declared
+ * field, recursing against its SOURCE list. Only `buildAccessScopedInclude`
+ * passes it, for the include-nested `where` position; the top-level `where`
+ * this function was originally built for (`context/index.ts`) omits it, so
+ * a synthetic key there is unaffected — matching #1092's own scope, which
+ * deliberately left the top-level checks unchanged.
  */
 export async function buildAccessScopedWhere(
   where: unknown,
@@ -542,12 +559,19 @@ export async function buildAccessScopedWhere(
     session: Session | null
     context: AccessContext
   },
+  // #1092/#1108 — the include-nested position's own addition, exactly
+  // mirroring `validateQueryKeys`'s `resolveSyntheticRelation` (see that
+  // module's doc comment): every top-level `where` caller omits this, so
+  // top-level behavior is unchanged.
+  resolveSyntheticRelation?: ResolveSyntheticRelation,
 ): Promise<unknown> {
   if (where === null || typeof where !== 'object') return where
 
   if (Array.isArray(where)) {
     return Promise.all(
-      where.map((entry) => buildAccessScopedWhere(entry, listConfig, listName, config, args)),
+      where.map((entry) =>
+        buildAccessScopedWhere(entry, listConfig, listName, config, args, resolveSyntheticRelation),
+      ),
     )
   }
 
@@ -555,24 +579,33 @@ export async function buildAccessScopedWhere(
 
   for (const [key, value] of Object.entries(where as Record<string, unknown>)) {
     if (LOGICAL_OPERATORS.has(key)) {
-      result[key] = await buildAccessScopedWhere(value, listConfig, listName, config, args)
+      result[key] = await buildAccessScopedWhere(
+        value,
+        listConfig,
+        listName,
+        config,
+        args,
+        resolveSyntheticRelation,
+      )
       continue
     }
 
     const resolved = resolveQueryField(key, listConfig.fields)
-    if (
-      !resolved ||
-      !resolved.isRelationship ||
-      value === null ||
-      typeof value !== 'object' ||
-      Array.isArray(value)
-    ) {
-      result[key] = value
-      continue
-    }
+    // A synthetic back-relation (#1082) carries no `ref` of its own to
+    // follow — its "related" list for recursion is the SOURCE list it
+    // stands for, given directly by the resolver, not `getRelatedListConfig`.
+    const related = resolved?.isRelationship
+      ? getRelatedListConfig(resolved.fieldConfig.ref, config)
+      : !resolved
+        ? (() => {
+            const synthetic = resolveSyntheticRelation?.(key, listName)
+            return synthetic
+              ? { listConfig: synthetic.listConfig, listName: synthetic.listName }
+              : null
+          })()
+        : null
 
-    const related = getRelatedListConfig(resolved.fieldConfig.ref, config)
-    if (!related) {
+    if (!related || value === null || typeof value !== 'object' || Array.isArray(value)) {
       result[key] = value
       continue
     }
@@ -598,6 +631,16 @@ export async function buildAccessScopedWhere(
           nestedEntry[quantifier] = quantifierValue
           continue
         }
+        if (quantifierValue === null) {
+          // `is: null` / `isNot: null` tests EXISTENCE of a to-one relation,
+          // not its fields — there is nothing to read-check or scope, and
+          // AND-folding the access filter in here would silently invert the
+          // caller's predicate: `is: null` ("has no related row") would
+          // become `is: <accessWhere>` ("has a related row matching the
+          // filter"), the opposite of what was asked. Passed through as-is.
+          nestedEntry[quantifier] = null
+          continue
+        }
         await walkWhereReadAccess(quantifierValue, related.listConfig, related.listName, args)
         const scopedNested = await buildAccessScopedWhere(
           quantifierValue,
@@ -605,6 +648,7 @@ export async function buildAccessScopedWhere(
           related.listName,
           config,
           args,
+          resolveSyntheticRelation,
         )
         nestedEntry[quantifier] = accessWhere
           ? andWhere(accessWhere, scopedNested as PrismaFilter | undefined)
@@ -624,6 +668,7 @@ export async function buildAccessScopedWhere(
         related.listName,
         config,
         args,
+        resolveSyntheticRelation,
       )
       result[key] = accessWhere
         ? { is: andWhere(accessWhere, scopedNested as PrismaFilter | undefined) }

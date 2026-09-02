@@ -94,7 +94,10 @@ export interface SyntheticRelationTarget {
   listName: string
 }
 
-type ResolveSyntheticRelation = (key: string, listName: string) => SyntheticRelationTarget | null
+export type ResolveSyntheticRelation = (
+  key: string,
+  listName: string,
+) => SyntheticRelationTarget | null
 
 /**
  * Resolve a `where`/`orderBy` key against a list's declared fields.

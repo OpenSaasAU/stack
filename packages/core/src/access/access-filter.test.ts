@@ -1211,5 +1211,128 @@ describe('buildAccessScopedInclude — nested where/orderBy validation (#1092)',
         ),
       ).rejects.toThrow(/Cannot query "Bill" — "bogusField"/)
     })
+
+    it("folds the synthetic's own SOURCE list's query access into the nested quantifier clause", async () => {
+      // Regression coverage for a Codex review finding on #1108: the deeper
+      // #916-style scoping originally only recognised a DECLARED
+      // relationship — a synthetic key's nested quantifier passed through
+      // with neither the source list's `query` access folded in nor its
+      // fields' read access checked, even though the shallow #912/#915
+      // checks (validateQueryKeys/validateQueryFieldReadAccess) already
+      // correctly tolerated and resolved the synthetic key itself.
+      const config = syntheticNestedConfig()
+      config.lists.Bill.access = { operation: { query: () => ({ paid: { equals: true } }) } }
+
+      const { include } = await buildAccessScopedInclude(
+        { terms: { where: { from_Bill_term: { some: { amount: { gt: 5 } } } } } },
+        config.lists.Company.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Company',
+      )
+
+      expect(include).toEqual({
+        terms: {
+          where: {
+            from_Bill_term: {
+              some: { AND: [{ paid: { equals: true } }, { amount: { gt: 5 } }] },
+            },
+          },
+        },
+      })
+    })
+
+    it('throws when a field nested under a synthetic quantifier is denied by field-level read access', async () => {
+      const config = syntheticNestedConfig()
+      ;(config.lists.Bill.fields as Record<string, FieldConfig>).secretAmount = {
+        type: 'integer',
+        access: { read: () => false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
+      } as any as FieldConfig
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { secretAmount: { gt: 5 } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).rejects.toThrow(/"secretAmount" is denied by field-level read access/)
+    })
+
+    it("throws when the synthetic's own SOURCE list denies query access outright, matching #916's loud failure", async () => {
+      const config = syntheticNestedConfig()
+      config.lists.Bill.access = { operation: { query: () => false } }
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { amount: { gt: 5 } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).rejects.toThrow(RelationFilterAccessDeniedError)
+    })
+  })
+
+  describe("a to-one relation's `is: null`/`isNot: null` inside a nested quantifier (Codex review finding on #1108)", () => {
+    // Root -> Parent (to-many, unscoped) -> Owner (to-one, query-scoped by a
+    // filter). Parent's own access is `true` (no filter), so the outer
+    // AND-fold is a no-op and cannot mask what this test is isolating: the
+    // fold that happens INSIDE the quantifier's own value.
+    function nullQuantifierConfig(): OpenSaasConfig {
+      return {
+        db: { provider: 'sqlite' },
+        lists: {
+          Root: {
+            fields: { name: { type: 'text' } as FieldConfig, parent: rel('Parent', true) },
+            access: { operation: { query: () => true } },
+          },
+          Parent: {
+            fields: { name: { type: 'text' } as FieldConfig, owner: rel('Owner') },
+            access: { operation: { query: () => true } },
+          },
+          Owner: {
+            fields: { name: { type: 'text' } as FieldConfig },
+            access: { operation: { query: () => ({ secret: { equals: true } }) } },
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+      } as any as OpenSaasConfig
+    }
+
+    it('preserves `is: null` rather than inverting it into an access-filter match', async () => {
+      // Before this fix, folding the access filter into a quantifier's
+      // value unconditionally turned `is: null` ("has no related row") into
+      // `is: <accessWhere>` ("has a related row matching the filter") —
+      // the opposite of the caller's own predicate.
+      const config = nullQuantifierConfig()
+
+      const { include } = await buildAccessScopedInclude(
+        { parent: { where: { owner: { is: null } } } },
+        config.lists.Root.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Root',
+      )
+
+      expect(include).toEqual({ parent: { where: { owner: { is: null } } } })
+    })
+
+    it('preserves `isNot: null` the same way', async () => {
+      const config = nullQuantifierConfig()
+
+      const { include } = await buildAccessScopedInclude(
+        { parent: { where: { owner: { isNot: null } } } },
+        config.lists.Root.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Root',
+      )
+
+      expect(include).toEqual({ parent: { where: { owner: { isNot: null } } } })
+    })
   })
 })
