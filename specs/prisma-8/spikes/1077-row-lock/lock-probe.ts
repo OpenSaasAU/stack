@@ -150,6 +150,59 @@ async function runSuite(name: string, url: string, opts: { contention: boolean }
       return await tx.query(plan).toArray()
     }),
   )
+  await attempt('B11 empty key set: IN () is a syntax error', () =>
+    db.transaction(async (tx: any) => {
+      const strings = [`SELECT ${col} FROM ${table} WHERE ${col} IN () ORDER BY ${col} FOR UPDATE`]
+      const tsa = Object.assign(strings, { raw: strings }) as unknown as TemplateStringsArray
+      const plan = db.raw
+        .sql(tsa)
+        .returnsRow({ [pk]: pkCodec.codecId })
+        .build()
+      return await tx.query(plan).toArray()
+    }),
+  )
+  await attempt('B12 65,600 keys: over the bind-parameter ceiling', () =>
+    db.transaction(async (tx: any) => {
+      const n = 65600
+      const ks = Array.from({ length: n }, (_, i) => `k${String(i).padStart(6, '0')}`)
+      const strings = [
+        `SELECT ${col} FROM ${table} WHERE ${col} IN (`,
+        ...ks.slice(1).map(() => ', '),
+        `) ORDER BY ${col} LIMIT `,
+        ' FOR UPDATE',
+      ]
+      const values = [...ks.map((k) => param(k, { codecId: pkCodec.codecId })), n]
+      const tsa = Object.assign(strings, { raw: strings }) as unknown as TemplateStringsArray
+      const plan = db.raw
+        .sql(tsa, ...values)
+        .returnsRow({ [pk]: pkCodec.codecId })
+        .build()
+      rendered.length = 0
+      const rows = await tx.query(plan).toArray()
+      return { rows: rows.length }
+    }),
+  )
+  await attempt('B12b 60,000 keys: under the ceiling', () =>
+    db.transaction(async (tx: any) => {
+      const n = 60000
+      const ks = Array.from({ length: n }, (_, i) => `k${String(i).padStart(6, '0')}`)
+      const strings = [
+        `SELECT ${col} FROM ${table} WHERE ${col} IN (`,
+        ...ks.slice(1).map(() => ', '),
+        `) ORDER BY ${col} LIMIT `,
+        ' FOR UPDATE',
+      ]
+      const values = [...ks.map((k) => param(k, { codecId: pkCodec.codecId })), n]
+      const tsa = Object.assign(strings, { raw: strings }) as unknown as TemplateStringsArray
+      const plan = db.raw
+        .sql(tsa, ...values)
+        .returnsRow({ [pk]: pkCodec.codecId })
+        .build()
+      const rows = await tx.query(plan).toArray()
+      rendered.length = 0
+      return { rows: rows.length }
+    }),
+  )
   await attempt('B7 uuid pk: bare string param vs uuid column', () =>
     db.transaction(async (tx: any) => {
       const plan = db.raw
