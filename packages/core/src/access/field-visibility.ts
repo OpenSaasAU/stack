@@ -54,6 +54,16 @@ import { buildDbDelegate } from '../context/index.js'
  * before any field-level access check or `resolveOutput` hook runs, so the
  * rest of the pipeline sees exactly what a denied to-one read has always
  * meant elsewhere: `null`, never a thrown error.
+ *
+ * **A denied to-many relation is forced to `[]`, the same way (issue
+ * #1103).** `buildAccessScopedInclude` drops a to-many relation from
+ * `include` on the same outright `query` denial as a to-one one, and records
+ * the same `kind: 'denied'` entry for it. The key is therefore just as absent
+ * from `workingItem` as a denied to-one key, and the fix is the same fixup
+ * loop — it now forces the key present using the field's own declared
+ * arity: `null` for a to-one relation (unchanged), `[]` for a to-many one,
+ * rather than leaving a to-many key silently missing where the fragment
+ * API's `ResultOf` type (`query/index.ts`) promises an array.
  */
 
 type ResolveOutputHookRuntime = (args: {
@@ -405,12 +415,14 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     }
   }
 
-  // To-one relations `buildAccessScopedInclude` denied outright (issue #974)
-  // were never asked of Prisma at all, so `fieldName` has no entry in
-  // `workingItem` and the loop above never visits it. Force it present as an
-  // explicit `null` here — matching what a denied single-record read means
-  // everywhere else in the context — rather than leaving the key silently
-  // absent.
+  // Relations `buildAccessScopedInclude` denied outright (to-one: issue #974,
+  // to-many: issue #1103) were never asked of Prisma at all, so `fieldName`
+  // has no entry in `workingItem` and the loop above never visits it. Force
+  // it present here — matching what a denied read means everywhere else in
+  // the context — rather than leaving the key silently absent: `null` for a
+  // to-one relation, `[]` for a to-many one. A synthetic back-relation
+  // (`fieldConfig` undefined — #1082) is always to-many, the same arity
+  // `buildAccessScopedInclude` assumes for it.
   for (const [fieldName, entry] of Object.entries(toOneVisibility.filters)) {
     if (entry.kind !== 'denied') continue
     if (fieldName in filtered || fieldName in workingItem) continue
@@ -427,7 +439,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    filtered[fieldName] = null
+    const isToMany = !fieldConfig || ('many' in fieldConfig && fieldConfig.many === true)
+    filtered[fieldName] = isToMany ? [] : null
   }
 
   // The item a virtual field's hook sees: stored columns and fetched

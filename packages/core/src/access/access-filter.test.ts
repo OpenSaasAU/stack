@@ -589,6 +589,67 @@ describe('buildAccessScopedInclude — to-one relations record a post-query filt
   })
 })
 
+/**
+ * Regression coverage for issue #1103: a denied to-MANY relation used to be
+ * dropped from `include` with nothing recorded, unlike its to-one sibling
+ * (issue #974, covered above). `filterReadableFields`'s main loop only ever
+ * visits keys present in the raw row, so an unrecorded denial left the key
+ * silently absent from the result — `undefined`, not `[]` — breaking the
+ * fragment API's typed contract (`ResultOf` types a to-many relation as an
+ * array). These tests pin that a to-many denial is now recorded exactly like
+ * a to-one one, sharing the same `toOneAccessFilters` tree and `kind:
+ * 'denied'` entry.
+ */
+describe('buildAccessScopedInclude — to-many relations record a denial too, like to-one (issue #1103)', () => {
+  function secretsConfig(): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite' },
+      lists: {
+        Author: {
+          fields: { name: { type: 'text' } as FieldConfig, secrets: rel('Secret.author', true) },
+          access: { operation: { query: () => true } },
+        },
+        Secret: {
+          fields: { value: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => false } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+  }
+
+  it('drops a to-many relation whose related list denies query access outright, and records the denial', async () => {
+    const config = secretsConfig()
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { secrets: true },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    // Never asked of Prisma at all — same treatment as a denied to-one.
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: { secrets: { kind: 'denied' } }, nested: {} })
+  })
+
+  it('records the denial even when the caller also asked for a `take`/`where` — a denied relation has no shape to preserve', async () => {
+    const config = secretsConfig()
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { secrets: { take: 5, where: { value: { equals: 'x' } } } },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: { secrets: { kind: 'denied' } }, nested: {} })
+  })
+})
+
 describe('resolveToOneAccessVisibility (issue #974)', () => {
   function makeVisibilityContext(findMany: ReturnType<typeof vi.fn>): AccessContext {
     return {

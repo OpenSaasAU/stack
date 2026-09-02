@@ -63,6 +63,19 @@ import { getDbKey } from '../lib/case-utils.js'
  * is recorded as `{ kind: 'denied' }`, and `field-visibility.ts` forces the
  * key to `null` without ever asking Prisma for it.
  *
+ * **A denied to-many relation is recorded the same way (issue #1103).** An
+ * outright `query` denial (`=== false`) drops the relation from `include`
+ * regardless of arity — a to-many relation has no more of a `where` shape
+ * for "denied" than a to-one one does. Before this, only the to-one branch
+ * recorded anything; a denied to-many key was simply absent from the raw
+ * row, and `filterReadableFields`'s main loop — which only ever visits keys
+ * `Object.entries(workingItem)` actually contains — had nothing to force it
+ * with, so it stayed missing from the result instead of coming back `[]`.
+ * Now both arities record `{ kind: 'denied' }` in `toOneAccessFilters`, and
+ * `field-visibility.ts`'s post-query pass forces the key present using the
+ * field's own declared arity: `null` for a to-one relation, `[]` for a
+ * to-many one.
+ *
  * **A synthetic back-relation is a declared relationship wherever a caller
  * can name one (issue #1082).** A list-only `ref` (`ref: 'Other'`,
  * no target field) makes schema generation synthesize a back-relation on
@@ -151,22 +164,35 @@ function andWhere(
   return accessWhere ?? callerWhere
 }
 
-/** One to-one relation's recorded access filter, or an outright denial — see the module doc's "To-one relations" section. */
+/**
+ * One relation's recorded access filter, or an outright denial — see the
+ * module doc's "To-one relations" section. `kind: 'scoped'` is to-one only
+ * (a to-many filter is attached as Prisma `where` instead, never recorded
+ * here); `kind: 'denied'` is recorded for BOTH arities (issue #1103) — a
+ * to-many relation has no `where`-based way to record "zero rows, and the
+ * key itself absent" either, so it shares the same post-query mechanism a
+ * denied to-one already used.
+ */
 export type ToOneAccessFilterEntry =
   { kind: 'scoped'; relatedListName: string; accessWhere: PrismaFilter } | { kind: 'denied' }
 
 /**
- * Which to-one relations, at which nesting level of an `include`, need a
- * post-query existence check rather than a Prisma-side `where` — because
- * their related list's `query` access resolved to a filter (`kind: 'scoped'`)
- * or a denial (`kind: 'denied'`) and Prisma cannot express either as a nested
- * `where` on a to-one include. `resolveToOneAccessVisibility` consumes this
- * tree; `filterReadableFields` (`field-visibility.ts`) applies its result.
+ * Which relations, at which nesting level of an `include`, need a post-query
+ * fixup rather than a Prisma-side `where` — a to-one relation whose related
+ * list's `query` access resolved to a filter (`kind: 'scoped'`) or a denial
+ * (`kind: 'denied'`), Prisma cannot express either as a nested `where` on a
+ * to-one include; a to-many relation whose related list denies `query`
+ * access outright (`kind: 'denied'` only — a to-many filter is attached as
+ * `where` and never reaches this tree) is dropped from `include` entirely,
+ * so nothing marks its key present in the raw row either (issue #1103).
+ * `resolveToOneAccessVisibility` consumes this tree; `filterReadableFields`
+ * (`field-visibility.ts`) applies its result — forcing a denied key to `null`
+ * for a to-one relation, `[]` for a to-many one.
  */
 export type ToOneAccessFilterTree = {
-  /** To-one relation keys at THIS level needing a post-query check. */
+  /** Relation keys at THIS level needing a post-query fixup. */
   filters: Record<string, ToOneAccessFilterEntry>
-  /** Per-key trees for relations present in the include for other reasons, whose own nested include may contain further to-one filters. */
+  /** Per-key trees for relations present in the include for other reasons, whose own nested include may contain further filters. */
   nested: Record<string, ToOneAccessFilterTree>
 }
 
@@ -199,10 +225,11 @@ function isToOneRelationship(fieldConfig: FieldConfig): boolean {
  * - A declared relationship whose related list's `query` access denies it
  *   (`=== false`) → dropped entirely, no matter what the request asked for
  *   nested beneath it (#566): the caller chooses *which* relations, access
- *   control chooses *whether* and *with what filter*. For a to-one relation
- *   this denial is also recorded in `toOneAccessFilters` (`kind: 'denied'`),
- *   so `filterReadableFields` can still surface an explicit `null` for it
- *   (issue #974) rather than an absent key.
+ *   control chooses *whether* and *with what filter*. This denial is also
+ *   recorded in `toOneAccessFilters` (`kind: 'denied'`), for either arity, so
+ *   `filterReadableFields` can still surface an explicit `null` (to-one,
+ *   issue #974) or `[]` (to-many, issue #1103) for it rather than an absent
+ *   key.
  * - Otherwise, for a to-**many** relation → the access `where` is
  *   AND-combined with any caller-supplied nested `where` (never replaced —
  *   the other half of #566), and a caller-supplied `take` rides through
@@ -285,9 +312,11 @@ export async function buildAccessScopedInclude(
     })
 
     if (accessResult === false) {
-      if (isToOne) {
-        toOneAccessFilters.filters[relationName] = { kind: 'denied' }
-      }
+      // Recorded for either arity (issue #1103) — a to-many relation is
+      // dropped from `include` here exactly like a to-one one, and needs the
+      // same post-query fixup so its key comes back `[]`, not silently
+      // absent from the row.
+      toOneAccessFilters.filters[relationName] = { kind: 'denied' }
       continue
     }
 
@@ -370,7 +399,13 @@ export async function buildAccessScopedInclude(
   return { include: result, toOneAccessFilters }
 }
 
-/** One to-one relation's resolved post-query visibility — see `resolveToOneAccessVisibility`. */
+/**
+ * One relation's resolved post-query visibility — see
+ * `resolveToOneAccessVisibility`. `kind: 'visible'` (an existence check
+ * against a set of ids) only ever arises for a to-one relation, since only a
+ * to-one `kind: 'scoped'` filter entry produces one; `kind: 'denied'` passes
+ * straight through unresolved for either arity.
+ */
 export type ToOneVisibility = { kind: 'denied' } | { kind: 'visible'; ids: ReadonlySet<string> }
 
 /** The resolved counterpart to {@link ToOneAccessFilterTree}, produced by `resolveToOneAccessVisibility`. */
