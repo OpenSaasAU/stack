@@ -49,3 +49,7 @@ _Amended by [ADR-0050](0050-nested-relation-input-leaves-the-secured-write-surfa
 **What the engine widens for** is a lookup in a generation-time emitted table, not a walk of the config's relationship graph. It also now covers stored columns: exact selection is what opened that hole, so it is this record's to close.
 
 **How the addition is stripped** is a recursive set difference, `widened ∖ caller`, rather than the provenance tree the old fold maintained. Because `.select()` replaces rather than accumulates and selection is exact, both are explicit complete trees the engine constructed — which is the `{ selectedForQuery, hiddenColumns }` shape this record already cites Prisma for.
+
+## Amendment — `where` and `orderBy` take the Where vocabulary (ADR-0055)
+
+The read subset above lists `where` and `orderBy` without saying what they accept. [ADR-0055](0055-the-secured-surface-accepts-a-where-vocabulary-the-engine-lowers.md) fixes it: a **Where vocabulary** — a closed, data-shaped grammar the engine owns (`equals`, `not`, `in`, `notIn`, the four comparisons, `contains`; `AND`/`OR`/`NOT`; `some`/`every`/`none` on any relation) — which the terminal lowers onto Prisma's lambda in one place, total or throwing. Not Prisma's lambda, and not Prisma's full object spelling. The subset principle above is why the vocabulary is trimmed rather than mirrored. One capability leaves with it: **ordering by a to-many count is gone**, since Prisma 8's `orderBy` takes scalar columns only; the count itself stays a native include reducer.
