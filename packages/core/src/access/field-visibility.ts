@@ -8,7 +8,7 @@ import type { DeclaredOnlyTree } from './declared-dependencies.js'
 import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
 import type { FieldSelectionScope } from '../query/index.js'
 import type { ToOneAccessVisibilityTree } from './access-filter.js'
-import { emptyToOneAccessVisibilityTree } from './access-filter.js'
+import { emptyToOneAccessVisibilityTree, isToOneRelationship } from './access-filter.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -439,7 +439,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    const isToMany = !fieldConfig || ('many' in fieldConfig && fieldConfig.many === true)
+    const isToMany = !fieldConfig || !isToOneRelationship(fieldConfig)
     filtered[fieldName] = isToMany ? [] : null
   }
 

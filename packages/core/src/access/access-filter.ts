@@ -204,8 +204,14 @@ function isToOneAccessFilterTreeEmpty(tree: ToOneAccessFilterTree): boolean {
   return Object.keys(tree.filters).length === 0 && Object.keys(tree.nested).length === 0
 }
 
-/** Whether a relationship field is to-one (at most one related row) rather than to-many. */
-function isToOneRelationship(fieldConfig: FieldConfig): boolean {
+/**
+ * Whether a relationship field is to-one (at most one related row) rather
+ * than to-many. Exported so `field-visibility.ts` can pick the same `null`
+ * (to-one) vs `[]` (to-many) shape for a denied relation's forced value
+ * (issue #1103) that this module used to decide whether to record the
+ * denial in the first place — one source of truth for arity, not two.
+ */
+export function isToOneRelationship(fieldConfig: FieldConfig): boolean {
   return !('many' in fieldConfig && fieldConfig.many === true)
 }
 
