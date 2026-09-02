@@ -48,6 +48,7 @@ describe('getContext', () => {
           fields: {
             name: { type: 'text' },
             email: { type: 'text', isIndexed: 'unique' },
+            posts: { type: 'relationship', ref: 'Post.author', many: true },
           },
           access: {
             operation: {

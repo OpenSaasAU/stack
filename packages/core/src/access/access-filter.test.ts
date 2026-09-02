@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildAccessScopedInclude, resolveToOneAccessVisibility } from './access-filter.js'
-import { AccessScopeDepthExceededError } from './errors.js'
+import { AccessScopeDepthExceededError, UndeclaredIncludeKeyError } from './errors.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
@@ -391,7 +391,7 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
     expect(include).toEqual({})
   })
 
-  it('a list with no relationships passes an unrelated requested key through unchanged', async () => {
+  it('a declared non-relationship key on a list with no relationships passes through unchanged', async () => {
     const config = {
       db: { provider: 'sqlite' },
       lists: {
@@ -403,16 +403,62 @@ describe('buildAccessScopedInclude — fail-closed at the read-include depth cap
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
     } as any as OpenSaasConfig
 
-    // An arbitrary (non-declared-relationship) key passed through unchanged —
-    // access control does not govern keys it doesn't recognize as relationships.
+    // A declared field that isn't a relationship — access control does not
+    // govern it (e.g. a virtual field named in `include`, stripped later by
+    // `stripVirtualFieldsFromInclude`).
     const { include } = await buildAccessScopedInclude(
-      { someUnrelatedKey: true },
+      { name: true },
       config.lists.Leaf.fields,
       { session: null, context: makeContext() },
       config,
       'Leaf',
     )
-    expect(include).toEqual({ someUnrelatedKey: true })
+    expect(include).toEqual({ name: true })
+  })
+
+  it('rejects a key that is neither declared nor a synthetic back-relation (#1082)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Leaf: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    await expect(
+      buildAccessScopedInclude(
+        { someUnrelatedKey: true },
+        config.lists.Leaf.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Leaf',
+      ),
+    ).rejects.toThrow(UndeclaredIncludeKeyError)
+  })
+
+  it('passes `_count` through unchanged even though it is undeclared (#1082 out of scope)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Leaf: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      { _count: true },
+      config.lists.Leaf.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Leaf',
+    )
+    expect(include).toEqual({ _count: true })
   })
 })
 
@@ -671,5 +717,158 @@ describe('resolveToOneAccessVisibility (issue #974)', () => {
       kind: 'visible',
       ids: new Set(['u1']),
     })
+  })
+})
+
+/**
+ * Regression coverage for issue #1082: a list-only `ref` (`ref: 'Term'`, no
+ * target field) makes schema generation synthesize a back-relation on `Term`
+ * (`from_Bill_term`) that no list config declares. Before this fix,
+ * `buildAccessScopedInclude` treated any key it couldn't resolve to a
+ * DECLARED relationship as "not governed by access control" and passed it
+ * through unchanged — so a caller naming `from_Bill_term` in `include`
+ * bypassed `Bill`'s own `query` access entirely. These tests pin the fix: a
+ * synthetic key is scoped exactly like the declared relationship field it
+ * stands for.
+ */
+describe('buildAccessScopedInclude — synthetic back-relation (#1082)', () => {
+  // Term ← Bill.term (list-only ref) ← Bill.lineItems (declared, to-many).
+  // `from_Bill_term` is the back-relation schema generation synthesizes on
+  // Term; nothing in `Term.fields` declares it.
+  function syntheticConfig(billQuery: () => boolean | Record<string, unknown>) {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Term: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => true } },
+        },
+        Bill: {
+          fields: {
+            amount: { type: 'integer' } as FieldConfig,
+            term: rel('Term'), // list-only ref — synthesizes `from_Bill_term` on Term
+            lineItems: rel('LineItem.bill', true),
+          },
+          access: { operation: { query: billQuery } },
+        },
+        LineItem: {
+          fields: { sku: { type: 'text' } as FieldConfig, bill: rel('Bill.lineItems') },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+    return config
+  }
+
+  it('drops the relation entirely when the owning list denies query access', async () => {
+    const config = syntheticConfig(() => false)
+
+    const { include } = await buildAccessScopedInclude(
+      { from_Bill_term: true },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Term',
+    )
+
+    expect(include).toEqual({})
+  })
+
+  it('AND-folds the owning list access filter with the caller-supplied where', async () => {
+    const config = syntheticConfig(() => ({ paid: { equals: true } }))
+
+    const { include } = await buildAccessScopedInclude(
+      { from_Bill_term: { where: { amount: { gt: 10 } } } },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Term',
+    )
+
+    expect(include).toEqual({
+      from_Bill_term: {
+        where: { AND: [{ paid: { equals: true } }, { amount: { gt: 10 } }] },
+      },
+    })
+  })
+
+  it('scopes a nested include against the OWNING list fields and consumes depth', async () => {
+    const config = syntheticConfig(() => true)
+    const lineItemQuery = vi.fn(() => true)
+    config.lists.LineItem.access = { operation: { query: lineItemQuery } }
+
+    const { include } = await buildAccessScopedInclude(
+      { from_Bill_term: { include: { lineItems: true } } },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Term',
+    )
+
+    // The nested `lineItems` key was resolved against Bill's own fields (not
+    // Term's, which has no `lineItems` field at all) — proof the recursion
+    // used the owning list, not the synthetic key's declaring list.
+    expect(lineItemQuery).toHaveBeenCalledTimes(1)
+    expect(include).toEqual({ from_Bill_term: { include: { lineItems: true } } })
+  })
+
+  it('a synthetic hop counts toward the read-include depth cap the same as a declared one', async () => {
+    // A chain like `chainConfig` builds (L0 ↔ L1 ↔ … via declared `next`/`prev`),
+    // except the FIRST hop is synthetic: L1's `prev` is a list-only ref, so L0
+    // never declares `next` at all — it only gets `from_L1_prev` synthesized
+    // onto it. Every hop past that first one is declared, exactly matching the
+    // mixed synthetic-then-declared case the depth cap must bound identically.
+    const chainLength = READ_INCLUDE_MAX_DEPTH + 2
+    const { config } = chainConfig(chainLength)
+    delete (config.lists.L0.fields as Record<string, unknown>).next
+    ;(config.lists.L1.fields as Record<string, FieldConfig>).prev = rel('L0')
+
+    // Outer `from_L1_prev` (hop 1) + nestedInclude(HOPS_AT_CAP) (HOPS_AT_CAP
+    // more, via the declared `next` chain from L1 onward) = HOPS_AT_CAP + 1.
+    const requested = { from_L1_prev: nestedInclude(READ_INCLUDE_MAX_DEPTH) }
+
+    await expect(
+      buildAccessScopedInclude(
+        requested,
+        config.lists.L0.fields,
+        { session: null, context: makeContext() },
+        config,
+        'L0',
+      ),
+    ).rejects.toThrow(AccessScopeDepthExceededError)
+  })
+
+  it('still resolves a synthetic hop one level shallower than the cap', async () => {
+    const chainLength = READ_INCLUDE_MAX_DEPTH + 1
+    const { config } = chainConfig(chainLength)
+    delete (config.lists.L0.fields as Record<string, unknown>).next
+    ;(config.lists.L1.fields as Record<string, FieldConfig>).prev = rel('L0')
+
+    const requested = { from_L1_prev: nestedInclude(READ_INCLUDE_MAX_DEPTH - 1) }
+
+    const { include } = await buildAccessScopedInclude(
+      requested,
+      config.lists.L0.fields,
+      { session: null, context: makeContext() },
+      config,
+      'L0',
+    )
+
+    expect(includeDepth(include)).toBe(READ_INCLUDE_MAX_DEPTH)
+  })
+
+  it('rejects a key that resolves to neither a declared relationship nor a synthetic one', async () => {
+    const config = syntheticConfig(() => true)
+
+    await expect(
+      buildAccessScopedInclude(
+        { from_Nonexistent_field: true },
+        config.lists.Term.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Term',
+      ),
+    ).rejects.toThrow(UndeclaredIncludeKeyError)
   })
 })
