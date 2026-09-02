@@ -47,7 +47,7 @@ A read that names no relations. It returns the row's own columns and never its r
 _Avoid_: auto-include, default include, unqualified read
 
 **One hop**:
-The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further. This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it. The ORM enforces it (ADR-0043), and it holds for every relation a caller can name: where the ORM could not reach one, the field is refused at generation rather than the rule gaining an exception. How far a caller may reach is a separate cost limit, refused loudly.
+The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further. This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it. The ORM enforces it (ADR-0043), and it holds for every relation a caller can name — both sides of a one-to-one included, since the ORM reaches a to-one from either side (ADR-0064) — so the rule carries no exception. How far a caller may reach is a separate cost limit, refused loudly.
 _Avoid_: deep include, nested expansion, relation tree
 
 **Projection**:
