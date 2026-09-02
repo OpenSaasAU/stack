@@ -23,6 +23,12 @@ jobs:
       - name: Ensure package version consistency
         run: pnpm manypkg check
 
+      # Runs against the PR's merge commit (actions/checkout's default ref for
+      # pull_request events), which is the only place a two-branch numbering
+      # collision becomes visible — each branch is self-consistent on its own.
+      - name: Check for duplicate ADR numbers
+        run: pnpm check:adr-duplicates
+
       - name: Lint codebase
         run: pnpm lint
 
