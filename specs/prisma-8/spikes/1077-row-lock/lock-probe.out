@@ -1,0 +1,122 @@
+
+== postgres14: postgres://…@localhost/spike_1077?host=/tmp ==
+
+== postgres14 / A. contract facts the engine would read ==
+Post storage.primaryKey                      {"columns":["id"]}
+Post id column codec (storage)               {"nativeType":"text","codecId":"pg/text@1","nullable":false}
+codecRefForStorageColumn(Post.id)            {"codecId":"pg/text@1"}
+quoteIdentifier("Post")                      "\"Post\""
+qualifyName("public","Post")                 "\"public\".\"Post\""
+quoteIdentifier("we\"ird")                   "\"we\"\"ird\""
+
+== postgres14 / B. spellings, run through tx.query(plan) inside db.transaction ==
+B1 IN (param per key, contract codec)        [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p2","p1"]
+B2 = ANY(param text[])                       [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" = ANY($1::text[]) ORDER BY "id" FOR UPDATE   params=[["p2","p1"]]
+B3 bare interpolation (inferred codec)       [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p1","p2"]
+   field-proxy operators                     ["eq","in","and"]
+B4 splice a db.sql select, append FOR UPDATE "THREW TypeError: value.buildAst(...).parts is not iterable (cannot read property undefined)"
+B5 hand-written (SELECT …) FOR UPDATE parenthesised [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: (SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id") FOR UPDATE   params=["p1","p2"]
+B6 engine spelling: tag called programmatically [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" LIMIT $3 FOR UPDATE   params=["p1","p2",2]
+B7 uuid pk: bare string param vs uuid column [{"id":"018f0000-0000-7000-8000-000000000001"}]
+   sql[raw]: SELECT "id" FROM "public"."Slot" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["018f0000-0000-7000-8000-000000000001"]
+B8 uuid pk: param with PG_UUID codec         [{"id":"018f0000-0000-7000-8000-000000000001"}]
+   sql[raw]: SELECT "id" FROM "public"."Slot" WHERE "id" IN ($1::uuid) ORDER BY "id" FOR UPDATE   params=["018f0000-0000-7000-8000-000000000001"]
+B9 execute() instead of query() for the lock {"affectedRows":1}
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+B10 advisory: pg_advisory_xact_lock(hashtext(key)) {"execute":{"affectedRows":1},"advisoryLocksHeld":[{"n":1}]}
+   sql[raw]: SELECT pg_advisory_xact_lock(hashtext($1))   params=["capacity:slot-1"]
+   sql[raw]: SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()   params=[]
+
+== postgres14 / C. is it a lock: EXPLAIN and pg_locks ==
+C1 EXPLAIN lock statement                    ["LockRows  (cost=13.67..13.69 rows=2 width=38)","->  Sort  (cost=13.67..13.67 rows=2 width=38)","Sort Key: id","->  Bitmap Heap Scan on \"Post\"  (cost=8.32..13.66 rows=2 width=38)","Recheck Cond: (id = ANY ('{p1,p2}'::text[]))","->  Bitmap Index Scan on \"Post_pkey\"  (cost=0.00..8.32 rows=2 width=0)","Index Cond: (id = ANY ('{p1,p2}'::text[]))"]
+   sql[raw]: EXPLAIN SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p1","p2"]
+C2 EXPLAIN parenthesised form                ["LockRows  (cost=0.15..8.18 rows=1 width=38)","->  Index Scan using \"Post_pkey\" on \"Post\"  (cost=0.15..8.17 rows=1 width=38)","Index Cond: (id = 'p1'::text)"]
+   sql[raw]: EXPLAIN (SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id") FOR UPDATE   params=["p1"]
+C3 pg_locks mode on Post inside the tx       ["RowShareLock"]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+   sql[raw]: SELECT mode FROM pg_locks WHERE relation = '"public"."Post"'::regclass AND pid = pg_backend_pid() ORDER BY mode   params=[]
+
+== postgres14 / D. Prisma's opt-in lints() middleware against the lock statement ==
+D1 lock without LIMIT under lints()          [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2 lock with LIMIT under lints()             [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" LIMIT $2 FOR UPDATE   params=["p1",1]
+D2b lock without LIMIT under lints({noLimit:error}) "THREW Error: Raw SQL plan omits LIMIT clause"
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2c lock without LIMIT under budgets()       [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2d lock WITH LIMIT under budgets()          [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" LIMIT $2 FOR UPDATE   params=["p1",1]
+D3 ORM read under lints() (control)          {"id":"p1","title":"t1","published":false,"authorId":"u1"}
+   sql[orm-client]: SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE "Post"."id" = $1 LIMIT 1   params=["p1"]
+
+== postgres14 / E. contention and the vanished row, second connection via pg ==
+E1 lock p1 in tx A; B FOR UPDATE NOWAIT on p1 / p3 {"b1":"B on p1: 55P03","b3":"B acquired p3: 1 row"}
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+E2 after A commits, B acquires p1            "B acquired p1: 1 row"
+E3 vanished row: read [p1,p2], delete p2 elsewhere, then lock {"read":["p1","p2"],"locked":["p1"]}
+   sql[orm-client]: SELECT "Post"."id" AS "id" FROM "public"."Post" WHERE "Post"."authorId" = $1   params=["u1"]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p1","p2"]
+E4 SKIP LOCKED: B holds p1; A lock [p1,p3] SKIP LOCKED ["p3"]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE SKIP LOCKED   params=["p1","p3"]
+
+== pglite: postgres://…@127.0.0.1:5437/postgres ==
+
+== pglite / A. contract facts the engine would read ==
+Post storage.primaryKey                      {"columns":["id"]}
+Post id column codec (storage)               {"nativeType":"text","codecId":"pg/text@1","nullable":false}
+codecRefForStorageColumn(Post.id)            {"codecId":"pg/text@1"}
+quoteIdentifier("Post")                      "\"Post\""
+qualifyName("public","Post")                 "\"public\".\"Post\""
+quoteIdentifier("we\"ird")                   "\"we\"\"ird\""
+
+== pglite / B. spellings, run through tx.query(plan) inside db.transaction ==
+B1 IN (param per key, contract codec)        [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p2","p1"]
+B2 = ANY(param text[])                       [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" = ANY($1::text[]) ORDER BY "id" FOR UPDATE   params=[["p2","p1"]]
+B3 bare interpolation (inferred codec)       [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p1","p2"]
+   field-proxy operators                     ["eq","in","and"]
+B4 splice a db.sql select, append FOR UPDATE "THREW TypeError: value.buildAst(...).parts is not iterable (cannot read property undefined)"
+B5 hand-written (SELECT …) FOR UPDATE parenthesised [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: (SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id") FOR UPDATE   params=["p1","p2"]
+B6 engine spelling: tag called programmatically [{"id":"p1"},{"id":"p2"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" LIMIT $3 FOR UPDATE   params=["p1","p2",2]
+B7 uuid pk: bare string param vs uuid column [{"id":"018f0000-0000-7000-8000-000000000001"}]
+   sql[raw]: SELECT "id" FROM "public"."Slot" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["018f0000-0000-7000-8000-000000000001"]
+B8 uuid pk: param with PG_UUID codec         [{"id":"018f0000-0000-7000-8000-000000000001"}]
+   sql[raw]: SELECT "id" FROM "public"."Slot" WHERE "id" IN ($1::uuid) ORDER BY "id" FOR UPDATE   params=["018f0000-0000-7000-8000-000000000001"]
+B9 execute() instead of query() for the lock {"affectedRows":1}
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+B10 advisory: pg_advisory_xact_lock(hashtext(key)) {"execute":{"affectedRows":1},"advisoryLocksHeld":[{"n":1}]}
+   sql[raw]: SELECT pg_advisory_xact_lock(hashtext($1))   params=["capacity:slot-1"]
+   sql[raw]: SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()   params=[]
+
+== pglite / C. is it a lock: EXPLAIN and pg_locks ==
+C1 EXPLAIN lock statement                    ["LockRows  (cost=9.52..9.54 rows=2 width=38)","->  Sort  (cost=9.52..9.52 rows=2 width=38)","Sort Key: id","->  Bitmap Heap Scan on \"Post\"  (cost=4.17..9.51 rows=2 width=38)","Recheck Cond: (id = ANY ('{p1,p2}'::text[]))","->  Bitmap Index Scan on \"Post_pkey\"  (cost=0.00..4.17 rows=2 width=0)","Index Cond: (id = ANY ('{p1,p2}'::text[]))"]
+   sql[raw]: EXPLAIN SELECT "id" FROM "public"."Post" WHERE "id" IN ($1, $2) ORDER BY "id" FOR UPDATE   params=["p1","p2"]
+C2 EXPLAIN parenthesised form                ["LockRows  (cost=0.15..8.18 rows=1 width=38)","->  Index Scan using \"Post_pkey\" on \"Post\"  (cost=0.15..8.17 rows=1 width=38)","Index Cond: (id = 'p1'::text)"]
+   sql[raw]: EXPLAIN (SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id") FOR UPDATE   params=["p1"]
+C3 pg_locks mode on Post inside the tx       ["RowShareLock"]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+   sql[raw]: SELECT mode FROM pg_locks WHERE relation = '"public"."Post"'::regclass AND pid = pg_backend_pid() ORDER BY mode   params=[]
+
+== pglite / D. Prisma's opt-in lints() middleware against the lock statement ==
+D1 lock without LIMIT under lints()          [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2 lock with LIMIT under lints()             [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" LIMIT $2 FOR UPDATE   params=["p1",1]
+D2b lock without LIMIT under lints({noLimit:error}) "THREW Error: Raw SQL plan omits LIMIT clause"
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2c lock without LIMIT under budgets()       [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" FOR UPDATE   params=["p1"]
+D2d lock WITH LIMIT under budgets()          [{"id":"p1"}]
+   sql[raw]: SELECT "id" FROM "public"."Post" WHERE "id" IN ($1) ORDER BY "id" LIMIT $2 FOR UPDATE   params=["p1",1]
+D3 ORM read under lints() (control)          {"id":"p1","title":"t1","published":false,"authorId":"u1"}
+   sql[orm-client]: SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE "Post"."id" = $1 LIMIT 1   params=["p1"]
