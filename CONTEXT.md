@@ -134,6 +134,10 @@ _Avoid_: generated schema, schema.prisma, contract source
 The `contract.json` + `contract.d.ts` pair that `prisma contract emit` produces from the Contract module. Both are committed and diffable, emission is byte-deterministic, and the type artifact carries what the stack used to derive by hand — read and write field shapes, per-field nullability and codec, the domain-to-column mapping, and the relation graph with cardinality. They are generated: changing them means changing the Contract module and re-emitting.
 _Avoid_: contract file, emitted schema, generated types
 
+**Contract remainder**:
+The per-list facts the generator writes into the Generated bundle because the Contract artifacts cannot carry them — a computed field's output type, a stored field's TypeScript override of its codec's type, each field's declared dependency set rendered as a type, and whether the list is a singleton. Everything else a list's types need is read from the contract and never re-derived: the generated types declare the remainder and instantiate core's contract-keyed generics with it (ADR-0052).
+_Avoid_: virtual field types, type overrides, generated types (that names the file, not the content)
+
 **Generated bundle**:
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
 _Avoid_: generated context, output dir, .opensaas folder
