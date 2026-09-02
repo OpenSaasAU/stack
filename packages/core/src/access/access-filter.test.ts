@@ -587,6 +587,26 @@ describe('buildAccessScopedInclude — `_count` is scoped like any other relatio
     expect(countDenials.keys).toEqual(new Set(['secrets']))
   })
 
+  it('a denied relation resolves to 0 without validating its caller `where` — no field-name/read-access oracle', async () => {
+    // A caller who cannot read a single `Secret` row supplies a nonsense
+    // `where` naming a field that doesn't exist. If denial were checked
+    // AFTER `where` validation, this would throw a `ValidationError` naming
+    // "Secret"'s fields — letting a caller probe a fully denied list's
+    // schema. Denial must win first: the count is 0 regardless of `where`.
+    const config = countConfig(() => true)
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: { select: { secrets: { where: { bogusField: { equals: 1 } } } } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({})
+    expect(countDenials.keys).toEqual(new Set(['secrets']))
+  })
+
   it('rejects a `_count.select` key that is not a countable to-many (undeclared)', async () => {
     const config = countConfig(() => true)
 

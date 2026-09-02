@@ -241,7 +241,12 @@ function normalizeCountSelect(
  * - The related list's `query` access denies it (`=== false`) → omitted from
  *   the select sent to Prisma and added to the returned `deniedKeys`, so
  *   `filterReadableFields` can inject `0` post-query (a count is
- *   session-relative; denial doesn't mean "no such relation").
+ *   session-relative; denial doesn't mean "no such relation"). Checked BEFORE
+ *   any caller-supplied nested `where` is validated — validating first would
+ *   let a caller who cannot read a single row of the related list learn its
+ *   field names and field-level read rules from a thrown `ValidationError`
+ *   alone, reopening the exact oracle #915/ADR-0031 closed for a top-level
+ *   predicate.
  * - Otherwise → the access filter (if any) is AND-combined with any
  *   caller-supplied nested `where` at that key — reusing `andWhere`, never
  *   replacing the caller's own condition (mirroring `buildAccessScopedInclude`
@@ -295,6 +300,18 @@ async function buildAccessScopedCountSelect(
 
     const accessEntry = await resolveCountAccessEntryForList(relatedConfig.listConfig, args)
 
+    // Denial is checked BEFORE the caller's nested `where` is validated —
+    // mirroring `buildAccessScopedWhere`'s own ordering below. A fully denied
+    // relation counts `0` no matter what `where` the caller supplied, so
+    // validating it first would let a caller who cannot read a single row of
+    // the related list learn its field names and field-level read rules from
+    // a `ValidationError`'s message alone — the exact oracle #915/ADR-0031
+    // closed for a top-level predicate, reopened here if this ran first.
+    if (accessEntry.kind === 'denied') {
+      deniedKeys.add(key)
+      continue
+    }
+
     const requestedWhere =
       isPlainObject(entryValue) && isPlainObject(entryValue.where)
         ? (entryValue.where as Record<string, unknown>)
@@ -316,11 +333,6 @@ async function buildAccessScopedCountSelect(
         context: args.context,
         isSudo: false,
       })
-    }
-
-    if (accessEntry.kind === 'denied') {
-      deniedKeys.add(key)
-      continue
     }
 
     const scopedWhere = andWhere(
