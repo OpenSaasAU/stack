@@ -1,0 +1,24 @@
+== unix socket binding variants (server maxConnections=1) ==
+  url ?host=<dir>                          FAIL: CliStructuredError: Database error while reading contract marker  <-  SqlQueryError: write EPIPE  <-  Error: write EPIPE
+  pg: Pool({host: dir, max: 1})            FAIL: CliStructuredError: Database error while reading contract marker  <-  SqlQueryError: write EPIPE  <-  Error: write EPIPE
+  pg: Pool({host: dir}) default max=10     OK 3 rows
+  pg: Client({host: dir})                  FAIL: CliStructuredError: Database error while reading contract marker  <-  SqlQueryError: write EPIPE  <-  Error: write EPIPE
+
+== same variants, server maxConnections=10 ==
+  url ?host=<dir>                          OK 3 rows
+  pg: Client({host: dir})                  OK 3 rows
+
+== why does the first query open >1 connection? count sockets during first .all() (tcp, maxConnections=10) ==
+  after first .all(): pool.totalCount=1 server active=1
+  after second .all(): pool.totalCount=1
+
+== concurrency: 5 concurrent .all() ==
+  server maxConnections=1 url (own pool, pg default max=10)    -> "ERROR SqlConnectionError: read ECONNRESET  <-  Error: read ECONNRESET" in 6ms stats={"activeConnections":1,"queuedQueries":0,"maxConnections":1}
+  server maxConnections=1 pg: Pool max=1                       -> [1,2,1,2,1] in 5ms stats={"activeConnections":1,"queuedQueries":0,"maxConnections":1}
+  server maxConnections=5 url, server maxConnections=5         -> [1,2,1,2,1] in 6ms stats={"activeConnections":5,"queuedQueries":0,"maxConnections":5}
+  server maxConnections=10 url, server maxConnections=10        -> [1,2,1,2,1] in 6ms stats={"activeConnections":5,"queuedQueries":0,"maxConnections":10}
+
+== 5 concurrent transactions (create + count), server maxConnections=10, url ==
+  -> "TIMEOUT 15s" in 15004ms
+
+== 5 concurrent transactions, pg: Pool max=1 (serialised by pool), server maxConnections=1 ==

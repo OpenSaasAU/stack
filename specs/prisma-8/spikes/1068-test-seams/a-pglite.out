@@ -1,0 +1,56 @@
+== startup: PGlite(+pgvector ext) + PGLiteSocketServer, 3 runs each mode ==
+  unix run 1: pglite=644ms socket=4.8ms total=649ms
+  unix run 2: pglite=401ms socket=0.6ms total=402ms
+  unix run 3: pglite=406ms socket=0.6ms total=406ms
+  tcp run 1: pglite=361ms socket=1.9ms total=363ms
+  tcp run 2: pglite=364ms socket=1.7ms total=366ms
+  tcp run 3: pglite=359ms socket=0.6ms total=359ms
+  unix (no pgvector ext): total=367ms
+
+== unix socket: postgres({ url }) vs pg: new Pool({ host: dir }) ==
+  url=?host=<dir> FAILED: Database error while reading contract marker
+  url with encoded dir as host FAILED: Database error while reading contract marker
+  pg: Pool({host: dir}) -> 3 rows OK
+  pg: Client({host: dir}) FAILED: Database error while reading contract marker
+
+== per-query latency (.where().all(), shared client, warm) ==
+  unix: orm .where().all() = 0.119 ms/query   raw pg.query = 0.063 ms/query
+  tcp: orm .where().all() = 0.143 ms/query   raw pg.query = 0.089 ms/query
+
+== two PGlite instances in one process ==
+  A users: [ 'u1', 'u2' ]  B users: [ 'zz' ]  isolated: true
+
+== concurrency: 5 concurrent .all() through postgres({ url }) (pg default pool max=10) ==
+/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/normalize-error-CNjgVO71.mjs:114
+	if (isConnectionError(error)) return new SqlConnectionError(error.message, {
+	                                     ^
+
+SqlConnectionError: read ECONNRESET
+    at normalizePgError (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/normalize-error-CNjgVO71.mjs:114:39)
+    at PostgresPoolDriverImpl.query (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/runtime.mjs:177:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async iterator (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-framework@8.0.0-rc.8_typescript@5.9.3/1-framework/1-core/framework-components/dist/runtime.mjs:439:21)
+    ... 3 lines matching cause stack trace ...
+    at async <anonymous> (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-framework@8.0.0-rc.8_typescript@5.9.3/1-framework/1-core/framework-components/dist/runtime.mjs:169:21)
+    at async Promise.all (index 1)
+    at async <anonymous> (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/a-pglite.ts:94:19) {
+  kind: 'sql_connection',
+  transient: true,
+  [cause]: Error: read ECONNRESET
+      at /private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/pg-pool@3.14.0_pg@8.22.0/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async PostgresPoolDriverImpl.acquireClient (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/runtime.mjs:463:41)
+      at async PostgresPoolDriverImpl.runQuery (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/runtime.mjs:256:18)
+      at async PostgresPoolDriverImpl.query (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-target-postgres@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1._xrdfumo6na5zkmfoivyxzi72di/3-targets/7-drivers/postgres/dist/runtime.mjs:171:5)
+      at async iterator (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-framework@8.0.0-rc.8_typescript@5.9.3/1-framework/1-core/framework-components/dist/runtime.mjs:439:21)
+      at async PostgresRuntimeImpl.streamRows (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-family-sql@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1.71.0__fmkczohhvcy64t67flyxamqhka/2-sql/5-runtime/dist/exports-BDzGy_bM.mjs:1424:19)
+      at async generator (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-family-sql@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1.71.0__fmkczohhvcy64t67flyxamqhka/2-sql/5-runtime/dist/exports-BDzGy_bM.mjs:1489:4)
+      at async generator (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-family-sql@8.0.0-rc.8_@prisma+cli-engine@0.3.0_@prisma+management-api-sdk@1.71.0__fmkczohhvcy64t67flyxamqhka/3-extensions/sql-orm-client/dist/index.mjs:557:20)
+      at async <anonymous> (/private/tmp/claude-501/-Users-joshcalder-Development-opensaas-stack/3c46e48b-567e-4777-9fc0-e05c4873eb41/scratchpad/spike-1068/node_modules/.pnpm/@prisma+orm-framework@8.0.0-rc.8_typescript@5.9.3/1-framework/1-core/framework-components/dist/runtime.mjs:169:21) {
+    errno: -54,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+
+Node.js v24.10.0

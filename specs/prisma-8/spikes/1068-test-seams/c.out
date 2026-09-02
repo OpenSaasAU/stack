@@ -1,0 +1,671 @@
+
+== Post.where({authorId:"u1", published:true}).orderBy? limit(5).all() ==
+   SQL: SELECT "tables"."table_schema" AS "table_schema" FROM "information_schema"."tables" WHERE ("tables"."table_schema" = $1 AND "tables"."table_name" = $2) ["prisma_contract","marker"]
+   SQL: SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE ("Post"."authorId" = $1 AND "Post"."published" = $2) LIMIT 5 ["u1",true]
+   ast class: SelectAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "select",
+       "from": {
+         "kind": "table-source",
+         "name": "Post",
+         "namespaceId": "public"
+       },
+       "projection": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "title",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "title"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "published",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "published"
+           },
+           "codec": {
+             "codecId": "pg/bool@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "authorId",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "authorId"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       ],
+       "where": {
+         "kind": "and",
+         "exprs": [
+           {
+             "kind": "binary",
+             "op": "eq",
+             "left": {
+               "kind": "column-ref",
+               "table": "Post",
+               "column": "authorId"
+             },
+             "right": {
+               "kind": "param-ref",
+               "value": "u1",
+               "codec": {
+                 "codecId": "pg/text@1"
+               }
+             }
+           },
+           {
+             "kind": "binary",
+             "op": "eq",
+             "left": {
+               "kind": "column-ref",
+               "table": "Post",
+               "column": "published"
+             },
+             "right": {
+               "kind": "param-ref",
+               "value": true,
+               "codec": {
+                 "codecId": "pg/bool@1"
+               }
+             }
+           }
+         ]
+       },
+       "limit": 5,
+       "selectAllIntent": {
+         "table": "Post"
+       }
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "lane": "orm-client"
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,lane  meta.annotations: undefined undefined  read(): undefined
+   JSON stable across two stringifies: true  size: 1063 bytes
+
+field proxy methods on p.title: returnType, codec, buildAst, eq, neq, in, notIn, gt, lt, gte, lte, like, asc, desc, isNull, isNotNull, ilike, __defineGetter__, __defineSetter__, hasOwnProperty, __lookupGetter__, __lookupSetter__, isPrototypeOf, propertyIsEnumerable, toString, valueOf, __proto__, toLocaleString
+
+== Post.where(p => p.title.like("%x%")).select id,title .all(annotated) ==
+   SQL: SELECT "Post"."id" AS "id", "Post"."title" AS "title" FROM "public"."Post" WHERE "Post"."title" LIKE $1 ["%x%"]
+   ast class: SelectAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "select",
+       "from": {
+         "kind": "table-source",
+         "name": "Post",
+         "namespaceId": "public"
+       },
+       "projection": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "title",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "title"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       ],
+       "where": {
+         "kind": "binary",
+         "op": "like",
+         "left": {
+           "kind": "column-ref",
+           "table": "Post",
+           "column": "title"
+         },
+         "right": {
+           "kind": "param-ref",
+           "value": "%x%",
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       }
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "annotations": {
+         "opensaas-session": {
+           "__annotation": true,
+           "namespace": "opensaas-session",
+           "value": {
+             "userId": "alice"
+           },
+           "applicableTo": [
+             "read",
+             "write"
+           ]
+         }
+       },
+       "lane": "orm-client"
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,annotations,lane  meta.annotations: Object {"opensaas-session":{"__annotation":true,"namespace":"opensaas-session","value":{"userId":"alice"},"applicableTo":["read","write"]}}  read(): {"userId":"alice"}
+   JSON stable across two stringifies: true  size: 540 bytes
+
+== Post.create({...}) ==
+   SQL: INSERT INTO "public"."Post" ("id", "title", "published", "authorId") VALUES ($1, $2, $3, $4) RETURNING "Post"."id", "Post"."title", "Post"."published", "Post"."authorId" ["p1","t",false,"u1"]
+   ast class: InsertAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "insert",
+       "table": {
+         "kind": "table-source",
+         "name": "Post",
+         "namespaceId": "public"
+       },
+       "rows": [
+         {
+           "id": {
+             "kind": "param-ref",
+             "value": "p1",
+             "name": "id",
+             "codec": {
+               "codecId": "pg/text@1"
+             }
+           },
+           "title": {
+             "kind": "param-ref",
+             "value": "t",
+             "name": "title",
+             "codec": {
+               "codecId": "pg/text@1"
+             }
+           },
+           "published": {
+             "kind": "param-ref",
+             "value": false,
+             "name": "published",
+             "codec": {
+               "codecId": "pg/bool@1"
+             }
+           },
+           "authorId": {
+             "kind": "param-ref",
+             "value": "u1",
+             "name": "authorId",
+             "codec": {
+               "codecId": "pg/text@1"
+             }
+           }
+         }
+       ],
+       "returning": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "title",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "title"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "published",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "published"
+           },
+           "codec": {
+             "codecId": "pg/bool@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "authorId",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "authorId"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       ]
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "lane": "orm-client"
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,lane  meta.annotations: undefined undefined  read(): undefined
+   JSON stable across two stringifies: true  size: 1027 bytes
+
+== Post.where({id}).update({published:true}) annotated ==
+   SQL: BEGIN []
+   SQL: SELECT "Post"."id" AS "id" FROM "public"."Post" WHERE "Post"."id" = $1 LIMIT 1 ["p1"]
+   SQL: UPDATE "public"."Post" SET "published" = $1 WHERE "Post"."id" = 'p1' RETURNING "Post"."id", "Post"."title", "Post"."published", "Post"."authorId" [true]
+   SQL: COMMIT []
+   ast class: SelectAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "select",
+       "from": {
+         "kind": "table-source",
+         "name": "Post",
+         "namespaceId": "public"
+       },
+       "projection": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       ],
+       "where": {
+         "kind": "binary",
+         "op": "eq",
+         "left": {
+           "kind": "column-ref",
+           "table": "Post",
+           "column": "id"
+         },
+         "right": {
+           "kind": "param-ref",
+           "value": "p1",
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       },
+       "limit": 1
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "lane": "orm-client"
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,lane  meta.annotations: undefined undefined  read(): undefined
+   JSON stable across two stringifies: true  size: 408 bytes
+   ast class: UpdateAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "update",
+       "table": {
+         "kind": "table-source",
+         "name": "Post",
+         "namespaceId": "public"
+       },
+       "set": {
+         "published": {
+           "kind": "param-ref",
+           "value": true,
+           "name": "published",
+           "codec": {
+             "codecId": "pg/bool@1"
+           }
+         }
+       },
+       "where": {
+         "kind": "binary",
+         "op": "eq",
+         "left": {
+           "kind": "column-ref",
+           "table": "Post",
+           "column": "id"
+         },
+         "right": {
+           "kind": "literal",
+           "value": "p1"
+         }
+       },
+       "returning": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "title",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "title"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "published",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "published"
+           },
+           "codec": {
+             "codecId": "pg/bool@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "authorId",
+           "expr": {
+             "kind": "column-ref",
+             "table": "Post",
+             "column": "authorId"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         }
+       ]
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "lane": "orm-client",
+       "annotations": {
+         "opensaas-session": {
+           "__annotation": true,
+           "namespace": "opensaas-session",
+           "value": {
+             "userId": "bob"
+           },
+           "applicableTo": [
+             "read",
+             "write"
+           ]
+         }
+       }
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,lane,annotations  meta.annotations: Object {"opensaas-session":{"__annotation":true,"namespace":"opensaas-session","value":{"userId":"bob"},"applicableTo":["read","write"]}}  read(): {"userId":"bob"}
+   JSON stable across two stringifies: true  size: 891 bytes
+
+== User.include("posts").all() ==
+   SQL: SELECT "User"."id" AS "id", "User"."name" AS "name", (SELECT coalesce(json_agg(json_build_object('id', "posts__rows"."id", 'title', "posts__rows"."title", 'published', "posts__rows"."published", 'authorId', "posts__rows"."authorId")), json_build_array()) AS "posts" FROM (SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE "Post"."authorId" = "User"."id") AS "posts__rows") AS "posts" FROM "public"."User" []
+   ast class: SelectAst  ctx keys: contract,mode,now,log,contentHash,scope,planExecutionId
+   ast JSON:      {
+       "kind": "select",
+       "from": {
+         "kind": "table-source",
+         "name": "User",
+         "namespaceId": "public"
+       },
+       "projection": [
+         {
+           "kind": "projection-item",
+           "alias": "id",
+           "expr": {
+             "kind": "column-ref",
+             "table": "User",
+             "column": "id"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "name",
+           "expr": {
+             "kind": "column-ref",
+             "table": "User",
+             "column": "name"
+           },
+           "codec": {
+             "codecId": "pg/text@1"
+           }
+         },
+         {
+           "kind": "projection-item",
+           "alias": "posts",
+           "expr": {
+             "kind": "subquery",
+             "query": {
+               "kind": "select",
+               "from": {
+                 "kind": "derived-table-source",
+                 "alias": "posts__rows",
+                 "query": {
+                   "kind": "select",
+                   "from": {
+                     "kind": "table-source",
+                     "name": "Post",
+                     "namespaceId": "public"
+                   },
+                   "projection": [
+                     {
+                       "kind": "projection-item",
+                       "alias": "id",
+                       "expr": {
+                         "kind": "column-ref",
+                         "table": "Post",
+                         "column": "id"
+                       },
+                       "codec": {
+                         "codecId": "pg/text@1"
+                       }
+                     },
+                     {
+                       "kind": "projection-item",
+                       "alias": "title",
+                       "expr": {
+                         "kind": "column-ref",
+                         "table": "Post",
+                         "column": "title"
+                       },
+                       "codec": {
+                         "codecId": "pg/text@1"
+                       }
+                     },
+                     {
+                       "kind": "projection-item",
+                       "alias": "published",
+                       "expr": {
+                         "kind": "column-ref",
+                         "table": "Post",
+                         "column": "published"
+                       },
+                       "codec": {
+                         "codecId": "pg/bool@1"
+                       }
+                     },
+                     {
+                       "kind": "projection-item",
+                       "alias": "authorId",
+                       "expr": {
+                         "kind": "column-ref",
+                         "table": "Post",
+                         "column": "authorId"
+                       },
+                       "codec": {
+                         "codecId": "pg/text@1"
+                       }
+                     }
+                   ],
+                   "where": {
+                     "kind": "binary",
+                     "op": "eq",
+                     "left": {
+                       "kind": "column-ref",
+                       "table": "Post",
+                       "column": "authorId"
+                     },
+                     "right": {
+                       "kind": "column-ref",
+                       "table": "User",
+                       "column": "id"
+                     }
+                   }
+                 }
+               },
+               "projection": [
+                 {
+                   "kind": "projection-item",
+                   "alias": "posts",
+                   "expr": {
+                     "kind": "json-array-agg",
+                     "expr": {
+                       "value": {
+                         "kind": "json-object",
+                         "entries": [
+                           {
+                             "key": "id",
+                             "value": {
+                               "value": {
+                                 "kind": "column-ref",
+                                 "table": "posts__rows",
+                                 "column": "id"
+                               },
+                               "kind": "codec",
+                               "codec": {
+                                 "codecId": "pg/text@1"
+                               }
+                             }
+                           },
+                           {
+                             "key": "title",
+                             "value": {
+                               "value": {
+                                 "kind": "column-ref",
+                                 "table": "posts__rows",
+                                 "column": "title"
+                               },
+                               "kind": "codec",
+                               "codec": {
+                                 "codecId": "pg/text@1"
+                               }
+                             }
+                           },
+                           {
+                             "key": "published",
+                             "value": {
+                               "value": {
+                                 "kind": "column-ref",
+                                 "table": "posts__rows",
+                                 "column": "published"
+                               },
+                               "kind": "codec",
+                               "codec": {
+                                 "codecId": "pg/bool@1"
+                               }
+                             }
+                           },
+                           {
+                             "key": "authorId",
+                             "value": {
+                               "value": {
+                                 "kind": "column-ref",
+                                 "table": "posts__rows",
+                                 "column": "authorId"
+                               },
+                               "kind": "codec",
+                               "codec": {
+                                 "codecId": "pg/text@1"
+                               }
+                             }
+                           }
+                         ]
+                       },
+                       "kind": "document"
+                     },
+                     "onEmpty": "emptyArray"
+                   }
+                 }
+               ]
+             }
+           }
+         }
+       ],
+       "selectAllIntent": {
+         "table": "User"
+       }
+     }
+   meta:      {
+       "target": "postgres",
+       "targetFamily": "sql",
+       "storageHash": "6f0dd8e7e39c1221b2d824e0dd7994932435bdd7ec6408f05af03c31652588c4",
+       "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+       "lane": "orm-client"
+     }
+   meta ownKeys: target,targetFamily,storageHash,profileHash,lane  meta.annotations: undefined undefined  read(): undefined
+   JSON stable across two stringifies: true  size: 2136 bytes
+   SQL: SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE "Post"."authorId" = $1 ["u1"]
+   SQL: SELECT "Post"."id" AS "id", "Post"."title" AS "title", "Post"."published" AS "published", "Post"."authorId" AS "authorId" FROM "public"."Post" WHERE "Post"."authorId" = $1 ["u1"]
+
+same query twice -> identical AST JSON: true
