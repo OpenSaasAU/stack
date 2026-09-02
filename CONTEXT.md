@@ -143,12 +143,8 @@ The per-list facts the generator writes into the Generated bundle because the Co
 _Avoid_: virtual field types, type overrides, generated types (that names the file, not the content)
 
 **Generated bundle**:
-The `.opensaas/` directory the generator emits from `opensaas.config.ts` — the `getContext`/`config` factory plus the Prisma client tree. Its imports are only relative paths and npm packages, never the host app's path aliases; the bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches (and so drags into the load) is the app's.
-_Avoid_: generated context, output dir, .opensaas folder
-
-**Node build**:
-A compiled, plain-Node-loadable form of the Generated bundle, emitted _in addition to_ the default bundler form so a live module (e.g. the auth path) can be imported in a runtime that has no bundler — plain Node, a Playwright e2e helper, a build-time script. Opt-in per `output: { buildTarget: 'node' }`; absent it, only the bundler form is emitted. Distinct from the default bundler form, which is loaded by the host's bundler and is the stack's standing default.
-_Avoid_: compiled bundle, dist build, mjs build, node bundle
+The `.opensaas/` directory the generator emits from `opensaas.config.ts` — `context.ts` (the `getContext`/`config` factory, which constructs the ORM client from the committed `contract.json`), `types.ts`, `lists.ts` and `plugin-types.ts`. It carries no Prisma code: its runtime imports are npm packages plus that one JSON artifact, and its relative imports use explicit `.ts` extensions and never the host app's path aliases. It is erasable TypeScript by contract, so the host's bundler compiles it and plain Node loads it natively (ADR-0008, ADR-0054); there is no compiled twin. The bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches at runtime — and so drags into the load — is the app's.
+_Avoid_: generated context, output dir, .opensaas folder, node build, dist build, compiled bundle
 
 ### Authentication
 
