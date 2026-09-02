@@ -47,7 +47,7 @@ A read that names no relations. It returns the row's own columns and never its r
 _Avoid_: auto-include, default include, unqualified read
 
 **One hop**:
-The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further. This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it. The ORM enforces it (ADR-0043), and it holds for every relation a caller can name: where the ORM could not reach one, the field is refused at generation rather than the rule gaining an exception. How far a caller may reach is a separate cost limit, refused loudly.
+The reach of naming a relation: it fetches that relation's own columns and stops, so reaching further means naming further. This is the Bare read rule at every level rather than only at the root — a read describes the tree it returns, one level at a time, and no part of that tree arrives because the engine went looking for it. The ORM enforces it (ADR-0043), and it holds for every relation a caller can name — both sides of a one-to-one included, since the ORM reaches a to-one from either side (ADR-0064) — so the rule carries no exception. How far a caller may reach is a separate cost limit, refused loudly.
 _Avoid_: deep include, nested expansion, relation tree
 
 **Projection**:
@@ -154,6 +154,16 @@ _Avoid_: virtual field types, type overrides, generated types (that names the fi
 The `.opensaas/` directory the generator emits from `opensaas.config.ts` — `context.ts` (the `getContext`/`config` factory, which constructs the ORM client from the committed `contract.json`), `types.ts`, `lists.ts` and `plugin-types.ts`. It carries no Prisma code: its runtime imports are npm packages plus that one JSON artifact, and its relative imports use explicit `.ts` extensions and never the host app's path aliases. It is erasable TypeScript by contract, so the host's bundler compiles it and plain Node loads it natively (ADR-0008, ADR-0054); there is no compiled twin. The bundle's own loadability in a given runtime is the stack's concern, while what the app's `opensaas.config` reaches at runtime — and so drags into the load — is the app's.
 _Avoid_: generated context, output dir, .opensaas folder, node build, dist build, compiled bundle
 
+### Local development
+
+**Dev database**:
+The Postgres the stack itself runs for a project while `opensaas dev` is running — an in-process PGlite behind a socket on a loopback port, persisted under the Generated bundle's directory and reset by deleting it. It is the same database a Test context stands on, started from the same module; every other process reaches it through its socket, never by opening its data directory (ADR-0063).
+_Avoid_: prisma dev, PGlite loop, local Postgres, dev server database
+
+**Database escape**:
+Any Postgres the stack does not own, selected by setting `DATABASE_URL`, at which point no Dev database starts. It exists for parity with production or for contention the Dev database cannot produce — CI, a Row lock under load — never because the Dev database lacks a capability (ADR-0063).
+_Avoid_: escape hatch, DATABASE_URL override, external database, real database
+
 ### Testing
 
 **Test context**:
@@ -165,7 +175,7 @@ A `beforeCompile` registered beside the engine's stamp in a test, capturing each
 _Avoid_: plan spy, query interceptor, test seam
 
 **Escape-only test**:
-A test whose guarantee the in-process database cannot exercise — a Row lock under contention, vector search — and which runs only when the `DATABASE_URL` escape points at a real Postgres. It skips visibly otherwise; CI always sets the escape, so the PR gate still covers it.
+A test whose guarantee the in-process database cannot exercise — a Row lock under contention, vector search — and which runs only under the Database escape. It skips visibly otherwise; CI always sets the escape, so the PR gate still covers it.
 _Avoid_: integration test, CI-only test, real-db test
 
 ### Authentication
