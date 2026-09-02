@@ -1,0 +1,59 @@
+
+== A. coverage: every statement of a logical call, executor wrapped in als.run ==
+A0 TRAP all() returned from run, awaited outside           statements=1 origin-visible=0/1  select:-[runtime]
+A1 all() awaited inside run                                statements=1 origin-visible=1/1  select:engine(r)[runtime]
+A2 include().all()                                         statements=1 origin-visible=1/1  select:engine(r)[connection]
+A3 update() one row                                        statements=2 origin-visible=2/2  select:engine(w)[transaction] update:engine(w)[transaction]
+A4 delete() one row                                        statements=2 origin-visible=2/2  select:engine(w)[transaction] delete:engine(w)[transaction]
+A5 nested create (User + posts)                            statements=3 origin-visible=3/3  insert:engine(w)[transaction] insert:engine(w)[transaction] select:engine(w)[runtime]
+A6 nested connect (Post -> author)                         statements=3 origin-visible=3/3  select:engine(w)[transaction] insert:engine(w)[transaction] select:engine(w)[runtime]
+A7 updateAll()                                             statements=1 origin-visible=1/1  update:engine(w)[runtime]
+A8 deleteAll() with include                                statements=2 origin-visible=2/2  select:engine(w)[transaction] delete:engine(w)[transaction]
+A9 aggregate count                                         statements=1 origin-visible=1/1  select:engine(r)[runtime]
+A10 transaction: two terminal calls, each wrapped          statements=3 origin-visible=3/3  select:engine(t1)[transaction] update:engine(t1)[transaction] select:engine(t2)[transaction]
+A11 raw affectedCount via runtime().execute in unsafe      statements=1 origin-visible=1/1  raw-query:unsafe(raw)[runtime]
+A12 dsl select via runtime().query in unsafe               statements=1 origin-visible=1/1  select:unsafe(dsl)[runtime]
+A13 streaming: iterator obtained+first next() inside run, rest outside statements=1 origin-visible=1/1  select:engine(r)[runtime]
+A14 first()                                                statements=1 origin-visible=1/1  select:engine(r)[runtime]
+A15 upsert()                                               statements=1 origin-visible=1/1  insert:engine(w)[runtime]
+
+== B. non-leakage and fail direction (tripwire throwing) ==
+B1 foreign query outside any run                           statements=1 origin-visible=0/1  select:-[runtime]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+B2 value built inside run, executed outside                statements=1 origin-visible=0/1  select:-[runtime]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+B3 value built outside, executed inside run                statements=1 origin-visible=1/1  select:engine(exec)[runtime]
+B4 hook-shaped: query issued from als.exit inside a run    statements=1 origin-visible=1/1  select:engine(outer)[runtime]
+B5 hook-shaped: query issued from run(undefined) inside a run statements=1 origin-visible=1/1  select:engine(outer)[runtime]
+B6 update() inside run whose 2nd statement must be covered statements=2 origin-visible=2/2  select:engine(w)[transaction] update:engine(w)[transaction]
+B7 foreign query inside db.transaction callback, unwrapped statements=1 origin-visible=0/1  select:-[transaction]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+
+== C. interleaving: 60 concurrent logical calls, alternating engine / unsafe / foreign ==
+  statements=120 (expected 120); foreign statements with no origin=40 (expected 40); every wrapped call saw exactly its own tag on both statements: true
+
+== D. a generic Proxy that wraps every method of an ORM collection in als.run (the Unsafe ORM lane) ==
+D1 unsafeOrm.Post.where().update() - 2 statements          statements=2 origin-visible=2/2  select:unsafe(proxy)[transaction] update:unsafe(proxy)[transaction]
+D2 unsafeOrm.User.create nested posts - 3 statements       statements=3 origin-visible=3/3  insert:unsafe(proxy)[transaction] insert:unsafe(proxy)[transaction] select:unsafe(proxy)[runtime]
+D3 chain built, terminal called later outside any run      statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
+D4 include refinement callback                             statements=1 origin-visible=1/1  select:unsafe(proxy)[connection]
+D5 streaming for-await over proxied all()                  statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
+D6 first() through proxy                                   statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
+D7 aggregate through proxy                                 statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
+
+== G. the Unsafe executor: query(plan) must return a lazy AsyncIterableResult, consumed outside any scope ==
+G1 NAIVE: return runtime().query(plan) from the scope, for-await outside statements=1 origin-visible=0/1  select:-[runtime]
+   -> threw UnstampedQueryError: unstamped dsl/select
+G2 wrapper: for-await streaming outside any scope          statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G3 wrapper: await (then) outside any scope                 statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G4 wrapper: .first() outside any scope                     statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G5 wrapper: held 5 ms, then consumed                       statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G6 wrapper: raw returnsRow plan streamed outside           statements=1 origin-visible=1/1  raw-query:unsafe(exec)[runtime]
+G7 execute(plan): eager, returned from the scope, awaited outside statements=1 origin-visible=1/1  raw-query:unsafe(exec)[runtime]
+
+== E. cost of als.run around a terminal (warm, 2000 iterations each) ==
+  first() bare 0.8669 ms   inside als.run 0.8100 ms   delta -56.9 µs (interleaved rounds)
+  bare als.run(sync fn) 0.147 µs
+
+== F. prepare(): does beforeCompile run per execution, and which origin does it see? ==
+  prepare probe failed: TypeError sql.public.Post.where is not a function
