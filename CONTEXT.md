@@ -71,7 +71,7 @@ A computed field's value reflects exactly the rows the reading session may see, 
 _Avoid_: filtered total, partial value, true value
 
 **Silent failure**:
-The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist". A denial is atomic with the result it replaces — a caller never receives part of a read that was refused, which is why a read arrives whole rather than a row at a time (see Terminal operation).
+The convention that an access-denied operation returns `null` (single) or `[]` (many) rather than throwing, so callers cannot distinguish "denied" from "does not exist". A relation the related list's operation-level `query` access scopes away from the reading session is present as `null` (to-one) or `[]` (to-many) in the row it hangs off, and is typed that way whatever its column says — a required to-one is required to write and nullable to read (ADR-0058). That is a different denial from the relationship field's own field-level `read` rule, which removes the key like any other denied field. A denial is atomic with the result it replaces — a caller never receives part of a read that was refused, which is why a read arrives whole rather than a row at a time (see Terminal operation).
 _Avoid_: access error, permission error
 
 **Engine stamp**:
