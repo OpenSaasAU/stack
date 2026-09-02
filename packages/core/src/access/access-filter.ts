@@ -277,6 +277,18 @@ export async function buildAccessScopedInclude(
   const toOneAccessFilters = emptyToOneAccessFilterTree()
 
   for (const [relationName, requestedValue] of Object.entries(requestedInclude)) {
+    // A caller can explicitly opt a relation OUT of a Prisma include with
+    // `false` (its `Include` type allows a bare `boolean`), or end up with an
+    // `undefined` value from a conditionally-built object
+    // (`{ posts: cond ? true : undefined }`) — Prisma treats both the same as
+    // the key being absent. Treat them identically here too, before this key
+    // ever reaches access evaluation: an explicitly-disabled relation was
+    // never actually requested, so it must not be evaluated, dropped as
+    // "denied", or recorded as needing a post-query fixup (issue #1103 code
+    // review) — any of those would surface a value (`[]`/`null`) for a key
+    // the caller deliberately excluded.
+    if (requestedValue === false || requestedValue === undefined) continue
+
     const fieldConfig = fieldConfigs[relationName]
     const isDeclaredRelationship =
       fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref

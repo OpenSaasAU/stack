@@ -648,6 +648,60 @@ describe('buildAccessScopedInclude — to-many relations record a denial too, li
     expect(include).toEqual({})
     expect(toOneAccessFilters).toEqual({ filters: { secrets: { kind: 'denied' } }, nested: {} })
   })
+
+  // Code-review finding on #1103's own PR: a caller's `Include` type allows a
+  // bare `boolean` for a relation, so `{ secrets: false }` (or a conditional
+  // `{ secrets: cond ? true : undefined }` that resolved to `undefined`)
+  // explicitly opts the relation OUT — no different from the key being
+  // absent altogether. Before this guard, the loop evaluated (and, once
+  // denied, recorded) the key regardless of its value, so a denied relation
+  // the caller explicitly disabled still ended up forced to `[]` downstream
+  // by `field-visibility.ts` — surfacing a value for a key nobody asked for.
+  it('treats an explicit `false` include value as not requested, even when the related list denies query access', async () => {
+    const config = secretsConfig()
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { secrets: false },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: {}, nested: {} })
+  })
+
+  it('treats an explicit `undefined` include value as not requested, even when the related list denies query access', async () => {
+    const config = secretsConfig()
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { secrets: undefined },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: {}, nested: {} })
+  })
+
+  it('treats an explicit `false` include value as not requested even when the related list is fully open — never flips it to `true`', async () => {
+    const config = secretsConfig()
+    config.lists.Secret.access = { operation: { query: () => true } }
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      { secrets: false },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({})
+    expect(toOneAccessFilters).toEqual({ filters: {}, nested: {} })
+  })
 })
 
 describe('resolveToOneAccessVisibility (issue #974)', () => {
