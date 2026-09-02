@@ -109,7 +109,7 @@ export class RelationFilterAccessDeniedError extends Error {
  * `include` that failed open rather than closed (issue #1082). `sudo` never
  * reaches this: it skips `buildAccessScopedInclude` entirely (see
  * `resolveReadInclude` in `context/index.ts`), matching every other
- * access-control escape hatch. See ADR-0054.
+ * access-control escape hatch.
  */
 export class UndeclaredIncludeKeyError extends Error {
   public listKey: string

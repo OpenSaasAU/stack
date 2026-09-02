@@ -721,17 +721,17 @@ describe('resolveToOneAccessVisibility (issue #974)', () => {
 })
 
 /**
- * Regression coverage for issue #1082 (ADR-0054): a list-only `ref`
- * (`ref: 'Term'`, no target field) makes schema generation synthesize a
- * back-relation on `Term` (`from_Bill_term`) that no list config declares.
- * Before this fix, `buildAccessScopedInclude` treated any key it couldn't
- * resolve to a DECLARED relationship as "not governed by access control" and
- * passed it through unchanged — so a caller naming `from_Bill_term` in
- * `include` bypassed `Bill`'s own `query` access entirely. These tests pin
- * the fix: a synthetic key is scoped exactly like the declared relationship
- * field it stands for.
+ * Regression coverage for issue #1082: a list-only `ref` (`ref: 'Term'`, no
+ * target field) makes schema generation synthesize a back-relation on `Term`
+ * (`from_Bill_term`) that no list config declares. Before this fix,
+ * `buildAccessScopedInclude` treated any key it couldn't resolve to a
+ * DECLARED relationship as "not governed by access control" and passed it
+ * through unchanged — so a caller naming `from_Bill_term` in `include`
+ * bypassed `Bill`'s own `query` access entirely. These tests pin the fix: a
+ * synthetic key is scoped exactly like the declared relationship field it
+ * stands for.
  */
-describe('buildAccessScopedInclude — synthetic back-relation (#1082, ADR-0054)', () => {
+describe('buildAccessScopedInclude — synthetic back-relation (#1082)', () => {
   // Term ← Bill.term (list-only ref) ← Bill.lineItems (declared, to-many).
   // `from_Bill_term` is the back-relation schema generation synthesizes on
   // Term; nothing in `Term.fields` declares it.

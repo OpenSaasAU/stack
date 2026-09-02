@@ -4,7 +4,7 @@ import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
 
 /**
- * Regression coverage for issue #1082 (ADR-0054), Field Visibility half.
+ * Regression coverage for issue #1082, Field Visibility half.
  *
  * `access-filter.test.ts` covers the pre-query scoping of a synthetic
  * back-relation (`buildAccessScopedInclude`); these tests cover what happens
@@ -70,7 +70,7 @@ function syntheticConfig(): OpenSaasConfig {
   } as any as OpenSaasConfig
 }
 
-describe('filterReadableFields — synthetic back-relation (#1082, ADR-0054)', () => {
+describe('filterReadableFields — synthetic back-relation (#1082)', () => {
   it('applies the owning list field-level read access to rows fetched through a synthetic key', async () => {
     const config = syntheticConfig()
     const termRow = {

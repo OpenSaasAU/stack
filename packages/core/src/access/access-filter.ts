@@ -61,7 +61,7 @@ import { getDbKey } from '../lib/case-utils.js'
  * key to `null` without ever asking Prisma for it.
  *
  * **A synthetic back-relation is a declared relationship wherever a caller
- * can name one (issue #1082, ADR-0054).** A list-only `ref` (`ref: 'Other'`,
+ * can name one (issue #1082).** A list-only `ref` (`ref: 'Other'`,
  * no target field) makes schema generation synthesize a back-relation on
  * `Other` (`from_<List>_<field>`) because the ORM requires an opposite field
  * there — but no list config declares it, so it is absent from `Other`'s own
