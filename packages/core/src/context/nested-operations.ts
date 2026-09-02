@@ -1,10 +1,11 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
-import type { AccessContext, FieldAccess } from '../access/types.js'
+import type { AccessContext, FieldAccess, PrismaFilter } from '../access/types.js'
 import {
   checkAccess,
   checkCreateAccess,
   filterWritableFields,
   getRelatedListConfig,
+  mergeFilters,
   resolveSyntheticReverseRelation,
 } from '../access/index.js'
 import { checkFieldAccess } from '../access/field-access.js'
@@ -485,6 +486,28 @@ async function processNestedConnect(
 }
 
 /**
+ * Re-check a nested update/delete access result against the target row,
+ * mirroring the Write Pipeline's `resolveExistingTarget` (#1081): `false`
+ * denies, `true` allows outright (the row's existence is already established
+ * by the caller's own `findUnique`), and a returned PrismaFilter must
+ * additionally match the row, re-checked in the DATABASE via
+ * `findFirst(mergeFilters(where, accessResult))` rather than in memory — the
+ * same requirement `connect`'s reachability check already applies (#578), so
+ * nested-relation predicates and boolean combinators are honoured correctly.
+ */
+async function isExistingTargetAccessible(
+  model: { findFirst: (args: { where: Record<string, unknown> }) => Promise<unknown> },
+  where: Record<string, unknown>,
+  accessResult: boolean | PrismaFilter,
+): Promise<boolean> {
+  if (accessResult === false) return false
+  if (accessResult === true) return true
+
+  const matchesFilter = await model.findFirst({ where: mergeFilters(where, accessResult) ?? {} })
+  return matchesFilter !== null
+}
+
+/**
  * Process nested update operations.
  *
  * Runs the target list's full update input pipeline AND its `beforeOperation`,
@@ -529,7 +552,7 @@ async function processNestedUpdate(
           context,
         })
 
-        if (accessResult === false) {
+        if (!(await isExistingTargetAccessible(model, where, accessResult))) {
           throw new Error('Access denied: Cannot update related item')
         }
       }
@@ -726,7 +749,7 @@ async function processNestedDelete(
           context,
         })
 
-        if (accessResult === false) {
+        if (!(await isExistingTargetAccessible(model, where, accessResult))) {
           throw new Error('Access denied: Cannot delete related item')
         }
       }

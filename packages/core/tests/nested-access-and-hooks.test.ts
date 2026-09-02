@@ -1471,6 +1471,330 @@ describe('Nested Operations - Access Control and Hooks', () => {
         }),
       ).rejects.toThrow('Access denied: Cannot update related item')
     })
+
+    // #1081: a nested update/delete access rule returning a Prisma filter (the
+    // common `gate ? filter : false` composition) must be re-checked against
+    // the target row in the DATABASE, mirroring the top-level write pipeline's
+    // `resolveExistingTarget` and the nested-connect reachability check (#578)
+    // — not treated as an unconditional allow just because it isn't `false`.
+    describe('Nested update/delete honour a filter-result access control (#1081)', () => {
+      it('denies nested update (to-one) when the update access filter does not match the target row', async () => {
+        const userResolveInput = vi.fn(async ({ resolvedData }) => resolvedData)
+
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            User: list({
+              fields: { name: text() },
+              access: {
+                operation: {
+                  query: () => true,
+                  update: ({ session }) => ({ id: { equals: session?.userId } }),
+                },
+              },
+              hooks: { resolveInput: userResolveInput },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                author: relationship({ ref: 'User.posts' }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        // The target row exists ...
+        mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+        // ... but is NOT reachable under { id: { equals: '1' } } for this caller.
+        mockPrisma.user.findFirst.mockResolvedValue(null)
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+        await expect(
+          context.db.post.update({
+            where: { id: '1' },
+            data: {
+              author: {
+                update: { where: { id: '2' }, data: { name: 'Jane Doe' } },
+              },
+            },
+          }),
+        ).rejects.toThrow('Access denied: Cannot update related item')
+
+        // Reachability re-checked in the DB, AND-combining the target `where`
+        // with the returned filter — not an in-memory test.
+        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+          where: { AND: [{ id: { equals: '1' } }, { id: '2' }] },
+        })
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.user.update).not.toHaveBeenCalled()
+        // Denied before any of the target list's hooks fire.
+        expect(userResolveInput).not.toHaveBeenCalled()
+      })
+
+      it('allows nested update (to-one) when the update access filter matches the target row', async () => {
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            User: list({
+              fields: { name: text() },
+              access: {
+                operation: {
+                  query: () => true,
+                  update: ({ session }) => ({ id: { equals: session?.userId } }),
+                },
+              },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                author: relationship({ ref: 'User.posts' }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.user.findUnique.mockResolvedValue({ id: '1', name: 'John Doe' })
+        // Reachable: the target IS the caller's own row.
+        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John Doe' })
+        mockPrisma.post.update.mockResolvedValue({
+          id: '1',
+          title: 'Original Title',
+          authorId: '1',
+        })
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+        const result = await context.db.post.update({
+          where: { id: '1' },
+          data: {
+            author: {
+              update: { where: { id: '1' }, data: { name: 'Jane Doe' } },
+            },
+          },
+        })
+
+        expect(result).toBeDefined()
+        // The re-check matched, so the nested write reaches Prisma's own
+        // nested-update syntax on the PARENT's `update` call (Prisma persists
+        // it, not a separate `user.update` call).
+        expect(mockPrisma.post.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              author: { update: { where: { id: '1' }, data: { name: 'Jane Doe' } } },
+            }),
+          }),
+        )
+      })
+
+      it('denies nested update (to-many array) when the update access filter does not match the target row', async () => {
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Comment: list({
+              fields: { body: text() },
+              access: {
+                operation: {
+                  query: () => true,
+                  update: ({ session }) => ({ authorId: { equals: session?.userId } }),
+                },
+              },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                comments: relationship({ ref: 'Comment', many: true }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.comment.findUnique.mockResolvedValue({
+          id: 'c1',
+          body: 'hi',
+          authorId: 'someone-else',
+        })
+        mockPrisma.comment.findFirst.mockResolvedValue(null)
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+        await expect(
+          context.db.post.update({
+            where: { id: '1' },
+            data: {
+              comments: {
+                update: [{ where: { id: 'c1' }, data: { body: 'edited' } }],
+              },
+            },
+          }),
+        ).rejects.toThrow('Access denied: Cannot update related item')
+
+        expect(mockPrisma.comment.findFirst).toHaveBeenCalledWith({
+          where: { AND: [{ authorId: { equals: '1' } }, { id: 'c1' }] },
+        })
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+      })
+
+      it('denies nested delete when the delete access filter does not match the target row', async () => {
+        const commentBeforeOperation = vi.fn(async () => {})
+
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Comment: list({
+              fields: { body: text() },
+              access: {
+                operation: {
+                  query: () => true,
+                  delete: ({ session }) => ({ authorId: { equals: session?.userId } }),
+                },
+              },
+              hooks: { beforeOperation: commentBeforeOperation },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                comments: relationship({ ref: 'Comment', many: true }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.comment.findUnique.mockResolvedValue({
+          id: 'c1',
+          body: 'hi',
+          authorId: 'someone-else',
+        })
+        mockPrisma.comment.findFirst.mockResolvedValue(null)
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+        await expect(
+          context.db.post.update({
+            where: { id: '1' },
+            data: {
+              comments: { delete: { id: 'c1' } },
+            },
+          }),
+        ).rejects.toThrow('Access denied: Cannot delete related item')
+
+        expect(mockPrisma.comment.findFirst).toHaveBeenCalledWith({
+          where: { AND: [{ authorId: { equals: '1' } }, { id: 'c1' }] },
+        })
+        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(commentBeforeOperation).not.toHaveBeenCalled()
+      })
+
+      it('allows nested delete when the delete access filter matches the target row', async () => {
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            Comment: list({
+              fields: { body: text() },
+              access: {
+                operation: {
+                  query: () => true,
+                  delete: ({ session }) => ({ authorId: { equals: session?.userId } }),
+                },
+              },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                comments: relationship({ ref: 'Comment', many: true }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
+        mockPrisma.comment.findFirst.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
+        mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' })
+
+        const result = await context.db.post.update({
+          where: { id: '1' },
+          data: {
+            comments: { delete: { id: 'c1' } },
+          },
+        })
+
+        expect(result).toBeDefined()
+        expect(mockPrisma.post.update).toHaveBeenCalled()
+      })
+
+      it('sudo bypasses the reachability re-check for both nested update and nested delete', async () => {
+        const updateAccess = vi.fn(() => ({ id: { equals: 'nobody' } }))
+        const deleteAccess = vi.fn(() => ({ id: { equals: 'nobody' } }))
+
+        const testConfig = config({
+          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+          lists: {
+            User: list({
+              fields: { name: text() },
+              access: { operation: { query: () => true, update: updateAccess } },
+            }),
+            Comment: list({
+              fields: { body: text() },
+              access: { operation: { query: () => true, delete: deleteAccess } },
+            }),
+            Post: list({
+              fields: {
+                title: text(),
+                author: relationship({ ref: 'User.posts' }),
+                comments: relationship({ ref: 'Comment', many: true }),
+              },
+              access: {
+                operation: { query: () => true, update: () => true },
+              },
+            }),
+          },
+        })
+
+        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+        mockPrisma.comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi' })
+        mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
+
+        const context = getContext(await testConfig, mockPrisma, { userId: '1' }).sudo()
+
+        const result = await context.db.post.update({
+          where: { id: '1' },
+          data: {
+            author: { update: { where: { id: '2' }, data: { name: 'Jane Doe' } } },
+            comments: { delete: { id: 'c1' } },
+          },
+        })
+
+        expect(result).toBeDefined()
+        expect(mockPrisma.post.update).toHaveBeenCalled()
+        expect(updateAccess).not.toHaveBeenCalled()
+        expect(deleteAccess).not.toHaveBeenCalled()
+        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.comment.findFirst).not.toHaveBeenCalled()
+      })
+    })
   })
 
   // #588 — nested connect must ALSO be gated by the OWNING relationship field's
