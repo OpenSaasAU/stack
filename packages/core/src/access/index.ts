@@ -20,6 +20,7 @@ export {
   isPrismaFilter,
   getRelatedListConfig,
   resolveSyntheticReverseRelation,
+  listSyntheticReverseRelationNames,
 } from './engine.js'
 export type { SyntheticReverseRelation } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).

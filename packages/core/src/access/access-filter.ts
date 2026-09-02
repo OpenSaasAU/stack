@@ -1,6 +1,11 @@
 import type { Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
-import { checkAccess, getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.js'
+import {
+  checkAccess,
+  getRelatedListConfig,
+  resolveSyntheticReverseRelation,
+  listSyntheticReverseRelationNames,
+} from './engine.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import {
   AccessScopeDepthExceededError,
@@ -200,21 +205,27 @@ function isCountAccessDenialTreeEmpty(tree: CountAccessDenialTree): boolean {
 /**
  * Normalize a caller's `_count` include value to the `_count.select` map it
  * names. `true` (Prisma's "count every relation" shorthand) expands to every
- * DECLARED to-many relationship on this list — matching
- * `buildRelationshipCountSelect`'s own scope (the admin list view), which
- * also does not enumerate synthetic back-relations for this form; a synthetic
- * key is still countable when the caller names it explicitly via `select`.
- * Returns `null` for a shape that requests nothing countable (`false`, or an
- * object with no usable `select`).
+ * countable relation Prisma itself carries on this model — every DECLARED
+ * to-many relationship, plus every synthetic back-relation a list-only `ref`
+ * elsewhere in the config synthesizes onto it (issue #1082): Prisma's own
+ * `_count: true` has always counted both, and dropping the synthetic ones
+ * here would silently stop counting a relation the caller used to get a
+ * (previously unscoped) count for. Returns `null` for a shape that requests
+ * nothing countable (`false`, or an object with no usable `select`).
  */
 function normalizeCountSelect(
   requestedValue: unknown,
   fieldConfigs: Record<string, FieldConfig>,
+  listKey: string,
+  config: OpenSaasConfig,
 ): Record<string, unknown> | null {
   if (requestedValue === true) {
     const expanded: Record<string, unknown> = {}
     for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
       if (isToManyRelationshipField(fieldConfig)) expanded[fieldName] = true
+    }
+    for (const syntheticName of listSyntheticReverseRelationNames(listKey, config)) {
+      expanded[syntheticName] = true
     }
     return expanded
   }
@@ -247,13 +258,17 @@ function normalizeCountSelect(
  *   field names and field-level read rules from a thrown `ValidationError`
  *   alone, reopening the exact oracle #915/ADR-0031 closed for a top-level
  *   predicate.
- * - Otherwise → the access filter (if any) is AND-combined with any
- *   caller-supplied nested `where` at that key — reusing `andWhere`, never
- *   replacing the caller's own condition (mirroring `buildAccessScopedInclude`
- *   itself) — and that `where` is key- and read-access-validated against the
- *   RELATED list via the same `validateQueryKeys`/`validateQueryFieldReadAccess`
- *   primitives `createFindMany` already runs on a top-level `where` (#912/#915),
- *   rather than a second, parallel predicate validator.
+ * - Otherwise → the caller-supplied nested `where` at that key (if any) is
+ *   key- and read-access-validated against the RELATED list via the same
+ *   `validateQueryKeys`/`validateQueryFieldReadAccess` primitives
+ *   `createFindMany` already runs on a top-level `where` (#912/#915), then
+ *   run through `buildAccessScopedWhere` — the same fold `createFindMany`
+ *   applies to a top-level `where` (#916) — so a relation filter nested
+ *   inside IT (e.g. `_count.select.posts.where.comments.some`) is scoped by
+ *   THAT further list's own `query` access too, not just the counted
+ *   relation's. The result is AND-combined with the counted relation's own
+ *   access filter (if any) — reusing `andWhere`, never replacing the
+ *   caller's condition, mirroring `buildAccessScopedInclude` itself.
  */
 async function buildAccessScopedCountSelect(
   requestedValue: unknown,
@@ -262,7 +277,7 @@ async function buildAccessScopedCountSelect(
   config: OpenSaasConfig,
   listKey: string,
 ): Promise<{ select: Record<string, unknown> | undefined; deniedKeys: Set<string> }> {
-  const requestedSelect = normalizeCountSelect(requestedValue, fieldConfigs)
+  const requestedSelect = normalizeCountSelect(requestedValue, fieldConfigs, listKey, config)
   const deniedKeys = new Set<string>()
   if (!requestedSelect) return { select: undefined, deniedKeys }
 
@@ -317,6 +332,7 @@ async function buildAccessScopedCountSelect(
         ? (entryValue.where as Record<string, unknown>)
         : undefined
 
+    let scopedRequestedWhere: Record<string, unknown> | undefined
     if (requestedWhere) {
       validateQueryKeys({
         where: requestedWhere,
@@ -333,11 +349,27 @@ async function buildAccessScopedCountSelect(
         context: args.context,
         isSudo: false,
       })
+      // A relation filter (`some`/`every`/`none`/`is`/`isNot`) nested inside
+      // the caller's own `where` names a THIRD list one hop further out —
+      // e.g. `_count.select.posts.where.comments.some`. Validation above only
+      // checked keys against the counted relation's OWN fields; without this,
+      // that nested relation would reach Prisma unscoped by ITS list's
+      // `query` access, letting the resulting count reveal whether
+      // inaccessible rows over there exist. `buildAccessScopedWhere` is the
+      // same fold `createFindMany` runs on an ordinary top-level `where`
+      // (#916) — reused here rather than re-derived.
+      scopedRequestedWhere = (await buildAccessScopedWhere(
+        requestedWhere,
+        relatedConfig.listConfig,
+        relatedConfig.listName,
+        config,
+        args,
+      )) as Record<string, unknown> | undefined
     }
 
     const scopedWhere = andWhere(
       accessEntry.kind === 'scoped' ? accessEntry.where : undefined,
-      requestedWhere,
+      scopedRequestedWhere,
     )
     select[key] = scopedWhere ? { where: scopedWhere } : true
   }

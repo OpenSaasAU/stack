@@ -681,6 +681,98 @@ describe('buildAccessScopedInclude — `_count` is scoped like any other relatio
     expect(include).toEqual({ _count: { select: { from_Post_category: true } } })
   })
 
+  it('`_count: true` also expands to a synthetic back-relation, scoped (#1082/#1087)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        Category: {
+          fields: { name: { type: 'text' } as FieldConfig },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' } as FieldConfig,
+            category: rel('Category'),
+          },
+          // A row filter — proves the synthetic relation's count is scoped
+          // exactly like an explicitly-named one, not merely included.
+          access: { operation: { query: () => ({ published: { equals: true } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      { _count: true },
+      config.lists.Category.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Category',
+    )
+
+    expect(include).toEqual({
+      _count: { select: { from_Post_category: { where: { published: { equals: true } } } } },
+    })
+  })
+
+  it('scopes a relation filter nested inside a caller-supplied count `where` (e.g. `_count.select.posts.where.comments.some`)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        User: {
+          fields: { name: { type: 'text' } as FieldConfig, posts: rel('Post.author', true) },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' } as FieldConfig,
+            author: rel('User.posts'),
+            comments: rel('Comment.post', true),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Comment: {
+          fields: { body: { type: 'text' } as FieldConfig, post: rel('Post.comments') },
+          // A row filter one hop past the counted relation — must still be
+          // folded in, or the resulting post count would reveal whether
+          // inaccessible comments matching the caller's filter exist.
+          access: { operation: { query: () => ({ approved: { equals: true } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      {
+        _count: {
+          select: {
+            posts: { where: { comments: { some: { body: { contains: 'hi' } } } } },
+          },
+        },
+      },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({
+      _count: {
+        select: {
+          posts: {
+            where: {
+              comments: {
+                some: {
+                  AND: [{ approved: { equals: true } }, { body: { contains: 'hi' } }],
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+  })
+
   it('`_count: true` expands to every declared to-many relation, scoped', async () => {
     const config = countConfig(() => true)
 
