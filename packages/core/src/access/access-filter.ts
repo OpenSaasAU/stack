@@ -92,6 +92,16 @@ import { getDbKey } from '../lib/case-utils.js'
  * `resolveSyntheticReverseRelation` (via `validateQueryKeys`'s
  * `resolveSyntheticRelation` hook) before being rejected, so a nested
  * predicate naming a synthetic back-relation resolves rather than throwing.
+ *
+ * Those two checks only reach the entry's OWN top-level keys. A relation
+ * quantifier (`some`/`every`/`none`/`is`/`isNot`) nested inside that `where`
+ * names a list one hop further away, which needs the same treatment the
+ * top-level `where` already gets from `buildAccessScopedWhere` (#916,
+ * below): scope it by THAT list's own `query` access and check its fields'
+ * read access, recursing through every further hop. Skipping this for a
+ * to-many entry would just move #1092's oracle one hop further out instead
+ * of closing it — `buildAccessScopedWhere` is reused unchanged, called on
+ * `requestedEntry.where` before the AND-fold.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -328,6 +338,25 @@ export async function buildAccessScopedInclude(
       isSudo: false,
     })
 
+    // The two checks above only reach the entry's own top-level keys — a
+    // relation quantifier (`some`/`every`/`none`/`is`/`isNot`) nested inside
+    // this `where` names a DEEPER related list, which needs the same
+    // treatment the top-level `where` already gets from `buildAccessScopedWhere`
+    // (#916): scope it by that deeper list's own `query` access and check ITS
+    // fields' read access, recursing through every further hop. Only for
+    // to-many — a to-one entry never carries `requestedEntry.where` through to
+    // Prisma at all (see below), so there is nothing here to scope.
+    const scopedRequestedWhere =
+      !isToOne && requestedEntry?.where !== undefined
+        ? ((await buildAccessScopedWhere(
+            requestedEntry.where,
+            relatedConfig.listConfig,
+            relatedConfig.listName,
+            config,
+            args,
+          )) as PrismaFilter)
+        : requestedEntry?.where
+
     let nestedInclude: Record<string, unknown> | undefined
     let nestedToOneFilters: ToOneAccessFilterTree | undefined
     if (requestedEntry?.include) {
@@ -353,7 +382,7 @@ export async function buildAccessScopedInclude(
         }
       }
     } else {
-      const mergedWhere = andWhere(accessWhere, requestedEntry?.where)
+      const mergedWhere = andWhere(accessWhere, scopedRequestedWhere)
       if (mergedWhere) entry.where = mergedWhere
       if (requestedEntry?.take !== undefined) entry.take = requestedEntry.take
       if (requestedEntry?.orderBy !== undefined) entry.orderBy = requestedEntry.orderBy

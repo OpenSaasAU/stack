@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildAccessScopedInclude, resolveToOneAccessVisibility } from './access-filter.js'
-import { AccessScopeDepthExceededError, UndeclaredIncludeKeyError } from './errors.js'
+import {
+  AccessScopeDepthExceededError,
+  RelationFilterAccessDeniedError,
+  UndeclaredIncludeKeyError,
+} from './errors.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
 import { ValidationError } from '../hooks/index.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
@@ -1016,10 +1020,7 @@ describe('buildAccessScopedInclude — nested where/orderBy validation (#1092)',
     // top-level walker, which already recurses through a relation quantifier
     // regardless of caller position — an undeclared key nested that deep
     // still rejects, naming the list it actually resolved against (Comment,
-    // not Post). The field-READ check does not itself go this deep (matching
-    // the top-level `where`'s own pre-existing asymmetry — closing that is
-    // #916's job, unchanged and out of scope here), so this test uses an
-    // undeclared key rather than a read-denied one.
+    // not Post).
     const config = blogConfig()
 
     await expect(
@@ -1031,6 +1032,64 @@ describe('buildAccessScopedInclude — nested where/orderBy validation (#1092)',
         'Author',
       ),
     ).rejects.toThrow(/Cannot query "Comment" — "bogusField"/)
+  })
+
+  it("scopes a relation quantifier nested inside the entry's own where against the DEEPER related list — a read-denied field one hop further out still throws (#916)", async () => {
+    // Without this, #1092's fix would only move the oracle one hop further
+    // out instead of closing it: `posts: { where: { comments: { some: {...} } } }`
+    // names Comment, a list the entry's own #912/#915 checks never reach —
+    // only `buildAccessScopedWhere` (#916), reused here, does.
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { comments: { some: { secretNote: { equals: 'x' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Comment" — "secretNote"/)
+  })
+
+  it("folds the deeper related list's own query access into a relation quantifier nested inside the entry's own where", async () => {
+    const config = blogConfig()
+    config.lists.Comment.access = {
+      operation: { query: () => ({ approved: { equals: true } }) },
+    }
+
+    const { include } = await buildAccessScopedInclude(
+      { posts: { where: { comments: { some: { body: { contains: 'hi' } } } } } },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({
+      posts: {
+        where: {
+          comments: {
+            some: { AND: [{ approved: { equals: true } }, { body: { contains: 'hi' } }] },
+          },
+        },
+      },
+    })
+  })
+
+  it("throws when the deeper related list denies query access outright, matching #916's loud failure", async () => {
+    const config = blogConfig()
+    config.lists.Comment.access = { operation: { query: () => false } }
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { comments: { some: { body: { contains: 'hi' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(RelationFilterAccessDeniedError)
   })
 
   it('recurses through a further nested include, at every level the walk reaches', async () => {
