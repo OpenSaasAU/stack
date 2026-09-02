@@ -18,6 +18,10 @@ _Avoid_: column access, property access
 A field-level `read` rule evaluated BEFORE the query runs, against a key named in a caller's `where`/`orderBy`, rather than against an already-fetched row — the check that stops a field's withheld value or relative order from being recovered by probing a query that returns no rows containing it (e.g. `count()`). There is no row yet at this point, so a rule that depends on one (dereferences `item`) cannot be answered and resolves to a denial rather than being skipped (ADR-0031).
 _Avoid_: filter access check, where validation
 
+**Where vocabulary**:
+The closed, data-shaped predicate grammar the secured surface accepts in a `where`/`orderBy` — a handful of scalar operators, `AND`/`OR`/`NOT`, and `some`/`every`/`none` on a relation of any cardinality — which the Terminal operation lowers onto the ORM's own query form in one place. Every producer of a predicate speaks it: an access rule's returned filter, the admin UI's Filter builder, and MCP's `where` argument. A key or operator outside it is refused at lowering, never dropped, so a predicate can only ever narrow (ADR-0055).
+_Avoid_: Prisma where, where clause, where input, filter object
+
 **Access Filter** (pre-query phase):
 The first pass of a read, run before the database is hit. Uses operation-level access to build the access-scoped `include`/`where` so the database only returns rows and relations the session is allowed to see. It scopes the relations a read asked for, and leaves out one the session may not read at all when that can be decided without a row; otherwise it does not choose which relations a read fetches (see Bare read). Leaving one out is a saving, never the decision — Field Visibility checks every relation it is handed regardless (ADR-0044). Failing to compute a scope is a **denial**, never a passthrough: a caller-supplied `include` nested deeper than the phase can scope throws rather than returning unscoped rows (ADR-0022). This is distinct from having nothing to scope — a list with no relationships — which passes through unchanged.
 _Avoid_: query builder, include builder
@@ -235,11 +239,11 @@ The list view's single query input that turns a typed query into scoped, server-
 _Avoid_: search bar (that's the free-text subset), query builder
 
 **Filter token**:
-One parsed unit of a filter query — a field, an operator, and a value — displayed as a removable chip. The v1 grammar is AND-only: tokens combine conjunctively, values with spaces are quoted, numeric/date fields take comparison operators, and a bare word is free-text search across text-searchable fields.
+One parsed unit of a filter query — a field, an operator, and a value — displayed as a removable chip. The v1 grammar is AND-only: tokens combine conjunctively, values with spaces are quoted, numeric/date fields take comparison operators, a to-many relationship takes only a presence test (none, or at least one), and a bare word is free-text search across text-searchable fields. Text matching is case-insensitive.
 _Avoid_: filter chip (the chip is the rendering, not the concept), predicate
 
 **Filter spec**:
-A field's self-declared filtering capability: which operators it supports, how a token maps to a query condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested. A relationship's Filter spec is pure (it cannot itself resolve access control), so its nested condition — a to-one's `is` label match or a to-many's count marker — is resolved into an access-scoped equivalent (the related list's `query` access ANDed in, or a never-match when denied) before the query runs, keeping the "never bypassed" guarantee true for nested relationship conditions too (issue #749).
+A field's self-declared filtering capability: which operators it supports, how a token maps to a Where vocabulary condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested. A relationship's Filter spec is pure (it cannot itself resolve access control): it emits a relation predicate — a to-one's label match, a to-many's presence test — and the engine's lowering ANDs the related list's `query` access inside it, a denied related list counting as empty, so the "never bypassed" guarantee holds for nested relationship conditions too (issue #749, ADR-0055).
 _Avoid_: filter config, operator list
 
 **Bulk action**:
