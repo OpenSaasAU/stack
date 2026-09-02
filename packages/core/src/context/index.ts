@@ -955,11 +955,12 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
  * caller include / bare (ADR-0024) — while folding declared dependencies
  * (`needs`, ADR-0025) into whichever of those the read is already using.
  *
- * A fragment's own `include` and a sudo caller's `include` are folded and
- * used as-is, matching their existing (unmerged) treatment. A non-sudo
- * caller include is folded and then scoped by `buildAccessScopedInclude`
- * (ADR-0026) — caller-directed, so a relation named nowhere in the folded
- * tree never has its list's `query` access evaluated at all. A bare read
+ * A non-sudo fragment's own `include` and a non-sudo caller's `include` are
+ * both folded and then scoped by `buildAccessScopedInclude` (ADR-0026) —
+ * caller-directed, so a relation named nowhere in the folded tree never has
+ * its list's `query` access evaluated at all (issue #1088: a fragment read
+ * used to skip this walk entirely). A sudo caller's `include` (fragment or
+ * not) is folded and used as-is, unscoped — sudo is unaffected. A bare read
  * stays on the exact ADR-0024 path — `include: undefined`, no related
  * `query` access evaluated — unless folding actually added something, which
  * only happens when a field on this list declares `needs`.
@@ -973,9 +974,10 @@ export function buildDbDelegate<TPrisma extends PrismaClientLike>(
  *
  * Also returns `toOneAccessFilters` — the to-one relations `buildAccessScopedInclude`
  * flagged as needing a post-query existence check rather than a Prisma-side
- * `where` (issue #974). Only the non-sudo caller-include path can produce a
- * non-empty tree: it's the only path that evaluates a related list's `query`
- * access at all. The fragment and sudo paths always return an empty tree.
+ * `where` (issue #974). Only a non-sudo fragment or caller-include read can
+ * produce a non-empty tree: those are the only paths that evaluate a related
+ * list's `query` access at all. A sudo read and a bare read always return an
+ * empty tree.
  */
 async function resolveReadInclude(
   callerInclude: Record<string, unknown> | undefined,
@@ -1002,7 +1004,19 @@ async function resolveReadInclude(
       [listName],
       selection,
     )
-    return { ...folded, selection, toOneAccessFilters: emptyToOneAccessFilterTree() }
+
+    if (context._isSudo || !folded.include) {
+      return { ...folded, selection, toOneAccessFilters: emptyToOneAccessFilterTree() }
+    }
+
+    const { include, toOneAccessFilters } = await buildAccessScopedInclude(
+      folded.include,
+      listConfig.fields,
+      { session: context.session, context },
+      config,
+      listName,
+    )
+    return { include, declaredOnly: folded.declaredOnly, selection, toOneAccessFilters }
   }
 
   if (context._isSudo) {
