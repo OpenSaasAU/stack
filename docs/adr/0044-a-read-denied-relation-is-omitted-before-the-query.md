@@ -79,3 +79,7 @@ The consequence above ("a relation fetched only to satisfy a `needs` declaration
 Row scoping is untouched: the Access Filter still scopes what the relation returns, so the declaring field's value stays session-relative.
 
 Two spellings here are superseded: "the `needs` closure" is now the **declared dependency set** (one hop, non-transitive), and ADR-0041's strip is a set difference rather than tracked provenance.
+
+## Amendment — a third and fourth consumer, and a name (ADR-0053)
+
+[ADR-0053](0053-the-mcp-vocabulary-omits-what-a-row-independent-rule-denies.md) reads the same classifier from MCP's `tools/list`: the advertised `fields` projection and the `create`/`update` `data` schemas **omit from the vocabulary** a field a row-independent rule denies, on reads and — with the payload poisoned alongside the row — on writes. The semantics differ again ("may you be told this exists?"), and the rule of this section holds: none of the consumers is to be harmonised into another. The objection this record raised against projecting scalars — a second _authority_ — does not reach a schema that is never authoritative; Field Visibility still decides visibility alone. The mechanism itself is now **Row-independent rule** in `CONTEXT.md`; "Predicate-time read check" stays the name of ADR-0031's consumer.
