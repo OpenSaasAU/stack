@@ -1,6 +1,6 @@
 import type { Session, AccessContext } from './types.js'
-import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
-import { getRelatedListConfig } from './engine.js'
+import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
+import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.js'
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
@@ -279,25 +279,49 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // cap used to let a relation be scoped correctly at the DB level while
     // still returning with unfiltered fields past this function's own,
     // separately-tracked limit (issue #830).
+    const isDeclaredRelationshipField =
+      fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
+    // A synthetic back-relation (#1082) — no declared field of its own on
+    // this list, so resolved by name against the owning list's relationship
+    // field instead. `undefined` (not `fieldConfig`) is the signal it's
+    // worth trying: a declared-but-non-relationship field (e.g. a scalar or
+    // virtual) must fall through to the generic path below, unchanged.
+    const synthetic =
+      !isDeclaredRelationshipField && fieldConfig === undefined && config && listKey
+        ? resolveSyntheticReverseRelation(fieldName, listKey, config)
+        : null
+
     if (
       config &&
-      fieldConfig?.type === 'relationship' &&
-      'ref' in fieldConfig &&
-      fieldConfig.ref &&
+      (isDeclaredRelationshipField || synthetic) &&
       value !== null &&
       value !== undefined
     ) {
-      const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
-        ...args,
-        item: workingItem,
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+      let relatedConfig: { listName: string; listConfig: ListConfig<any> } | null = null
 
-      if (!canRead) {
-        accessDeniedKeys.add(fieldName)
-        continue
+      if (isDeclaredRelationshipField) {
+        const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
+          ...args,
+          item: workingItem,
+        })
+
+        if (!canRead) {
+          accessDeniedKeys.add(fieldName)
+          continue
+        }
+
+        relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
+      } else if (synthetic) {
+        // No declared field means no field-level `read` gate of its own to
+        // check here — the owning list's OWN field-level access is enforced
+        // by the recursive `filterReadableFields` call below, exactly as it
+        // would be for a declared relationship's related rows.
+        relatedConfig = {
+          listName: synthetic.sourceListName,
+          listConfig: synthetic.sourceListConfig,
+        }
       }
-
-      const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
       // The declared-only tree for whatever THIS relation's own list computes,
       // e.g. a field on the related list that declares its own `needs`. Falls
       // back to an empty tree when this relation isn't declaration-related at

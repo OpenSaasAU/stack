@@ -69,3 +69,5 @@ export { InvalidFieldAccessResultError } from './errors.js'
 export { InvalidCreateAccessResultError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
 export { RelationFilterAccessDeniedError } from './errors.js'
+// Thrown when a caller `include` names a key that is neither declared, synthetic, nor `_count` (#1082).
+export { UndeclaredIncludeKeyError } from './errors.js'

@@ -1,8 +1,12 @@
 import type { Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
-import { checkAccess, getRelatedListConfig } from './engine.js'
+import { checkAccess, getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
-import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from './errors.js'
+import {
+  AccessScopeDepthExceededError,
+  RelationFilterAccessDeniedError,
+  UndeclaredIncludeKeyError,
+} from './errors.js'
 import {
   LOGICAL_OPERATORS,
   RELATION_QUANTIFIERS,
@@ -55,6 +59,22 @@ import { getDbKey } from '../lib/case-utils.js'
  * former is left as `true` in `include`, unchanged from before; the latter
  * is recorded as `{ kind: 'denied' }`, and `field-visibility.ts` forces the
  * key to `null` without ever asking Prisma for it.
+ *
+ * **A synthetic back-relation is a declared relationship wherever a caller
+ * can name one (issue #1082, ADR-0054).** A list-only `ref` (`ref: 'Other'`,
+ * no target field) makes schema generation synthesize a back-relation on
+ * `Other` (`from_<List>_<field>`) because the ORM requires an opposite field
+ * there — but no list config declares it, so it is absent from `Other`'s own
+ * `fieldConfigs`. An include key that fails the declared-relationship test is
+ * resolved via `resolveSyntheticReverseRelation` before being treated as
+ * unrecognised; a hit is scoped exactly like the declared relationship field
+ * it stands for (its owning list's `query` access, folded `where`, nested
+ * recursion, depth), always as a to-many relation — a list-only ref has one
+ * construction site and no arity branch. A key that resolves to neither a
+ * declared relationship nor a synthetic one is **rejected** (`_count` is the
+ * one allowlisted exception, scoped separately — see #1082's "Out of scope"),
+ * restoring this module's own denial rule for the one key shape that used to
+ * fail open.
  */
 
 /** The structured (object) form of a relation include entry — caller/fold-supplied or produced by this module. */
@@ -151,9 +171,14 @@ function isToOneRelationship(fieldConfig: FieldConfig): boolean {
  * requested, recursing only into branches `requestedInclude` itself names.
  *
  * For each key in `requestedInclude`:
- * - Not a config-declared relationship → access control does not govern it;
- *   passed through unchanged (e.g. a fragment/caller key that isn't a
- *   relationship at all).
+ * - A declared field that isn't a relationship (scalar, virtual, …) → access
+ *   control does not govern it; passed through unchanged (a virtual key is
+ *   stripped later by `stripVirtualFieldsFromInclude`, #628).
+ * - Not declared at all → resolved via `resolveSyntheticReverseRelation`
+ *   (the synthetic-back-relation case above); `_count` is passed through
+ *   unchanged (unscoped by design, see #1082's "Out of scope"); anything
+ *   else throws `UndeclaredIncludeKeyError` rather than reaching the
+ *   database unscoped.
  * - A declared relationship whose related list's `query` access denies it
  *   (`=== false`) → dropped entirely, no matter what the request asked for
  *   nested beneath it (#566): the caller chooses *which* relations, access
@@ -206,15 +231,35 @@ export async function buildAccessScopedInclude(
     const isDeclaredRelationship =
       fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
 
-    if (!isDeclaredRelationship) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    let relatedConfig: { listName: string; listConfig: ListConfig<any> } | null
+    let isToOne: boolean
+
+    if (isDeclaredRelationship) {
+      relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
+      if (!relatedConfig) continue
+      isToOne = isToOneRelationship(fieldConfig)
+    } else if (fieldConfig) {
+      // A declared field that is not a relationship — access control does
+      // not govern it here; passed through unchanged.
       result[relationName] = requestedValue
       continue
+    } else if (relationName === '_count') {
+      // Unscoped by design (#1082's "Out of scope") — a caller `_count`
+      // leaks related-row counts regardless of the related list's `query`
+      // access. Same bug class, its own fix, tracked separately.
+      result[relationName] = requestedValue
+      continue
+    } else {
+      const synthetic = resolveSyntheticReverseRelation(relationName, listKey, config)
+      if (!synthetic) {
+        throw new UndeclaredIncludeKeyError(listKey, relationName)
+      }
+      relatedConfig = { listName: synthetic.sourceListName, listConfig: synthetic.sourceListConfig }
+      // Always to-many — a list-only ref has one construction site and no
+      // arity branch, and one-to-one is structurally impossible for it.
+      isToOne = false
     }
-
-    const relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
-    if (!relatedConfig) continue
-
-    const isToOne = isToOneRelationship(fieldConfig)
 
     const queryAccess = relatedConfig.listConfig.access?.operation?.query
     const accessResult = await checkAccess(queryAccess, {

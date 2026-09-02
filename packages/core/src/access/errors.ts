@@ -99,6 +99,33 @@ export class RelationFilterAccessDeniedError extends Error {
   }
 }
 
+/**
+ * Thrown when a caller-supplied `include` names a key that resolves to
+ * neither a declared relationship, a synthetic back-relation (a list-only
+ * `ref`'s ORM-required opposite field, which no list config declares — see
+ * `resolveSyntheticReverseRelation`), nor `_count`. Before this,
+ * `buildAccessScopedInclude`'s scoping walk passed an unrecognised key
+ * straight through unscoped — the one surface among `data`/`where`/`orderBy`/
+ * `include` that failed open rather than closed (issue #1082). `sudo` never
+ * reaches this: it skips `buildAccessScopedInclude` entirely (see
+ * `resolveReadInclude` in `context/index.ts`), matching every other
+ * access-control escape hatch. See ADR-0054.
+ */
+export class UndeclaredIncludeKeyError extends Error {
+  public listKey: string
+  public fieldKey: string
+
+  constructor(listKey: string, fieldKey: string) {
+    super(
+      `Cannot include "${listKey}.${fieldKey}" — it is not a field of this list. ` +
+        `Undeclared include keys are rejected, matching data/where/orderBy keys.`,
+    )
+    this.name = 'UndeclaredIncludeKeyError'
+    this.listKey = listKey
+    this.fieldKey = fieldKey
+  }
+}
+
 function describeAccessResult(result: unknown): string {
   if (result === null) return 'null'
   if (result === undefined) return 'undefined'
