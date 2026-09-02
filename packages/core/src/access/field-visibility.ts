@@ -7,8 +7,12 @@ import { ResolveOutputCycleError } from './errors.js'
 import type { DeclaredOnlyTree } from './declared-dependencies.js'
 import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
 import type { FieldSelectionScope } from '../query/index.js'
-import type { ToOneAccessVisibilityTree } from './access-filter.js'
-import { emptyToOneAccessVisibilityTree, isToOneRelationship } from './access-filter.js'
+import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
+import {
+  emptyToOneAccessVisibilityTree,
+  isToOneRelationship,
+  emptyCountAccessDenialTree,
+} from './access-filter.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -64,6 +68,16 @@ import { buildDbDelegate } from '../context/index.js'
  * arity: `null` for a to-one relation (unchanged), `[]` for a to-many one,
  * rather than leaving a to-many key silently missing where the fragment
  * API's `ResultOf` type (`query/index.ts`) promises an array.
+ *
+ * **`_count` denial injection (issue #1087).** A caller-supplied `_count.select`
+ * key whose related list denies `query` access outright is omitted from the
+ * select `buildAccessScopedInclude` sends to Prisma — there is no way to ask
+ * Prisma for a guaranteed `0`, and no query is needed to know one (unlike the
+ * to-one existence check above). This module is where that becomes the
+ * caller-visible `0`: every key in a `CountAccessDenialTree` at this level is
+ * written into `filtered._count` as `0`, whether or not `_count` came back
+ * from the database at all — a count is a session-relative value, and `0` is
+ * what "no visible rows" means for it, never an absent key.
  */
 
 type ResolveOutputHookRuntime = (args: {
@@ -226,6 +240,10 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // regardless of that relation's own arity, since a filtered to-one can sit
   // beneath a to-many hop.
   toOneVisibility: ToOneAccessVisibilityTree = emptyToOneAccessVisibilityTree(),
+  // `_count.select` keys denied outright at THIS level (issue #1087, see
+  // module doc above), and the same tree one level down for each nested
+  // relation whose own nested include named a further `_count`.
+  countDenials: CountAccessDenialTree = emptyCountAccessDenialTree(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -352,6 +370,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // This key's OWN to-one existence check, if `fieldName` itself is a
       // filtered to-one relation (as opposed to one further down its tree).
       const toOneEntry = toOneVisibility.filters[fieldName]
+      // This relation's own denied `_count` keys, if `buildAccessScopedInclude`
+      // flagged any beneath it (issue #1087). Falls back to empty — the
+      // common case for a relation with no denied `_count` anywhere in its
+      // own nested include.
+      const nestedCountDenials = countDenials.nested[fieldName] ?? emptyCountAccessDenialTree()
 
       if (relatedConfig) {
         if (Array.isArray(value)) {
@@ -367,6 +390,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 nestedDeclaredOnly,
                 nestedSelection,
                 nestedToOneVisibility,
+                nestedCountDenials,
               ),
             ),
           )
@@ -386,6 +410,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 nestedDeclaredOnly,
                 nestedSelection,
                 nestedToOneVisibility,
+                nestedCountDenials,
               )
             : null
         }
@@ -441,6 +466,25 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
     const isToMany = !fieldConfig || !isToOneRelationship(fieldConfig)
     filtered[fieldName] = isToMany ? [] : null
+  }
+
+  // `_count.select` keys `buildAccessScopedInclude` denied outright (issue
+  // #1087) were omitted from the select sent to Prisma, so `_count` may be
+  // absent from `workingItem` entirely, or present but missing exactly these
+  // keys. Write each denied key in as `0` — matching what a denied count has
+  // always meant for the admin list view's own scoped counts — unless a
+  // fragment's own selection excluded `_count` altogether, in which case
+  // there is nothing to inject it into.
+  if (countDenials.keys.size > 0 && !(selection?.fields && !selection.fields.has('_count'))) {
+    const existingCount =
+      filtered._count && typeof filtered._count === 'object'
+        ? (filtered._count as Record<string, unknown>)
+        : {}
+    const mergedCount = { ...existingCount }
+    for (const key of countDenials.keys) {
+      mergedCount[key] = 0
+    }
+    filtered._count = mergedCount
   }
 
   // The item a virtual field's hook sees: stored columns and fetched

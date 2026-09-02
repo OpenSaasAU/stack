@@ -94,6 +94,34 @@ export function resolveSyntheticReverseRelation(
   return null
 }
 
+/**
+ * Enumerate every synthetic back-relation name a list-only `ref` elsewhere in
+ * the config synthesizes onto `parentListName` — the same relations
+ * `resolveSyntheticReverseRelation` resolves one at a time given a candidate
+ * key, returned here as the full set for a caller that instead needs "every
+ * relation this list carries" with no candidate to check (e.g. `_count:
+ * true`'s "count every relation" expansion in `access-filter.ts`, issue
+ * #1087 — a bare `_count: true` must include a synthetic back-relation's
+ * count exactly as it always has, not only a caller-named one).
+ */
+export function listSyntheticReverseRelationNames(
+  parentListName: string,
+  config: OpenSaasConfig,
+): string[] {
+  const names: string[] = []
+  for (const [sourceListName, sourceListConfig] of Object.entries(config.lists)) {
+    for (const [sourceFieldName, sourceFieldConfig] of Object.entries(sourceListConfig.fields)) {
+      if (sourceFieldConfig.type !== 'relationship') continue
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
+      const rel = sourceFieldConfig as RelationshipField<any>
+      const refParts = rel.ref.split('.')
+      if (refParts.length !== 1 || refParts[0] !== parentListName) continue
+      names.push(getSyntheticFieldName(sourceListName, sourceFieldName))
+    }
+  }
+  return names
+}
+
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
