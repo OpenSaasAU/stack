@@ -70,6 +70,22 @@ Every shape #1073 found unstamped under the annotation (`1/2`, `0/3`) is fully c
 
 A generic `Proxy` over a `Collection` that runs every method call inside the unsafe scope, re-proxies a returned `Collection`, and wraps a lazy result so `then`/`toArray`/`first`/`[Symbol.asyncIterator]().next` re-enter the scope: `update()` 2/2, nested create 3/3, a chain whose terminal is called 5 ms later outside any scope, an `include` refinement callback, `for await` streaming, `first()`, `aggregate()` — all `unsafe`.
 
+## The Unsafe executors (`als-probe.ts`, section G)
+
+`runtime().query(plan)` returns a lazy `AsyncIterableResult`, and ADR-0056 requires the Unsafe surface's `query()` to hand that streaming result back unchanged. Returning it naively from inside the scope is the A0 trap: the scope closes before the first `then`/`next`, and the query is **refused** (G1). Returning the same scope-preserving wrapper the ORM proxy uses — `then`/`toArray`/`first`/`firstOrThrow`/`[Symbol.asyncIterator]().next` each re-enter the unsafe scope — keeps the API lazy and covered:
+
+| case                                                             | result                  |
+| ---------------------------------------------------------------- | ----------------------- |
+| naive: `runtime().query(plan)` returned, `for await` outside     | no origin → **refused** |
+| wrapper: `for await` streaming outside any scope                 | **1/1** `unsafe`        |
+| wrapper: `await` (`then`) outside any scope                      | **1/1** `unsafe`        |
+| wrapper: `.first()` outside any scope                            | **1/1** `unsafe`        |
+| wrapper: held 5 ms, then consumed                                | **1/1** `unsafe`        |
+| wrapper: raw `returnsRow` plan streamed outside                  | **1/1** `unsafe`        |
+| `execute(plan)`: eager, returned from the scope, awaited outside | **1/1** `unsafe`        |
+
+`execute()` needs no wrapper — it runs in the calling context — but is wrapped anyway for one executor shape.
+
 ## Refusal semantics (`als-probe2.ts`, sections J and K)
 
 Throwing on the **second** statement of `update()` rolled back the implicit transaction (row unchanged) and left the client usable, plain and inside `db.transaction()`. The thrown error reaches the caller unwrapped: `instanceof` the middleware's own class is `true` for both `all()` and `update()`.

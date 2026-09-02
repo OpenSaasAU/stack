@@ -298,6 +298,74 @@ await measure('D7 aggregate through proxy', () =>
 )
 throwMode = false
 
+console.log(
+  '\n== G. the Unsafe executor: query(plan) must return a lazy AsyncIterableResult, consumed outside any scope ==',
+)
+const UNSAFE_EXEC: Origin = { origin: 'unsafe', tag: 'exec' }
+const unsafeQueryNaive = (plan: any) => originStore.run(UNSAFE_EXEC, () => db.runtime().query(plan))
+const unsafeQuery = (plan: any) => {
+  const r: any = originStore.run(UNSAFE_EXEC, () => db.runtime().query(plan))
+  const enter = <T>(fn: () => T) => originStore.run(UNSAFE_EXEC, fn)
+  return {
+    then: (a: any, b: any) => enter(() => r.then(a, b)),
+    toArray: () => enter(() => r.toArray()),
+    first: () => enter(() => r.first()),
+    firstOrThrow: () => enter(() => r.firstOrThrow()),
+    [Symbol.asyncIterator]: () => {
+      const it = enter(() => r[Symbol.asyncIterator]())
+      return {
+        next: (...x: any[]) => enter(() => it.next(...x)),
+        return: (...x: any[]) => enter(() => it.return?.(...x)),
+        throw: (...x: any[]) => enter(() => it.throw?.(...x)),
+      }
+    },
+  }
+}
+const unsafeExecute = (plan: any) => originStore.run(UNSAFE_EXEC, () => db.runtime().execute(plan))
+throwMode = true
+await measure(
+  'G1 NAIVE: return runtime().query(plan) from the scope, for-await outside',
+  async () => {
+    const rows = []
+    for await (const r of unsafeQueryNaive(db.sql.public.Post.select('id').build())) rows.push(r)
+    return rows
+  },
+)
+await measure('G2 wrapper: for-await streaming outside any scope', async () => {
+  const rows = []
+  for await (const r of unsafeQuery(db.sql.public.Post.select('id').build())) rows.push(r)
+  return rows
+})
+await measure('G3 wrapper: await (then) outside any scope', () =>
+  unsafeQuery(db.sql.public.Post.select('id').build()),
+)
+await measure('G4 wrapper: .first() outside any scope', () =>
+  unsafeQuery(db.sql.public.Post.select('id').build()).first(),
+)
+await measure('G5 wrapper: held 5 ms, then consumed', async () => {
+  const q = unsafeQuery(db.sql.public.Post.select('id').build())
+  await new Promise((r) => setTimeout(r, 5))
+  const rows = []
+  for await (const x of q) rows.push(x)
+  return rows
+})
+await measure('G6 wrapper: raw returnsRow plan streamed outside', async () => {
+  const rows = []
+  for await (const r of unsafeQuery(
+    db.raw.sql`SELECT "id" FROM "public"."Post"`.returnsRow({ id: 'pg/text@1' }).build(),
+  ))
+    rows.push(r)
+  return rows
+})
+await measure('G7 execute(plan): eager, returned from the scope, awaited outside', () =>
+  unsafeExecute(
+    db.raw.sql`UPDATE "public"."Post" SET "title" = "title" WHERE "id" = ${'nope'}`
+      .affectedCount()
+      .build(),
+  ),
+)
+throwMode = false
+
 console.log('\n== E. cost of als.run around a terminal (warm, 2000 iterations each) ==')
 {
   const N = 2000

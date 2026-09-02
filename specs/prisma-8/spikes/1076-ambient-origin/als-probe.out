@@ -41,9 +41,19 @@ D5 streaming for-await over proxied all()                  statements=1 origin-v
 D6 first() through proxy                                   statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
 D7 aggregate through proxy                                 statements=1 origin-visible=1/1  select:unsafe(proxy)[runtime]
 
+== G. the Unsafe executor: query(plan) must return a lazy AsyncIterableResult, consumed outside any scope ==
+G1 NAIVE: return runtime().query(plan) from the scope, for-await outside statements=1 origin-visible=0/1  select:-[runtime]
+   -> threw UnstampedQueryError: unstamped dsl/select
+G2 wrapper: for-await streaming outside any scope          statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G3 wrapper: await (then) outside any scope                 statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G4 wrapper: .first() outside any scope                     statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G5 wrapper: held 5 ms, then consumed                       statements=1 origin-visible=1/1  select:unsafe(exec)[runtime]
+G6 wrapper: raw returnsRow plan streamed outside           statements=1 origin-visible=1/1  raw-query:unsafe(exec)[runtime]
+G7 execute(plan): eager, returned from the scope, awaited outside statements=1 origin-visible=1/1  raw-query:unsafe(exec)[runtime]
+
 == E. cost of als.run around a terminal (warm, 2000 iterations each) ==
-  first() bare 0.9828 ms   inside als.run 0.9177 ms   delta -65.2 µs (interleaved rounds)
-  bare als.run(sync fn) 0.145 µs
+  first() bare 0.8669 ms   inside als.run 0.8100 ms   delta -56.9 µs (interleaved rounds)
+  bare als.run(sync fn) 0.147 µs
 
 == F. prepare(): does beforeCompile run per execution, and which origin does it see? ==
   prepare probe failed: TypeError sql.public.Post.where is not a function
