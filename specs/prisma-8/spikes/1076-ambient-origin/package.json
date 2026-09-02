@@ -1,0 +1,16 @@
+{
+  "name": "spike-1076-ambient-origin",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@electric-sql/pglite": "latest",
+    "@electric-sql/pglite-socket": "latest",
+    "@electric-sql/pglite-pgvector": "latest",
+    "pg": "^8.13.0",
+    "@types/pg": "^8.11.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

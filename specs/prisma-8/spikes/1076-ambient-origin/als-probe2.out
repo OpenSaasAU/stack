@@ -1,0 +1,34 @@
+
+== H. hook-shaped exits, done right (await inside the exit) ==
+H1 hook query: als.exit(async () => await all()) inside engine run statements=1 origin-visible=0/1  select:-[runtime]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+H2 hook returns a LAZY all() the engine then awaits (caveat)       statements=1 origin-visible=1/1  select:engine(outer)[runtime]
+H3 hook query: exit(async () => await update()) - eager write      statements=1 origin-visible=0/1  select:-[transaction]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+H4 hook returns an un-awaited update() promise, engine awaits it   statements=1 origin-visible=0/1  select:-[transaction]
+   -> threw UnstampedQueryError: unstamped orm-client/select
+
+== I. laziness survey: terminal called inside run, awaited outside (which terminals execute at call time?) ==
+  all()                          compiled-before-await=0 total=1 origin-visible=0/1  -> LAZY (executes at await)  [would be refused if awaited outside]
+  first()                        compiled-before-await=1 total=1 origin-visible=1/1  -> EAGER (executes at call)
+  aggregate()                    compiled-before-await=1 total=1 origin-visible=1/1  -> EAGER (executes at call)
+  create()                       compiled-before-await=0 total=1 origin-visible=1/1  -> LAZY (executes at await)
+  update()                       compiled-before-await=0 total=2 origin-visible=2/2  -> LAZY (executes at await)
+  updateAll()                    compiled-before-await=0 total=1 origin-visible=0/1  -> LAZY (executes at await)  [would be refused if awaited outside]
+  delete()                       compiled-before-await=0 total=1 origin-visible=1/1  -> LAZY (executes at await)
+  deleteAll()                    compiled-before-await=0 total=1 origin-visible=0/1  -> LAZY (executes at await)  [would be refused if awaited outside]
+  upsert()                       compiled-before-await=1 total=1 origin-visible=1/1  -> EAGER (executes at call)
+  runtime().query(dsl plan)      compiled-before-await=0 total=1 origin-visible=0/1  -> LAZY (executes at await)  [would be refused if awaited outside]
+  runtime().execute(raw plan)    compiled-before-await=1 total=1 origin-visible=1/1  -> EAGER (executes at call)
+
+== J. a refusal on the SECOND statement of an implicit transaction: rollback and client health ==
+  statements seen: select,update  threw: UnstampedQueryError: refused update  row title after: before (expected 'before')
+  client still usable: plain first() -> p2, transaction first() -> p2
+  cause chain: 
+
+== K. tripwire error surfaces to the caller unwrapped? ==
+  caller sees: UnstampedQueryError; instanceof UnstampedQueryError: true
+  update caller sees: UnstampedQueryError; instanceof: true
+
+== F. prepare(): beforeCompile once at prepare or per execution? ==
+  prepare probe failed: TypeError p.id.eq is not a function

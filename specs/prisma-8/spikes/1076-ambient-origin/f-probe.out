@@ -1,0 +1,6 @@
+builder exports: 
+F1 prepare(): select:engine
+   prepared members: sql,ast,meta,slots,decodeContext,paramMetadata,query
+F2 execute outside run: rows [{"id":"p1"}]  beforeCompile calls: 0 
+F3 execute outside run, tripwire throwing: NOT refused; beforeCompile calls: 0
+F4 prepare outside run, tripwire throwing: refused -> UNSTAMPED

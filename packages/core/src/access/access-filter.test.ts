@@ -2,10 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { buildAccessScopedInclude, resolveToOneAccessVisibility } from './access-filter.js'
 import {
   AccessScopeDepthExceededError,
+  RelationFilterAccessDeniedError,
   UndeclaredCountKeyError,
   UndeclaredIncludeKeyError,
 } from './errors.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
+import { ValidationError } from '../hooks/index.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
 
@@ -773,6 +775,68 @@ describe('buildAccessScopedInclude — `_count` is scoped like any other relatio
     })
   })
 
+  it('resolves a synthetic back-relation named inside a caller-supplied count `where` (#1082/#1092)', async () => {
+    const config = {
+      db: { provider: 'sqlite' },
+      lists: {
+        User: {
+          fields: { name: { type: 'text' } as FieldConfig, posts: rel('Post.author', true) },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' } as FieldConfig,
+            author: rel('User.posts'),
+            // A list-only ref: no `Post` field names it back, so schema
+            // generation synthesizes `from_Category_posts` on Post.
+            category: rel('Category'),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Category: {
+          fields: {
+            name: { type: 'text' } as FieldConfig,
+            posts: rel('Post', true),
+          },
+          // A row filter one hop past the counted relation, reached only
+          // through the synthetic back-relation — must still be folded in.
+          access: { operation: { query: () => ({ published: { equals: true } }) } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+
+    const { include } = await buildAccessScopedInclude(
+      {
+        _count: {
+          select: {
+            posts: { where: { from_Category_posts: { some: { name: { contains: 'news' } } } } },
+          },
+        },
+      },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({
+      _count: {
+        select: {
+          posts: {
+            where: {
+              from_Category_posts: {
+                some: {
+                  AND: [{ published: { equals: true } }, { name: { contains: 'news' } }],
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+  })
+
   it('`_count: true` expands to every declared to-many relation, scoped', async () => {
     const config = countConfig(() => true)
 
@@ -1236,5 +1300,464 @@ describe('buildAccessScopedInclude — synthetic back-relation (#1082)', () => {
         'Term',
       ),
     ).rejects.toThrow(UndeclaredIncludeKeyError)
+  })
+})
+
+/**
+ * Regression coverage for issue #1092: a `where`/`orderBy` a caller nests
+ * inside an `include` entry reached Prisma with neither #912's key-existence
+ * check nor #915's field-read check — a probing oracle over exactly the
+ * fields those two tickets close one level up. `secret`/`secretNote` below
+ * deny field-level `read` outright; every other field is a normal declared
+ * field, so a throw in these tests can only come from the new validation.
+ */
+describe('buildAccessScopedInclude — nested where/orderBy validation (#1092)', () => {
+  function blogConfig(): OpenSaasConfig {
+    return {
+      db: { provider: 'sqlite' },
+      lists: {
+        Author: {
+          fields: {
+            name: { type: 'text' } as FieldConfig,
+            posts: rel('Post.author', true),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: {
+            title: { type: 'text' } as FieldConfig,
+            secret: { type: 'text', access: { read: () => false } } as unknown as FieldConfig,
+            author: rel('Author.posts'),
+            comments: rel('Comment.post', true),
+          },
+          access: { operation: { query: () => true } },
+        },
+        Comment: {
+          fields: {
+            body: { type: 'text' } as FieldConfig,
+            secretNote: { type: 'text', access: { read: () => false } } as unknown as FieldConfig,
+            post: rel('Post.comments'),
+          },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any as OpenSaasConfig
+  }
+
+  it('throws when a nested `where` names a field the session cannot read', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { secret: { equals: 'x' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { secret: { equals: 'x' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/"secret" is denied by field-level read access/)
+  })
+
+  it('throws when a nested `where` names a key the related list does not declare, naming the related list and key', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { bogusField: { equals: 'x' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Post" — "bogusField" is not a field of this list/)
+  })
+
+  it('applies the same two checks to a nested `orderBy`', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { orderBy: { secret: 'asc' } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(ValidationError)
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { orderBy: { bogusField: 'asc' } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Post"/)
+  })
+
+  it('resolves against the RELATED list, not the current one — a key valid on the parent but not the related list is rejected', async () => {
+    const config = blogConfig()
+
+    // `name` is declared on Author, not on Post — validating against the
+    // wrong list would let this through.
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { name: { equals: 'x' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Post" — "name"/)
+  })
+
+  it('recurses through AND/OR/NOT', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        {
+          posts: {
+            where: { AND: [{ title: { contains: 'x' } }, { OR: [{ secret: { equals: 'x' } }] }] },
+          },
+        },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it("the key-existence check recurses through a relation quantifier nested inside the entry's own where", async () => {
+    // #912's existence check (`validateQueryKeys`) is the reused #912/#915
+    // top-level walker, which already recurses through a relation quantifier
+    // regardless of caller position — an undeclared key nested that deep
+    // still rejects, naming the list it actually resolved against (Comment,
+    // not Post).
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { comments: { some: { bogusField: { equals: 'x' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Comment" — "bogusField"/)
+  })
+
+  it("scopes a relation quantifier nested inside the entry's own where against the DEEPER related list — a read-denied field one hop further out still throws (#916)", async () => {
+    // Without this, #1092's fix would only move the oracle one hop further
+    // out instead of closing it: `posts: { where: { comments: { some: {...} } } }`
+    // names Comment, a list the entry's own #912/#915 checks never reach —
+    // only `buildAccessScopedWhere` (#916), reused here, does.
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { comments: { some: { secretNote: { equals: 'x' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Comment" — "secretNote"/)
+  })
+
+  it("folds the deeper related list's own query access into a relation quantifier nested inside the entry's own where", async () => {
+    const config = blogConfig()
+    config.lists.Comment.access = {
+      operation: { query: () => ({ approved: { equals: true } }) },
+    }
+
+    const { include } = await buildAccessScopedInclude(
+      { posts: { where: { comments: { some: { body: { contains: 'hi' } } } } } },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({
+      posts: {
+        where: {
+          comments: {
+            some: { AND: [{ approved: { equals: true } }, { body: { contains: 'hi' } }] },
+          },
+        },
+      },
+    })
+  })
+
+  it("throws when the deeper related list denies query access outright, matching #916's loud failure", async () => {
+    const config = blogConfig()
+    config.lists.Comment.access = { operation: { query: () => false } }
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { comments: { some: { body: { contains: 'hi' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(RelationFilterAccessDeniedError)
+  })
+
+  it('recurses through a further nested include, at every level the walk reaches', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { include: { comments: { where: { secretNote: { equals: 'x' } } } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(/Cannot query "Comment" — "secretNote"/)
+  })
+
+  it('accepts a foreign-key scalar a to-one relationship implies, matching the top-level resolver', async () => {
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { authorId: { equals: 'a1' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).resolves.not.toThrow()
+  })
+
+  it('leaves a legitimate nested where over readable, declared fields unchanged, still AND-combined with the access filter', async () => {
+    const config = blogConfig()
+    config.lists.Post.access = { operation: { query: () => ({ published: { equals: true } }) } }
+
+    const { include } = await buildAccessScopedInclude(
+      { posts: { where: { title: { contains: 'hello' } } } },
+      config.lists.Author.fields,
+      { session: null, context: makeContext() },
+      config,
+      'Author',
+    )
+
+    expect(include).toEqual({
+      posts: {
+        where: { AND: [{ published: { equals: true } }, { title: { contains: 'hello' } }] },
+      },
+    })
+  })
+
+  it('equivalence: the same read-denied predicate throws whether it names the current list, a relation quantifier, or an include-nested where', async () => {
+    // Mirrors the triage comment's three-position table for #1092 — the
+    // include-nested position (the one gap) now matches the other two.
+    const config = blogConfig()
+
+    await expect(
+      buildAccessScopedInclude(
+        { posts: { where: { secret: { equals: 'x' } } } },
+        config.lists.Author.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Author',
+      ),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  describe('synthetic back-relation nested in a where (#1082 interaction)', () => {
+    function syntheticNestedConfig(): OpenSaasConfig {
+      const config = {
+        db: { provider: 'sqlite' },
+        lists: {
+          Company: {
+            fields: {
+              name: { type: 'text' } as FieldConfig,
+              terms: rel('Term', true),
+            },
+            access: { operation: { query: () => true } },
+          },
+          Term: {
+            fields: { name: { type: 'text' } as FieldConfig },
+            access: { operation: { query: () => true } },
+          },
+          Bill: {
+            fields: {
+              amount: { type: 'integer' } as FieldConfig,
+              term: rel('Term'), // list-only ref — synthesizes `from_Bill_term` on Term
+            },
+            access: { operation: { query: () => true } },
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+      } as any as OpenSaasConfig
+      return config
+    }
+
+    it('does not throw for a nested predicate naming a synthetic back-relation', async () => {
+      const config = syntheticNestedConfig()
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { amount: { gt: 5 } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).resolves.not.toThrow()
+    })
+
+    it("recurses into the synthetic's own SOURCE list — an invalid key nested under it still throws, naming that list", async () => {
+      const config = syntheticNestedConfig()
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { bogusField: { equals: 'x' } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).rejects.toThrow(/Cannot query "Bill" — "bogusField"/)
+    })
+
+    it("folds the synthetic's own SOURCE list's query access into the nested quantifier clause", async () => {
+      // Regression coverage for a Codex review finding on #1108: the deeper
+      // #916-style scoping originally only recognised a DECLARED
+      // relationship — a synthetic key's nested quantifier passed through
+      // with neither the source list's `query` access folded in nor its
+      // fields' read access checked, even though the shallow #912/#915
+      // checks (validateQueryKeys/validateQueryFieldReadAccess) already
+      // correctly tolerated and resolved the synthetic key itself.
+      const config = syntheticNestedConfig()
+      config.lists.Bill.access = { operation: { query: () => ({ paid: { equals: true } }) } }
+
+      const { include } = await buildAccessScopedInclude(
+        { terms: { where: { from_Bill_term: { some: { amount: { gt: 5 } } } } } },
+        config.lists.Company.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Company',
+      )
+
+      expect(include).toEqual({
+        terms: {
+          where: {
+            from_Bill_term: {
+              some: { AND: [{ paid: { equals: true } }, { amount: { gt: 5 } }] },
+            },
+          },
+        },
+      })
+    })
+
+    it('throws when a field nested under a synthetic quantifier is denied by field-level read access', async () => {
+      const config = syntheticNestedConfig()
+      ;(config.lists.Bill.fields as Record<string, FieldConfig>).secretAmount = {
+        type: 'integer',
+        access: { read: () => false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
+      } as any as FieldConfig
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { secretAmount: { gt: 5 } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).rejects.toThrow(/"secretAmount" is denied by field-level read access/)
+    })
+
+    it("throws when the synthetic's own SOURCE list denies query access outright, matching #916's loud failure", async () => {
+      const config = syntheticNestedConfig()
+      config.lists.Bill.access = { operation: { query: () => false } }
+
+      await expect(
+        buildAccessScopedInclude(
+          { terms: { where: { from_Bill_term: { some: { amount: { gt: 5 } } } } } },
+          config.lists.Company.fields,
+          { session: null, context: makeContext() },
+          config,
+          'Company',
+        ),
+      ).rejects.toThrow(RelationFilterAccessDeniedError)
+    })
+  })
+
+  describe("a to-one relation's `is: null`/`isNot: null` inside a nested quantifier (Codex review finding on #1108)", () => {
+    // Root -> Parent (to-many, unscoped) -> Owner (to-one, query-scoped by a
+    // filter). Parent's own access is `true` (no filter), so the outer
+    // AND-fold is a no-op and cannot mask what this test is isolating: the
+    // fold that happens INSIDE the quantifier's own value.
+    function nullQuantifierConfig(): OpenSaasConfig {
+      return {
+        db: { provider: 'sqlite' },
+        lists: {
+          Root: {
+            fields: { name: { type: 'text' } as FieldConfig, parent: rel('Parent', true) },
+            access: { operation: { query: () => true } },
+          },
+          Parent: {
+            fields: { name: { type: 'text' } as FieldConfig, owner: rel('Owner') },
+            access: { operation: { query: () => true } },
+          },
+          Owner: {
+            fields: { name: { type: 'text' } as FieldConfig },
+            access: { operation: { query: () => ({ secret: { equals: true } }) } },
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+      } as any as OpenSaasConfig
+    }
+
+    it('preserves `is: null` rather than inverting it into an access-filter match', async () => {
+      // Before this fix, folding the access filter into a quantifier's
+      // value unconditionally turned `is: null` ("has no related row") into
+      // `is: <accessWhere>` ("has a related row matching the filter") —
+      // the opposite of the caller's own predicate.
+      const config = nullQuantifierConfig()
+
+      const { include } = await buildAccessScopedInclude(
+        { parent: { where: { owner: { is: null } } } },
+        config.lists.Root.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Root',
+      )
+
+      expect(include).toEqual({ parent: { where: { owner: { is: null } } } })
+    })
+
+    it('preserves `isNot: null` the same way', async () => {
+      const config = nullQuantifierConfig()
+
+      const { include } = await buildAccessScopedInclude(
+        { parent: { where: { owner: { isNot: null } } } },
+        config.lists.Root.fields,
+        { session: null, context: makeContext() },
+        config,
+        'Root',
+      )
+
+      expect(include).toEqual({ parent: { where: { owner: { isNot: null } } } })
+    })
   })
 })
