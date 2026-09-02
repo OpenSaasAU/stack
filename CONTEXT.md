@@ -14,6 +14,10 @@ _Avoid_: list access, row access
 A check that gates whether a session may read or write a single field, returning a boolean only. Cannot scope rows — a denied field is removed, not used to exclude records.
 _Avoid_: column access, property access
 
+**Row-independent rule**:
+A field-level rule the session alone can decide — one that never reaches into the row (`item`) or, for a write, the payload (`inputData`). Told apart from a row-dependent rule by evaluating it once with those arguments poisoned, so the rule itself is interpreted in exactly one place and each consumer only chooses what to do with the answer: a predicate names it and is refused, an include leaves the relation out, a published vocabulary omits the field (ADR-0031, ADR-0044, ADR-0053). A rule that touches the row is never decided ahead of it.
+_Avoid_: static rule, session-only rule, constant rule
+
 **Predicate-time read check**:
 A field-level `read` rule evaluated BEFORE the query runs, against a key named in a caller's `where`/`orderBy`, rather than against an already-fetched row — the check that stops a field's withheld value or relative order from being recovered by probing a query that returns no rows containing it (e.g. `count()`). There is no row yet at this point, so a rule that depends on one (dereferences `item`) cannot be answered and resolves to a denial rather than being skipped (ADR-0031).
 _Avoid_: filter access check, where validation
@@ -39,7 +43,7 @@ The reach of naming a relation: it fetches that relation's own columns and stops
 _Avoid_: deep include, nested expansion, relation tree
 
 **Projection**:
-A caller's statement of which fields it wants back, at each level it names — the reciprocal of One hop, which says how far naming reaches. A projection may be narrower than a Bare read as easily as wider, since it selects the row's own fields too, and what it selects is what gets computed. Where a projection crosses a trust boundary the reachable vocabulary is published ahead of the request and anything outside it is refused, so a caller can tell what it may ask for without asking.
+A caller's statement of which fields it wants back, at each level it names — the reciprocal of One hop, which says how far naming reaches. A projection may be narrower than a Bare read as easily as wider, since it selects the row's own fields too, and what it selects is what gets computed. Where a projection crosses a trust boundary the reachable vocabulary is published ahead of the request and anything outside it is refused, so a caller can tell what it may ask for without asking; what a Row-independent rule denies the session is already absent from that vocabulary, and asking for it anyway is refused exactly as an unknown name is (ADR-0053).
 _Avoid_: include, field mask. (`select` is the ORM's spelling of this term, honoured exactly — the word is fine; what it names is narrower than the term.)
 
 **Computed field**:
