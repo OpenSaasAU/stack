@@ -42,6 +42,8 @@ A caller that genuinely needs a cursor — a bulk re-embed, a one-off migration 
 
 The cost is stated rather than discovered: no access filter, no Field Visibility, no `resolveOutput`, no computed fields. The caller owns scoping entirely, exactly as [ADR-0045](0045-vector-search-is-an-engine-owned-terminal-over-a-native-vector-column.md) requires of raw SQL. This is not a workaround for a missing feature — it is where an operation that cannot preserve the secured surface's guarantees belongs, and naming it converts an omission into a destination.
 
+_[ADR-0056](0056-app-authored-sql-lives-on-the-unsafe-surface-which-stamps-at-execution.md) gives that destination its SQL shape: the surface carries Prisma's typed SQL builder and raw tag untouched, `query(plan)` returns Prisma's own `AsyncIterableResult`, and the intentionally-unscoped stamp is applied by the surface's executor at execution rather than at any call site._
+
 ## The demand is absent, which is the weakest of these reasons
 
 ADR-0041 dropped streaming without a use case being cited, and the sweep this record rests on found none. The repository's only unbounded row read is `packages/rag/src/config/plugin.ts`'s `rag_search` handler — `await context.db[dbKey].findMany()` over an entire list, then cosine similarity in JavaScript — and ADR-0045 deletes it, pushing the search into the database as a scoped `nearest()` terminal. `ListView` paginates against a scoped count, nav counts never materialise rows, MCP tools are bounded by ADR-0037, and the one `AsyncIterable` elsewhere in the tree (`packages/storage-s3`) streams bytes rather than rows.
