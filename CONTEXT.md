@@ -174,6 +174,10 @@ _Avoid_: integration test, CI-only test, real-db test
 The user/session/account/verification lists the auth plugin derives from the better-auth config — their keys, table/column maps, and database schema all follow that config, so they can be modelled to match (adopt) pre-existing better-auth tables. Distinct from any application domain User.
 _Avoid_: auth tables, auth models, auth schema
 
+**Auth adapter**:
+The stack-authored better-auth adapter that drives the Unsafe surface — its ORM lane for what a Collection can express, its typed SQL lane for the rest — so better-auth's flows share the stack's connection and transaction model without ever touching the secured surface. It owns no schema: the Auth lists it reads and writes derive from better-auth's own table definitions, the stack's generator emits them, and the ORM mints their ids (ADR-0060).
+_Avoid_: prisma adapter, kysely adapter, database adapter, auth storage
+
 **Auth identity**:
 The better-auth-owned record of who a session belongs to (the better-auth user). Separate from, and not assumed to be, the application's own domain User; an app links the two itself when it needs to.
 _Avoid_: auth user, principal, account
