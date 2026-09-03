@@ -1,8 +1,9 @@
-import type { Session, AccessContext, PrismaFilter } from './types.js'
+import type { Session, AccessContext, PrismaFilter, FieldAccess } from './types.js'
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
 import type { FilterOperator, RelationshipCountFilterMarker } from '../filter/types.js'
 import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 import { checkAccess, getRelatedListConfig } from './engine.js'
+import { isFieldReadableForPredicate } from './field-access.js'
 import { getDbKey } from '../lib/case-utils.js'
 
 /**
@@ -14,8 +15,10 @@ import { getDbKey } from '../lib/case-utils.js'
  * `_count` (`_count: { select: { orders: { where: <access filter> } } }`), so no
  * per-row query is issued and the count can never include rows the session
  * cannot read. This module is the single place the related list's
- * operation-level `query` access is folded into that `_count`, mirroring how
- * `buildAccessScopedInclude` folds it into relation includes.
+ * operation-level `query` access, AND the counting list's own field-level
+ * `read` access on the relationship field being counted (issue #1111), are
+ * folded into that `_count`, mirroring how `buildAccessScopedInclude` folds
+ * both into relation includes.
  *
  * It also resolves the count Filter spec's markers: Prisma cannot compare a
  * relation count in a `where`, so a to-many relationship's Filter spec emits a
@@ -52,19 +55,42 @@ export type CountAccessEntry =
   | { kind: 'denied' } // related list not readable at all → count is always 0
 
 /**
- * Resolve one related list's operation-level `query` access directly into the
- * entry its `_count` select needs. The shared decision both
- * `relationshipCountAccessEntry` below (field → related list, for this
- * module's own admin-list-view and count-filter callers) and
- * `access-filter.ts`'s caller-`_count` scoping (issue #1087, which already
- * has the related list resolved — including a synthetic back-relation's,
- * which has no field of its own on the counting list) build on.
+ * Resolve one related list's operation-level `query` access, and — when the
+ * counting list has a field of its own for the relationship being counted —
+ * that field's own field-level `read` access, into the entry its `_count`
+ * select needs. The shared decision both `relationshipCountAccessEntry` below
+ * (field → related list, for this module's own admin-list-view and
+ * count-filter callers) and `access-filter.ts`'s caller-`_count` scoping
+ * (issue #1087, which already has the related list resolved — including a
+ * synthetic back-relation's, which has no field of its own on the counting
+ * list) build on.
+ *
+ * `fieldAccess` is the COUNTING list's own relationship field access — not
+ * the related list's — mirroring the check `filterReadableFields`
+ * (`field-visibility.ts`) runs before returning an ordinary `include` of that
+ * same field (issue #1111: a `_count` used to leak the true count of a
+ * relationship whose field-level `read` access denied the relationship
+ * itself, even when the related list's own rows were otherwise fully
+ * readable). Evaluated via `isFieldReadableForPredicate` — the pre-query
+ * evaluator #915 already built for the identical problem on `where`/`orderBy`
+ * — since there is no fetched row yet at `_count`-select-build time; a rule
+ * that depends on one denies here, the same as it would there. Checked BEFORE
+ * the related list's `query` access so a field-level denial short-circuits
+ * without needing the related list's access rule at all. Omitted entirely
+ * (`undefined`) for a synthetic back-relation, which has no field of its own
+ * on the counting list to evaluate.
  */
 export async function resolveCountAccessEntryForList(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
   args: CountArgs,
+  fieldAccess?: FieldAccess,
 ): Promise<CountAccessEntry> {
+  if (fieldAccess) {
+    const canReadField = await isFieldReadableForPredicate(fieldAccess, args)
+    if (!canReadField) return { kind: 'denied' }
+  }
+
   const queryAccess = relatedListConfig.access?.operation?.query
   const result = await checkAccess(queryAccess, { session: args.session, context: args.context })
 
@@ -91,7 +117,7 @@ async function relationshipCountAccessEntry(
   const related = getRelatedListConfig(ref, config)
   if (!related) return null
 
-  return resolveCountAccessEntryForList(related.listConfig, args)
+  return resolveCountAccessEntryForList(related.listConfig, args, field.access)
 }
 
 /**
