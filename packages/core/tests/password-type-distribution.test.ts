@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { config, list, getContext } from '../src/index.js'
 import { text, password, relationship } from '../src/fields/index.js'
-import { PrismaClient } from '@prisma/client'
+import type { PrismaClientLike } from '../src/access/types.js'
 import type { HashedPassword } from '../src/utils/password.js'
 
 /**
@@ -36,7 +36,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
     post: {
       findMany: async () => [],
     },
-  } as unknown as PrismaClient
+  } as PrismaClientLike
 
   const testConfig = config({
     db: {

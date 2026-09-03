@@ -1,0 +1,23 @@
+# Files that still carry a Prisma error-code literal. Read by
+# scripts/check-prisma-error-codes.mjs. Remove a line once its file is clean;
+# never add one. Tracked to empty by the end of the Prisma 8 build (#1121).
+docs/adr/0004-generator-emits-keystone-compatible-defaults.md
+docs/adr/0012-interactive-transactions-rebind-the-secured-context.md
+docs/adr/0028-a-transaction-boundary-hook-reports-the-outermost-transaction.md
+docs/adr/0042-transactions-lose-isolation-levels-and-errors-become-stack-owned.md
+docs/adr/0060-better-auth-is-driven-by-a-stack-authored-auth-adapter-over-the-unsafe-surface.md
+docs/agents/comments.md
+docs/content/concepts/hooks.md
+docs/content/how-to/migrate-from-keystone.md
+packages/cli/src/generator/prisma.test.ts
+packages/cli/src/generator/prisma.ts
+packages/core/CLAUDE.md
+packages/core/src/config/types.ts
+packages/core/src/context/index.ts
+packages/core/src/index.ts
+packages/core/src/lib/prisma-errors.ts
+packages/core/tests/context.test.ts
+packages/core/tests/interactive-transaction.test.ts
+packages/core/tests/prisma-errors.test.ts
+packages/core/tests/transaction-boundary-outermost.test.ts
+specs/prisma-8/architecture-spec.md

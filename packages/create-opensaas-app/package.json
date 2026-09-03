@@ -3,6 +3,9 @@
   "version": "0.3.4",
   "description": "Create a new OpenSaas Stack application",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "bin": {
     "create-opensaas-app": "./dist/index.js"
   },

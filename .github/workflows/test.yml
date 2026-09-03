@@ -2,7 +2,7 @@ name: Test
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, prisma-8]
 
 # Cancel any in-progress run for the same PR/branch when a new push arrives.
 concurrency:
@@ -28,6 +28,9 @@ jobs:
       # collision becomes visible — each branch is self-consistent on its own.
       - name: Check for duplicate ADR numbers
         run: pnpm check:adr-duplicates
+
+      - name: Check for Prisma error-code literals
+        run: pnpm check:prisma-error-codes
 
       - name: Lint codebase
         run: pnpm lint
@@ -71,7 +74,12 @@ jobs:
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
 
+  # Every guard and the Playwright run below stands on the SQLite examples and
+  # the Prisma 7 scaffold, which the prisma-8 branch has dropped and cannot
+  # rebuild until its examples are converted (#1121, build spec 9). Until then
+  # this job runs only for PRs into main.
   e2e:
+    if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

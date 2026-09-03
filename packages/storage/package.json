@@ -3,6 +3,9 @@
   "version": "0.40.0",
   "description": "File and image upload field types with pluggable storage providers for OpenSaas Stack",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

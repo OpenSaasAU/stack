@@ -3,6 +3,9 @@
   "version": "0.40.0",
   "description": "Core stack for OpenSaas - schema definition, access control, and runtime utilities",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -57,14 +60,31 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@prisma/client": "^6.17.0 || ^7.0.0"
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/orm-postgres": "8.0.0-rc.8"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@electric-sql/pglite-pgvector": {
+      "optional": true
+    },
+    "@electric-sql/pglite-socket": {
+      "optional": true
+    }
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@prisma/client": "^7.9.1",
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
