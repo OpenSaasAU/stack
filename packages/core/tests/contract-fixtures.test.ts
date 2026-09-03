@@ -431,6 +431,15 @@ describe('multi-schema — db.schemas and db.schema place a model in its namespa
     })
     expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
   })
+
+  test('a relation whose emitted target sits in another namespace is a divergence', () => {
+    const seeded = toEmittedContract(buildPrismaContract(data))
+    seeded.domain.namespaces.public.models.User.relations.sessions.to.namespace = 'public'
+    expect(() => assertRelationGraphAgrees(data, seeded)).toThrow(RelationGraphDivergenceError)
+    expect(() => assertRelationGraphAgrees(data, seeded)).toThrow(
+      /at User\.sessions: the config places "Session" in namespace "auth" but the emitted relation targets it in "public"/,
+    )
+  })
 })
 
 describe('native types — every honoured db.nativeType lowers to its own column', () => {

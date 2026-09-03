@@ -67,6 +67,8 @@ function findEmittedModel(
   return undefined
 }
 
+const DEFAULT_NAMESPACE = 'public'
+
 const CARDINALITY: Record<ContractRelation['kind'], string> = {
   belongsTo: 'N:1',
   hasMany: '1:N',
@@ -96,6 +98,7 @@ function assertRelation(
   model: ContractModel,
   relation: ContractRelation,
   emittedModel: EmittedModel,
+  derivedModels: Map<string, ContractModel>,
 ): void {
   const at = `${model.name}.${relation.name}`
   const found = emittedModel.relations[relation.name]
@@ -105,6 +108,13 @@ function assertRelation(
     throw new RelationGraphDivergenceError(
       at,
       `the config targets "${relation.target}" but the emitted relation targets "${found.to.model}"`,
+    )
+  }
+  const targetNamespace = derivedModels.get(relation.target)?.namespace ?? DEFAULT_NAMESPACE
+  if (found.to.namespace !== targetNamespace) {
+    throw new RelationGraphDivergenceError(
+      at,
+      `the config places "${relation.target}" in namespace "${targetNamespace}" but the emitted relation targets it in "${found.to.namespace}"`,
     )
   }
   const cardinality = CARDINALITY[relation.kind]
@@ -140,8 +150,9 @@ function assertRelation(
 /**
  * Assert that the relations in an emitted contract are exactly the ones
  * {@link deriveContract} derived from the config: every derived relation is
- * present with the same target, cardinality (`belongsTo` → `N:1`, `hasMany`
- * → `1:N`, `hasOne` → `1:1`) and key columns, every one-to-one has its unique
+ * present with the same target model and namespace (`db.schema`, default
+ * `public`), cardinality (`belongsTo` → `N:1`, `hasMany` → `1:N`, `hasOne` →
+ * `1:1`) and key columns, every one-to-one has its unique
  * constraint on the owning column (ADR-0064), and the emitted contract
  * carries no relation the config did not derive. Throws
  * {@link RelationGraphDivergenceError} naming the first divergence.
@@ -150,6 +161,7 @@ function assertRelation(
  * error rather than a Prisma rejection at runtime (ADR-0040).
  */
 export function assertRelationGraphAgrees(derived: ContractData, emitted: EmittedContract): void {
+  const derivedModels = new Map(derived.models.map((model) => [model.name, model]))
   const found = new Map<string, EmittedModel>()
   for (const model of derived.models) {
     const emittedModel = findEmittedModel(emitted, model.name)
@@ -165,7 +177,7 @@ export function assertRelationGraphAgrees(derived: ContractData, emitted: Emitte
     const emittedModel = found.get(model.name)
     if (!emittedModel) continue
     for (const relation of model.relations) {
-      assertRelation(emitted, model, relation, emittedModel)
+      assertRelation(emitted, model, relation, emittedModel, derivedModels)
     }
     const derivedNames = new Set(model.relations.map((relation) => relation.name))
     for (const name of Object.keys(emittedModel.relations)) {
