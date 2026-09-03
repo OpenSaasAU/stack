@@ -99,6 +99,16 @@ describe('getContractField — every core builder describes its contract contrib
       type: { pack: 'pg', type: 'decimal', args: [18, 4] },
       nullable: true,
     })
+    // getPrismaType always emits @db.Decimal(p, s) and ignores db.nativeType;
+    // the descriptor carries the args only, never a second, competing native type.
+    expect(
+      decimal({ db: { nativeType: 'Money' } }).getContractField?.('price', 'Product', config),
+    ).toEqual({
+      kind: 'column',
+      name: 'price',
+      type: { pack: 'pg', type: 'decimal', args: [18, 4] },
+      nullable: true,
+    })
     expect(
       decimal({ precision: 10, scale: 2, defaultValue: '0.00' }).getContractField?.(
         'price',
@@ -111,14 +121,16 @@ describe('getContractField — every core builder describes its contract contrib
     })
   })
 
-  test('bigInt: pg bigint; a bigint default is carried as a decimal string', () => {
-    expect(bigInt({ defaultValue: 42n }).getContractField?.('epoch', 'Event', config)).toEqual({
-      kind: 'column',
-      name: 'epoch',
-      type: { pack: 'pg', type: 'bigint' },
-      nullable: true,
-      default: { kind: 'literal', value: '42' },
-    })
+  test('bigInt: pg bigint; 42n, 42 and "42" defaults all carry the one decimal string', () => {
+    for (const defaultValue of [42n, 42, '42']) {
+      expect(bigInt({ defaultValue }).getContractField?.('epoch', 'Event', config)).toEqual({
+        kind: 'column',
+        name: 'epoch',
+        type: { pack: 'pg', type: 'bigint' },
+        nullable: true,
+        default: { kind: 'literal', value: '42' },
+      })
+    }
   })
 
   test('checkbox: non-nullable unless db.isNullable is true', () => {
@@ -132,6 +144,15 @@ describe('getContractField — every core builder describes its contract contrib
     expect(
       checkbox({ db: { isNullable: true } }).getContractField?.('done', 'Task', config),
     ).toMatchObject({ nullable: true })
+    // getPrismaType never emits @db.* for a checkbox, so neither does the descriptor.
+    expect(
+      checkbox({ db: { nativeType: 'Bit(1)' } }).getContractField?.('done', 'Task', config),
+    ).toEqual({
+      kind: 'column',
+      name: 'done',
+      type: { pack: 'pg', type: 'boolean' },
+      nullable: false,
+    })
   })
 
   test('timestamp: { kind: "now" } is a database-clock default and makes the column non-nullable', () => {
@@ -150,17 +171,22 @@ describe('getContractField — every core builder describes its contract contrib
     })
   })
 
-  test('timestamp: a Date default is carried as its ISO string; no default leaves the column nullable', () => {
-    const epoch = new Date('2024-01-01T00:00:00.000Z')
-    expect(
-      timestamp({ defaultValue: epoch }).getContractField?.('publishedAt', 'Post', config),
-    ).toMatchObject({ nullable: true, default: { kind: 'literal', value: epoch.toISOString() } })
-    expect(timestamp().getContractField?.('publishedAt', 'Post', config)).toEqual({
+  test('timestamp: a Date default carries no default, matching getPrismaType; null and absence leave the column nullable', () => {
+    const noDefault = {
       kind: 'column',
       name: 'publishedAt',
       type: { pack: 'pg', type: 'dateTime' },
       nullable: true,
+    }
+    const dated = timestamp({ defaultValue: new Date('2024-01-01T00:00:00.000Z') })
+    expect(dated.getPrismaType?.('publishedAt').modifiers).toBe('?')
+    expect(dated.getContractField?.('publishedAt', 'Post', config)).toEqual(noDefault)
+    const nulled = timestamp({
+      // @ts-expect-error — a plain-JS config can spell "no default" as null
+      defaultValue: null,
     })
+    expect(nulled.getContractField?.('publishedAt', 'Post', config)).toEqual(noDefault)
+    expect(timestamp().getContractField?.('publishedAt', 'Post', config)).toEqual(noDefault)
   })
 
   test('calendarDay: a date-typed column with a string TypeScript face on both sides', () => {
@@ -250,6 +276,41 @@ describe('getContractField — every core builder describes its contract contrib
       nullable: true,
       default: { kind: 'literal', value: { theme: 'dark', tags: [] } },
     })
+  })
+
+  test('a default that is not a JSON literal is refused, naming the list and field', () => {
+    expect(() =>
+      json({ defaultValue: new Date(0) }).getContractField?.('meta', 'Post', config),
+    ).toThrow('"Post.meta" has a defaultValue the contract cannot carry')
+    expect(() =>
+      json({ defaultValue: new Date(0) }).getContractField?.('meta', 'Post', config),
+    ).toThrow('an instance of Date')
+    expect(() =>
+      json({ defaultValue: { tags: new Map() } }).getContractField?.('meta', 'Post', config),
+    ).toThrow('"Post.meta"')
+    expect(() =>
+      json({ defaultValue: () => 1 }).getContractField?.('meta', 'Post', config),
+    ).toThrow('a function')
+    expect(
+      json({ defaultValue: [1, 'two', null, { three: true }] }).getContractField?.(
+        'meta',
+        'Post',
+        config,
+      ),
+    ).toMatchObject({ default: { kind: 'literal', value: [1, 'two', null, { three: true }] } })
+  })
+
+  test('a caller-supplied outputType/inputType wins over the builder default', () => {
+    const status = select({
+      options: [{ label: 'Open', value: 'open' }],
+      outputType: 'Status',
+      inputType: 'StatusInput',
+    })
+    expect(status.outputType).toBe('Status')
+    expect(status.inputType).toBe('StatusInput')
+    expect(password({ outputType: 'string' }).outputType).toBe('string')
+    expect(calendarDay({ outputType: 'Date' }).outputType).toBe('Date')
+    expect(calendarDay().inputType).toBe('string')
   })
 
   test('virtual: no storage; its outputType is the type it was declared with', () => {

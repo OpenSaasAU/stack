@@ -294,6 +294,49 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(result).toHaveProperty('title')
   })
 
+  it('a declared stored column reaches the hook under a fragment that did not select it, and stays out of the result (ADR-0051)', async () => {
+    const productConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Product: list({
+          fields: {
+            name: text(),
+            price: integer(),
+            doubled: virtual({
+              type: 'number',
+              needs: ['price'],
+              hooks: {
+                resolveOutput: ({ item }) => {
+                  const typedItem = item as { price?: number }
+                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
+                },
+              },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+    const mockPrisma = createMockPrisma()
+    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productFragment = defineFragment<any>()({ doubled: true } as const)
+
+    const context = getContext(productConfig, mockPrisma, null)
+    const result = await context.db.product.findUnique({
+      where: { id: 'p1' },
+      query: productFragment,
+    })
+
+    expect(result?.doubled).toBe(20)
+    expect(result).not.toHaveProperty('price')
+    expect(result).not.toHaveProperty('name')
+    // A column is already on every row — nothing to include for it.
+    const callArgs = mockPrisma.product.findFirst.mock.calls[0][0]
+    expect(callArgs.include).toBeUndefined()
+  })
+
   it("a declaration cycle across two lists terminates via the declaration fold's own cycle guard (ADR-0026 note)", async () => {
     // Order.total needs lineItems; LineItem.orderTitle needs order — a
     // two-list declaration cycle. This must not hang or crash: it rides

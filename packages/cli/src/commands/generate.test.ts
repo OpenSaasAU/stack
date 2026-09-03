@@ -640,8 +640,7 @@ describe('Generate Command Integration', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
+          prismaClientConstructor: () => null,
         },
         lists: {
           Post: {

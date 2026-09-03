@@ -82,12 +82,31 @@ function isContractLiteral(value: unknown): value is ContractLiteral {
     return true
   }
   if (Array.isArray(value)) return value.every(isContractLiteral)
-  if (typeof value === 'object') return Object.values(value).every(isContractLiteral)
-  return false
+  if (typeof value !== 'object') return false
+  const proto: unknown = Object.getPrototypeOf(value)
+  return (
+    (proto === Object.prototype || proto === null) && Object.values(value).every(isContractLiteral)
+  )
 }
 
-function literalDefault(value: unknown): ColumnDefaultDescriptor | undefined {
-  return value !== undefined && isContractLiteral(value) ? { kind: 'literal', value } : undefined
+function describeDefault(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return `a ${typeof value}`
+  return `an instance of ${value.constructor?.name ?? 'an unnamed class'}`
+}
+
+function literalDefault(
+  value: unknown,
+  listKey: string,
+  fieldName: string,
+): ColumnDefaultDescriptor | undefined {
+  if (value === undefined) return undefined
+  if (!isContractLiteral(value)) {
+    throw new Error(
+      `"${listKey}.${fieldName}" has a defaultValue the contract cannot carry: expected a JSON ` +
+        `literal (string, number, boolean, null, array or plain object), got ${describeDefault(value)}.`,
+    )
+  }
+  return { kind: 'literal', value }
 }
 
 type ScalarColumn = {
@@ -212,14 +231,14 @@ export function text<
         index: options?.isIndexed === true ? true : undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('text'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
     getTypeScriptType: () => {
       const validation = options?.validation
@@ -308,14 +327,14 @@ export function integer<
         index: options?.isIndexed === true ? true : undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('int'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
     getTypeScriptType: () => {
       const isRequired = options?.validation?.isRequired
@@ -473,14 +492,13 @@ export function decimal<
         index: options?.isIndexed === true ? true : undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('decimal', [precision, scale]),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
-        nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
     getTypeScriptType: () => {
       const validation = options?.validation
@@ -622,19 +640,23 @@ export function bigInt<
         index: options?.isIndexed === true ? true : undefined,
       }
     },
-    getContractField: (fieldName: string) =>
-      scalarColumn(fieldName, {
+    getContractField: (fieldName: string, listKey: string) => {
+      const defaultValue = options?.defaultValue
+      return scalarColumn(fieldName, {
         type: pgType('bigint'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
         default: literalDefault(
-          typeof options?.defaultValue === 'bigint'
-            ? options.defaultValue.toString()
-            : options?.defaultValue,
+          typeof defaultValue === 'bigint' || typeof defaultValue === 'number'
+            ? defaultValue.toString()
+            : defaultValue,
+          listKey,
+          fieldName,
         ),
-      }),
+      })
+    },
     getTypeScriptType: () => {
       const isRequired = options?.validation?.isRequired
 
@@ -693,13 +715,12 @@ export function checkbox<
         modifiers: modifiers.trimStart() || undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('boolean'),
         nullable: options?.db?.isNullable === true,
-        nativeType: options?.db?.nativeType,
         map: options?.db?.map,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
     getTypeScriptType: () => {
       return {
@@ -785,18 +806,19 @@ export function timestamp<
     getContractField: (fieldName: string) => {
       const defaultValue = options?.defaultValue
       const hasDefaultNow =
-        defaultValue !== undefined && !(defaultValue instanceof Date) && defaultValue.kind === 'now'
+        typeof defaultValue === 'object' &&
+        defaultValue !== null &&
+        'kind' in defaultValue &&
+        defaultValue.kind === 'now'
       return scalarColumn(fieldName, {
         type: pgType('dateTime'),
         nullable: options?.db?.isNullable ?? !hasDefaultNow,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: hasDefaultNow
-          ? { kind: 'now' }
-          : defaultValue instanceof Date
-            ? { kind: 'literal', value: defaultValue.toISOString() }
-            : undefined,
+        // Only `now` reaches the schema — getPrismaType emits no @default for
+        // a Date, and the descriptor must not disagree with it.
+        default: hasDefaultNow ? { kind: 'now' } : undefined,
       })
     },
     getTypeScriptType: () => {
@@ -889,6 +911,8 @@ export function calendarDay<
 >(options?: Omit<CalendarDayField<TTypeInfo>, 'type'>): CalendarDayField<TTypeInfo> {
   return {
     type: 'calendarDay',
+    outputType: 'string',
+    inputType: 'string',
     ...options,
     // Hook Pipeline runs field resolveInput before zod validation — the only
     // point a YYYY-MM-DD string can be turned into what Prisma's `@db.Date`
@@ -973,17 +997,15 @@ export function calendarDay<
         index: options?.isIndexed === true ? true : undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('dateTime'),
         nativeType: 'date',
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    outputType: 'string',
-    inputType: 'string',
     getTypeScriptType: () => {
       const validation = options?.validation
       const db = options?.db
@@ -1100,11 +1122,11 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
 ): PasswordField<TTypeInfo> {
   return {
     type: 'password',
+    outputType: "import('@opensaas/stack-core/internal').HashedPassword",
     ...options,
     resultExtension: {
       outputType: "import('@opensaas/stack-core/internal').HashedPassword",
     },
-    outputType: "import('@opensaas/stack-core/internal').HashedPassword",
     ui: {
       ...options?.ui,
       // Excluded from default admin table columns (issue #1018) — declared
@@ -1248,9 +1270,9 @@ export function select<
 
   return {
     type: 'select',
-    ...options,
     outputType: unionType,
     inputType: unionType,
+    ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const values = options.options.map((opt) => opt.value)
       let schema: z.ZodTypeAny = z.enum(values as [string, ...string[]], {
@@ -1342,7 +1364,7 @@ export function select<
           nullable,
           map: options.db?.map,
           isIndexed: options.isIndexed,
-          default: literalDefault(options.defaultValue),
+          default: literalDefault(options.defaultValue, listName, fieldName),
         })
       }
       const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
@@ -1351,7 +1373,7 @@ export function select<
         nullable,
         map: options.db?.map,
         isIndexed: options.isIndexed,
-        default: literalDefault(options.defaultValue),
+        default: literalDefault(options.defaultValue, listName, fieldName),
         enum: {
           name: options.db?.enumName ?? `${listName}${capitalizedField}`,
           values: options.options.map((opt) => opt.value),
@@ -1412,9 +1434,9 @@ function parseRelationshipRef(ref: string): { list: string; field?: string } {
   }
 }
 
-function isOneToOneRelationship(
+function isOneToOneRelationship<TTypeInfo extends import('../config/types.js').TypeInfo>(
   fieldName: string,
-  field: RelationshipField,
+  field: RelationshipField<TTypeInfo>,
   config: OpenSaasConfig,
 ): boolean {
   const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
@@ -1444,10 +1466,10 @@ function isOneToOneRelationship(
   return !(targetFieldConfig as RelationshipField).many
 }
 
-function shouldHaveForeignKey(
+function shouldHaveForeignKey<TTypeInfo extends import('../config/types.js').TypeInfo>(
   listKey: string,
   fieldName: string,
-  field: RelationshipField,
+  field: RelationshipField<TTypeInfo>,
   config: OpenSaasConfig,
 ): boolean {
   const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
@@ -1694,8 +1716,8 @@ function getPrismaRelation(
   return { modelLines: [relationLine], backRelation }
 }
 
-function getContractRelation(
-  field: RelationshipField,
+function getContractRelation<TTypeInfo extends import('../config/types.js').TypeInfo>(
+  field: RelationshipField<TTypeInfo>,
   fieldName: string,
   listKey: string,
   config: OpenSaasConfig,
@@ -1784,7 +1806,7 @@ export function relationship<
   ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
 
   field.getContractField = (fieldName: string, listKey: string, config: OpenSaasConfig) =>
-    getContractRelation(field as RelationshipField, fieldName, listKey, config)
+    getContractRelation(field, fieldName, listKey, config)
 
   // Relationships filter differently by cardinality (issue #732):
   //  • to-one filters by the related Item's label — `author:"Ada Lovelace"`
@@ -1951,13 +1973,13 @@ export function json<
         modifiers: modifiers.trimStart() || undefined,
       }
     },
-    getContractField: (fieldName: string) =>
+    getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('json'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
-        default: literalDefault(options?.defaultValue),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
     getTypeScriptType: () => {
       const isRequired = options?.validation?.isRequired

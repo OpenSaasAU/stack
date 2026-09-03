@@ -789,8 +789,9 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * ADR-0049): its stored column(s) as a pack-qualified type constructor with
    * native type, nullability and column mapping; for a relationship, the
    * relation and the foreign-key column this side owns; for a virtual field,
-   * nothing. Core's contract derivation reads this — never the PSL-shaped
-   * `getPrismaType`/`getPrismaColumns`/`getPrismaRelation`, which it replaces.
+   * nothing. The PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation`
+   * stay beside it until core's contract derivation lands on this descriptor
+   * (#1133).
    *
    * @param fieldName - The field's config key
    * @param listKey - The owning list's key
@@ -923,7 +924,10 @@ export type ColumnTypeDescriptor = {
 
 /**
  * A column's default. `'literal'` carries a value the Contract module emits as
- * source; `'now'` is the database clock at insert.
+ * source; `'now'` is the database clock at insert. A `bigint` column's default
+ * is carried as its decimal string — `42n`, `42` and `'42'` all become `'42'`,
+ * the form the generator writes into `@default`. A default that is not a
+ * JSON literal (a `Date`, a `Decimal`, a `Map`) is refused by the builder.
  */
 export type ColumnDefaultDescriptor = { kind: 'literal'; value: ContractLiteral } | { kind: 'now' }
 
@@ -956,9 +960,9 @@ export type ContractColumnDescriptor = {
 }
 
 /**
- * The foreign-key column a relationship's owning side contributes. Its type
- * is not described here: it follows the id of the list it references, which
- * the derivation resolves from that list's own `db.idField`.
+ * The foreign-key column a relationship's owning side contributes. The
+ * column's type is the referenced list's id type, resolved from that list's
+ * `db.idField`.
  */
 export type ContractForeignKeyDescriptor = {
   /** The model field name of the foreign-key column (`<field>Id`). */
