@@ -65,7 +65,9 @@ export function formatNeedsClosureErrors(errors: NeedsClosureError[]): string {
 export function formatConfigRefusals(refusals: ConfigRefusal[]): string {
   const lines = refusals.map((refusal) => `  • ${refusal.message}`)
 
-  return [`${refusals.length} config declaration(s) the contract cannot carry:`, ...lines].join('\n')
+  return [`${refusals.length} config declaration(s) the contract cannot carry:`, ...lines].join(
+    '\n',
+  )
 }
 
 export async function generateCommand() {
