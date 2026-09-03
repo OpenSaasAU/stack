@@ -283,6 +283,27 @@ await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done'
 const anonymous = context.withSession(null)
 ```
 
+##### Hook `context` is the same secured context (issue #1176)
+
+A list or field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
+hook's `context` argument is a full `Context` — `sudo()`, `withSession()` and
+`transaction()` are all present — bound to the write's OWN transaction client,
+exactly like the `txContext` a `context.transaction()` callback receives.
+
+```typescript
+hooks: {
+  beforeOperation: async ({ context }) => {
+    // Elevated AND atomic with this write — rolls back together if it throws.
+    await context.sudo().db.auditLog.create({ data: { action: 'write' } })
+  },
+}
+```
+
+`context.transaction()` called from inside one of these hooks **joins** the
+write's own transaction rather than opening a nested one. `beforeTransaction` /
+`afterTransaction` and a field's `resolveOutput` are unaffected — their
+`context` stays the plain, access-checked context bound to the base client.
+
 ##### `_isSudo`
 
 Flag indicating if context is in sudo mode.

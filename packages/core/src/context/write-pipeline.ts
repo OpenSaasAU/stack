@@ -23,10 +23,11 @@ import { enumerateInvolvedLists, runWithTransactionBoundary } from './transactio
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import { getDbKey } from '../lib/case-utils.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
-// dependency. It is safe because `buildDbDelegate` is only INVOKED at write
-// time (never during module evaluation), so by the time it runs the export is
-// fully initialised.
-import { buildDbDelegate } from './index.js'
+// dependency. It is safe because `getContext` is only INVOKED at write time
+// (never during module evaluation), so by the time it runs the export is fully
+// initialised.
+import { getContext } from './index.js'
+import type { StackContext } from './index.js'
 
 /**
  * Write Pipeline — runs the canonical, secured write sequence for one
@@ -167,6 +168,22 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
 }
 
 /**
+ * {@link WritePipelineArgs} narrowed to the in-transaction phase: `context` is
+ * the full {@link StackContext} `bindContextToTransaction` rebuilds (issue
+ * #1176), not the plain {@link AccessContext} the pre-transaction gate and the
+ * transaction-boundary hooks use. `StackContext` is a structural superset of
+ * `AccessContext` (it carries `_resolveOutputChain`/`_transactionOwner` too),
+ * so nothing downstream of {@link runWriteInTransaction} that only needs
+ * `AccessContext` requires any change.
+ */
+type WriteInTransactionArgs<TPrisma extends PrismaClientLike> = Omit<
+  WritePipelineArgs<TPrisma>,
+  'context'
+> & {
+  context: StackContext<TPrisma>
+}
+
+/**
  * Run the canonical secured write sequence once. Phase order matches the
  * "Write Pipeline" glossary entry in CONTEXT.md.
  *
@@ -242,41 +259,44 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
 }
 
 /**
- * Build an {@link AccessContext} whose `db`/`prisma` target the transaction
- * client `tx`, so a `context.db` write a hook performs runs inside — and rolls
- * back with — this write's transaction (ADR-0010).
+ * Build the full {@link StackContext} a hook's `context` is (issue #1176):
+ * bound to the transaction client `tx`, so a `context.db` write a hook
+ * performs runs inside — and rolls back with — this write's transaction
+ * (ADR-0010), and carrying `sudo()`/`withSession()`/`transaction()` so a hook
+ * can reach an elevated or substituted read/write that stays on the SAME
+ * transaction client rather than escaping to the base one.
  *
- * The access-controlled `db` delegates capture their Prisma client at
- * construction, so swapping `context.prisma` alone would not rebind `db` — we
- * rebuild the delegates against `tx` via {@link buildDbDelegate}, reusing the
- * request context's `session`, `storage`, `plugins`, `_isSudo`, and
- * `_resolveOutputChain` as-is (so a write from inside a `resolveOutput` hook
- * keeps that hook's chain). Plugin runtimes are NOT re-executed.
+ * Goes through the same {@link getContext} factory `context.transaction()`
+ * already rebuilds through (ADR-0012), rather than hand-assembling a plain
+ * object literal — reusing the request context's `session`, `storage`,
+ * `_isSudo`, `plugins` (as `_sharedPlugins`, so plugin `runtime()` is NOT
+ * re-executed on the rebind), and `_resolveOutputChain` (so a write issued
+ * from inside a `resolveOutput` hook keeps that hook's cycle-guard chain,
+ * ADR-0023) as-is.
  *
  * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook's
- * own `context.db` write defers its transaction-boundary bracket to that owner
- * instead of firing eagerly.
+ * own `context.db` write — and any write reached through its `sudo()`/
+ * `withSession()` — defers its transaction-boundary bracket to that owner
+ * instead of firing eagerly; `context.transaction()` called from a hook joins
+ * this same owner rather than opening a nested transaction, for the same
+ * reason.
  */
 function bindContextToTransaction<TPrisma extends PrismaClientLike>(
   args: WritePipelineArgs<TPrisma>,
   tx: TPrisma,
   transactionOwner: TransactionRegistry | undefined,
-): AccessContext<TPrisma> {
+): StackContext<TPrisma> {
   const { context, config } = args
-  const txContext: AccessContext<TPrisma> = {
-    session: context.session,
-    prisma: tx,
-    db: context.db,
-    storage: context.storage,
-    plugins: context.plugins,
-    _isSudo: context._isSudo,
-    _resolveOutputChain: context._resolveOutputChain,
-    _transactionOwner: transactionOwner,
-  }
-  // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
-  // through it see the transactional context.
-  txContext.db = buildDbDelegate(config, tx, txContext)
-  return txContext
+  return getContext(
+    config,
+    tx,
+    context.session,
+    context.storage,
+    context._isSudo,
+    context.plugins,
+    transactionOwner,
+    context._resolveOutputChain,
+  )
 }
 
 /**
@@ -286,7 +306,7 @@ function bindContextToTransaction<TPrisma extends PrismaClientLike>(
  * `runInTransaction` and rolls the transaction back.
  */
 async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
-  args: WritePipelineArgs<TPrisma>,
+  args: WriteInTransactionArgs<TPrisma>,
 ): Promise<Record<string, unknown> | null> {
   const { listName, listConfig, prisma: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
@@ -485,7 +505,7 @@ async function runDeletePath(args: {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
-  context: AccessContext
+  context: StackContext
   originalItem: Record<string, unknown> | undefined
   model: PrismaModel
   strategy: WriteStrategy

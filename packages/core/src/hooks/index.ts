@@ -1,6 +1,13 @@
 import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
+// #1176: resolveInput/validate/beforeOperation/afterOperation (list AND field
+// level) receive the full secured `StackContext` — sudo()/withSession()/
+// transaction() bound to the write's own transaction client — not the plain
+// `AccessContext`. Transaction-boundary hooks (beforeTransaction/
+// afterTransaction) are unaffected: they stay on `AccessContext`/the base
+// client by ADR-0028 design.
+import type { StackContext } from '../context/index.js'
 import { validateWithZod } from '../validation/schema.js'
 import { checkFieldAccess } from '../access/field-access.js'
 
@@ -42,7 +49,7 @@ export async function executeResolveInput<
         inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
@@ -50,7 +57,7 @@ export async function executeResolveInput<
         inputData: TUpdateInput
         resolvedData: TUpdateInput
         item: TOutput
-        context: AccessContext
+        context: StackContext
       },
 ): Promise<TCreateInput | TUpdateInput> {
   if (!hooks?.resolveInput) {
@@ -75,7 +82,7 @@ export async function executeValidate<
         inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
@@ -83,13 +90,13 @@ export async function executeValidate<
         inputData: TUpdateInput
         resolvedData: TUpdateInput
         item: TOutput
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
         operation: 'delete'
         item: TOutput
-        context: AccessContext
+        context: StackContext
       },
 ): Promise<void> {
   const validateHook = hooks?.validate || hooks?.validateInput
@@ -131,7 +138,7 @@ export async function executeBeforeOperation<
         operation: 'create'
         inputData: TCreateInput
         resolvedData: TCreateInput
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
@@ -139,13 +146,13 @@ export async function executeBeforeOperation<
         inputData: TUpdateInput
         item: TOutput
         resolvedData: TUpdateInput
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
         operation: 'delete'
         item: TOutput
-        context: AccessContext
+        context: StackContext
       },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
@@ -168,7 +175,7 @@ export async function executeAfterOperation<
         inputData: TCreateInput
         item: TOutput
         resolvedData: TCreateInput
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
@@ -177,13 +184,13 @@ export async function executeAfterOperation<
         originalItem: TOutput
         item: TOutput
         resolvedData: TUpdateInput
-        context: AccessContext
+        context: StackContext
       }
     | {
         listKey: string
         operation: 'delete'
         originalItem: TOutput
-        context: AccessContext
+        context: StackContext
       },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
@@ -472,7 +479,7 @@ export async function executeFieldResolveInputHooks(
   resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
-  context: AccessContext,
+  context: StackContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -575,7 +582,7 @@ export async function executeFieldValidateHooks(
   resolvedData: Record<string, any> | undefined,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: AccessContext,
+  context: StackContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -640,7 +647,7 @@ export async function executeFieldBeforeOperationHooks(
   resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: AccessContext,
+  context: StackContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -687,7 +694,7 @@ export async function executeFieldAfterOperationHooks(
   resolvedData: Record<string, unknown> | undefined,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: AccessContext,
+  context: StackContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   originalItem?: any,

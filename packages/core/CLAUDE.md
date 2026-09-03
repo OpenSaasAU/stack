@@ -192,6 +192,49 @@ Key points:
   optimistically at write time, unchanged. See ADR-0028 and the hooks concept
   doc.
 
+#### Hook context is the same secured context as a transaction's (#1176)
+
+A list/field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
+hook's `context` argument is a full `StackContext` — `sudo()`, `withSession()`,
+`transaction()` and `serverAction` are all present, exactly like the `txContext`
+a `context.transaction()` callback receives — bound to the WRITE'S OWN
+transaction client, not the base one. This amends ADR-0012: the Write
+Pipeline's transaction rebind (`bindContextToTransaction`) goes through the
+same `getContext` factory `context.transaction()` already rebuilds through,
+instead of hand-assembling a bare `AccessContext` object literal.
+
+```typescript
+Order: list({
+  hooks: {
+    beforeOperation: async ({ context }) => {
+      // Elevated AND atomic with this write: rolls back together if the
+      // write (or a later hook in it) throws — unlike `getContext(session)
+      // .sudo()`, which would bind to a SEPARATE connection.
+      await context.sudo().db.auditLog.create({ data: { action: 'order-write' } })
+    },
+  },
+})
+```
+
+- `context.sudo()` / `context.withSession(s)` from one of these hooks stays
+  bound to the SAME transaction client the hook itself was given — carrying
+  the write's transaction owner (ADR-0028, so a write through them defers its
+  `afterTransaction` to that owner) and the hook's own resolve chain
+  (ADR-0023, so a write issued from inside a `resolveOutput` hook keeps that
+  hook's cycle-guard chain into its own Field Visibility pass).
+- `context.transaction(fn)` called from inside one of these hooks **joins**
+  the write's transaction (the existing "no interactive client → run
+  directly" fallback) — it never opens a nested one.
+- Plugin runtimes are **not** re-executed on this rebind (same rule as the
+  nested-write rebind ADR-0010 already established).
+- **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) and
+  a field's `resolveOutput` keep the plain `AccessContext`, bound to the BASE
+  client, per their existing contract — see ADR-0028 for why boundary hooks
+  must not run through a client that may already be closed by flush time.
+
+See ADR-0066 and the hooks concept doc's "In-transaction vs
+transaction-boundary hooks" section.
+
 #### Substituting a session (`context.withSession`, #980)
 
 `context.withSession(session)` sits beside `sudo()` on the other axis:

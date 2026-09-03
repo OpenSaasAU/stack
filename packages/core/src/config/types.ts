@@ -21,7 +21,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -30,7 +30,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
@@ -45,7 +45,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -55,7 +55,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -63,7 +63,7 @@ export type FieldValidateHookArgs<
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
 
@@ -78,7 +78,7 @@ export type FieldBeforeOperationHookArgs<
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -87,14 +87,14 @@ export type FieldBeforeOperationHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /** Arguments for {@link FieldHooks.afterOperation}. */
@@ -109,7 +109,7 @@ export type FieldAfterOperationHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -119,14 +119,14 @@ export type FieldAfterOperationHookArgs<
       originalItem: TTypeInfo['item']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       originalItem: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /**
@@ -1609,7 +1609,7 @@ export type ResolveInputHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -1617,7 +1617,7 @@ export type ResolveInputHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /**
@@ -1637,7 +1637,7 @@ export type ValidateHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -1646,14 +1646,14 @@ export type ValidateHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
       addValidationError: (msg: string) => void
     }
 
@@ -1673,7 +1673,7 @@ export type BeforeOperationHookArgs<
       operation: 'create'
       inputData: TCreateInput
       resolvedData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -1681,13 +1681,13 @@ export type BeforeOperationHookArgs<
       inputData: TUpdateInput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /**
@@ -1707,7 +1707,7 @@ export type AfterOperationHookArgs<
       inputData: TCreateInput
       item: TOutput
       resolvedData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
@@ -1716,13 +1716,13 @@ export type AfterOperationHookArgs<
       originalItem: TOutput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
   | {
       listKey: string
       operation: 'delete'
       originalItem: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../context/index.js').StackContext
     }
 
 /**

@@ -364,6 +364,15 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
    */
   withSession: (session: Session | null) => StackContext<TPrisma>
   _isSudo: boolean
+  /**
+   * @internal Present so a hook-bound `StackContext` (issue #1176) satisfies
+   * {@link AccessContext} and can be threaded through the same internal
+   * write-pipeline/access plumbing that a plain `AccessContext` is — see
+   * `_resolveOutputChain` on `AccessContext` for what this tracks.
+   */
+  _resolveOutputChain: readonly { listKey: string; fieldKey: string }[]
+  /** @internal See `_transactionOwner` on `AccessContext`. */
+  _transactionOwner?: TransactionRegistry
 }
 
 /**
@@ -411,6 +420,11 @@ export function getContext<
   // owner's callback body, carry the deferral registry so writes reached
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
+  // Internal (ADR-0023, issue #1176): when rebuilding the context for a
+  // hook-bound write (or a derived `sudo()`/`withSession()` of one), carry the
+  // resolve chain forward so a write issued from inside a `resolveOutput` hook
+  // keeps that hook's cycle-guard chain instead of resetting to empty.
+  _resolveOutputChain?: readonly { listKey: string; fieldKey: string }[],
 ): StackContext<TPrisma> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
@@ -445,7 +459,7 @@ export function getContext<
     // client, otherwise start empty and populate via plugin runtimes below.
     plugins: _sharedPlugins ?? {},
     _isSudo,
-    _resolveOutputChain: [],
+    _resolveOutputChain: _resolveOutputChain ?? [],
     _transactionOwner,
   }
 
@@ -796,6 +810,10 @@ export function getContext<
       // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
       // `tx.sudo().db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      // #1176: carry the resolve chain forward so a `context.sudo()` called
+      // from inside a `resolveOutput` hook keeps that hook's cycle-guard
+      // chain (ADR-0023) rather than resetting to empty.
+      context._resolveOutputChain,
     )
   }
 
@@ -812,6 +830,8 @@ export function getContext<
       // ADR-0028: a write issued from inside an owned transaction (e.g.
       // `tx.withSession(s).db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      // #1176: see the identical comment in `sudo()` above.
+      context._resolveOutputChain,
     )
   }
 
@@ -852,6 +872,7 @@ export function getContext<
               _isSudo,
               context.plugins,
               registry,
+              context._resolveOutputChain,
             ),
           )
         : (client.$transaction(
@@ -865,6 +886,7 @@ export function getContext<
                   _isSudo,
                   context.plugins,
                   registry,
+                  context._resolveOutputChain,
                 ),
               ),
             options,
@@ -884,6 +906,12 @@ export function getContext<
     withSession,
     transaction,
     _isSudo,
+    // #1176: carried so a `StackContext` structurally satisfies `AccessContext`
+    // and can be handed, unchanged, to the internal write-pipeline/hook
+    // plumbing that a plain `AccessContext` was built for — see
+    // `bindContextToTransaction` in `write-pipeline.ts`.
+    _resolveOutputChain: context._resolveOutputChain,
+    _transactionOwner: context._transactionOwner,
   }
   return returned
 }
