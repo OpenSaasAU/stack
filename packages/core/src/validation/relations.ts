@@ -59,15 +59,14 @@ type Ownership = 'owner' | 'non-owner' | 'contested'
 
 /**
  * Which side of a one-to-one `end` is, by the generator's own rule
- * (`shouldHaveForeignKey`). A field that refs itself is both ends and owns
- * the column; both ends claiming it is `contested`, its own refusal.
+ * (`shouldHaveForeignKey`). Both ends claiming it is `contested`, its own
+ * refusal.
  */
 function resolveOwnership(
   config: OpenSaasConfig,
   end: RelationshipEnd,
   other: RelationshipEnd,
 ): Ownership {
-  if (sameEnd(end, other)) return 'owner'
   if (claimsForeignKey(end.field) && claimsForeignKey(other.field)) return 'contested'
   return shouldHaveForeignKey(end.listKey, end.fieldKey, end.field, config) ? 'owner' : 'non-owner'
 }
@@ -200,6 +199,20 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
     return refusals
   }
 
+  if (sameEnd(end, other)) {
+    refusals.push({
+      listKey: end.listKey,
+      entry,
+      reason: 'self-referencing-field',
+      message:
+        `List "${end.listKey}": ${entry} refs itself ("${end.field.ref}"), but a one-to-one is two ` +
+        `declarations (ADR-0064) — one field cannot be both ends of its own relationship. Declare the ` +
+        `inverse as a second field on "${end.listKey}" (e.g. partner: relationship({ ref: '${end.field.ref}' })) ` +
+        `and point ${entry} at that field.`,
+    })
+    return refusals
+  }
+
   if (end.field.many) {
     refusals.push(
       ...refuseNonOwningReferentialActions(
@@ -278,7 +291,7 @@ function refuseNonOwningSideIndexes(
 
       const end: RelationshipEnd = { listKey, fieldKey, field }
       const other = resolveOtherEnd(config, field)
-      if (!other || !isOneToOne(config, end)) continue
+      if (!other || sameEnd(end, other) || !isOneToOne(config, end)) continue
       if (resolveOwnership(config, end, other) !== 'non-owner') continue
 
       refusals.push({
@@ -303,7 +316,8 @@ function refuseNonOwningSideIndexes(
  * list-only ref (ADR-0048), `db.foreignKey: true` on both ends of a
  * one-to-one, `db.isNullable: false`, `db.onDelete`/`db.onUpdate` or a
  * `db.indexes` entry on a side that owns no foreign key column (ADR-0064),
- * `'setNull'` on a `db.isNullable: false` column, and a relationship at a
+ * `'setNull'` on a `db.isNullable: false` column, a `many: false` field whose
+ * `ref` is its own `List.field` (ADR-0064), and a relationship at a
  * composite-keyed list (ADR-0048). Ownership is the generator's own rule
  * (`shouldHaveForeignKey`). A pairwise refusal is reported once, from the end
  * whose `List.field` key sorts first.

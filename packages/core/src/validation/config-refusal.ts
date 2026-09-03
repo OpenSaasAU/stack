@@ -8,6 +8,7 @@ export type ConfigRefusalReason =
   | 'non-owning-side-index'
   | 'non-owning-side-referential-action'
   | 'set-null-on-required-relation'
+  | 'self-referencing-field'
   | 'composite-keyed-target'
 
 /**

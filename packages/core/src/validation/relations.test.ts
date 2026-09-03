@@ -179,7 +179,7 @@ describe('validateRelations', () => {
       ])
     })
 
-    it('treats a field that refs itself as owning its own column', () => {
+    it('refuses a many: false field whose ref is its own List.field, naming the list, the entry and the two-field fix', () => {
       const config = configWith({
         Person: {
           fields: {
@@ -192,7 +192,17 @@ describe('validateRelations', () => {
         },
       })
 
-      expect(validateRelations(config)).toEqual([])
+      const refusals = validateRelations(config)
+
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'Person',
+        entry: 'fields.spouse',
+        reason: 'self-referencing-field',
+      })
+      expect(refusals[0].message).toContain('List "Person": fields.spouse')
+      expect(refusals[0].message).toContain('"Person.spouse"')
+      expect(refusals[0].message).toContain('second field')
     })
 
     it('does not read db.foreignKey: { map } as an ownership claim', () => {
