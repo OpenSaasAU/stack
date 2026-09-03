@@ -111,6 +111,41 @@ describe('buildRelationshipCountSelect', () => {
     )
     expect(select).toBeUndefined()
   })
+
+  // Issue #1111: a relationship hidden via field-level `read` access must not
+  // leak its true count, even when the related list's rows are otherwise
+  // fully readable — the same denial an ordinary `include` of that field
+  // already gets from `filterReadableFields`'s `checkFieldAccess` call.
+  it('omits a relation whose field-level `read` access denies it, even though the related list is fully readable', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        User: list({
+          fields: {
+            name: text(),
+            posts: relationship({
+              ref: 'Post.author',
+              many: true,
+              access: { read: () => false },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+        Post: list({
+          fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
+          access: { operation: { query: () => true } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+
+    const select = await buildRelationshipCountSelect(
+      config.lists.User,
+      { session: null, context: makeContext() },
+      config,
+    )
+    expect(select).toBeUndefined()
+  })
 })
 
 describe('resolveRelationshipCountFilters', () => {
@@ -182,6 +217,46 @@ describe('resolveRelationshipCountFilters', () => {
       config,
     )
     // 0 is not > 5 → nothing matches, and no read was issued.
+    expect(resolved).toEqual({ id: { in: [] } })
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  // Issue #1111: a relationship denied at the FIELD level (as opposed to the
+  // related list's operation-level `query` access, covered above) must also
+  // resolve to "always 0, no query needed" — the related list here (Post) is
+  // otherwise fully readable, so only the field-level check on `posts` itself
+  // can be what's denying it.
+  it('resolves a field-level-denied relationship without any query: count is always 0', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      lists: {
+        User: list({
+          fields: {
+            name: text(),
+            posts: relationship({
+              ref: 'Post.author',
+              many: true,
+              access: { read: () => false },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+        Post: list({
+          fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
+          access: { operation: { query: () => true } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+    const findMany = vi.fn(async () => [])
+    const where = { posts: { [RELATIONSHIP_COUNT_FILTER_KEY]: { operator: 'gt', value: 0 } } }
+    const resolved = await resolveRelationshipCountFilters(
+      where,
+      config.lists.User,
+      'User',
+      { session: null, context: makeContext(findMany) },
+      config,
+    )
     expect(resolved).toEqual({ id: { in: [] } })
     expect(findMany).not.toHaveBeenCalled()
   })

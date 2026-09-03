@@ -308,10 +308,14 @@ function normalizeCountSelect(
  *   rejection for the ordinary walk. A declared to-many relationship whose
  *   `ref` cannot be resolved is skipped instead, matching that same walk's
  *   handling of a config-level dangling ref (not a caller error).
- * - The related list's `query` access denies it (`=== false`) → omitted from
- *   the select sent to Prisma and added to the returned `deniedKeys`, so
- *   `filterReadableFields` can inject `0` post-query (a count is
- *   session-relative; denial doesn't mean "no such relation"). Checked BEFORE
+ * - The counting list's OWN field-level `read` access on the relationship
+ *   field being counted denies it, or the related list's `query` access
+ *   denies it (`=== false`) → omitted from the select sent to Prisma and
+ *   added to the returned `deniedKeys`, so `filterReadableFields` can inject
+ *   `0` post-query (a count is session-relative; denial doesn't mean "no such
+ *   relation"). The field-level check has nothing to evaluate for a synthetic
+ *   back-relation (no field of its own on this list) and is skipped for it —
+ *   `resolveCountAccessEntryForList` (issue #1111). Both checks run BEFORE
  *   any caller-supplied nested `where` is validated — validating first would
  *   let a caller who cannot read a single row of the related list learn its
  *   field names and field-level read rules from a thrown `ValidationError`
@@ -372,7 +376,16 @@ async function buildAccessScopedCountSelect(
       throw new UndeclaredCountKeyError(listKey, key)
     }
 
-    const accessEntry = await resolveCountAccessEntryForList(relatedConfig.listConfig, args)
+    // `fieldConfig` is undefined for a synthetic back-relation (#1082) — it has
+    // no field of its own on THIS list, so there is no field-level `read`
+    // access to fold in; `resolveCountAccessEntryForList` treats a missing
+    // `fieldAccess` as exempt, matching the ordinary include path's own lack
+    // of a field-level gate for a synthetic key (issue #1111).
+    const accessEntry = await resolveCountAccessEntryForList(
+      relatedConfig.listConfig,
+      args,
+      fieldConfig?.access,
+    )
 
     // Denial is checked BEFORE the caller's nested `where` is validated —
     // mirroring `buildAccessScopedWhere`'s own ordering below. A fully denied
