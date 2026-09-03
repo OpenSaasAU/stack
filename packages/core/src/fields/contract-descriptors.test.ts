@@ -26,7 +26,7 @@ const profileUser = relationship({
 })
 
 const config: OpenSaasConfig = {
-  db: { provider: 'postgresql', prismaClientConstructor: () => null },
+  db: { provider: 'postgresql' },
   lists: {
     User: { fields: { name: text(), posts: userPosts, profile: userProfile } },
     Post: { fields: { author: postAuthor, category: postCategory, tags: postTags } },

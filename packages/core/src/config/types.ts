@@ -1,6 +1,10 @@
 import type { AccessControl, FieldAccess } from '../access/types.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
+import type {
+  PostgresOptionsBase,
+  PostgresOptionsWithContractJson,
+} from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
@@ -1384,64 +1388,23 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       foreignKey?: boolean | { map?: string }
       /**
-       * Custom relation name for many-to-many relationships
-       * Overrides the global joinTableNaming setting
-       * Prisma will create an implicit join table named _relationName
-       * Only needs to be set on one side of a bidirectional relationship
+       * What the database does to this row when the referenced row is
+       * deleted. Only meaningful on the foreign-key-owning side.
        *
-       * @example KeystoneJS-style naming for migration
-       * ```typescript
-       * Lesson: list({
-       *   fields: {
-       *     teachers: relationship({
-       *       ref: 'Teacher.lessons',
-       *       many: true,
-       *       db: { relationName: 'Lesson_teachers' }
-       *       // Prisma creates join table _Lesson_teachers
-       *     })
-       *   }
-       * })
-       *
-       * Teacher: list({
-       *   fields: {
-       *     lessons: relationship({ ref: 'Lesson.teachers', many: true })
-       *     // Automatically uses same relationName from other side
-       *   }
-       * })
-       * ```
-       */
-      relationName?: string
-      /**
-       * Extend or modify the generated Prisma schema lines for this relationship field
-       * Receives the generated FK line (if applicable) and relation line
-       * Returns the modified lines
-       *
-       * @example Add onDelete cascade for self-referential relationship
+       * @example Detach children when a parent category goes
        * ```typescript
        * parent: relationship({
        *   ref: 'Category.children',
-       *   db: {
-       *     foreignKey: true,
-       *     extendPrismaSchema: ({ fkLine, relationLine }) => ({
-       *       fkLine,
-       *       relationLine: relationLine.replace(
-       *         '@relation(',
-       *         '@relation(onDelete: SetNull, '
-       *       )
-       *     })
-       *   }
+       *   db: { foreignKey: true, onDelete: 'setNull' },
        * })
        * ```
        */
-      extendPrismaSchema?: (lines: {
-        /** The foreign key field line (e.g., "parentId String?"), only present for single relationships that own the FK */
-        fkLine?: string
-        /** The relation field line (e.g., "parent Category? @relation(...)") */
-        relationLine: string
-      }) => {
-        fkLine?: string
-        relationLine: string
-      }
+      onDelete?: ReferentialAction
+      /**
+       * What the database does to this row's foreign key when the referenced
+       * row's id changes. Only meaningful on the foreign-key-owning side.
+       */
+      onUpdate?: ReferentialAction
     }
     ui?: {
       displayMode?: 'select' | 'cards'
@@ -2055,22 +2018,23 @@ export type Hooks<
 }
 
 /**
- * A single field reference within a model-level {@link ListIndex}. Either
- * just the OpenSaaS field name, or an object naming it alongside a sort
- * direction.
+ * The five referential actions a foreign key can carry, in the ORM's own
+ * spelling so the generated contract re-emits the value verbatim.
  */
-export type ListIndexFieldRef =
-  | string
-  | {
-      field: string
-      /** Sort direction for this column within the index/constraint. */
-      sort?: 'asc' | 'desc'
-    }
+export type ReferentialAction = 'cascade' | 'restrict' | 'noAction' | 'setNull' | 'setDefault'
 
 /**
- * A model-level `@@unique`/`@@index` constraint spanning one or more of a
- * list's own fields. See {@link ListConfig.db}'s `indexes` for the full
- * explanation and examples (#864, #918).
+ * A single field reference within a model-level {@link ListIndex}: the
+ * OpenSaaS field name, bare or wrapped. An index column carries no sort
+ * direction (ADR-0040); a `sort` key on the wrapped form is refused at
+ * generation.
+ */
+export type ListIndexFieldRef = string | { field: string }
+
+/**
+ * A model-level unique constraint or index spanning one or more of a list's
+ * own fields. See {@link ListConfig.db}'s `indexes` for the full explanation
+ * and examples (#864, #918).
  */
 export type ListIndex = {
   /**
@@ -2078,21 +2042,17 @@ export type ListIndex = {
    * OpenSaaS field names, not raw database column names.
    *
    * One or more fields — a named single-column constraint is as legitimate
-   * as a composite one, and is the form to reach for when a live table's
-   * constraint carries a name Prisma wouldn't derive on its own. Field-level
-   * `isIndexed` remains the sugar for the unnamed single-column case; this
-   * is the full form when a name or a sort direction is needed.
+   * as a composite one. Field-level `isIndexed` remains the sugar for the
+   * unnamed single-column case; this is the full form when a name is needed.
    */
   fields: ListIndexFieldRef[]
   /**
-   * Emit `@@unique([...])` instead of `@@index([...])`.
+   * Emit a unique constraint instead of an index.
    * @default false
    */
   unique?: boolean
   /**
-   * Constraint/index name, emitted as Prisma's `map:` argument — lets an
-   * existing live constraint be adopted under its current name rather than
-   * renamed.
+   * The constraint/index's wire name, emitted as the contract's `name:`.
    */
   name?: string
 }
@@ -2175,21 +2135,40 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      */
     timestamps?: boolean
     /**
-     * Model-level `@@unique`/`@@index` constraints spanning one or more of
+     * How this list's `id` is minted, overriding the config-level
+     * `db.idField` default (ADR-0048). A plugin pins this on every list it
+     * injects so an app-level default cannot reach a table it owns.
+     *
+     * Refused on a singleton list: a singleton's id is derived from
+     * `isSingleton`, and that is the one knob.
+     *
+     * @example A list with a serial integer key
+     * ```typescript
+     * Invoice: list({
+     *   fields: { total: integer() },
+     *   db: { idField: 'int autoincrement' },
+     * })
+     * ```
+     */
+    idField?: IdFieldStrategy
+    /**
+     * Model-level unique constraints and indexes spanning one or more of
      * this list's own fields (#864, #918). See the [reference
      * docs](https://stack.opensaas.au/docs/reference/config-api#dbindexes)
      * for the full explanation, arity, and error conditions.
      *
      * Field-level `isIndexed` (on a scalar or relationship field) is the
      * sugar for the unnamed single-column case. `db.indexes` is the full
-     * form — reach for it when a constraint needs a `name` (Prisma's `map:`,
-     * for adopting an existing live constraint), a `sort` direction, or spans
-     * more than one column. Arity is incidental: each entry names one or
-     * more of the list's own OpenSaaS field names, not raw database column
-     * names. The generator resolves each to its underlying Prisma column — a
-     * scalar field's own name (its Prisma field name is unaffected by
-     * `db.map`), or a relationship field's foreign key column (`<field>Id`)
-     * when this side owns it.
+     * form — reach for it when a constraint needs a `name` or spans more
+     * than one column. Arity is incidental: each entry names one or more of
+     * the list's own OpenSaaS field names, not raw database column names.
+     * The generator resolves each to its underlying column — a scalar
+     * field's own name (unaffected by `db.map`), or a relationship field's
+     * foreign key column (`<field>Id`) when this side owns it.
+     *
+     * An index column carries no sort direction (ADR-0040): a `sort` key on
+     * an entry's field reference fails `pnpm generate` naming the list and
+     * the entry.
      *
      * A **unique** entry is the load-bearing case: it's the database-level
      * backstop for a business rule concurrent writes could otherwise both
@@ -2230,7 +2209,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * // Generates: @@unique([studentId, productionId])
      * ```
      *
-     * @example Hot lookup path (composite index) with a sort direction and an adopted constraint name
+     * @example Hot lookup path (composite index) with a name
      * ```typescript
      * AuthVerification: list({
      *   fields: {
@@ -2240,16 +2219,15 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *   db: {
      *     indexes: [
      *       {
-     *         fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+     *         fields: ['identifier', 'createdAt'],
      *         name: 'AuthVerification_identifier_createdAt_idx',
      *       },
      *     ],
      *   },
      * })
-     * // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
      * ```
      *
-     * @example Naming a single-column unique constraint (adopting a live table's existing name)
+     * @example Naming a single-column unique constraint
      * ```typescript
      * RateLimit: list({
      *   fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
@@ -2257,7 +2235,6 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *     indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
      *   },
      * })
-     * // Generates: @@unique([key], map: "RateLimit_key_key")
      * // Setting key's own isIndexed too would duplicate this constraint and
      * // fail generation — one of the two must own the column.
      * ```
@@ -2572,77 +2549,126 @@ export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeI
   access?: ListAccessControl<TTypeInfo['item']>
 }
 
-export type DatabaseConfig = {
-  provider: 'postgresql' | 'mysql' | 'sqlite'
+/**
+ * How a list's `id` column is minted (ADR-0048). Every list carries a single
+ * `id` column; this picks its shape.
+ *
+ * - `'uuid7'` — time-sortable UUID, minted by the ORM. The default.
+ * - `'cuid2'` — CUID, minted by the ORM.
+ * - `'int autoincrement'` — a serial integer key.
+ *
+ * A singleton list derives its id from `isSingleton` and refuses this option.
+ */
+export type IdFieldStrategy = 'uuid7' | 'cuid2' | 'int autoincrement'
+
+/**
+ * A Prisma extension pack the contract declares (ADR-0049, ADR-0065). An
+ * import descriptor rather than a pack value: the generated contract module is
+ * standalone and fully literal, so it re-emits `from` as an import instead of
+ * serialising an object out of the config.
+ */
+export type ExtensionDescriptor = {
   /**
-   * Factory function to create a Prisma client instance with a database adapter
-   * Required in Prisma 7+ - receives the PrismaClient class and returns a configured instance
+   * The pack's binding name — the key that spells its types on a field
+   * (`type.pgvector.Vector(n)`), and the identity two declarations are merged
+   * on. The same `name` declared twice with a different `from` is refused.
+   */
+  name: string
+  /**
+   * The pack's package name (e.g. `'@prisma/orm-extension-pgvector'`). The
+   * generator derives the `/pack`, `/control` and `/runtime` subpaths per
+   * emission.
+   */
+  from: string
+}
+
+// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
+// `PostgresBindingOptions` interface that carries `pg`, so `pg` is still read
+// off the contractJson options (the contract generic does not reach it).
+type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
+
+/**
+ * Per-deployment pool binding for the generated runtime client (ADR-0049,
+ * ADR-0054). Nothing here reaches the contract; it is read only by the
+ * generated `.opensaas/context.ts` when it constructs the client.
+ */
+export type DatabaseClientConfig = {
+  /**
+   * Pool options handed to the ORM client as-is when no `pg` factory is
+   * given.
+   */
+  poolOptions?: PostgresOptionsBase['poolOptions']
+  /**
+   * A lazy factory for the `pg` pool or client the runtime should bind to.
+   * A factory, not an instance: the config is loaded by the CLI and by tooling
+   * that never issues a query, and none of it should open a connection. Called
+   * at most once, after the config promise resolves, under the runtime's
+   * client singleton.
    *
-   * The connection URL is passed directly to the adapter, not to the config.
-   *
-   * @example SQLite with better-sqlite3
+   * @example Serverless Postgres over a WebSocket pool
    * ```typescript
-   * import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-   *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-   *   return new PrismaClient({ adapter })
-   * }
-   * ```
-   *
-   * @example PostgreSQL with pg
-   * ```typescript
-   * import { PrismaPg } from '@prisma/adapter-pg'
-   * import pg from 'pg'
-   *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-   *   const adapter = new PrismaPg(pool)
-   *   return new PrismaClient({ adapter })
-   * }
-   * ```
-   *
-   * @example Neon serverless (PostgreSQL)
-   * ```typescript
-   * import { PrismaNeon } from '@prisma/adapter-neon'
-   * import { neonConfig } from '@neondatabase/serverless'
+   * import { Pool, neonConfig } from '@neondatabase/serverless'
    * import ws from 'ws'
    *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   neonConfig.webSocketConstructor = ws
-   *   const adapter = new PrismaNeon({
-   *     connectionString: process.env.DATABASE_URL
-   *   })
-   *   return new PrismaClient({ adapter })
+   * db: {
+   *   provider: 'postgresql',
+   *   client: {
+   *     pg: () => {
+   *       neonConfig.webSocketConstructor = ws
+   *       return new Pool({ connectionString: process.env.DATABASE_URL })
+   *     },
+   *   },
    * }
    * ```
    */
-  // Uses `any` for maximum flexibility with Prisma client constructors and adapters
-  // Different database adapters have varying type signatures that are hard to unify
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prismaClientConstructor: (PrismaClientClass: any) => any
+  pg?: () => NonNullable<PostgresBindingOptions['pg']>
+}
+
+export type DatabaseConfig = {
   /**
-   * Join table naming strategy for many-to-many relationships
-   * - 'prisma': Use Prisma's default alphabetically-sorted naming (e.g., `_LessonToTeacher`)
-   * - 'keystone': Use KeystoneJS-compatible naming based on field location (e.g., `_Lesson_teachers`)
+   * The database the stack targets. Postgres only.
+   */
+  provider: 'postgresql'
+  /**
+   * The id strategy every list gets unless it declares its own
+   * `db.idField` (ADR-0048).
    *
-   * Default: 'prisma'
+   * @default 'uuid7'
    *
-   * **Important for KeystoneJS migration:**
-   * When migrating from KeystoneJS, set this to 'keystone' to preserve existing join table names
-   * and avoid data loss. Keystone names join tables as `_Model_fieldName` based on where the
-   * relationship is defined in the schema.
-   *
-   * @example Preserve Keystone join table names during migration
+   * @example Small integer keys across the whole app
    * ```typescript
    * db: {
    *   provider: 'postgresql',
-   *   joinTableNaming: 'keystone',  // Use KeystoneJS naming convention
-   *   // ... rest of config
+   *   idField: 'int autoincrement',
    * }
    * ```
    */
-  joinTableNaming?: 'prisma' | 'keystone'
+  idField?: IdFieldStrategy
+  /**
+   * Extension packs the contract declares (ADR-0049). Each descriptor names a
+   * package; one declaration drives the contract module, `prisma.config.ts`,
+   * the runtime client and the pack's extension contract space under
+   * `migrations/`. A plugin adds its own through
+   * {@link PluginContext.addExtension}.
+   *
+   * Two entries with the same `name` are one declaration when their `from`
+   * agrees and a config error when it does not.
+   *
+   * @example Declare pgvector for a native vector column
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+   * }
+   * ```
+   */
+  extensions?: ExtensionDescriptor[]
+  /**
+   * Pool binding for the generated runtime client — see
+   * {@link DatabaseClientConfig}. Omit it to let the runtime open its own pool
+   * from the resolved database URL.
+   */
+  client?: DatabaseClientConfig
   /**
    * Postgres multi-schema support.
    *
@@ -2723,37 +2749,6 @@ export type DatabaseConfig = {
    * @see ADR-0004 (Keystone-compatible generator defaults)
    */
   keystoneCompat?: boolean
-  /**
-   * Optional function to extend or modify the generated Prisma schema
-   * Receives the generated schema as a string and should return the modified schema
-   * Useful for advanced Prisma features not directly supported by the config API
-   *
-   * @example Add multi-schema support for PostgreSQL
-   * ```typescript
-   * extendPrismaSchema: (schema) => {
-   *   // Add schemas array to datasource
-   *   let modifiedSchema = schema
-   *     .replace(
-   *       /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
-   *       '$1\n  schemas = ["public", "auth"]'
-   *     )
-   *
-   *   // Add @@schema("public") to all models
-   *   modifiedSchema = modifiedSchema.replace(
-   *     /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
-   *     (match, modelContent) => {
-   *       if (!modelContent.includes('@@schema')) {
-   *         return `${modelContent}\n  @@schema("public")\n}`
-   *       }
-   *       return match
-   *     }
-   *   )
-   *
-   *   return modifiedSchema
-   * }
-   * ```
-   */
-  extendPrismaSchema?: (schema: string) => string
   /**
    * Override the Prisma `generator client { ... }` options the CLI emits for the
    * `.opensaas` prisma-client subtree.
@@ -3182,6 +3177,21 @@ export type PluginContext = {
    * Tools are added to the global MCP server
    */
   registerMcpTool?: (tool: McpCustomTool) => void
+
+  /**
+   * Declare an extension pack the plugin's field types need (ADR-0049), as
+   * if the app had listed it under `db.extensions`. Idempotent when the
+   * config already declares the same `name` from the same package; throws
+   * when it declares that `name` from a different one.
+   *
+   * @example
+   * ```typescript
+   * init: async (context) => {
+   *   context.addExtension({ name: 'pgvector', from: '@prisma/orm-extension-pgvector' })
+   * }
+   * ```
+   */
+  addExtension: (descriptor: ExtensionDescriptor) => void
 
   /**
    * Store plugin-specific data in config for runtime access

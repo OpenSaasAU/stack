@@ -194,6 +194,7 @@ describe('Plugin Engine', () => {
       expect(typeof receivedContext!.extendList).toBe('function')
       expect(typeof receivedContext!.registerFieldType).toBe('function')
       expect(typeof receivedContext!.registerMcpTool).toBe('function')
+      expect(typeof receivedContext!.addExtension).toBe('function')
       expect(typeof receivedContext!.setPluginData).toBe('function')
     })
 
@@ -879,6 +880,78 @@ describe('Plugin Engine', () => {
 
       expect(result.lists.Post.mcp?.enabled).toBe(true)
       expect(result.lists.Post.mcp?.customTools).toHaveLength(1)
+    })
+  })
+
+  describe('addExtension (ADR-0049)', () => {
+    const pgvector = { name: 'pgvector', from: '@prisma/orm-extension-pgvector' }
+
+    test('declares a pack the config did not, reachable from the resolved db.extensions', async () => {
+      const plugin: Plugin = {
+        name: 'rag',
+        init: async (context) => {
+          context.addExtension(pgvector)
+        },
+      }
+
+      const result = await executePlugins({
+        db: { provider: 'postgresql' },
+        lists: {},
+        plugins: [plugin],
+      })
+
+      expect(result.db.extensions).toEqual([pgvector])
+    })
+
+    test('merges idempotently with an app declaration whose from agrees', async () => {
+      const plugin: Plugin = {
+        name: 'rag',
+        init: async (context) => {
+          context.addExtension(pgvector)
+          context.addExtension({ ...pgvector })
+        },
+      }
+
+      const result = await executePlugins({
+        db: { provider: 'postgresql', extensions: [{ ...pgvector }] },
+        lists: {},
+        plugins: [plugin],
+      })
+
+      expect(result.db.extensions).toEqual([pgvector])
+    })
+
+    test('refuses a pack whose name is already declared from a different package', async () => {
+      const plugin: Plugin = {
+        name: 'rag',
+        init: async (context) => {
+          context.addExtension({ name: 'pgvector', from: '@acme/vector-pack' })
+        },
+      }
+
+      await expect(
+        executePlugins({
+          db: { provider: 'postgresql', extensions: [pgvector] },
+          lists: {},
+          plugins: [plugin],
+        }),
+      ).rejects.toThrow(
+        'Plugin "rag" tried to add extension pack "pgvector" from "@acme/vector-pack", but the config already declares "pgvector" from "@prisma/orm-extension-pgvector"',
+      )
+    })
+
+    test('does not mutate the original db config', async () => {
+      const plugin: Plugin = {
+        name: 'rag',
+        init: async (context) => {
+          context.addExtension(pgvector)
+        },
+      }
+      const db = { provider: 'postgresql' as const, extensions: [] }
+
+      await executePlugins({ db, lists: {}, plugins: [plugin] })
+
+      expect(db.extensions).toEqual([])
     })
   })
 

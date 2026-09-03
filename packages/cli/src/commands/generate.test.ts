@@ -7,8 +7,10 @@ import {
   validateConfigFields,
   validateNeedsDeclarations,
   validateNeedsClosureDepth,
+  validateDatabaseConfig,
+  validateRelations,
 } from '@opensaas/stack-core'
-import { text, relationship, virtual } from '@opensaas/stack-core/fields'
+import { text, timestamp, relationship, virtual } from '@opensaas/stack-core/fields'
 import {
   writePrismaSchema,
   writePrismaConfig,
@@ -18,7 +20,11 @@ import {
   writePluginTypes,
   resolveOutputPaths,
 } from '../generator/index.js'
-import { formatFieldValidationErrors, formatNeedsClosureErrors } from './generate.js'
+import {
+  formatFieldValidationErrors,
+  formatNeedsClosureErrors,
+  formatConfigRefusals,
+} from './generate.js'
 
 // Mock ora module
 vi.mock('ora', () => ({
@@ -702,6 +708,53 @@ describe('Generate Command Integration', () => {
 
       const message = formatNeedsClosureErrors(errors)
       expect(message).toContain('never terminates')
+    })
+  })
+
+  describe('Config surface refusals (ADR-0040, ADR-0048, ADR-0064)', () => {
+    it('passes a compliant config with no refusals', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              author: relationship({ ref: 'User.posts', db: { onDelete: 'cascade' } }),
+            },
+            db: { indexes: [{ fields: ['title', 'author'], unique: true }] },
+          },
+          User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+        },
+      }
+
+      expect([...validateDatabaseConfig(config), ...validateRelations(config)]).toEqual([])
+    })
+
+    it('reports an index-sort refusal with the list and the entry visible', () => {
+      const sorted: { field: string; sort: 'desc' } = { field: 'createdAt', sort: 'desc' }
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          AuthVerification: {
+            fields: { identifier: text(), createdAt: timestamp() },
+            db: { indexes: [{ fields: ['identifier', sorted] }] },
+          },
+        },
+      }
+
+      const refusals = [...validateDatabaseConfig(config), ...validateRelations(config)]
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'AuthVerification',
+        entry: 'db.indexes[0]',
+        reason: 'index-sort',
+      })
+
+      const message = formatConfigRefusals(refusals)
+      expect(message).toContain('1 config declaration(s) the contract cannot carry')
+      expect(message).toContain('List "AuthVerification"')
+      expect(message).toContain('db.indexes[0]')
+      expect(message).toContain('Remove "sort"')
     })
   })
 })

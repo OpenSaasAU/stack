@@ -21,8 +21,14 @@ import {
   validateConfigFields,
   validateNeedsDeclarations,
   validateNeedsClosureDepth,
+  validateDatabaseConfig,
+  validateRelations,
 } from '@opensaas/stack-core'
-import type { FieldConfigValidationError, NeedsClosureError } from '@opensaas/stack-core'
+import type {
+  ConfigRefusal,
+  FieldConfigValidationError,
+  NeedsClosureError,
+} from '@opensaas/stack-core'
 
 export function formatFieldValidationErrors(errors: FieldConfigValidationError[]): string {
   const lines = errors.map((error) => {
@@ -49,6 +55,19 @@ export function formatNeedsClosureErrors(errors: NeedsClosureError[]): string {
   const lines = errors.map((error) => `  • ${error.message}`)
 
   return [`${errors.length} field(s) declare an unsatisfiable \`needs\`:`, ...lines].join('\n')
+}
+
+/**
+ * Format config-surface refusals (ADR-0040, ADR-0048, ADR-0049, ADR-0064)
+ * into a friendly, multi-line message, each naming the list, the entry and
+ * the fix.
+ */
+export function formatConfigRefusals(refusals: ConfigRefusal[]): string {
+  const lines = refusals.map((refusal) => `  • ${refusal.message}`)
+
+  return [`${refusals.length} config declaration(s) the contract cannot carry:`, ...lines].join(
+    '\n',
+  )
 }
 
 export async function generateCommand() {
@@ -130,6 +149,15 @@ export async function generateCommand() {
       process.exit(1)
     }
     needsSpinner.succeed(chalk.green('Declared dependencies valid'))
+
+    const surfaceSpinner = ora('Validating config surface...').start()
+    const refusals = [...validateDatabaseConfig(config), ...validateRelations(config)]
+    if (refusals.length > 0) {
+      surfaceSpinner.fail(chalk.red('Config surface invalid'))
+      console.error(chalk.red('\n❌ Error:'), formatConfigRefusals(refusals))
+      process.exit(1)
+    }
+    surfaceSpinner.succeed(chalk.green('Config surface valid'))
 
     // Captured here so the (optional) Node build step, which runs after
     // `prisma generate` outside this try block, knows where the bundle lives.
