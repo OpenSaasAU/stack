@@ -25,6 +25,28 @@ export type {
   ContractFieldDescriptor,
 } from './config/index.js'
 
+// Contract derivation (ADR-0057) — the data a config derives to, which the
+// generator renders and `@opensaas/stack-core/contract` feeds into Prisma.
+export { deriveContract } from './contract/derive.js'
+export {
+  assertRelationGraphAgrees,
+  RelationGraphDivergenceError,
+  type EmittedContract,
+} from './contract/relation-graph.js'
+export type {
+  ContractColumn,
+  ContractData,
+  ContractEnum,
+  ContractForeignKey,
+  ContractIdColumn,
+  ContractIdStrategy,
+  ContractIndex,
+  ContractModel,
+  ContractRelation,
+  ContractRelationKind,
+  ContractTimestamps,
+} from './contract/types.js'
+
 // Filter spec authoring — a field's optional `getFilterSpec` returns these
 // (ADR-0017). Additive: a field without one is simply not filterable.
 export type {

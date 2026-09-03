@@ -2,6 +2,7 @@ export type ConfigRefusalReason =
   | 'index-sort'
   | 'id-field-on-singleton'
   | 'duplicate-extension-pack'
+  | 'undeclared-extension-pack'
   | 'many-to-many'
   | 'foreign-key-on-both-sides'
   | 'non-owning-side-nullability'
@@ -9,7 +10,12 @@ export type ConfigRefusalReason =
   | 'non-owning-side-referential-action'
   | 'set-null-on-required-relation'
   | 'self-referencing-field'
+  | 'inverse-mismatch'
   | 'composite-keyed-target'
+  | 'reserved-field-name'
+  | 'foreign-key-column-collision'
+  | 'synthetic-relation-collision'
+  | 'field-descriptor-error'
 
 /**
  * A config declaration the Prisma 8 contract cannot carry, found before

@@ -1,16 +1,11 @@
-import type {
-  FieldConfig,
-  ListConfig,
-  OpenSaasConfig,
-  RelationshipField,
-  TypeInfo,
-} from '../config/types.js'
-import { claimsForeignKey, isOneToOneRelationship, shouldHaveForeignKey } from '../fields/index.js'
+import type { ListConfig, OpenSaasConfig, RelationshipField, TypeInfo } from '../config/types.js'
+import {
+  claimsForeignKey,
+  isOneToOneRelationship,
+  isRelationshipField,
+  shouldHaveForeignKey,
+} from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
-
-function isRelationshipField(field: FieldConfig | undefined): field is RelationshipField {
-  return field?.type === 'relationship'
-}
 
 type RelationshipEnd = {
   listKey: string
@@ -184,6 +179,20 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
     return refusals
   }
 
+  if (other.field.ref !== endKey(end)) {
+    refusals.push({
+      listKey: end.listKey,
+      entry,
+      reason: 'inverse-mismatch',
+      message:
+        `List "${end.listKey}": ${entry} refs "${end.field.ref}", but "${endKey(other)}" refs ` +
+        `"${other.field.ref}" rather than "${endKey(end)}" — the two ends of a relationship must name ` +
+        `each other. Point "${endKey(other)}" at '${endKey(end)}', or point ${entry} at the field on ` +
+        `"${other.listKey}" whose ref is '${endKey(end)}'.`,
+    })
+    return refusals
+  }
+
   if (end.field.many && other.field.many) {
     if (reportsForPair(end, other)) {
       refusals.push({
@@ -317,8 +326,9 @@ function refuseNonOwningSideIndexes(
  * one-to-one, `db.isNullable: false`, `db.onDelete`/`db.onUpdate` or a
  * `db.indexes` entry on a side that owns no foreign key column (ADR-0064),
  * `'setNull'` on a `db.isNullable: false` column, a `many: false` field whose
- * `ref` is its own `List.field` (ADR-0064), and a relationship at a
- * composite-keyed list (ADR-0048). Ownership is the generator's own rule
+ * `ref` is its own `List.field` (ADR-0064), a bidirectional `ref` whose other
+ * end does not ref back, and a relationship at a composite-keyed list
+ * (ADR-0048). Ownership is the generator's own rule
  * (`shouldHaveForeignKey`). A pairwise refusal is reported once, from the end
  * whose `List.field` key sorts first.
  */
