@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, integer, relationship } from '../src/fields/index.js'
-import type { PrismaClient } from '@prisma/client'
 import type { Plugin } from '../src/config/types.js'
 import type { AccessContext } from '../src/access/types.js'
 
@@ -18,7 +17,7 @@ describe('Sudo Context', () => {
       delete: vi.fn(),
       count: vi.fn(),
     },
-  } as unknown as PrismaClient
+  }
 
   // Track hook execution
   const hookExecutions: string[] = []
@@ -413,7 +412,7 @@ describe('Sudo Context', () => {
         create: vi.fn(),
         update: vi.fn(),
       },
-    } as unknown as PrismaClient
+    }
 
     const nestedTestConfig = config({
       db: {

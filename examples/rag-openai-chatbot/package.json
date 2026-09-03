@@ -18,8 +18,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/adapter-pg": "^7.9.1",
-    "@prisma/client": "^7.9.1",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
     "ai": "^7.0.32",
     "next": "^16.2.10",
     "openai": "^6.32.0",
@@ -40,7 +39,7 @@
     "dotenv": "^17.4.2",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
-    "prisma": "^7.9.1",
+    "prisma": "8.0.0-rc.12",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2"

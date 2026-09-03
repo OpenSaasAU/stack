@@ -3,6 +3,9 @@
   "version": "0.40.0",
   "description": "Vercel Blob storage provider for OpenSaas Stack file uploads",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

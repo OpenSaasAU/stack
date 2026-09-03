@@ -1,0 +1,21 @@
+# path:count of Prisma error-code literals still carried, read by scripts/check-prisma-error-codes.mjs; lower or remove entries, never raise or add.
+docs/adr/0004-generator-emits-keystone-compatible-defaults.md:1
+docs/adr/0012-interactive-transactions-rebind-the-secured-context.md:4
+docs/adr/0028-a-transaction-boundary-hook-reports-the-outermost-transaction.md:1
+docs/adr/0042-transactions-lose-isolation-levels-and-errors-become-stack-owned.md:8
+docs/adr/0060-better-auth-is-driven-by-a-stack-authored-auth-adapter-over-the-unsafe-surface.md:3
+docs/agents/comments.md:1
+docs/content/concepts/hooks.md:1
+docs/content/how-to/migrate-from-keystone.md:1
+packages/cli/src/generator/prisma.test.ts:7
+packages/cli/src/generator/prisma.ts:2
+packages/core/CLAUDE.md:3
+packages/core/src/config/types.ts:2
+packages/core/src/context/index.ts:3
+packages/core/src/index.ts:1
+packages/core/src/lib/prisma-errors.ts:3
+packages/core/tests/context.test.ts:10
+packages/core/tests/interactive-transaction.test.ts:5
+packages/core/tests/prisma-errors.test.ts:16
+packages/core/tests/transaction-boundary-outermost.test.ts:4
+specs/prisma-8/architecture-spec.md:1

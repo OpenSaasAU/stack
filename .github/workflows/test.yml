@@ -2,7 +2,7 @@ name: Test
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, prisma-8]
 
 # Cancel any in-progress run for the same PR/branch when a new push arrives.
 concurrency:
@@ -29,6 +29,9 @@ jobs:
       - name: Check for duplicate ADR numbers
         run: pnpm check:adr-duplicates
 
+      - name: Check for Prisma error-code literals
+        run: pnpm check:prisma-error-codes
+
       - name: Lint codebase
         run: pnpm lint
 
@@ -36,13 +39,33 @@ jobs:
         run: pnpm format:check
 
       - name: Run tests
+        if: github.base_ref == 'main'
         run: turbo run test
         env:
           OPENAI_API_KEY: 'sk-testing-key'
           DATABASE_URL: 'file:./dev.db'
 
+      # turbo's `test` task depends on `build`, so an unfiltered run also builds
+      # every examples/* package. On the prisma-8 integration branch the
+      # examples cannot build until they are converted (#1121, build spec 9),
+      # so PRs into any base other than main run the published packages only.
+      - name: Run package tests (integration branch — examples convert in spec 9)
+        if: github.base_ref != 'main'
+        run: turbo run test --filter='./packages/*'
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+          DATABASE_URL: 'file:./dev.db'
+
       - name: Run tests with coverage
+        if: github.base_ref == 'main'
         run: turbo run test:coverage
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+          DATABASE_URL: 'file:./dev.db'
+
+      - name: Run package tests with coverage (integration branch — examples convert in spec 9)
+        if: github.base_ref != 'main'
+        run: turbo run test:coverage --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
           DATABASE_URL: 'file:./dev.db'
@@ -71,7 +94,12 @@ jobs:
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
 
+  # Every guard and the Playwright run below stands on the SQLite examples and
+  # the Prisma 7 scaffold, which the prisma-8 branch has dropped and cannot
+  # rebuild until its examples are converted (#1121, build spec 9). Until then
+  # this job runs only for PRs into main.
   e2e:
+    if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
