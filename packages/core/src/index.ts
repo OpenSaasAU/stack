@@ -134,7 +134,32 @@ export type { NeedsClosureError } from './validation/needs-closure.js'
 // list, the entry and the fix rather than silently dropped.
 export { validateRelations } from './validation/relations.js'
 export { validateDatabaseConfig } from './validation/database-config.js'
+export { validateExtensionPacks } from './validation/extension-packs.js'
 export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
+
+// Contract derivation (ADR-0057) — `deriveContract(config)` is the data the
+// generator renders into the Contract module; `assertRelationGraphAgrees`
+// checks an emitted contract against it. The Prisma builder feed lives on
+// `@opensaas/stack-core/contract` so the root stays free of `@prisma/orm-postgres`.
+export { deriveContract } from './contract/derive.js'
+export {
+  assertRelationGraphAgrees,
+  RelationGraphDivergenceError,
+  type EmittedContract,
+} from './contract/relation-graph.js'
+export type {
+  ContractColumn,
+  ContractData,
+  ContractEnum,
+  ContractForeignKey,
+  ContractIdColumn,
+  ContractIdStrategy,
+  ContractIndex,
+  ContractModel,
+  ContractRelation,
+  ContractRelationKind,
+  ContractTimestamps,
+} from './contract/types.js'
 
 // Fragment-based query API — composable, type-safe reads that mirror
 // Keystone's GraphQL fragments without a GraphQL runtime. The migration

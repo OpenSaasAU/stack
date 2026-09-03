@@ -952,6 +952,9 @@ importers:
       '@electric-sql/pglite-socket':
         specifier: 0.2.11
         version: 0.2.11(@electric-sql/pglite-age@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_hashids@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_ivm@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_textsearch@0.0.10(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_uuidv7@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgtap@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgvector@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite@0.5.8)
+      '@prisma/orm-extension-pgvector':
+        specifier: 8.0.0-rc.8
+        version: 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@prisma/orm-target-postgres@8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.8
         version: 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))
@@ -3186,6 +3189,15 @@ packages:
 
   '@prisma/management-api-sdk@1.69.0':
     resolution: {integrity: sha512-z3zBWvOjFSWqUwkJcsdkBZzkUaUMEEcKy4QiMfo7n1GqNQvRYkzxzaNRTqmxTjw3thOjmdq+UegIqOU57i7jiA==}
+
+  '@prisma/orm-extension-pgvector@8.0.0-rc.8':
+    resolution: {integrity: sha512-QGdljrgi9Z3DSJ7OrNgd1YgSku10Q7XJ711GfZ36E6ympgprukkohrEEXb5Ls4KzG0oqjVvQliII5lO9RjAgNQ==}
+    peerDependencies:
+      '@prisma/orm-target-postgres': 8.0.0-rc.8
+      typescript: '>=5.9'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@prisma/orm-family-sql@8.0.0-rc.8':
     resolution: {integrity: sha512-Bz9ZMx2ntXbuasl3Dhq99NLKRq5ZNk5IVcs8RmfOvs1vUFJAEyyJmPgIArRm7N4WixZ9bEJLYKPSCo7avqxSfQ==}
@@ -11057,6 +11069,22 @@ snapshots:
   '@prisma/management-api-sdk@1.69.0':
     dependencies:
       openapi-fetch: 0.14.0
+
+  '@prisma/orm-extension-pgvector@8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@prisma/orm-target-postgres@8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))':
+    dependencies:
+      '@prisma/orm-family-sql': 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))
+      '@prisma/orm-framework': 8.0.0-rc.8(@typescript/typescript6@6.0.2)
+      '@prisma/orm-target-postgres': 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))
+      '@prisma/orm-toolchain': 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))
+      '@standard-schema/spec': 1.1.0
+      arktype: 2.2.3
+    optionalDependencies:
+      typescript: '@typescript/typescript6@6.0.2'
+    transitivePeerDependencies:
+      - '@prisma/cli-engine'
+      - magicast
+      - typanion
+      - vite
 
   '@prisma/orm-family-sql@8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))':
     dependencies:

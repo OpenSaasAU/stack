@@ -1,5 +1,6 @@
 import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { ConfigRefusal } from './config-refusal.js'
+import { validateExtensionPacks } from './extension-packs.js'
 
 function refuseIndexSort(listKey: string, listConfig: ListConfig<TypeInfo>): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
@@ -71,9 +72,10 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
 /**
  * Refuse the database-level declarations the Prisma 8 contract cannot carry:
  * a `sort` direction on a `db.indexes` field reference (ADR-0040),
- * `db.idField` on a singleton list (ADR-0048), and the same extension pack
- * name declared from two packages (ADR-0049). Each refusal names the list
- * (when there is one), the entry and the fix.
+ * `db.idField` on a singleton list (ADR-0048), the same extension pack
+ * name declared from two packages, and a field typed by a pack `db.extensions`
+ * does not declare (ADR-0049). Each refusal names the list (when there is
+ * one), the entry and the fix.
  *
  * `sort` is absent from {@link ListIndexFieldRef}'s type; this catches the
  * runtime object that still carries one.
@@ -85,6 +87,8 @@ export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] 
     refusals.push(...refuseIndexSort(listKey, listConfig))
     refusals.push(...refuseIdFieldOnSingleton(listKey, listConfig))
   }
+
+  refusals.push(...validateExtensionPacks(config))
 
   return refusals
 }
