@@ -16,6 +16,13 @@ export type {
   TypeInfo,
   TypeDescriptor,
   MultiColumnPrismaResult,
+  ContractLiteral,
+  ColumnTypeDescriptor,
+  ColumnDefaultDescriptor,
+  ContractColumnDescriptor,
+  ContractForeignKeyDescriptor,
+  ContractRelationDescriptor,
+  ContractFieldDescriptor,
 } from './config/index.js'
 
 // Filter spec authoring — a field's optional `getFilterSpec` returns these

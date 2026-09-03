@@ -27,6 +27,13 @@ export type {
   ListIndexFieldRef,
   FieldConfig,
   OperationAccess,
+  ContractLiteral,
+  ColumnTypeDescriptor,
+  ColumnDefaultDescriptor,
+  ContractColumnDescriptor,
+  ContractForeignKeyDescriptor,
+  ContractRelationDescriptor,
+  ContractFieldDescriptor,
   // Custom Bulk actions (issue #736) — declared per list in
   // `ui.listView.bulkActions`; the handler runs server-side over the selected
   // ids through the secured context.
@@ -118,11 +125,7 @@ export { RelationFilterAccessDeniedError } from './access/index.js'
 export { validateFieldConfig, validateConfigFields } from './validation/field-config.js'
 export type { FieldConfigValidationError } from './validation/field-config.js'
 
-// Declared-dependency validation (`needs`, ADR-0025) — checks every `needs`
-// entry names an immediate relationship field on the same list, and that no
-// field's declaration closure (the recursive fold of its dependencies, and
-// theirs) exceeds the read-include depth cap from any starting point. A
-// config that fails either must not generate.
+// Declared-dependency validation (`needs`, ADR-0025, ADR-0051) — a config that fails either must not generate.
 export { validateNeedsDeclarations, validateNeedsClosureDepth } from './validation/needs-closure.js'
 export type { NeedsClosureError } from './validation/needs-closure.js'
 

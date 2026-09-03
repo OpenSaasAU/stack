@@ -789,22 +789,70 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    */
   splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
   /**
-   * Declares the immediate sibling relations this field's `resolveOutput`
-   * hook cannot compute without (ADR-0025 — the "Declared dependency" glossary
-   * entry in `CONTEXT.md`). The read fetches each declared relation wherever
-   * this field is computed — at the root of a read and at every nested level
-   * alike — and scopes it through the Access Filter exactly like a
-   * caller-named relation: a dependency a session cannot query is not
-   * fetched, and the hook sees nothing in its place.
+   * Describe what this field contributes to the contract (ADR-0040,
+   * ADR-0049): its stored column(s) as a pack-qualified type constructor with
+   * native type, nullability and column mapping; for a relationship, the
+   * relation and the foreign-key column this side owns; for a virtual field,
+   * nothing. The PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation`
+   * stay beside it until core's contract derivation lands on this descriptor
+   * (#1133).
+   *
+   * @param fieldName - The field's config key
+   * @param listKey - The owning list's key
+   * @param config - The full config (a relationship resolves its target and
+   *   foreign-key ownership from it)
+   *
+   * @example
+   * ```typescript
+   * getContractField: (fieldName) => ({
+   *   kind: 'column',
+   *   name: fieldName,
+   *   type: { pack: 'pgvector', type: 'Vector', args: [1536] },
+   *   nullable: true,
+   * })
+   * ```
+   */
+  getContractField?: (
+    fieldName: string,
+    listKey: string,
+    config: OpenSaasConfig,
+  ) => ContractFieldDescriptor
+  /**
+   * The TypeScript type a read returns for this field, when it differs from
+   * the column's codec type (ADR-0052). Required on a virtual field, where it
+   * is the contract remainder's computed entry; on a stored field it is an
+   * override — `password` reads as `HashedPassword` over a text column —
+   * and absence means the codec's own type.
+   *
+   * @example "import('@opensaas/stack-core/internal').HashedPassword"
+   * @example { value: Decimal, from: 'decimal.js' }
+   */
+  outputType?: TypeDescriptor
+  /**
+   * The TypeScript type a write accepts for this field, when it differs from
+   * the column's codec input type (ADR-0052) — `calendarDay` accepts a
+   * `YYYY-MM-DD` string where the codec would take more. Absence means the
+   * codec's own input type.
+   */
+  inputType?: TypeDescriptor
+  /**
+   * Declares the immediate sibling columns and relations this field's
+   * `resolveOutput` hook cannot compute without (ADR-0025, widened to columns
+   * by ADR-0051 — the "Declared dependency" glossary entry in `CONTEXT.md`).
+   * The read fetches each declared dependency wherever this field is
+   * computed — at the root of a read and at every nested level alike — and
+   * scopes a relation through the Access Filter exactly like a caller-named
+   * one: a dependency a session cannot query is not fetched, and the hook
+   * sees nothing in its place.
    *
    * A declared dependency is private plumbing, not an implicit `include`: it
    * is stripped from the result unless the caller named it too, so declaring
    * or removing one changes this field's implementation, never the shape of
    * every read of the list.
    *
-   * Names immediate relations only — no dotted paths. Reach beyond one hop
-   * comes from the recursive fold: a dependency's own list declares its own
-   * dependencies.
+   * Names stored columns and immediate relations on the same list only — no
+   * dotted paths, and never a computed field. A declaration on a field with
+   * no `resolveOutput` hook is dead config and fails `pnpm generate`.
    *
    * Typed as a plain `string[]`, not narrowed to this list's own relation
    * keys: `BaseFieldConfig` is the contextual type EVERY field builder's
@@ -851,6 +899,128 @@ export type MultiColumnPrismaResult = {
   /** Physical column name for the `@map` attribute, when it differs from `name`. */
   map?: string
 }
+
+/**
+ * A JSON-serialisable literal. What a column default can hold, and the
+ * argument vocabulary of a {@link ColumnTypeDescriptor} — the Contract module
+ * is fully literal (ADR-0040), so nothing that cannot be re-emitted as source
+ * belongs here.
+ */
+export type ContractLiteral =
+  string | number | boolean | null | ContractLiteral[] | { [key: string]: ContractLiteral }
+
+/**
+ * A column's type as a pack-qualified type constructor —
+ * `type.<pack>.<type>(...args)` in the Contract module (ADR-0049). Core's
+ * scalars live in the `pg` pack (`{ pack: 'pg', type: 'text' }`,
+ * `{ pack: 'pg', type: 'decimal', args: [18, 4] }`); a field over an extension
+ * pack names it (`{ pack: 'pgvector', type: 'Vector', args: [1536] }`), and the
+ * generator refuses a config that uses a pack `db.extensions` does not declare.
+ */
+export type ColumnTypeDescriptor = {
+  /** The pack that owns the type constructor — `'pg'` for core's scalars, else an extension pack's `name`. */
+  pack: string
+  /** The type constructor's name within the pack. */
+  type: string
+  /** Positional arguments to the constructor (a length, a precision/scale pair, a dimension). */
+  args?: ContractLiteral[]
+}
+
+/**
+ * A column's default. `'literal'` carries a value the Contract module emits as
+ * source; `'now'` is the database clock at insert. A `bigint` column's default
+ * is carried as its decimal string — `42n`, `42` and `'42'` all become `'42'`,
+ * the form the generator writes into `@default`. A default that is not a
+ * JSON literal (a `Date`, a `Decimal`, a `Map`) is refused by the builder.
+ */
+export type ColumnDefaultDescriptor = { kind: 'literal'; value: ContractLiteral } | { kind: 'now' }
+
+/**
+ * One stored column a field contributes to the contract.
+ */
+export type ContractColumnDescriptor = {
+  /** The model field name — the property the column is declared as. Equals the field key for a single-column field. */
+  name: string
+  /** The column's type constructor. */
+  type: ColumnTypeDescriptor
+  /** A native-type override for the column (`db.nativeType`), when the constructor's default is not wanted. */
+  nativeType?: string
+  /** Whether the column accepts NULL. */
+  nullable: boolean
+  /** The physical column name, when it differs from {@link name} (`db.map`). */
+  map?: string
+  /** Whether the column carries a unique constraint (`isIndexed: 'unique'`). */
+  unique?: boolean
+  /** Whether the column carries a non-unique index (`isIndexed: true`). */
+  index?: boolean
+  /** The column's default, when it has one. */
+  default?: ColumnDefaultDescriptor
+  /**
+   * The native enum this column is typed by, when {@link type} is an enum
+   * constructor — the contract declares the enum entity once and the column
+   * references it.
+   */
+  enum?: { name: string; values: string[] }
+}
+
+/**
+ * The foreign-key column a relationship's owning side contributes. The
+ * column's type is the referenced list's id type, resolved from that list's
+ * `db.idField`.
+ */
+export type ContractForeignKeyDescriptor = {
+  /** The model field name of the foreign-key column (`<field>Id`). */
+  name: string
+  /** The physical column name, when it differs from {@link name}. */
+  map?: string
+  /** Whether the column accepts NULL (`db.isNullable`, default `true`). */
+  nullable: boolean
+  /** Whether the column carries a unique constraint — the owning side of a one-to-one. */
+  unique: boolean
+  /** Whether the column carries a non-unique index (`isIndexed`, default `true`). */
+  index: boolean
+  /** The list and field the column references. */
+  references: { list: string; field: 'id' }
+}
+
+/**
+ * A relationship field's contract contribution: the relation itself and, on
+ * the owning side of a to-one, its foreign-key column.
+ */
+export type ContractRelationDescriptor = {
+  kind: 'relation'
+  /** The list this field points at. */
+  target: string
+  /**
+   * The field on {@link target} that is this relation's other side. Declared
+   * (`ref: 'List.field'`) or, for a list-only `ref: 'List'`, synthesised as
+   * `from_<List>_<field>` on the target.
+   */
+  inverse: { field: string; synthetic: boolean }
+  /** Whether this side holds many rows. */
+  many: boolean
+  /**
+   * The foreign-key column this side owns. Absent on a to-many side and on
+   * the non-owning side of a one-to-one, which have no column.
+   */
+  foreignKey?: ContractForeignKeyDescriptor
+}
+
+/**
+ * What a field contributes to the contract (ADR-0040, ADR-0049):
+ *
+ * - `'column'` — one stored column; the common scalar case.
+ * - `'columns'` — several stored columns owned by one field (the multi-column
+ *   path ADR-0006 gave storage fields; each entry is its own column).
+ * - `'relation'` — a relation and, when this side owns it, a foreign key.
+ * - `'computed'` — no storage at all; a virtual field. Its TypeScript face is
+ *   {@link BaseFieldConfig.outputType}, the contract remainder's computed entry.
+ */
+export type ContractFieldDescriptor =
+  | ({ kind: 'column' } & ContractColumnDescriptor)
+  | { kind: 'columns'; columns: ContractColumnDescriptor[] }
+  | ContractRelationDescriptor
+  | { kind: 'computed' }
 
 export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'text'
@@ -1403,25 +1573,32 @@ type ParseTypeString<T extends string> = T extends 'string'
                 : unknown // Fallback
 
 /**
- * Extract field value type from a field config
- * Uses the field's getTypeScriptType() method result
- * If resultExtension is present, uses its outputType instead
+ * Extract field value type from a field config, in order of authority: the
+ * field's `outputType` descriptor, then `resultExtension.outputType`, then
+ * `getTypeScriptType()`.
  *
  * @example
  * ExtractFieldValueType<TextField> => string | null | undefined (if optional)
  * ExtractFieldValueType<IntegerField> => number
- * ExtractFieldValueType<PasswordField> => HashedPassword (from resultExtension)
+ * ExtractFieldValueType<PasswordField> => HashedPassword (from outputType)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any BaseFieldConfig
 type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends {
-  resultExtension: { outputType: infer O }
+  outputType: infer O extends string
 }
-  ? ParseTypeString<O & string>
-  : TField extends { getTypeScriptType(): { type: infer T; optional: infer Opt } }
-    ? Opt extends true
-      ? ParseTypeString<T & string> | null | undefined
-      : ParseTypeString<T & string>
-    : unknown
+  ? ParseTypeString<O>
+  : TField extends {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
+        outputType: { value: new (...args: any[]) => infer I }
+      }
+    ? I
+    : TField extends { resultExtension: { outputType: infer O } }
+      ? ParseTypeString<O & string>
+      : TField extends { getTypeScriptType(): { type: infer T; optional: infer Opt } }
+        ? Opt extends true
+          ? ParseTypeString<T & string> | null | undefined
+          : ParseTypeString<T & string>
+        : unknown
 
 /**
  * Extract field names as union of string literals

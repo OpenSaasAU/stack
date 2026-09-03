@@ -22,7 +22,12 @@ export interface NeedsClosureError {
   fieldKey: string
   /** The list keys on the offending chain, starting at `listKey`. */
   chain: string[]
-  reason: 'cycle' | 'depth' | 'invalid-relation'
+  /**
+   * `'invalid-dependency'` — an entry names nothing on the list, or names a
+   * computed field; `'no-resolve-output'` — the declaring field has no
+   * `resolveOutput` hook to consume it (ADR-0051).
+   */
+  reason: 'cycle' | 'depth' | 'invalid-dependency' | 'no-resolve-output'
   message: string
 }
 
@@ -90,12 +95,13 @@ function listClosureDepth(
 }
 
 /**
- * Validate that every `needs` entry names an immediate relationship field
- * declared on the SAME list. The generated `Lists.<List>.TypeInfo` already
- * makes a misspelled or non-relation entry a compile error for a config
- * annotated with it (`list<Lists.X.TypeInfo>({...})`, the documented
- * pattern) — this is the runtime backstop for configs that aren't, or that
- * are authored in plain JS.
+ * Validate that every `needs` entry names a stored column or an immediate
+ * relationship field declared on the SAME list (ADR-0051), and that the
+ * declaring field has a `resolveOutput` hook to consume it. The generated
+ * `Lists.<List>.TypeInfo` already makes a misspelled or computed entry a
+ * compile error for a config annotated with it (`list<Lists.X.TypeInfo>({...})`,
+ * the documented pattern) — this is the runtime backstop for configs that
+ * aren't, or that are authored in plain JS.
  *
  * @param config - The fully resolved OpenSaas config.
  * @returns All invalid `needs` entries, flattened across lists and fields.
@@ -107,21 +113,39 @@ export function validateNeedsDeclarations(config: OpenSaasConfig): NeedsClosureE
     if (!listConfig?.fields) continue
 
     for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-      for (const relationName of fieldConfig?.needs ?? []) {
-        if (isRelationshipFieldConfig(listConfig.fields[relationName])) continue
+      const needs = fieldConfig?.needs ?? []
+      if (needs.length === 0) continue
 
-        const exists = relationName in listConfig.fields
+      if (!fieldConfig?.hooks?.resolveOutput) {
         errors.push({
           listKey,
           fieldKey,
           chain: [listKey],
-          reason: 'invalid-relation',
-          message: exists
-            ? `"${listKey}.${fieldKey}" declares needs: ['${relationName}'], but "${relationName}" ` +
-              `is not a relationship field on "${listKey}". \`needs\` may only name immediate ` +
-              `relationship fields declared on the same list.`
-            : `"${listKey}.${fieldKey}" declares needs: ['${relationName}'], but "${listKey}" has ` +
-              `no field named "${relationName}".`,
+          reason: 'no-resolve-output',
+          message:
+            `"${listKey}.${fieldKey}" declares needs: [${needs.map((n) => `'${n}'`).join(', ')}] ` +
+            `but has no resolveOutput hook, so nothing can consume the declaration. Add the ` +
+            `hook that reads these dependencies, or remove \`needs\` from "${listKey}.${fieldKey}".`,
+        })
+        continue
+      }
+
+      for (const dependencyName of needs) {
+        const dependency = listConfig.fields[dependencyName]
+        if (isRelationshipFieldConfig(dependency)) continue
+        if (dependency && dependency.virtual !== true && dependency.type !== 'virtual') continue
+
+        errors.push({
+          listKey,
+          fieldKey,
+          chain: [listKey],
+          reason: 'invalid-dependency',
+          message: dependency
+            ? `"${listKey}.${fieldKey}" declares needs: ['${dependencyName}'], but "${dependencyName}" ` +
+              `is a computed field on "${listKey}". \`needs\` may only name stored columns and ` +
+              `immediate relationship fields declared on the same list.`
+            : `"${listKey}.${fieldKey}" declares needs: ['${dependencyName}'], but "${listKey}" has ` +
+              `no field named "${dependencyName}".`,
         })
       }
     }
