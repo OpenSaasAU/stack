@@ -10,10 +10,15 @@ receives (ADR-0012). This amends ADR-0012: the Write Pipeline's transaction
 rebind (`bindContextToTransaction`, `context/write-pipeline.ts`) now goes
 through the same `getContext` factory `context.transaction()` already rebuilds
 through, instead of hand-assembling a bare `AccessContext` object literal.
-`beforeTransaction` / `afterTransaction` (list and field) and a field's
-`resolveOutput` are unchanged by this record — they keep the plain
-`AccessContext`, bound to the base client, per ADR-0028's boundary-hook
-contract.
+`beforeTransaction` / `afterTransaction` (list and field) are unchanged by
+this record — they keep the plain `AccessContext`, bound to the base client
+always, per ADR-0028's boundary-hook contract. A field's `resolveOutput` also
+keeps the plain `AccessContext` TYPE, but which client an instance of it is
+bound to already depended — before this record and after it alike — on how
+the read that triggered it arose (ADR-0010): the base client for a plain
+top-level read, or the write's OWN transaction client when it runs as part of
+a create/update's Field Visibility pass. That distinction predates this
+record; it is not one of its consequences.
 
 ## Context
 

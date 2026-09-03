@@ -262,9 +262,19 @@ hooks: {
 }
 ```
 
-`context` on `beforeTransaction` / `afterTransaction` and on a field's
-`resolveOutput` is unaffected — it stays the plain access-checked context
-bound to the base (non-transaction) client, per their existing contract.
+`context` on `beforeTransaction` / `afterTransaction` is unaffected — it stays
+the plain access-checked context bound to the base (non-transaction) client,
+per their existing contract.
+
+A field's `resolveOutput` hook's `context` type is likewise unchanged (still
+the plain access-checked context, no `sudo`/`withSession`/`transaction`), but
+which client it's bound to already depended — before this change and after it
+alike — on how the read that triggered it arose: a plain top-level read
+(`findMany`/`findUnique`/`get`) resolves its fields against the base client; a
+`resolveOutput` that runs as part of a create/update's OWN result (the write's
+Field Visibility pass) resolves against THAT write's transaction client (ADR-0010),
+so a `context.db` read/write issued from inside such a hook is atomic with the
+write, same as `beforeOperation`/`afterOperation`.
 
 ## Common Use Cases
 

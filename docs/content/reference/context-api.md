@@ -301,8 +301,18 @@ hooks: {
 
 `context.transaction()` called from inside one of these hooks **joins** the
 write's own transaction rather than opening a nested one. `beforeTransaction` /
-`afterTransaction` and a field's `resolveOutput` are unaffected — their
-`context` stays the plain, access-checked context bound to the base client.
+`afterTransaction` are unaffected by this — their `context` stays the plain,
+access-checked context bound to the base client, always.
+
+A field's `resolveOutput` hook's `context` type is likewise unchanged (still
+`AccessContext`, no `sudo`/`withSession`/`transaction`), but WHICH client it's
+bound to already depended on how the read that triggered it arose, before this
+change and after it alike: a plain top-level read (`findMany`/`findUnique`/
+`get`) resolves its fields against the base client; a `resolveOutput` that
+runs as part of a create/update's OWN result (the write's Field Visibility
+pass) resolves against THAT write's transaction client, per ADR-0010 — so a
+`context.db` read/write issued from inside such a hook is atomic with the
+write, same as `beforeOperation`/`afterOperation`.
 
 ##### `_isSudo`
 

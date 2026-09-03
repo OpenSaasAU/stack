@@ -227,10 +227,19 @@ Order: list({
   directly" fallback) — it never opens a nested one.
 - Plugin runtimes are **not** re-executed on this rebind (same rule as the
   nested-write rebind ADR-0010 already established).
-- **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) and
-  a field's `resolveOutput` keep the plain `AccessContext`, bound to the BASE
-  client, per their existing contract — see ADR-0028 for why boundary hooks
-  must not run through a client that may already be closed by flush time.
+- **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) keep
+  the plain `AccessContext`, bound to the BASE client, always — see ADR-0028
+  for why boundary hooks must not run through a client that may already be
+  closed by flush time.
+- **A field's `resolveOutput` keeps the plain `AccessContext` type**, but which
+  client it's bound to already depended — before this record and after it
+  alike — on how the read that triggered it arose: a plain top-level read
+  resolves against the base client; a `resolveOutput` that runs as part of a
+  create/update's OWN result (the write's Field Visibility pass, Phase 11)
+  resolves against THAT write's transaction client (ADR-0010) — so a
+  `context.db` read/write from inside such a hook is already atomic with the
+  write, same as `beforeOperation`/`afterOperation`. Not a consequence of this
+  record; stated here only so it isn't mistaken for one.
 
 See ADR-0066 and the hooks concept doc's "In-transaction vs
 transaction-boundary hooks" section.
