@@ -5,7 +5,7 @@ import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
 import type { DeclaredOnlyTree } from './declared-dependencies.js'
-import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
+import { emptyDeclaredOnlyTree, getDeclaredRelationNames } from './declared-dependencies.js'
 import type { FieldSelectionScope } from '../query/index.js'
 import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
 import {
@@ -490,18 +490,20 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // The item a virtual field's hook sees: stored columns and fetched
   // relations (from `workingItem`, never a resolved value — no hook's output
   // is ever written back into `workingItem`). A key is visible here if it
-  // either survived into `filtered` (selected and allowed) OR exists only to
-  // satisfy a `needs` declaration (`declaredOnly` — that IS the point of
-  // declaring it: fetched for a hook, never for the caller, ADR-0025).
-  // Everything else — field-level denied, or skipped by `selection` and
-  // declared by no one — is deleted. A computed field reaches for exactly its
-  // own declared dependencies and nothing another field's hook produced
-  // (ADR-0027): reaching for a sibling that was denied or skipped-and-
-  // undeclared finds nothing there, the same as reaching for one never
-  // declared at all, and reaching for a sibling that DID survive finds its
-  // raw stored form, never another hook's resolved value — a virtual field
-  // computed earlier in declaration order is exactly as invisible as one
-  // computed later.
+  // either survived into `filtered` (selected and allowed) OR is declared via
+  // `needs` by a field this level computes — a relation the fold fetched
+  // (`declaredOnly`) or a stored column the caller's projection skipped but a
+  // hook named (ADR-0025, ADR-0051: that IS the point of declaring it —
+  // carried for a hook, never for the caller). Everything else — field-level
+  // denied, or skipped by `selection` and declared by no one — is deleted. A
+  // computed field reaches for exactly its own declared dependencies and
+  // nothing another field's hook produced (ADR-0027): reaching for a sibling
+  // that was denied or skipped-and-undeclared finds nothing there, the same
+  // as reaching for one never declared at all, and reaching for a sibling
+  // that DID survive finds its raw stored form, never another hook's resolved
+  // value — a virtual field computed earlier in declaration order is exactly
+  // as invisible as one computed later.
+  const declaredNames = new Set(getDeclaredRelationNames(fieldConfigs, selection?.fields))
   const computedFieldItem: Record<string, unknown> = { ...workingItem }
   for (const key of Object.keys(workingItem)) {
     if (['id', 'createdAt', 'updatedAt'].includes(key)) continue
@@ -510,7 +512,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
     if (key in filtered) continue
-    if (declaredOnly.keys.has(key)) continue
+    if (declaredOnly.keys.has(key) || declaredNames.has(key)) continue
     delete computedFieldItem[key]
   }
 

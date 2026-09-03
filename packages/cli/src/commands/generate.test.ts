@@ -612,7 +612,7 @@ describe('Generate Command Integration', () => {
       expect(validateNeedsClosureDepth(config)).toEqual([])
     })
 
-    it('reports a `needs` entry naming a non-relationship field', () => {
+    it('accepts a `needs` entry naming a stored column (ADR-0051)', () => {
       const config: OpenSaasConfig = {
         db: {
           provider: 'sqlite',
@@ -623,11 +623,30 @@ describe('Generate Command Integration', () => {
           Post: {
             fields: {
               title: text(),
-              badField: virtual({
+              excerpt: virtual({
                 type: 'string',
                 needs: ['title'],
                 hooks: { resolveOutput: () => 'x' },
               }),
+            },
+          },
+        },
+      }
+
+      expect(validateNeedsDeclarations(config)).toEqual([])
+    })
+
+    it('reports a `needs` declaration on a field with no resolveOutput hook', () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          prismaClientConstructor: () => null,
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              badField: text({ needs: ['title'] }),
             },
           },
         },
@@ -638,12 +657,12 @@ describe('Generate Command Integration', () => {
       expect(errors[0]).toMatchObject({
         listKey: 'Post',
         fieldKey: 'badField',
-        reason: 'invalid-relation',
+        reason: 'no-resolve-output',
       })
 
       const message = formatNeedsClosureErrors(errors)
       expect(message).toContain('Post.badField')
-      expect(message).toContain('not a relationship field')
+      expect(message).toContain('no resolveOutput hook')
     })
 
     it('reports a cyclic needs declaration closure', () => {

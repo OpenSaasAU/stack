@@ -6,12 +6,15 @@ import type { FieldSelectionScope } from '../query/index.js'
  * Declared Dependencies — folding a computed field's `needs` into a read's
  * `include` without widening what the caller receives (ADR-0025).
  *
- * A field's `needs` declares immediate sibling relations its `resolveOutput`
- * hook cannot compute without. This module folds those relations into
- * whatever `include` a read is already building (caller-supplied, fragment-
- * derived, or none at all) BEFORE it reaches the access-scoping pipeline
- * (`buildAccessScopedInclude` in `access-filter.ts`) — a declared relation is
- * scoped exactly like a caller-named one, never a bypass.
+ * A field's `needs` declares immediate sibling columns and relations its
+ * `resolveOutput` hook cannot compute without (ADR-0051). This module folds
+ * the relations into whatever `include` a read is already building
+ * (caller-supplied, fragment-derived, or none at all) BEFORE it reaches the
+ * access-scoping pipeline (`buildAccessScopedInclude` in `access-filter.ts`)
+ * — a declared relation is scoped exactly like a caller-named one, never a
+ * bypass. A declared column needs no fetching: every read already carries the
+ * row's stored columns, and `field-visibility.ts` keeps a declared one on the
+ * hook's `item` when the caller's projection left it out.
  *
  * The fold also tracks provenance: which relation keys, at which nesting
  * level, were added ONLY to satisfy a declaration (as opposed to being named
@@ -99,10 +102,10 @@ function getExplicitInclude(value: unknown): Record<string, unknown> | undefined
 }
 
 /**
- * The deduped set of relation names declared via `needs` by fields on this
- * list that have a `resolveOutput` hook. A `needs` entry on a field without
- * one is inert — there is no hook to feed it to — so it contributes nothing
- * to fetch.
+ * The deduped set of dependency names — relations and stored columns alike —
+ * declared via `needs` by fields on this list that have a `resolveOutput`
+ * hook. A `needs` entry on a field without one is inert — there is no hook to
+ * feed it to — so it contributes nothing.
  *
  * `selectedFields`, when given, restricts the union to fields the read is
  * actually going to return (ADR-0027) — a field a fragment did not select is
@@ -140,6 +143,10 @@ export function getDeclaredRelationNames(
  * `listKey` seeds the cycle guard at the root of a read; recursive calls
  * extend it with each related list reached along THIS fold's own path.
  *
+ * Only the relation entries of a `needs` fold in; a declared stored column
+ * is already on the row, so a list whose declarations name columns alone
+ * stays on the bare-read path.
+ *
  * `selection`, when given, is the fragment scope this level was reached
  * under (ADR-0027) — only fields it names contribute their `needs` (see
  * `getDeclaredRelationNames`). It is `undefined` for a bare/`include`-based
@@ -157,7 +164,9 @@ export function foldDeclaredDependencies(
   visitedLists: readonly string[] = [listKey],
   selection?: FieldSelectionScope,
 ): { include: Record<string, unknown> | undefined; declaredOnly: DeclaredOnlyTree } {
-  const declaredNames = getDeclaredRelationNames(fieldConfigs, selection?.fields)
+  const declaredNames = getDeclaredRelationNames(fieldConfigs, selection?.fields).filter((name) =>
+    isRelationshipFieldConfig(fieldConfigs[name]),
+  )
 
   if (declaredNames.length === 0 && !rawInclude) {
     return { include: rawInclude, declaredOnly: emptyDeclaredOnlyTree() }
@@ -168,7 +177,6 @@ export function foldDeclaredDependencies(
 
   for (const name of declaredNames) {
     if (name in merged) continue // caller (or fragment) already asked for it — not declaration-only
-    if (!isRelationshipFieldConfig(fieldConfigs[name])) continue // invalid `needs` entry; caught by generate-time validation
     merged[name] = true
     declaredOnly.keys.add(name)
   }
