@@ -1,7 +1,10 @@
 import type { AccessControl, FieldAccess } from '../access/types.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
-import type { PostgresOptionsWithContractJson } from '@prisma/orm-postgres/runtime'
+import type {
+  PostgresOptionsBase,
+  PostgresOptionsWithContractJson,
+} from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
@@ -2402,6 +2405,9 @@ export type ExtensionDescriptor = {
   from: string
 }
 
+// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
+// `PostgresBindingOptions` interface that carries `pg`, so `pg` is still read
+// off the contractJson options (the contract generic does not reach it).
 type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
 
 /**
@@ -2414,7 +2420,7 @@ export type DatabaseClientConfig = {
    * Pool options handed to the ORM client as-is when no `pg` factory is
    * given.
    */
-  poolOptions?: PostgresBindingOptions['poolOptions']
+  poolOptions?: PostgresOptionsBase['poolOptions']
   /**
    * A lazy factory for the `pg` pool or client the runtime should bind to.
    * A factory, not an instance: the config is loaded by the CLI and by tooling

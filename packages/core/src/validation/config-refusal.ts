@@ -6,6 +6,8 @@ export type ConfigRefusalReason =
   | 'foreign-key-on-both-sides'
   | 'non-owning-side-nullability'
   | 'non-owning-side-index'
+  | 'non-owning-side-referential-action'
+  | 'set-null-on-required-relation'
   | 'composite-keyed-target'
 
 /**

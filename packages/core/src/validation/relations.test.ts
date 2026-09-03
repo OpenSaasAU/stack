@@ -23,18 +23,41 @@ describe('validateRelations', () => {
             ref: 'User.posts',
             db: { onDelete: 'cascade', onUpdate: 'noAction' },
           }),
-          category: relationship({ ref: 'Category', many: true }),
+          category: relationship({ ref: 'Category', db: { onDelete: 'setNull' } }),
         },
       },
       Profile: {
         fields: {
-          user: relationship({ ref: 'User.profile', db: { isNullable: false } }),
+          user: relationship({
+            ref: 'User.profile',
+            db: { isNullable: false, onDelete: 'cascade' },
+          }),
         },
       },
       Category: { fields: { name: text() } },
     })
 
     expect(validateRelations(config)).toEqual([])
+  })
+
+  it('refuses a list-only ref with many: true as a many-to-many, naming the list, the entry and the junction fix', () => {
+    const config = configWith({
+      Post: { fields: { tags: relationship({ ref: 'Tag', many: true }) } },
+      Tag: { fields: { name: text() } },
+    })
+
+    const refusals = validateRelations(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'Post',
+      entry: 'fields.tags',
+      reason: 'many-to-many',
+    })
+    expect(refusals[0].message).toContain('List "Post": fields.tags')
+    expect(refusals[0].message).toContain('list-only ref "Tag"')
+    expect(refusals[0].message).toContain('junction')
+    expect(refusals[0].message).toContain('"Post.tags"')
   })
 
   describe('many: true on both sides', () => {
@@ -156,6 +179,42 @@ describe('validateRelations', () => {
       ])
     })
 
+    it('treats a field that refs itself as owning its own column', () => {
+      const config = configWith({
+        Person: {
+          fields: {
+            spouse: relationship({
+              ref: 'Person.spouse',
+              db: { isNullable: false, onDelete: 'cascade' },
+            }),
+          },
+          db: { indexes: [{ fields: ['spouse'], unique: true }] },
+        },
+      })
+
+      expect(validateRelations(config)).toEqual([])
+    })
+
+    it('does not read db.foreignKey: { map } as an ownership claim', () => {
+      const config = configWith({
+        Profile: {
+          fields: {
+            user: relationship({
+              ref: 'User.profile',
+              db: { foreignKey: { map: 'user_id' }, isNullable: false },
+            }),
+          },
+        },
+        User: {
+          fields: { profile: relationship({ ref: 'Profile.user', db: { foreignKey: true } }) },
+        },
+      })
+
+      expect(validateRelations(config)).toMatchObject([
+        { listKey: 'Profile', entry: 'fields.user', reason: 'non-owning-side-nullability' },
+      ])
+    })
+
     it('refuses a db.indexes entry naming the non-owning side, naming the list and the entry', () => {
       const config = configWith({
         User: {
@@ -188,6 +247,165 @@ describe('validateRelations', () => {
           fields: { user: relationship({ ref: 'User.account', db: { foreignKey: true } }) },
           db: { indexes: [{ fields: ['user'], unique: true }] },
         },
+      })
+
+      expect(validateRelations(config)).toEqual([])
+    })
+  })
+
+  describe('referential actions', () => {
+    it('refuses db.onDelete and db.onUpdate on the to-many side, naming the owning side', () => {
+      const config = configWith({
+        User: {
+          fields: {
+            posts: relationship({
+              ref: 'Post.author',
+              many: true,
+              db: { onDelete: 'cascade', onUpdate: 'cascade' },
+            }),
+          },
+        },
+        Post: { fields: { author: relationship({ ref: 'User.posts' }) } },
+      })
+
+      const refusals = validateRelations(config)
+
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'User',
+        entry: 'fields.posts',
+        reason: 'non-owning-side-referential-action',
+      })
+      expect(refusals[0].message).toContain('List "User": fields.posts')
+      expect(refusals[0].message).toContain('db.onDelete and db.onUpdate')
+      expect(refusals[0].message).toContain('Set it on "Post.author" instead')
+    })
+
+    it('refuses db.onDelete on the non-owning side of a one-to-one, naming the owning side', () => {
+      const config = configWith({
+        User: {
+          fields: { account: relationship({ ref: 'Account.user', db: { onDelete: 'cascade' } }) },
+        },
+        Account: {
+          fields: { user: relationship({ ref: 'User.account', db: { foreignKey: true } }) },
+        },
+      })
+
+      const refusals = validateRelations(config)
+
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'User',
+        entry: 'fields.account',
+        reason: 'non-owning-side-referential-action',
+      })
+      expect(refusals[0].message).toContain('List "User": fields.account')
+      expect(refusals[0].message).toContain('db.onDelete')
+      expect(refusals[0].message).toContain('"Account.user"')
+      expect(refusals[0].message).toContain('db.foreignKey: true')
+    })
+
+    it('reports nullability and referential actions on the non-owning side separately', () => {
+      const config = configWith({
+        User: {
+          fields: {
+            account: relationship({
+              ref: 'Account.user',
+              db: { isNullable: false, onUpdate: 'cascade' },
+            }),
+          },
+        },
+        Account: {
+          fields: { user: relationship({ ref: 'User.account', db: { foreignKey: true } }) },
+        },
+      })
+
+      expect(validateRelations(config)).toMatchObject([
+        { listKey: 'User', entry: 'fields.account', reason: 'non-owning-side-nullability' },
+        { listKey: 'User', entry: 'fields.account', reason: 'non-owning-side-referential-action' },
+      ])
+    })
+
+    it('accepts db.onDelete on the owning side of a one-to-one', () => {
+      const config = configWith({
+        User: { fields: { account: relationship({ ref: 'Account.user' }) } },
+        Account: {
+          fields: {
+            user: relationship({
+              ref: 'User.account',
+              db: { foreignKey: true, onDelete: 'cascade', onUpdate: 'restrict' },
+            }),
+          },
+        },
+      })
+
+      expect(validateRelations(config)).toEqual([])
+    })
+
+    it("refuses onDelete: 'setNull' together with db.isNullable: false on a one-to-many's owning side", () => {
+      const config = configWith({
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+        Post: {
+          fields: {
+            author: relationship({
+              ref: 'User.posts',
+              db: { isNullable: false, onDelete: 'setNull' },
+            }),
+          },
+        },
+      })
+
+      const refusals = validateRelations(config)
+
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'Post',
+        entry: 'fields.author',
+        reason: 'set-null-on-required-relation',
+      })
+      expect(refusals[0].message).toContain('List "Post": fields.author')
+      expect(refusals[0].message).toContain("db.onDelete: 'setNull'")
+      expect(refusals[0].message).toContain('db.isNullable: false')
+    })
+
+    it("refuses onUpdate: 'setNull' with db.isNullable: false on a list-only ref and a one-to-one's owner", () => {
+      const config = configWith({
+        Post: {
+          fields: {
+            category: relationship({
+              ref: 'Category',
+              db: { isNullable: false, onUpdate: 'setNull' },
+            }),
+          },
+        },
+        Category: { fields: { name: text() } },
+        User: { fields: { account: relationship({ ref: 'Account.user' }) } },
+        Account: {
+          fields: {
+            user: relationship({
+              ref: 'User.account',
+              db: { foreignKey: true, isNullable: false, onDelete: 'setNull', onUpdate: 'setNull' },
+            }),
+          },
+        },
+      })
+
+      const refusals = validateRelations(config)
+
+      expect(refusals).toMatchObject([
+        { listKey: 'Post', entry: 'fields.category', reason: 'set-null-on-required-relation' },
+        { listKey: 'Account', entry: 'fields.user', reason: 'set-null-on-required-relation' },
+      ])
+      expect(refusals[0].message).toContain("db.onUpdate: 'setNull'")
+      expect(refusals[1].message).toContain("db.onDelete and db.onUpdate: 'setNull'")
+    })
+
+    it("accepts 'setNull' on a nullable owning side", () => {
+      const config = configWith({
+        Post: {
+          fields: { category: relationship({ ref: 'Category', db: { onDelete: 'setNull' } }) },
+        },
+        Category: { fields: { name: text() } },
       })
 
       expect(validateRelations(config)).toEqual([])

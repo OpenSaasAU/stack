@@ -7,7 +7,9 @@ function refuseIndexSort(listKey: string, listConfig: ListConfig<TypeInfo>): Con
 
   indexes.forEach((index, i) => {
     for (const fieldRef of index.fields) {
-      if (typeof fieldRef === 'string' || !('sort' in fieldRef)) continue
+      if (typeof fieldRef === 'string' || !('sort' in fieldRef) || fieldRef.sort === undefined) {
+        continue
+      }
       refusals.push({
         listKey,
         entry: `db.indexes[${i}]`,

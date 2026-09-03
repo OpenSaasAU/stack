@@ -5,6 +5,7 @@ import type {
   RelationshipField,
   TypeInfo,
 } from '../config/types.js'
+import { claimsForeignKey, isOneToOneRelationship, shouldHaveForeignKey } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
 function isRelationshipField(field: FieldConfig | undefined): field is RelationshipField {
@@ -38,6 +39,10 @@ function endKey(end: RelationshipEnd): string {
   return `${end.listKey}.${end.fieldKey}`
 }
 
+function sameEnd(a: RelationshipEnd, b: RelationshipEnd): boolean {
+  return endKey(a) === endKey(b)
+}
+
 /**
  * Whether `a` sorts before `b`, so a pairwise refusal is reported once, from
  * the end that sorts first. Equal keys (a self-referential field) report.
@@ -46,25 +51,25 @@ function reportsForPair(a: RelationshipEnd, b: RelationshipEnd): boolean {
   return endKey(a).localeCompare(endKey(b)) <= 0
 }
 
-function isOneToOne(a: RelationshipEnd, b: RelationshipEnd): boolean {
-  return !a.field.many && !b.field.many
+function isOneToOne(config: OpenSaasConfig, end: RelationshipEnd): boolean {
+  return isOneToOneRelationship(end.fieldKey, end.field, config)
 }
 
+type Ownership = 'owner' | 'non-owner' | 'contested'
+
 /**
- * Which end of a one-to-one owns the foreign key column (ADR-0064): the end
- * that sets `db.foreignKey: true`, else the alphabetically smaller list name,
- * else — self-referential — the alphabetically smaller field name. Returns
- * `undefined` when both ends claim it, which is its own refusal.
+ * Which side of a one-to-one `end` is, by the generator's own rule
+ * (`shouldHaveForeignKey`). A field that refs itself is both ends and owns
+ * the column; both ends claiming it is `contested`, its own refusal.
  */
-function resolveOneToOneOwner(a: RelationshipEnd, b: RelationshipEnd): RelationshipEnd | undefined {
-  const aClaims = a.field.db?.foreignKey === true
-  const bClaims = b.field.db?.foreignKey === true
-  if (aClaims && bClaims) return undefined
-  if (aClaims) return a
-  if (bClaims) return b
-  const byList = a.listKey.localeCompare(b.listKey)
-  if (byList !== 0) return byList < 0 ? a : b
-  return a.fieldKey.localeCompare(b.fieldKey) < 0 ? a : b
+function resolveOwnership(
+  config: OpenSaasConfig,
+  end: RelationshipEnd,
+  other: RelationshipEnd,
+): Ownership {
+  if (sameEnd(end, other)) return 'owner'
+  if (claimsForeignKey(end.field) && claimsForeignKey(other.field)) return 'contested'
+  return shouldHaveForeignKey(end.listKey, end.fieldKey, end.field, config) ? 'owner' : 'non-owner'
 }
 
 /**
@@ -89,6 +94,63 @@ function fixOwnership(nonOwner: RelationshipEnd, owner: RelationshipEnd): string
   )
 }
 
+function junctionFix(ends: RelationshipEnd[]): string {
+  const pointers = ends.map((end) => `"${endKey(end)}"`).join(' and ')
+  return (
+    `Author the junction as its own list with a to-one relationship to each side, a surrogate id and ` +
+    `a unique db.indexes entry over those two fields, then point ${pointers} at the junction with many: true.`
+  )
+}
+
+function referentialActionKeys(field: RelationshipField): string[] {
+  const keys: string[] = []
+  if (field.db?.onDelete !== undefined) keys.push('db.onDelete')
+  if (field.db?.onUpdate !== undefined) keys.push('db.onUpdate')
+  return keys
+}
+
+function refuseNonOwningReferentialActions(
+  end: RelationshipEnd,
+  owner: RelationshipEnd,
+  side: string,
+  fix: string,
+): ConfigRefusal[] {
+  const keys = referentialActionKeys(end.field)
+  if (keys.length === 0) return []
+  const entry = `fields.${end.fieldKey}`
+  return [
+    {
+      listKey: end.listKey,
+      entry,
+      reason: 'non-owning-side-referential-action',
+      message:
+        `List "${end.listKey}": ${entry} sets ${keys.join(' and ')}, but it is ${side} ` +
+        `"${endKey(owner)}" and has no foreign key column for a referential action to act on. ${fix}`,
+    },
+  ]
+}
+
+function refuseSetNullOnRequired(end: RelationshipEnd): ConfigRefusal[] {
+  if (end.field.db?.isNullable !== false) return []
+  const keys: string[] = []
+  if (end.field.db?.onDelete === 'setNull') keys.push('db.onDelete')
+  if (end.field.db?.onUpdate === 'setNull') keys.push('db.onUpdate')
+  if (keys.length === 0) return []
+  const entry = `fields.${end.fieldKey}`
+  return [
+    {
+      listKey: end.listKey,
+      entry,
+      reason: 'set-null-on-required-relation',
+      message:
+        `List "${end.listKey}": ${entry} sets ${keys.join(' and ')}: 'setNull' together with ` +
+        `db.isNullable: false, but Prisma rejects SetNull on a required relation — a non-nullable column ` +
+        `has nothing to set to null. Drop db.isNullable: false, or use another action such as 'cascade' ` +
+        `or 'restrict'.`,
+    },
+  ]
+}
+
 function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   const entry = `fields.${end.fieldKey}`
@@ -107,7 +169,21 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
   }
 
   const other = resolveOtherEnd(config, end.field)
-  if (!other) return refusals
+  if (!other) {
+    if (end.field.many) {
+      refusals.push({
+        listKey: end.listKey,
+        entry,
+        reason: 'many-to-many',
+        message:
+          `List "${end.listKey}": ${entry} is many: true with the list-only ref "${end.field.ref}" — an ` +
+          `implicit many-to-many, which the contract cannot carry (ADR-0048). ${junctionFix([end])}`,
+      })
+      return refusals
+    }
+    refusals.push(...refuseSetNullOnRequired(end))
+    return refusals
+  }
 
   if (end.field.many && other.field.many) {
     if (reportsForPair(end, other)) {
@@ -117,19 +193,32 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
         reason: 'many-to-many',
         message:
           `List "${end.listKey}": ${entry} and list "${other.listKey}": fields.${other.fieldKey} are both ` +
-          `many: true — an implicit many-to-many, which the contract cannot carry (ADR-0048). Author the ` +
-          `junction as its own list with a to-one relationship to each side, a surrogate id and a unique ` +
-          `db.indexes entry over those two fields, then point "${end.listKey}.${end.fieldKey}" and ` +
-          `"${other.listKey}.${other.fieldKey}" at the junction with many: true.`,
+          `many: true — an implicit many-to-many, which the contract cannot carry (ADR-0048). ` +
+          junctionFix([end, other]),
       })
     }
     return refusals
   }
 
-  if (!isOneToOne(end, other)) return refusals
+  if (end.field.many) {
+    refusals.push(
+      ...refuseNonOwningReferentialActions(
+        end,
+        other,
+        'the to-many side of the one-to-many with',
+        `Set it on "${endKey(other)}" instead.`,
+      ),
+    )
+    return refusals
+  }
 
-  const owner = resolveOneToOneOwner(end, other)
-  if (!owner) {
+  if (!isOneToOne(config, end)) {
+    refusals.push(...refuseSetNullOnRequired(end))
+    return refusals
+  }
+
+  const ownership = resolveOwnership(config, end, other)
+  if (ownership === 'contested') {
     if (reportsForPair(end, other)) {
       refusals.push({
         listKey: end.listKey,
@@ -144,7 +233,10 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
     return refusals
   }
 
-  if (owner === end) return refusals
+  if (ownership === 'owner') {
+    refusals.push(...refuseSetNullOnRequired(end))
+    return refusals
+  }
 
   if (end.field.db?.isNullable === false) {
     refusals.push({
@@ -157,6 +249,15 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
         fixOwnership(end, other),
     })
   }
+
+  refusals.push(
+    ...refuseNonOwningReferentialActions(
+      end,
+      other,
+      'the non-owning side of the one-to-one with',
+      fixOwnership(end, other),
+    ),
+  )
 
   return refusals
 }
@@ -177,10 +278,8 @@ function refuseNonOwningSideIndexes(
 
       const end: RelationshipEnd = { listKey, fieldKey, field }
       const other = resolveOtherEnd(config, field)
-      if (!other || !isOneToOne(end, other)) continue
-
-      const owner = resolveOneToOneOwner(end, other)
-      if (!owner || owner === end) continue
+      if (!other || !isOneToOne(config, end)) continue
+      if (resolveOwnership(config, end, other) !== 'non-owner') continue
 
       refusals.push({
         listKey,
@@ -200,12 +299,14 @@ function refuseNonOwningSideIndexes(
 
 /**
  * Refuse the relationship shapes the Prisma 8 contract cannot carry, each
- * naming the list, the entry and the fix: `many: true` on both ends
- * (ADR-0048), `db.foreignKey: true` on both ends of a one-to-one,
- * `db.isNullable: false` or a `db.indexes` entry on a one-to-one's non-owning
- * end (ADR-0064), and a relationship at a composite-keyed list (ADR-0048).
- * A pairwise refusal is reported once, from the end whose `List.field` key
- * sorts first.
+ * naming the list, the entry and the fix: `many: true` on both ends or on a
+ * list-only ref (ADR-0048), `db.foreignKey: true` on both ends of a
+ * one-to-one, `db.isNullable: false`, `db.onDelete`/`db.onUpdate` or a
+ * `db.indexes` entry on a side that owns no foreign key column (ADR-0064),
+ * `'setNull'` on a `db.isNullable: false` column, and a relationship at a
+ * composite-keyed list (ADR-0048). Ownership is the generator's own rule
+ * (`shouldHaveForeignKey`). A pairwise refusal is reported once, from the end
+ * whose `List.field` key sorts first.
  */
 export function validateRelations(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []

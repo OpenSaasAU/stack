@@ -53,6 +53,21 @@ describe('validateDatabaseConfig', () => {
     expect(refusals[0].message).toContain('Remove "sort"')
   })
 
+  it('accepts a field reference whose sort is present but undefined', () => {
+    const unsorted: { field: string; sort: undefined } = { field: 'createdAt', sort: undefined }
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        AuthVerification: {
+          fields: { identifier: text(), createdAt: timestamp() },
+          db: { indexes: [{ fields: ['identifier', unsorted] }] },
+        },
+      },
+    }
+
+    expect(validateDatabaseConfig(config)).toEqual([])
+  })
+
   it('refuses db.idField on a singleton list, naming the list and the entry', () => {
     const config: OpenSaasConfig = {
       db: { provider: 'postgresql' },
