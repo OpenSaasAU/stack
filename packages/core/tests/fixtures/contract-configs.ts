@@ -3,7 +3,9 @@ import {
   bigInt,
   calendarDay,
   checkbox,
+  decimal,
   integer,
+  json,
   password,
   relationship,
   select,
@@ -189,12 +191,6 @@ export const ragConfig: OpenSaasConfig = {
   },
 }
 
-/** The same lists with the pack left undeclared — the refusal case. */
-export const ragConfigWithoutPack: OpenSaasConfig = {
-  db: { provider: 'postgresql' },
-  lists: ragConfig.lists,
-}
-
 /**
  * Every ownership case ADR-0064 names: explicit `db.foreignKey: true`
  * (`Profile.user`), the alphabetical default (`Passport` sorts before
@@ -216,7 +212,7 @@ export const oneToOneConfig: OpenSaasConfig = {
         bio: text(),
         user: relationship({
           ref: 'User.profile',
-          db: { foreignKey: true, isNullable: false, onDelete: 'cascade' },
+          db: { foreignKey: true, isNullable: false, onDelete: 'cascade', onUpdate: 'cascade' },
         }),
       },
     },
@@ -232,6 +228,53 @@ export const oneToOneConfig: OpenSaasConfig = {
       fields: {
         number: text({ isIndexed: 'unique' }),
         holder: relationship({ ref: 'Person.passport' }),
+      },
+    },
+  },
+}
+
+/**
+ * Two Postgres schemas: `db.schemas` declares them, `Session` lives in
+ * `auth` and points back at `User` in the default `public`.
+ */
+export const multiSchemaConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql', schemas: ['public', 'auth'] },
+  lists: {
+    User: {
+      fields: {
+        email: text({ isIndexed: 'unique' }),
+        sessions: relationship({ ref: 'Session.user', many: true }),
+      },
+    },
+    Session: {
+      fields: {
+        token: text({ isIndexed: 'unique' }),
+        user: relationship({ ref: 'User.sessions', db: { isNullable: false } }),
+      },
+      db: { schema: 'auth', map: 'session' },
+    },
+  },
+}
+
+/**
+ * Every `db.nativeType` override the derivation honours, next to the
+ * builders' own defaults it overrides.
+ */
+export const nativeTypesConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    Reading: {
+      fields: {
+        code: text({ db: { nativeType: 'VarChar(255)' } }),
+        tag: text({ db: { nativeType: 'Char(3)' } }),
+        amount: decimal({ db: { nativeType: 'Decimal(10, 2)' } }),
+        ratio: decimal({ db: { nativeType: 'Real' } }),
+        raw: json({ db: { nativeType: 'Json' } }),
+        doc: json(),
+        takenAt: timestamp({ db: { nativeType: 'Timestamp(3)' } }),
+        seenAt: timestamp({ db: { nativeType: 'Timestamptz(6)' } }),
+        atTime: timestamp({ db: { nativeType: 'Time(2)' } }),
+        day: timestamp({ db: { nativeType: 'Date' } }),
       },
     },
   },

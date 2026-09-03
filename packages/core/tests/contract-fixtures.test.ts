@@ -9,7 +9,16 @@ import {
   type ContractData,
   type EmittedContract,
 } from '../src/contract/index.js'
-import { authConfig, blogConfig, oneToOneConfig, ragConfig } from './fixtures/contract-configs.js'
+import {
+  authConfig,
+  blogConfig,
+  multiSchemaConfig,
+  nativeTypesConfig,
+  oneToOneConfig,
+  ragConfig,
+} from './fixtures/contract-configs.js'
+import { relationship, text } from '../src/fields/index.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
 
 function model(data: ContractData, name: string) {
   const found = data.models.find((m) => m.name === name)
@@ -134,7 +143,8 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       ['category'],
       ['author', 'status'],
     ])
-    expect(table(emitted, 'Post').indexes[3]).toMatchObject({ prefix: 'post_author_status' })
+    expect(table(emitted, 'Post').indexes[3]).toMatchObject({ name: 'post_author_status' })
+    expect(table(emitted, 'Post').indexes[3]).not.toHaveProperty('prefix')
     expect(table(emitted, 'Post').uniques).toEqual([{ columns: ['slug'] }])
     expect(table(emitted, 'User').uniques).toEqual([{ columns: ['email'] }])
 
@@ -244,7 +254,20 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
       unique: true,
     })
     expect(model(data, 'Profile').foreignKeys).toEqual([
-      { column: 'userId', references: { model: 'User', column: 'id' }, onDelete: 'cascade' },
+      {
+        column: 'userId',
+        references: { model: 'User', column: 'id' },
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      },
+    ])
+    expect(table(emitted, 'Profile').foreignKeys).toEqual([
+      {
+        source: { namespaceId: 'public', tableName: 'Profile', columns: ['user'] },
+        target: { namespaceId: 'public', tableName: 'User', columns: ['id'] },
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      },
     ])
     expect(model(data, 'User').relations).toEqual([
       {
@@ -345,6 +368,122 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
 
   test('the relation graph agrees with the emitted contract', () => {
     expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
+  })
+})
+
+describe('one-to-one — a named unique db.indexes entry on the owning column names the implicit constraint', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      User: { fields: { profile: relationship({ ref: 'Profile.user' }) } },
+      Profile: {
+        fields: {
+          bio: text(),
+          user: relationship({ ref: 'User.profile', db: { foreignKey: true } }),
+        },
+        db: { indexes: [{ fields: ['user'], unique: true, name: 'Profile_user_key' }] },
+      },
+    },
+  }
+  const data = deriveContract(config)
+  const emitted = toEmittedContract(buildPrismaContract(data))
+
+  test('one unique constraint carries the entry name; the column drops its own', () => {
+    expect(model(data, 'Profile').columns.find((column) => column.name === 'userId')).toEqual({
+      name: 'userId',
+      type: { pack: 'pg', type: 'uuid' },
+      nullable: true,
+      map: 'user',
+    })
+    expect(model(data, 'Profile').indexes).toEqual([
+      { columns: ['userId'], unique: true, name: 'Profile_user_key' },
+    ])
+    expect(table(emitted, 'Profile').uniques).toEqual([
+      { columns: ['user'], name: 'Profile_user_key' },
+    ])
+    expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
+  })
+})
+
+describe('multi-schema — db.schemas and db.schema place a model in its namespace', () => {
+  const data = deriveContract(multiSchemaConfig)
+  const emitted = toEmittedContract(buildPrismaContract(data))
+
+  test('the namespaces beyond public are declared and the model lands in its own', () => {
+    expect(data.namespaces).toEqual(['auth'])
+    expect(model(data, 'Session').namespace).toBe('auth')
+    expect(Object.keys(emitted.storage.namespaces).sort()).toEqual(['auth', 'public'])
+    expect(emitted.storage.namespaces.auth.entries.table.session).toBeDefined()
+    expect(emitted.storage.namespaces.public.entries.table.User).toBeDefined()
+    expect(emitted.domain.namespaces.auth.models.Session.storage).toMatchObject({
+      table: 'session',
+      namespaceId: 'auth',
+    })
+    expect(emitted.domain.namespaces.auth.models.Session.relations.user).toEqual({
+      to: { namespace: 'public', model: 'User' },
+      cardinality: 'N:1',
+      on: { localFields: ['userId'], targetFields: ['id'] },
+    })
+    expect(emitted.domain.namespaces.public.models.User.relations.sessions).toEqual({
+      to: { namespace: 'auth', model: 'Session' },
+      cardinality: '1:N',
+      on: { localFields: ['id'], targetFields: ['userId'] },
+    })
+    expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
+  })
+})
+
+describe('native types — every honoured db.nativeType lowers to its own column', () => {
+  const data = deriveContract(nativeTypesConfig)
+  const emitted = toEmittedContract(buildPrismaContract(data))
+  const columns = table(emitted, 'Reading').columns
+
+  test('the derived descriptors carry the constructor and its arguments', () => {
+    expect(Object.fromEntries(model(data, 'Reading').columns.map((c) => [c.name, c.type]))).toEqual(
+      {
+        code: { pack: 'pg', type: 'varchar', args: [255] },
+        tag: { pack: 'pg', type: 'char', args: [3] },
+        amount: { pack: 'pg', type: 'decimal', args: [10, 2] },
+        ratio: { pack: 'pg', type: 'real' },
+        raw: { pack: 'pg', type: 'json' },
+        doc: { pack: 'pg', type: 'jsonb' },
+        takenAt: { pack: 'pg', type: 'timestamp', args: [3] },
+        seenAt: { pack: 'pg', type: 'timestamptz', args: [6] },
+        atTime: { pack: 'pg', type: 'time', args: [2] },
+        day: { pack: 'pg', type: 'date' },
+      },
+    )
+  })
+
+  test('the built contract binds each to its native type, codec and type params', () => {
+    expect(columns.code).toMatchObject({
+      nativeType: 'character varying',
+      typeParams: { length: 255 },
+    })
+    expect(columns.tag).toMatchObject({ nativeType: 'character', typeParams: { length: 3 } })
+    expect(columns.amount).toMatchObject({
+      nativeType: 'numeric',
+      typeParams: { precision: 10, scale: 2 },
+    })
+    expect(columns.ratio).toMatchObject({ nativeType: 'float4', codecId: 'pg/float4@1' })
+    expect(columns.raw).toMatchObject({ nativeType: 'json', codecId: 'pg/json@1' })
+    expect(columns.doc).toMatchObject({ nativeType: 'jsonb', codecId: 'pg/jsonb@1' })
+    expect(columns.takenAt).toMatchObject({
+      nativeType: 'timestamp',
+      codecId: 'pg/timestamp-string@1',
+      typeParams: { precision: 3 },
+    })
+    expect(columns.seenAt).toMatchObject({
+      nativeType: 'timestamptz',
+      codecId: 'pg/timestamptz-string@1',
+      typeParams: { precision: 6 },
+    })
+    expect(columns.atTime).toMatchObject({
+      nativeType: 'time',
+      codecId: 'pg/time-string@1',
+      typeParams: { precision: 2 },
+    })
+    expect(columns.day).toMatchObject({ nativeType: 'date', codecId: 'pg/date-string@1' })
   })
 })
 

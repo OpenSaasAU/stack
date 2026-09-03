@@ -40,6 +40,26 @@ describe('validateRelations', () => {
     expect(validateRelations(config)).toEqual([])
   })
 
+  it('refuses a bidirectional ref whose other end does not ref back, naming both ends and the fix', () => {
+    const config = configWith({
+      User: { fields: { posts: relationship({ ref: 'Post.editor', many: true }) } },
+      Org: { fields: { posts: relationship({ ref: 'Post.editor', many: true }) } },
+      Post: { fields: { editor: relationship({ ref: 'Org.posts' }) } },
+    })
+
+    const refusals = validateRelations(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'User',
+      entry: 'fields.posts',
+      reason: 'inverse-mismatch',
+    })
+    expect(refusals[0].message).toContain('List "User": fields.posts refs "Post.editor"')
+    expect(refusals[0].message).toContain('"Post.editor" refs "Org.posts" rather than "User.posts"')
+    expect(refusals[0].message).toContain(`Point "Post.editor" at 'User.posts'`)
+  })
+
   it('refuses a list-only ref with many: true as a many-to-many, naming the list, the entry and the junction fix', () => {
     const config = configWith({
       Post: { fields: { tags: relationship({ ref: 'Tag', many: true }) } },

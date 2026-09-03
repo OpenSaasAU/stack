@@ -1,4 +1,8 @@
-import type { ColumnTypeDescriptor, OpenSaasConfig } from '../config/types.js'
+import type {
+  ColumnTypeDescriptor,
+  ContractFieldDescriptor,
+  OpenSaasConfig,
+} from '../config/types.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
 export function undeclaredExtensionPackMessage(
@@ -26,7 +30,20 @@ export function validateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       if (field.virtual || field.type === 'relationship' || !field.getContractField) continue
-      const descriptor = field.getContractField(fieldKey, listKey, config)
+      let descriptor: ContractFieldDescriptor
+      try {
+        descriptor = field.getContractField(fieldKey, listKey, config)
+      } catch (error) {
+        refusals.push({
+          listKey,
+          entry: `fields.${fieldKey}`,
+          reason: 'field-descriptor-error',
+          message:
+            `List "${listKey}": fields.${fieldKey} cannot describe its contract column — ` +
+            (error instanceof Error ? error.message : String(error)),
+        })
+        continue
+      }
       const columns =
         descriptor.kind === 'column'
           ? [descriptor]

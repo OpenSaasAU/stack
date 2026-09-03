@@ -99,14 +99,17 @@ describe('getContractField — every core builder describes its contract contrib
       type: { pack: 'pg', type: 'decimal', args: [18, 4] },
       nullable: true,
     })
-    // getPrismaType always emits @db.Decimal(p, s) and ignores db.nativeType;
-    // the descriptor carries the args only, never a second, competing native type.
     expect(
-      decimal({ db: { nativeType: 'Money' } }).getContractField?.('price', 'Product', config),
+      decimal({ db: { nativeType: 'Decimal(10, 2)' } }).getContractField?.(
+        'price',
+        'Product',
+        config,
+      ),
     ).toEqual({
       kind: 'column',
       name: 'price',
       type: { pack: 'pg', type: 'decimal', args: [18, 4] },
+      nativeType: 'Decimal(10, 2)',
       nullable: true,
     })
     expect(
@@ -262,7 +265,7 @@ describe('getContractField — every core builder describes its contract contrib
     ).toMatchObject({ nullable: true, enum: { name: 'TicketStatusType' } })
   })
 
-  test('json: a pg json column; an object default is carried as a literal', () => {
+  test('json: a pg jsonb column; an object default is carried as a literal', () => {
     expect(
       json({ defaultValue: { theme: 'dark', tags: [] } }).getContractField?.(
         'settings',
@@ -272,7 +275,7 @@ describe('getContractField — every core builder describes its contract contrib
     ).toEqual({
       kind: 'column',
       name: 'settings',
-      type: { pack: 'pg', type: 'json' },
+      type: { pack: 'pg', type: 'jsonb' },
       nullable: true,
       default: { kind: 'literal', value: { theme: 'dark', tags: [] } },
     })

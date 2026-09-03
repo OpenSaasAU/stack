@@ -135,6 +135,7 @@ export type { NeedsClosureError } from './validation/needs-closure.js'
 export { validateRelations } from './validation/relations.js'
 export { validateDatabaseConfig } from './validation/database-config.js'
 export { validateExtensionPacks } from './validation/extension-packs.js'
+export { validateFieldNames } from './validation/field-names.js'
 export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
 
 // Contract derivation (ADR-0057) — `deriveContract(config)` is the data the

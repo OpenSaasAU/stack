@@ -46,8 +46,14 @@ export type ContractForeignKey = {
 /**
  * A model-level index or unique constraint from `db.indexes`, with every field
  * name resolved to its column (a scalar's own name, or a relationship's
- * `<field>Id`). `name` is the entry's declared name, emitted as the
- * constraint's `name:` (ADR-0040).
+ * `<field>Id`). `name` is the entry's declared name, adopted as the
+ * constraint's exact physical name (ADR-0040) — the option Prisma's builder
+ * spells `name:` on a unique and `map:` on an index at rc.8, where an index's
+ * `name:` is a wire-name prefix that gains a content hash.
+ *
+ * A single-field unique entry on the owning column of a one-to-one names the
+ * constraint that column carries implicitly (ADR-0064) instead of adding a
+ * second one; the column's own `unique` is then cleared.
  */
 export type ContractIndex = {
   columns: string[]
@@ -126,6 +132,12 @@ export type ContractModel = {
 export type ContractData = {
   /** Models in config list order. */
   models: ContractModel[]
+  /**
+   * The Postgres schemas the contract declares beyond the default `public`:
+   * `db.schemas`, unioned with every `db.schema` a list uses. Prisma resolves
+   * a model's `namespace` against this list.
+   */
+  namespaces: string[]
   /** Native enums, deduplicated by name. */
   enums: ContractEnum[]
   /** The extension packs the contract declares (`db.extensions`, plus any a plugin added), deduplicated by name. */

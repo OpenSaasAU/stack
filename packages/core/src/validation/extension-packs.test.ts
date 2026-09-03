@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { relationship, text, virtual } from '../fields/index.js'
+import { json, relationship, text, virtual } from '../fields/index.js'
 import { validateDatabaseConfig } from './database-config.js'
 import { validateExtensionPacks } from './extension-packs.js'
 
@@ -75,6 +75,27 @@ describe('validateExtensionPacks', () => {
     expect(refusals).toHaveLength(1)
     expect(refusals[0]).toMatchObject({ listKey: 'Map', entry: 'fields.tiles' })
     expect(refusals[0].message).toContain('"Geometry" from extension pack "postgis"')
+  })
+
+  it('reports a field whose getContractField throws instead of throwing itself', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { meta: json({ defaultValue: new Date(0) }) } } },
+    }
+    const refusals = validateExtensionPacks(config)
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'Post',
+      entry: 'fields.meta',
+      reason: 'field-descriptor-error',
+    })
+    expect(refusals[0].message).toContain(
+      'List "Post": fields.meta cannot describe its contract column',
+    )
+    expect(refusals[0].message).toContain(
+      '"Post.meta" has a defaultValue the contract cannot carry',
+    )
+    expect(validateDatabaseConfig(config).map((r) => r.reason)).toEqual(['field-descriptor-error'])
   })
 
   it('is part of validateDatabaseConfig', () => {

@@ -497,6 +497,7 @@ export function decimal<
       scalarColumn(fieldName, {
         type: pgType('decimal', [precision, scale]),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
+        nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
@@ -1435,6 +1436,11 @@ function parseRelationshipRef(ref: string): { list: string; field?: string } {
   }
 }
 
+/** Narrow a field config to the relationship variant. */
+export function isRelationshipField(field: FieldConfig | undefined): field is RelationshipField {
+  return field?.type === 'relationship'
+}
+
 /**
  * Whether `field` declares one end of a one-to-one: a bidirectional ref with
  * `many: false` on both ends. A list-only ref is never one-to-one. Throws
@@ -2042,7 +2048,7 @@ export function json<
     },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
-        type: pgType('json'),
+        type: pgType('jsonb'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,

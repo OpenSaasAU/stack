@@ -3,8 +3,11 @@ import type { NativeEnumHandle, ScalarFieldBuilder } from '@prisma/orm-postgres/
 import {
   charColumn,
   dateStringColumn,
+  float4Column,
   int2Column,
+  jsonColumn,
   numericColumn,
+  timeStringColumn,
   timestampStringColumn,
   timestamptzStringColumn,
   varcharColumn,
@@ -54,6 +57,15 @@ type Relations = Record<string, RelationBuilder>
 function firstNumber(args: ContractLiteral[] | undefined, index: number): number | undefined {
   const value = args?.[index]
   return typeof value === 'number' ? value : undefined
+}
+
+/**
+ * The rc.8 `timestamp`/`timestamptz` descriptors are constants with no
+ * precision parameter; the codec behind each accepts a `precision` type
+ * param, which the DDL renders as `timestamp(n)`.
+ */
+function withPrecision(column: PrismaColumnType, precision: number | undefined): PrismaColumnType {
+  return precision === undefined ? column : { ...column, typeParams: { precision } }
 }
 
 function isColumnType(value: unknown): value is PrismaColumnType {
@@ -114,7 +126,10 @@ function pgColumn(
       return field.text()
     case 'varchar': {
       const length = firstNumber(type.args, 0)
-      return length === undefined ? field.text() : field.column(varcharColumn(length))
+      if (length === undefined) {
+        throw new Error(`Model "${model}", column "${columnName}": a varchar column needs a length`)
+      }
+      return field.column(varcharColumn(length))
     }
     case 'char': {
       const length = firstNumber(type.args, 0)
@@ -137,18 +152,23 @@ function pgColumn(
     }
     case 'float':
       return field.float()
+    case 'real':
+      return field.column(float4Column)
     case 'boolean':
       return field.boolean()
     case 'dateTime':
     case 'timestamptz':
-      return field.column(timestamptzStringColumn)
+      return field.column(withPrecision(timestamptzStringColumn, firstNumber(type.args, 0)))
     case 'timestamp':
-      return field.column(timestampStringColumn)
+      return field.column(withPrecision(timestampStringColumn, firstNumber(type.args, 0)))
+    case 'time':
+      return field.column(timeStringColumn(firstNumber(type.args, 0)))
     case 'date':
       return field.column(dateStringColumn)
     case 'uuid':
       return field.uuidNative()
     case 'json':
+      return field.column(jsonColumn)
     case 'jsonb':
       return field.json()
     case 'bytes':
@@ -261,7 +281,7 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
         ...plainIndexes.map((index) =>
           constraints.index(
             index.columns.map((column) => cols[column]),
-            index.name !== undefined ? { name: index.name } : {},
+            index.name !== undefined ? { map: index.name } : {},
           ),
         ),
       ],
@@ -281,17 +301,6 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
  * module and running `prisma contract emit` (ADR-0057). The builder
  * validates as it builds, so an invalid derivation throws here.
  *
- * Entry points relied on (`@prisma/orm-postgres@8.0.0-rc.8`): the callback
- * overload of `defineContract` from `/contract-builder` for the `field`,
- * `model`, `rel` and `type` helpers; `field.id.uuidv7Native()`,
- * `field.id.cuid2()`, `field.int().defaultSql('autoincrement()').id()`;
- * `field.temporal.createdAtString()`/`updatedAtString()`; `nativeEnum` +
- * `pg.enum`; the raw column descriptors from `/adapter/column-types` for the
- * constructors the presets do not parameterise; `model(...).attributes({ uniques })` and
- * `.sql({ table, indexes, foreignKeys })` with `constraints.foreignKey(col,
- * Model.refs.id, { onDelete, onUpdate })`; and the thunk form of
- * `rel.belongsTo`/`hasOne`/`hasMany` for forward and self references.
- *
  * @example
  * ```typescript
  * import pgvector from '@prisma/orm-extension-pgvector/pack'
@@ -306,9 +315,14 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
  * supported Node release ships (ADR-0048's re-verification row). The
  * string codecs read and write ISO-8601 text; the column type is the same.
  *
+ * A `db.indexes` name is adopted verbatim: `constraints.unique(..., { name })`
+ * is exact at rc.8, while `constraints.index(..., { name })` is a wire-name
+ * prefix that gains a content hash, so an index's name goes through `map`.
+ *
  * Known limits:
- * - A `timestamp`/`timestamptz` precision argument is dropped; the pack's
- *   column descriptors carry none.
+ * - The loaded pack value for every declared extension must arrive in
+ *   `options.packs`; core does not import a pack by package name on the
+ *   caller's behalf.
  */
 export function buildPrismaContract(
   data: ContractData,
@@ -326,27 +340,33 @@ export function buildPrismaContract(
   }
   const enums = nativeEnums(data)
 
-  return defineContract({ extensions: packs }, (helpers) => {
-    const tokens: Record<string, ModelToken> = {}
-    for (const model of data.models) {
-      const relations: Relations = {}
-      for (const relation of model.relations) {
-        const target = () => tokens[relation.target]
-        relations[relation.name] =
-          relation.kind === 'belongsTo'
-            ? helpers.rel.belongsTo(target, { from: relation.column, to: 'id' })
-            : relation.kind === 'hasOne'
-              ? helpers.rel.hasOne(target, { by: relation.column })
-              : helpers.rel.hasMany(target, { by: relation.column })
+  return defineContract(
+    {
+      extensions: packs,
+      ...(data.namespaces.length > 0 ? { namespaces: data.namespaces } : {}),
+    },
+    (helpers) => {
+      const tokens: Record<string, ModelToken> = {}
+      for (const model of data.models) {
+        const relations: Relations = {}
+        for (const relation of model.relations) {
+          const target = () => tokens[relation.target]
+          relations[relation.name] =
+            relation.kind === 'belongsTo'
+              ? helpers.rel.belongsTo(target, { from: relation.column, to: 'id' })
+              : relation.kind === 'hasOne'
+                ? helpers.rel.hasOne(target, { by: relation.column })
+                : helpers.rel.hasMany(target, { by: relation.column })
+        }
+        tokens[model.name] = baseModel(helpers, model, enums, relations)
       }
-      tokens[model.name] = baseModel(helpers, model, enums, relations)
-    }
-    const models: Record<string, ReturnType<typeof finishModel>> = {}
-    for (const model of data.models) {
-      models[model.name] = finishModel(tokens[model.name], model, tokens)
-    }
-    return { models }
-  })
+      const models: Record<string, ReturnType<typeof finishModel>> = {}
+      for (const model of data.models) {
+        models[model.name] = finishModel(tokens[model.name], model, tokens)
+      }
+      return { models }
+    },
+  )
 }
 
 /**
