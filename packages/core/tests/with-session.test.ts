@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text } from '../src/fields/index.js'
-import type { PrismaClientLike } from '../src/access/types.js'
 
 /**
  * #980: `context.withSession(session)` — the sibling to `sudo()` on the
@@ -22,7 +21,7 @@ describe('withSession', () => {
       delete: vi.fn(),
       count: vi.fn(),
     },
-  } as PrismaClientLike
+  }
 
   const seenSessions: (Record<string, unknown> | null | undefined)[] = []
 

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { config, list, getContext } from '../src/index.js'
 import { text, password } from '../src/fields/index.js'
-import type { PrismaClientLike } from '../src/access/types.js'
 import type { HashedPassword } from '../src/utils/password.js'
 
 /**
@@ -41,7 +40,7 @@ describe('Password Field Type Safety', () => {
       }),
       count: async () => 1,
     },
-  } as PrismaClientLike
+  }
 
   const testConfig = config({
     db: {
@@ -162,7 +161,7 @@ describe('Password Field Type Safety', () => {
         ...mockPrismaClient.user,
         findFirst: mockPrismaClient.user.findUnique,
       },
-    } as PrismaClientLike
+    }
     const context = getContext(await readableConfig, readablePrismaClient, null)
 
     const user = await context.db.user.findUnique({ where: { id: '1' } })
