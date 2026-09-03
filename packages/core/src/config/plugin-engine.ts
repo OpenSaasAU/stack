@@ -198,6 +198,21 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
         mcpToolsRegistry.push(tool)
       },
 
+      addExtension: ({ name, from }) => {
+        const declared = currentConfig.db?.extensions ?? []
+        const existing = declared.find((descriptor) => descriptor.name === name)
+        if (existing) {
+          if (existing.from !== from) {
+            throw new Error(
+              `Plugin "${plugin.name}" tried to add extension pack "${name}" from "${from}", but the config already declares "${name}" from "${existing.from}". ` +
+                `Two packs cannot share a name — rename one of them, or point both declarations at the same package.`,
+            )
+          }
+          return
+        }
+        currentConfig.db = { ...currentConfig.db, extensions: [...declared, { name, from }] }
+      },
+
       setPluginData: <T>(pluginName: string, data: T) => {
         if (!currentConfig._pluginData) {
           currentConfig._pluginData = {}

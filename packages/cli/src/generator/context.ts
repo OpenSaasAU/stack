@@ -3,6 +3,15 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
 
+/**
+ * The Prisma 7 client constructor the config types no longer carry. This
+ * generator is deleted by #1134; until then it reads a runtime object through
+ * this shim.
+ */
+type LegacyPrisma7DbConfig = OpenSaasConfig['db'] & {
+  prismaClientConstructor?: (PrismaClientClass: unknown) => unknown
+}
+
 export function generateContext(config: OpenSaasConfig, configImport?: string): string {
   // Defaults to the legacy `../opensaas.config` (bundle one level below the
   // project root); the output-path resolver supplies a recomputed value when
@@ -11,7 +20,8 @@ export function generateContext(config: OpenSaasConfig, configImport?: string): 
   // (see ./extension.ts).
   const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
 
-  const hasCustomConstructor = !!config.db.prismaClientConstructor
+  const db: LegacyPrisma7DbConfig = config.db
+  const hasCustomConstructor = !!db.prismaClientConstructor
 
   const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
 

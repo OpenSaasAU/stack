@@ -141,8 +141,7 @@ describe('validateConfigFields', () => {
   it('returns no errors for a fully compliant config', () => {
     const config: OpenSaasConfig = {
       db: {
-        provider: 'sqlite',
-        prismaClientConstructor: () => null as never,
+        provider: 'postgresql',
       },
       lists: {
         User: {
@@ -172,8 +171,7 @@ describe('validateConfigFields', () => {
 
     const config: OpenSaasConfig = {
       db: {
-        provider: 'sqlite',
-        prismaClientConstructor: () => null as never,
+        provider: 'postgresql',
       },
       lists: {
         User: {

@@ -19,6 +19,10 @@ export type {
   OutputConfig,
   ListConfig,
   DatabaseConfig,
+  DatabaseClientConfig,
+  ExtensionDescriptor,
+  IdFieldStrategy,
+  ReferentialAction,
   ListIndex,
   ListIndexFieldRef,
   FieldConfig,
@@ -121,6 +125,13 @@ export type { FieldConfigValidationError } from './validation/field-config.js'
 // config that fails either must not generate.
 export { validateNeedsDeclarations, validateNeedsClosureDepth } from './validation/needs-closure.js'
 export type { NeedsClosureError } from './validation/needs-closure.js'
+
+// Config-surface refusals (ADR-0040, ADR-0048, ADR-0049, ADR-0064) — the
+// declarations the Prisma 8 contract cannot carry, each refused naming the
+// list, the entry and the fix rather than silently dropped.
+export { validateRelations } from './validation/relations.js'
+export { validateDatabaseConfig } from './validation/database-config.js'
+export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
 
 // Fragment-based query API — composable, type-safe reads that mirror
 // Keystone's GraphQL fragments without a GraphQL runtime. The migration

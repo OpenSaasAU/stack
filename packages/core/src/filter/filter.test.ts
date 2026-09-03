@@ -247,7 +247,7 @@ describe('buildFilterWhere', () => {
 
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+    db: { provider: 'postgresql' },
     lists: {
       User: list({ fields: { name: text() } }),
       Post: list({
@@ -352,7 +352,7 @@ describe('core field Filter specs', () => {
 
   it('excludes a field the session cannot read (#915)', async () => {
     const gatedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
           fields: {
@@ -373,7 +373,7 @@ describe('core field Filter specs', () => {
 
   it('excludes a row-dependent read rule too — no row exists at predicate time (#915)', async () => {
     const gatedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
           fields: {
@@ -426,7 +426,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
 
   it('a read-denied field degrades to free text instead of reaching the engine (#915)', async () => {
     const gatedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
           fields: {
@@ -453,7 +453,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
 describe('to-many relationship Filter spec (count comparisons — issue #732)', () => {
   function countConfig(): OpenSaasConfig {
     return {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         User: list({
           fields: {
@@ -517,7 +517,7 @@ describe('collectFilterSuggestions', () => {
 
   it('excludes a read-denied field from the suggestion metadata (#915)', async () => {
     const gatedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
           fields: {

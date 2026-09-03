@@ -219,10 +219,7 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
         },
       }
       return {
-        db: {
-          provider: 'postgresql',
-          prismaClientConstructor: (PrismaClient) => new PrismaClient(),
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Event: {
             fields: {

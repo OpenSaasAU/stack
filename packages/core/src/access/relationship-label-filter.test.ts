@@ -21,7 +21,7 @@ import {
 
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+    db: { provider: 'postgresql' },
     lists: {
       User: list({
         fields: { name: text(), active: integer() },

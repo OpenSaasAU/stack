@@ -11,6 +11,17 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 /**
+ * The Prisma 7 config keys the public types no longer carry (`extendPrismaSchema`
+ * and an index column's `sort`). This generator is deleted by #1134; until then
+ * it reads a runtime object through these shims.
+ */
+type LegacyPrisma7DbConfig = DatabaseConfig & {
+  extendPrismaSchema?: (schema: string) => string
+}
+
+type LegacyPrisma7IndexFieldRef = string | { field: string; sort?: 'asc' | 'desc' }
+
+/**
  * Decide which auto-timestamp columns the generator should inject into a list's model.
  *
  * Auto-timestamps are OFF by default (matching Keystone 6, which never adds them
@@ -123,8 +134,9 @@ function resolveIndexFieldColumn(
   fieldRef: ListIndex['fields'][number],
   autoTimestampColumns: { createdAt: boolean; updatedAt: boolean },
 ): { column: string; sort?: 'asc' | 'desc' } {
-  const fieldName = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
-  const sort = typeof fieldRef === 'string' ? undefined : fieldRef.sort
+  const legacyRef: LegacyPrisma7IndexFieldRef = fieldRef
+  const fieldName = typeof legacyRef === 'string' ? legacyRef : legacyRef.field
+  const sort = typeof legacyRef === 'string' ? undefined : legacyRef.sort
 
   const fieldConfig = listConfig.fields[fieldName]
   if (!fieldConfig) {
@@ -580,8 +592,9 @@ export function generatePrismaSchema(config: OpenSaasConfig, prismaClientOutput?
 
   let schema = lines.join('\n')
 
-  if (config.db.extendPrismaSchema) {
-    schema = config.db.extendPrismaSchema(schema)
+  const db: LegacyPrisma7DbConfig = config.db
+  if (db.extendPrismaSchema) {
+    schema = db.extendPrismaSchema(schema)
   }
 
   return schema

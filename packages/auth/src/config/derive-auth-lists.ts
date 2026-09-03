@@ -24,7 +24,13 @@ import {
 import { getAuthTables } from 'better-auth/db'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
-import type { ListConfig, FieldConfig, ListIndex, FieldAccess } from '@opensaas/stack-core'
+import type {
+  ListConfig,
+  FieldConfig,
+  ListIndex,
+  FieldAccess,
+  ReferentialAction,
+} from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
@@ -258,16 +264,16 @@ function relationshipFieldName(upstreamFieldKey: string): string {
   return upstreamFieldKey.endsWith('Id') ? upstreamFieldKey.slice(0, -2) : upstreamFieldKey
 }
 
-const ON_DELETE_ACTIONS: Record<string, string> = {
-  cascade: 'Cascade',
-  restrict: 'Restrict',
-  'set null': 'SetNull',
-  'set default': 'SetDefault',
-  'no action': 'NoAction',
+const ON_DELETE_ACTIONS: Record<string, ReferentialAction> = {
+  cascade: 'cascade',
+  restrict: 'restrict',
+  'set null': 'setNull',
+  'set default': 'setDefault',
+  'no action': 'noAction',
 }
 
-function mapOnDelete(action: string): string {
-  return ON_DELETE_ACTIONS[action] ?? 'Cascade'
+function mapOnDelete(action: string): ReferentialAction {
+  return ON_DELETE_ACTIONS[action] ?? 'cascade'
 }
 
 /**
@@ -446,10 +452,7 @@ function buildForeignKeyField(
     db: {
       isNullable: !isRequired,
       foreignKey: { map: columnName },
-      extendPrismaSchema: ({ fkLine, relationLine }) => ({
-        fkLine,
-        relationLine: relationLine.replace('@relation(', `@relation(onDelete: ${onDelete}, `),
-      }),
+      onDelete,
     },
   })
 }

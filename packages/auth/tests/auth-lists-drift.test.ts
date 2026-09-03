@@ -259,18 +259,14 @@ function compareForeignKeyField(
       })
     }
 
-    const extend = derived.db?.extendPrismaSchema
-    const relationLine = extend
-      ? extend({ relationLine: '@relation(fields: [x], references: [id])' }).relationLine
-      : ''
-    const derivedOnDelete = /onDelete:\s*(\w+)/.exec(relationLine)?.[1] ?? ''
+    const derivedOnDelete = derived.db?.onDelete ?? ''
     const upstreamOnDelete = references.onDelete ?? 'cascade'
     if (normalizeOnDelete(derivedOnDelete) !== normalizeOnDelete(upstreamOnDelete)) {
       divergences.push({
         model,
         field: upstreamFieldKey,
         dimension: 'references',
-        detail: `better-auth onDelete="${upstreamOnDelete}" vs derived relation line "${relationLine}"`,
+        detail: `better-auth onDelete="${upstreamOnDelete}" vs derived db.onDelete "${derivedOnDelete}"`,
       })
     }
   }

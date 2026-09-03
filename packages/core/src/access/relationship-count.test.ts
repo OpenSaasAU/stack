@@ -22,7 +22,7 @@ import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 // closed by default (no query access) to prove the denied path.
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+    db: { provider: 'postgresql' },
     lists: {
       User: list({
         fields: {
@@ -83,7 +83,7 @@ describe('buildRelationshipCountSelect', () => {
 
   it('uses a bare `true` when the related list is fully readable', async () => {
     const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: {
         Tag: list({ fields: { name: text() }, access: { operation: { query: () => true } } }),
         Post: list({ fields: { title: text(), tags: relationship({ ref: 'Tag', many: true }) } }),
@@ -100,7 +100,7 @@ describe('buildRelationshipCountSelect', () => {
 
   it('returns undefined when there are no countable to-many relationships', async () => {
     const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', prismaClientConstructor: () => null as never },
+      db: { provider: 'postgresql' },
       lists: { Post: list({ fields: { title: text() } }) },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
     } as any

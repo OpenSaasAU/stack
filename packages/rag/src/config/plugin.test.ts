@@ -78,11 +78,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -102,6 +98,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -126,11 +123,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -147,6 +140,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await expect(plugin.init!(mockContext as PluginContext)).rejects.toThrow(
@@ -166,11 +160,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -186,6 +176,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -209,17 +200,14 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {},
         },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         extendList: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -247,11 +235,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -269,6 +253,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -295,11 +280,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -325,6 +306,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -348,11 +330,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -367,6 +345,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -394,11 +373,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -413,6 +388,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -433,11 +409,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             User: {
               fields: {
@@ -451,6 +423,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -471,11 +444,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             BlogPost: {
               fields: {
@@ -493,6 +462,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -523,11 +493,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -541,6 +507,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -581,11 +548,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -603,6 +566,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -622,11 +586,7 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {
             Article: {
               fields: {
@@ -644,6 +604,7 @@ describe('RAG Plugin', () => {
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)
@@ -665,17 +626,14 @@ describe('RAG Plugin', () => {
 
       const mockContext = {
         config: {
-          db: {
-            provider: 'sqlite',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            prismaClientConstructor: (() => null) as any,
-          },
+          db: { provider: 'postgresql' },
           lists: {},
         },
         setPluginData: vi.fn(),
         registerMcpTool: vi.fn(),
         extendList: vi.fn(),
         addList: vi.fn(),
+        addExtension: vi.fn(),
       } as PluginContext
 
       await plugin.init!(mockContext as PluginContext)

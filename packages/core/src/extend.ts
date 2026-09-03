@@ -8,7 +8,7 @@
 // ───────────────────────────────────────────────────────────────
 
 // Plugin authoring (see the Plugin System docs)
-export type { Plugin, PluginContext, GeneratedFiles } from './config/index.js'
+export type { Plugin, PluginContext, GeneratedFiles, ExtensionDescriptor } from './config/index.js'
 
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
