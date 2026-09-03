@@ -329,22 +329,75 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
 })
 
 describe('needs — generate-time validation (ADR-0025)', () => {
-  it('rejects a `needs` entry that does not name a relationship field on the same list', async () => {
+  it('accepts a `needs` entry naming a stored column on the same list (ADR-0051)', async () => {
     const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
     const testConfig = await buildTestConfig()
-    // Reach in and corrupt a `needs` array the way an un-typed (plain JS)
-    // config author might — the type constraint only helps when the list is
-    // annotated with its generated `Lists.X.TypeInfo`.
+    // Reach in the way an un-typed (plain JS) config author might — the type
+    // constraint only helps when the list is annotated with its generated
+    // `Lists.X.TypeInfo`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(testConfig.lists.LineItem.fields.summary as any).needs = ['price']
 
-    const errors = validateNeedsDeclarations(testConfig)
+    expect(validateNeedsDeclarations(testConfig)).toEqual([])
+  })
+
+  it('rejects a `needs` entry naming a computed sibling, naming the list and field', async () => {
+    const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
+    const computedConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Person: list({
+          fields: {
+            firstName: text(),
+            fullName: virtual({
+              type: 'string',
+              needs: ['firstName'],
+              hooks: { resolveOutput: ({ item }) => String(item.firstName) },
+            }),
+            greeting: virtual({
+              type: 'string',
+              needs: ['fullName'],
+              hooks: { resolveOutput: () => 'hi' },
+            }),
+          },
+        }),
+      },
+    })
+
+    const errors = validateNeedsDeclarations(computedConfig)
     expect(errors).toHaveLength(1)
     expect(errors[0]).toMatchObject({
-      listKey: 'LineItem',
-      fieldKey: 'summary',
-      reason: 'invalid-relation',
+      listKey: 'Person',
+      fieldKey: 'greeting',
+      reason: 'invalid-dependency',
     })
+    expect(errors[0].message).toContain('"Person.greeting"')
+    expect(errors[0].message).toContain('computed field')
+  })
+
+  it('rejects a `needs` declaration on a field with no resolveOutput hook, naming the list and field', async () => {
+    const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
+    const hooklessConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Order: list({
+          fields: {
+            price: integer(),
+            label: text({ needs: ['price'] }),
+          },
+        }),
+      },
+    })
+
+    const errors = validateNeedsDeclarations(hooklessConfig)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({
+      listKey: 'Order',
+      fieldKey: 'label',
+      reason: 'no-resolve-output',
+    })
+    expect(errors[0].message).toContain('"Order.label"')
+    expect(errors[0].message).toContain('no resolveOutput hook')
   })
 
   it('rejects a needs closure that cannot fit within the read-include depth cap from any starting point', async () => {
@@ -493,7 +546,8 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     expect(() => validateNeedsClosureDepth(edgeConfig)).not.toThrow()
 
     const declErrors = validateNeedsDeclarations(edgeConfig)
-    expect(declErrors.some((e) => e.fieldKey === 'usesNonRelation')).toBe(true)
+    // A stored column is a legitimate dependency (ADR-0051).
+    expect(declErrors.some((e) => e.fieldKey === 'usesNonRelation')).toBe(false)
     const typoError = declErrors.find((e) => e.fieldKey === 'typo')
     expect(typoError?.message).toContain('has no field named')
 
