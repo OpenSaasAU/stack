@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
 import { executeFieldResolveInputHooks, splitMultiColumnFields } from '../hooks/index.js'
 import type { FieldConfig } from '../config/types.js'
-import type { AccessContext, FieldAccess } from './types.js'
+import type { FieldAccess } from './types.js'
+import type { StackContext } from '../context/index.js'
 
 /**
  * Generic core wiring for multi-column fields (the contract storage
@@ -48,7 +49,7 @@ function multiColumnField(access?: FieldAccess): FieldConfig {
   } as unknown as FieldConfig
 }
 
-function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
+function makeContext(overrides: { isSudo?: boolean } = {}): StackContext {
   return {
     session: null,
     _isSudo: overrides.isSudo ?? false,

@@ -113,14 +113,26 @@ fields: {
 Every write runs inside one database transaction (see ADR-0010). The side-effect
 hooks split into two families by where they run relative to that transaction:
 
-- **In-transaction hooks — `beforeOperation` / `afterOperation`.** They run
-  _inside_ the transaction and roll back with it. Use them for work that must be
-  atomic with the write — typically further database work through
-  `context.db`/`context.prisma` (which the pipeline binds to the transaction for
-  the duration of the write). A throwing `afterOperation` rolls the write back.
-  **Do not** make non-transactional external calls (HTTP, email, billing) here:
-  holding a transaction open across a network call is bad, and such calls can't
-  be rolled back.
+- **In-transaction hooks — `resolveInput` / `validate` / `beforeOperation` /
+  `afterOperation`.** They run _inside_ the transaction and roll back with it.
+  Use them for work that must be atomic with the write — typically further
+  database work through `context.db`/`context.prisma` (which the pipeline binds
+  to the transaction for the duration of the write). A throwing `afterOperation`
+  rolls the write back. **Do not** make non-transactional external calls (HTTP,
+  email, billing) here: holding a transaction open across a network call is bad,
+  and such calls can't be rolled back.
+
+  Their `context` (list AND field level) is the **same full secured context**
+  `context.transaction()`'s own callback receives (ADR-0012's amendment,
+  issue #1176) — `context.sudo()`, `context.withSession()` and
+  `context.transaction()` are all available, and every one of them stays bound
+  to the write's OWN transaction client. A `context.sudo().db.x.create()` (or
+  `.delete()`, `.update()`) issued from one of these hooks is therefore atomic
+  with the write: it rolls back together if the write later throws, and its
+  `afterTransaction` (if it has one) defers to the write's own transaction
+  owner exactly like a plain `context.db` write does. `context.transaction()`
+  called from inside one of these hooks **joins** the write's transaction —
+  it never opens a nested one.
 
 - **Transaction-boundary hooks — `beforeTransaction` / `afterTransaction`.** They
   run _outside_ the transaction and form a compensation bracket around it:
@@ -235,6 +247,34 @@ interface HookContext {
   originalInput?: any // Original input before transformations
 }
 ```
+
+**`context` on `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
+(list and field level) is a full `StackContext` — the same shape
+`context.transaction()`'s own callback receives (issue #1176), bound to the
+write's transaction client:**
+
+```typescript
+hooks: {
+  beforeOperation: async ({ context }) => {
+    // Elevated, bound to THIS write's own transaction — rolls back with it.
+    await context.sudo().db.auditLog.create({ data: { action: 'write' } })
+  },
+}
+```
+
+`context` on `beforeTransaction` / `afterTransaction` is unaffected — it stays
+the plain access-checked context bound to the base (non-transaction) client,
+per their existing contract.
+
+A field's `resolveOutput` hook's `context` type is likewise unchanged (still
+the plain access-checked context, no `sudo`/`withSession`/`transaction`), but
+which client it's bound to already depended — before this change and after it
+alike — on how the read that triggered it arose: a plain top-level read
+(`findMany`/`findUnique`/`get`) resolves its fields against the base client; a
+`resolveOutput` that runs as part of a create/update's OWN result (the write's
+Field Visibility pass) resolves against THAT write's transaction client (ADR-0010),
+so a `context.db` read/write issued from inside such a hook is atomic with the
+write, same as `beforeOperation`/`afterOperation`.
 
 ## Common Use Cases
 

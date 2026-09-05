@@ -1,5 +1,6 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
-import type { AccessContext, FieldAccess, PrismaFilter } from '../access/types.js'
+import type { FieldAccess, PrismaFilter } from '../access/types.js'
+import type { StackContext } from './index.js'
 import {
   checkAccess,
   checkCreateAccess,
@@ -200,7 +201,7 @@ async function processNestedCreate(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
@@ -392,7 +393,7 @@ async function verifyConnectReachable(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   prisma: unknown,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
@@ -457,7 +458,7 @@ async function processNestedConnect(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   prisma: unknown,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
@@ -520,7 +521,7 @@ async function processNestedUpdate(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
@@ -716,7 +717,7 @@ async function processNestedDelete(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   prisma: unknown,
   afterTasks: AfterTask[],
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>> | boolean> {
@@ -824,7 +825,7 @@ async function processNestedConnectOrCreate(
   relatedListName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
-  context: AccessContext,
+  context: StackContext,
   config: OpenSaasConfig,
   prisma: unknown,
   afterTasks: AfterTask[],
@@ -945,7 +946,7 @@ interface NestedOpHandlerArgs {
   enclosingItem: Record<string, unknown> | undefined
   /** The enclosing write's input data, passed to the owning-field gate for the same reason as `enclosingItem`. */
   enclosingInputData: Record<string, unknown> | undefined
-  context: AccessContext
+  context: StackContext
   config: OpenSaasConfig
   /** Prisma client used for dynamic model access during access checks. */
   prisma: unknown
@@ -1213,7 +1214,7 @@ export async function processNestedOperations(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaasConfig,
-  context: AccessContext & { prisma: unknown },
+  context: StackContext & { prisma: unknown },
   operation: 'create' | 'update',
   parentListName: string,
   parentOriginalItem: Record<string, unknown> | undefined,
