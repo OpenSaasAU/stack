@@ -25,7 +25,5 @@ export type {
   ResolvedWritePaths,
   ResolvedCrossReferences,
 } from './output-paths.js'
-export { buildNodeBundle, formatNodeBuildDiagnostics } from './node-build.js'
-export type { BuildNodeBundleOptions, BuildNodeBundleResult } from './node-build.js'
 export { resolveTsconfigAlias } from './tsconfig-alias.js'
 export type { TsconfigAliasResult } from './tsconfig-alias.js'

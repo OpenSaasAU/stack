@@ -14,8 +14,6 @@ import {
   writeContext,
   writePluginTypes,
   resolveOutputPaths,
-  buildNodeBundle,
-  formatNodeBuildDiagnostics,
   resolveTsconfigAlias,
 } from '../generator/index.js'
 import {
@@ -189,14 +187,9 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // Captured here so the (optional) Node build step, which runs after
-    // emission outside this try block, knows where the bundle lives.
-    let opensaasDir = ''
     const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
     const generatorSpinner = ora('Writing the Contract module and prisma.config.ts...').start()
     try {
-      opensaasDir = paths.opensaasDir
-
       writeContractModule(contractData, paths.contractModule)
       writePrismaConfig(contractData, paths.prismaConfig, {
         contractModule: crossReferences.prismaConfigContract,
@@ -343,34 +336,6 @@ export async function generateCommand() {
       agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
       process.exit(1)
-    }
-
-    // Optional Node build (ADR-0011): when `output.buildTarget === 'node'`,
-    // additionally compile the `.ts` bundle to a plain-Node-loadable ESM form
-    // under `<opensaasDir>/dist/` so a live module (e.g. better-auth's adapter)
-    // can be imported in a bundler-less runtime. Purely additive — the default
-    // `.ts` form is untouched.
-    if (config.output?.buildTarget === 'node') {
-      const nodeBuildSpinner = ora('Building Node-loadable bundle...').start()
-      try {
-        const result = buildNodeBundle({ opensaasDir, configPath })
-        nodeBuildSpinner.succeed(chalk.green('Node-loadable bundle built'))
-        console.log(chalk.green(`✅ Node build emitted to ${path.relative(cwd, result.distDir)}`))
-
-        // The Node build is best-effort (`noEmitOnError: false`): emit proceeds
-        // even with stray type errors (e.g. the host's type-only `@/*` config
-        // alias). Surface any errors as a warning rather than failing.
-        const formattedErrors = formatNodeBuildDiagnostics(result.diagnostics)
-        if (formattedErrors.trim().length > 0) {
-          console.log(chalk.yellow('⚠️  Node build completed with type diagnostic(s) (non-fatal):'))
-          console.log(chalk.gray(formattedErrors))
-        }
-      } catch (err) {
-        nodeBuildSpinner.fail(chalk.red('Failed to build Node-loadable bundle'))
-        const message = err instanceof Error ? err.message : String(err)
-        console.error(chalk.red('\n❌ Error:'), message)
-        process.exit(1)
-      }
     }
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))

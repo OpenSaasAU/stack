@@ -58,7 +58,6 @@
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "@prisma/orm-toolchain": "8.0.0-rc.8",
-    "@typescript/native": "npm:typescript@^7.0.2",
     "chalk": "^6.0.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
@@ -76,6 +75,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.1.1",
     "@types/prompts": "^2.4.9",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "vitest": "^4.1.10"
   }
