@@ -20,14 +20,19 @@ export const contract = defineContract({ extensions: { pgvector } }, ({ field, m
 })
 ```
 
-`prisma.config.ts` imports each pack's `/control` façade and resolves its connection through the stack's URL lookup:
+`prisma.config.ts` imports each pack's `/control` façade, loads the project's `.env`, and resolves its connection through the stack's URL lookup (`DIRECT_DATABASE_URL`, then `DATABASE_URL`). Prisma's config evaluation loads no dotenv of its own, so without that load a project keeping its connection only in `.env` would reach `db update` and `migrate` with nothing set. The load is native — `process.loadEnvFile`, no dependency — and guarded, so a project with no `.env` still generates and runs:
 
 ```typescript
 // prisma.config.ts — generated
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { definePrismaConfig } from 'prisma/config'
 import { defineConfig } from '@prisma/orm-postgres/config'
 import { findDatabaseUrl } from '@opensaas/stack-core'
 import pgvector from '@prisma/orm-extension-pgvector/control'
+
+const envFile = join(import.meta.dirname, '.env')
+if (existsSync(envFile)) process.loadEnvFile(envFile)
 
 export default definePrismaConfig({
   orm: defineConfig({
