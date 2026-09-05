@@ -7,8 +7,6 @@ docs/adr/0060-better-auth-is-driven-by-a-stack-authored-auth-adapter-over-the-un
 docs/agents/comments.md:1
 docs/content/concepts/hooks.md:1
 docs/content/how-to/migrate-from-keystone.md:1
-packages/cli/src/generator/prisma.test.ts:7
-packages/cli/src/generator/prisma.ts:2
 packages/core/CLAUDE.md:3
 packages/core/src/config/types.ts:2
 packages/core/src/context/index.ts:3

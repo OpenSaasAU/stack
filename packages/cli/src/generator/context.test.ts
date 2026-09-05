@@ -16,7 +16,9 @@ describe('generateContext', () => {
     const context = generateContext(config, data)
 
     expect(context).toContain("import postgres from '@prisma/orm-postgres/runtime'")
-    expect(context).toContain("import contractJson from '../prisma/contract.json' with { type: 'json' }")
+    expect(context).toContain(
+      "import contractJson from '../prisma/contract.json' with { type: 'json' }",
+    )
     expect(context).toContain("import type { Contract } from '../prisma/contract.d.ts'")
     expect(context).toContain('postgres<Contract>({')
     expect(context).toContain('contractJson,')
@@ -95,10 +97,7 @@ describe('generateContext', () => {
   })
 
   it('lazily loads the storage runtime when providers are configured', () => {
-    const context = generateContext(
-      { ...config, storage: { local: { type: 'local' } } },
-      data,
-    )
+    const context = generateContext({ ...config, storage: { local: { type: 'local' } } }, data)
 
     expect(context).toContain("await import('@opensaas/stack-storage/runtime')")
   })

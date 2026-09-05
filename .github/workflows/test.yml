@@ -38,6 +38,21 @@ jobs:
       - name: Check format
         run: pnpm format:check
 
+      # `opensaas generate` must be deterministic: re-running it over a
+      # committed fixture project leaves contract.ts, prisma.config.ts,
+      # contract.json and contract.d.ts byte-identical. The examples cannot
+      # build on the integration branch (#1121, build spec 9), so this fixture
+      # stands in for them until they convert.
+      - name: Build the CLI for the contract fixture
+        run: turbo run build --filter=@opensaas/stack-cli
+
+      - name: Regenerate the contract fixture
+        run: node ../../../bin/opensaas.js generate
+        working-directory: ./packages/cli/tests/fixtures/contract-project
+
+      - name: Fail on a dirty contract fixture
+        run: git diff --exit-code -- packages/cli/tests/fixtures/contract-project
+
       - name: Run tests
         if: github.base_ref == 'main'
         run: turbo run test

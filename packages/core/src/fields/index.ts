@@ -15,7 +15,6 @@ import type {
   OpenSaasConfig,
   FieldConfig,
   PrismaRelationResult,
-  ReferentialAction,
   ColumnDefaultDescriptor,
   ColumnTypeDescriptor,
   ContractColumnDescriptor,
