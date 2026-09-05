@@ -58,6 +58,16 @@ export type PrismaModelDelegate = {
  *
  * `context.prisma` is this type: unsecured, and honest about how little the
  * engine assumes of it.
+ *
+ * The index signature's `unknown` is deliberate, and is the one place the
+ * repo's "never expose `unknown` externally" rule is relaxed. It replaced
+ * `PrismaClientLike = any`: `unknown` forces every consumer to narrow before
+ * calling — which is what {@link ormModel} does, once — where `any` let a
+ * mistyped call compile. What would replace it is a per-model type, and that
+ * cannot live here: model keys come from the config's list names, so the
+ * typed surface is the generated bundle's `DB`, instantiated from the emitted
+ * contract (ADR-0052). Reach for `context.db` when you want types; this is
+ * the escape hatch beneath it.
  */
 export interface OrmClient {
   /**
@@ -68,10 +78,19 @@ export interface OrmClient {
   [modelKey: string]: unknown
 }
 
-/** The arguments an ORM operation takes, before the engine lowers them. */
+/**
+ * The arguments an ORM operation takes, before the engine lowers them.
+ * Untyped for the same reason as {@link OrmClient}: the shape depends on the
+ * list, which is a config value. `Record<string, unknown>` still rejects a
+ * non-object and forces a narrow at each use.
+ */
 export type OrmOperationArgs = Record<string, unknown>
 
-/** One row as the ORM returns it, before Field Visibility runs over it. */
+/**
+ * One row as the ORM returns it, before Field Visibility runs over it. The
+ * typed row is the generated bundle's `Row`; this is what the engine handles
+ * on the way there, where the columns are not statically known.
+ */
 export type OrmRow = Record<string, unknown>
 
 /**

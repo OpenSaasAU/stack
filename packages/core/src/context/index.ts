@@ -1017,9 +1017,9 @@ function createFindUnique(
   config: OpenSaasConfig,
 ) {
   return async (args: {
-    // Accepts any unique selector at the delegate level (the generated
-    // `<List>FindUniqueArgs` type narrows `where` to Prisma's `WhereUniqueInput`).
-    // The runtime guard below rejects non-unique shapes.
+    // No static type restricts this to the list's unique keys: the generated
+    // `ListUniqueWhere` admits any stored column, optionally. The runtime
+    // guard below is the only thing that rejects a non-unique `where`.
     where: Record<string, unknown>
     include?: Record<string, unknown>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1030,10 +1030,10 @@ function createFindUnique(
     warnIfSelectIgnored(args, listName, 'findUnique')
 
     // Runs first, before the access check below — a non-unique `where` is a
-    // caller-shape error (see `assertUniqueWhere`), not an access denial. The
-    // generated `<List>FindUniqueArgs` only Omits `select`/`include` from
-    // Prisma's own type, so `where` stays `<List>WhereUniqueInput` — this
-    // runtime guard backstops untyped callers.
+    // caller-shape error (see `assertUniqueWhere`), not an access denial.
+    // Typed callers reach here too: `ListUniqueWhere` is derived from the
+    // list's stored columns, not from the contract's unique constraints, so
+    // `findUnique({ where: { title: 'x' } })` type-checks and fails here.
     assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
 
     let where: Record<string, unknown> = args.where

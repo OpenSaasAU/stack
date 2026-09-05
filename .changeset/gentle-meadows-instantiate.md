@@ -108,6 +108,22 @@ not change. What changes is what they mean:
   `VirtualFields`, `TransformedFields` and `{List}Crud` type is gone;
   `CustomDB` is now `DB`.
 
+Resolving a list's model off the ORM client now **throws**
+`OrmModelMissingError` where the client carries no delegate for it. The
+previous behaviour degraded silently in one place: a nested write's
+pre-existing-id capture treated a missing parent delegate as "no pre-existing
+ids", so a disconnect that should have been reported instead ran against an
+empty set. A real client always carries the delegate, so this surfaces on test
+doubles — give the double the model, or use a client whose model keys match the
+config's list names in `getDbKey` form (`AuthUser` → `authUser`):
+
+```typescript
+// Before: a double missing `post` silently captured nothing
+const prisma = { user: userDouble }
+// After: give it the delegate the config declares
+const prisma = { user: userDouble, post: postDouble }
+```
+
 `PrismaClientLike = any` is deleted. `context.prisma` is `OrmClient`, a
 structural interface, and `AccessContext`, `StackContext` and
 `AccessControlledDB` lose their `TPrisma` type parameter — drop the argument:
@@ -118,6 +134,12 @@ function render(context: AccessContext<unknown>) {}
 // After
 function render(context: AccessContext) {}
 ```
+
+`OrmClient`, `OrmRow` and `OrmOperationArgs` are deliberately untyped
+(`Record<string, unknown>` and an index signature). The unsecured surface's
+shape depends on the config's list names, so the typed surface is the generated
+bundle's `DB` and `Row`; `unknown` here forces a narrow at each use where the
+`any` it replaces did not. Use `context.db` when you want types.
 
 `StackContext`'s first parameter is now the generated `db` surface, not the
 client, and refuses one: a stale `StackContext<MyPrismaClient>` fails its

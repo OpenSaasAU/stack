@@ -19,6 +19,14 @@ type StoredFields<C, R extends RemainderBase, K extends keyof R & string> = Omit
  * `resolveOutput` and never sees a computed value (ADR-0027), so a type
  * carrying computed keys would be a lie the compiler could not catch.
  *
+ * The `output` overrides are the exception, and they are inconsistent with
+ * that reasoning: they are produced by `resolveOutput` too, so a hook reading
+ * `item.password` off a row the Write Pipeline fetched from the raw model
+ * (`write-pipeline.ts`) is typed `HashedPassword` and holds a `string`. This
+ * is carried over from the pre-contract generator, whose `Item` applied the
+ * same overrides; narrowing it is a change to the write surface, not to this
+ * type alone.
+ *
  * Relations are absent: a hook reaches one only by declaring it in `needs`,
  * which types it through {@link NeedsRow}.
  */
