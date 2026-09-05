@@ -40,7 +40,8 @@ jobs:
 
       # `opensaas generate` must be deterministic: re-running it over a
       # committed fixture project leaves contract.ts, prisma.config.ts,
-      # contract.json and contract.d.ts byte-identical. The examples cannot
+      # contract.json, contract.d.ts and the seeded extension contract space
+      # under migrations/ byte-identical. The examples cannot
       # build on the integration branch (#1121, build spec 9), so this fixture
       # stands in for them until they convert.
       - name: Build the CLI for the contract fixture

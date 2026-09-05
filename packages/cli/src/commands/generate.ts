@@ -267,8 +267,23 @@ export async function generateCommand() {
     }
 
     // Extension contract spaces are seeded between the Contract module and
-    // emission (ADR-0065). #1135 fills this in; today it is a no-op.
-    seedExtensionContractSpaces(cwd, contractData)
+    // emission (ADR-0065), so `contract emit` and every later `db` command
+    // read a migrations directory that already carries each declared pack's
+    // space.
+    if (contractData.extensions.length > 0) {
+      const seedSpinner = ora('Seeding extension contract spaces...').start()
+      try {
+        const { seeded } = await seedExtensionContractSpaces(cwd, contractData)
+        seedSpinner.succeed(chalk.green('Extension contract spaces seeded'))
+        for (const space of seeded) {
+          console.log(chalk.green(`✅ ${space.pack}: migrations/${space.spaceId} ${space.action}`))
+        }
+      } catch (err) {
+        seedSpinner.fail(chalk.red('Failed to seed extension contract spaces'))
+        console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+        process.exit(1)
+      }
+    }
 
     // Emission runs after `afterGenerate`, so a plugin's rewrite of the
     // Contract module is what the artifacts and the agreement gate below
