@@ -22,6 +22,11 @@ export default [
       // Research spikes under specs/ are throwaway scripts run against pre-release
       // APIs and deliberately reach @internal surfaces; they are evidence, not shipped code.
       'specs/**/spikes/**',
+      // Generator output committed as a CI determinism fixture, plus the scratch
+      // projects the contract tests evaluate a rendered module in.
+      'packages/cli/tests/fixtures/contract-project/prisma/**',
+      'packages/cli/tests/fixtures/contract-project/prisma.config.ts',
+      'packages/cli/tests/tmp-*/**',
     ],
   },
   js.configs.recommended,

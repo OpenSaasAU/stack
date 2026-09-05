@@ -40,8 +40,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain("key: 'Post'")
       expect(lists).toContain('item: Item')
       expect(lists).toContain('inputs: {')
-      expect(lists).toContain("create: import('./prisma-client/client.ts').Prisma.PostCreateInput")
-      expect(lists).toContain("update: import('./prisma-client/client.ts').Prisma.PostUpdateInput")
+      expect(lists).toContain("create: import('./types.ts').PostCreateInput")
+      expect(lists).toContain("update: import('./types.ts').PostUpdateInput")
     })
 
     it('should generate Lists namespace for multiple lists', () => {
@@ -135,8 +135,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain("import('./types.ts').User")
 
       // Check Prisma imports (explicit `.ts` extension — ADR-0008)
-      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserCreateInput")
-      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserUpdateInput")
+      expect(lists).toContain("import('./types.ts').UserCreateInput")
+      expect(lists).toContain("import('./types.ts').UserUpdateInput")
     })
 
     it('should generate TypeInfo structure correctly', () => {
@@ -192,10 +192,10 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('export type Post')
 
       // Prisma input types should still reference correct types
-      expect(lists).toContain('Prisma.UserCreateInput')
-      expect(lists).toContain('Prisma.PostCreateInput')
-      expect(lists).toContain('Prisma.UserUpdateInput')
-      expect(lists).toContain('Prisma.PostUpdateInput')
+      expect(lists).toContain("import('./types.ts').UserCreateInput")
+      expect(lists).toContain("import('./types.ts').PostCreateInput")
+      expect(lists).toContain("import('./types.ts').UserUpdateInput")
+      expect(lists).toContain("import('./types.ts').PostUpdateInput")
     })
 
     it('should handle lists with various field types', () => {
@@ -220,8 +220,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('export type Product')
       expect(lists).toContain('namespace Product {')
       expect(lists).toContain('export type TypeInfo')
-      expect(lists).toContain('Prisma.ProductCreateInput')
-      expect(lists).toContain('Prisma.ProductUpdateInput')
+      expect(lists).toContain("import('./types.ts').ProductCreateInput")
+      expect(lists).toContain("import('./types.ts').ProductUpdateInput")
     })
 
     it('should close namespace properly', () => {
@@ -316,8 +316,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('namespace APIKey {')
       expect(lists).toContain("key: 'BlogPost'")
       expect(lists).toContain("key: 'APIKey'")
-      expect(lists).toContain('Prisma.BlogPostCreateInput')
-      expect(lists).toContain('Prisma.APIKeyCreateInput')
+      expect(lists).toContain("import('./types.ts').BlogPostCreateInput")
+      expect(lists).toContain("import('./types.ts').APIKeyCreateInput")
     })
 
     it('should connect List type to TypeInfo via ListConfig generic', () => {

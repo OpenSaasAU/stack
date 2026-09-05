@@ -138,11 +138,16 @@ export { validateExtensionPacks } from './validation/extension-packs.js'
 export { validateFieldNames } from './validation/field-names.js'
 export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
 
+// The stack's database URL lookup — the single place a connection string is
+// read from the environment, emitted into `prisma.config.ts` and the generated
+// context.
+export { resolveDatabaseUrl, findDatabaseUrl, DatabaseUrlUnresolvedError } from './db/url.js'
+
 // Contract derivation (ADR-0057) — `deriveContract(config)` is the data the
 // generator renders into the Contract module; `assertRelationGraphAgrees`
 // checks an emitted contract against it. The Prisma builder feed lives on
 // `@opensaas/stack-core/contract` so the root stays free of `@prisma/orm-postgres`.
-export { deriveContract } from './contract/derive.js'
+export { deriveContract, resolveListTimestamps } from './contract/derive.js'
 export {
   assertRelationGraphAgrees,
   RelationGraphDivergenceError,

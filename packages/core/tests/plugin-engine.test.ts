@@ -1087,7 +1087,7 @@ describe('Plugin Engine', () => {
       const afterGenerate = vi.fn((files) => {
         return {
           ...files,
-          prismaSchema: files.prismaSchema + '\n// Modified by plugin',
+          contractModule: files.contractModule + '\n// Modified by plugin',
         }
       })
 
@@ -1103,7 +1103,7 @@ describe('Plugin Engine', () => {
       }
 
       const files = {
-        prismaSchema: 'schema content',
+        contractModule: 'schema content',
         types: 'types content',
         context: 'context content',
       }
@@ -1111,7 +1111,7 @@ describe('Plugin Engine', () => {
       const result = await executeAfterGenerateHooks(config, files)
 
       expect(afterGenerate).toHaveBeenCalledTimes(1)
-      expect(result.prismaSchema).toContain('// Modified by plugin')
+      expect(result.contractModule).toContain('// Modified by plugin')
     })
 
     test('chains afterGenerate hooks', async () => {
@@ -1120,7 +1120,7 @@ describe('Plugin Engine', () => {
         init: async () => {},
         afterGenerate: async (files) => ({
           ...files,
-          prismaSchema: files.prismaSchema + '\n// Plugin 1',
+          contractModule: files.contractModule + '\n// Plugin 1',
         }),
       }
 
@@ -1129,7 +1129,7 @@ describe('Plugin Engine', () => {
         init: async () => {},
         afterGenerate: async (files) => ({
           ...files,
-          prismaSchema: files.prismaSchema + '\n// Plugin 2',
+          contractModule: files.contractModule + '\n// Plugin 2',
         }),
       }
 
@@ -1139,14 +1139,14 @@ describe('Plugin Engine', () => {
       }
 
       const files = {
-        prismaSchema: 'schema',
+        contractModule: 'schema',
         types: 'types',
         context: 'context',
       }
 
       const result = await executeAfterGenerateHooks(config, files)
 
-      expect(result.prismaSchema).toBe('schema\n// Plugin 1\n// Plugin 2')
+      expect(result.contractModule).toBe('schema\n// Plugin 1\n// Plugin 2')
     })
 
     test('handles no lifecycle hooks', async () => {
@@ -1159,7 +1159,7 @@ describe('Plugin Engine', () => {
       expect(configResult).toEqual(config)
 
       const files = {
-        prismaSchema: 'schema',
+        contractModule: 'schema',
         types: 'types',
         context: 'context',
       }

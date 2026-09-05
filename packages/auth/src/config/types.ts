@@ -269,11 +269,12 @@ export type AuthModelConfig = {
    * @example Extend a derived index into a composite (per-identifier resend cooldown)
    * ```typescript
    * authPlugin({
-   *   verification: {
-   *     indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
-   *   },
+   *   verification: { indexes: [{ fields: ['identifier', 'createdAt'] }] },
    * })
    * ```
+   *
+   * An index column carries no sort direction (ADR-0040); a `sort` key on a
+   * wrapped field reference is refused at generation.
    */
   indexes?: ListIndex[]
 }

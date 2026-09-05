@@ -16,10 +16,6 @@
     "./generator": {
       "types": "./dist/generator/index.d.ts",
       "default": "./dist/generator/index.js"
-    },
-    "./generator/prisma": {
-      "types": "./dist/generator/prisma.d.ts",
-      "default": "./dist/generator/prisma.js"
     }
   },
   "bin": {
@@ -75,6 +71,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.1.1",
     "@types/prompts": "^2.4.9",

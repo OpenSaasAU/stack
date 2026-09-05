@@ -1,22 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { config, list } from '@opensaas/stack-core'
+import { config, deriveContract, list } from '@opensaas/stack-core'
 import { text, relationship } from '@opensaas/stack-core/fields'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type {
+  ContractColumn,
+  ContractData,
+  ContractModel,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
 import { mcp } from '@better-auth/mcp'
-import { generatePrismaSchema } from '@opensaas/stack-cli/generator/prisma'
 import { authPlugin } from '../src/config/plugin.js'
 import { adoptBetterAuthTables } from '../src/config/adopt-better-auth-tables.js'
 
 /**
  * Resolve a config through plugin `init` (via `config()`) and each plugin's
  * `beforeGenerate` hook — the same sequence the CLI generate pipeline runs —
- * then hand the result to the Prisma generator. Unlike the config-level
- * assertions in `derive-auth-lists.test.ts` and `plugin-schema-placement.test.ts`,
- * this exercises the *assembled generated schema text* so the auth FK shape is
- * locked end-to-end (issue #753).
+ * then derive the contract. Unlike the config-level assertions in
+ * `derive-auth-lists.test.ts` and `plugin-schema-placement.test.ts`, this
+ * exercises the *derived contract* so the auth FK shape is locked end-to-end
+ * (issue #753) against the artifact the runtime actually executes.
  */
-async function generateSchema(userConfig: OpenSaasConfig): Promise<string> {
+async function deriveAuthContract(userConfig: OpenSaasConfig): Promise<ContractData> {
   let current = await config(userConfig)
   const plugins: Plugin[] = current.plugins ?? []
   for (const plugin of plugins) {
@@ -24,505 +28,367 @@ async function generateSchema(userConfig: OpenSaasConfig): Promise<string> {
       current = await plugin.beforeGenerate(current)
     }
   }
-  return generatePrismaSchema(current)
+  return deriveContract(current)
 }
 
-/** Slice out a single `model X { ... }` block from generated schema text. */
-function modelBlock(schema: string, modelName: string): string {
-  const start = schema.indexOf(`model ${modelName} {`)
-  if (start === -1) throw new Error(`model ${modelName} not found in generated schema`)
-  const end = schema.indexOf('\n}', start)
-  return schema.slice(start, end === -1 ? undefined : end + 2)
+function model(data: ContractData, name: string): ContractModel {
+  const found = data.models.find((candidate) => candidate.name === name)
+  if (!found) throw new Error(`model ${name} not found in the derived contract`)
+  return found
 }
 
-describe('generated auth schema — Session/Account/Verification mirror better-auth (issue #679/#753/#937)', () => {
-  it('emits onDelete: Cascade, a userId @map, and @@index([userId]) on Session.user and Account.user', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+function column(data: ContractData, modelName: string, columnName: string): ContractColumn {
+  const found = model(data, modelName).columns.find((candidate) => candidate.name === columnName)
+  if (!found) throw new Error(`column ${modelName}.${columnName} not found`)
+  return found
+}
+
+function relation(data: ContractData, modelName: string, relationName: string) {
+  const found = model(data, modelName).relations.find(
+    (candidate) => candidate.name === relationName,
+  )
+  if (!found) throw new Error(`relation ${modelName}.${relationName} not found`)
+  return found
+}
+
+const emailAndPassword = { emailAndPassword: { enabled: true } } as const
+
+describe('derived auth contract — Session/Account/Verification mirror better-auth (issue #679/#753/#937)', () => {
+  it('gives Session.user and Account.user a cascading foreign key on a userId column, indexed', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
       lists: {},
     })
 
-    for (const model of ['Session', 'Account']) {
-      const block = modelBlock(schema, model)
+    for (const modelName of ['Session', 'Account']) {
+      // (a) A real foreign key with the cascade, not a bare relation.
+      expect(model(data, modelName).foreignKeys).toEqual([
+        { column: 'userId', references: { model: 'User', column: 'id' }, onDelete: 'cascade' },
+      ])
 
-      // (a) The user relation carries the cascade referential action. Match on
-      // the whitespace-stable attribute substring rather than the padded line,
-      // since raw generator output and prisma-formatted output differ only in
-      // column alignment.
-      expect(block).toContain('@relation(onDelete: Cascade, fields: [userId], references: [id])')
+      // (b) The column is better-auth's own `userId`, not the generator's
+      // Keystone-parity default of the field name (`user`) — see issue #935.
+      expect(column(data, modelName, 'userId').name).toBe('userId')
+      expect(column(data, modelName, 'userId').map).toBeUndefined()
 
-      // (b) The FK column maps to better-auth's own `userId` column name,
-      // not the generator's Keystone-parity default of the field name
-      // (`user`) — see issue #935.
-      expect(block).toContain('@map("userId")')
+      // (c) The FK column is indexed, matching better-auth's own schema.
+      expect(column(data, modelName, 'userId').index).toBe(true)
 
-      // (c) The FK index is emitted, matching better-auth's own
-      // `session_userId_idx` / `account_userId_idx` — see issue #937 and
-      // ADR-0007. It is never emitted against the wrong field name.
-      expect(block).toContain('@@index([userId])')
-      expect(block).not.toContain('@@index([user])')
+      expect(relation(data, modelName, 'user')).toMatchObject({
+        target: 'User',
+        kind: 'belongsTo',
+        column: 'userId',
+      })
     }
   })
 
-  it('emits @@index([identifier]) on Verification', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+  it('indexes Verification.identifier', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'Verification')
-    expect(block).toContain('@@index([identifier])')
+    expect(column(data, 'Verification', 'identifier').index).toBe(true)
   })
 
-  it('still emits the default @@index for a non-auth relationship FK', async () => {
-    // Contrast case: the generic FK-index path is untouched by the
-    // auth-specific FK/index shape above.
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+  it('still indexes a non-auth relationship FK by default', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
       lists: {
-        Widget: list({
-          fields: {
-            title: text({ validation: { isRequired: true } }),
-            owner: relationship({ ref: 'User' }),
-          },
-        }),
+        Widget: list({ fields: { name: text(), owner: relationship({ ref: 'User' }) } }),
       },
     })
 
-    const widget = modelBlock(schema, 'Widget')
-    expect(widget).toContain('@@index([ownerId])')
+    expect(column(data, 'Widget', 'ownerId').index).toBe(true)
   })
 })
 
-describe('generated auth schema — account.issuer (better-auth 1.7, issue #986)', () => {
-  it('emits a required, non-nullable issuer column on Account, positioned after providerId', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
-      lists: {},
-    })
-
-    const block = modelBlock(schema, 'Account')
-    expect(block).toMatch(/issuer\s+String\s/)
-    expect(block).not.toMatch(/issuer\s+String\?/)
-
-    // FIELD_ORDER groups issuer with accountId/providerId — the fields that
-    // together form better-auth's table-level @@unique([issuer, accountId]),
-    // which this derivation does not yet emit (blocked on #986 reading
-    // better-auth's own table-level `indexes` option; #985 only lands the
-    // app-supplied `db.indexes` passthrough, exercised below).
-    const providerIdLine = block.indexOf('providerId')
-    const issuerLine = block.indexOf('issuer')
-    expect(providerIdLine).toBeGreaterThan(-1)
-    expect(issuerLine).toBeGreaterThan(providerIdLine)
-
-    // Not yet emitted — see the migration note in the auth package's
-    // CHANGELOG and issue #986.
-    expect(block).not.toContain('@@unique([issuer, accountId])')
-  })
-})
-
-describe('generated auth schema — adopted index names match better-auth exactly (issue #937)', () => {
-  it('derives session_userId_idx / account_userId_idx / verification_identifier_idx under adoptBetterAuthTables()', async () => {
-    const schema = await generateSchema({
+describe('derived auth contract — account.issuer (better-auth 1.7, issue #986)', () => {
+  it('carries a required issuer column on Account, positioned after providerId', async () => {
+    const data = await deriveAuthContract({
       db: { provider: 'postgresql' },
-      plugins: [
-        authPlugin({
-          ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
-          emailAndPassword: { enabled: true },
-        }),
-      ],
+      plugins: [authPlugin(emailAndPassword)],
       lists: {},
     })
 
-    // No explicit `map:` is set on these auto FK/scalar indexes — Prisma's own
-    // implicit naming convention (<mapped table>_<mapped column>_idx) is what
-    // has to line up with better-auth's migrator-assigned names, so assert
-    // against the raw @@index lines rather than a `map:` argument.
-    const session = modelBlock(schema, 'AuthSession')
-    expect(session).toContain('@@map("session")')
-    expect(session).toContain('@@index([userId])')
-
-    const account = modelBlock(schema, 'AuthAccount')
-    expect(account).toContain('@@map("account")')
-    expect(account).toContain('@@index([userId])')
-
-    const verification = modelBlock(schema, 'AuthVerification')
-    expect(verification).toContain('@@map("verification")')
-    expect(verification).toContain('@@index([identifier])')
-  })
-
-  it('still indexes all three columns under the default adoptBetterAuthTables() (Auth-prefixed physical tables)', async () => {
-    // Without useBetterAuthTableNames, the physical table stays the prefixed
-    // model name (@@map("AuthSession"), not better-auth's own lowercase
-    // "session") — the index name won't match better-auth's naming
-    // convention here, but the columns must still be indexed regardless of
-    // table naming.
-    const schema = await generateSchema({
-      db: { provider: 'postgresql' },
-      plugins: [
-        authPlugin({
-          ...adoptBetterAuthTables(),
-          emailAndPassword: { enabled: true },
-        }),
-      ],
-      lists: {},
-    })
-
-    for (const model of ['AuthSession', 'AuthAccount']) {
-      const block = modelBlock(schema, model)
-      expect(block).toContain(`@@map("${model}")`)
-      expect(block).toContain('@@index([userId])')
-    }
-
-    const verification = modelBlock(schema, 'AuthVerification')
-    expect(verification).toContain('@@index([identifier])')
+    const columns = model(data, 'Account').columns.map((candidate) => candidate.name)
+    expect(columns).toContain('issuer')
+    expect(columns.indexOf('issuer')).toBe(columns.indexOf('providerId') + 1)
+    expect(column(data, 'Account', 'issuer').nullable).toBe(false)
   })
 })
 
-describe('generated auth schema — required columns mirror better-auth (issue #863)', () => {
-  it('emits a required (non-nullable) userId FK and user relation on Session and Account', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+describe('derived auth contract — adopted table names (issue #937)', () => {
+  it('maps every auth model to its Auth-prefixed table under adoptBetterAuthTables()', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin({ ...emailAndPassword, ...adoptBetterAuthTables() })],
       lists: {},
     })
 
-    for (const model of ['Session', 'Account']) {
-      const block = modelBlock(schema, model)
-
-      expect(block).toMatch(/userId\s+String\s/)
-      expect(block).not.toMatch(/userId\s+String\?/)
-      expect(block).toMatch(/user\s+User\s+@relation/)
-      expect(block).not.toMatch(/user\s+User\?/)
-
-      // The physical column must be userId, not the Keystone-parity default
-      // of the relationship field name ("user") — issue #935.
-      expect(block).not.toContain('@map("user")')
+    for (const modelName of ['AuthUser', 'AuthSession', 'AuthAccount', 'AuthVerification']) {
+      expect(model(data, modelName).table).toBe(modelName)
     }
   })
 
-  it('emits a required (non-nullable) expiresAt on Session and Verification', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+  it('still indexes all three columns under adoptBetterAuthTables()', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin({ ...emailAndPassword, ...adoptBetterAuthTables() })],
       lists: {},
     })
 
-    for (const model of ['Session', 'Verification']) {
-      const block = modelBlock(schema, model)
-
-      expect(block).toMatch(/expiresAt\s+DateTime\s/)
-      expect(block).not.toMatch(/expiresAt\s+DateTime\?/)
-    }
+    expect(column(data, 'AuthSession', 'userId').index).toBe(true)
+    expect(column(data, 'AuthAccount', 'userId').index).toBe(true)
+    expect(column(data, 'AuthVerification', 'identifier').index).toBe(true)
   })
 })
 
-describe('generated auth schema — tableName independent of modelName (issue #862)', () => {
-  it('emits a prefixed model name with a @@map to a better-auth default lowercase table', async () => {
-    const schema = await generateSchema({
+describe('derived auth contract — required columns mirror better-auth (issue #863)', () => {
+  it('makes the userId foreign key non-nullable on Session and Account', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
+      lists: {},
+    })
+
+    expect(column(data, 'Session', 'userId').nullable).toBe(false)
+    expect(column(data, 'Account', 'userId').nullable).toBe(false)
+  })
+
+  it('makes expiresAt non-nullable on Session and Verification', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
+      lists: {},
+    })
+
+    expect(column(data, 'Session', 'expiresAt').nullable).toBe(false)
+    expect(column(data, 'Verification', 'expiresAt').nullable).toBe(false)
+  })
+})
+
+describe('derived auth contract — table name independent of model name (issue #862)', () => {
+  it('keeps the prefixed model name while mapping to a lowercase table', async () => {
+    const data = await deriveAuthContract({
       db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
+          ...emailAndPassword,
           user: { modelName: 'AuthUser', tableName: 'user' },
-          session: { modelName: 'AuthSession', tableName: 'session' },
-          account: { modelName: 'AuthAccount', tableName: 'account' },
-          verification: { modelName: 'AuthVerification', tableName: 'verification' },
-          emailAndPassword: { enabled: true },
         }),
       ],
       lists: {},
     })
 
-    for (const [model, table] of [
-      ['AuthUser', 'user'],
-      ['AuthSession', 'session'],
-      ['AuthAccount', 'account'],
-      ['AuthVerification', 'verification'],
-    ]) {
-      const block = modelBlock(schema, model)
-      // The generated model keeps the prefixed name but maps to the live
-      // lowercase table — no DROP/CREATE rename against a real better-auth
-      // install using its own default table names.
-      expect(block).toContain(`@@map("${table}")`)
-    }
+    expect(model(data, 'AuthUser').table).toBe('user')
   })
 })
 
-describe('generated MCP plugin OAuth schema gets real foreign keys and cascades (issue #992)', () => {
-  it('emits onDelete: Cascade, a userId @map, and @@index([userId]) on every OAuth table’s user relation', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          betterAuthPlugins: [
-            mcp({
-              loginPage: '/sign-in',
-              consentPage: '/consent',
-              resource: 'https://example.com/mcp',
-            }),
-          ],
-        }),
-      ],
-      lists: {},
-    })
+describe('derived MCP plugin OAuth contract gets real foreign keys and cascades (issue #992)', () => {
+  const withMcp: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    plugins: [
+      authPlugin({
+        ...emailAndPassword,
+        betterAuthPlugins: [
+          mcp({
+            loginPage: '/sign-in',
+            consentPage: '/consent',
+            resource: 'https://example.com/mcp',
+          }),
+        ],
+      }),
+    ],
+    lists: {},
+  }
 
-    for (const model of ['OauthClient', 'OauthAccessToken', 'OauthConsent']) {
-      const block = modelBlock(schema, model)
-      expect(block).toContain('@relation(onDelete: Cascade, fields: [userId], references: [id])')
-      expect(block).toContain('@map("userId")')
-      expect(block).toContain('@@index([userId])')
+  it('cascades every OAuth table’s user foreign key from an indexed userId column', async () => {
+    const data = await deriveAuthContract(withMcp)
+
+    for (const modelName of ['OauthClient', 'OauthAccessToken', 'OauthConsent']) {
+      expect(model(data, modelName).foreignKeys).toContainEqual({
+        column: 'userId',
+        references: { model: 'User', column: 'id' },
+        onDelete: 'cascade',
+      })
+      expect(column(data, modelName, 'userId').index).toBe(true)
     }
   })
 
-  it('maps each OAuth table to its camelCase physical table name via @@map', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          betterAuthPlugins: [
-            mcp({
-              loginPage: '/sign-in',
-              consentPage: '/consent',
-              resource: 'https://example.com/mcp',
-            }),
-          ],
-        }),
-      ],
-      lists: {},
-    })
+  it('maps each OAuth model to its camelCase physical table', async () => {
+    const data = await deriveAuthContract(withMcp)
 
-    expect(modelBlock(schema, 'OauthClient')).toContain('@@map("oauthClient")')
-    expect(modelBlock(schema, 'OauthAccessToken')).toContain('@@map("oauthAccessToken")')
-    expect(modelBlock(schema, 'OauthConsent')).toContain('@@map("oauthConsent")')
+    expect(model(data, 'OauthClient').table).toBe('oauthClient')
+    expect(model(data, 'OauthAccessToken').table).toBe('oauthAccessToken')
+    expect(model(data, 'OauthConsent').table).toBe('oauthConsent')
+    expect(model(data, 'OauthRefreshToken').table).toBe('oauthRefreshToken')
   })
 
-  it('leaves the non-PK clientId reference (oauthAccessToken/oauthConsent -> oauthClient.clientId) as an indexed plain column, not a relation', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          betterAuthPlugins: [
-            mcp({
-              loginPage: '/sign-in',
-              consentPage: '/consent',
-              resource: 'https://example.com/mcp',
-            }),
-          ],
-        }),
-      ],
-      lists: {},
-    })
+  it('leaves the non-PK clientId reference an indexed plain column, not a relation', async () => {
+    const data = await deriveAuthContract(withMcp)
 
-    for (const model of ['OauthAccessToken', 'OauthConsent']) {
-      const block = modelBlock(schema, model)
-      expect(block).toMatch(/clientId\s+String\s/)
-      expect(block).not.toContain('clientId  OauthClient')
-      expect(block).toContain('@@index([clientId])')
+    for (const modelName of ['OauthAccessToken', 'OauthConsent']) {
+      expect(column(data, modelName, 'clientId').index).toBe(true)
+      expect(model(data, modelName).relations.map((each) => each.name)).not.toContain('client')
+      expect(model(data, modelName).foreignKeys.map((each) => each.column)).not.toContain(
+        'clientId',
+      )
     }
   })
 
-  it('adds a reverse collection on User for every OAuth table referencing it, and on Session for the two token tables that also reference it, leaving Account/Verification unchanged', async () => {
-    const withMcp = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          betterAuthPlugins: [
-            mcp({
-              loginPage: '/sign-in',
-              consentPage: '/consent',
-              resource: 'https://example.com/mcp',
-            }),
-          ],
-        }),
-      ],
-      lists: {},
-    })
-    const withoutMcp = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
-      lists: {},
-    })
+  it('adds a reverse collection on User for every OAuth table referencing it, and on Session for the two token tables', async () => {
+    const data = await deriveAuthContract(withMcp)
 
-    const user = modelBlock(withMcp, 'User')
-    expect(user).toContain('oauthClients')
-    expect(user).toContain('oauthAccessTokens')
-    expect(user).toContain('oauthRefreshTokens')
-    expect(user).toContain('oauthConsents')
+    const userRelations = model(data, 'User').relations.map((each) => each.name)
+    expect(userRelations).toEqual(
+      expect.arrayContaining([
+        'oauthClients',
+        'oauthRefreshTokens',
+        'oauthAccessTokens',
+        'oauthConsents',
+      ]),
+    )
 
-    // oauthAccessToken.sessionId / oauthRefreshToken.sessionId both reference
-    // session.id (unlike better-auth's pre-1.7 MCP schema, which had no
-    // session-scoped OAuth tables at all) — Session gains reverse collections
-    // for both, Account/Verification stay untouched by the MCP plugin.
-    const session = modelBlock(withMcp, 'Session')
-    expect(session).toContain('oauthAccessTokens')
-    expect(session).toContain('oauthRefreshTokens')
+    const sessionRelations = model(data, 'Session').relations.map((each) => each.name)
+    expect(sessionRelations).toEqual(
+      expect.arrayContaining(['oauthRefreshTokens', 'oauthAccessTokens']),
+    )
 
-    for (const model of ['Account', 'Verification']) {
-      expect(modelBlock(withMcp, model)).toBe(modelBlock(withoutMcp, model))
-    }
+    // Account and Verification are untouched by the MCP plugin.
+    expect(model(data, 'Account').relations.map((each) => each.name)).toEqual(['user'])
+    expect(model(data, 'Verification').relations).toEqual([])
   })
 
-  it('generates a required, non-nullable userId FK on OauthRefreshToken (required upstream), and an optional one on OauthClient (optional upstream)', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          betterAuthPlugins: [
-            mcp({
-              loginPage: '/sign-in',
-              consentPage: '/consent',
-              resource: 'https://example.com/mcp',
-            }),
-          ],
-        }),
-      ],
-      lists: {},
+  it('honours each OAuth table’s own nullability for the user foreign key', async () => {
+    const data = await deriveAuthContract(withMcp)
+
+    // Required upstream on the refresh token; optional on the client.
+    expect(column(data, 'OauthRefreshToken', 'userId').nullable).toBe(false)
+    expect(column(data, 'OauthClient', 'userId').nullable).toBe(true)
+  })
+
+  it('sets the session foreign key to SET NULL, not cascade', async () => {
+    const data = await deriveAuthContract(withMcp)
+
+    expect(model(data, 'OauthAccessToken').foreignKeys).toContainEqual({
+      column: 'sessionId',
+      references: { model: 'Session', column: 'id' },
+      onDelete: 'setNull',
     })
-
-    const refreshToken = modelBlock(schema, 'OauthRefreshToken')
-    expect(refreshToken).toMatch(/userId\s+String\s/)
-    expect(refreshToken).not.toMatch(/userId\s+String\?/)
-
-    const client = modelBlock(schema, 'OauthClient')
-    expect(client).toMatch(/userId\s+String\?/)
   })
 })
 
-describe('generated RateLimit schema mirrors better-auth exactly (issue #909)', () => {
+describe('derived RateLimit contract mirrors better-auth exactly (issue #909)', () => {
   it('does not add a RateLimit model when storage is unset', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
       lists: {},
     })
 
-    expect(schema).not.toContain('model RateLimit')
+    expect(data.models.map((each) => each.name)).not.toContain('RateLimit')
   })
 
-  it('emits key (unique, non-null), count (non-null Int), lastRequest (non-null BigInt), no createdAt/updatedAt, no @default', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [
-        authPlugin({
-          emailAndPassword: { enabled: true },
-          rateLimit: { enabled: true, storage: 'database' },
-        }),
-      ],
+  it('emits key (unique, non-null), count (int), lastRequest (bigint) and no timestamps', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin({ ...emailAndPassword, rateLimit: { storage: 'database' } })],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'RateLimit')
-
-    expect(block).toMatch(/key\s+String\s+@unique/)
-    expect(block).toMatch(/count\s+Int\s/)
-    expect(block).not.toMatch(/count\s+Int\?/)
-    expect(block).toMatch(/lastRequest\s+BigInt\s/)
-    expect(block).not.toMatch(/lastRequest\s+BigInt\?/)
-
-    expect(block).not.toContain('createdAt')
-    expect(block).not.toContain('updatedAt')
-    // The system `id` field carries its own @default(cuid()) — only the
-    // three better-auth-mirrored columns must carry none.
-    expect(block).not.toMatch(/key\s+String\s+@unique\s+@default/)
-    expect(block).not.toMatch(/count\s+Int\s+@default/)
-    expect(block).not.toMatch(/lastRequest\s+BigInt\s+@default/)
+    const rateLimit = model(data, 'RateLimit')
+    expect(rateLimit.columns).toEqual([
+      { name: 'key', type: { pack: 'pg', type: 'text' }, nullable: false, unique: true },
+      { name: 'count', type: { pack: 'pg', type: 'int' }, nullable: false },
+      { name: 'lastRequest', type: { pack: 'pg', type: 'bigint' }, nullable: false },
+    ])
+    expect(rateLimit.timestamps).toEqual({ createdAt: false, updatedAt: false })
   })
 
-  it('honours a custom modelName/tableName/fields/schema on the rateLimit model', async () => {
-    const schema = await generateSchema({
+  it('honours a custom modelName and tableName on the rateLimit model', async () => {
+    const data = await deriveAuthContract({
       db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           rateLimit: {
-            enabled: true,
             storage: 'database',
-            modelName: 'AuthRateLimit',
-            tableName: 'rate_limit',
-            fields: { key: 'limit_key', count: 'hit_count', lastRequest: 'last_hit_at' },
+            modelName: 'ApiThrottle',
+            tableName: 'api_throttle',
           },
         }),
       ],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'AuthRateLimit')
-    expect(block).toContain('@@map("rate_limit")')
-    expect(block).toContain('@map("limit_key")')
-    expect(block).toContain('@map("hit_count")')
-    expect(block).toContain('@map("last_hit_at")')
+    expect(model(data, 'ApiThrottle').table).toBe('api_throttle')
   })
 
   it('produces a RateLimit model even when enabled is false, since better-auth still expects the table', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
-          rateLimit: { enabled: false, storage: 'database' },
+          ...emailAndPassword,
+          rateLimit: { storage: 'database', enabled: false },
         }),
       ],
       lists: {},
     })
 
-    expect(schema).toContain('model RateLimit')
+    expect(data.models.map((each) => each.name)).toContain('RateLimit')
   })
 })
 
 describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
-  it('emits a composite index on Verification and suppresses the derived single-column index on identifier', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+  it('emits a composite index on Verification and suppresses the derived single-column one', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
-          verification: {
-            indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
-          },
+          ...emailAndPassword,
+          verification: { indexes: [{ fields: ['identifier', 'value'] }] },
         }),
       ],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'Verification')
-    expect(block).toContain('@@index([identifier, createdAt(sort: Desc)])')
+    expect(model(data, 'Verification').indexes).toEqual([
+      { columns: ['identifier', 'value'], unique: false },
+    ])
     // The derived single-column index on identifier is suppressed — only the
     // composite survives (ADR-0035).
-    expect(block).not.toContain('@@index([identifier])')
+    expect(column(data, 'Verification', 'identifier').index).toBeFalsy()
   })
 
-  it('adopts a live named unique constraint on User.email, suppressing the derived inline @unique', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+  it('adopts a live named unique constraint on User.email, clearing the derived column unique', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
         }),
       ],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'User')
-    expect(block).toContain('@@unique([email], map: "user_email_key")')
-    expect(block).not.toMatch(/email\s+String\s+@unique/)
+    expect(model(data, 'User').indexes).toEqual([
+      { columns: ['email'], unique: true, name: 'user_email_key' },
+    ])
+    expect(column(data, 'User', 'email').unique).toBeFalsy()
   })
 
-  it('suppresses per-column only — every other derived index on the model still emits', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+  it('suppresses per-column only — every other derived index still emits', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
         }),
       ],
@@ -531,39 +397,38 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
 
     // Session/Account's derived FK index on the User relation is untouched —
     // suppression only ever applies to the column(s) an app entry names.
-    for (const model of ['Session', 'Account']) {
-      expect(modelBlock(schema, model)).toContain('@@index([userId])')
-    }
+    expect(column(data, 'Session', 'userId').index).toBe(true)
+    expect(column(data, 'Account', 'userId').index).toBe(true)
   })
 
   it('suppresses the derived FK index on a relationship field, not just scalars', async () => {
     // A relationship field's own generator defaults its FK index to indexed
     // whenever isIndexed is *omitted* (unlike a scalar field) — suppression
-    // must set isIndexed: false explicitly, or the derived @@index([userId])
-    // survives and collides with the app's own named entry.
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+    // must set isIndexed: false explicitly, or the derived index survives and
+    // collides with the app's own named entry.
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           session: { indexes: [{ fields: ['user'], name: 'session_user_idx' }] },
         }),
       ],
       lists: {},
     })
 
-    const block = modelBlock(schema, 'Session')
-    expect(block).toContain('@@index([userId], map: "session_user_idx")')
-    // The derived, unnamed @@index([userId]) must not also survive alongside it.
-    expect(block).not.toContain('@@index([userId])')
+    expect(model(data, 'Session').indexes).toEqual([
+      { columns: ['userId'], unique: false, name: 'session_user_idx' },
+    ])
+    expect(column(data, 'Session', 'userId').index).toBeFalsy()
   })
 
-  it("resolves the entry's field key through the model's own column map (@map)", async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+  it("resolves the entry's field key through the model's own column map", async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           verification: {
             fields: { identifier: 'ident_col' },
             indexes: [{ fields: ['identifier'] }],
@@ -573,19 +438,19 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
       lists: {},
     })
 
-    const block = modelBlock(schema, 'Verification')
-    // db.indexes names the OpenSaaS field key, not the mapped column name —
-    // Prisma's @@index references the field, independent of its own @map.
-    expect(block).toContain('@map("ident_col")')
-    expect(block).toContain('@@index([identifier])')
+    // db.indexes names the OpenSaaS field key; the column carries its own map.
+    expect(column(data, 'Verification', 'identifier').map).toBe('ident_col')
+    expect(model(data, 'Verification').indexes).toEqual([
+      { columns: ['identifier'], unique: false },
+    ])
   })
 
   it('#921: user.email and session.token both round-trip under adopted constraint names', async () => {
-    const schema = await generateSchema({
-      db: { provider: 'sqlite' },
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
-          emailAndPassword: { enabled: true },
+          ...emailAndPassword,
           user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
           session: { indexes: [{ fields: ['token'], unique: true, name: 'session_token_key' }] },
         }),
@@ -593,22 +458,24 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
       lists: {},
     })
 
-    const user = modelBlock(schema, 'User')
-    expect(user).toContain('@@unique([email], map: "user_email_key")')
-    expect(user).not.toMatch(/email\s+String\s+@unique/)
+    expect(model(data, 'User').indexes).toEqual([
+      { columns: ['email'], unique: true, name: 'user_email_key' },
+    ])
+    expect(column(data, 'User', 'email').unique).toBeFalsy()
 
-    const session = modelBlock(schema, 'Session')
-    expect(session).toContain('@@unique([token], map: "session_token_key")')
-    expect(session).not.toMatch(/token\s+String\s+@unique/)
+    expect(model(data, 'Session').indexes).toEqual([
+      { columns: ['token'], unique: true, name: 'session_token_key' },
+    ])
+    expect(column(data, 'Session', 'token').unique).toBeFalsy()
   })
 
   it('fails generation naming the model, the entry, and the bad field for an unknown field', async () => {
     await expect(
-      generateSchema({
-        db: { provider: 'sqlite' },
+      deriveAuthContract({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
-            emailAndPassword: { enabled: true },
+            ...emailAndPassword,
             verification: { indexes: [{ fields: ['doesNotExist'] }] },
           }),
         ],
@@ -619,11 +486,11 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
 
   it('names the remapped list key when modelName overrides the derived key', async () => {
     await expect(
-      generateSchema({
-        db: { provider: 'sqlite' },
+      deriveAuthContract({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
-            emailAndPassword: { enabled: true },
+            ...emailAndPassword,
             verification: {
               modelName: 'AuthVerification',
               indexes: [{ fields: ['doesNotExist'] }],
@@ -635,16 +502,15 @@ describe('app-supplied db.indexes on derived auth lists (issue #985)', () => {
     ).rejects.toThrow(/AuthVerification.*references unknown field "doesNotExist"/)
   })
 
-  it('leaves existing auth-list derivation unchanged when no indexes are configured', async () => {
-    const withIndexes = await generateSchema({
-      db: { provider: 'sqlite' },
-      plugins: [authPlugin({ emailAndPassword: { enabled: true } })],
+  it('leaves auth-list derivation unchanged when no indexes are configured', async () => {
+    const data = await deriveAuthContract({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin(emailAndPassword)],
       lists: {},
     })
 
-    for (const model of ['User', 'Session', 'Account', 'Verification']) {
-      expect(modelBlock(withIndexes, model)).not.toContain('@@unique([')
-      expect(modelBlock(withIndexes, model)).not.toContain('@@index([identifier, ')
+    for (const modelName of ['User', 'Session', 'Account', 'Verification']) {
+      expect(model(data, modelName).indexes).toEqual([])
     }
   })
 })

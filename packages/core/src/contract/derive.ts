@@ -3,6 +3,7 @@ import type {
   ContractColumnDescriptor,
   ContractFieldDescriptor,
   ContractRelationDescriptor,
+  DatabaseConfig,
   ExtensionDescriptor,
   FieldConfig,
   ListConfig,
@@ -51,14 +52,16 @@ function resolveIdStrategy(
 }
 
 /**
- * A declared `createdAt`/`updatedAt` field replaces the auto-timestamp
- * column, as the generator has always allowed.
+ * Which auto-timestamp columns a list carries: `db.timestamps` per list over
+ * the config default, off by default (ADR-0004). A declared `createdAt`/
+ * `updatedAt` field replaces the auto-timestamp column, as the generator has
+ * always allowed.
  */
-function resolveTimestamps(
+export function resolveListTimestamps(
   listConfig: ListConfig<TypeInfo>,
-  config: OpenSaasConfig,
+  dbConfig: DatabaseConfig,
 ): ContractTimestamps {
-  const enabled = listConfig.db?.timestamps ?? config.db.timestamps ?? false
+  const enabled = listConfig.db?.timestamps ?? dbConfig.timestamps ?? false
   if (!enabled) return { createdAt: false, updatedAt: false }
   return {
     createdAt: !Object.prototype.hasOwnProperty.call(listConfig.fields, 'createdAt'),
@@ -527,7 +530,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   const syntheticByTarget = new Map<string, SyntheticRelation[]>()
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const timestamps = resolveTimestamps(listConfig, config)
+    const timestamps = resolveListTimestamps(listConfig, config.db)
     const draft: ModelDraft = {
       model: {
         name: listKey,

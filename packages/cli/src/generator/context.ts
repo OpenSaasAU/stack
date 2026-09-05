@@ -1,56 +1,54 @@
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
 
 /**
- * The Prisma 7 client constructor the config types no longer carry. This
- * generator is deleted by #1134; until then it reads a runtime object through
- * this shim.
+ * The relative specifiers the generated context embeds, resolved by
+ * {@link resolveOutputPaths} so the bundle and the Contract module can each be
+ * relocated.
  */
-type LegacyPrisma7DbConfig = OpenSaasConfig['db'] & {
-  prismaClientConstructor?: (PrismaClientClass: unknown) => unknown
+export interface ContextReferences {
+  /** Specifier for `opensaas.config`, relative to the bundle directory. */
+  configImport: string
+  /** Specifier for the emitted `contract.json`, relative to the bundle directory. */
+  contractJsonImport: string
 }
 
-export function generateContext(config: OpenSaasConfig, configImport?: string): string {
-  // Defaults to the legacy `../opensaas.config` (bundle one level below the
-  // project root); the output-path resolver supplies a recomputed value when
-  // the bundle is relocated via the `output` config block. The `.ts`
-  // extension keeps the bundle loadable without a consumer `extensionAlias`
-  // (see ./extension.ts).
-  const configImportPath = withTsExtension(configImport ?? '../opensaas.config')
+const DEFAULT_REFERENCES: ContextReferences = {
+  configImport: '../opensaas.config',
+  contractJsonImport: '../prisma/contract.json',
+}
 
-  const db: LegacyPrisma7DbConfig = config.db
-  const hasCustomConstructor = !!db.prismaClientConstructor
+/** The `contract.d.ts` beside a `contract.json`, as a type-only specifier. */
+function contractTypesImport(contractJsonImport: string): string {
+  return contractJsonImport.replace(/contract\.json$/, 'contract.d.ts')
+}
 
+function storageUtilities(config: OpenSaasConfig): string {
   const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
+  if (!hasStorage) {
+    return `
+const storage = {
+  uploadFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  uploadImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteFile: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+  deleteImage: async () => {
+    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
+  },
+}
+`
+  }
 
-  // Prisma 7 requires adapters, so prismaClientConstructor must be provided
-  const prismaInstantiation = hasCustomConstructor
-    ? `resolvedConfig.db.prismaClientConstructor!(PrismaClient)`
-    : `(() => {
-      throw new Error(
-        'Prisma 7 requires a database adapter. Please add prismaClientConstructor to your opensaas.config.ts db configuration.\\n\\n' +
-        'Example for SQLite:\\n' +
-        'import { PrismaBetterSqlite3 } from \\'@prisma/adapter-better-sqlite3\\'\\n\\n' +
-        'db: {\\n' +
-        '  provider: \\'sqlite\\',\\n' +
-        '  url: process.env.DATABASE_URL || \\'file:./dev.db\\',\\n' +
-        '  prismaClientConstructor: (PrismaClient) => {\\n' +
-        '    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || \\'file:./dev.db\\' })\\n' +
-        '    return new PrismaClient({ adapter })\\n' +
-        '  }\\n' +
-        '}\\n\\n' +
-        'See https://www.prisma.io/docs/orm/overview/databases/database-drivers for more information.'
-      )
-    })()`
-
-  const storageUtilities = hasStorage
-    ? `
-/**
- * Lazy-loaded storage runtime functions
- * Prevents sharp and other storage dependencies from being bundled in client code
- */
+  return `
+// Lazily loaded so sharp and the other storage dependencies stay out of a
+// client bundle that only reaches the context for its types.
 let storageRuntime: typeof import('@opensaas/stack-storage/runtime') | null = null
 
 async function getStorageRuntime() {
@@ -66,9 +64,6 @@ async function getStorageRuntime() {
   return storageRuntime
 }
 
-/**
- * Storage utilities for file/image uploads
- */
 const storage = {
   uploadFile: async (providerName: string, file: File, buffer: Buffer, options?: unknown) => {
     const config = await getConfig()
@@ -95,38 +90,50 @@ const storage = {
   },
 }
 `
-    : `
-/**
- * Storage utilities (not configured)
- */
-const storage = {
-  uploadFile: async () => {
-    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
-  },
-  uploadImage: async () => {
-    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
-  },
-  deleteFile: async () => {
-    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
-  },
-  deleteImage: async () => {
-    throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
-  },
 }
-`
+
+/**
+ * Render `<opensaasDir>/context.ts` — the generated context factory.
+ *
+ * The client is constructed from the committed `contract.json`, so the runtime
+ * executes the same bytes the emitted artifacts were signed over (PRD user
+ * story 6). Its connection comes from `db.client` when the config supplies a
+ * pool factory, and otherwise from the stack's URL lookup.
+ *
+ * Known limits:
+ * - `Context` is still the bundle's own type; #1136 rewrites `types.ts` to
+ *   instantiate core's contract-keyed generics, and the client's own typed
+ *   surface is spec 2's.
+ * - Pool lifecycle beyond the module-level singleton — `close()`, the dev
+ *   loop's ephemeral database, the pooled/direct split — is spec 2's.
+ */
+export function generateContext(
+  config: OpenSaasConfig,
+  data: ContractData,
+  references: Partial<ContextReferences> = {},
+): string {
+  const { configImport, contractJsonImport } = { ...DEFAULT_REFERENCES, ...references }
+  const configImportPath = withTsExtension(configImport)
+  const contractTypesPath = contractTypesImport(contractJsonImport)
+
+  const runtimeExtensionImports = data.extensions
+    .map((extension) => `import ${extension.name}Runtime from '${extension.from}/runtime'`)
+    .join('\n')
+  const runtimeExtensions = data.extensions
+    .map((extension) => `${extension.name}Runtime`)
+    .join(', ')
 
   return `/**
  * Auto-generated context factory
  *
- * This module provides a simple API for creating OpenSaas contexts.
- * It abstracts away Prisma client management and configuration.
- *
  * DO NOT EDIT - This file is automatically generated by 'pnpm generate'
  */
 
-import { getContext as getOpensaasContext } from '@opensaas/stack-core'
+import { getContext as getOpensaasContext, resolveDatabaseUrl } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
-import { PrismaClient } from './prisma-client/client.ts'
+import postgres from '@prisma/orm-postgres/runtime'
+${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
+import contractJson from '${contractJsonImport}' with { type: 'json' }
 import type { Context } from './types.ts'
 import configOrPromise from '${configImportPath}'
 
@@ -134,20 +141,32 @@ import configOrPromise from '${configImportPath}'
 const configPromise = Promise.resolve(configOrPromise)
 let resolvedConfig: OpenSaasConfig | null = null
 
-// Internal Prisma singleton - managed automatically
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | null }
-let prisma: PrismaClient | null = null
+/**
+ * The ORM client, built from the committed contract artifact rather than from
+ * a generated client tree, so the runtime executes exactly the structure the
+ * emitted contract describes.
+ */
+function createClient(config: OpenSaasConfig) {
+  const binding = config.db.client
+  const pool = binding?.pg?.()
+  return postgres<Contract>({
+    contractJson,
+    extensions: [${runtimeExtensions}],
+    ...(pool !== undefined ? { pg: pool } : { url: resolveDatabaseUrl() }),
+    ...(binding?.poolOptions !== undefined ? { poolOptions: binding.poolOptions } : {}),
+  })
+}
 
-async function getPrisma() {
-  if (!prisma) {
-    if (!resolvedConfig) {
-      resolvedConfig = await configPromise
-    }
-    const basePrisma: PrismaClient = ${prismaInstantiation}
-    prisma = globalForPrisma.prisma ?? basePrisma
-    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+const globalForClient = globalThis as unknown as { opensaasClient: ReturnType<typeof createClient> | null }
+let client: ReturnType<typeof createClient> | null = null
+
+async function getClient() {
+  if (!client) {
+    const config = await getConfig()
+    client = globalForClient.opensaasClient ?? createClient(config)
+    if (process.env.NODE_ENV !== 'production') globalForClient.opensaasClient = client
   }
-  return prisma
+  return client
 }
 
 async function getConfig() {
@@ -156,7 +175,7 @@ async function getConfig() {
   }
   return resolvedConfig
 }
-${storageUtilities}
+${storageUtilities(config)}
 /**
  * Get OpenSaas context with optional session
  *
@@ -171,29 +190,24 @@ ${storageUtilities}
  * // Authenticated access
  * const context = await getContext({ userId: 'user-123' })
  * const myPosts = await context.db.post.findMany()
- *
- * // With custom session type
- * type CustomSession = { userId: string; email: string; role: string } | null
- * const context = await getContext<CustomSession>({ userId: '123', email: 'user@example.com', role: 'admin' })
- * // context.session is now typed as CustomSession
  * \`\`\`
  */
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
-  const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
+  const db = await getClient()
+  return getOpensaasContext(config, db, session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
  * Raw context as a Promise, for module-init-time consumers that can't \`await\` directly
- * (e.g., Better-auth setup). Resolves once config and the Prisma client are ready.
+ * (e.g., Better-auth setup). Resolves once config and the client are ready.
  * Pass this promise itself to helpers like \`createAuth\` that defer real construction
  * behind a lazy Proxy until it resolves - do not await it at module scope.
  */
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
-  const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
+  const db = await getClient()
+  return getOpensaasContext(config, db, null, storage) as unknown as Context
 })()
 
 /**
@@ -206,10 +220,11 @@ export const config = getConfig()
 
 export function writeContext(
   config: OpenSaasConfig,
+  data: ContractData,
   outputPath: string,
-  configImport?: string,
+  references?: Partial<ContextReferences>,
 ): void {
-  const content = generateContext(config, configImport)
+  const content = generateContext(config, data, references)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

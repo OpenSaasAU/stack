@@ -14,6 +14,11 @@ build/
 prisma/migrations/
 next-env.d.ts
 
+# Generator output committed as a CI determinism fixture — reformatting it
+# would make every `opensaas generate` run report a dirty tree.
+packages/cli/tests/fixtures/contract-project/prisma/
+packages/cli/tests/fixtures/contract-project/prisma.config.ts
+
 # Misc
 .DS_Store
 *.log

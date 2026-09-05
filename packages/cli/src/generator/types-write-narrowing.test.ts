@@ -21,11 +21,10 @@ import {
  * The generated `context.db.<list>.create()/update()` `data` member now narrows
  * scalar fields to their OpenSaaS `getTypeScriptType()` types while leaving
  * relationship nested writes, unchecked FK fields, and decimal/bigInt/json on
- * Prisma's input shape. These tests assert the *real* compile behaviour by feeding the
- * actual generated `*Args` types — exactly as `generateCustomDBType` wires them
- * into the `create`/`update`/`createMany`/`updateMany` method signatures
- * (`<T extends Args>(args: Prisma.SelectSubset<T, Args>) => ...`) — into a real
- * `tsc` program against a faithful `Prisma` stub.
+ * the unnarrowed write base. These tests assert the *real* compile behaviour by
+ * feeding the actual generated `*Args` types — exactly as `generateCustomDBType`
+ * wires them into the `create`/`update`/`createMany`/`updateMany` method
+ * signatures — into a real `tsc` program.
  *
  * What is asserted:
  *  - `day: new Date()` (a `Date` to a `calendarDay`) is a COMPILE ERROR.
@@ -44,98 +43,18 @@ import {
 const COMPILE_TIMEOUT_MS = 60000
 
 /**
- * A faithful-enough `Prisma` stub: the scalar `*Args['data']` / `*Input` shapes
- * mirror what Prisma generates for the corresponding column types, so the
- * generated `Omit<...> & { narrowed }` override composes against realistic input
- * types (calendarDay -> `Date | string`, decimal -> `Decimal | number | string`,
- * json -> value | null-sentinel, plus a relationship nested-write + unchecked FK).
- */
-const PRISMA_STUB = `
-import type { Decimal } from 'decimal.js'
-
-export class PrismaClient {}
-
-export namespace Prisma {
-  // Prisma's SelectSubset narrows excess keys for select/include but still
-  // requires assignability to the constraint U — a known key with the wrong
-  // type is rejected (the calendarDay-Date case). Modelled here as the real
-  // SelectSubset does (T constrained to U via Has/Or, falling back to U).
-  export type SelectSubset<T, U> = {
-    [key in keyof T]: key extends keyof U ? T[key] : never
-  } & U
-
-  export type JsonNullValueInput = { __jsonNull: true }
-  export type InputJsonValue = string | number | boolean | { [k: string]: InputJsonValue } | InputJsonValue[]
-
-  // --- User ---
-  export type UserCreateInput = { name: string }
-  export type UserUpdateInput = { name?: string }
-  export type UserSelect = { name?: boolean }
-  export type UserWhereInput = { name?: string }
-  export type UserCreateArgs = { data: UserCreateInput; select?: UserSelect | null }
-  export type UserUpdateArgs = { where: { id: string }; data: UserUpdateInput; select?: UserSelect | null }
-  export type UserFindUniqueArgs = { where: { id: string }; select?: UserSelect | null }
-  export type UserFindManyArgs = { where?: UserWhereInput; select?: UserSelect | null }
-  export type UserFindFirstArgs = { where?: UserWhereInput; select?: UserSelect | null }
-  export type UserDeleteArgs = { where: { id: string }; select?: UserSelect | null }
-  export type UserCountArgs = { where?: UserWhereInput }
-  export type UserGetPayload<T> = { id: string; name: string }
-
-  // --- Event ---
-  // Scalar inputs mirror Prisma's generated column input types. Nullable
-  // scalars (day/price/meta — no isRequired) are optional, as Prisma emits.
-  // A single (non-union) input is used so the relationship nested-write and the
-  // unchecked FK are both present, sidestepping TS union excess-property quirks
-  // that do not exist against Prisma's real XOR<Checked, Unchecked> inputs.
-  export type EventCreateInput = {
-    title: string
-    day?: Date | string                       // calendarDay backing column: DateTime @db.Date
-    price?: Decimal | number | string
-    sequence?: bigint | number                // bigInt backing column: BigInt
-    meta?: InputJsonValue | JsonNullValueInput
-    active?: boolean
-    owner?: { connect: { id: string } }       // relationship nested write (checked)
-    ownerId?: string | null                   // unchecked FK
-  }
-  export type EventUpdateInput = {
-    title?: string
-    day?: Date | string
-    price?: Decimal | number | string
-    sequence?: bigint | number
-    meta?: InputJsonValue | JsonNullValueInput
-    active?: boolean
-    owner?: { connect: { id: string } } | { disconnect: true }
-    ownerId?: string | null
-  }
-
-  export type EventSelect = {
-    title?: boolean; day?: boolean; price?: boolean; sequence?: boolean; meta?: boolean; active?: boolean; owner?: boolean
-  }
-  export type EventInclude = { owner?: boolean }
-  export type EventWhereInput = { title?: string }
-  export type EventCreateArgs = { data: EventCreateInput; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventUpdateArgs = { where: { id: string }; data: EventUpdateInput; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventFindUniqueArgs = { where: { id: string }; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventFindManyArgs = { where?: EventWhereInput; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventFindFirstArgs = { where?: EventWhereInput; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventDeleteArgs = { where: { id: string }; select?: EventSelect | null; include?: EventInclude | null }
-  export type EventCountArgs = { where?: EventWhereInput }
-  export type EventGetPayload<T> = { id: string; title: string; day: string; active: boolean }
-}
-`
-
-/**
  * Minimal stubs for the `@opensaas/stack-core` + `/internal` symbols the
  * generated types import. Kept permissive: these are not what we're testing.
  */
 const CORE_STUB = `
 export interface Session { [key: string]: unknown }
-export type AccessContext<P> = { db: unknown; session: Session }
+export type AccessContext<P = unknown> = { db: unknown; session: Session }
 `
 
 const CORE_INTERNAL_STUB = `
 export type StorageUtils = unknown
 export type ServerActionProps = unknown
+export type PrismaClientLike = unknown
 export type AccessControlledDB<P> = Record<string, unknown>
 export type Fragment<A, B> = unknown
 export type FieldSelection<A> = unknown
@@ -204,9 +123,6 @@ void run
 function compileFixture(generatedTypes: string): ts.Diagnostic[] {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-write-narrowing-'))
   try {
-    const prismaClientDir = path.join(dir, 'prisma-client')
-    fs.mkdirSync(prismaClientDir, { recursive: true })
-    fs.writeFileSync(path.join(prismaClientDir, 'client.ts'), PRISMA_STUB)
     fs.writeFileSync(path.join(dir, 'types.ts'), generatedTypes)
     fs.writeFileSync(path.join(dir, 'consumer.ts'), CONSUMER)
 
@@ -238,11 +154,7 @@ function compileFixture(generatedTypes: string): ts.Diagnostic[] {
       'export class Decimal { constructor(_v: string | number) {} }\n',
     )
 
-    const rootNames = [
-      path.join(dir, 'types.ts'),
-      path.join(dir, 'consumer.ts'),
-      path.join(prismaClientDir, 'client.ts'),
-    ]
+    const rootNames = [path.join(dir, 'types.ts'), path.join(dir, 'consumer.ts')]
     const program = ts.createProgram({ rootNames, options: compilerOptions })
     return [...ts.getPreEmitDiagnostics(program)]
   } finally {
@@ -288,9 +200,7 @@ describe('write-path data narrowing (#599)', () => {
   it('narrows day to string and keeps active optional in the generated CreateArgs', () => {
     const generated = generateTypes(TEST_CONFIG)
     // Structural assertions on the generated override (cheap, complements tsc).
-    expect(generated).toContain(
-      "data: Omit<Prisma.EventCreateArgs['data'], 'title' | 'day' | 'active'> & {",
-    )
+    expect(generated).toContain("data: Omit<OpensaasUnnarrowed, 'title' | 'day' | 'active'> & {")
     expect(generated).toContain('day?: string | null')
     // checkbox({ defaultValue: false }) is optional on create (the bug fix).
     expect(generated).toContain('active?: boolean')
