@@ -411,6 +411,49 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(withColumn).not.toHaveProperty('price')
   })
 
+  it('falls back to the config for a list a stale emitted table does not describe', async () => {
+    // The bundle predates the list — regenerated for someone else's change, or
+    // not regenerated at all. An empty row would silently stop `price`
+    // reaching the hook; deriving that one list's row keeps the pre-emission
+    // answer instead.
+    const productConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Product: list({
+          fields: {
+            price: integer(),
+            doubled: virtual({
+              type: 'number',
+              needs: ['price'],
+              hooks: {
+                resolveOutput: ({ item }) => {
+                  const typedItem = item as { price?: number }
+                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
+                },
+              },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+
+    const mockPrisma = createMockPrisma()
+    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', price: 10 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productFragment = defineFragment<any>()({ doubled: true } as const)
+
+    const result = await getContext(
+      { ...productConfig, _tables: { dependencies: {}, constraints: {} } },
+      mockPrisma,
+      null,
+    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+
+    expect(result?.doubled).toBe(20)
+    expect(result).not.toHaveProperty('price')
+  })
+
   it('widens the read for a relation the emitted table names, and strips it again', async () => {
     const orderConfig = await config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -473,12 +516,48 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(result).not.toHaveProperty('lineItems')
   })
 
+  it('runs no computed field on a branch the widening added, even one whose hook would throw (ADR-0051)', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+
+    // LineItem.summary's own declaration (`product`) is NOT paid for: the
+    // one-hop set stops at `lineItems`, so the include carries no `product`
+    // and a hook reading `item.product.name` would throw.
+    const ranOnAddedBranch: string[] = []
+    const lineItem = testConfig.lists.LineItem.fields
+    lineItem.summary.hooks = {
+      resolveOutput: ({ item }) => {
+        ranOnAddedBranch.push('LineItem.summary')
+        return `${(item as { product: { name: string } }).product.name} x1`
+      },
+    }
+
+    mockPrisma.order.findMany.mockImplementation((args: { include?: Record<string, unknown> }) => {
+      const included = args.include ?? {}
+      return Promise.resolve([
+        {
+          id: 'o1',
+          title: 'O',
+          ...('lineItems' in included
+            ? { lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }] }
+            : {}),
+        },
+      ])
+    })
+
+    const context = getContext(testConfig, mockPrisma, null)
+    const result = await context.db.order.findMany({})
+
+    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(ranOnAddedBranch).toEqual([])
+    expect(result).toEqual([{ id: 'o1', title: 'O', total: 10 }])
+  })
+
   it('a declaration cycle across two lists terminates by construction, with no cycle guard (ADR-0051)', async () => {
     // Order.total needs lineItems; LineItem.orderTitle needs order — a
     // two-list declaration cycle. It cannot recurse: the widening never
-    // descends into a branch it added, so `lineItems` is fetched bare and
-    // nothing on it computes. That is why the runtime `visitedLists` guard
-    // and `validateNeedsClosureDepth` are both deleted.
+    // descends into a branch it added. That is why the runtime `visitedLists`
+    // guard and `validateNeedsClosureDepth` are both deleted.
     const testConfig = await buildTestConfig({ withDeclarationCycle: true })
     const mockPrisma = createMockPrisma()
     mockPrisma.order.findMany.mockResolvedValue([
@@ -501,7 +580,8 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     const context = getContext(testConfig, mockPrisma, null)
     const result = await context.db.order.findMany({})
 
-    expect(result[0].total).toBe(10)
+    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(result).toEqual([{ id: 'o1', title: 'Order 1', total: 10 }])
   })
 })
 

@@ -14,7 +14,12 @@ import {
   type PrismaContract,
 } from '../src/contract/index.js'
 import { deriveConstraintMap } from '../src/contract/dependencies.js'
-import { authConfig, blogConfig, oneToOneConfig } from './fixtures/contract-configs.js'
+import {
+  authConfig,
+  blogConfig,
+  longIdentifierConfig,
+  oneToOneConfig,
+} from './fixtures/contract-configs.js'
 
 /**
  * An in-process PGlite reached over pglite-socket (ADR-0057). The socket
@@ -223,6 +228,7 @@ describe('engine: the constraint map names the constraints PostgreSQL actually c
     ['blog', blogConfig],
     ['auth', authConfig],
     ['one-to-one', oneToOneConfig],
+    ['long identifiers', longIdentifierConfig],
   ])(
     '%s',
     async (_name, config) => {

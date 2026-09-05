@@ -353,6 +353,16 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
           continue
         }
 
+        // A branch the widening added returns to nobody — it is stripped from
+        // `filtered` below, and the declaring hook reads its raw rows off
+        // `computedFieldItem`, never off `filtered`. Descending would run the
+        // related list's own computed fields over a one-hop set that was
+        // never fetched for them, so a hook reading its declared dependency
+        // there dereferences `undefined` and fails the whole read. ADR-0051
+        // records this as the decision: no computed field runs on a declared
+        // branch.
+        if (additions.keys.has(fieldName)) continue
+
         relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
       } else if (synthetic) {
         // No declared field means no field-level `read` gate of its own to

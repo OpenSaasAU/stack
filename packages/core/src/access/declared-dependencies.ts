@@ -77,15 +77,8 @@ function getExplicitInclude(value: unknown): Record<string, unknown> | undefined
 
 const derived = new WeakMap<OpenSaasConfig, DependencyTable>()
 
-/**
- * The dependency-set table for `config`: the one `pnpm generate` emitted when
- * the generated context supplied it, otherwise the same computation run once
- * and memoised.
- */
-export function getDependencyTable(config: OpenSaasConfig): DependencyTable {
-  const emitted = config._tables?.dependencies
-  if (emitted) return emitted
-
+/** The table `config` derives, computed once and memoised rather than per read. */
+function deriveOnce(config: OpenSaasConfig): DependencyTable {
   const cached = derived.get(config)
   if (cached) return cached
   const table = deriveDependencyTable(config)
@@ -93,11 +86,34 @@ export function getDependencyTable(config: OpenSaasConfig): DependencyTable {
   return table
 }
 
+/**
+ * The dependency-set table for `config`: the one `pnpm generate` emitted when
+ * the generated context supplied it, otherwise the same computation.
+ */
+export function getDependencyTable(config: OpenSaasConfig): DependencyTable {
+  return config._tables?.dependencies ?? deriveOnce(config)
+}
+
 const EMPTY_LIST_DEPENDENCIES: ListDependencies = { systemFields: ['id'], fields: {} }
 
-/** One list's row in the table, or an `id`-only row for a list the table does not describe. */
+/**
+ * One list's row in the table.
+ *
+ * A list the emitted table does not describe is a bundle older than the config
+ * — a list added without regenerating. Answering with an empty row would be
+ * silently wrong in two directions at once: the list's declared columns would
+ * stop reaching their hooks, and its timestamps would stop being exempt from
+ * field access. So the row is derived from the config instead. The emitted
+ * table stays authoritative everywhere it speaks, and a stale one degrades to
+ * the behaviour that predated emission rather than to silence.
+ *
+ * The `id`-only row survives for a list key the config does not have either,
+ * where there is genuinely nothing to say.
+ */
 export function getListDependencies(config: OpenSaasConfig, listKey: string): ListDependencies {
-  return getDependencyTable(config)[listKey] ?? EMPTY_LIST_DEPENDENCIES
+  return (
+    getDependencyTable(config)[listKey] ?? deriveOnce(config)[listKey] ?? EMPTY_LIST_DEPENDENCIES
+  )
 }
 
 /**

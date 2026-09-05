@@ -61,22 +61,56 @@ export interface GeneratedTables {
   constraints: ConstraintMap
 }
 
-/** PostgreSQL's `NAMEDATALEN - 1`: an identifier longer than this is truncated on a character boundary. */
+/*
+ * How a constraint over the 63-byte identifier limit ends up named.
+ *
+ * The two constraint kinds this map covers take DIFFERENT routes, so one
+ * truncation rule for both is wrong for one of them. `@prisma/orm-target-postgres`
+ * emits a table's primary key as a bare `PRIMARY KEY (…)` with no name, and
+ * every unique as `CONSTRAINT "<table>_<column…>_key" UNIQUE (…)` — a name it
+ * assembles itself and only warns about when it is too long. So:
+ *
+ * - a **primary key** is named by PostgreSQL's `makeObjectName`, which reserves
+ *   the `_pkey` label and shrinks the table component to fit;
+ * - a **unique** is named by Prisma and merely clipped by PostgreSQL's
+ *   `truncate_identifier`, which takes the leading 63 bytes and loses `_key`.
+ *
+ * The PGlite case in `tests/contract-engine.test.ts` carries a fixture whose
+ * names overflow both ways and asserts the map's key set equals PostgreSQL's
+ * own `conname` set, so the database — not this comment — is what pins them.
+ */
+
+/** PostgreSQL's `NAMEDATALEN - 1`. */
 const MAX_IDENTIFIER_BYTES = 63
 
 const encoder = new TextEncoder()
 
-function truncateIdentifier(name: string): string {
-  if (encoder.encode(name).length <= MAX_IDENTIFIER_BYTES) return name
-  let truncated = ''
-  let bytes = 0
-  for (const character of name) {
-    const width = encoder.encode(character).length
-    if (bytes + width > MAX_IDENTIFIER_BYTES) break
-    truncated += character
-    bytes += width
+function byteLength(value: string): number {
+  return encoder.encode(value).length
+}
+
+/** PostgreSQL's `truncate_identifier`/`pg_mbcliplen`: the longest prefix fitting in `bytes`, never splitting a character. */
+function clipToBytes(value: string, bytes: number): string {
+  if (byteLength(value) <= bytes) return value
+  let clipped = ''
+  let used = 0
+  for (const character of value) {
+    const width = byteLength(character)
+    if (used + width > bytes) break
+    clipped += character
+    used += width
   }
-  return truncated
+  return clipped
+}
+
+/**
+ * PostgreSQL's `makeObjectName` (`src/backend/commands/indexcmds.c`) for the
+ * one-component case: the label is reserved and never truncated, and the name
+ * component shrinks to make room for it.
+ */
+function makeObjectName(name: string, label: string): string {
+  const available = MAX_IDENTIFIER_BYTES - (byteLength(label) + 1)
+  return `${clipToBytes(name, available)}_${label}`
 }
 
 function foreignKeyColumnName(fieldKey: string): string {
@@ -105,8 +139,11 @@ function ownedForeignKeyColumn(
 }
 
 function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>): string[] {
+  // `resolveListTimestamps` reads `listConfig.fields` directly, so a raw config
+  // that omits it entirely throws — and this runs per read, not only at
+  // generation.
   const fields = listConfig.fields ?? {}
-  const timestamps = resolveListTimestamps(listConfig, config.db)
+  const timestamps = resolveListTimestamps({ ...listConfig, fields }, config.db)
   const names = ['id']
   if (timestamps.createdAt || Object.prototype.hasOwnProperty.call(fields, 'createdAt')) {
     names.push('createdAt')
@@ -204,23 +241,37 @@ function physicalColumn(model: ContractModel, name: string): string {
   return column?.map ?? name
 }
 
-/**
- * PostgreSQL's own default name for an unnamed unique constraint —
- * `<table>_<column…>_key`, truncated to `NAMEDATALEN - 1`. Prisma emits the
- * constraint without a name and PostgreSQL derives it, so this is the name
- * `SqlQueryError.constraint` reports.
- */
+/** The name Prisma gives an undeclared unique, as PostgreSQL stores it (see the naming note above). */
 function defaultUniqueName(table: string, columns: string[]): string {
-  return truncateIdentifier(`${table}_${columns.join('_')}_key`)
+  return clipToBytes(`${table}_${columns.join('_')}_key`, MAX_IDENTIFIER_BYTES)
 }
 
-function claim(map: ConstraintMap, name: string, entry: UniqueConstraint, listKey: string): void {
+/** The name PostgreSQL derives for the unnamed primary key Prisma emits (see the naming note above). */
+function primaryKeyName(table: string): string {
+  return makeObjectName(table, 'pkey')
+}
+
+/** A primary key's name is derived from the table alone, so only `db.map` can move it. */
+const PRIMARY_KEY_REMEDY =
+  'A primary key takes its name from the table, so it cannot be renamed directly: give one of the two lists a distinct table name with db.map.'
+
+/** An unnamed unique can adopt a name, replacing the field-level `isIndexed` that emitted it where there is one. */
+const UNIQUE_REMEDY =
+  'Give one of them an explicit name with a db.indexes entry (replacing the field-level isIndexed that emitted it, where there is one).'
+
+function claim(
+  map: ConstraintMap,
+  name: string,
+  entry: UniqueConstraint,
+  listKey: string,
+  remedy: string,
+): void {
   const existing = map[name]
   if (existing) {
     throw new Error(
       `The unique constraint "${name}" is emitted by both list "${existing.list}" (${existing.fields.join(', ')}) ` +
         `and list "${listKey}" (${entry.fields.join(', ')}), so a violation could not be resolved to one set of ` +
-        `fields. Give one of them an explicit name with a db.indexes entry.`,
+        `fields. ${remedy}`,
     )
   }
   map[name] = entry
@@ -237,8 +288,13 @@ function claim(map: ConstraintMap, name: string, entry: UniqueConstraint, listKe
  * - A constraint managed by hand in the database is not here, and falls
  *   through to the generic unique-violation message.
  * - Two constraints whose derived names collide after PostgreSQL's
- *   63-byte truncation are a generation error naming both lists; the fix is
- *   an explicit `name` on one of the entries.
+ *   63-byte truncation are a generation error naming both lists and the
+ *   remedy for the kind that collided.
+ * - The key omits `model.namespace`, so two lists in different schemas whose
+ *   physical table and column names coincide collide on one key even though
+ *   PostgreSQL keeps them apart. That is the same generation error, and for
+ *   the primary keys it reports `db.map` rather than an unusable `db.indexes`
+ *   suggestion.
  */
 export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractData): ConstraintMap {
   const map: ConstraintMap = {}
@@ -253,9 +309,10 @@ export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractDa
 
     claim(
       map,
-      truncateIdentifier(`${table}_pkey`),
+      primaryKeyName(table),
       { list: model.name, fields: ['id'] },
       model.name,
+      PRIMARY_KEY_REMEDY,
     )
 
     for (const column of model.columns) {
@@ -265,18 +322,29 @@ export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractDa
         defaultUniqueName(table, [physicalColumn(model, column.name)]),
         { list: model.name, fields: fieldsOf([column.name]) },
         model.name,
+        UNIQUE_REMEDY,
       )
     }
 
     for (const index of model.indexes) {
       if (!index.unique) continue
       const name =
-        index.name ??
-        defaultUniqueName(
-          table,
-          index.columns.map((column) => physicalColumn(model, column)),
-        )
-      claim(map, name, { list: model.name, fields: fieldsOf(index.columns) }, model.name)
+        index.name !== undefined
+          ? // PostgreSQL's `truncate_identifier`: an adopted name over the
+            // limit is clipped, not rejected, so the map must be keyed by
+            // what the server stored rather than what the config wrote.
+            clipToBytes(index.name, MAX_IDENTIFIER_BYTES)
+          : defaultUniqueName(
+              table,
+              index.columns.map((column) => physicalColumn(model, column)),
+            )
+      claim(
+        map,
+        name,
+        { list: model.name, fields: fieldsOf(index.columns) },
+        model.name,
+        UNIQUE_REMEDY,
+      )
     }
   }
 

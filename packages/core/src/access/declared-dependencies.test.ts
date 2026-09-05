@@ -69,9 +69,16 @@ describe('the emitted table backs the read', () => {
     }
 
     expect(getDependencyTable(config)).toBe(emitted)
-    // The bundle's table is authoritative: LineItem is absent from it, so the
-    // read widens for nothing there even though the config declares `product`.
-    expect(resolveDeclaredDependencies(config, 'LineItem').relations.size).toBe(0)
+    // The bundle's table is authoritative wherever it speaks — `Order` reads
+    // from it, not from the config.
+    expect([...resolveDeclaredDependencies(config, 'Order').relations]).toEqual(['lineItems'])
+    // `LineItem` is absent from it, which means a bundle older than the
+    // config rather than a list with no declarations. Answering with an empty
+    // set would silently stop `product` reaching the hook, so that one row is
+    // derived from the config instead.
+    expect([...resolveDeclaredDependencies(config, 'LineItem').relations]).toEqual(['product'])
+    // A key neither the table nor the config has still yields nothing.
+    expect(resolveDeclaredDependencies(config, 'Nonexistent').relations.size).toBe(0)
   })
 
   it('derives the same table once, and reuses it, for a config with none', () => {

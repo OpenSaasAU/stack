@@ -301,6 +301,31 @@ export const nativeTypesConfig: OpenSaasConfig = {
  * text. Nothing here enforces PascalCase or an identifier-shaped field key, so
  * every one of these is reachable from a real config.
  */
+/**
+ * Names long enough that PostgreSQL has to truncate the constraint names it
+ * derives: a 60-character table (whose `_pkey` overflows on the label alone), a
+ * unique column whose table+column pair overflows, and a composite unique whose
+ * two columns overflow between them. PostgreSQL reserves the `_pkey`/`_key`
+ * label and shrinks the components, so the emitted map is only right if it
+ * does the same.
+ */
+export const longIdentifierConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    Overflowing: {
+      fields: {
+        ['c'.repeat(55)]: text({ isIndexed: 'unique' }),
+        left: text({ db: { map: 'l'.repeat(40) } }),
+        right: text({ db: { map: 'r'.repeat(40) } }),
+      },
+      db: {
+        map: 'A'.repeat(60),
+        indexes: [{ fields: ['left', 'right'], unique: true }],
+      },
+    },
+  },
+}
+
 export const hostileNamesConfig: OpenSaasConfig = {
   db: { provider: 'postgresql' },
   lists: {

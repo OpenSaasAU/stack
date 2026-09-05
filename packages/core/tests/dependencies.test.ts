@@ -131,13 +131,33 @@ describe('deriveConstraintMap', () => {
     expect(map.session_token_key).toEqual({ list: 'Session', fields: ['token'] })
   })
 
-  it('truncates a derived name to PostgreSQL’s 63-byte identifier limit', () => {
-    const longField = 'veryLongFieldNameThatGoesOnAndOnForeverAndEverAndEver'
+  // The expected names below are literals, not a rerun of the implementation's
+  // own rule. PGlite is what pins them — `contract-engine.test.ts` asserts the
+  // map's key set equals PostgreSQL's `conname` set for a fixture that overflows
+  // both ways.
+  it('clips an over-long unique to its leading 63 bytes, the way Prisma’s own name reaches PostgreSQL', () => {
+    const longField = 'c'.repeat(70)
     const config = textListConfig({ [longField]: text({ isIndexed: 'unique' }) })
 
     const map = deriveConstraintMap(config, deriveContract(config))
-    const name = `Doc_${longField}_key`.slice(0, 63)
+    // `Doc_<70 c's>_key` is 78 bytes; PostgreSQL keeps the leading 63 and the
+    // `_key` suffix is gone.
+    const name = `Doc_${'c'.repeat(59)}`
+    expect(name).toHaveLength(63)
     expect(map[name]).toEqual({ list: 'Doc', fields: [longField] })
+  })
+
+  it('shrinks the table component of an over-long primary key, keeping the _pkey PostgreSQL reserves', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Doc: { fields: { title: text() }, db: { map: 'A'.repeat(60) } } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a minimal config, not a builder-produced one
+    } as any
+
+    const map = deriveConstraintMap(config, deriveContract(config))
+    const name = `${'A'.repeat(58)}_pkey`
+    expect(name).toHaveLength(63)
+    expect(map[name]).toEqual({ list: 'Doc', fields: ['id'] })
   })
 
   it('refuses two constraints whose derived names collide after truncation, naming both', () => {
@@ -150,6 +170,24 @@ describe('deriveConstraintMap', () => {
     expect(() => deriveConstraintMap(config, deriveContract(config))).toThrow(
       /is emitted by both list "Doc"/,
     )
+  })
+
+  it('offers db.map, not a db.indexes name, when the collision is between two primary keys', () => {
+    // Two lists in different schemas mapped to the same table name: the key
+    // omits the namespace (a recorded limit), so their `_pkey` names collide.
+    // A primary key cannot adopt a `db.indexes` name, so that remedy would be
+    // unusable here.
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', schemas: ['public', 'auth'] },
+      lists: {
+        PublicUser: { fields: { name: text() }, db: { map: 'user' } },
+        AuthUser: { fields: { name: text() }, db: { map: 'user', schema: 'auth' } },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a minimal config, not a builder-produced one
+    } as any
+
+    expect(() => deriveConstraintMap(config, deriveContract(config))).toThrow(/db\.map/)
+    expect(() => deriveConstraintMap(config, deriveContract(config))).not.toThrow(/db\.indexes/)
   })
 })
 
