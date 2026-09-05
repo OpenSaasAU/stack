@@ -27,7 +27,7 @@ interface DelegateStub {
   findFirst?: (args?: unknown) => Promise<Record<string, unknown> | null>
 }
 
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unknown> {
+function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
   const context = {
     db: delegates,
     session: null,
@@ -37,7 +37,7 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unk
     _resolveOutputChain: [],
   }
   // Cast: this is a stub for pipeline tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext<unknown>
+  return context as unknown as AccessContext
 }
 
 /**

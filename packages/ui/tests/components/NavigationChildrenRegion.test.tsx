@@ -36,7 +36,7 @@ const context = {
   plugins: {},
   _isSudo: false,
   _resolveOutputChain: [],
-} as unknown as AccessContext<unknown>
+} as unknown as AccessContext
 
 describe('Navigation children region (ADR-0021)', () => {
   it('with no children, produces unchanged output', () => {

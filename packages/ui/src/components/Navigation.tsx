@@ -8,7 +8,7 @@ import { UserMenu } from './UserMenu.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 export interface NavigationProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string

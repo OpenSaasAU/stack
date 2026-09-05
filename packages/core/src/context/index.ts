@@ -1,4 +1,5 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
+import { ormModel } from '../access/orm-client.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import {
   checkAccess,
@@ -22,7 +23,8 @@ import type {
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { uniqueConstraintOf } from '../lib/prisma-errors.js'
-import type { PrismaClientLike } from '../access/types.js'
+import type { OrmClient } from '../access/types.js'
+import type { StackContext } from '../types/context.js'
 import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
 import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
@@ -297,73 +299,11 @@ export interface TransactionOptions {
  * does NOT expose `$transaction`, which is how nested writes detect they are
  * already inside a transaction and join it rather than opening another.
  */
-interface TransactionCapable<TPrisma> {
+interface TransactionCapable {
   $transaction?: (
-    fn: (tx: TPrisma) => Promise<unknown>,
+    fn: (tx: OrmClient) => Promise<unknown>,
     options?: TransactionOptions,
   ) => Promise<unknown>
-}
-
-/**
- * The access-controlled context returned by {@link getContext}.
- *
- * Exposes the secured `db` delegate plus the session, raw `prisma`, storage,
- * plugin services, the generic `serverAction` handler, `sudo()` (bypasses access
- * control but still runs hooks), `withSession()` (substitutes the session but
- * still runs access control), and `transaction()` (interactive, hook-firing
- * transaction). All access-checked operations run their list/field hooks.
- */
-export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  db: AccessControlledDB<TPrisma>
-  session: Session | null
-  prisma: TPrisma
-  storage: StorageUtils
-  plugins: Record<string, unknown>
-  serverAction: (props: ServerActionProps) => Promise<unknown>
-  /**
-   * Run `fn` inside ONE interactive transaction. The `txContext` handed to `fn`
-   * is a full {@link StackContext} whose `db.*` operations are access-checked and
-   * hook-firing (identical to this context) but persist against the transaction
-   * client, so every write in the callback is atomic — a throw anywhere rolls the
-   * whole transaction back.
-   *
-   * `options` (notably `isolationLevel`) is forwarded to the underlying Prisma
-   * transaction. Serialization failures (e.g. Prisma `P2034`) propagate to the
-   * caller rather than being swallowed, so the caller can own a retry loop. If
-   * the client cannot open an interactive transaction (e.g. a plain mock, or we
-   * are already inside a transaction), `fn` runs directly against the current
-   * client with identical hook/access semantics.
-   *
-   * Caveat: plugin runtime services (`txContext.plugins`) stay bound to the
-   * top-level (non-transaction) client — they are shared services initialised
-   * once per request. Reads through a plugin service therefore won't see this
-   * transaction's uncommitted writes, and a plugin service that WRITES would
-   * escape the transaction and survive a rollback. Use `txContext.db` (not a
-   * plugin service) for writes that must be atomic with the transaction.
-   */
-  transaction: <T>(
-    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
-    options?: TransactionOptions,
-  ) => Promise<T>
-  sudo: () => StackContext<TPrisma>
-  /**
-   * Derive a context identical to this one except for its session, reusing
-   * the already-resolved config and this context's own client (including a
-   * transaction client — a call inside `context.transaction()` stays in that
-   * transaction) and storage.
-   *
-   * **This is not an authorisation.** It substitutes who hooks and access
-   * control see; it does not change what they decide. The derived context
-   * can do exactly what any context built with `session` directly could
-   * do — access rules still evaluate against the new session. The caller is
-   * responsible for deciding who may invoke this.
-   *
-   * Orthogonal to `sudo()`: `withSession(s)` preserves the receiver's sudo
-   * state (elevated stays elevated), so `context.withSession(s).sudo()` and
-   * `context.sudo().withSession(s)` are equivalent.
-   */
-  withSession: (session: Session | null) => StackContext<TPrisma>
-  _isSudo: boolean
 }
 
 /**
@@ -395,12 +335,9 @@ async function settleTransactionOwner<T>(
   return result
 }
 
-export function getContext<
-  TConfig extends OpenSaasConfig,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
->(
+export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
-  prisma: TPrisma,
+  prisma: OrmClient,
   session: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
@@ -411,14 +348,14 @@ export function getContext<
   // owner's callback body, carry the deferral registry so writes reached
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
-): StackContext<TPrisma> {
+): StackContext<AccessControlledDB> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 
-  const context: AccessContext<TPrisma> = {
+  const context: AccessContext = {
     session,
-    prisma: prisma as TPrisma,
-    db: db as AccessControlledDB<TPrisma>,
+    prisma,
+    db: db as AccessControlledDB,
     storage: storage ?? {
       uploadFile: async () => {
         throw new Error(
@@ -462,7 +399,7 @@ export function getContext<
           // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
           context.plugins[plugin.name] = plugin.runtime(
             context,
-            () => sudo() as unknown as AccessContext<TPrisma>,
+            () => sudo() as unknown as AccessContext,
           )
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
@@ -785,7 +722,7 @@ export function getContext<
   }
 
   // Bypasses access control; hooks and validation still run.
-  function sudo(): StackContext<TPrisma> {
+  function sudo(): StackContext<AccessControlledDB> {
     return getContext(
       config,
       prisma,
@@ -801,7 +738,7 @@ export function getContext<
 
   // Substitutes the session; access control and hooks still run against it
   // (orthogonal to `sudo`, so the receiver's sudo state is preserved).
-  function withSession(newSession: Session | null): StackContext<TPrisma> {
+  function withSession(newSession: Session | null): StackContext<AccessControlledDB> {
     return getContext(
       config,
       prisma,
@@ -827,7 +764,7 @@ export function getContext<
   // `transaction()` nested inside another joins the outer owner's queue
   // rather than creating a second one.
   function transaction<T>(
-    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
+    fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
     options?: TransactionOptions,
   ): Promise<T> {
     if (context._transactionOwner) {
@@ -835,7 +772,7 @@ export function getContext<
     }
 
     const registry = new TransactionRegistry()
-    const client = prisma as unknown as TransactionCapable<TPrisma>
+    const client = prisma as unknown as TransactionCapable
 
     const settled =
       typeof client.$transaction !== 'function'
@@ -873,8 +810,8 @@ export function getContext<
     return settleTransactionOwner(settled, registry)
   }
 
-  const returned: StackContext<TPrisma> = {
-    db: db as AccessControlledDB<TPrisma>,
+  const returned: StackContext<AccessControlledDB> = {
+    db: db as AccessControlledDB,
     session,
     prisma,
     storage: context.storage,
@@ -899,11 +836,11 @@ export function getContext<
  * client (e.g. a transaction `tx`) requires rebuilding the delegate — which is
  * exactly what this function enables.
  */
-export function populateDbDelegate<TPrisma extends PrismaClientLike>(
+export function populateDbDelegate(
   target: Record<string, unknown>,
   config: OpenSaasConfig,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const dbKey = getDbKey(listName)
@@ -944,14 +881,14 @@ export function populateDbDelegate<TPrisma extends PrismaClientLike>(
  * Convenience wrapper over {@link populateDbDelegate} returning a new object,
  * used by the Write Pipeline to rebind `db` to a transaction client.
  */
-export function buildDbDelegate<TPrisma extends PrismaClientLike>(
+export function buildDbDelegate(
   config: OpenSaasConfig,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-): AccessControlledDB<TPrisma> {
+  prisma: OrmClient,
+  context: AccessContext,
+): AccessControlledDB {
   const db: Record<string, unknown> = {}
   populateDbDelegate(db, config, prisma, context)
-  return db as AccessControlledDB<TPrisma>
+  return db as AccessControlledDB
 }
 
 /**
@@ -1072,12 +1009,12 @@ async function resolveReadInclude(
   }
 }
 
-function createFindUnique<TPrisma extends PrismaClientLike>(
+function createFindUnique(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   return async (args: {
@@ -1146,8 +1083,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
+    const model = ormModel(prisma, listName)
     const item = await model.findFirst({
       where,
       include,
@@ -1190,12 +1126,12 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
   }
 }
 
-function createFindMany<TPrisma extends PrismaClientLike>(
+function createFindMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   return async (args?: {
@@ -1304,8 +1240,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
+    const model = ormModel(prisma, listName)
     const items = await model.findMany({
       where,
       orderBy: args?.orderBy,
@@ -1377,12 +1312,12 @@ function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
   }
 }
 
-function createCreate<TPrisma extends PrismaClientLike>(
+function createCreate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
@@ -1402,12 +1337,12 @@ function createCreate<TPrisma extends PrismaClientLike>(
 
 // Runs create in a loop (not Prisma's native createMany) so every item still
 // gets its own hooks and access control.
-function createCreateMany<TPrisma extends PrismaClientLike>(
+function createCreateMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createFn: any,
@@ -1424,12 +1359,12 @@ function createCreateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-function createUpdate<TPrisma extends PrismaClientLike>(
+function createUpdate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the update strategy, run the
@@ -1449,12 +1384,12 @@ function createUpdate<TPrisma extends PrismaClientLike>(
 
 // Finds matching records, then updates each individually (not Prisma's native
 // updateMany) so every item still gets its own hooks and access control.
-function createUpdateMany<TPrisma extends PrismaClientLike>(
+function createUpdateMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   findManyFn: any,
@@ -1474,12 +1409,12 @@ function createUpdateMany<TPrisma extends PrismaClientLike>(
   }
 }
 
-function createDelete<TPrisma extends PrismaClientLike>(
+function createDelete(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
@@ -1497,12 +1432,12 @@ function createDelete<TPrisma extends PrismaClientLike>(
   }
 }
 
-function createCount<TPrisma extends PrismaClientLike>(
+function createCount(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   return async (args?: { where?: Record<string, unknown> }) => {
@@ -1565,8 +1500,7 @@ function createCount<TPrisma extends PrismaClientLike>(
     }
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
+    const model = ormModel(prisma, listName)
     const count = await model.count({
       where,
     })
@@ -1575,12 +1509,12 @@ function createCount<TPrisma extends PrismaClientLike>(
   }
 }
 
-function createGet<TPrisma extends PrismaClientLike>(
+function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  prisma: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createFn: any,
@@ -1595,8 +1529,7 @@ function createGet<TPrisma extends PrismaClientLike>(
     warnIfSelectIgnored(args, listName, 'get')
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
+    const model = ormModel(prisma, listName)
 
     let where: Record<string, unknown> = {}
     if (!context._isSudo) {

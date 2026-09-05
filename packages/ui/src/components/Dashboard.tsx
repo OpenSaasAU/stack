@@ -7,7 +7,7 @@ import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
 
 export interface DashboardProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   basePath?: string
 }

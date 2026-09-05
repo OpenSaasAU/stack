@@ -6,7 +6,7 @@ import type { StoredEmbedding } from '../config/types.js'
 import type { AccessContext } from '@opensaas/stack-core'
 
 // Helper to create mock context
-function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessContext<unknown> {
+function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessContext {
   return {
     db: dbOverrides,
     session: null,
@@ -16,7 +16,7 @@ function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessCon
     plugins: {},
     _isSudo: false,
     _resolveOutputChain: [],
-  } as AccessContext<unknown>
+  } as AccessContext
 }
 
 describe('Vector Storage', () => {

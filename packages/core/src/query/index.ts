@@ -1,4 +1,5 @@
 import { getDbKey } from '../lib/case-utils.js'
+import type { OrmOperationArgs } from '../access/types.js'
 
 // ─────────────────────────────────────────────────────────────
 // Internal helpers
@@ -97,8 +98,8 @@ export type QueryArgs = {
 export interface QueryRunnerContext {
   db: {
     [key: string]: {
-      findMany: (args?: unknown) => Promise<unknown[]>
-      findFirst: (args?: unknown) => Promise<unknown>
+      findMany: (args?: OrmOperationArgs) => Promise<unknown[]>
+      findFirst: (args?: OrmOperationArgs) => Promise<unknown>
     }
   }
 }

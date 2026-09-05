@@ -1,4 +1,5 @@
 import type { Session, AccessContext, PrismaFilter } from './types.js'
+import { ormModel } from './orm-client.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
 import {
   checkAccess,
@@ -763,14 +764,13 @@ export async function resolveToOneAccessVisibility(
       continue
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic model access by list name, mirroring the rest of the read pipeline
-    const model = (args.context.prisma as any)[getDbKey(entry.relatedListName)]
+    const model = ormModel(args.context.prisma, entry.relatedListName)
     const visibleRows = await model.findMany({
       where: { AND: [entry.accessWhere, { id: { in: [...ids] } }] },
       select: { id: true },
     })
     const visibleIds = new Set<string>(
-      Array.isArray(visibleRows) ? visibleRows.map((row: { id: unknown }) => String(row.id)) : [],
+      Array.isArray(visibleRows) ? visibleRows.map((row) => String(row.id)) : [],
     )
     resolved.filters[key] = { kind: 'visible', ids: visibleIds }
   }

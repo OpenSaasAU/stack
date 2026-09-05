@@ -23,7 +23,7 @@ interface DelegateStub {
   count?: (args: unknown) => Promise<number>
 }
 
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unknown> {
+function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
   const context = {
     db: delegates,
     session: null,
@@ -32,7 +32,7 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unk
     _isSudo: false,
     _resolveOutputChain: [],
   }
-  return context as unknown as AccessContext<unknown>
+  return context as unknown as AccessContext
 }
 
 /**

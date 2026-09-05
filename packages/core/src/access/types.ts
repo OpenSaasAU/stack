@@ -48,10 +48,45 @@ export type PrismaModelDelegate = {
   count: (args?: unknown) => Promise<number>
 }
 
-// Uses `any` because Prisma generates highly complex client types that are difficult
-// to constrain here; actual type safety comes from the TPrisma generic parameter.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type PrismaClientLike = any
+/**
+ * The ORM client the engine drives, structurally. Model keys are resolved at
+ * runtime from the config's list names, so the client is reached through an
+ * index signature and narrowed to {@link OrmModelDelegate} at the point of
+ * use rather than typed per model here — the per-model types belong to the
+ * generated bundle, which instantiates them from the emitted contract
+ * (ADR-0052).
+ *
+ * `context.prisma` is this type: unsecured, and honest about how little the
+ * engine assumes of it.
+ */
+export interface OrmClient {
+  /**
+   * Present on a real client and absent on a plain test double. The Write
+   * Pipeline probes for it rather than requiring it (ADR-0010).
+   */
+  $transaction?: unknown
+  [modelKey: string]: unknown
+}
+
+/** The arguments an ORM operation takes, before the engine lowers them. */
+export type OrmOperationArgs = Record<string, unknown>
+
+/** One row as the ORM returns it, before Field Visibility runs over it. */
+export type OrmRow = Record<string, unknown>
+
+/**
+ * One model's operations on {@link OrmClient}. Reached through
+ * {@link isOrmModelDelegate}, never by assuming the key is present.
+ */
+export interface OrmModelDelegate {
+  findUnique: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  findFirst: (args?: OrmOperationArgs) => Promise<OrmRow | null>
+  findMany: (args?: OrmOperationArgs) => Promise<OrmRow[]>
+  create: (args: OrmOperationArgs) => Promise<OrmRow>
+  update: (args: OrmOperationArgs) => Promise<OrmRow>
+  delete: (args: OrmOperationArgs) => Promise<OrmRow>
+  count: (args?: OrmOperationArgs) => Promise<number>
+}
 
 // ─────────────────────────────────────────────────────────────
 // Augmented find operation types — add `query` overload to findMany / findUnique
@@ -94,12 +129,11 @@ export type FindManyQueryArgs = {
  * // posts: Post[]
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
+export interface AugmentedFindMany {
   <TItem, TFields extends FieldSelection<TItem>>(
     args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  (args?: OrmOperationArgs): Promise<OrmRow[]>
 }
 
 /**
@@ -134,12 +168,11 @@ export type FindFirstQueryArgs = {
  * // post: ResultOf<typeof postFragment> | null
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
+export interface AugmentedFindFirst {
   <TItem, TFields extends FieldSelection<TItem>>(
     args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  (args?: OrmOperationArgs): Promise<OrmRow | null>
 }
 
 /**
@@ -159,61 +192,44 @@ export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
  * // post: ResultOf<typeof postFragment> | null
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> {
+export interface AugmentedFindUnique {
   <TItem, TFields extends FieldSelection<TItem>>(args: {
     where: Record<string, unknown>
     query: Fragment<TItem, TFields>
   }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  (args: OrmOperationArgs): Promise<OrmRow | null>
 }
 
-export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
-  [K in keyof TPrisma]: TPrisma[K] extends {
-    // Uses `any` here to check the property exists with any signature, a standard
-    // TypeScript pattern for verifying Prisma model shape in a conditional type.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findUnique: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findFirst: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findMany: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    create: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    update: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    count: any
-  }
-    ? {
-        findUnique: AugmentedFindUnique<TPrisma[K]['findUnique']>
-        findFirst: AugmentedFindFirst<TPrisma[K]['findFirst']>
-        findMany: AugmentedFindMany<TPrisma[K]['findMany']>
-        create: TPrisma[K]['create']
-        update: TPrisma[K]['update']
-        delete: TPrisma[K]['delete']
-        count: TPrisma[K]['count']
-        // Batch operations - run individual operations in a loop to ensure hooks and access control
-        createMany: Parameters<TPrisma[K]['create']>[0] extends { data: infer TData }
-          ? (args: { data: TData[] }) => Promise<Awaited<ReturnType<TPrisma[K]['create']>>[]>
-          : never
-        updateMany: Parameters<TPrisma[K]['update']>[0] extends { data: infer TData }
-          ? Parameters<TPrisma[K]['findMany']>[0] extends { where?: infer TWhere }
-            ? (args: {
-                where?: TWhere
-                data: TData
-              }) => Promise<Awaited<ReturnType<TPrisma[K]['update']>>[]>
-            : never
-          : never
-      }
-    : never
-} & {
-  // Add index signature for runtime string access (e.g., db[getDbKey(listName)])
-  // Uses `any` because models can have any shape from Prisma schema
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any
+/**
+ * One list's access-controlled delegate. Every operation runs the list's
+ * access rules and hooks, and returns `null` (single record) or `[]`
+ * (multiple) on denial rather than throwing (Silent failure).
+ *
+ * Rows are untyped here on purpose: the per-list shapes live in the generated
+ * bundle, which instantiates `SecuredList` from the emitted contract
+ * (ADR-0052). This is the engine's own view of its output.
+ */
+export interface AccessControlledDelegate {
+  findUnique: AugmentedFindUnique
+  findFirst: AugmentedFindFirst
+  findMany: AugmentedFindMany
+  create: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  update: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  delete: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  count: (args?: OrmOperationArgs) => Promise<number>
+  createMany: (args: OrmOperationArgs) => Promise<OrmRow[]>
+  updateMany: (args: OrmOperationArgs) => Promise<OrmRow[]>
+  /** Present only on a list declared `isSingleton` (ADR-0039). */
+  get?: (args?: OrmOperationArgs) => Promise<OrmRow | null>
+}
+
+/**
+ * The secured `db` surface, keyed by the camelCase db key of each list. List
+ * names come from the config at runtime, so this is an index signature; the
+ * generated bundle names each member and gives it its contract-derived type.
+ */
+export interface AccessControlledDB {
+  [dbKey: string]: AccessControlledDelegate
 }
 
 export type StorageUtils = {
@@ -237,10 +253,10 @@ export type StorageUtils = {
 }
 
 // Uses `interface` rather than `type` so consumers can extend it via module augmentation.
-export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
+export interface AccessContext {
   session: Session | null
-  prisma: TPrisma
-  db: AccessControlledDB<TPrisma>
+  prisma: OrmClient
+  db: AccessControlledDB
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean

@@ -54,7 +54,7 @@ function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boole
  */
 async function resolveVisibleBulkActions(
   actions: BulkAction[] | undefined,
-  context: AccessContext<unknown>,
+  context: AccessContext,
   listKey: string,
 ): Promise<SerializedBulkAction[]> {
   if (!actions || actions.length === 0) return []
@@ -108,7 +108,7 @@ function toRelationshipLabel(
  */
 async function isSortableField(
   field: FieldConfig | undefined,
-  args: { session: AccessContext<unknown>['session']; context: AccessContext<unknown> },
+  args: { session: AccessContext['session']; context: AccessContext },
 ): Promise<boolean> {
   if (!field) return false
   if (field.virtual === true) return false
@@ -136,7 +136,7 @@ export interface ListViewSort {
 }
 
 export interface ListViewProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   listKey: string
   basePath?: string

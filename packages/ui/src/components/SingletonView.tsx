@@ -8,7 +8,7 @@ import { prepareItemForm } from '../lib/prepareItemForm.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
 
 export interface SingletonViewProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   listKey: string
   basePath?: string

@@ -54,11 +54,53 @@ export type {
 
 // Context factory
 export { getContext } from './context/index.js'
+export type { TransactionOptions, TransactionIsolationLevel } from './context/index.js'
+
+// The contract-keyed generics the Generated bundle instantiates (ADR-0052).
+// The bundle names one interface per list extending each of these, keyed by
+// the emitted \`Contract\` and the generator-authored \`Remainder\`.
 export type {
-  StackContext,
-  TransactionOptions,
-  TransactionIsolationLevel,
-} from './context/index.js'
+  ListRemainder,
+  RemainderBase,
+  ColumnOutputTypes,
+  ColumnInputTypes,
+  RelationKey,
+  RelationTarget,
+  IsToOne,
+  OwnedRelationKey,
+  ForeignKeyColumn,
+  ListId,
+  Row,
+  StoredRow,
+  NeedsRow,
+  RelationValue,
+  SystemFieldKey,
+  CreateInput,
+  UpdateInput,
+  WritableColumn,
+  SecuredList,
+  QueryResult,
+  ColumnFilter,
+  ListWhere,
+  ListOrderBy,
+  ListUniqueWhere,
+  ListSelect,
+  ListInclude,
+  SubArgs,
+  FindUniqueArgs,
+  FindManyArgs,
+  CountArgs,
+  CreateArgs,
+  CreateManyArgs,
+  UpdateArgs,
+  UpdateManyArgs,
+  DeleteArgs,
+  GetArgs,
+  StackBaseContext,
+  StackTransactionContext,
+  StackDb,
+} from './types/index.js'
+export type { StackContext } from './types/context.js'
 
 // Naming utilities (documented public helpers; used for URLs and db keys)
 export { getDbKey, getUrlKey, getListKeyFromUrl, resolveListKeyFromUrl } from './lib/case-utils.js'
