@@ -126,6 +126,18 @@ function selectTarget(target: unknown, star: string | undefined): string | undef
   return undefined
 }
 
+// Node's PATTERN_KEY_COMPARE ranks two overlapping patterns by the length of
+// the base (the prefix up to and including `*`) and breaks an equal base with
+// the longer key. Ranking on the prefix alone picks `./*` over `./*l` for
+// `./control`, which is not the file the loader would load.
+// https://nodejs.org/api/esm.html#resolution-algorithm-specification
+function isBetterPatternKey(candidate: string, incumbent: string): boolean {
+  const candidateBase = candidate.indexOf('*')
+  const incumbentBase = incumbent.indexOf('*')
+  if (candidateBase !== incumbentBase) return candidateBase > incumbentBase
+  return candidate.length > incumbent.length
+}
+
 function matchSubpath(
   exportsField: unknown,
   key: string,
@@ -140,7 +152,7 @@ function matchSubpath(
     if (name === key) return { target, star: undefined }
   }
 
-  let best: { target: unknown; star: string; prefix: string } | undefined
+  let best: { name: string; target: unknown; star: string } | undefined
   for (const [name, target] of entries) {
     const starAt = name.indexOf('*')
     if (starAt === -1) continue
@@ -148,9 +160,11 @@ function matchSubpath(
     const suffix = name.slice(starAt + 1)
     if (suffix.includes('*')) continue
     if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue
-    if (key.length < prefix.length + suffix.length) continue
-    if (best !== undefined && prefix.length <= best.prefix.length) continue
-    best = { target, star: key.slice(prefix.length, key.length - suffix.length), prefix }
+    // Node requires `matchKey.length >= key.length`, so the star must expand to
+    // at least one character: `./control*` does not match `./control`.
+    if (key.length < name.length) continue
+    if (best !== undefined && !isBetterPatternKey(name, best.name)) continue
+    best = { name, target, star: key.slice(prefix.length, key.length - suffix.length) }
   }
   return best === undefined ? undefined : { target: best.target, star: best.star }
 }
@@ -171,7 +185,11 @@ function resolveImportSubpath(cwd: string, from: string, subpath: string): strin
     if (target === undefined || !target.startsWith('./')) return undefined
     file = path.join(root, target)
   }
-  return fs.existsSync(file) ? pathToFileURL(file).href : undefined
+  // ESM has no directory index resolution — importing a directory throws
+  // ERR_UNSUPPORTED_DIR_IMPORT — so an existing directory is not a resolution.
+  return fs.statSync(file, { throwIfNoEntry: false })?.isFile() === true
+    ? pathToFileURL(file).href
+    : undefined
 }
 
 /**

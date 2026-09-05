@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import type { ContractData } from '@opensaas/stack-core'
 import {
   seedExtensionContractSpaces,
+  verifyExtensionSubpaths,
   ExtensionSubpathError,
   ExtensionDescriptorError,
 } from './extension-spaces.js'
@@ -49,8 +50,19 @@ function fakePack(
     JSON.stringify({ name, version: '1.0.0', type: 'module', ...manifest }),
   )
   for (const [file, contents] of Object.entries(files)) {
-    fs.writeFileSync(path.join(packageDir, file), contents)
+    const target = path.join(packageDir, file)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, contents)
   }
+}
+
+/** A `/control` module that records which file the loader actually ran. */
+function markerModule(marker: string, which: string): string {
+  return (
+    `import { writeFileSync } from 'node:fs'\n` +
+    `writeFileSync(${JSON.stringify(marker)}, ${JSON.stringify(which)})\n` +
+    `export default { id: "differential" }\n`
+  )
 }
 
 function readSpaceFiles(cwd: string): string[] {
@@ -283,5 +295,170 @@ describe('seedExtensionContractSpaces', () => {
     await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
       /"namedOnly".*"@fake\/named-only\/control"/s,
     )
+  })
+
+  // ESM has no directory index resolution, so a directory at the subpath is not
+  // something the loader can reach: it throws ERR_UNSUPPORTED_DIR_IMPORT. Taking
+  // the directory's existence as a resolution accepts a pack that then fails on
+  // the generated import — the divergence this whole resolver exists to close.
+  it('refuses a pack with no exports map whose subpaths are directories', async () => {
+    const cwd = scratchProject()
+    const packageDir = path.join(cwd, 'node_modules', '@fake', 'legacy-dir')
+    for (const subpath of ['pack', 'control', 'runtime']) {
+      fs.mkdirSync(path.join(packageDir, subpath), { recursive: true })
+      fs.writeFileSync(
+        path.join(packageDir, subpath, 'index.mjs'),
+        'export default { id: "legacy" }\n',
+      )
+    }
+    fs.writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({ name: '@fake/legacy-dir', version: '1.0.0', type: 'module' }),
+    )
+
+    const declaration = contract([{ name: 'legacy', from: '@fake/legacy-dir' }])
+
+    await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
+      ExtensionSubpathError,
+    )
+    await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
+      /"legacy".*"@fake\/legacy-dir\/pack"/s,
+    )
+  })
+})
+
+// The resolver is a hand-rolled reimplementation of Node's `exports` matching,
+// so the loader — not a second copy of the rule — is the oracle: each shape is
+// resolved twice, once by the resolver and once by a real `import` from inside
+// an identical project, and the two must land on the same file. The `/control`
+// candidates record which of them ran.
+const PATTERN_PACK = '@fake/differential'
+
+interface PatternCase {
+  readonly label: string
+  readonly exports: Record<string, string>
+  readonly files: (marker: string) => Record<string, string>
+}
+
+const inert = 'export default {}\n'
+
+const patternCases: readonly PatternCase[] = [
+  {
+    label: 'overlapping patterns with an equal prefix',
+    exports: { './*': './a/*.mjs', './*l': './b/*l.mjs' },
+    files: (marker) => ({
+      'a/pack.mjs': inert,
+      'a/runtime.mjs': inert,
+      'a/control.mjs': markerModule(marker, 'a'),
+      'b/control.mjs': markerModule(marker, 'b'),
+    }),
+  },
+  {
+    label: 'overlapping patterns with a longer prefix',
+    exports: { './*': './a/*.mjs', './co*': './b/co*.mjs' },
+    files: (marker) => ({
+      'a/pack.mjs': inert,
+      'a/runtime.mjs': inert,
+      'a/control.mjs': markerModule(marker, 'a'),
+      'b/control.mjs': markerModule(marker, 'b'),
+    }),
+  },
+  {
+    label: 'a pattern whose star would have to expand to nothing',
+    exports: { './control*': './b/x*.mjs', './*': './a/*.mjs' },
+    files: (marker) => ({
+      'a/pack.mjs': inert,
+      'a/runtime.mjs': inert,
+      'a/control.mjs': markerModule(marker, 'a'),
+      'b/x.mjs': markerModule(marker, 'b'),
+    }),
+  },
+  {
+    label: 'a single catch-all pattern',
+    exports: { './*': './a/*.mjs' },
+    files: (marker) => ({
+      'a/pack.mjs': inert,
+      'a/runtime.mjs': inert,
+      'a/control.mjs': markerModule(marker, 'a'),
+    }),
+  },
+]
+
+function patternProject(patternCase: PatternCase): { cwd: string; marker: string } {
+  const cwd = scratchProject()
+  const marker = path.join(cwd, 'marker.txt')
+  fakePack(cwd, PATTERN_PACK, { exports: patternCase.exports }, patternCase.files(marker))
+  return { cwd, marker }
+}
+
+function readMarker(marker: string): string | undefined {
+  return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf-8') : undefined
+}
+
+describe('resolving a subpath agrees with the loader', () => {
+  for (const patternCase of patternCases) {
+    it(patternCase.label, async () => {
+      const resolver = patternProject(patternCase)
+      await seedExtensionContractSpaces(
+        resolver.cwd,
+        contract([{ name: 'differential', from: PATTERN_PACK }]),
+      )
+
+      const loader = patternProject(patternCase)
+      const probe = path.join(loader.cwd, 'probe.mjs')
+      fs.writeFileSync(probe, `export { default } from '${PATTERN_PACK}/control'\n`)
+      await import(pathToFileURL(probe).href)
+
+      expect(readMarker(loader.marker)).toBeDefined()
+      expect(readMarker(resolver.marker)).toBe(readMarker(loader.marker))
+    })
+  }
+})
+
+describe('verifyExtensionSubpaths', () => {
+  // Verification runs before the Contract module and prisma.config.ts are
+  // written, so it must be pure resolution: it neither executes the pack nor
+  // puts anything on disk that a later refusal would leave behind.
+  it('accepts a well-formed pack without loading it or writing anything', () => {
+    const cwd = scratchProject()
+    const marker = path.join(cwd, 'marker.txt')
+    fakePack(
+      cwd,
+      '@fake/verified',
+      {
+        exports: {
+          './pack': './pack.mjs',
+          './control': './control.mjs',
+          './runtime': './runtime.mjs',
+        },
+      },
+      { 'pack.mjs': inert, 'control.mjs': markerModule(marker, 'loaded'), 'runtime.mjs': inert },
+    )
+
+    verifyExtensionSubpaths(cwd, contract([{ name: 'verified', from: '@fake/verified' }]))
+
+    expect(readMarker(marker)).toBeUndefined()
+    expect(fs.existsSync(path.join(cwd, 'migrations'))).toBe(false)
+  })
+
+  it('refuses a pack missing a subpath, naming the pack and the subpath', () => {
+    const cwd = scratchProject()
+    fakePack(
+      cwd,
+      '@fake/unverifiable',
+      { exports: { './pack': './pack.mjs', './control': './control.mjs' } },
+      { 'pack.mjs': inert, 'control.mjs': 'export default { id: "x" }\n' },
+    )
+
+    const declaration = contract([
+      { name: 'ok', from: '@prisma/orm-extension-pgvector' },
+      { name: 'broken', from: '@fake/unverifiable' },
+    ])
+
+    expect(() => verifyExtensionSubpaths(cwd, declaration)).toThrow(ExtensionSubpathError)
+    expect(() => verifyExtensionSubpaths(cwd, declaration)).toThrow(
+      /"broken".*"@fake\/unverifiable\/runtime"/s,
+    )
+    expect(fs.existsSync(path.join(cwd, 'migrations'))).toBe(false)
   })
 })
