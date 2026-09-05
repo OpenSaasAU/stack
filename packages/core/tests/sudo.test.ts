@@ -637,13 +637,13 @@ describe('Sudo Context', () => {
     // plugin's getUser/getCurrentUser, see ADR-0013) an access-bypassing
     // identity-lookup path.
     it('passes a working sudo() as the second argument to plugin.runtime()', async () => {
-      let capturedSudo: (() => AccessContext<typeof mockPrisma>) | undefined
+      let capturedSudo: (() => AccessContext) | undefined
 
       const plugin: Plugin = {
         name: 'test-plugin',
         init: async () => {},
         runtime: (_context, sudo) => {
-          capturedSudo = sudo as () => AccessContext<typeof mockPrisma>
+          capturedSudo = sudo as () => AccessContext
           return {}
         },
       }
