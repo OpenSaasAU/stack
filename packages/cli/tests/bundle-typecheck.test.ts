@@ -4,7 +4,7 @@ import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createJiti } from 'jiti'
-import { deriveContract } from '../../core/src/contract/index.js'
+import { deriveContract, deriveGeneratedTables } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import { resolveOutputPaths } from '../src/generator/output-paths.js'
 import { writeContext } from '../src/generator/context.js'
@@ -12,6 +12,7 @@ import { writeContractModule } from '../src/generator/contract-module.js'
 import { writeLists } from '../src/generator/lists.js'
 import { writePluginTypes } from '../src/generator/plugin-types.js'
 import { writePrismaConfig } from '../src/generator/prisma-config.js'
+import { writeTables } from '../src/generator/tables.js'
 import { writeTypes } from '../src/generator/types.js'
 
 /**
@@ -20,10 +21,11 @@ import { writeTypes } from '../src/generator/types.js'
  * The equivalence suite type-checks `prisma/contract.ts` alone, which is why a
  * `.opensaas/types.ts` importing a Prisma client tree the pipeline no longer
  * writes could sit on green CI (#1134 review). This runs `tsc --noEmit` over
- * every one of the six files `opensaas generate` writes for the contract
+ * every one of the seven files `opensaas generate` writes for the contract
  * fixture — `prisma/contract.ts`, `prisma.config.ts`, and the bundle's
- * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts` — against the
- * committed `prisma/contract.d.ts` and `contract.json` they resolve into.
+ * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts`, `tables.ts` —
+ * against the committed `prisma/contract.d.ts` and `contract.json` they
+ * resolve into.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules` for `@opensaas/stack-core` and `@prisma/orm-postgres`.
@@ -109,6 +111,7 @@ describe('the generated bundle type-checks', () => {
       contractJsonImport: crossReferences.contractJsonImport,
     })
     writePluginTypes(config, paths.pluginTypes)
+    writeTables(deriveGeneratedTables(config, contractData), paths.tables)
   }, 120_000)
 
   test('writes every file generate writes', () => {
@@ -116,6 +119,7 @@ describe('the generated bundle type-checks', () => {
       'context.ts',
       'lists.ts',
       'plugin-types.ts',
+      'tables.ts',
       'types.ts',
     ])
     expect(fs.existsSync(path.join(projectDir, 'prisma.config.ts'))).toBe(true)

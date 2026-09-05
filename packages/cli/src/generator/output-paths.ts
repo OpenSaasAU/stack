@@ -10,14 +10,15 @@ export const DEFAULT_CONTRACT_MODULE = 'prisma/contract.ts'
 export const DEFAULT_OPENSAAS_DIR = '.opensaas'
 
 /**
- * The four files written into the `.opensaas` bundle directory. These names
- * are not configurable — only the directory that holds them moves.
+ * The files written into the `.opensaas` bundle directory. These names are
+ * not configurable — only the directory that holds them moves.
  */
 export const OPENSAAS_FILES = {
   types: 'types.ts',
   lists: 'lists.ts',
   context: 'context.ts',
   pluginTypes: 'plugin-types.ts',
+  tables: 'tables.ts',
 } as const
 
 /**
@@ -53,6 +54,8 @@ export interface ResolvedWritePaths {
   context: string
   /** Absolute path to `<opensaasDir>/plugin-types.ts`. */
   pluginTypes: string
+  /** Absolute path to `<opensaasDir>/tables.ts` — the dependency-set table and constraint map. */
+  tables: string
 }
 
 /**
@@ -145,6 +148,7 @@ export function resolveOutputPaths(
     lists: path.join(opensaasDirAbs, OPENSAAS_FILES.lists),
     context: path.join(opensaasDirAbs, OPENSAAS_FILES.context),
     pluginTypes: path.join(opensaasDirAbs, OPENSAAS_FILES.pluginTypes),
+    tables: path.join(opensaasDirAbs, OPENSAAS_FILES.tables),
   }
 
   const crossReferences: ResolvedCrossReferences = {

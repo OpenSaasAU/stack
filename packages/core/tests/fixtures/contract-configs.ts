@@ -17,7 +17,9 @@ import {
 /**
  * The blog example, as the Prisma 8 config surface spells it: a singleton,
  * a virtual field, a select enum, a mapped calendar day, a bidirectional
- * one-to-many and a list-only ref (synthetic back-relation).
+ * one-to-many and a list-only ref (synthetic back-relation). Two of its
+ * computed fields declare `needs` — one over a relation, one over sibling
+ * columns — so the dependency-set table has both kinds to resolve.
  */
 export const blogConfig: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },
@@ -59,6 +61,16 @@ export const blogConfig: OpenSaasConfig = {
         publishedAt: timestamp(),
         author: relationship({ ref: 'User.posts', db: { onDelete: 'setNull' } }),
         category: relationship({ ref: 'Category' }),
+        byline: virtual({
+          type: 'string',
+          needs: ['author'],
+          hooks: { resolveOutput: ({ item }) => String(item.authorId ?? 'anonymous') },
+        }),
+        excerpt: virtual({
+          type: 'string',
+          needs: ['content', 'title'],
+          hooks: { resolveOutput: ({ item }) => String(item.title) },
+        }),
       },
       db: { indexes: [{ fields: ['author', 'status'], name: 'post_author_status' }] },
     },
@@ -289,6 +301,31 @@ export const nativeTypesConfig: OpenSaasConfig = {
  * text. Nothing here enforces PascalCase or an identifier-shaped field key, so
  * every one of these is reachable from a real config.
  */
+/**
+ * Names long enough that PostgreSQL has to truncate the constraint names it
+ * derives: a 60-character table (whose `_pkey` overflows on the label alone), a
+ * unique column whose table+column pair overflows, and a composite unique whose
+ * two columns overflow between them. PostgreSQL reserves the `_pkey`/`_key`
+ * label and shrinks the components, so the emitted map is only right if it
+ * does the same.
+ */
+export const longIdentifierConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    Overflowing: {
+      fields: {
+        ['c'.repeat(55)]: text({ isIndexed: 'unique' }),
+        left: text({ db: { map: 'l'.repeat(40) } }),
+        right: text({ db: { map: 'r'.repeat(40) } }),
+      },
+      db: {
+        map: 'A'.repeat(60),
+        indexes: [{ fields: ['left', 'right'], unique: true }],
+      },
+    },
+  },
+}
+
 export const hostileNamesConfig: OpenSaasConfig = {
   db: { provider: 'postgresql' },
   lists: {

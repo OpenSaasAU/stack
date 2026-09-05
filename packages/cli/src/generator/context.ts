@@ -110,6 +110,10 @@ const storage = {
  * story 6). Its connection comes from `db.client` when the config supplies a
  * pool factory, and otherwise from the stack's URL lookup.
  *
+ * The resolved config carries the emitted dependency-set table and
+ * unique-constraint map from `tables.ts` on `_tables`, which is how the
+ * engine reaches them (ADR-0051, ADR-0042).
+ *
  * Known limits:
  * - `Context` is still the bundle's own type; #1136 rewrites `types.ts` to
  *   instantiate core's contract-keyed generics, and the client's own typed
@@ -146,6 +150,7 @@ import postgres from '@prisma/orm-postgres/runtime'
 ${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
 import contractJson from '${contractJsonImport}' with { type: 'json' }
 import type { Context } from './types.ts'
+import { constraintMap, dependencyTable } from './tables.ts'
 import configOrPromise from '${configImportPath}'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -180,9 +185,18 @@ async function getClient() {
   return client
 }
 
+/**
+ * The app's config carrying the emitted tables. This is the door the engine
+ * reads them through (ADR-0051): it widens a read for a computed field's
+ * declared dependencies, and resolves a unique violation to per-field
+ * messages, from the generated facts rather than by walking the config.
+ */
 async function getConfig() {
   if (!resolvedConfig) {
-    resolvedConfig = await configPromise
+    resolvedConfig = {
+      ...(await configPromise),
+      _tables: { dependencies: dependencyTable, constraints: constraintMap },
+    }
   }
   return resolvedConfig
 }

@@ -175,8 +175,8 @@ export { RelationFilterAccessDeniedError } from './access/index.js'
 export { validateFieldConfig, validateConfigFields } from './validation/field-config.js'
 export type { FieldConfigValidationError } from './validation/field-config.js'
 
-// Declared-dependency validation (`needs`, ADR-0025, ADR-0051) — a config that fails either must not generate.
-export { validateNeedsDeclarations, validateNeedsClosureDepth } from './validation/needs-closure.js'
+// Declared-dependency validation (`needs`, ADR-0025, ADR-0051) — a config that fails it must not generate.
+export { validateNeedsDeclarations } from './validation/needs-closure.js'
 export type { NeedsClosureError } from './validation/needs-closure.js'
 
 // Config-surface refusals (ADR-0040, ADR-0048, ADR-0049, ADR-0064) — the
@@ -216,6 +216,25 @@ export type {
   ContractRelationKind,
   ContractTimestamps,
 } from './contract/types.js'
+
+// The two tables the generator emits into the bundle beside the four
+// generated files (ADR-0051, ADR-0042). `deriveDependencyTable` is the one
+// computation behind both the runtime table and the generated `Remainder`'s
+// `needs` type; the engine reads the emitted result through the generated
+// context rather than walking the config on every read.
+export {
+  deriveConstraintMap,
+  deriveDependencyTable,
+  deriveGeneratedTables,
+} from './contract/dependencies.js'
+export type {
+  ConstraintMap,
+  DependencyTable,
+  FieldDependencySet,
+  GeneratedTables,
+  ListDependencies,
+  UniqueConstraint,
+} from './contract/dependencies.js'
 
 // Fragment-based query API — composable, type-safe reads that mirror
 // Keystone's GraphQL fragments without a GraphQL runtime. The migration
