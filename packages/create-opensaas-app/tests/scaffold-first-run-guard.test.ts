@@ -94,16 +94,11 @@ describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated, SQLi
 
     // Scaffold the basic (SQLite, no-auth) template fully non-interactively:
     // `--no-auth`/`--no-ai` skip the auth/AI prompts (and `--no-ai` its networked
-    // MCP install); `--db sqlite` fixes the database choice so the database prompt
-    // is bypassed; `--no-install` skips the CLI's auto install → generate →
+    // MCP install); `--no-install` skips the CLI's auto install → generate →
     // db:push so we drive those steps ourselves against the workspace toolchain.
-    await run(
-      'node',
-      [createCli, 'myapp', '--no-auth', '--no-ai', '--db', 'sqlite', '--no-install'],
-      {
-        cwd: tmpRoot,
-      },
-    )
+    await run('node', [createCli, 'myapp', '--no-auth', '--no-ai', '--no-install'], {
+      cwd: tmpRoot,
+    })
     projectDir = path.join(tmpRoot, 'myapp')
 
     // Lend the workspace example's installed toolchain to the scaffolded

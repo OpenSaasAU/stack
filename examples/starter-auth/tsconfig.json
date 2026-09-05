@@ -8,6 +8,8 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

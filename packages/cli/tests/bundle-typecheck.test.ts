@@ -129,4 +129,40 @@ describe('the generated bundle type-checks', () => {
     expect(`${result.stdout ?? ''}${result.stderr ?? ''}`.trim()).toBe('')
     expect(result.status).toBe(0)
   }, 180_000)
+
+  /**
+   * The check above only proves the bundle is clean today; these prove the
+   * check would catch it if it stopped being. Each construct is one plain Node
+   * refuses to strip, injected into a throwaway copy of the same bundle.
+   */
+  describe.each([
+    ['an enum', 'export enum Sentinel {\n  A,\n}\n'],
+    ['a runtime namespace', 'export namespace Sentinel {\n  export const a = 1\n}\n'],
+    [
+      'a parameter property',
+      'export class Sentinel {\n  constructor(public readonly a: string) {}\n}\n',
+    ],
+    ['a non-type re-export of a type', "import { Post } from './types.ts'\nexport { Post }\n"],
+  ])('%s in generator output', (_label, construct) => {
+    test('fails the same check', () => {
+      const injectedDir = fs.mkdtempSync(path.join(scratchRoot, 'injected-'))
+      fs.cpSync(projectDir, injectedDir, { recursive: true })
+      fs.writeFileSync(path.join(injectedDir, '.opensaas', 'sentinel.ts'), construct, 'utf-8')
+      fs.writeFileSync(
+        path.join(injectedDir, 'tsconfig.json'),
+        JSON.stringify(TSCONFIG, null, 2),
+        'utf-8',
+      )
+
+      const result = spawnSync(tscBinary, ['--project', injectedDir], {
+        cwd: injectedDir,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+      expect(output, output).toMatch(/sentinel\.ts/)
+      expect(result.status, output).not.toBe(0)
+    }, 180_000)
+  })
 })
