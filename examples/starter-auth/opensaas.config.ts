@@ -43,15 +43,6 @@ const isOwner: AccessControl = ({ session }) => {
  * OpenSaas Configuration with Better-Auth
  */
 export default config({
-  // Emit a Node build (ADR-0011): a compiled, plain-Node-loadable form of the
-  // generated bundle under `.opensaas/dist/`, in addition to the default `.ts`
-  // bundler form. This lets the e2e `node-build.test.ts` import the compiled
-  // context under plain Node (no bundler, no tsx) and create a user through
-  // better-auth — the consumer that anchors the Node build (see #579).
-  output: {
-    buildTarget: 'node',
-  },
-
   plugins: [
     authPlugin({
       // Enable email/password authentication
