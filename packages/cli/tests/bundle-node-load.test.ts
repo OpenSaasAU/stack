@@ -3,31 +3,30 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
-import { createJiti } from 'jiti'
-import { deriveContract } from '../../core/src/contract/index.js'
-import type { OpenSaasConfig } from '../../core/src/config/types.js'
-import { resolveOutputPaths } from '../src/generator/output-paths.js'
-import { writeContext } from '../src/generator/context.js'
-import { writeLists } from '../src/generator/lists.js'
-import { writePluginTypes } from '../src/generator/plugin-types.js'
-import { writeTypes } from '../src/generator/types.js'
 
 /**
  * ADR-0054 withdrew the Node build on the claim that the `.ts` bundle loads
  * natively. This runs the claim: the real `node` binary, no flags, no loader,
  * no bundler, importing `.opensaas/context.ts` for the contract fixture.
  *
+ * The bundle under test is written by the real CLI rather than by the writer
+ * functions, so what `opensaas generate` actually leaves on disk — including
+ * what it does *not* leave — is what is asserted.
+ *
  * The probe stops at the point a connection would be opened. `DATABASE_URL` is
  * set so `resolveDatabaseUrl()` resolves, but nothing dials it: the module's
  * `rawOpensaasContext` promise is the only eager path and its rejection is
  * absorbed, so what is asserted is that the module graph — the bundle, the
  * config, `@opensaas/stack-core` and `@prisma/orm-postgres/runtime` — loads.
+ * better-auth is not exercised here; ADR-0054's amendment says where that
+ * anchor went.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules`, and outside `node_modules` itself so type stripping applies.
  */
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'contract-project')
+const cliEntry = path.join(packageRoot, 'bin', 'opensaas.js')
 const scratchRoot = fs.mkdtempSync(path.join(packageRoot, 'tests', 'tmp-node-load-'))
 
 afterAll(() => {
@@ -53,49 +52,50 @@ console.log('BUNDLE_LOADED_UNDER_PLAIN_NODE')
 
 describe('the generated bundle loads under plain Node', () => {
   let projectDir = ''
+  let generate: ReturnType<typeof spawnSync>
 
-  beforeAll(async () => {
+  beforeAll(() => {
+    expect(
+      fs.existsSync(path.join(packageRoot, 'dist', 'index.js')),
+      'the CLI must be built before this test runs (turbo `test` dependsOn `build`)',
+    ).toBe(true)
+
     projectDir = path.join(scratchRoot, 'contract-project')
-    fs.mkdirSync(path.join(projectDir, 'prisma'), { recursive: true })
-
+    fs.mkdirSync(projectDir, { recursive: true })
     fs.copyFileSync(
       path.join(fixtureRoot, 'opensaas.config.ts'),
       path.join(projectDir, 'opensaas.config.ts'),
     )
-    for (const artifact of ['contract.json', 'contract.d.ts']) {
-      fs.copyFileSync(
-        path.join(fixtureRoot, 'prisma', artifact),
-        path.join(projectDir, 'prisma', artifact),
-      )
-    }
 
-    const jiti = createJiti(projectDir, { interopDefault: true })
-    const module = await jiti.import<{ default: OpenSaasConfig | Promise<OpenSaasConfig> }>(
-      path.join(projectDir, 'opensaas.config.ts'),
-    )
-    const config = await Promise.resolve(module.default)
-    const contractData = deriveContract(config)
-
-    const { paths, crossReferences } = resolveOutputPaths(projectDir, config.output)
-    writeTypes(config, paths.types)
-    writeLists(config, paths.lists)
-    writeContext(config, contractData, paths.context, {
-      configImport: crossReferences.configImport,
-      contractJsonImport: crossReferences.contractJsonImport,
+    generate = spawnSync(process.execPath, [cliEntry, 'generate'], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 180_000,
     })
-    writePluginTypes(config, paths.pluginTypes)
+  }, 240_000)
 
-    fs.writeFileSync(path.join(projectDir, 'probe.mjs'), PROBE, 'utf-8')
-  }, 120_000)
+  test('opensaas generate succeeds', () => {
+    const output = `${generate.stdout ?? ''}${generate.stderr ?? ''}`
+    expect(output, output).toContain('Generation complete')
+    expect(generate.status, output).toBe(0)
+  })
 
   test('emits no compiled twin beside the bundle', () => {
+    expect(fs.existsSync(path.join(projectDir, '.opensaas', 'context.ts'))).toBe(true)
     expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dist'))).toBe(false)
   })
 
   test('the real node binary imports it with no flags', () => {
+    fs.writeFileSync(path.join(projectDir, 'probe.mjs'), PROBE, 'utf-8')
+
+    // `spawnSync` cannot be interrupted by vitest's test timeout, so a probe
+    // that never exits would hang the worker rather than fail the test.
     const result = spawnSync(process.execPath, ['probe.mjs'], {
       cwd: projectDir,
       encoding: 'utf-8',
+      timeout: 60_000,
+      killSignal: 'SIGKILL',
       env: {
         ...process.env,
         DATABASE_URL: 'postgresql://user:password@127.0.0.1:5432/never_dialled',
@@ -103,6 +103,7 @@ describe('the generated bundle loads under plain Node', () => {
     })
 
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    expect(result.signal, output).toBe(null)
     expect(output, output).toContain('BUNDLE_LOADED_UNDER_PLAIN_NODE')
     expect(result.status, output).toBe(0)
   }, 120_000)

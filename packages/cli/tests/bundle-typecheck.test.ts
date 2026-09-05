@@ -136,14 +136,22 @@ describe('the generated bundle type-checks', () => {
    * refuses to strip, injected into a throwaway copy of the same bundle.
    */
   describe.each([
-    ['an enum', 'export enum Sentinel {\n  A,\n}\n'],
-    ['a runtime namespace', 'export namespace Sentinel {\n  export const a = 1\n}\n'],
+    ['an enum', 'export enum Sentinel {\n  A,\n}\n', /TS1294/],
+    ['a runtime namespace', 'export namespace Sentinel {\n  export const a = 1\n}\n', /TS1294/],
     [
       'a parameter property',
       'export class Sentinel {\n  constructor(public readonly a: string) {}\n}\n',
+      /TS1294/,
     ],
-    ['a non-type re-export of a type', "import { Post } from './types.ts'\nexport { Post }\n"],
-  ])('%s in generator output', (_label, construct) => {
+    [
+      'a non-type re-export of a type',
+      "import { Post } from './types.ts'\nexport { Post }\n",
+      /TS1484/,
+    ],
+  ])('%s in generator output', (_label, construct, diagnostic) => {
+    // The diagnostic is asserted, not just a non-zero status: the last case
+    // would otherwise keep passing as TS2305 if the generator renamed `Post`,
+    // and stop guarding `verbatimModuleSyntax` without going red.
     test('fails the same check', () => {
       const injectedDir = fs.mkdtempSync(path.join(scratchRoot, 'injected-'))
       fs.cpSync(projectDir, injectedDir, { recursive: true })
@@ -162,6 +170,7 @@ describe('the generated bundle type-checks', () => {
 
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
       expect(output, output).toMatch(/sentinel\.ts/)
+      expect(output, output).toMatch(diagnostic)
       expect(result.status, output).not.toBe(0)
     }, 180_000)
   })
