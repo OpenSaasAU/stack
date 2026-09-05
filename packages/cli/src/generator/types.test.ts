@@ -294,7 +294,7 @@ describe('Types Generator', () => {
       expect(types).toContain('fullName: string')
 
       // Should generate UserSelect with virtual field
-      expect(types).toContain('export type UserSelect = Prisma.UserSelect & {')
+      expect(types).toContain('export type UserSelect = OpensaasUnnarrowed & {')
       expect(types).toContain('fullName?: boolean')
 
       // Should generate UserGetPayload helper type using StripVirtualFromArgs
@@ -302,7 +302,7 @@ describe('Types Generator', () => {
         'export type UserGetPayload<T extends { select?: any; include?: any } = {}> =',
       )
       expect(types).toContain(
-        'Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>>',
+        'OpensaasPayload<UserOutput, StripVirtualFromArgs<T, keyof UserVirtualFields>>',
       )
 
       expect(types).toMatchSnapshot()
@@ -342,11 +342,11 @@ describe('Types Generator', () => {
 
       // Bill has virtual fields so its GetPayload must use StripVirtualFromArgs
       expect(types).toContain(
-        'Prisma.BillGetPayload<StripVirtualFromArgs<T, keyof BillVirtualFields>>',
+        'OpensaasPayload<BillOutput, StripVirtualFromArgs<T, keyof BillVirtualFields>>',
       )
 
       // Account has no virtual fields so its GetPayload must NOT use StripVirtualFromArgs
-      expect(types).not.toContain('Prisma.AccountGetPayload<StripVirtualFromArgs')
+      expect(types).not.toContain('OpensaasPayload<AccountOutput, StripVirtualFromArgs')
 
       expect(types).toMatchSnapshot()
     })
@@ -381,7 +381,7 @@ describe('Types Generator', () => {
       const types = generateTypes(config)
 
       // Should generate UserInclude with virtual field
-      expect(types).toContain('export type UserInclude = Prisma.UserInclude & {')
+      expect(types).toContain('export type UserInclude = OpensaasUnnarrowed & {')
       expect(types).toContain('postCount?: boolean')
 
       expect(types).toMatchSnapshot()
@@ -425,13 +425,13 @@ describe('Types Generator', () => {
       const types = generateTypes(config)
       // The CreateArgs `data` override narrows scalars; the nullable `content`
       // member must match the standalone CreateInput member exactly.
-      expect(types).toContain("data: Omit<Prisma.PostCreateArgs['data'], 'title' | 'content'> & {")
+      expect(types).toContain("data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {")
       expect(types).toContain('    content?: string | null')
     })
 
     it('emits the same nullable-scalar shape in the call-site update `data` override', () => {
       const types = generateTypes(config)
-      expect(types).toContain("data: Omit<Prisma.PostUpdateArgs['data'], 'title' | 'content'> & {")
+      expect(types).toContain("data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {")
       expect(types).toContain('    content?: string | null')
     })
 

@@ -56,81 +56,9 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
   }
 }
 
-/**
- * Flat (non-conditional) Prisma stub: `XGetPayload<T>` ignores `T`, matching
- * the fixture pattern in types-write-narrowing.test.ts. This isolates the
- * test to OUR generated layer (CustomDB, per-list GetPayload conditional
- * chains, Context.sudo() self-reference) rather than re-implementing
- * Prisma's own deeply-conditional GetPayload machinery.
- */
-function buildPrismaStub(config: OpenSaasConfig): string {
-  const lines: string[] = [
-    "import type { Decimal } from 'decimal.js'",
-    '',
-    'export class PrismaClient {}',
-    '',
-    'export namespace Prisma {',
-    '  export type SelectSubset<T, U> = {',
-    '    [key in keyof T]: key extends keyof U ? T[key] : never',
-    '  } & U',
-    '',
-  ]
-
-  for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const scalarFields = Object.entries(listConfig.fields).filter(
-      ([, f]) => f.type !== 'relationship',
-    )
-    const relFields = Object.entries(listConfig.fields).filter((entry) => {
-      const [, f] = entry
-      return f.type === 'relationship'
-    })
-
-    const createMembers = scalarFields
-      .map(([name]) => `${name}?: unknown`)
-      .concat(
-        relFields.map(([name]) => `${name}?: { connect: { id: string } | Array<{ id: string }> }`),
-      )
-      .join('; ')
-    const selectMembers = Object.keys(listConfig.fields)
-      .map((name) => `${name}?: boolean`)
-      .join('; ')
-    const includeMembers = relFields.map(([name]) => `${name}?: boolean`).join('; ')
-
-    lines.push(`  export type ${listName}CreateInput = { ${createMembers} }`)
-    lines.push(`  export type ${listName}UpdateInput = { ${createMembers} }`)
-    lines.push(`  export type ${listName}Select = { ${selectMembers} }`)
-    lines.push(`  export type ${listName}Include = { ${includeMembers} }`)
-    lines.push(`  export type ${listName}WhereInput = { id?: string }`)
-    lines.push(
-      `  export type ${listName}CreateArgs = { data: ${listName}CreateInput; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(
-      `  export type ${listName}UpdateArgs = { where: { id: string }; data: ${listName}UpdateInput; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(
-      `  export type ${listName}FindUniqueArgs = { where: { id: string }; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(
-      `  export type ${listName}FindManyArgs = { where?: ${listName}WhereInput; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(
-      `  export type ${listName}FindFirstArgs = { where?: ${listName}WhereInput; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(
-      `  export type ${listName}DeleteArgs = { where: { id: string }; select?: ${listName}Select | null; include?: ${listName}Include | null }`,
-    )
-    lines.push(`  export type ${listName}CountArgs = { where?: ${listName}WhereInput }`)
-    lines.push(`  export type ${listName}GetPayload<T> = { id: string }`)
-    lines.push('')
-  }
-
-  lines.push('}')
-  return lines.join('\n')
-}
-
 const CORE_STUB = `
 export interface Session { [key: string]: unknown }
-export interface AccessContext<P> {
+export interface AccessContext<P = unknown> {
   db: unknown
   session: Session
   prisma: P
@@ -143,6 +71,7 @@ export interface AccessContext<P> {
 const CORE_INTERNAL_STUB = `
 export type StorageUtils = unknown
 export type ServerActionProps = unknown
+export type PrismaClientLike = unknown
 export type AccessControlledDB<P> = Record<string, unknown>
 export type Fragment<A, B> = unknown
 export type FieldSelection<A> = unknown
@@ -168,12 +97,9 @@ async function run() {
 void run
 `
 
-function compileFixture(generatedTypes: string, prismaStub: string): ts.Diagnostic[] {
+function compileFixture(generatedTypes: string): ts.Diagnostic[] {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-large-schema-'))
   try {
-    const prismaClientDir = path.join(dir, 'prisma-client')
-    fs.mkdirSync(prismaClientDir, { recursive: true })
-    fs.writeFileSync(path.join(prismaClientDir, 'client.ts'), prismaStub)
     fs.writeFileSync(path.join(dir, 'types.ts'), generatedTypes)
     fs.writeFileSync(path.join(dir, 'consumer.ts'), CONSUMER)
 
@@ -202,11 +128,7 @@ function compileFixture(generatedTypes: string, prismaStub: string): ts.Diagnost
       },
     }
 
-    const rootNames = [
-      path.join(dir, 'types.ts'),
-      path.join(dir, 'consumer.ts'),
-      path.join(prismaClientDir, 'client.ts'),
-    ]
+    const rootNames = [path.join(dir, 'types.ts'), path.join(dir, 'consumer.ts')]
     const program = ts.createProgram({ rootNames, options: compilerOptions })
     return [...ts.getPreEmitDiagnostics(program)]
   } finally {
@@ -221,9 +143,8 @@ describe('large-schema Context/CustomDB type-checks (#952)', () => {
     () => {
       const config = buildLargeSchemaConfig()
       const generated = generateTypes(config)
-      const prismaStub = buildPrismaStub(config)
 
-      const diagnostics = compileFixture(generated, prismaStub)
+      const diagnostics = compileFixture(generated)
       const messages = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
 
       const depthErrors = messages.filter((m) => m.includes('excessively deep'))

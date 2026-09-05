@@ -3235,7 +3235,13 @@ export type Plugin = {
 
   /**
    * Optional: Post-process generated files
-   * Allows plugins to modify Prisma schema, types, or add custom generated files
+   * Allows plugins to modify the Contract module, types, or add custom generated files
+   *
+   * Runs before `prisma contract emit`, so a rewritten `contractModule` is the
+   * one the emitted `contract.json` / `contract.d.ts` describe and the one the
+   * relation-graph agreement gate checks. A rewrite that the contract toolchain
+   * rejects therefore fails `opensaas generate` rather than landing on disk
+   * unemitted.
    */
   afterGenerate?: (files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>
 

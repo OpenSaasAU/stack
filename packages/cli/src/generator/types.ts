@@ -291,9 +291,9 @@ function shouldNarrowScalarWrite(fieldConfig: FieldConfig): boolean {
 }
 
 /**
- * The Prisma `data` keys to omit before re-adding narrowed scalar members.
+ * The base `data` keys to omit before re-adding narrowed scalar members.
  * Includes each narrowed scalar field name plus any raw backing columns of
- * multi-column fields (so no dangling Prisma keys remain after the Omit).
+ * multi-column fields (so no dangling keys remain after the Omit).
  */
 function getScalarOverrideOmitKeys(fields: Record<string, FieldConfig>): string[] {
   const keys: string[] = []
@@ -337,45 +337,25 @@ function buildScalarOverrideMembers(
 }
 
 /**
- * Build the write `data` type for a single-record create/update Args type.
- * Scalars are narrowed to OpenSaaS types while relationship nested writes,
- * unchecked FK fields, and decimal/json keep Prisma's input shape.
+ * The base every write-path `data` type is layered over.
  *
- * Shape: `Omit<Prisma.{List}{Create|Update}Args['data'], <omitKeys>> & { <narrowed scalars> }`
- *
- * When there are no narrowable scalars and no backing columns to strip, the
- * Prisma `data` type is used unchanged.
+ * Prisma's own `{List}{Create|Update}Input` used to fill this slot. Nothing in
+ * the bundle can reconstruct it now the generated client is gone (#1134): it
+ * carries nested relation writes, unchecked FK columns, atomic number
+ * operations and the JSON null sentinels, none of which the config describes.
+ * Claiming the narrower config-derived `{List}CreateInput` here would reject
+ * writes that are valid, so the unnarrowed placeholder stands in and only the
+ * scalars OpenSaaS itself narrows (#599) are checked. #1136 replaces it with
+ * the contract-derived input.
  */
-function buildWriteDataType(
-  listName: string,
-  fields: Record<string, FieldConfig>,
-  forCreate: boolean,
-): string {
-  const argsType = forCreate ? `${listName}CreateArgs` : `${listName}UpdateArgs`
-  const prismaData = `Prisma.${argsType}['data']`
-
-  const omitKeys = getScalarOverrideOmitKeys(fields)
-  const members = buildScalarOverrideMembers(fields, forCreate)
-
-  if (omitKeys.length === 0 && members.length === 0) {
-    return prismaData
-  }
-
-  const omitUnion = omitKeys.map((k) => `'${k}'`).join(' | ')
-  const base = omitKeys.length > 0 ? `Omit<${prismaData}, ${omitUnion}>` : prismaData
-
-  if (members.length === 0) {
-    return base
-  }
-
-  return `${base} & {\n${members.join('\n')}\n  }`
-}
+const WRITE_DATA_BASE = 'OpensaasUnnarrowed'
 
 /**
- * Build a narrowed write input type over an arbitrary Prisma base input type
- * expression (e.g. `Prisma.{List}CreateInput`). Used by the createMany /
- * updateMany variants whose `data` is built from the scalar `*Input` types
- * rather than the single-record `*Args['data']`.
+ * Build a narrowed write input type over a base input type expression.
+ * Scalars are narrowed to OpenSaaS types while relationship nested writes,
+ * unchecked FK fields, and decimal/bigInt/json are left to the base.
+ *
+ * Shape: `Omit<<base>, <omitKeys>> & { <narrowed scalars> }`
  */
 function buildWriteInputOverride(
   prismaBase: string,
@@ -436,7 +416,7 @@ function generateUpdateInputType(listName: string, fields: Record<string, FieldC
 }
 
 function generateWhereInputType(listName: string, _fields: Record<string, FieldConfig>): string {
-  return `export type ${listName}WhereInput = Prisma.${listName}WhereInput`
+  return `export type ${listName}WhereInput = OpensaasUnnarrowed`
 }
 
 function generateHookTypes(listName: string): string {
@@ -444,39 +424,39 @@ function generateHookTypes(listName: string): string {
 
   lines.push(`/**`)
   lines.push(` * Hook types for ${listName} list`)
-  lines.push(` * Properly typed to use Prisma's generated input types`)
+  lines.push(` * Typed against the generated ${listName}CreateInput / ${listName}UpdateInput`)
   lines.push(` */`)
   lines.push(`export type ${listName}Hooks = {`)
   lines.push(`  resolveInput?: (args:`)
   lines.push(`    | {`)
   lines.push(`        operation: 'create'`)
-  lines.push(`        resolvedData: Prisma.${listName}CreateInput`)
+  lines.push(`        resolvedData: ${listName}CreateInput`)
   lines.push(`        item: undefined`)
   lines.push(`        context: BaseContext`)
   lines.push(`      }`)
   lines.push(`    | {`)
   lines.push(`        operation: 'update'`)
-  lines.push(`        resolvedData: Prisma.${listName}UpdateInput`)
+  lines.push(`        resolvedData: ${listName}UpdateInput`)
   lines.push(`        item: ${listName}`)
   lines.push(`        context: BaseContext`)
   lines.push(`      }`)
-  lines.push(`  ) => Promise<Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput>`)
+  lines.push(`  ) => Promise<${listName}CreateInput | ${listName}UpdateInput>`)
   lines.push(`  validateInput?: (args: {`)
   lines.push(`    operation: 'create' | 'update'`)
-  lines.push(`    resolvedData: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    resolvedData: ${listName}CreateInput | ${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
   lines.push(`    context: BaseContext`)
   lines.push(`    addValidationError: (msg: string) => void`)
   lines.push(`  }) => Promise<void>`)
   lines.push(`  beforeOperation?: (args: {`)
   lines.push(`    operation: 'create' | 'update' | 'delete'`)
-  lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    resolvedData?: ${listName}CreateInput | ${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
   lines.push(`    context: BaseContext`)
   lines.push(`  }) => Promise<void>`)
   lines.push(`  afterOperation?: (args: {`)
   lines.push(`    operation: 'create' | 'update' | 'delete'`)
-  lines.push(`    resolvedData?: Prisma.${listName}CreateInput | Prisma.${listName}UpdateInput`)
+  lines.push(`    resolvedData?: ${listName}CreateInput | ${listName}UpdateInput`)
   lines.push(`    item?: ${listName}`)
   lines.push(`    context: BaseContext`)
   lines.push(`  }) => Promise<void>`)
@@ -499,7 +479,7 @@ function generateSelectType(listName: string, fields: Record<string, FieldConfig
  * Select type for ${listName}
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type ${listName}Select = Prisma.${listName}Select`
+export type ${listName}Select = OpensaasUnnarrowed`
   }
 
   const lines: string[] = []
@@ -521,7 +501,7 @@ export type ${listName}Select = Prisma.${listName}Select`
  * Select type for ${listName}
  * Uses Prisma's Select type directly
  */
-export type ${listName}Select = Prisma.${listName}Select`
+export type ${listName}Select = OpensaasUnnarrowed`
   }
 
   const exampleLines: string[] = []
@@ -542,7 +522,7 @@ export type ${listName}Select = Prisma.${listName}Select`
 ${exampleLines.join('\n')}
  * } satisfies ${listName}Select
  */
-export type ${listName}Select = Prisma.${listName}Select & {
+export type ${listName}Select = OpensaasUnnarrowed & {
 ${lines.join('\n')}
 }`
 }
@@ -582,7 +562,7 @@ function generateIncludeType(listName: string, fields: Record<string, FieldConfi
  * Include type for ${listName}
  * No virtual fields defined, uses Prisma's Include type directly
  */
-export type ${listName}Include = Prisma.${listName}Include`
+export type ${listName}Include = OpensaasUnnarrowed`
   }
 
   const exampleLines: string[] = []
@@ -602,7 +582,7 @@ export type ${listName}Include = Prisma.${listName}Include`
 ${exampleLines.join('\n')}
  * } satisfies ${listName}Include
  */
-export type ${listName}Include = Prisma.${listName}Include & {
+export type ${listName}Include = OpensaasUnnarrowed & {
 ${lines.join('\n')}
 }`
 }
@@ -675,10 +655,10 @@ function generateGetPayloadType(listName: string, fields: Record<string, FieldCo
     virtualFields.length > 0 ? `StripVirtualFromArgs<T, keyof ${listName}VirtualFields>` : 'T'
   if (fieldsToOmit.length > 0) {
     lines.push(
-      `  Omit<Prisma.${listName}GetPayload<${prismaT}>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
+      `  Omit<OpensaasPayload<${listName}Output, ${prismaT}>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
     )
   } else {
-    lines.push(`  Prisma.${listName}GetPayload<${prismaT}> &`)
+    lines.push(`  OpensaasPayload<${listName}Output, ${prismaT}> &`)
   }
 
   if (transformedFieldNames.length > 0) {
@@ -785,7 +765,7 @@ function generateFindUniqueArgsType(listName: string, fields: Record<string, Fie
     return `/**
  * Custom FindUniqueArgs for ${listName} with virtual field support in nested relationships
  */
-export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select' | 'include'> & {
+export type ${listName}FindUniqueArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
@@ -794,7 +774,7 @@ export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, '
     return `/**
  * Custom FindUniqueArgs for ${listName} with virtual field support
  */
-export type ${listName}FindUniqueArgs = Omit<Prisma.${listName}FindUniqueArgs, 'select'> & {
+export type ${listName}FindUniqueArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
@@ -808,7 +788,7 @@ function generateFindManyArgsType(listName: string, fields: Record<string, Field
     return `/**
  * Custom FindManyArgs for ${listName} with virtual field support in nested relationships
  */
-export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select' | 'include'> & {
+export type ${listName}FindManyArgs = OpensaasFilterArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
@@ -817,7 +797,7 @@ export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'sele
     return `/**
  * Custom FindManyArgs for ${listName} with virtual field support
  */
-export type ${listName}FindManyArgs = Omit<Prisma.${listName}FindManyArgs, 'select'> & {
+export type ${listName}FindManyArgs = OpensaasFilterArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
@@ -831,7 +811,7 @@ function generateFindFirstArgsType(listName: string, fields: Record<string, Fiel
     return `/**
  * Custom FindFirstArgs for ${listName} with virtual field support in nested relationships
  */
-export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'select' | 'include'> & {
+export type ${listName}FindFirstArgs = OpensaasFilterArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
@@ -840,7 +820,7 @@ export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'se
     return `/**
  * Custom FindFirstArgs for ${listName} with virtual field support
  */
-export type ${listName}FindFirstArgs = Omit<Prisma.${listName}FindFirstArgs, 'select'> & {
+export type ${listName}FindFirstArgs = OpensaasFilterArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
 }`
@@ -879,14 +859,14 @@ function generateCreateArgsType(listName: string, fields: Record<string, FieldCo
   // Narrow scalar `data` members to OpenSaaS types so field-level narrowing
   // (e.g. calendarDay -> string) is a compile error at the call site (#599),
   // while relationship nested writes / decimal / json keep Prisma's shape.
-  const dataType = buildWriteDataType(listName, fields, true)
+  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, true)
 
   if (hasRelationships) {
     return `/**
  * Custom CreateArgs for ${listName} with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'include' | 'data'> & {
+export type ${listName}CreateArgs = {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
   data: ${dataType}
@@ -896,7 +876,7 @@ export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' 
  * Custom CreateArgs for ${listName} with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' | 'data'> & {
+export type ${listName}CreateArgs = {
   select?: ${listName}Select | null
   data: ${dataType}
 }`
@@ -906,14 +886,14 @@ export type ${listName}CreateArgs = Omit<Prisma.${listName}CreateArgs, 'select' 
 function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // See generateCreateArgsType: narrow scalar `data` members (#599).
-  const dataType = buildWriteDataType(listName, fields, false)
+  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, false)
 
   if (hasRelationships) {
     return `/**
  * Custom UpdateArgs for ${listName} with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'include' | 'data'> & {
+export type ${listName}UpdateArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
   data: ${dataType}
@@ -923,7 +903,7 @@ export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' 
  * Custom UpdateArgs for ${listName} with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type ${listName}UpdateArgs = Omit<Prisma.${listName}UpdateArgs, 'select' | 'data'> & {
+export type ${listName}UpdateArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   data: ${dataType}
 }`
@@ -937,7 +917,7 @@ function generateDeleteArgsType(listName: string, fields: Record<string, FieldCo
     return `/**
  * Custom DeleteArgs for ${listName} with virtual field support in nested relationships
  */
-export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select' | 'include'> & {
+export type ${listName}DeleteArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
   include?: ${listName}Include | null
 }`
@@ -945,7 +925,7 @@ export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select' 
     return `/**
  * Custom DeleteArgs for ${listName} with virtual field support
  */
-export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'> & {
+export type ${listName}DeleteArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
   select?: ${listName}Select | null
 }`
   }
@@ -954,7 +934,7 @@ export type ${listName}DeleteArgs = Omit<Prisma.${listName}DeleteArgs, 'select'>
 function generateCreateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // createMany `data` is an array of scalar inputs; narrow each element (#599).
-  const dataElement = buildWriteInputOverride(`Prisma.${listName}CreateInput`, fields, true)
+  const dataElement = buildWriteInputOverride(WRITE_DATA_BASE, fields, true)
 
   if (hasRelationships) {
     return `/**
@@ -981,7 +961,7 @@ export type ${listName}CreateManyArgs = {
 function generateUpdateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
   const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
   // updateMany `data` is a single partial scalar input; narrow it (#599).
-  const dataType = buildWriteInputOverride(`Prisma.${listName}UpdateInput`, fields, false)
+  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, false)
 
   if (hasRelationships) {
     return `/**
@@ -1029,44 +1009,44 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`export interface ${listName}Crud {`)
 
   lines.push(`  findUnique: <T extends ${listName}FindUniqueArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}FindUniqueArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
   lines.push(`  findFirst: <T extends ${listName}FindFirstArgs>(`)
-  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
+  lines.push(`    args?: OpensaasSelectSubset<T, ${listName}FindFirstArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
   lines.push(`  findMany: <T extends ${listName}FindManyArgs>(`)
-  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
+  lines.push(`    args?: OpensaasSelectSubset<T, ${listName}FindManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
   lines.push(`  create: <T extends ${listName}CreateArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}CreateArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T>>`)
 
   lines.push(`  update: <T extends ${listName}UpdateArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}UpdateArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
   lines.push(`  delete: <T extends ${listName}DeleteArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}DeleteArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}DeleteArgs>`)
   lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
 
-  lines.push(`  count: (args?: Prisma.${listName}CountArgs) => Promise<number>`)
+  lines.push(`  count: (args?: OpensaasFilterArgs<${listName}WhereInput>) => Promise<number>`)
 
   lines.push(`  createMany: <T extends ${listName}CreateManyArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateManyArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}CreateManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
   lines.push(`  updateMany: <T extends ${listName}UpdateManyArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}UpdateManyArgs>`)
+  lines.push(`    args: OpensaasSelectSubset<T, ${listName}UpdateManyArgs>`)
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
   // get - only for singleton lists; accepts the same include/query narrowing
   // as findUnique (minus `where` — a singleton has exactly one row).
   if (isSingleton) {
     lines.push(`  get: <T extends ${listName}GetArgs>(`)
-    lines.push(`    args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
+    lines.push(`    args?: OpensaasSelectSubset<T, ${listName}GetArgs>`)
     lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
   }
 
@@ -1109,7 +1089,7 @@ function generateCustomDBType(config: OpenSaasConfig): string {
   )
   lines.push(' * Virtual fields and transformed fields are added to the base model type')
   lines.push(' */')
-  lines.push('export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, ')
+  lines.push('export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, ')
   lines.push(`  ${dbKeys.join(' | ')}`)
   lines.push('> {')
 
@@ -1144,7 +1124,7 @@ function generateContextType(_config: OpenSaasConfig): string {
   lines.push(' * Use this type for services that should work in both contexts')
   lines.push(' */')
   lines.push(
-    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {",
+    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {",
   )
   lines.push('  db: CustomDB')
   lines.push('  session: TSession')
@@ -1205,6 +1185,37 @@ function collectFieldImports(config: OpenSaasConfig): Array<{
   }))
 }
 
+/**
+ * Emit the stand-ins for the per-model types the bundle used to import from
+ * the generated `./prisma-client/` subtree.
+ *
+ * `opensaas generate` no longer runs `prisma generate`, so that subtree is
+ * never written (#1134): the emitted artifacts are `prisma/contract.json` and
+ * `prisma/contract.d.ts`. These placeholders keep the bundle compiling on its
+ * own until #1136 rewrites this generator against `contract.d.ts`. They carry
+ * no column-level narrowing — a `where`, `select`, `include` or `orderBy` is
+ * accepted structurally rather than checked against the model's columns.
+ */
+function generatePlaceholderTypes(): string {
+  return `// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}`
+}
+
 export function generateTypes(config: OpenSaasConfig): string {
   const lines: string[] = []
 
@@ -1221,12 +1232,11 @@ export function generateTypes(config: OpenSaasConfig): string {
     "import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'",
   )
   lines.push(
-    "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
+    "import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
   )
   // Relative imports carry an explicit `.ts` extension (see ./extension.ts) so
   // the bundle resolves under a host bundler / plain Node without an
   // `extensionAlias`. See ADR-0008.
-  lines.push("import type { PrismaClient, Prisma } from './prisma-client/client.ts'")
   lines.push("import type { PluginServices } from './plugin-types.ts'")
 
   const fieldImports = collectFieldImports(config)
@@ -1236,6 +1246,9 @@ export function generateTypes(config: OpenSaasConfig): string {
     lines.push(`import ${typePrefix}{ ${names} } from '${imp.from}'`)
   }
 
+  lines.push('')
+
+  lines.push(generatePlaceholderTypes())
   lines.push('')
 
   lines.push(

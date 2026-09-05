@@ -202,36 +202,6 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // Extension contract spaces are seeded between the Contract module and
-    // emission (ADR-0065). #1135 fills this in; today it is a no-op.
-    seedExtensionContractSpaces(cwd, contractData)
-
-    const emitSpinner = ora('Emitting contract artifacts...').start()
-    try {
-      emitContract(cwd, paths.contractDir)
-      emitSpinner.succeed(chalk.green('Contract artifacts emitted'))
-      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractJson)} emitted`))
-      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractTypes)} emitted`))
-    } catch (err) {
-      emitSpinner.fail(chalk.red('Failed to emit contract artifacts'))
-      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
-    }
-
-    // The emitted contract is the artifact the runtime executes, so the last
-    // gate is that its relation graph is the one the config describes — a
-    // divergence is a build error, not a query-time Prisma rejection.
-    const agreementSpinner = ora('Checking the emitted relation graph...').start()
-    try {
-      const emitted: EmittedContract = JSON.parse(fs.readFileSync(paths.contractJson, 'utf-8'))
-      assertRelationGraphAgrees(contractData, emitted)
-      agreementSpinner.succeed(chalk.green('Emitted relation graph agrees with the config'))
-    } catch (err) {
-      agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
-      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
-    }
-
     const bundleSpinner = ora('Generating the bundle...').start()
     try {
       writeTypes(config, paths.types)
@@ -293,6 +263,58 @@ export async function generateCommand() {
       if (err.stack) {
         console.error(chalk.gray('\n' + err.stack))
       }
+      process.exit(1)
+    }
+
+    // Extension contract spaces are seeded between the Contract module and
+    // emission (ADR-0065). #1135 fills this in; today it is a no-op.
+    seedExtensionContractSpaces(cwd, contractData)
+
+    // Emission runs after `afterGenerate`, so a plugin's rewrite of the
+    // Contract module is what the artifacts and the agreement gate below
+    // describe. Emitting first would commit a contract.json for the pre-hook
+    // module and leave it silently disagreeing with the checked-in
+    // contract.ts.
+    const emitSpinner = ora('Emitting contract artifacts...').start()
+    try {
+      emitContract(cwd, paths.contractDir)
+      emitSpinner.succeed(chalk.green('Contract artifacts emitted'))
+      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractJson)} emitted`))
+      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractTypes)} emitted`))
+    } catch (err) {
+      emitSpinner.fail(chalk.red('Failed to emit contract artifacts'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
+    // Reading the artifact is its own failure: a missing or unparseable
+    // contract.json means emission did not put it where the resolved paths say
+    // it is, which is not the same problem as a config the emitted graph
+    // disagrees with.
+    let emitted: EmittedContract
+    try {
+      emitted = JSON.parse(fs.readFileSync(paths.contractJson, 'utf-8'))
+    } catch (err) {
+      console.error(
+        chalk.red('\n❌ Error:'),
+        `Could not read the emitted contract at ${path.relative(cwd, paths.contractJson)}. ` +
+          '`prisma contract emit` reported success, so it wrote its artifacts elsewhere or ' +
+          'wrote them unparseably.',
+      )
+      console.error(chalk.gray(err instanceof Error ? err.message : String(err)))
+      process.exit(1)
+    }
+
+    // The emitted contract is the artifact the runtime executes, so the last
+    // gate is that its relation graph is the one the config describes — a
+    // divergence is a build error, not a query-time Prisma rejection.
+    const agreementSpinner = ora('Checking the emitted relation graph...').start()
+    try {
+      assertRelationGraphAgrees(contractData, emitted)
+      agreementSpinner.succeed(chalk.green('Emitted relation graph agrees with the config'))
+    } catch (err) {
+      agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
       process.exit(1)
     }
 

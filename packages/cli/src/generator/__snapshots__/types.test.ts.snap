@@ -7,9 +7,26 @@ exports[`Types Generator > generateTypes > should generate Context type with all
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -50,43 +67,43 @@ export type UserUpdateInput = {
   name?: string | null
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -96,7 +113,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -112,7 +129,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -126,7 +143,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -134,7 +151,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -142,7 +159,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -151,9 +168,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -162,9 +179,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -172,7 +189,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -181,7 +198,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -193,7 +210,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -204,29 +221,29 @@ export type UserUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -235,7 +252,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user'
 > {
   user: UserCrud
@@ -246,7 +263,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -270,9 +287,26 @@ exports[`Types Generator > generateTypes > should generate CreateInput type 1`] 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -316,43 +350,43 @@ export type PostUpdateInput = {
   content?: string | null
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -362,7 +396,7 @@ export type PostHooks = {
  * Select type for Post
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for Post
@@ -378,7 +412,7 @@ export type PostSelect = Prisma.PostSelect
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  OpensaasPayload<PostOutput, T> &
   {}
 
 /**
@@ -392,7 +426,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -400,7 +434,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for Post with virtual field support
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -408,7 +442,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for Post with virtual field support
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -417,9 +451,9 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
  * Custom CreateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title: string
     content?: string | null
   }
@@ -429,9 +463,9 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title?: string
     content?: string | null
   }
@@ -440,7 +474,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for Post with virtual field support
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
 }
 
@@ -449,7 +483,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title' | 'content'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title: string
     content?: string | null
   }>
@@ -462,7 +496,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title?: string
     content?: string | null
   }
@@ -474,29 +508,29 @@ export type PostUpdateManyArgs = {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -505,7 +539,7 @@ export interface PostCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'post'
 > {
   post: PostCrud
@@ -516,7 +550,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -540,9 +574,26 @@ exports[`Types Generator > generateTypes > should generate Include type with vir
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -586,43 +637,43 @@ export type UserUpdateInput = {
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -641,7 +692,7 @@ export type UserHooks = {
  *   postCount: true, // Virtual field
  * } satisfies UserSelect
  */
-export type UserSelect = Prisma.UserSelect & {
+export type UserSelect = OpensaasUnnarrowed & {
   postCount?: boolean
   posts?: boolean | PostDefaultArgs
 }
@@ -658,7 +709,7 @@ export type UserSelect = Prisma.UserSelect & {
  *   postCount: true, // Virtual field
  * } satisfies UserInclude
  */
-export type UserInclude = Prisma.UserInclude & {
+export type UserInclude = OpensaasUnnarrowed & {
   postCount?: boolean
   posts?: boolean | PostDefaultArgs
 }
@@ -677,7 +728,7 @@ export type UserInclude = Prisma.UserInclude & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>>, 'posts'> &
+  Omit<OpensaasPayload<UserOutput, StripVirtualFromArgs<T, keyof UserVirtualFields>>, 'posts'> &
   {
     posts?:
       T extends { select: any }
@@ -740,7 +791,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support in nested relationships
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'include'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -749,7 +800,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for User with virtual field support in nested relationships
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -758,7 +809,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for User with virtual field support in nested relationships
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'include'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -768,10 +819,10 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for User with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
   include?: UserInclude | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -780,10 +831,10 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for User with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -791,7 +842,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for User with virtual field support in nested relationships
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
 }
@@ -801,7 +852,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -814,7 +865,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -856,43 +907,43 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -911,7 +962,7 @@ export type PostHooks = {
 
  * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect & {
+export type PostSelect = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -927,7 +978,7 @@ export type PostSelect = Prisma.PostSelect & {
 
  * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude & {
+export type PostInclude = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -945,7 +996,7 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  Omit<OpensaasPayload<PostOutput, T>, 'author'> &
   {
     author?:
       T extends { select: any }
@@ -986,7 +1037,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support in nested relationships
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -995,7 +1046,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for Post with virtual field support in nested relationships
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -1004,7 +1055,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for Post with virtual field support in nested relationships
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -1014,10 +1065,10 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -1026,10 +1077,10 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -1037,7 +1088,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for Post with virtual field support in nested relationships
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
 }
@@ -1047,7 +1098,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }>
   select?: PostSelect | null
@@ -1060,7 +1111,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
   select?: PostSelect | null
@@ -1072,29 +1123,29 @@ export type PostUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -1103,29 +1154,29 @@ export interface UserCrud {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -1134,7 +1185,7 @@ export interface PostCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user' | 'post'
 > {
   user: UserCrud
@@ -1146,7 +1197,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1170,9 +1221,26 @@ exports[`Types Generator > generateTypes > should generate Select and GetPayload
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1216,43 +1284,43 @@ export type UserUpdateInput = {
   lastName?: string
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -1271,7 +1339,7 @@ export type UserHooks = {
  *   fullName: true, // Virtual field
  * } satisfies UserSelect
  */
-export type UserSelect = Prisma.UserSelect & {
+export type UserSelect = OpensaasUnnarrowed & {
   fullName?: boolean
 }
 
@@ -1289,7 +1357,7 @@ export type UserSelect = Prisma.UserSelect & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<StripVirtualFromArgs<T, keyof UserVirtualFields>> &
+  OpensaasPayload<UserOutput, StripVirtualFromArgs<T, keyof UserVirtualFields>> &
   (
     T extends { select: any }
       ? T['select'] extends true
@@ -1325,7 +1393,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1333,7 +1401,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1341,7 +1409,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1350,9 +1418,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'firstName' | 'lastName'> & {
+  data: Omit<OpensaasUnnarrowed, 'firstName' | 'lastName'> & {
     firstName: string
     lastName: string
   }
@@ -1362,9 +1430,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'firstName' | 'lastName'> & {
+  data: Omit<OpensaasUnnarrowed, 'firstName' | 'lastName'> & {
     firstName?: string
     lastName?: string
   }
@@ -1373,7 +1441,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -1382,7 +1450,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'firstName' | 'lastName'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'firstName' | 'lastName'> & {
     firstName: string
     lastName: string
   }>
@@ -1395,7 +1463,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'firstName' | 'lastName'> & {
+  data: Omit<OpensaasUnnarrowed, 'firstName' | 'lastName'> & {
     firstName?: string
     lastName?: string
   }
@@ -1407,29 +1475,29 @@ export type UserUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -1438,7 +1506,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user'
 > {
   user: UserCrud
@@ -1449,7 +1517,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1473,9 +1541,26 @@ exports[`Types Generator > generateTypes > should generate UpdateInput type 1`] 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1519,43 +1604,43 @@ export type PostUpdateInput = {
   content?: string | null
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -1565,7 +1650,7 @@ export type PostHooks = {
  * Select type for Post
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for Post
@@ -1581,7 +1666,7 @@ export type PostSelect = Prisma.PostSelect
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  OpensaasPayload<PostOutput, T> &
   {}
 
 /**
@@ -1595,7 +1680,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -1603,7 +1688,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for Post with virtual field support
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -1611,7 +1696,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for Post with virtual field support
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -1620,9 +1705,9 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
  * Custom CreateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title: string
     content?: string | null
   }
@@ -1632,9 +1717,9 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title?: string
     content?: string | null
   }
@@ -1643,7 +1728,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for Post with virtual field support
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
 }
 
@@ -1652,7 +1737,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title' | 'content'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title: string
     content?: string | null
   }>
@@ -1665,7 +1750,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title' | 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'title' | 'content'> & {
     title?: string
     content?: string | null
   }
@@ -1677,29 +1762,29 @@ export type PostUpdateManyArgs = {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -1708,7 +1793,7 @@ export interface PostCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'post'
 > {
   post: PostCrud
@@ -1719,7 +1804,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -1743,9 +1828,26 @@ exports[`Types Generator > generateTypes > should generate WhereInput type 1`] =
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -1786,43 +1888,43 @@ export type UserUpdateInput = {
   name?: string | null
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -1832,7 +1934,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -1848,7 +1950,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -1862,7 +1964,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1870,7 +1972,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1878,7 +1980,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -1887,9 +1989,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -1898,9 +2000,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -1908,7 +2010,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -1917,7 +2019,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -1929,7 +2031,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -1940,29 +2042,29 @@ export type UserUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -1971,7 +2073,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user'
 > {
   user: UserCrud
@@ -1982,7 +2084,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -2006,9 +2108,26 @@ exports[`Types Generator > generateTypes > should generate type definitions for 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -2052,43 +2171,43 @@ export type UserUpdateInput = {
   email?: string
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -2098,7 +2217,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -2114,7 +2233,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -2128,7 +2247,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2136,7 +2255,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2144,7 +2263,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2153,9 +2272,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name' | 'email'> & {
+  data: Omit<OpensaasUnnarrowed, 'name' | 'email'> & {
     name: string
     email: string
   }
@@ -2165,9 +2284,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name' | 'email'> & {
+  data: Omit<OpensaasUnnarrowed, 'name' | 'email'> & {
     name?: string
     email?: string
   }
@@ -2176,7 +2295,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -2185,7 +2304,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name' | 'email'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name' | 'email'> & {
     name: string
     email: string
   }>
@@ -2198,7 +2317,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name' | 'email'> & {
+  data: Omit<OpensaasUnnarrowed, 'name' | 'email'> & {
     name?: string
     email?: string
   }
@@ -2210,29 +2329,29 @@ export type UserUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -2241,7 +2360,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user'
 > {
   user: UserCrud
@@ -2252,7 +2371,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -2276,9 +2395,26 @@ exports[`Types Generator > generateTypes > should generate types for multiple li
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -2319,43 +2455,43 @@ export type UserUpdateInput = {
   name?: string | null
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -2365,7 +2501,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -2381,7 +2517,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -2395,7 +2531,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2403,7 +2539,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2411,7 +2547,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -2420,9 +2556,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -2431,9 +2567,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -2441,7 +2577,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -2450,7 +2586,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -2462,7 +2598,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -2499,43 +2635,43 @@ export type PostUpdateInput = {
   title?: string | null
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -2545,7 +2681,7 @@ export type PostHooks = {
  * Select type for Post
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type PostSelect = Prisma.PostSelect
+export type PostSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for Post
@@ -2561,7 +2697,7 @@ export type PostSelect = Prisma.PostSelect
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.PostGetPayload<T> &
+  OpensaasPayload<PostOutput, T> &
   {}
 
 /**
@@ -2575,7 +2711,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -2583,7 +2719,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for Post with virtual field support
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -2591,7 +2727,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for Post with virtual field support
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
 }
@@ -2600,9 +2736,9 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select'> & {
  * Custom CreateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -2611,9 +2747,9 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for Post with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -2621,7 +2757,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for Post with virtual field support
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
 }
 
@@ -2630,7 +2766,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }>
   select?: PostSelect | null
@@ -2642,7 +2778,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
   select?: PostSelect | null
@@ -2679,43 +2815,43 @@ export type CommentUpdateInput = {
   content?: string | null
 }
 
-export type CommentWhereInput = Prisma.CommentWhereInput
+export type CommentWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Comment list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated CommentCreateInput / CommentUpdateInput
  */
 export type CommentHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.CommentCreateInput
+        resolvedData: CommentCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.CommentUpdateInput
+        resolvedData: CommentUpdateInput
         item: Comment
         context: BaseContext
       }
-  ) => Promise<Prisma.CommentCreateInput | Prisma.CommentUpdateInput>
+  ) => Promise<CommentCreateInput | CommentUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    resolvedData: CommentCreateInput | CommentUpdateInput
     item?: Comment
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    resolvedData?: CommentCreateInput | CommentUpdateInput
     item?: Comment
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.CommentCreateInput | Prisma.CommentUpdateInput
+    resolvedData?: CommentCreateInput | CommentUpdateInput
     item?: Comment
     context: BaseContext
   }) => Promise<void>
@@ -2725,7 +2861,7 @@ export type CommentHooks = {
  * Select type for Comment
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type CommentSelect = Prisma.CommentSelect
+export type CommentSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for Comment
@@ -2741,7 +2877,7 @@ export type CommentSelect = Prisma.CommentSelect
  * type Result = CommentGetPayload<{ select: typeof select }>
  */
 export type CommentGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.CommentGetPayload<T> &
+  OpensaasPayload<CommentOutput, T> &
   {}
 
 /**
@@ -2755,7 +2891,7 @@ export type CommentDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Comment with virtual field support
  */
-export type CommentFindUniqueArgs = Omit<Prisma.CommentFindUniqueArgs, 'select'> & {
+export type CommentFindUniqueArgs = OpensaasUniqueArgs<CommentWhereInput> & {
   select?: CommentSelect | null
   query?: Fragment<CommentOutput, FieldSelection<CommentOutput>>
 }
@@ -2763,7 +2899,7 @@ export type CommentFindUniqueArgs = Omit<Prisma.CommentFindUniqueArgs, 'select'>
 /**
  * Custom FindManyArgs for Comment with virtual field support
  */
-export type CommentFindManyArgs = Omit<Prisma.CommentFindManyArgs, 'select'> & {
+export type CommentFindManyArgs = OpensaasFilterArgs<CommentWhereInput> & {
   select?: CommentSelect | null
   query?: Fragment<CommentOutput, FieldSelection<CommentOutput>>
 }
@@ -2771,7 +2907,7 @@ export type CommentFindManyArgs = Omit<Prisma.CommentFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for Comment with virtual field support
  */
-export type CommentFindFirstArgs = Omit<Prisma.CommentFindFirstArgs, 'select'> & {
+export type CommentFindFirstArgs = OpensaasFilterArgs<CommentWhereInput> & {
   select?: CommentSelect | null
   query?: Fragment<CommentOutput, FieldSelection<CommentOutput>>
 }
@@ -2780,9 +2916,9 @@ export type CommentFindFirstArgs = Omit<Prisma.CommentFindFirstArgs, 'select'> &
  * Custom CreateArgs for Comment with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type CommentCreateArgs = Omit<Prisma.CommentCreateArgs, 'select' | 'data'> & {
+export type CommentCreateArgs = {
   select?: CommentSelect | null
-  data: Omit<Prisma.CommentCreateArgs['data'], 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'content'> & {
     content?: string | null
   }
 }
@@ -2791,9 +2927,9 @@ export type CommentCreateArgs = Omit<Prisma.CommentCreateArgs, 'select' | 'data'
  * Custom UpdateArgs for Comment with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type CommentUpdateArgs = Omit<Prisma.CommentUpdateArgs, 'select' | 'data'> & {
+export type CommentUpdateArgs = OpensaasUniqueArgs<CommentWhereInput> & {
   select?: CommentSelect | null
-  data: Omit<Prisma.CommentUpdateArgs['data'], 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'content'> & {
     content?: string | null
   }
 }
@@ -2801,7 +2937,7 @@ export type CommentUpdateArgs = Omit<Prisma.CommentUpdateArgs, 'select' | 'data'
 /**
  * Custom DeleteArgs for Comment with virtual field support
  */
-export type CommentDeleteArgs = Omit<Prisma.CommentDeleteArgs, 'select'> & {
+export type CommentDeleteArgs = OpensaasUniqueArgs<CommentWhereInput> & {
   select?: CommentSelect | null
 }
 
@@ -2810,7 +2946,7 @@ export type CommentDeleteArgs = Omit<Prisma.CommentDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type CommentCreateManyArgs = {
-  data: Array<Omit<Prisma.CommentCreateInput, 'content'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'content'> & {
     content?: string | null
   }>
   select?: CommentSelect | null
@@ -2822,7 +2958,7 @@ export type CommentCreateManyArgs = {
  */
 export type CommentUpdateManyArgs = {
   where?: CommentWhereInput
-  data: Omit<Prisma.CommentUpdateInput, 'content'> & {
+  data: Omit<OpensaasUnnarrowed, 'content'> & {
     content?: string | null
   }
   select?: CommentSelect | null
@@ -2833,29 +2969,29 @@ export type CommentUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -2864,29 +3000,29 @@ export interface UserCrud {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -2895,29 +3031,29 @@ export interface PostCrud {
  */
 export interface CommentCrud {
   findUnique: <T extends CommentFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
+    args: OpensaasSelectSubset<T, CommentFindUniqueArgs>
   ) => Promise<CommentGetPayload<T> | null>
   findFirst: <T extends CommentFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, CommentFindFirstArgs>
+    args?: OpensaasSelectSubset<T, CommentFindFirstArgs>
   ) => Promise<CommentGetPayload<T> | null>
   findMany: <T extends CommentFindManyArgs>(
-    args?: Prisma.SelectSubset<T, CommentFindManyArgs>
+    args?: OpensaasSelectSubset<T, CommentFindManyArgs>
   ) => Promise<Array<CommentGetPayload<T>>>
   create: <T extends CommentCreateArgs>(
-    args: Prisma.SelectSubset<T, CommentCreateArgs>
+    args: OpensaasSelectSubset<T, CommentCreateArgs>
   ) => Promise<CommentGetPayload<T>>
   update: <T extends CommentUpdateArgs>(
-    args: Prisma.SelectSubset<T, CommentUpdateArgs>
+    args: OpensaasSelectSubset<T, CommentUpdateArgs>
   ) => Promise<CommentGetPayload<T> | null>
   delete: <T extends CommentDeleteArgs>(
-    args: Prisma.SelectSubset<T, CommentDeleteArgs>
+    args: OpensaasSelectSubset<T, CommentDeleteArgs>
   ) => Promise<CommentGetPayload<T> | null>
-  count: (args?: Prisma.CommentCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<CommentWhereInput>) => Promise<number>
   createMany: <T extends CommentCreateManyArgs>(
-    args: Prisma.SelectSubset<T, CommentCreateManyArgs>
+    args: OpensaasSelectSubset<T, CommentCreateManyArgs>
   ) => Promise<Array<CommentGetPayload<T>>>
   updateMany: <T extends CommentUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, CommentUpdateManyArgs>
+    args: OpensaasSelectSubset<T, CommentUpdateManyArgs>
   ) => Promise<Array<CommentGetPayload<T>>>
 }
 
@@ -2926,7 +3062,7 @@ export interface CommentCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user' | 'post' | 'comment'
 > {
   user: UserCrud
@@ -2939,7 +3075,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -2963,9 +3099,26 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -3010,43 +3163,43 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -3065,7 +3218,7 @@ export type PostHooks = {
 
  * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect & {
+export type PostSelect = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -3081,7 +3234,7 @@ export type PostSelect = Prisma.PostSelect & {
 
  * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude & {
+export type PostInclude = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -3099,7 +3252,7 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  Omit<OpensaasPayload<PostOutput, T>, 'author'> &
   {
     author?:
       T extends { select: any }
@@ -3140,7 +3293,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support in nested relationships
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3149,7 +3302,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for Post with virtual field support in nested relationships
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3158,7 +3311,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for Post with virtual field support in nested relationships
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3168,10 +3321,10 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -3180,10 +3333,10 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -3191,7 +3344,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for Post with virtual field support in nested relationships
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
 }
@@ -3201,7 +3354,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }>
   select?: PostSelect | null
@@ -3214,7 +3367,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
   select?: PostSelect | null
@@ -3252,43 +3405,43 @@ export type UserUpdateInput = {
   name?: string | null
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -3298,7 +3451,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -3314,7 +3467,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -3328,7 +3481,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3336,7 +3489,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3344,7 +3497,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3353,9 +3506,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -3364,9 +3517,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -3374,7 +3527,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -3383,7 +3536,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -3395,7 +3548,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -3406,29 +3559,29 @@ export type UserUpdateManyArgs = {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -3437,29 +3590,29 @@ export interface PostCrud {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -3468,7 +3621,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'post' | 'user'
 > {
   post: PostCrud
@@ -3480,7 +3633,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -3504,9 +3657,26 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -3551,43 +3721,43 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -3606,7 +3776,7 @@ export type PostHooks = {
 
  * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect & {
+export type PostSelect = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -3622,7 +3792,7 @@ export type PostSelect = Prisma.PostSelect & {
 
  * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude & {
+export type PostInclude = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -3640,7 +3810,7 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  Omit<OpensaasPayload<PostOutput, T>, 'author'> &
   {
     author?:
       T extends { select: any }
@@ -3681,7 +3851,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support in nested relationships
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3690,7 +3860,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for Post with virtual field support in nested relationships
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3699,7 +3869,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for Post with virtual field support in nested relationships
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -3709,10 +3879,10 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -3721,10 +3891,10 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -3732,7 +3902,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for Post with virtual field support in nested relationships
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
 }
@@ -3742,7 +3912,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }>
   select?: PostSelect | null
@@ -3755,7 +3925,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
   select?: PostSelect | null
@@ -3793,43 +3963,43 @@ export type UserUpdateInput = {
   name?: string | null
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -3839,7 +4009,7 @@ export type UserHooks = {
  * Select type for User
  * No virtual fields defined, uses Prisma's Select type directly
  */
-export type UserSelect = Prisma.UserSelect
+export type UserSelect = OpensaasUnnarrowed
 
 /**
  * GetPayload type for User
@@ -3855,7 +4025,7 @@ export type UserSelect = Prisma.UserSelect
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Prisma.UserGetPayload<T> &
+  OpensaasPayload<UserOutput, T> &
   {}
 
 /**
@@ -3869,7 +4039,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3877,7 +4047,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select'> & {
 /**
  * Custom FindManyArgs for User with virtual field support
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3885,7 +4055,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select'> & {
 /**
  * Custom FindFirstArgs for User with virtual field support
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
 }
@@ -3894,9 +4064,9 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select'> & {
  * Custom CreateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -3905,9 +4075,9 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'data'> & {
  * Custom UpdateArgs for User with virtual field support
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -3915,7 +4085,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'data'> & {
 /**
  * Custom DeleteArgs for User with virtual field support
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
 }
 
@@ -3924,7 +4094,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select'> & {
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -3936,7 +4106,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -3947,29 +4117,29 @@ export type UserUpdateManyArgs = {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -3978,29 +4148,29 @@ export interface PostCrud {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -4009,7 +4179,7 @@ export interface UserCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'post' | 'user'
 > {
   post: PostCrud
@@ -4021,7 +4191,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -4045,9 +4215,26 @@ exports[`Types Generator > generateTypes > should handle relationship fields in 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -4091,43 +4278,43 @@ export type UserUpdateInput = {
   posts?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
-export type UserWhereInput = Prisma.UserWhereInput
+export type UserWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for User list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated UserCreateInput / UserUpdateInput
  */
 export type UserHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.UserCreateInput
+        resolvedData: UserCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.UserUpdateInput
+        resolvedData: UserUpdateInput
         item: User
         context: BaseContext
       }
-  ) => Promise<Prisma.UserCreateInput | Prisma.UserUpdateInput>
+  ) => Promise<UserCreateInput | UserUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.UserCreateInput | Prisma.UserUpdateInput
+    resolvedData?: UserCreateInput | UserUpdateInput
     item?: User
     context: BaseContext
   }) => Promise<void>
@@ -4146,7 +4333,7 @@ export type UserHooks = {
 
  * } satisfies UserSelect
  */
-export type UserSelect = Prisma.UserSelect & {
+export type UserSelect = OpensaasUnnarrowed & {
   posts?: boolean | PostDefaultArgs
 }
 
@@ -4162,7 +4349,7 @@ export type UserSelect = Prisma.UserSelect & {
 
  * } satisfies UserInclude
  */
-export type UserInclude = Prisma.UserInclude & {
+export type UserInclude = OpensaasUnnarrowed & {
   posts?: boolean | PostDefaultArgs
 }
 
@@ -4180,7 +4367,7 @@ export type UserInclude = Prisma.UserInclude & {
  * type Result = UserGetPayload<{ select: typeof select }>
  */
 export type UserGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.UserGetPayload<T>, 'posts'> &
+  Omit<OpensaasPayload<UserOutput, T>, 'posts'> &
   {
     posts?:
       T extends { select: any }
@@ -4221,7 +4408,7 @@ export type UserDefaultArgs = {
 /**
  * Custom FindUniqueArgs for User with virtual field support in nested relationships
  */
-export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'include'> & {
+export type UserFindUniqueArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -4230,7 +4417,7 @@ export type UserFindUniqueArgs = Omit<Prisma.UserFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for User with virtual field support in nested relationships
  */
-export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include'> & {
+export type UserFindManyArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -4239,7 +4426,7 @@ export type UserFindManyArgs = Omit<Prisma.UserFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for User with virtual field support in nested relationships
  */
-export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'include'> & {
+export type UserFindFirstArgs = OpensaasFilterArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
   query?: Fragment<UserOutput, FieldSelection<UserOutput>>
@@ -4249,10 +4436,10 @@ export type UserFindFirstArgs = Omit<Prisma.UserFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for User with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include' | 'data'> & {
+export type UserCreateArgs = {
   select?: UserSelect | null
   include?: UserInclude | null
-  data: Omit<Prisma.UserCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -4261,10 +4448,10 @@ export type UserCreateArgs = Omit<Prisma.UserCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for User with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include' | 'data'> & {
+export type UserUpdateArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
-  data: Omit<Prisma.UserUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -4272,7 +4459,7 @@ export type UserUpdateArgs = Omit<Prisma.UserUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for User with virtual field support in nested relationships
  */
-export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> & {
+export type UserDeleteArgs = OpensaasUniqueArgs<UserWhereInput> & {
   select?: UserSelect | null
   include?: UserInclude | null
 }
@@ -4282,7 +4469,7 @@ export type UserDeleteArgs = Omit<Prisma.UserDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type UserCreateManyArgs = {
-  data: Array<Omit<Prisma.UserCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: UserSelect | null
@@ -4295,7 +4482,7 @@ export type UserCreateManyArgs = {
  */
 export type UserUpdateManyArgs = {
   where?: UserWhereInput
-  data: Omit<Prisma.UserUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: UserSelect | null
@@ -4337,43 +4524,43 @@ export type PostUpdateInput = {
   author?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type PostWhereInput = Prisma.PostWhereInput
+export type PostWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Post list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated PostCreateInput / PostUpdateInput
  */
 export type PostHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.PostCreateInput
+        resolvedData: PostCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.PostUpdateInput
+        resolvedData: PostUpdateInput
         item: Post
         context: BaseContext
       }
-  ) => Promise<Prisma.PostCreateInput | Prisma.PostUpdateInput>
+  ) => Promise<PostCreateInput | PostUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.PostCreateInput | Prisma.PostUpdateInput
+    resolvedData?: PostCreateInput | PostUpdateInput
     item?: Post
     context: BaseContext
   }) => Promise<void>
@@ -4392,7 +4579,7 @@ export type PostHooks = {
 
  * } satisfies PostSelect
  */
-export type PostSelect = Prisma.PostSelect & {
+export type PostSelect = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -4408,7 +4595,7 @@ export type PostSelect = Prisma.PostSelect & {
 
  * } satisfies PostInclude
  */
-export type PostInclude = Prisma.PostInclude & {
+export type PostInclude = OpensaasUnnarrowed & {
   author?: boolean | UserDefaultArgs
 }
 
@@ -4426,7 +4613,7 @@ export type PostInclude = Prisma.PostInclude & {
  * type Result = PostGetPayload<{ select: typeof select }>
  */
 export type PostGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.PostGetPayload<T>, 'author'> &
+  Omit<OpensaasPayload<PostOutput, T>, 'author'> &
   {
     author?:
       T extends { select: any }
@@ -4467,7 +4654,7 @@ export type PostDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Post with virtual field support in nested relationships
  */
-export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'include'> & {
+export type PostFindUniqueArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -4476,7 +4663,7 @@ export type PostFindUniqueArgs = Omit<Prisma.PostFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for Post with virtual field support in nested relationships
  */
-export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include'> & {
+export type PostFindManyArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -4485,7 +4672,7 @@ export type PostFindManyArgs = Omit<Prisma.PostFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for Post with virtual field support in nested relationships
  */
-export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'include'> & {
+export type PostFindFirstArgs = OpensaasFilterArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
   query?: Fragment<PostOutput, FieldSelection<PostOutput>>
@@ -4495,10 +4682,10 @@ export type PostFindFirstArgs = Omit<Prisma.PostFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 'data'> & {
+export type PostCreateArgs = {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostCreateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -4507,10 +4694,10 @@ export type PostCreateArgs = Omit<Prisma.PostCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for Post with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 'data'> & {
+export type PostUpdateArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
-  data: Omit<Prisma.PostUpdateArgs['data'], 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
 }
@@ -4518,7 +4705,7 @@ export type PostUpdateArgs = Omit<Prisma.PostUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for Post with virtual field support in nested relationships
  */
-export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> & {
+export type PostDeleteArgs = OpensaasUniqueArgs<PostWhereInput> & {
   select?: PostSelect | null
   include?: PostInclude | null
 }
@@ -4528,7 +4715,7 @@ export type PostDeleteArgs = Omit<Prisma.PostDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type PostCreateManyArgs = {
-  data: Array<Omit<Prisma.PostCreateInput, 'title'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }>
   select?: PostSelect | null
@@ -4541,7 +4728,7 @@ export type PostCreateManyArgs = {
  */
 export type PostUpdateManyArgs = {
   where?: PostWhereInput
-  data: Omit<Prisma.PostUpdateInput, 'title'> & {
+  data: Omit<OpensaasUnnarrowed, 'title'> & {
     title?: string | null
   }
   select?: PostSelect | null
@@ -4553,29 +4740,29 @@ export type PostUpdateManyArgs = {
  */
 export interface UserCrud {
   findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    args: OpensaasSelectSubset<T, UserFindUniqueArgs>
   ) => Promise<UserGetPayload<T> | null>
   findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    args?: OpensaasSelectSubset<T, UserFindFirstArgs>
   ) => Promise<UserGetPayload<T> | null>
   findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    args?: OpensaasSelectSubset<T, UserFindManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   create: <T extends UserCreateArgs>(
-    args: Prisma.SelectSubset<T, UserCreateArgs>
+    args: OpensaasSelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
   update: <T extends UserUpdateArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateArgs>
+    args: OpensaasSelectSubset<T, UserUpdateArgs>
   ) => Promise<UserGetPayload<T> | null>
   delete: <T extends UserDeleteArgs>(
-    args: Prisma.SelectSubset<T, UserDeleteArgs>
+    args: OpensaasSelectSubset<T, UserDeleteArgs>
   ) => Promise<UserGetPayload<T> | null>
-  count: (args?: Prisma.UserCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<UserWhereInput>) => Promise<number>
   createMany: <T extends UserCreateManyArgs>(
-    args: Prisma.SelectSubset<T, UserCreateManyArgs>
+    args: OpensaasSelectSubset<T, UserCreateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
   updateMany: <T extends UserUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, UserUpdateManyArgs>
+    args: OpensaasSelectSubset<T, UserUpdateManyArgs>
   ) => Promise<Array<UserGetPayload<T>>>
 }
 
@@ -4584,29 +4771,29 @@ export interface UserCrud {
  */
 export interface PostCrud {
   findUnique: <T extends PostFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, PostFindUniqueArgs>
+    args: OpensaasSelectSubset<T, PostFindUniqueArgs>
   ) => Promise<PostGetPayload<T> | null>
   findFirst: <T extends PostFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, PostFindFirstArgs>
+    args?: OpensaasSelectSubset<T, PostFindFirstArgs>
   ) => Promise<PostGetPayload<T> | null>
   findMany: <T extends PostFindManyArgs>(
-    args?: Prisma.SelectSubset<T, PostFindManyArgs>
+    args?: OpensaasSelectSubset<T, PostFindManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   create: <T extends PostCreateArgs>(
-    args: Prisma.SelectSubset<T, PostCreateArgs>
+    args: OpensaasSelectSubset<T, PostCreateArgs>
   ) => Promise<PostGetPayload<T>>
   update: <T extends PostUpdateArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateArgs>
+    args: OpensaasSelectSubset<T, PostUpdateArgs>
   ) => Promise<PostGetPayload<T> | null>
   delete: <T extends PostDeleteArgs>(
-    args: Prisma.SelectSubset<T, PostDeleteArgs>
+    args: OpensaasSelectSubset<T, PostDeleteArgs>
   ) => Promise<PostGetPayload<T> | null>
-  count: (args?: Prisma.PostCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<PostWhereInput>) => Promise<number>
   createMany: <T extends PostCreateManyArgs>(
-    args: Prisma.SelectSubset<T, PostCreateManyArgs>
+    args: OpensaasSelectSubset<T, PostCreateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
   updateMany: <T extends PostUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, PostUpdateManyArgs>
+    args: OpensaasSelectSubset<T, PostUpdateManyArgs>
   ) => Promise<Array<PostGetPayload<T>>>
 }
 
@@ -4615,7 +4802,7 @@ export interface PostCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'user' | 'post'
 > {
   user: UserCrud
@@ -4627,7 +4814,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
@@ -4651,9 +4838,26 @@ exports[`Types Generator > generateTypes > should use StripVirtualFromArgs in Ge
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
-import type { PrismaClient, Prisma } from './prisma-client/client.ts'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
 import type { PluginServices } from './plugin-types.ts'
+
+// Stand-ins for the per-model shapes the generated Prisma client used to
+// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
+// instead of a client subtree, so these keep this file self-contained until
+// #1136 rewrites it against the emitted contract. They carry no column-level
+// narrowing.
+type OpensaasUnnarrowed = Record<string, unknown>
+type OpensaasSelectSubset<T, _Constraint> = T
+type OpensaasPayload<TModel, _Args> = TModel
+type OpensaasUniqueArgs<TWhere> = { where: TWhere }
+type OpensaasFilterArgs<TWhere> = {
+  where?: TWhere
+  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
+  cursor?: TWhere
+  take?: number
+  skip?: number
+  distinct?: string | string[]
+}
 
 // Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them
 type StripVirtualFromArgs<T, VirtualKeys extends string> =
@@ -4697,43 +4901,43 @@ export type AccountUpdateInput = {
   bills?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }
 }
 
-export type AccountWhereInput = Prisma.AccountWhereInput
+export type AccountWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Account list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated AccountCreateInput / AccountUpdateInput
  */
 export type AccountHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.AccountCreateInput
+        resolvedData: AccountCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.AccountUpdateInput
+        resolvedData: AccountUpdateInput
         item: Account
         context: BaseContext
       }
-  ) => Promise<Prisma.AccountCreateInput | Prisma.AccountUpdateInput>
+  ) => Promise<AccountCreateInput | AccountUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    resolvedData: AccountCreateInput | AccountUpdateInput
     item?: Account
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    resolvedData?: AccountCreateInput | AccountUpdateInput
     item?: Account
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.AccountCreateInput | Prisma.AccountUpdateInput
+    resolvedData?: AccountCreateInput | AccountUpdateInput
     item?: Account
     context: BaseContext
   }) => Promise<void>
@@ -4752,7 +4956,7 @@ export type AccountHooks = {
 
  * } satisfies AccountSelect
  */
-export type AccountSelect = Prisma.AccountSelect & {
+export type AccountSelect = OpensaasUnnarrowed & {
   bills?: boolean | BillDefaultArgs
 }
 
@@ -4768,7 +4972,7 @@ export type AccountSelect = Prisma.AccountSelect & {
 
  * } satisfies AccountInclude
  */
-export type AccountInclude = Prisma.AccountInclude & {
+export type AccountInclude = OpensaasUnnarrowed & {
   bills?: boolean | BillDefaultArgs
 }
 
@@ -4786,7 +4990,7 @@ export type AccountInclude = Prisma.AccountInclude & {
  * type Result = AccountGetPayload<{ select: typeof select }>
  */
 export type AccountGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.AccountGetPayload<T>, 'bills'> &
+  Omit<OpensaasPayload<AccountOutput, T>, 'bills'> &
   {
     bills?:
       T extends { select: any }
@@ -4827,7 +5031,7 @@ export type AccountDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Account with virtual field support in nested relationships
  */
-export type AccountFindUniqueArgs = Omit<Prisma.AccountFindUniqueArgs, 'select' | 'include'> & {
+export type AccountFindUniqueArgs = OpensaasUniqueArgs<AccountWhereInput> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
   query?: Fragment<AccountOutput, FieldSelection<AccountOutput>>
@@ -4836,7 +5040,7 @@ export type AccountFindUniqueArgs = Omit<Prisma.AccountFindUniqueArgs, 'select' 
 /**
  * Custom FindManyArgs for Account with virtual field support in nested relationships
  */
-export type AccountFindManyArgs = Omit<Prisma.AccountFindManyArgs, 'select' | 'include'> & {
+export type AccountFindManyArgs = OpensaasFilterArgs<AccountWhereInput> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
   query?: Fragment<AccountOutput, FieldSelection<AccountOutput>>
@@ -4845,7 +5049,7 @@ export type AccountFindManyArgs = Omit<Prisma.AccountFindManyArgs, 'select' | 'i
 /**
  * Custom FindFirstArgs for Account with virtual field support in nested relationships
  */
-export type AccountFindFirstArgs = Omit<Prisma.AccountFindFirstArgs, 'select' | 'include'> & {
+export type AccountFindFirstArgs = OpensaasFilterArgs<AccountWhereInput> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
   query?: Fragment<AccountOutput, FieldSelection<AccountOutput>>
@@ -4855,10 +5059,10 @@ export type AccountFindFirstArgs = Omit<Prisma.AccountFindFirstArgs, 'select' | 
  * Custom CreateArgs for Account with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type AccountCreateArgs = Omit<Prisma.AccountCreateArgs, 'select' | 'include' | 'data'> & {
+export type AccountCreateArgs = {
   select?: AccountSelect | null
   include?: AccountInclude | null
-  data: Omit<Prisma.AccountCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -4867,10 +5071,10 @@ export type AccountCreateArgs = Omit<Prisma.AccountCreateArgs, 'select' | 'inclu
  * Custom UpdateArgs for Account with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type AccountUpdateArgs = Omit<Prisma.AccountUpdateArgs, 'select' | 'include' | 'data'> & {
+export type AccountUpdateArgs = OpensaasUniqueArgs<AccountWhereInput> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
-  data: Omit<Prisma.AccountUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -4878,7 +5082,7 @@ export type AccountUpdateArgs = Omit<Prisma.AccountUpdateArgs, 'select' | 'inclu
 /**
  * Custom DeleteArgs for Account with virtual field support in nested relationships
  */
-export type AccountDeleteArgs = Omit<Prisma.AccountDeleteArgs, 'select' | 'include'> & {
+export type AccountDeleteArgs = OpensaasUniqueArgs<AccountWhereInput> & {
   select?: AccountSelect | null
   include?: AccountInclude | null
 }
@@ -4888,7 +5092,7 @@ export type AccountDeleteArgs = Omit<Prisma.AccountDeleteArgs, 'select' | 'inclu
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type AccountCreateManyArgs = {
-  data: Array<Omit<Prisma.AccountCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: AccountSelect | null
@@ -4901,7 +5105,7 @@ export type AccountCreateManyArgs = {
  */
 export type AccountUpdateManyArgs = {
   where?: AccountWhereInput
-  data: Omit<Prisma.AccountUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: AccountSelect | null
@@ -4943,43 +5147,43 @@ export type BillUpdateInput = {
   account?: { connect: { id: string } } | { disconnect: true }
 }
 
-export type BillWhereInput = Prisma.BillWhereInput
+export type BillWhereInput = OpensaasUnnarrowed
 
 /**
  * Hook types for Bill list
- * Properly typed to use Prisma's generated input types
+ * Typed against the generated BillCreateInput / BillUpdateInput
  */
 export type BillHooks = {
   resolveInput?: (args:
     | {
         operation: 'create'
-        resolvedData: Prisma.BillCreateInput
+        resolvedData: BillCreateInput
         item: undefined
         context: BaseContext
       }
     | {
         operation: 'update'
-        resolvedData: Prisma.BillUpdateInput
+        resolvedData: BillUpdateInput
         item: Bill
         context: BaseContext
       }
-  ) => Promise<Prisma.BillCreateInput | Prisma.BillUpdateInput>
+  ) => Promise<BillCreateInput | BillUpdateInput>
   validateInput?: (args: {
     operation: 'create' | 'update'
-    resolvedData: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    resolvedData: BillCreateInput | BillUpdateInput
     item?: Bill
     context: BaseContext
     addValidationError: (msg: string) => void
   }) => Promise<void>
   beforeOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    resolvedData?: BillCreateInput | BillUpdateInput
     item?: Bill
     context: BaseContext
   }) => Promise<void>
   afterOperation?: (args: {
     operation: 'create' | 'update' | 'delete'
-    resolvedData?: Prisma.BillCreateInput | Prisma.BillUpdateInput
+    resolvedData?: BillCreateInput | BillUpdateInput
     item?: Bill
     context: BaseContext
   }) => Promise<void>
@@ -4998,7 +5202,7 @@ export type BillHooks = {
  *   total: true, // Virtual field
  * } satisfies BillSelect
  */
-export type BillSelect = Prisma.BillSelect & {
+export type BillSelect = OpensaasUnnarrowed & {
   total?: boolean
   account?: boolean | AccountDefaultArgs
 }
@@ -5015,7 +5219,7 @@ export type BillSelect = Prisma.BillSelect & {
  *   total: true, // Virtual field
  * } satisfies BillInclude
  */
-export type BillInclude = Prisma.BillInclude & {
+export type BillInclude = OpensaasUnnarrowed & {
   total?: boolean
   account?: boolean | AccountDefaultArgs
 }
@@ -5034,7 +5238,7 @@ export type BillInclude = Prisma.BillInclude & {
  * type Result = BillGetPayload<{ select: typeof select }>
  */
 export type BillGetPayload<T extends { select?: any; include?: any } = {}> =
-  Omit<Prisma.BillGetPayload<StripVirtualFromArgs<T, keyof BillVirtualFields>>, 'account'> &
+  Omit<OpensaasPayload<BillOutput, StripVirtualFromArgs<T, keyof BillVirtualFields>>, 'account'> &
   {
     account?:
       T extends { select: any }
@@ -5097,7 +5301,7 @@ export type BillDefaultArgs = {
 /**
  * Custom FindUniqueArgs for Bill with virtual field support in nested relationships
  */
-export type BillFindUniqueArgs = Omit<Prisma.BillFindUniqueArgs, 'select' | 'include'> & {
+export type BillFindUniqueArgs = OpensaasUniqueArgs<BillWhereInput> & {
   select?: BillSelect | null
   include?: BillInclude | null
   query?: Fragment<BillOutput, FieldSelection<BillOutput>>
@@ -5106,7 +5310,7 @@ export type BillFindUniqueArgs = Omit<Prisma.BillFindUniqueArgs, 'select' | 'inc
 /**
  * Custom FindManyArgs for Bill with virtual field support in nested relationships
  */
-export type BillFindManyArgs = Omit<Prisma.BillFindManyArgs, 'select' | 'include'> & {
+export type BillFindManyArgs = OpensaasFilterArgs<BillWhereInput> & {
   select?: BillSelect | null
   include?: BillInclude | null
   query?: Fragment<BillOutput, FieldSelection<BillOutput>>
@@ -5115,7 +5319,7 @@ export type BillFindManyArgs = Omit<Prisma.BillFindManyArgs, 'select' | 'include
 /**
  * Custom FindFirstArgs for Bill with virtual field support in nested relationships
  */
-export type BillFindFirstArgs = Omit<Prisma.BillFindFirstArgs, 'select' | 'include'> & {
+export type BillFindFirstArgs = OpensaasFilterArgs<BillWhereInput> & {
   select?: BillSelect | null
   include?: BillInclude | null
   query?: Fragment<BillOutput, FieldSelection<BillOutput>>
@@ -5125,10 +5329,10 @@ export type BillFindFirstArgs = Omit<Prisma.BillFindFirstArgs, 'select' | 'inclu
  * Custom CreateArgs for Bill with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type BillCreateArgs = Omit<Prisma.BillCreateArgs, 'select' | 'include' | 'data'> & {
+export type BillCreateArgs = {
   select?: BillSelect | null
   include?: BillInclude | null
-  data: Omit<Prisma.BillCreateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -5137,10 +5341,10 @@ export type BillCreateArgs = Omit<Prisma.BillCreateArgs, 'select' | 'include' | 
  * Custom UpdateArgs for Bill with virtual field support in nested relationships
  * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
  */
-export type BillUpdateArgs = Omit<Prisma.BillUpdateArgs, 'select' | 'include' | 'data'> & {
+export type BillUpdateArgs = OpensaasUniqueArgs<BillWhereInput> & {
   select?: BillSelect | null
   include?: BillInclude | null
-  data: Omit<Prisma.BillUpdateArgs['data'], 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
 }
@@ -5148,7 +5352,7 @@ export type BillUpdateArgs = Omit<Prisma.BillUpdateArgs, 'select' | 'include' | 
 /**
  * Custom DeleteArgs for Bill with virtual field support in nested relationships
  */
-export type BillDeleteArgs = Omit<Prisma.BillDeleteArgs, 'select' | 'include'> & {
+export type BillDeleteArgs = OpensaasUniqueArgs<BillWhereInput> & {
   select?: BillSelect | null
   include?: BillInclude | null
 }
@@ -5158,7 +5362,7 @@ export type BillDeleteArgs = Omit<Prisma.BillDeleteArgs, 'select' | 'include'> &
  * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
  */
 export type BillCreateManyArgs = {
-  data: Array<Omit<Prisma.BillCreateInput, 'name'> & {
+  data: Array<Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }>
   select?: BillSelect | null
@@ -5171,7 +5375,7 @@ export type BillCreateManyArgs = {
  */
 export type BillUpdateManyArgs = {
   where?: BillWhereInput
-  data: Omit<Prisma.BillUpdateInput, 'name'> & {
+  data: Omit<OpensaasUnnarrowed, 'name'> & {
     name?: string | null
   }
   select?: BillSelect | null
@@ -5183,29 +5387,29 @@ export type BillUpdateManyArgs = {
  */
 export interface AccountCrud {
   findUnique: <T extends AccountFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
+    args: OpensaasSelectSubset<T, AccountFindUniqueArgs>
   ) => Promise<AccountGetPayload<T> | null>
   findFirst: <T extends AccountFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, AccountFindFirstArgs>
+    args?: OpensaasSelectSubset<T, AccountFindFirstArgs>
   ) => Promise<AccountGetPayload<T> | null>
   findMany: <T extends AccountFindManyArgs>(
-    args?: Prisma.SelectSubset<T, AccountFindManyArgs>
+    args?: OpensaasSelectSubset<T, AccountFindManyArgs>
   ) => Promise<Array<AccountGetPayload<T>>>
   create: <T extends AccountCreateArgs>(
-    args: Prisma.SelectSubset<T, AccountCreateArgs>
+    args: OpensaasSelectSubset<T, AccountCreateArgs>
   ) => Promise<AccountGetPayload<T>>
   update: <T extends AccountUpdateArgs>(
-    args: Prisma.SelectSubset<T, AccountUpdateArgs>
+    args: OpensaasSelectSubset<T, AccountUpdateArgs>
   ) => Promise<AccountGetPayload<T> | null>
   delete: <T extends AccountDeleteArgs>(
-    args: Prisma.SelectSubset<T, AccountDeleteArgs>
+    args: OpensaasSelectSubset<T, AccountDeleteArgs>
   ) => Promise<AccountGetPayload<T> | null>
-  count: (args?: Prisma.AccountCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<AccountWhereInput>) => Promise<number>
   createMany: <T extends AccountCreateManyArgs>(
-    args: Prisma.SelectSubset<T, AccountCreateManyArgs>
+    args: OpensaasSelectSubset<T, AccountCreateManyArgs>
   ) => Promise<Array<AccountGetPayload<T>>>
   updateMany: <T extends AccountUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, AccountUpdateManyArgs>
+    args: OpensaasSelectSubset<T, AccountUpdateManyArgs>
   ) => Promise<Array<AccountGetPayload<T>>>
 }
 
@@ -5214,29 +5418,29 @@ export interface AccountCrud {
  */
 export interface BillCrud {
   findUnique: <T extends BillFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, BillFindUniqueArgs>
+    args: OpensaasSelectSubset<T, BillFindUniqueArgs>
   ) => Promise<BillGetPayload<T> | null>
   findFirst: <T extends BillFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, BillFindFirstArgs>
+    args?: OpensaasSelectSubset<T, BillFindFirstArgs>
   ) => Promise<BillGetPayload<T> | null>
   findMany: <T extends BillFindManyArgs>(
-    args?: Prisma.SelectSubset<T, BillFindManyArgs>
+    args?: OpensaasSelectSubset<T, BillFindManyArgs>
   ) => Promise<Array<BillGetPayload<T>>>
   create: <T extends BillCreateArgs>(
-    args: Prisma.SelectSubset<T, BillCreateArgs>
+    args: OpensaasSelectSubset<T, BillCreateArgs>
   ) => Promise<BillGetPayload<T>>
   update: <T extends BillUpdateArgs>(
-    args: Prisma.SelectSubset<T, BillUpdateArgs>
+    args: OpensaasSelectSubset<T, BillUpdateArgs>
   ) => Promise<BillGetPayload<T> | null>
   delete: <T extends BillDeleteArgs>(
-    args: Prisma.SelectSubset<T, BillDeleteArgs>
+    args: OpensaasSelectSubset<T, BillDeleteArgs>
   ) => Promise<BillGetPayload<T> | null>
-  count: (args?: Prisma.BillCountArgs) => Promise<number>
+  count: (args?: OpensaasFilterArgs<BillWhereInput>) => Promise<number>
   createMany: <T extends BillCreateManyArgs>(
-    args: Prisma.SelectSubset<T, BillCreateManyArgs>
+    args: OpensaasSelectSubset<T, BillCreateManyArgs>
   ) => Promise<Array<BillGetPayload<T>>>
   updateMany: <T extends BillUpdateManyArgs>(
-    args: Prisma.SelectSubset<T, BillUpdateManyArgs>
+    args: OpensaasSelectSubset<T, BillUpdateManyArgs>
   ) => Promise<Array<BillGetPayload<T>>>
 }
 
@@ -5245,7 +5449,7 @@ export interface BillCrud {
  * Types change based on select/include - relationships only present when explicitly included
  * Virtual fields and transformed fields are added to the base model type
  */
-export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>, 
+export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, 
   'account' | 'bill'
 > {
   account: AccountCrud
@@ -5257,7 +5461,7 @@ export interface CustomDB extends Omit<AccessControlledDB<PrismaClient>,
  * Compatible with both AccessContext (from hooks) and Context (from server actions)
  * Use this type for services that should work in both contexts
  */
-export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {
   db: CustomDB
   session: TSession
 }
