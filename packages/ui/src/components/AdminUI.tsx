@@ -18,7 +18,7 @@ import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
 
 export interface AdminUIProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   params?: string[]
   searchParams?: { [key: string]: string | string[] | undefined }

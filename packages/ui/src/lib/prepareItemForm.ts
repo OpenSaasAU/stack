@@ -56,7 +56,7 @@ export function buildRelationshipInclude(
  * relationship/serialization logic lives in exactly one place.
  */
 export async function prepareItemForm(
-  context: AccessContext<unknown>,
+  context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,

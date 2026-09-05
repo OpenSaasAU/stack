@@ -1,5 +1,6 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
-import type { AccessContext, PrismaClientLike } from '../access/types.js'
+import { ormModel } from '../access/orm-client.js'
+import type { AccessContext, OrmClient } from '../access/types.js'
 import {
   checkAccess,
   checkCreateAccess,
@@ -21,7 +22,6 @@ import { processNestedOperations, runAfterTasks } from './nested-operations.js'
 import type { AfterTask } from './nested-operations.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
-import { getDbKey } from '../lib/case-utils.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -99,19 +99,6 @@ export interface WriteStrategy {
 }
 
 /**
- * Resolve the dynamic Prisma model for a list. Model names are generated at
- * runtime, so the cast is unavoidable — kept localized here (mirrors
- * `context/index.ts`).
- */
-function getModel<TPrisma extends PrismaClientLike>(
-  prisma: TPrisma,
-  listName: string,
-): PrismaModel {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- model names are generated at runtime
-  return (prisma as any)[getDbKey(listName)] as PrismaModel
-}
-
-/**
  * Minimal shape of a Prisma interactive-transaction-capable client. `tx` is
  * dynamically typed like the model surface above (names generated at runtime).
  */
@@ -128,16 +115,13 @@ interface TransactionCapable {
  * client — hook ordering and arguments are identical, but only a real
  * transaction provides the rollback guarantee.
  */
-async function runInTransaction<TPrisma extends PrismaClientLike>(
-  prisma: TPrisma,
-  fn: (tx: TPrisma) => Promise<Record<string, unknown> | null>,
+async function runInTransaction(
+  prisma: OrmClient,
+  fn: (tx: OrmClient) => Promise<Record<string, unknown> | null>,
 ): Promise<Record<string, unknown> | null> {
   const client = prisma as unknown as TransactionCapable
   if (typeof client.$transaction === 'function') {
-    return (await client.$transaction(async (tx) => fn(tx as TPrisma))) as Record<
-      string,
-      unknown
-    > | null
+    return (await client.$transaction(async (tx) => fn(tx))) as Record<string, unknown> | null
   }
   return fn(prisma)
 }
@@ -147,12 +131,12 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
 }
 
-export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
+export interface WritePipelineArgs {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
-  prisma: TPrisma
-  context: AccessContext<TPrisma>
+  prisma: OrmClient
+  context: AccessContext
   config: OpenSaasConfig
   /** The original input data for the write (create/update). `undefined` for delete. */
   inputData: Record<string, unknown> | undefined
@@ -179,8 +163,8 @@ export interface WritePipelineArgs<TPrisma extends PrismaClientLike> {
  *     create).
  *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
-export async function runWritePipeline<TPrisma extends PrismaClientLike>(
-  args: WritePipelineArgs<TPrisma>,
+export async function runWritePipeline(
+  args: WritePipelineArgs,
 ): Promise<Record<string, unknown> | null> {
   const { prisma, listName, listConfig, context, config, inputData, strategy } = args
 
@@ -191,7 +175,7 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(getModel(prisma, listName))
+  const gate = await strategy.resolveTarget(ormModel(prisma, listName))
   if (gate.status === 'denied') {
     return null
   }
@@ -257,13 +241,13 @@ export async function runWritePipeline<TPrisma extends PrismaClientLike>(
  * own `context.db` write defers its transaction-boundary bracket to that owner
  * instead of firing eagerly.
  */
-function bindContextToTransaction<TPrisma extends PrismaClientLike>(
-  args: WritePipelineArgs<TPrisma>,
-  tx: TPrisma,
+function bindContextToTransaction(
+  args: WritePipelineArgs,
+  tx: OrmClient,
   transactionOwner: TransactionRegistry | undefined,
-): AccessContext<TPrisma> {
+): AccessContext {
   const { context, config } = args
-  const txContext: AccessContext<TPrisma> = {
+  const txContext: AccessContext = {
     session: context.session,
     prisma: tx,
     db: context.db,
@@ -285,12 +269,12 @@ function bindContextToTransaction<TPrisma extends PrismaClientLike>(
  * the Field-Visibility-filtered row otherwise. Any throw here propagates out of
  * `runInTransaction` and rolls the transaction back.
  */
-async function runWriteInTransaction<TPrisma extends PrismaClientLike>(
-  args: WritePipelineArgs<TPrisma>,
+async function runWriteInTransaction(
+  args: WritePipelineArgs,
 ): Promise<Record<string, unknown> | null> {
   const { listName, listConfig, prisma: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
-  const model = getModel(tx, listName)
+  const model = ormModel(tx, listName)
 
   // ── Phase 1: resolve target + operation-level access ──────────────────────
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than

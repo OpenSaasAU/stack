@@ -11,8 +11,12 @@
 // Runtime context internals consumed by generated `.opensaas/` code
 export type { ServerActionProps } from './context/index.js'
 export type {
-  PrismaClientLike,
+  OrmClient,
+  OrmModelDelegate,
+  OrmOperationArgs,
+  OrmRow,
   AccessControlledDB,
+  AccessControlledDelegate,
   StorageUtils,
   AugmentedFindMany,
   AugmentedFindUnique,

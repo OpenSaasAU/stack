@@ -1,6 +1,11 @@
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { DependencyTable, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { needsEntries } from './types.js'
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
 
 /**
  * Map a field type string to the TypeScript field-config type and the
@@ -58,7 +63,10 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
  * }
  * ```
  */
-export function generateListsNamespace(config: OpenSaasConfig): string {
+export function generateListsNamespace(
+  config: OpenSaasConfig,
+  dependencies: DependencyTable,
+): string {
   const lines: string[] = []
 
   lines.push('/**')
@@ -96,7 +104,9 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     )
     lines.push('')
     lines.push(`  namespace ${listName} {`)
-    lines.push(`    export type Item = import('./types.ts').${listName}`)
+    // A hook's \`item\` is the STORED row: it runs before \`resolveOutput\`, so a
+    // type carrying computed keys would promise a value it never sees (ADR-0027).
+    lines.push(`    export type Item = import('./types.ts').${listName}StoredRow`)
     lines.push('')
 
     lines.push(`    /**`)
@@ -111,10 +121,25 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push(`    }`)
     lines.push('')
 
+    lines.push(`    /**`)
+    lines.push(`     * Per-field declared-dependency facts (ADR-0051). \`needs\` is the set`)
+    lines.push(`     * the runtime widens the read by; \`item\` is that set resolved against`)
+    lines.push(`     * the contract — exactly what its \`resolveOutput\` hook is handed.`)
+    lines.push(`     */`)
+    lines.push(`    export type Needs = {`)
+    for (const [fieldName, union] of needsEntries(listName, listConfig.fields, dependencies)) {
+      const itemType = `import('./types.ts').${listName}${capitalize(fieldName)}NeedsItem`
+      lines.push(`      ${fieldName}: { needs: ${union}; item: ${itemType} }`)
+    }
+    lines.push(`    }`)
+    lines.push('')
+
     lines.push(`    export type TypeInfo = {`)
     lines.push(`      key: '${listName}'`)
     lines.push(`      fields: Fields`)
+    lines.push(`      needs: Needs`)
     lines.push(`      item: Item`)
+    lines.push(`      output: import('./types.ts').${listName}`)
     lines.push(`      inputs: {`)
     lines.push(`        create: import('./types.ts').${listName}CreateInput`)
     lines.push(`        update: import('./types.ts').${listName}UpdateInput`)
@@ -129,8 +154,12 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
   return lines.join('\n')
 }
 
-export function writeLists(config: OpenSaasConfig, outputPath: string): void {
-  const lists = generateListsNamespace(config)
+export function writeLists(
+  config: OpenSaasConfig,
+  outputPath: string,
+  dependencies: DependencyTable,
+): void {
+  const lists = generateListsNamespace(config, dependencies)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

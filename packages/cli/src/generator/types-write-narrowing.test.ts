@@ -1,212 +1,248 @@
-import { describe, it, expect } from 'vitest'
-import * as path from 'path'
-import * as fs from 'fs'
-import * as os from 'os'
-import ts from 'typescript'
-import { generateTypes } from './types.js'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import {
-  text,
-  decimal,
-  bigInt,
-  json,
-  checkbox,
   calendarDay,
+  checkbox,
+  json,
+  password,
   relationship,
+  select,
+  text,
 } from '@opensaas/stack-core/fields'
+import {
+  CONSUMER_PRELUDE,
+  emitTypeFixture,
+  type TypeFixture,
+} from '../../tests/emit-type-fixture.js'
 
 /**
- * Compile-time type tests for the write-path `data` narrowing (#599 / Approach B).
+ * The write inputs, against a real emitted contract.
  *
- * The generated `context.db.<list>.create()/update()` `data` member now narrows
- * scalar fields to their OpenSaaS `getTypeScriptType()` types while leaving
- * relationship nested writes, unchecked FK fields, and decimal/bigInt/json on
- * the unnarrowed write base. These tests assert the *real* compile behaviour by
- * feeding the actual generated `*Args` types — exactly as `generateCustomDBType`
- * wires them into the `create`/`update`/`createMany`/`updateMany` method
- * signatures — into a real `tsc` program.
+ * #608 recorded two places describing a list's create input and asked for one.
+ * There is now one: `CreateInput<Contract, Remainder, 'Event'>` is both the
+ * export and the terminal's parameter, and everything in it — which columns
+ * exist, what they accept, which are required — is read from the contract
+ * except the remainder's own `input` overrides.
  *
  * What is asserted:
- *  - `day: new Date()` (a `Date` to a `calendarDay`) is a COMPILE ERROR.
- *  - `day: '2026-01-01'` (a `string`) compiles.
- *  - `price` accepts `number` and `string` (decimal not over-narrowed).
- *  - `sequence` accepts `bigint` and `number` (bigInt not over-narrowed, #907).
- *  - `meta` accepts a plain JSON value and Prisma's `JsonNull` sentinel.
- *  - relationship writes (`owner.connect`, unchecked `ownerId`) compile.
- *  - `active` (`checkbox({ defaultValue: false })`) is OPTIONAL on create.
+ *  - a required column with no default is required on create, and one with a
+ *    default is not (#599's `checkbox({ defaultValue: false })` case);
+ *  - a system-filled column (`id`, `createdAt`, `updatedAt`) is not writable
+ *    at all;
+ *  - a field's `input` override wins over its codec (`calendarDay` writes as
+ *    a `string`, so a `Date` is a compile error);
+ *  - `connect` is offered on the foreign-key-owning side, and the foreign-key
+ *    column itself stays writable (ADR-0050);
+ *  - update is partial;
+ *  - every write terminal admits silent denial — `create` is `| null`, and the
+ *    per-item batches carry `null` in a denied item's position.
  *
- * The `@ts-expect-error` markers in the consumer fixture make a passing compile
- * (zero diagnostics) the proof: each marker must catch an error, and every
- * other line must type-check.
+ * The `@ts-expect-error` markers make a zero-diagnostic compile the proof:
+ * each marker must catch an error, and every other line must type-check.
  */
 
-const COMPILE_TIMEOUT_MS = 60000
-
-/**
- * Minimal stubs for the `@opensaas/stack-core` + `/internal` symbols the
- * generated types import. Kept permissive: these are not what we're testing.
- */
-const CORE_STUB = `
-export interface Session { [key: string]: unknown }
-export type AccessContext<P = unknown> = { db: unknown; session: Session }
-`
-
-const CORE_INTERNAL_STUB = `
-export type StorageUtils = unknown
-export type ServerActionProps = unknown
-export type PrismaClientLike = unknown
-export type AccessControlledDB<P> = Record<string, unknown>
-export type Fragment<A, B> = unknown
-export type FieldSelection<A> = unknown
-`
-
-const PLUGIN_TYPES_STUB = `export type PluginServices = unknown\n`
-
-/**
- * The consumer: exercises the generated CustomDB write methods. Passing
- * lines must compile; `@ts-expect-error` lines must each catch an error.
- */
-const CONSUMER = `
-import type { CustomDB } from './types.ts'
-
-declare const db: CustomDB
-
-async function run() {
-  // string -> calendarDay: compiles.
-  await db.event.create({ data: { title: 't', day: '2026-01-01' } })
-
-  // Date -> calendarDay: COMPILE ERROR (the #599 win).
-  // @ts-expect-error Date is not assignable to a calendarDay (string) field
-  await db.event.create({ data: { title: 't', day: new Date() } })
-
-  // decimal accepts number and string (not over-narrowed to Decimal).
-  await db.event.create({ data: { title: 't', price: 12.5 } })
-  await db.event.create({ data: { title: 't', price: '12.50' } })
-
-  // bigInt accepts bigint and number (not over-narrowed to bare bigint, #907).
-  await db.event.create({ data: { title: 't', sequence: 5n } })
-  await db.event.create({ data: { title: 't', sequence: 5 } })
-
-  // json accepts a plain value and Prisma's JsonNull sentinel.
-  await db.event.create({ data: { title: 't', meta: { a: 1 } } })
-
-  // relationship nested write + unchecked FK both compile.
-  await db.event.create({ data: { title: 't', owner: { connect: { id: 'u1' } } } })
-  await db.event.create({ data: { title: 't', ownerId: 'u1' } })
-
-  // checkbox({ defaultValue: false }) is OPTIONAL on create: omitting it compiles.
-  await db.event.create({ data: { title: 't' } })
-
-  // update path: Date -> calendarDay still a COMPILE ERROR.
-  // @ts-expect-error Date is not assignable to a calendarDay (string) field on update
-  await db.event.update({ where: { id: 'e1' }, data: { day: new Date() } })
-
-  // update path: string and decimal-number compile.
-  await db.event.update({ where: { id: 'e1' }, data: { day: '2026-01-02', price: 9 } })
-
-  // update path: bigint and number both compile for bigInt (#907).
-  await db.event.update({ where: { id: 'e1' }, data: { sequence: 9n } })
-  await db.event.update({ where: { id: 'e1' }, data: { sequence: 9 } })
-
-  // createMany element narrowing: Date rejected, string accepted.
-  await db.event.createMany({ data: [{ title: 't', day: '2026-01-01' }] })
-  // @ts-expect-error Date is not assignable to a calendarDay (string) field in createMany
-  await db.event.createMany({ data: [{ title: 't', day: new Date() }] })
-
-  // updateMany narrowing: string accepted.
-  await db.event.updateMany({ data: { day: '2026-01-03' } })
-}
-
-void run
-`
-
-function compileFixture(generatedTypes: string): ts.Diagnostic[] {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-write-narrowing-'))
-  try {
-    fs.writeFileSync(path.join(dir, 'types.ts'), generatedTypes)
-    fs.writeFileSync(path.join(dir, 'consumer.ts'), CONSUMER)
-
-    // Stub the bare-specifier core imports via a paths mapping.
-    const coreDir = path.join(dir, '_stubs')
-    fs.mkdirSync(coreDir, { recursive: true })
-    fs.writeFileSync(path.join(coreDir, 'core.ts'), CORE_STUB)
-    fs.writeFileSync(path.join(coreDir, 'core-internal.ts'), CORE_INTERNAL_STUB)
-    fs.writeFileSync(path.join(dir, 'plugin-types.ts'), PLUGIN_TYPES_STUB)
-
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.Bundler,
-      strict: true,
-      noEmit: true,
-      skipLibCheck: true,
-      allowImportingTsExtensions: true,
-      // `baseUrl` is deprecated as of TS 7 (https://aka.ms/ts6); absolute
-      // `paths` targets resolve without it.
-      paths: {
-        '@opensaas/stack-core': [path.join(coreDir, 'core.ts')],
-        '@opensaas/stack-core/internal': [path.join(coreDir, 'core-internal.ts')],
-        'decimal.js': [path.join(coreDir, 'decimal.ts')],
-      },
-    }
-    fs.writeFileSync(
-      path.join(coreDir, 'decimal.ts'),
-      'export class Decimal { constructor(_v: string | number) {} }\n',
-    )
-
-    const rootNames = [path.join(dir, 'types.ts'), path.join(dir, 'consumer.ts')]
-    const program = ts.createProgram({ rootNames, options: compilerOptions })
-    return [...ts.getPreEmitDiagnostics(program)]
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
-
-const TEST_CONFIG: OpenSaasConfig = {
-  db: { provider: 'postgresql' },
+const config: OpenSaasConfig = {
+  db: { provider: 'postgresql', timestamps: true },
   lists: {
     User: { fields: { name: text({ validation: { isRequired: true } }) } },
     Event: {
       fields: {
         title: text({ validation: { isRequired: true } }),
         day: calendarDay(),
-        price: decimal(),
-        sequence: bigInt(),
         meta: json(),
+        secret: password(),
         active: checkbox({ defaultValue: false }),
+        status: select({
+          options: [
+            { label: 'Draft', value: 'draft' },
+            { label: 'Live', value: 'live' },
+          ],
+          defaultValue: 'draft',
+          db: { type: 'enum' },
+        }),
         owner: relationship({ ref: 'User' }),
+      },
+    },
+    // ADR-0058's criterion needs a to-one whose foreign key is NOT nullable,
+    // so the arity rule can be told apart from a nullability-driven one.
+    Booking: {
+      fields: {
+        host: relationship({ ref: 'User', db: { isNullable: false } }),
       },
     },
   },
 }
 
-describe('write-path data narrowing (#599)', () => {
-  it(
-    'rejects Date->calendarDay while allowing string/decimal/json/relationship writes',
-    { timeout: COMPILE_TIMEOUT_MS },
-    () => {
-      const generated = generateTypes(TEST_CONFIG)
-      const diagnostics = compileFixture(generated)
+describe('write-path narrowing over the emitted contract', () => {
+  let fixture: TypeFixture
 
-      const messages = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+  beforeAll(() => {
+    fixture = emitTypeFixture('write-narrowing', config)
+  }, 300_000)
 
-      // Zero diagnostics: every valid write compiled AND every @ts-expect-error
-      // caught its intended error (an uncaught @ts-expect-error is itself a
-      // diagnostic, so a stray pass would fail here too).
-      expect(messages).toEqual([])
-    },
-  )
+  afterAll(() => {
+    fixture?.cleanup()
+  })
 
-  it('narrows day to string and keeps active optional in the generated CreateArgs', () => {
-    const generated = generateTypes(TEST_CONFIG)
-    // Structural assertions on the generated override (cheap, complements tsc).
-    expect(generated).toContain("data: Omit<OpensaasUnnarrowed, 'title' | 'day' | 'active'> & {")
-    expect(generated).toContain('day?: string | null')
-    // checkbox({ defaultValue: false }) is optional on create (the bug fix).
-    expect(generated).toContain('active?: boolean')
-    // decimal/bigInt/json are NOT narrowed: they stay out of the Omit key list.
-    expect(generated).not.toContain("'price'")
-    expect(generated).not.toContain("'sequence'")
-    expect(generated).not.toContain("'meta'")
+  it('accepts every valid write and rejects the narrowed ones', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, EventCreateInput, EventUpdateInput } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // A required column with no default is required; everything else is optional.
+  await context.db.event.create({ data: { title: 't' } })
+
+  // @ts-expect-error \`title\` is non-nullable with no default
+  await context.db.event.create({ data: { day: '2026-01-01' } })
+
+  // \`calendarDay\` declares a \`string\` input override; the codec would take more.
+  await context.db.event.create({ data: { title: 't', day: '2026-01-01' } })
+
+  // @ts-expect-error a Date is not a calendarDay input
+  await context.db.event.create({ data: { title: 't', day: new Date() } })
+
+  // A native enum column is its own value union, from the contract.
+  await context.db.event.create({ data: { title: 't', status: 'live' } })
+
+  // @ts-expect-error 'archived' is not one of the declared options
+  await context.db.event.create({ data: { title: 't', status: 'archived' } })
+
+  // \`connect\` on the foreign-key-owning side, and the column itself (ADR-0050).
+  await context.db.event.create({ data: { title: 't', owner: { connect: { id: 'u1' } } } })
+  await context.db.event.create({ data: { title: 't', ownerId: 'u1' } })
+
+  // @ts-expect-error the primary key is system-filled and never writable
+  await context.db.event.create({ data: { title: 't', id: 'e1' } })
+
+  // @ts-expect-error \`createdAt\` carries a database default and is never writable
+  await context.db.event.create({ data: { title: 't', createdAt: '2026-01-01T00:00:00Z' } })
+
+  // Update is partial, and keeps every narrowing create has.
+  await context.db.event.update({ where: { id: 'e1' }, data: { day: '2026-01-02' } })
+
+  // @ts-expect-error a Date is not a calendarDay input on update either
+  await context.db.event.update({ where: { id: 'e1' }, data: { day: new Date() } })
+
+  // @ts-expect-error \`titel\` is not a column on this list
+  await context.db.event.update({ where: { id: 'e1' }, data: { titel: 't' } })
+}
+
+// The standalone export and the terminal's parameter are the same type (#608).
+declare const create: EventCreateInput
+declare const update: EventUpdateInput
+assertType<Exact<Parameters<Context['db']['event']['create']>[0]['data'], EventCreateInput>>()
+
+void run
+void create
+void update
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('admits silent denial at every write terminal', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, Event } from './.opensaas/types.ts'
+
+type Created = Awaited<ReturnType<Context['db']['event']['create']>>
+type CreatedMany = Awaited<ReturnType<Context['db']['event']['createMany']>>
+type UpdatedMany = Awaited<ReturnType<Context['db']['event']['updateMany']>>
+type Found = Awaited<ReturnType<Context['db']['event']['findMany']>>
+
+declare const created: Created
+declare const createdMany: CreatedMany
+declare const updatedMany: UpdatedMany
+declare const found: Found
+
+// A denied create returns null rather than throwing, so the caller must check.
+const maybeCreated: Event | null = created
+// @ts-expect-error a denied create is null
+const alwaysCreated: Event = created
+
+// \`createMany\` and \`updateMany\` run one secured write per item, so a partial
+// denial leaves a null in that item's position.
+const maybeEach: (Event | null)[] = createdMany
+// @ts-expect-error a denied item in the batch is null
+const alwaysEach: Event[] = createdMany
+
+const maybeEachUpdated: (Event | null)[] = updatedMany
+// @ts-expect-error a denied item in the batch is null
+const alwaysEachUpdated: Event[] = updatedMany
+
+// A denied read of many is an empty array, not an array of nulls.
+const alwaysFound: Event[] = found
+
+void maybeCreated
+void alwaysCreated
+void maybeEach
+void alwaysEach
+void maybeEachUpdated
+void alwaysEachUpdated
+void alwaysFound
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('reads a required to-one as | null all the same', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, User } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // ADR-0058: arity decides, not the column. \`host\`'s foreign key is
+  // non-nullable, and the included row is still \`| null\` — the Access Filter
+  // can scope it away even when the database cannot.
+  const rows = await context.db.booking.findMany({ include: { host: true } })
+  assertType<Exact<(typeof rows)[number]['host'], User | null>>()
+
+  // …and the write side still requires it.
+  await context.db.booking.create({ data: { host: { connect: { id: 'u1' } } } })
+
+  // @ts-expect-error \`host\` is non-nullable with no default
+  await context.db.booking.create({ data: {} })
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('refuses the pre-ADR-0052 spelling of StackContext', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { StackContext } from '@opensaas/stack-core'
+import type { DB } from './.opensaas/types.ts'
+
+type Current = StackContext<DB>
+
+// @ts-expect-error the first parameter is the secured \`db\` surface, not the client
+type Stale = StackContext<{ post: object; $connect: () => Promise<void> }>
+
+declare const current: Current
+declare const stale: Stale
+void current
+void stale
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('reads a password column through its output override', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Event } from './.opensaas/types.ts'
+import type { HashedPassword } from '@opensaas/stack-core/internal'
+
+// ADR-0029: a field may read differently from its column. The contract knows
+// only the codec (text); the remainder carries the override.
+assertType<Exact<Event['secret'], HashedPassword>>()
+assertType<Exact<Event['active'], boolean>>()
+assertType<Exact<Event['status'], 'draft' | 'live'>>()
+`)
+
+    expect(output).toBe('')
   })
 })

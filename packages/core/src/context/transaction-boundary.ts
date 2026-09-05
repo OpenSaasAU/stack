@@ -1,5 +1,5 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
-import type { AccessContext, PrismaClientLike } from '../access/types.js'
+import type { AccessContext } from '../access/types.js'
 import { getRelatedListConfig } from '../access/index.js'
 import {
   executeBeforeTransaction,
@@ -201,9 +201,9 @@ export function enumerateInvolvedLists(args: {
 }
 
 /** Runs one involved list's `beforeTransaction` hooks. A throw propagates to the caller (which aborts the write). */
-async function runBeforeTransactionForList<TPrisma extends PrismaClientLike>(
+async function runBeforeTransactionForList(
   involved: InvolvedList,
-  context: AccessContext<TPrisma>,
+  context: AccessContext,
 ): Promise<void> {
   const { listKey, listConfig, operation, inputData, originalItem } = involved
 
@@ -248,10 +248,10 @@ async function runBeforeTransactionForList<TPrisma extends PrismaClientLike>(
  * {@link TransactionRegistry} to reuse when draining a deferred, joined
  * write's bracket (ADR-0028).
  */
-export async function runAfterTransactionForList<TPrisma extends PrismaClientLike>(
+export async function runAfterTransactionForList(
   involved: InvolvedList,
   outcome: TransactionOutcome,
-  context: AccessContext<TPrisma>,
+  context: AccessContext,
   errors: unknown[],
 ): Promise<void> {
   const { listKey, listConfig, operation, isTopLevel, inputData, originalItem } = involved
@@ -388,9 +388,9 @@ function resolveDeferredOutcome(
  *
  * Sudo bypasses access control only — never these hooks.
  */
-export async function runWithTransactionBoundary<TPrisma extends PrismaClientLike>(args: {
+export async function runWithTransactionBoundary(args: {
   involvedLists: InvolvedList[]
-  context: AccessContext<TPrisma>
+  context: AccessContext
   /** Set when this write is nested in a transaction it did not open (ADR-0028). */
   joinedOwner?: TransactionRegistry
   /** Set when this write just opened the transaction joined writes below it share. */

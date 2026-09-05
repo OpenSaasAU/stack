@@ -1,22 +1,42 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { JsonVectorStorage } from './json.js'
+import { PgVectorStorage } from './pgvector.js'
 import { createVectorStorage } from './index.js'
 import { cosineSimilarity, dotProduct, l2Distance } from './types.js'
 import type { StoredEmbedding } from '../config/types.js'
 import type { AccessContext } from '@opensaas/stack-core'
 
 // Helper to create mock context
-function createMockContext(dbOverrides: Record<string, unknown> = {}): AccessContext<unknown> {
+function createMockContext(
+  dbOverrides: Record<string, unknown> = {},
+  prisma: Record<string, unknown> = {},
+): AccessContext {
   return {
     db: dbOverrides,
     session: null,
     sudo: vi.fn(),
-    prisma: {} as unknown,
+    prisma,
     storage: {} as unknown,
     plugins: {},
     _isSudo: false,
     _resolveOutputChain: [],
-  } as AccessContext<unknown>
+  } as AccessContext
+}
+
+/**
+ * An ORM client double whose `$queryRawUnsafe` reads its own state through
+ * `this`. A caller that lifts the method off the client loses the receiver and
+ * throws, rather than quietly returning a plausible empty result.
+ */
+function createRawQueryClient(rows: Array<{ id: string; distance: string }>) {
+  return {
+    rows,
+    queries: [] as string[],
+    $queryRawUnsafe(sql: string): Promise<unknown> {
+      this.queries.push(sql)
+      return Promise.resolve(this.rows)
+    },
+  }
 }
 
 describe('Vector Storage', () => {
@@ -495,6 +515,67 @@ describe('Vector Storage', () => {
         const vec2 = [1.0, 0.0, 0.0]
         expect(() => l2Distance(vec1, vec2)).toThrow('Vector dimension mismatch')
       })
+    })
+  })
+
+  describe('PgVectorStorage', () => {
+    const embedding: StoredEmbedding = {
+      vector: [1.0, 0.0, 0.0],
+      metadata: {
+        model: 'test',
+        provider: 'test',
+        dimensions: 3,
+        generatedAt: new Date().toISOString(),
+      },
+    }
+
+    it('runs the raw query against the client, not a detached method', async () => {
+      const storage = new PgVectorStorage({ type: 'pgvector' })
+      const prisma = createRawQueryClient([{ id: '1', distance: '0' }])
+      const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
+      const context = createMockContext({ article: { findMany } }, prisma)
+
+      const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], { context })
+
+      expect(prisma.queries).toHaveLength(1)
+      expect(prisma.queries[0]).toContain('FROM "Article"')
+      expect(prisma.queries[0]).toContain('<=>')
+      expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['1'] } } })
+      expect(results).toHaveLength(1)
+      expect((results[0].item as { id: string }).id).toBe('1')
+      expect(results[0].score).toBe(1)
+    })
+
+    it('drops rows below minScore before refetching', async () => {
+      const storage = new PgVectorStorage({ type: 'pgvector' })
+      const prisma = createRawQueryClient([
+        { id: '1', distance: '0' },
+        { id: '2', distance: '0.9' },
+      ])
+      const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
+      const context = createMockContext({ article: { findMany } }, prisma)
+
+      const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], {
+        context,
+        minScore: 0.5,
+      })
+
+      expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['1'] } } })
+      expect(results).toHaveLength(1)
+    })
+
+    it('falls back to JSON search when the client exposes no raw query', async () => {
+      const storage = new PgVectorStorage({ type: 'pgvector' })
+      const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1', embedding }])
+      const context = createMockContext({ article: { findMany } }, {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], { context })
+
+      expect(warn).toHaveBeenCalled()
+      expect(results).toHaveLength(1)
+      expect((results[0].item as { id: string }).id).toBe('1')
+      warn.mockRestore()
     })
   })
 

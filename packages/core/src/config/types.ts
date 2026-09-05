@@ -260,7 +260,12 @@ export type FieldResolveOutputHookArgs<
 > = {
   operation: 'query'
   value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
-  item: TTypeInfo['item']
+  /**
+   * Exactly the field's declared dependency set plus the list's system
+   * fields — what the runtime fetches for it (ADR-0051). Reading a column
+   * this field did not declare in `needs` is a compile error.
+   */
+  item: FieldNeedsItem<TTypeInfo, TFieldKey>
   listKey: string
   fieldName: TFieldKey
   context: import('../access/types.js').AccessContext
@@ -1668,7 +1673,39 @@ export interface TypeInfo<
     create: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
     update: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
   }
+  /**
+   * What a caller receives from a read of this list — the stored row plus its
+   * computed fields. `item` is the narrower stored row a hook sees, which
+   * never carries a computed value (ADR-0027).
+   */
+  output?: unknown
+  /**
+   * Per-field declared-dependency facts (ADR-0051). `needs` is the field's
+   * declared set as a union of column and relation keys; `item` is that set
+   * resolved against the contract — exactly what the runtime hands the
+   * field's `resolveOutput` hook, which is what makes reading an undeclared
+   * column a compile error.
+   *
+   * Written by `pnpm generate`; absent on a hand-authored `TypeInfo`, where
+   * a hook's `item` falls back to the whole stored row.
+   */
+  needs?: Record<string, { needs?: string; item?: unknown }>
 }
+
+/**
+ * The `item` a field's `resolveOutput` hook is handed: its declared
+ * dependency set plus the list's system fields, resolved by `pnpm generate`
+ * and read back off {@link TypeInfo.needs}. Falls back to the whole stored
+ * row for a `TypeInfo` that carries no declared-dependency facts.
+ */
+export type FieldNeedsItem<TTypeInfo extends TypeInfo, TFieldKey extends PropertyKey> =
+  NonNullable<TTypeInfo['needs']> extends infer TNeeds
+    ? TFieldKey extends keyof TNeeds
+      ? TNeeds[TFieldKey] extends { item: infer TItem }
+        ? TItem
+        : TTypeInfo['item']
+      : TTypeInfo['item']
+    : TTypeInfo['item']
 
 // Generic `any` default allows OperationAccess to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models

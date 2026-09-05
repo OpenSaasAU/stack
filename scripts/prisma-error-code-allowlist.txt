@@ -9,7 +9,7 @@ docs/content/concepts/hooks.md:1
 docs/content/how-to/migrate-from-keystone.md:1
 packages/core/CLAUDE.md:3
 packages/core/src/config/types.ts:2
-packages/core/src/context/index.ts:3
+packages/core/src/context/index.ts:2
 packages/core/src/index.ts:1
 packages/core/src/lib/prisma-errors.ts:3
 packages/core/tests/context.test.ts:10

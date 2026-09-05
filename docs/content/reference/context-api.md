@@ -27,16 +27,16 @@ const context = await getContext(config, prisma, session, storage)
 **Type Signature:**
 
 ```typescript
-function getContext<TConfig extends OpenSaasConfig, TPrisma extends PrismaClientLike>(
+function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
-  prisma: TPrisma,
+  prisma: OrmClient,
   session: Session,
   storage?: StorageUtils,
   _isSudo?: boolean,
 ): {
-  db: AccessControlledDB<TPrisma>
+  db: AccessControlledDB
   session: Session
-  prisma: TPrisma
+  prisma: OrmClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context
@@ -44,6 +44,11 @@ function getContext<TConfig extends OpenSaasConfig, TPrisma extends PrismaClient
   _isSudo: boolean
 }
 ```
+
+The per-list types are not read off the client: they come from the generated
+bundle, which instantiates `@opensaas/stack-core`'s contract-keyed generics
+against the emitted `contract.d.ts`. `getContext()` from `.opensaas/context.ts`
+returns the generated `Context`, which is the one applications use.
 
 #### Parameters
 
@@ -63,18 +68,11 @@ const context = await getContext(config, prisma, session)
 
 ##### `prisma` (required)
 
-Your Prisma client instance. Pass as generic for type safety.
+The ORM client. The generated `.opensaas/context.ts` constructs it from the
+committed `contract.json` and passes it for you, so an application calls
+`getContext(session)` from that module rather than this function directly.
 
-**Type:** `TPrisma extends PrismaClientLike`
-
-**Example:**
-
-```typescript
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
-const context = await getContext(config, prisma, session)
-```
+**Type:** `OrmClient`
 
 ##### `session` (required)
 
@@ -134,7 +132,7 @@ Returns a context object with the following properties:
 
 Access-controlled database interface with full Prisma type inference.
 
-**Type:** `AccessControlledDB<TPrisma>`
+**Type:** `AccessControlledDB`
 
 **Available Operations:**
 

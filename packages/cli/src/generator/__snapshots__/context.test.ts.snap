@@ -8,9 +8,10 @@ exports[`generateContext > matches the full snapshot 1`] = `
  */
 
 import { getContext as getOpensaasContext, resolveDatabaseUrl } from '@opensaas/stack-core'
+import type { OrmClient } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
-import type { Contract } from '../prisma/contract.d.ts'
+import type { Contract } from '../prisma/contract.d.js'
 import contractJson from '../prisma/contract.json' with { type: 'json' }
 import type { Context } from './types.ts'
 import { constraintMap, dependencyTable } from './tables.ts'
@@ -64,6 +65,17 @@ async function getConfig() {
   return resolvedConfig
 }
 
+/**
+ * The engine still reaches a model by key (\`client.post.findMany\`) — the Prisma 7
+ * shape — while a Prisma 8 client exposes its collections at
+ * \`db.orm.<namespace>.<Model>\`. Reconciling the two is the runtime spec's
+ * (ADR-0041, ADR-0039); until then the client crosses into the engine here, in
+ * one named place, rather than at every call site.
+ */
+function asOrmClient(value: ReturnType<typeof createClient>): OrmClient {
+  return value as unknown as OrmClient
+}
+
 const storage = {
   uploadFile: async () => {
     throw new Error('Storage is not configured. Add storage providers to your opensaas.config.ts')
@@ -98,7 +110,7 @@ const storage = {
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, db, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext(config, asOrmClient(db), session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
@@ -110,7 +122,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, db, null, storage) as unknown as Context
+  return getOpensaasContext(config, asOrmClient(db), null, storage) as unknown as Context
 })()
 
 /**

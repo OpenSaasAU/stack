@@ -7,7 +7,7 @@ import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 
 // A minimal access-scoped context: resolveEditableColumns only forwards it to
 // the related list's own access functions (which ignore it here).
-function makeContext(): AccessContext<unknown> {
+function makeContext(): AccessContext {
   const context = {
     db: {},
     session: null,
@@ -16,7 +16,7 @@ function makeContext(): AccessContext<unknown> {
     _isSudo: false,
     _resolveOutputChain: [],
   }
-  return context as unknown as AccessContext<unknown>
+  return context as unknown as AccessContext
 }
 
 function section(columns: string[]): RelationshipTableSection {

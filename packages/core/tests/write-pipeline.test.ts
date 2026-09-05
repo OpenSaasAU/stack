@@ -9,7 +9,7 @@ import { ValidationError } from '../src/hooks/index.js'
 import { InvalidCreateAccessResultError } from '../src/access/errors.js'
 import { text } from '../src/fields/index.js'
 import type { OpenSaasConfig, ListConfig } from '../src/config/types.js'
-import type { AccessContext, PrismaClientLike } from '../src/access/types.js'
+import type { AccessContext, OrmClient } from '../src/access/types.js'
 
 /**
  * Unit tests for the Write Pipeline — the single module that owns the canonical
@@ -72,7 +72,7 @@ function makeFakePrisma(overrides?: {
     }),
   }
 
-  return { prisma: { post } as unknown as PrismaClientLike, post }
+  return { prisma: { post } as unknown as OrmClient, post }
 }
 
 /**
@@ -502,7 +502,7 @@ describe('Write Pipeline — sudo mode', () => {
       update: vi.fn(),
       delete: vi.fn(),
     }
-    const prisma = { post } as unknown as PrismaClientLike
+    const prisma = { post } as unknown as OrmClient
 
     const listConfig = {
       fields: {

@@ -2,8 +2,23 @@ import type { VectorStorage, SearchOptions } from './types.js'
 import type { SearchResult } from '../config/types.js'
 import type { PgVectorStorageConfig } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
+import type { OrmClient } from '@opensaas/stack-core'
 import { getDbKey } from '@opensaas/stack-core'
 import { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'
+
+/** The one ORM client method this backend needs beyond the secured surface. */
+type RawQueryable = {
+  $queryRawUnsafe: (sql: string) => Promise<unknown>
+}
+
+/**
+ * `$queryRawUnsafe` dereferences `this`, so the client must stay the receiver
+ * of the call — narrowing the client rather than lifting the method off it is
+ * what keeps that true.
+ */
+function isRawQueryable(client: OrmClient | undefined): client is OrmClient & RawQueryable {
+  return typeof client?.$queryRawUnsafe === 'function'
+}
 
 /**
  * pgvector storage backend. Requires the Postgres `vector` extension: `CREATE EXTENSION vector;`
@@ -70,7 +85,7 @@ export class PgVectorStorage implements VectorStorage {
     try {
       const prisma = context.prisma
 
-      if (!prisma) {
+      if (!isRawQueryable(prisma)) {
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +

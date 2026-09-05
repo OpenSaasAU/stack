@@ -139,22 +139,35 @@ export default defineConfig({
 
 ### Types (`.opensaas/types.ts`)
 
+The file declares the **contract remainder** — the four per-list facts the
+emitted Contract artifacts cannot carry — and instantiates the generics
+`@opensaas/stack-core` exports, keyed by the emitted `Contract`. Scalar types,
+nullability, relation arity, foreign-key ownership and column defaults are read
+from the contract and are never written here (ADR-0052).
+
 ```typescript
-export type Post = {
-  id: string
-  title: string
-  createdAt: Date
-  updatedAt: Date
+import type { Contract } from '../prisma/contract.d.js'
+import type { CreateInput, Row, SecuredList, UpdateInput } from '@opensaas/stack-core'
+
+export type Remainder = {
+  Post: {
+    computed: { excerpt: string }
+    output: Record<never, never>
+    input: Record<never, never>
+    needs: { excerpt: 'content' }
+  }
 }
 
-export type PostCreateInput = {
-  title: string
-}
-
-export type PostUpdateInput = {
-  title?: string
-}
+export interface Post extends Row<Contract, Remainder, 'Post'> {}
+export interface PostCreateInput extends CreateInput<Contract, Remainder, 'Post'> {}
+export interface PostUpdateInput extends UpdateInput<Contract, Remainder, 'Post'> {}
+export interface PostList extends SecuredList<Contract, Remainder, 'Post'> {}
 ```
+
+The type-only import of the emitted declarations is spelled `contract.d.js`,
+not `contract.d.ts`: the Contract module (`prisma/contract.ts`) sits in the same
+directory and TypeScript resolves `./contract.d.ts` to **it**. The import is
+erased, so no loader ever sees the specifier.
 
 ### Context Factory (`.opensaas/context.ts`)
 

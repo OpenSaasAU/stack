@@ -98,8 +98,9 @@ describe('Generate Command Integration', () => {
         contractModule: crossReferences.prismaConfigContract,
         outputDir: crossReferences.prismaConfigOutput,
       })
-      writeTypes(forConfig, paths.types)
-      writeLists(forConfig, paths.lists)
+      const dependencies = deriveDependencyTable(forConfig)
+      writeTypes(forConfig, paths.types, dependencies)
+      writeLists(forConfig, paths.lists, dependencies)
       writeContext(forConfig, data, paths.context, {
         configImport: crossReferences.configImport,
         contractJsonImport: crossReferences.contractJsonImport,

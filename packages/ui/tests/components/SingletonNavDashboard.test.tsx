@@ -46,7 +46,7 @@ interface DelegateStub {
  * Build a minimal AccessContext whose db delegates return canned data. Only the
  * methods the views call are implemented.
  */
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unknown> {
+function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
   const context = {
     db: delegates,
     session: null,
@@ -56,7 +56,7 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unk
     _resolveOutputChain: [],
   }
   // Cast: this is a stub for rendering tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext<unknown>
+  return context as unknown as AccessContext
 }
 
 describe('Navigation singleton grouping', () => {

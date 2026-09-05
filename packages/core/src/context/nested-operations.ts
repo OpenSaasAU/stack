@@ -1,4 +1,6 @@
 import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
+import { ormModel } from '../access/orm-client.js'
+import type { OrmClient } from '../access/types.js'
 import type { AccessContext, FieldAccess, PrismaFilter } from '../access/types.js'
 import {
   checkAccess,
@@ -22,7 +24,6 @@ import {
   splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
-import { getDbKey } from '../lib/case-utils.js'
 import { applyCreateDefaults } from './apply-defaults.js'
 
 /**
@@ -165,7 +166,7 @@ async function capturePreExistingIds(
   parentListName: string,
   parentOriginalItem: Record<string, unknown> | undefined,
   fieldName: string,
-  prisma: unknown,
+  prisma: OrmClient,
 ): Promise<Set<string>> {
   const ids = new Set<string>()
   const parentId = parentOriginalItem?.id
@@ -175,10 +176,7 @@ async function capturePreExistingIds(
   }
 
   // Access Prisma model dynamically - required because model names are generated at runtime
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parentModel = (prisma as any)[getDbKey(parentListName)]
-  if (!parentModel?.findUnique) return ids
-
+  const parentModel = ormModel(prisma, parentListName)
   const current = await parentModel.findUnique({
     where: { id: parentId },
     include: { [fieldName]: true },
@@ -202,7 +200,7 @@ async function processNestedCreate(
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
-  prisma: unknown,
+  prisma: OrmClient,
   afterTasks: AfterTask[],
   recovery: CreatedRowRecovery,
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
@@ -393,15 +391,14 @@ async function verifyConnectReachable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
-  prisma: unknown,
+  prisma: OrmClient,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
   enclosingItem: Record<string, unknown> | undefined,
   enclosingInputData: Record<string, unknown> | undefined,
 ): Promise<void> {
   // Access Prisma model dynamically - required because model names are generated at runtime
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const model = (prisma as any)[getDbKey(relatedListName)]
+  const model = ormModel(prisma, relatedListName)
 
   // #588 owning-field gate (see docblock above). `item`/`inputData` are the
   // ENCLOSING write's `originalItem`/`inputData` — the same values the canonical
@@ -458,7 +455,7 @@ async function processNestedConnect(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
-  prisma: unknown,
+  prisma: OrmClient,
   owningFieldAccess: FieldAccess | undefined,
   enclosingOperation: 'create' | 'update',
   enclosingItem: Record<string, unknown> | undefined,
@@ -522,7 +519,7 @@ async function processNestedUpdate(
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
-  prisma: unknown,
+  prisma: OrmClient,
   afterTasks: AfterTask[],
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
   const updatesArray = Array.isArray(updates) ? updates : [updates]
@@ -530,8 +527,7 @@ async function processNestedUpdate(
   const processedUpdates = await Promise.all(
     updatesArray.map(async (update) => {
       // Access Prisma model dynamically - required because model names are generated at runtime
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = (prisma as any)[getDbKey(relatedListName)]
+      const model = ormModel(prisma, relatedListName)
 
       const where = (update as Record<string, unknown>).where as Record<string, unknown>
 
@@ -717,7 +713,7 @@ async function processNestedDelete(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
-  prisma: unknown,
+  prisma: OrmClient,
   afterTasks: AfterTask[],
 ): Promise<Record<string, unknown> | Array<Record<string, unknown>> | boolean> {
   // A to-one relation delete can be a boolean (`{ delete: true }`); there is no
@@ -730,8 +726,7 @@ async function processNestedDelete(
 
   await Promise.all(
     deletesArray.map(async (del) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = (prisma as any)[getDbKey(relatedListName)]
+      const model = ormModel(prisma, relatedListName)
 
       // A nested delete entry is itself the unique `where` (e.g. `{ id }`).
       const where = del as Record<string, unknown>
@@ -826,7 +821,7 @@ async function processNestedConnectOrCreate(
   relatedListConfig: ListConfig<any>,
   context: AccessContext,
   config: OpenSaasConfig,
-  prisma: unknown,
+  prisma: OrmClient,
   afterTasks: AfterTask[],
   recovery: CreatedRowRecovery,
   owningFieldAccess: FieldAccess | undefined,
@@ -847,8 +842,7 @@ async function processNestedConnectOrCreate(
       // — only a genuine "row absent" may fall back to create.
       let rowExists = false
       if (!context._isSudo) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const model = (prisma as any)[getDbKey(relatedListName)]
+        const model = ormModel(prisma, relatedListName)
         const where = opRecord.where as Record<string, unknown>
 
         const existingItem = await model.findUnique({ where })
@@ -948,7 +942,7 @@ interface NestedOpHandlerArgs {
   context: AccessContext
   config: OpenSaasConfig
   /** Prisma client used for dynamic model access during access checks. */
-  prisma: unknown
+  prisma: OrmClient
   /** Collector for deferred nested `afterOperation` tasks. */
   afterTasks: AfterTask[]
   /**

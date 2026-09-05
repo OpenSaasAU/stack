@@ -19,7 +19,7 @@ import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemFor
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
 export interface ItemFormProps {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
@@ -141,7 +141,7 @@ async function ItemViewLayoutView({
   serverAction,
   layout,
 }: {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   listConfig: AnyListConfig
   listKey: string
@@ -327,7 +327,7 @@ export async function ItemForm({
     }
   }
 
-  let itemData: Record<string, unknown> = {}
+  let itemData: Record<string, unknown> | null = {}
   if (mode === 'edit' && itemId) {
     try {
       const includeRelationships = buildRelationshipInclude(listConfig)

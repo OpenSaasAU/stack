@@ -42,7 +42,7 @@ export interface RelationshipTableProps {
    * The access-scoped context, used to evaluate the related list's own access
    * (removal, create, and inline-edit gating) — never the parent's.
    */
-  context: AccessContext<unknown>
+  context: AccessContext
   /** The list being edited (the parent record's list). */
   parentListKey: string
   /** The parent record's id — the disconnect target for many-to-many rows. */
@@ -60,7 +60,7 @@ export interface RelationshipTableProps {
 async function resolveRemoveMode(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<RemoveMode> {
   if (section.removeAction === 'none' || !relatedListConfig) return null
 
@@ -102,7 +102,7 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
 export async function resolveEditableColumns(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<string[]> {
   if (!relatedListConfig) return []
 
@@ -154,7 +154,7 @@ async function resolveCreateForm(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
   config: OpenSaasConfig,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<CreateFormData | null> {
   if (!section.backReferenceField || !relatedListConfig) return null
 

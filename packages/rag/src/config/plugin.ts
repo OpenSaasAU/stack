@@ -201,26 +201,20 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
                 const allItems = await context.db[dbKey].findMany()
 
-                const results = allItems
-                  .map((item: { [key: string]: { vector: number[] } | null }) => {
-                    const embedding = item[field]
-                    if (!embedding || !embedding.vector) return null
+                const scored: { item: Record<string, unknown>; score: number }[] = []
+                for (const item of allItems) {
+                  const embedding = item[field]
+                  const vector = readStoredVector(embedding)
+                  if (!vector) continue
 
-                    const score = cosineSimilarity(queryVector, embedding.vector)
-                    return { item, score }
-                  })
-                  .filter((r: { score: number } | null) => r !== null && r.score >= minScore)
-                  .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
-                  .slice(0, limit)
+                  const score = cosineSimilarity(queryVector, vector)
+                  if (score >= minScore) scored.push({ item, score })
+                }
+
+                const results = scored.sort((a, b) => b.score - a.score).slice(0, limit)
 
                 return {
-                  results: results.map((r: { item: unknown; score: number }) => {
-                    const item = r.item as Record<string, unknown>
-                    return {
-                      ...item,
-                      _similarity: r.score,
-                    }
-                  }),
+                  results: results.map((r) => ({ ...r.item, _similarity: r.score })),
                   count: results.length,
                 }
               },
@@ -273,6 +267,18 @@ async function hashText(text: string): Promise<string> {
     hash = hash & hash // Convert to 32-bit integer
   }
   return hash.toString(36)
+}
+
+/**
+ * Read the embedding off a stored column. The row comes back from the secured
+ * surface untyped — the per-list types live in the generated bundle — so the
+ * shape this plugin wrote is checked rather than assumed.
+ */
+function readStoredVector(value: unknown): number[] | null {
+  if (typeof value !== 'object' || value === null) return null
+  const vector = (value as { vector?: unknown }).vector
+  if (!Array.isArray(vector)) return null
+  return vector.every((entry) => typeof entry === 'number') ? (vector as number[]) : null
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {

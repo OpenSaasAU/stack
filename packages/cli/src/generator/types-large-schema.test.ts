@@ -1,36 +1,66 @@
-import { describe, it, expect } from 'vitest'
-import * as path from 'path'
-import * as fs from 'fs'
-import * as os from 'os'
-import ts from 'typescript'
-import { generateTypes } from './types.js'
-import type { OpenSaasConfig, ListConfig } from '@opensaas/stack-core'
-import { text, integer, checkbox, json, relationship } from '@opensaas/stack-core/fields'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { checkbox, integer, json, relationship, text, virtual } from '@opensaas/stack-core/fields'
+import {
+  CONSUMER_PRELUDE,
+  emitTypeFixture,
+  type TypeFixture,
+} from '../../tests/emit-type-fixture.js'
 
 /**
- * Regression test for #952: the generated `Context`/`CustomDB` type must
- * type-check under `tsc --noEmit` for a realistically large schema (20
- * lists, a mix of scalar/json/relationship fields, and a relationship
- * chain that forces each list's generated `GetPayload<T>` to reference its
- * neighbours). Before the fix, this reliably hit
- * `TS2589: Type instantiation is excessively deep and possibly infinite`.
+ * The generated bundle for a realistically large schema has to type-check
+ * against a REAL emitted `contract.d.ts`, under the two gates ADR-0054 puts on
+ * the bundle (`erasableSyntaxOnly`, `verbatimModuleSyntax`).
+ *
+ * Its original job (#952 / ADR-0032) was catching `TS2589: Type instantiation
+ * is excessively deep` once a schema grew past a handful of lists, and it
+ * keeps it: the per-list shapes are now core generics instantiated 22 times
+ * over a mutually-recursive relation graph, which is exactly the shape that
+ * used to blow up. What changed is that the contract is emitted rather than
+ * stubbed, so the types being checked are the ones an application gets.
+ *
+ * It also pins the app-facing names (PRD user story 10), the include
+ * narrowing (ADR-0058) and the declared-dependency item type (ADR-0051) —
+ * every one of them a claim about the generics, not about generated text.
  */
 
-const COMPILE_TIMEOUT_MS = 120_000
 const LIST_COUNT = 20
 
 function buildLargeSchemaConfig(): OpenSaasConfig {
-  const lists: Record<string, ListConfig> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over per-list TypeInfo
+  const lists: Record<string, ListConfig<any>> = {
     Tenant: {
       fields: {
         name: text({ validation: { isRequired: true } }),
+      },
+    },
+    Settings: {
+      isSingleton: true,
+      fields: {
+        siteName: text({ defaultValue: 'Fixture' }),
+      },
+    },
+    // A computed field over a RELATION: ADR-0051 widens the read to the
+    // relation AND the foreign-key column this side owns, so the item type
+    // has to carry both. It sits on a list of its own because `list()` cannot
+    // tell which field a `virtual()` call will be bound to, so a second
+    // computed field here would widen both hooks' `item` to a union.
+    Membership: {
+      fields: {
+        role: text(),
+        tenant: relationship({ ref: 'Tenant' }),
+        owner: virtual({
+          type: 'string',
+          needs: ['tenant'],
+          hooks: { resolveOutput: ({ item }) => `${item.tenantId ?? ''}` },
+        }),
       },
     },
   }
 
   for (let i = 0; i < LIST_COUNT; i++) {
     const listName = `Model${i}`
-    const prevListName = i === 0 ? null : `Model${i - 1}`
+    const previousListName = i === 0 ? null : `Model${i - 1}`
     const hasNext = i < LIST_COUNT - 1
 
     lists[listName] = {
@@ -41,115 +71,235 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
         active: checkbox({ defaultValue: false }),
         metaA: json(),
         metaB: json(),
+        // A computed field over a sibling column: `needs` widened to stored
+        // columns by ADR-0051, and the type of what its hook is handed.
+        summary: virtual({
+          type: 'string',
+          needs: ['title'],
+          hooks: { resolveOutput: ({ item }) => `${item.title}` },
+        }),
         tenant: relationship({ ref: 'Tenant' }),
-        ...(prevListName
-          ? { previous: relationship({ ref: `${prevListName}.next`, many: false }) }
+        ...(previousListName
+          ? { previous: relationship({ ref: `${previousListName}.next`, many: false }) }
           : {}),
         ...(hasNext ? { next: relationship({ ref: `Model${i + 1}.previous`, many: true }) } : {}),
       },
     }
   }
 
-  return {
-    db: { provider: 'postgresql' },
-    lists,
-  }
+  return { db: { provider: 'postgresql' }, lists }
 }
 
-const CORE_STUB = `
-export interface Session { [key: string]: unknown }
-export interface AccessContext<P = unknown> {
-  db: unknown
-  session: Session
-  prisma: P
-  storage: unknown
-  plugins: Record<string, unknown>
-  _isSudo: boolean
+describe('the generated bundle for a 23-list schema', () => {
+  let fixture: TypeFixture
+
+  beforeAll(() => {
+    fixture = emitTypeFixture('large-schema', buildLargeSchemaConfig())
+  }, 300_000)
+
+  afterAll(() => {
+    fixture?.cleanup()
+  })
+
+  it(
+    'type-checks against the emitted contract, with the app-facing names intact',
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type {
+  BaseContext,
+  Context,
+  Model0,
+  Model0CreateInput,
+  Model0UpdateInput,
+  TransactionContext,
+} from './.opensaas/types.ts'
+import type { Lists } from './.opensaas/lists.ts'
+
+declare const context: Context
+declare const base: BaseContext
+declare const tx: TransactionContext
+
+// PRD user story 10: these names survive the migration.
+declare const row: Model0
+declare const create: Model0CreateInput
+declare const update: Model0UpdateInput
+type Info = Lists.Model0.TypeInfo
+
+assertType<Exact<Info['key'], 'Model0'>>()
+assertType<Exact<Info['output'], Model0>>()
+assertType<Exact<Info['inputs']['create'], Model0CreateInput>>()
+assertType<Exact<Info['inputs']['update'], Model0UpdateInput>>()
+
+async function run() {
+  // The self-referential \`sudo()\` over a 23-list \`DB\` is what used to hit TS2589.
+  const sudoed = context.sudo()
+  const one = await sudoed.db.model0.findUnique({ where: { id: '1' } })
+  const many = await context.db.model10.findMany({ include: { previous: true, next: true } })
+  const made = await context.db.model5.create({
+    data: { title: 't', code: 'c', tenant: { connect: { id: 't1' } } },
+  })
+  void one
+  void many
+  void made
+  void base.db
+  void tx.db
 }
-`
 
-const CORE_INTERNAL_STUB = `
-export type StorageUtils = unknown
-export type ServerActionProps = unknown
-export type PrismaClientLike = unknown
-export type AccessControlledDB<P> = Record<string, unknown>
-export type Fragment<A, B> = unknown
-export type FieldSelection<A> = unknown
-`
+void run
+void row
+void create
+void update
+`)
 
-const PLUGIN_TYPES_STUB = `export type PluginServices = unknown\n`
+      expect(output).toBe('')
+    },
+  )
 
-const CONSUMER = `
-import type { Context } from './types.ts'
+  it('types an included to-one as | null and a to-many as []', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, Model0, Model1, Tenant } from './.opensaas/types.ts'
 
 declare const context: Context
 
 async function run() {
-  const model0 = await context.db.model0.findUnique({ where: { id: '1' }, include: { tenant: true, next: true } })
-  const created = await context.db.model5.create({ data: { title: 't', code: 'c', tenant: { connect: { id: 't1' } } } })
-  const sudoContext = context.sudo()
-  const nested = await sudoContext.db.model10.findMany({ include: { previous: true, next: true } })
-  void model0
-  void created
-  void nested
+  const rows = await context.db.model1.findMany({ include: { previous: true, tenant: true } })
+  // ADR-0058: arity decides, not the column. \`tenant\` and \`previous\` are both
+  // to-one, so both read \`| null\` however their foreign key is declared.
+  assertType<Exact<(typeof rows)[number]['previous'], Model0 | null>>()
+  assertType<Exact<(typeof rows)[number]['tenant'], Tenant | null>>()
+
+  const withMany = await context.db.model0.findMany({ include: { next: true } })
+  assertType<Exact<(typeof withMany)[number]['next'], Model1[]>>()
+
+  // A relation the caller did not name is optional, not present (ADR-0024).
+  const bare = await context.db.model1.findMany()
+  assertType<Exact<(typeof bare)[number]['previous'], Model0 | null | undefined>>()
+
+  // A nested include narrows one hop further and keeps the same arity rule.
+  const nested = await context.db.model1.findMany({
+    include: { previous: { include: { next: true } } },
+  })
+  const nestedToOne: Model0 | null = nested[0].previous
+  // @ts-expect-error the nested to-one is \`| null\` too
+  const nestedNotNull: Model0 = nested[0].previous
+  const nestedToMany: Model1[] = nested[0].previous?.next ?? []
+  void nestedToOne
+  void nestedNotNull
+  void nestedToMany
 }
 
 void run
-`
+`)
 
-function compileFixture(generatedTypes: string): ts.Diagnostic[] {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-large-schema-'))
-  try {
-    fs.writeFileSync(path.join(dir, 'types.ts'), generatedTypes)
-    fs.writeFileSync(path.join(dir, 'consumer.ts'), CONSUMER)
+    expect(output).toBe('')
+  })
 
-    const coreDir = path.join(dir, '_stubs')
-    fs.mkdirSync(coreDir, { recursive: true })
-    fs.writeFileSync(path.join(coreDir, 'core.ts'), CORE_STUB)
-    fs.writeFileSync(path.join(coreDir, 'core-internal.ts'), CORE_INTERNAL_STUB)
-    fs.writeFileSync(path.join(dir, 'plugin-types.ts'), PLUGIN_TYPES_STUB)
-    fs.writeFileSync(
-      path.join(coreDir, 'decimal.ts'),
-      'export class Decimal { constructor(_v: string | number) {} }\n',
-    )
-
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.Bundler,
-      strict: true,
-      noEmit: true,
-      skipLibCheck: true,
-      allowImportingTsExtensions: true,
-      paths: {
-        '@opensaas/stack-core': [path.join(coreDir, 'core.ts')],
-        '@opensaas/stack-core/internal': [path.join(coreDir, 'core-internal.ts')],
-        'decimal.js': [path.join(coreDir, 'decimal.ts')],
-      },
-    }
-
-    const rootNames = [path.join(dir, 'types.ts'), path.join(dir, 'consumer.ts')]
-    const program = ts.createProgram({ rootNames, options: compilerOptions })
-    return [...ts.getPreEmitDiagnostics(program)]
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
-
-describe('large-schema Context/CustomDB type-checks (#952)', () => {
   it(
-    `type-checks a generated Context/CustomDB for ${LIST_COUNT + 1} lists without TS2589`,
-    { timeout: COMPILE_TIMEOUT_MS },
+    'narrows a resolveOutput hook item to its declared dependency set',
+    { timeout: 300_000 },
     () => {
-      const config = buildLargeSchemaConfig()
-      const generated = generateTypes(config)
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Lists } from './.opensaas/lists.ts'
+import { list } from '@opensaas/stack-core'
+import { virtual } from '@opensaas/stack-core/fields'
 
-      const diagnostics = compileFixture(generated)
-      const messages = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+// ADR-0051: the runtime hands the hook exactly its declared set plus the
+// list's system fields, and the type says so.
+const declared = list<Lists.Model0.TypeInfo>({
+  fields: {
+    summary: virtual({
+      type: 'string',
+      needs: ['title'],
+      hooks: { resolveOutput: ({ item }) => item.title },
+    }),
+  },
+})
 
-      const depthErrors = messages.filter((m) => m.includes('excessively deep'))
-      expect(depthErrors).toEqual([])
-      expect(messages).toEqual([])
+const alsoDeclared = list<Lists.Model0.TypeInfo>({
+  fields: {
+    summary: virtual({
+      type: 'string',
+      needs: ['title'],
+      // System fields are always fetched, so they are always readable.
+      hooks: { resolveOutput: ({ item }) => \`\${item.id}:\${item.title}\` },
+    }),
+  },
+})
+
+const undeclared = list<Lists.Model0.TypeInfo>({
+  fields: {
+    summary: virtual({
+      type: 'string',
+      needs: ['title'],
+      hooks: {
+        // @ts-expect-error \`code\` is not in this field's declared dependency set
+        resolveOutput: ({ item }) => item.code,
+      },
+    }),
+  },
+})
+
+void declared
+void alsoDeclared
+void undeclared
+`)
+
+      expect(output).toBe('')
     },
   )
+
+  it('carries the foreign-key column a declared relation implies', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Lists } from './.opensaas/lists.ts'
+import { list } from '@opensaas/stack-core'
+import { virtual } from '@opensaas/stack-core/fields'
+
+// ADR-0051: \`needs: ['tenant']\` widens the read to the relation and to the
+// foreign-key column Membership owns for it, and the list carries no
+// timestamps, so \`id\` is its only system field. The runtime table and this
+// type are the same rows of one derivation (#1136).
+type OwnerItem = Lists.Membership.Needs['owner']['item']
+assertType<Exact<keyof OwnerItem, 'id' | 'tenantId' | 'tenant'>>()
+
+declare const ownerItem: OwnerItem
+// The foreign-key column, which a type rendered from the declaration alone
+// would have left off entirely.
+const foreignKey: string | null = ownerItem.tenantId
+// The relation one hop deep, \`| null\` because the Access Filter can scope the
+// related row away even though the declaration keeps the key present.
+const tenantName: string | null = ownerItem.tenant === null ? null : ownerItem.tenant.name
+
+const declared = list<Lists.Membership.TypeInfo>({
+  fields: {
+    owner: virtual({
+      type: 'string',
+      needs: ['tenant'],
+      hooks: { resolveOutput: ({ item }) => \`\${item.tenantId ?? ''}\` },
+    }),
+  },
+})
+
+void foreignKey
+void tenantName
+
+const undeclared = list<Lists.Membership.TypeInfo>({
+  fields: {
+    owner: virtual({
+      type: 'string',
+      needs: ['tenant'],
+      hooks: {
+        // @ts-expect-error \`role\` is not in this field's declared dependency set
+        resolveOutput: ({ item }) => item.role,
+      },
+    }),
+  },
+})
+
+void declared
+void undeclared
+`)
+
+    expect(output).toBe('')
+  })
 })
