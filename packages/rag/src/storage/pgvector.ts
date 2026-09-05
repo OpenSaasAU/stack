@@ -2,8 +2,23 @@ import type { VectorStorage, SearchOptions } from './types.js'
 import type { SearchResult } from '../config/types.js'
 import type { PgVectorStorageConfig } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
+import type { OrmClient } from '@opensaas/stack-core'
 import { getDbKey } from '@opensaas/stack-core'
 import { buildAccessControlFilter, mergeAccessFilter, prismaFilterToSQL } from './access-filter.js'
+
+/** The one ORM client method this backend needs beyond the secured surface. */
+type RawQueryable = {
+  $queryRawUnsafe: (sql: string) => Promise<unknown>
+}
+
+/**
+ * `$queryRawUnsafe` dereferences `this`, so the client must stay the receiver
+ * of the call — narrowing the client rather than lifting the method off it is
+ * what keeps that true.
+ */
+function isRawQueryable(client: OrmClient | undefined): client is OrmClient & RawQueryable {
+  return typeof client?.$queryRawUnsafe === 'function'
+}
 
 /**
  * pgvector storage backend. Requires the Postgres `vector` extension: `CREATE EXTENSION vector;`
@@ -68,9 +83,9 @@ export class PgVectorStorage implements VectorStorage {
     // filter below must be built and merged into the WHERE clause manually.
 
     try {
-      const queryRawUnsafe = context.prisma?.$queryRawUnsafe
+      const prisma = context.prisma
 
-      if (typeof queryRawUnsafe !== 'function') {
+      if (!isRawQueryable(prisma)) {
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +
@@ -97,8 +112,7 @@ export class PgVectorStorage implements VectorStorage {
       const tableName = listKey // Prisma table names match the model name (PascalCase by default)
       const sqlWhereClause = prismaFilterToSQL(combinedFilter, tableName)
 
-      const runRawQuery = queryRawUnsafe as (sql: string) => Promise<unknown>
-      const results = (await runRawQuery(`
+      const results = (await prisma.$queryRawUnsafe(`
         SELECT id,
                (("${fieldName}"->>'vector')::vector ${distanceOp} '${vectorString}'::vector) as distance
         FROM "${tableName}"

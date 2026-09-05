@@ -33,7 +33,9 @@ import {
  *    a `string`, so a `Date` is a compile error);
  *  - `connect` is offered on the foreign-key-owning side, and the foreign-key
  *    column itself stays writable (ADR-0050);
- *  - update is partial.
+ *  - update is partial;
+ *  - every write terminal admits silent denial — `create` is `| null`, and the
+ *    per-item batches carry `null` in a denied item's position.
  *
  * The `@ts-expect-error` markers make a zero-diagnostic compile the proof:
  * each marker must catch an error, and every other line must type-check.
@@ -59,6 +61,13 @@ const config: OpenSaasConfig = {
           db: { type: 'enum' },
         }),
         owner: relationship({ ref: 'User' }),
+      },
+    },
+    // ADR-0058's criterion needs a to-one whose foreign key is NOT nullable,
+    // so the arity rule can be told apart from a nullability-driven one.
+    Booking: {
+      fields: {
+        host: relationship({ ref: 'User', db: { isNullable: false } }),
       },
     },
   },
@@ -128,6 +137,95 @@ assertType<Exact<Parameters<Context['db']['event']['create']>[0]['data'], EventC
 void run
 void create
 void update
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('admits silent denial at every write terminal', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, Event } from './.opensaas/types.ts'
+
+type Created = Awaited<ReturnType<Context['db']['event']['create']>>
+type CreatedMany = Awaited<ReturnType<Context['db']['event']['createMany']>>
+type UpdatedMany = Awaited<ReturnType<Context['db']['event']['updateMany']>>
+type Found = Awaited<ReturnType<Context['db']['event']['findMany']>>
+
+declare const created: Created
+declare const createdMany: CreatedMany
+declare const updatedMany: UpdatedMany
+declare const found: Found
+
+// A denied create returns null rather than throwing, so the caller must check.
+const maybeCreated: Event | null = created
+// @ts-expect-error a denied create is null
+const alwaysCreated: Event = created
+
+// \`createMany\` and \`updateMany\` run one secured write per item, so a partial
+// denial leaves a null in that item's position.
+const maybeEach: (Event | null)[] = createdMany
+// @ts-expect-error a denied item in the batch is null
+const alwaysEach: Event[] = createdMany
+
+const maybeEachUpdated: (Event | null)[] = updatedMany
+// @ts-expect-error a denied item in the batch is null
+const alwaysEachUpdated: Event[] = updatedMany
+
+// A denied read of many is an empty array, not an array of nulls.
+const alwaysFound: Event[] = found
+
+void maybeCreated
+void alwaysCreated
+void maybeEach
+void alwaysEach
+void maybeEachUpdated
+void alwaysEachUpdated
+void alwaysFound
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('reads a required to-one as | null all the same', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context, User } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // ADR-0058: arity decides, not the column. \`host\`'s foreign key is
+  // non-nullable, and the included row is still \`| null\` — the Access Filter
+  // can scope it away even when the database cannot.
+  const rows = await context.db.booking.findMany({ include: { host: true } })
+  assertType<Exact<(typeof rows)[number]['host'], User | null>>()
+
+  // …and the write side still requires it.
+  await context.db.booking.create({ data: { host: { connect: { id: 'u1' } } } })
+
+  // @ts-expect-error \`host\` is non-nullable with no default
+  await context.db.booking.create({ data: {} })
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('refuses the pre-ADR-0052 spelling of StackContext', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { StackContext } from '@opensaas/stack-core'
+import type { DB } from './.opensaas/types.ts'
+
+type Current = StackContext<DB>
+
+// @ts-expect-error the first parameter is the secured \`db\` surface, not the client
+type Stale = StackContext<{ post: object; $connect: () => Promise<void> }>
+
+declare const current: Current
+declare const stale: Stale
+void current
+void stale
 `)
 
     expect(output).toBe('')

@@ -238,7 +238,7 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
     data: CreateInput<C, R, K>
     select?: S
     include?: I
-  }) => Promise<QueryResult<C, R, K, S, I>>
+  }) => Promise<QueryResult<C, R, K, S, I> | null>
 
   createMany: <
     S extends ListSelect<C, R, K> = never,
@@ -247,7 +247,7 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
     data: CreateInput<C, R, K>[]
     select?: S
     include?: I
-  }) => Promise<QueryResult<C, R, K, S, I>[]>
+  }) => Promise<(QueryResult<C, R, K, S, I> | null)[]>
 
   update: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
     where: ListUniqueWhere<C, R, K>
@@ -264,7 +264,7 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
     data: UpdateInput<C, R, K>
     select?: S
     include?: I
-  }) => Promise<QueryResult<C, R, K, S, I>[]>
+  }) => Promise<(QueryResult<C, R, K, S, I> | null)[]>
 
   delete: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
     where: ListUniqueWhere<C, R, K>
@@ -277,9 +277,10 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
 
 /**
  * One list's access-controlled surface, keyed by the emitted contract and the
- * generated remainder. Every operation returns `null` (single record) or `[]`
- * (multiple) when access is denied rather than throwing, so a caller checks
- * for `null` rather than catching.
+ * generated remainder. Denial is silent rather than thrown, so a caller checks
+ * rather than catches: a single-record terminal returns `null`, a read of many
+ * returns `[]`, and `createMany`/`updateMany` — which run one secured write per
+ * item — return `null` in the position of each item that was denied.
  *
  * This is the type `.opensaas/types.ts` names per list:
  *

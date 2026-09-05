@@ -99,15 +99,6 @@ export interface WriteStrategy {
 }
 
 /**
- * Resolve the dynamic Prisma model for a list. Model names are generated at
- * runtime, so the cast is unavoidable — kept localized here (mirrors
- * `context/index.ts`).
- */
-function getModel(prisma: OrmClient, listName: string): PrismaModel {
-  return ormModel(prisma, listName)
-}
-
-/**
  * Minimal shape of a Prisma interactive-transaction-capable client. `tx` is
  * dynamically typed like the model surface above (names generated at runtime).
  */
@@ -184,7 +175,7 @@ export async function runWritePipeline(
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(getModel(prisma, listName))
+  const gate = await strategy.resolveTarget(ormModel(prisma, listName))
   if (gate.status === 'denied') {
     return null
   }
@@ -283,7 +274,7 @@ async function runWriteInTransaction(
 ): Promise<Record<string, unknown> | null> {
   const { listName, listConfig, prisma: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
-  const model = getModel(tx, listName)
+  const model = ormModel(tx, listName)
 
   // ── Phase 1: resolve target + operation-level access ──────────────────────
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than

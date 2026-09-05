@@ -177,8 +177,6 @@ async function capturePreExistingIds(
 
   // Access Prisma model dynamically - required because model names are generated at runtime
   const parentModel = ormModel(prisma, parentListName)
-  if (!parentModel?.findUnique) return ids
-
   const current = await parentModel.findUnique({
     where: { id: parentId },
     include: { [fieldName]: true },

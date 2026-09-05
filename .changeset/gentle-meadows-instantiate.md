@@ -28,17 +28,22 @@ export type Remainder = {
   }
 }
 
-export interface User extends Row<Contract, Remainder, 'User'> {}
-export interface UserCreateInput extends CreateInput<Contract, Remainder, 'User'> {}
-export interface UserUpdateInput extends UpdateInput<Contract, Remainder, 'User'> {}
-export interface UserList extends SecuredList<Contract, Remainder, 'User'> {}
+export interface User extends Stack$Row<Stack$Contract, Remainder, 'User'> {}
+export interface UserCreateInput extends Stack$CreateInput<Stack$Contract, Remainder, 'User'> {}
+export interface UserUpdateInput extends Stack$UpdateInput<Stack$Contract, Remainder, 'User'> {}
+export interface UserList extends Stack$SecuredList<Stack$Contract, Remainder, 'User'> {}
 
-export interface Context<TSession extends Session = Session> extends StackContext<
+export interface Context<TSession extends Stack$Session = Stack$Session> extends Stack$StackContext<
   DB,
   TSession,
-  PluginServices
+  Stack$PluginServices
 > {}
 ```
+
+Everything the file imports is aliased behind `Stack$`, so a list may be named
+`Row`, `Contract` or `Session` without shadowing the generic its own interface
+is declared from. Only what is used is imported, so a bundle compiled under
+`noUnusedLocals` stays clean.
 
 `Post`, `PostCreateInput`, `PostUpdateInput`, `Context`, `BaseContext`,
 `TransactionContext` and `Lists.Post.TypeInfo` keep their names, so imports do
@@ -66,6 +71,16 @@ not change. What changes is what they mean:
 - **A write input is checked against the contract's columns.** A system-filled
   column (`id`, `createdAt`, `updatedAt`) is not writable, a non-nullable column
   with no default is required on create, and an unknown key is rejected.
+- **Every write terminal admits silent denial.** `create` returns
+  `Row | null`, and `createMany` / `updateMany` — which run one secured write
+  per item — return `(Row | null)[]`, so a partially denied batch is visible in
+  the type. Code that used a create result without checking now fails `tsc`:
+
+  ```typescript
+  const post = await context.db.post.create({ data })
+  if (!post) return { error: 'Access denied' }
+  ```
+
 - Every per-list `GetPayload`, `Select`, `Include`, `WhereInput`, `*Args`,
   `VirtualFields`, `TransformedFields` and `{List}Crud` type is gone;
   `CustomDB` is now `DB`.
@@ -80,6 +95,15 @@ function render(context: AccessContext<unknown>) {}
 // After
 function render(context: AccessContext) {}
 ```
+
+`StackContext`'s first parameter is now the generated `db` surface, not the
+client, and refuses one: a stale `StackContext<MyPrismaClient>` fails its
+constraint rather than silently meaning `db: MyPrismaClient`.
+
+`pnpm generate` now refuses two configs it used to emit uncompilable code for:
+a virtual field with no declared `outputType`, and two lists whose generated
+names collide (`Post` and `PostList` both want `PostList`). Both errors name the
+list and field involved.
 
 The bundle's type-only import of the emitted declarations is now
 `'../prisma/contract.d.js'`. `'../prisma/contract.d.ts'` resolved to the

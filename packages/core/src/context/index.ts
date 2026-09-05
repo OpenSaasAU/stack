@@ -1528,9 +1528,6 @@ function createGet(
   }) => {
     warnIfSelectIgnored(args, listName, 'get')
 
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(prisma, listName)
-
     let where: Record<string, unknown> = {}
     if (!context._isSudo) {
       const queryAccess = listConfig.access?.operation?.query
@@ -1570,6 +1567,8 @@ function createGet(
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
+    // Access Prisma model dynamically - required because model names are generated at runtime
+    const model = ormModel(prisma, listName)
     const item = await model.findFirst({
       where,
       include,

@@ -159,6 +159,18 @@ async function run() {
   // A relation the caller did not name is optional, not present (ADR-0024).
   const bare = await context.db.model1.findMany()
   assertType<Exact<(typeof bare)[number]['previous'], Model0 | null | undefined>>()
+
+  // A nested include narrows one hop further and keeps the same arity rule.
+  const nested = await context.db.model1.findMany({
+    include: { previous: { include: { next: true } } },
+  })
+  const nestedToOne: Model0 | null = nested[0].previous
+  // @ts-expect-error the nested to-one is \`| null\` too
+  const nestedNotNull: Model0 = nested[0].previous
+  const nestedToMany: Model1[] = nested[0].previous?.next ?? []
+  void nestedToOne
+  void nestedNotNull
+  void nestedToMany
 }
 
 void run

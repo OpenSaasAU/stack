@@ -202,8 +202,9 @@ export interface AugmentedFindUnique {
 
 /**
  * One list's access-controlled delegate. Every operation runs the list's
- * access rules and hooks, and returns `null` (single record) or `[]`
- * (multiple) on denial rather than throwing (Silent failure).
+ * access rules and hooks, and denial is silent rather than thrown: a
+ * single-record terminal returns `null`, a read of many returns `[]`, and
+ * `createMany`/`updateMany` return `null` per denied item (Silent failure).
  *
  * Rows are untyped here on purpose: the per-list shapes live in the generated
  * bundle, which instantiates `SecuredList` from the emitted contract
@@ -217,11 +218,42 @@ export interface AccessControlledDelegate {
   update: (args: OrmOperationArgs) => Promise<OrmRow | null>
   delete: (args: OrmOperationArgs) => Promise<OrmRow | null>
   count: (args?: OrmOperationArgs) => Promise<number>
-  createMany: (args: OrmOperationArgs) => Promise<OrmRow[]>
-  updateMany: (args: OrmOperationArgs) => Promise<OrmRow[]>
+  createMany: (args: OrmOperationArgs) => Promise<(OrmRow | null)[]>
+  updateMany: (args: OrmOperationArgs) => Promise<(OrmRow | null)[]>
   /** Present only on a list declared `isSingleton` (ADR-0039). */
   get?: (args?: OrmOperationArgs) => Promise<OrmRow | null>
 }
+
+/** The keys that mark an ORM client rather than a secured `db` surface. */
+type OrmClientMarker =
+  | '$connect'
+  | '$disconnect'
+  | '$transaction'
+  | '$extends'
+  | '$queryRaw'
+  | '$queryRawUnsafe'
+  | '$executeRaw'
+  | '$executeRawUnsafe'
+
+/**
+ * Reported in place of a bare `never` when an ORM client is passed where a
+ * secured `db` surface belongs, so the constraint failure names its own cause.
+ */
+export interface OrmClientIsNotADbSurface {
+  readonly 'StackContext takes the generated `db` surface, not the ORM client': never
+}
+
+/**
+ * The bound on a generated `db` surface. The generated `DB` is an `interface`
+ * (ADR-0032), which has no implicit index signature, so this cannot demand a
+ * per-member shape. What it can do is refuse what the parameter used to hold:
+ * before ADR-0052 `StackContext`'s first argument was the Prisma client, and
+ * `StackContext<MyPrismaClient>` would otherwise still compile and silently
+ * mean `db: MyPrismaClient`.
+ */
+export type StackDb<DB = object> = [Extract<keyof DB, OrmClientMarker>] extends [never]
+  ? object
+  : OrmClientIsNotADbSurface
 
 /**
  * The secured `db` surface, keyed by the camelCase db key of each list. List

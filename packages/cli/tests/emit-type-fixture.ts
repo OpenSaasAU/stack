@@ -95,7 +95,19 @@ export function emitTypeFixture(name: string, config: OpenSaasConfig): TypeFixtu
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      return `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+      if (result.error !== undefined) {
+        throw new Error(`tsc could not be run: ${result.error.message}`)
+      }
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+      // A caller asserts an empty result. Without this, a spawn that produced
+      // no output — a crash, a signal — would satisfy that assertion while
+      // checking nothing, and every fixture built on it would pass vacuously.
+      if (output === '' && result.status !== 0) {
+        throw new Error(
+          `tsc exited with status ${String(result.status)} and no diagnostics; nothing was checked`,
+        )
+      }
+      return output
     },
     cleanup() {
       fs.rmSync(scratchRoot, { recursive: true, force: true })

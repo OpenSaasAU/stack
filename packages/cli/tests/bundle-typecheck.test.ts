@@ -8,8 +8,10 @@ import { deriveContract } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import { resolveOutputPaths } from '../src/generator/output-paths.js'
 import { writeContext } from '../src/generator/context.js'
+import { writeContractModule } from '../src/generator/contract-module.js'
 import { writeLists } from '../src/generator/lists.js'
 import { writePluginTypes } from '../src/generator/plugin-types.js'
+import { writePrismaConfig } from '../src/generator/prisma-config.js'
 import { writeTypes } from '../src/generator/types.js'
 
 /**
@@ -18,9 +20,10 @@ import { writeTypes } from '../src/generator/types.js'
  * The equivalence suite type-checks `prisma/contract.ts` alone, which is why a
  * `.opensaas/types.ts` importing a Prisma client tree the pipeline no longer
  * writes could sit on green CI (#1134 review). This runs `tsc --noEmit` over
- * every file `opensaas generate` writes for the contract fixture — `types.ts`,
- * `lists.ts`, `context.ts`, `plugin-types.ts` — against the committed
- * `prisma/contract.d.ts` and `contract.json` they resolve into.
+ * every one of the six files `opensaas generate` writes for the contract
+ * fixture — `prisma/contract.ts`, `prisma.config.ts`, and the bundle's
+ * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts` — against the
+ * committed `prisma/contract.d.ts` and `contract.json` they resolve into.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules` for `@opensaas/stack-core` and `@prisma/orm-postgres`.
@@ -57,7 +60,7 @@ const TSCONFIG = {
     verbatimModuleSyntax: true,
     types: ['node'],
   },
-  include: ['opensaas.config.ts', '.opensaas/**/*.ts', 'prisma/**/*.ts'],
+  include: ['opensaas.config.ts', 'prisma.config.ts', '.opensaas/**/*.ts', 'prisma/**/*.ts'],
 }
 
 describe('the generated bundle type-checks', () => {
@@ -71,14 +74,11 @@ describe('the generated bundle type-checks', () => {
       path.join(fixtureRoot, 'opensaas.config.ts'),
       path.join(projectDir, 'opensaas.config.ts'),
     )
-    // The emitted artifacts are committed and CI proves they are current, so
-    // this reuses them rather than paying for another `prisma contract emit`.
-    //
-    // The Contract MODULE is copied alongside them deliberately: it sits in the
-    // same directory in a real project, and `./contract.d.ts` resolves to it
-    // rather than to the emitted declarations, so a scratch tree missing it
-    // would let that import land on the wrong file and still pass (#1136).
-    for (const artifact of ['contract.json', 'contract.d.ts', 'contract.ts']) {
+    // `prisma contract emit` writes these two, they are committed, and CI
+    // proves they are current — so this reuses them rather than paying for
+    // another emit. Everything else in the tree is written by the generator
+    // below, so the scratch project is what `opensaas generate` produces.
+    for (const artifact of ['contract.json', 'contract.d.ts']) {
       fs.copyFileSync(
         path.join(fixtureRoot, 'prisma', artifact),
         path.join(projectDir, 'prisma', artifact),
@@ -93,6 +93,15 @@ describe('the generated bundle type-checks', () => {
     const contractData = deriveContract(config)
 
     const { paths, crossReferences } = resolveOutputPaths(projectDir, config.output)
+    // The Contract MODULE lands beside the emitted declarations deliberately:
+    // it does so in a real project, and `./contract.d.ts` resolves to IT rather
+    // than to `contract.d.ts`, so a scratch tree missing it would let that
+    // import land on the wrong file and still pass (#1136).
+    writeContractModule(contractData, paths.contractModule)
+    writePrismaConfig(contractData, paths.prismaConfig, {
+      contractModule: crossReferences.prismaConfigContract,
+      outputDir: crossReferences.prismaConfigOutput,
+    })
     writeTypes(config, paths.types)
     writeLists(config, paths.lists)
     writeContext(config, contractData, paths.context, {
@@ -102,14 +111,47 @@ describe('the generated bundle type-checks', () => {
     writePluginTypes(config, paths.pluginTypes)
   }, 120_000)
 
-  test('writes the four bundle files', () => {
+  test('writes every file generate writes', () => {
     expect(fs.readdirSync(path.join(projectDir, '.opensaas')).sort()).toEqual([
       'context.ts',
       'lists.ts',
       'plugin-types.ts',
       'types.ts',
     ])
+    expect(fs.existsSync(path.join(projectDir, 'prisma.config.ts'))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, 'prisma', 'contract.ts'))).toBe(true)
   })
+
+  /**
+   * The tsconfig above has to reach all six. `prisma.config.ts` sits at the
+   * project root rather than under `.opensaas/` or `prisma/`, and went
+   * unchecked for exactly that reason (#1190 review).
+   */
+  test('the tsconfig include covers all six', () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'tsconfig.json'),
+      JSON.stringify(TSCONFIG, null, 2),
+      'utf-8',
+    )
+
+    const result = spawnSync(tscBinary, ['--project', projectDir, '--listFiles'], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const listed = `${result.stdout ?? ''}`.split('\n')
+
+    for (const generated of [
+      path.join(projectDir, 'prisma.config.ts'),
+      path.join(projectDir, 'prisma', 'contract.ts'),
+      path.join(projectDir, '.opensaas', 'types.ts'),
+      path.join(projectDir, '.opensaas', 'lists.ts'),
+      path.join(projectDir, '.opensaas', 'context.ts'),
+      path.join(projectDir, '.opensaas', 'plugin-types.ts'),
+    ]) {
+      expect(listed, generated).toContain(generated)
+    }
+  }, 180_000)
 
   test('references no Prisma client tree the pipeline never writes', () => {
     for (const file of ['types.ts', 'lists.ts', 'context.ts']) {

@@ -55,9 +55,13 @@ describe('the generated types file', () => {
   const types = generateTypes(config)
 
   it('keys every shape off the emitted contract', () => {
-    expect(types).toContain("import type { Contract } from '../prisma/contract.d.js'")
+    expect(types).toContain(
+      "import type { Contract as Stack$Contract } from '../prisma/contract.d.js'",
+    )
     expect(types).toContain("} from '@opensaas/stack-core'")
-    expect(types).toContain("import type { PluginServices } from './plugin-types.ts'")
+    expect(types).toContain(
+      "import type { PluginServices as Stack$PluginServices } from './plugin-types.ts'",
+    )
   })
 
   it('names a virtual field in `computed`, where the contract has no column', () => {
@@ -99,21 +103,21 @@ describe('the generated types file', () => {
   it('keeps the app-facing names, as named interfaces (ADR-0032)', () => {
     for (const name of ['User', 'Post', 'Settings']) {
       expect(types).toContain(
-        `export interface ${name} extends Row<Contract, Remainder, '${name}'>`,
+        `export interface ${name} extends Stack$Row<Stack$Contract, Remainder, '${name}'>`,
       )
       expect(types).toContain(
-        `export interface ${name}CreateInput extends CreateInput<Contract, Remainder, '${name}'>`,
+        `export interface ${name}CreateInput extends Stack$CreateInput<Stack$Contract, Remainder, '${name}'>`,
       )
       expect(types).toContain(
-        `export interface ${name}UpdateInput extends UpdateInput<Contract, Remainder, '${name}'>`,
+        `export interface ${name}UpdateInput extends Stack$UpdateInput<Stack$Contract, Remainder, '${name}'>`,
       )
       expect(types).toContain(
-        `export interface ${name}List extends SecuredList<Contract, Remainder, '${name}'>`,
+        `export interface ${name}List extends Stack$SecuredList<Stack$Contract, Remainder, '${name}'>`,
       )
     }
-    expect(types).toContain('export interface Context<TSession extends OpensaasSession')
-    expect(types).toContain('export interface BaseContext<TSession extends OpensaasSession')
-    expect(types).toContain('export interface TransactionContext<TSession extends OpensaasSession')
+    expect(types).toContain('export interface Context<TSession extends Stack$Session')
+    expect(types).toContain('export interface BaseContext<TSession extends Stack$Session')
+    expect(types).toContain('export interface TransactionContext<TSession extends Stack$Session')
   })
 
   it('keys the db surface by each list’s camelCase db key', () => {
@@ -151,5 +155,69 @@ describe('the generated types file', () => {
     expect(types).not.toContain('title: string')
     expect(types).not.toContain('age: number | null')
     expect(types).not.toContain('posts?:')
+  })
+})
+
+describe('what the generated types refuse to emit', () => {
+  it('imports NeedsRow only when a field declares dependencies', () => {
+    expect(generateTypes(config)).toContain('NeedsRow as Stack$NeedsRow')
+
+    const withoutNeeds = generateTypes({
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { title: text() } } },
+    })
+    // A project compiling `.opensaas/` under `noUnusedLocals` cannot edit
+    // generated code to silence an import it never uses.
+    expect(withoutNeeds).not.toContain('NeedsRow')
+  })
+
+  it('refuses a virtual field with no declared output type', () => {
+    expect(() =>
+      generateTypes({
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+              // A third-party field can set `virtual` without going through
+              // `virtual()`, which is the only way `outputType` goes missing.
+              summary: { type: 'summary', virtual: true },
+            },
+          },
+        },
+      }),
+    ).toThrow(/List "Post", field "summary".*outputType/s)
+  })
+
+  it('refuses two lists whose generated names collide', () => {
+    expect(() =>
+      generateTypes({
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: { fields: { title: text() } },
+          PostList: { fields: { title: text() } },
+        },
+      }),
+    ).toThrow(/"PostList" twice: list "Post", and list "PostList"/)
+  })
+
+  it('refuses a list that collides with the bundle’s own names', () => {
+    expect(() =>
+      generateTypes({
+        db: { provider: 'postgresql' },
+        lists: { Context: { fields: { title: text() } } },
+      }),
+    ).toThrow(/"Context" twice/)
+  })
+
+  it('lets a list take the name of a core generic', () => {
+    // The imports are aliased out of reach, so `Row` is the app's own list.
+    const types = generateTypes({
+      db: { provider: 'postgresql' },
+      lists: { Row: { fields: { title: text() } } },
+    })
+    expect(types).toContain(
+      "export interface Row extends Stack$Row<Stack$Contract, Remainder, 'Row'>",
+    )
   })
 })
