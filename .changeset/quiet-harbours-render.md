@@ -47,6 +47,8 @@ The generated `.opensaas/context.ts` constructs its client from the committed `c
 postgres<Contract>({ contractJson, url: resolveDatabaseUrl() })
 ```
 
-Core adds `resolveDatabaseUrl()` (throws when nothing is set) and `findDatabaseUrl()` (returns `undefined`) — the one place a connection string is read from `DIRECT_DATABASE_URL` or `DATABASE_URL` — plus `resolveListTimestamps`. `output.prismaSchema` is now `output.contractModule` (default `prisma/contract.ts`), and a plugin's `afterGenerate` receives `contractModule` where it received `prismaSchema`.
+Core adds `resolveDatabaseUrl()` (throws when nothing is set) and `findDatabaseUrl()` (returns `undefined`) — the one place a connection string is read from `DIRECT_DATABASE_URL` or `DATABASE_URL` — plus `resolveListTimestamps`. `output.prismaSchema` is now `output.contractModule` (default `prisma/contract.ts`), and a plugin's `afterGenerate` receives `contractModule` where it received `prismaSchema`. The hook runs **before** `prisma contract emit`, so a rewritten `contractModule` is the one the emitted artifacts describe and the one the relation-graph gate checks — a rewrite the toolchain rejects fails `opensaas generate` rather than landing on disk unemitted.
+
+Until the bundle is rewritten against `prisma/contract.d.ts`, the per-model `Select`, `Include`, `WhereInput`, `*Args` and write-`data` shapes in `.opensaas/types.ts` are unnarrowed placeholders: a query result is typed as the full model row (no `select`/`include` narrowing), and only the scalars OpenSaaS itself narrows are checked on a write.
 
 `authPlugin`'s per-model `indexes` no longer document a `sort` direction on a field reference; an index column cannot carry one, and a `sort` key is refused at generation.

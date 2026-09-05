@@ -20,6 +20,7 @@ import {
   multiSchemaConfig,
   nativeTypesConfig,
   oneToOneConfig,
+  hostileNamesConfig,
   ragConfig,
 } from '../../core/tests/fixtures/contract-configs.js'
 import { renderContractModule } from '../src/generator/contract-module.js'
@@ -52,6 +53,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'one-to-one', config: oneToOneConfig },
   { name: 'multi-schema', config: multiSchemaConfig },
   { name: 'native-types', config: nativeTypesConfig },
+  { name: 'hostile-names', config: hostileNamesConfig },
 ]
 
 describe('renderContractModule — the rendered module and the in-process derivation agree', () => {
@@ -206,4 +208,59 @@ describe('renderContractModule — the rendered module is valid TypeScript for t
     expect(`${result.stdout ?? ''}${result.stderr ?? ''}`.trim()).toBe('')
     expect(result.status).toBe(0)
   }, 120_000)
+})
+
+/**
+ * The structural deep-equal above cannot see any of this: an identifier
+ * collision throws (or silently binds the wrong value) only when the module is
+ * evaluated, and a broken string literal fails to parse. The `hostile-names`
+ * fixture is in the list above, so the evaluation and `tsc` passes cover it;
+ * these assertions name what it is there to hold.
+ */
+describe('renderContractModule — names and values the renderer has to survive', () => {
+  const source = renderContractModule(deriveContract(hostileNamesConfig))
+
+  test('a list named `models` does not shadow the callback’s model record', () => {
+    expect(source).toContain('const models: Record<string, ModelToken> = {}')
+    expect(source).toContain('const model_models = (models.models = model(')
+    expect(source).toContain('constraints.foreignKey(cols.ownerId, model_models.refs.id')
+  })
+
+  test('an enum keeps its own binding beside a model of the same name', () => {
+    expect(source).toContain("const enum_Status = nativeEnum('Status'")
+    expect(source).toContain("const model_Status = (models.Status = model('Status'")
+    expect(source).toContain("const model_StatusEnum = (models.StatusEnum = model('StatusEnum'")
+    expect(source).toContain('pg.enum(enum_Status)')
+  })
+
+  test('a non-identifier column name is quoted as a key and as a member', () => {
+    expect(source).toContain("'weird-key': field.text()")
+    expect(source).toContain("cols['weird-key']")
+  })
+
+  test('a quote, a backslash and every line terminator are escaped', () => {
+    const rendered = source
+      .split('\n')
+      .find((line) => line.includes('.default(') && line.includes('a CRLF'))
+
+    // One line: an unescaped CR, LF, U+2028 or U+2029 would have split it.
+    expect(rendered).toBeDefined()
+    expect(rendered).toContain("it\\'s \\\\ a quote")
+    expect(rendered).toContain('\\r\\n a CRLF')
+    expect(rendered).toContain('\\u2028 a line separator')
+    expect(rendered).toContain('\\u2029 a paragraph separator')
+    // Non-ASCII needs no escape; the file is written UTF-8.
+    expect(rendered).toContain('café')
+  })
+
+  test('a non-identifier table and index name are quoted', () => {
+    expect(source).toContain("table: 'weird\\'table\\\\name'")
+    expect(source).toContain("{ map: 'weird\\'index name' }")
+  })
+
+  test('renders no bare `undefined`', () => {
+    for (const { config } of fixtures) {
+      expect(renderContractModule(deriveContract(config))).not.toContain('undefined')
+    }
+  })
 })

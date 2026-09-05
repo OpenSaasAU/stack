@@ -346,18 +346,23 @@ const post = await context.db.post.delete({ where: { id } })
 
 ## Generators
 
-### Prisma Schema
+### Contract module
 
 ```typescript
-import { writePrismaSchema } from '@opensaas/stack-core'
+import { deriveContract } from '@opensaas/stack-core'
+import { writeContractModule } from '@opensaas/stack-cli/generator'
 
-writePrismaSchema(config, './prisma/schema.prisma')
+writeContractModule(deriveContract(config), './prisma/contract.ts')
 ```
+
+`prisma contract emit` then reads that module and writes `prisma/contract.json`
+and `prisma/contract.d.ts` — the artifacts the runtime executes. `opensaas
+generate` runs both steps.
 
 ### TypeScript Types
 
 ```typescript
-import { writeTypes } from '@opensaas/stack-core'
+import { writeTypes } from '@opensaas/stack-cli/generator'
 
 writeTypes(config, './.opensaas/types.ts')
 ```

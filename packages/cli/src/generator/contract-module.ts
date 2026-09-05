@@ -36,20 +36,52 @@ type Rendered = {
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
-/** A single-quoted TypeScript string, matching the repo's own source style. */
+/**
+ * A single-quoted TypeScript string, matching the repo's own source style.
+ *
+ * All four ECMAScript LineTerminators are escaped: an unescaped one inside a
+ * single-quoted literal ends it, so a `\r` or a U+2028/U+2029 in a user's
+ * `defaultValue` would otherwise write a module that will not parse. This is
+ * not `JSON.stringify`, which leaves U+2028 and U+2029 raw — legal in JSON,
+ * fatal in a JavaScript string literal.
+ */
 function quote(value: string): string {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+  return `'${escaped}'`
 }
 
-/** JSON literals are the whole vocabulary a contract carries (ADR-0040). */
+/**
+ * JSON literals are the whole vocabulary a contract carries (ADR-0040).
+ *
+ * An object member whose value is `undefined` is omitted, as `JSON.stringify`
+ * omits it. Anything else with no JSON form — `undefined` as an array element
+ * or a bare argument, a function, a symbol — is refused rather than rendered
+ * as the bare identifier `undefined`: omitting it there would silently shift
+ * the positions around it.
+ */
 function literal(value: unknown): string {
   if (typeof value === 'string') return quote(value)
   if (Array.isArray(value)) return `[${value.map((entry) => literal(entry)).join(', ')}]`
   if (typeof value === 'object' && value !== null) {
-    const entries = Object.entries(value).map(([name, entry]) => `${key(name)}: ${literal(entry)}`)
+    const entries = Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([name, entry]) => `${key(name)}: ${literal(entry)}`)
     return entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`
   }
-  return JSON.stringify(value)
+  const rendered = JSON.stringify(value)
+  if (rendered === undefined) {
+    throw new Error(
+      `A contract descriptor carries a ${typeof value} where a JSON literal is required. ` +
+        'Contract values are JSON (ADR-0040).',
+    )
+  }
+  return rendered
 }
 
 /**
@@ -75,12 +107,23 @@ function argList(args: readonly unknown[] | undefined): string {
 }
 
 /**
- * The identifier a native enum is bound to at module scope. Enum names come
- * from a `select({ db: { type: 'enum' } })` field, so they can collide with a
- * model name; the suffix keeps the two apart.
+ * The identifiers a model and a native enum are bound to in the rendered
+ * module.
+ *
+ * Both names come from the config surface, which enforces no casing and no
+ * reserved words: a list may be called `models` or `field`, and an enum name
+ * (`db.enumName`) may equal a list's. A bare `<Name>` binding would then shadow
+ * the callback's own `field`/`model`/`rel`/`type` parameters or the internal
+ * `models` record, and a bare `<Name>Enum` would collide with a list literally
+ * called `<Name>Enum`. Prefixing puts both in their own namespace, and the
+ * prefixes are injective, so two distinct names can never land on one binding.
  */
+function modelBinding(name: string): string {
+  return `model_${name}`
+}
+
 function enumBinding(name: string): string {
-  return `${name}Enum`
+  return `enum_${name}`
 }
 
 /**
@@ -211,7 +254,7 @@ function idExpression(id: ContractIdColumn): string {
 }
 
 function relationExpression(relation: ContractModel['relations'][number]): string {
-  const target = `() => models.${relation.target}`
+  const target = `() => ${member('models', relation.target)}`
   return relation.kind === 'belongsTo'
     ? `rel.belongsTo(${target}, { from: ${literal(relation.column)}, to: 'id' })`
     : `rel.${relation.kind}(${target}, { by: ${literal(relation.column)} })`
@@ -233,7 +276,7 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
   }
 
   const lines = [
-    `    const ${model.name} = (models.${model.name} = model(${literal(model.name)}, {`,
+    `    const ${modelBinding(model.name)} = (${member('models', model.name)} = model(${literal(model.name)}, {`,
   ]
   lines.push('      fields: {', ...fields, '      },')
   if (model.relations.length === 0) {
@@ -281,7 +324,7 @@ function renderModelAttributes(model: ContractModel): string {
     const options = ['index: false']
     if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
     if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
-    return `constraints.foreignKey(${member('cols', fk.column)}, ${fk.references.model}.refs.id, { ${options.join(', ')} }),`
+    return `constraints.foreignKey(${member('cols', fk.column)}, ${modelBinding(fk.references.model)}.refs.id, { ${options.join(', ')} }),`
   })
 
   /** `key: []`, or the entries one per line under it. */
@@ -296,7 +339,9 @@ function renderModelAttributes(model: ContractModel): string {
 
   const lines: string[] = []
   const uniqueParams = uniqueEntries.length > 0 ? '({ fields, constraints })' : '()'
-  lines.push(`        ${key(model.name)}: ${model.name}.attributes(${uniqueParams} => ({`)
+  lines.push(
+    `        ${key(model.name)}: ${modelBinding(model.name)}.attributes(${uniqueParams} => ({`,
+  )
   lines.push(...block('uniques', uniqueEntries))
 
   const usesSqlHelpers = indexEntries.length > 0 || foreignKeyEntries.length > 0
@@ -342,10 +387,11 @@ function packSubpath(extension: ExtensionDescriptor): string {
  * ```
  *
  * Known limits:
- * - A model, relation, column or enum name must be a valid TypeScript
- *   identifier where the module binds one (models and enums become `const`
- *   declarations); the config surface's own validation is what keeps those
- *   names well-formed, and this renderer does not re-check them.
+ * - A model or enum name must be a valid TypeScript identifier: each becomes a
+ *   `const` declaration (`model_<Name>` / `enum_<Name>`), and this renderer
+ *   does not re-check the name. Relation, column and index names have no such
+ *   limit — they are rendered through `key()`/`member()`, which quote whatever
+ *   is not an identifier.
  * - The emitted relation targets are thunks (`() => Target`), so a model may
  *   reference one declared later, but every target must be a model in the
  *   same contract — cross-space references are not rendered.

@@ -279,3 +279,52 @@ export const nativeTypesConfig: OpenSaasConfig = {
     },
   },
 }
+
+/**
+ * The names and values the renderer has to survive rather than the ones it
+ * usually sees: a list called `models` (the record the emitted callback keeps
+ * its model tokens in), a list called `StatusEnum` beside an enum called
+ * `Status`, a non-identifier field key, a non-identifier index name, and a
+ * default carrying a quote, a backslash, every line terminator and non-ASCII
+ * text. Nothing here enforces PascalCase or an identifier-shaped field key, so
+ * every one of these is reachable from a real config.
+ */
+export const hostileNamesConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    models: {
+      fields: {
+        'weird-key': text({
+          defaultValue:
+            "it's \\ a quote, a backslash,\r\n a CRLF,\u2028 a line separator,\u2029 a paragraph separator \u2014 caf\u00e9 \ud83c\udf10",
+        }),
+        plain: text(),
+      },
+      db: {
+        map: "weird'table\\name",
+        indexes: [{ fields: ['weird-key', 'plain'], name: "weird'index name" }],
+      },
+    },
+    // A model whose name is exactly the enum's, and one whose name is what the
+    // enum binding used to be spelled as.
+    Status: {
+      fields: { label: text() },
+    },
+    StatusEnum: {
+      fields: { label: text() },
+    },
+    Ticket: {
+      fields: {
+        state: select({
+          options: [
+            { label: "It's open", value: 'open' },
+            { label: 'Closed', value: 'closed' },
+          ],
+          defaultValue: 'open',
+          db: { type: 'enum', enumName: 'Status' },
+        }),
+        owner: relationship({ ref: 'models' }),
+      },
+    },
+  },
+}

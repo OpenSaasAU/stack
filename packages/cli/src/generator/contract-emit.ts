@@ -18,26 +18,45 @@ export class ContractEmitError extends Error {
 }
 
 /**
- * The pinned `prisma` binary from the project's own `node_modules/.bin`, so
- * emission runs the toolchain version the project depends on rather than
- * whatever `npx` would fetch.
+ * The pinned `prisma` CLI from the project's own dependency tree, so emission
+ * runs the toolchain version the project depends on rather than whatever `npx`
+ * would fetch. Resolving the package (rather than looking only in `<cwd>`)
+ * finds it wherever the installer put it — a pnpm workspace hoists it to the
+ * workspace root, and a monorepo sub-app has no local `node_modules` at all.
+ *
+ * The entry comes off the resolved manifest's `bin` rather than an assumed
+ * path, so a layout change between prereleases surfaces as the real error
+ * instead of "prisma is not installed" immediately after resolution succeeded.
+ * It is preferred over `node_modules/.bin/prisma` because it is a `.js` file
+ * this process can run with `process.execPath` on every platform, where the
+ * shim is an `sh` script on Windows that `spawnSync` cannot run without a
+ * shell.
+ *
+ * Known limits:
+ * - The `.bin` shim fallback is POSIX-only. It is reached only when `prisma`
+ *   is installed but not resolvable as a package from `cwd`, which the
+ *   manifest lookup covers for every normal install.
  *
  * @throws when the project has no `prisma` installed, naming the package.
  */
 export function resolvePrismaBinary(cwd: string): string {
-  const local = path.join(cwd, 'node_modules', '.bin', 'prisma')
-  if (fs.existsSync(local)) return local
-
-  // A pnpm workspace hoists the binary to the workspace root; resolving the
-  // package itself finds it wherever the installer put it.
   try {
     const require = createRequire(path.join(cwd, 'noop.js'))
     const packageJson = require.resolve('prisma/package.json')
-    const binary = path.join(path.dirname(packageJson), 'dist', 'prisma.js')
-    if (fs.existsSync(binary)) return binary
+    const manifest: { bin?: string | Record<string, string> } = require(packageJson)
+    const entry = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.prisma
+    if (entry !== undefined) {
+      const binary = path.join(path.dirname(packageJson), entry)
+      if (fs.existsSync(binary)) return binary
+    }
   } catch {
-    // Fall through to the error below — a resolution failure and a missing
-    // file are the same problem for the caller.
+    // A resolution failure and a missing file are the same problem for the
+    // caller: fall through to the shim, then to the error below.
+  }
+
+  if (process.platform !== 'win32') {
+    const shim = path.join(cwd, 'node_modules', '.bin', 'prisma')
+    if (fs.existsSync(shim)) return shim
   }
 
   throw new Error(

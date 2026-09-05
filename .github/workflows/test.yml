@@ -50,8 +50,13 @@ jobs:
         run: node ../../../bin/opensaas.js generate
         working-directory: ./packages/cli/tests/fixtures/contract-project
 
+      # `git add --intent-to-add` first: a plain `git diff` only sees tracked
+      # files, so a newly emitted artifact would land untracked and pass green.
+      # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty contract fixture
-        run: git diff --exit-code -- packages/cli/tests/fixtures/contract-project
+        run: |
+          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project
+          git diff --exit-code -- packages/cli/tests/fixtures/contract-project
 
       - name: Run tests
         if: github.base_ref == 'main'

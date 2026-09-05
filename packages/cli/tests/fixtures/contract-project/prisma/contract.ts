@@ -12,14 +12,14 @@ type ModelToken = {
   }
 }
 
-const PostStatusEnum = nativeEnum('PostStatus', 'draft', 'published')
+const enum_PostStatus = nativeEnum('PostStatus', 'draft', 'published')
 
 export const contract = defineContract(
   { extensions: {}, namespaces: ['audit'] },
   ({ field, model, rel }) => {
     const models: Record<string, ModelToken> = {}
 
-    const User = (models.User = model('User', {
+    const model_User = (models.User = model('User', {
       fields: {
         id: field.id.uuidv7Native(),
         email: field.text().unique(),
@@ -38,7 +38,7 @@ export const contract = defineContract(
       },
     }))
 
-    const Profile = (models.Profile = model('Profile', {
+    const model_Profile = (models.Profile = model('Profile', {
       fields: {
         id: field.id.uuidv7Native(),
         bio: field.text().optional(),
@@ -51,11 +51,11 @@ export const contract = defineContract(
       },
     }))
 
-    const Post = (models.Post = model('Post', {
+    const model_Post = (models.Post = model('Post', {
       fields: {
         id: field.id.uuidv7Native(),
         title: field.text(),
-        status: field.column(pg.enum(PostStatusEnum)).default('draft'),
+        status: field.column(pg.enum(enum_PostStatus)).default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
         authorId: field.uuidNative().optional().column('author'),
         categoryId: field.uuidNative().optional().column('category'),
@@ -68,7 +68,7 @@ export const contract = defineContract(
       },
     }))
 
-    const Category = (models.Category = model('Category', {
+    const model_Category = (models.Category = model('Category', {
       fields: {
         id: field.id.uuidv7Native(),
         name: field.text().unique(),
@@ -78,7 +78,7 @@ export const contract = defineContract(
       },
     }))
 
-    const AuditEntry = (models.AuditEntry = model('AuditEntry', {
+    const model_AuditEntry = (models.AuditEntry = model('AuditEntry', {
       fields: {
         id: field.id.uuidv7Native(),
         action: field.text(),
@@ -92,7 +92,7 @@ export const contract = defineContract(
       namespace: 'audit',
     }))
 
-    const Settings = (models.Settings = model('Settings', {
+    const model_Settings = (models.Settings = model('Settings', {
       fields: {
         id: field.int().default(1).id(),
         siteName: field.text().optional().default('Fixture'),
@@ -105,25 +105,25 @@ export const contract = defineContract(
 
     return {
       models: {
-        User: User.attributes(() => ({
+        User: model_User.attributes(() => ({
           uniques: [],
         })).sql(({ cols, constraints }) => ({
           indexes: [
             constraints.index([cols.managerId]),
           ],
           foreignKeys: [
-            constraints.foreignKey(cols.managerId, User.refs.id, { index: false }),
+            constraints.foreignKey(cols.managerId, model_User.refs.id, { index: false }),
           ],
         })),
-        Profile: Profile.attributes(() => ({
+        Profile: model_Profile.attributes(() => ({
           uniques: [],
         })).sql(({ cols, constraints }) => ({
           indexes: [],
           foreignKeys: [
-            constraints.foreignKey(cols.userId, User.refs.id, { index: false, onDelete: 'cascade' }),
+            constraints.foreignKey(cols.userId, model_User.refs.id, { index: false, onDelete: 'cascade' }),
           ],
         })),
-        Post: Post.attributes(() => ({
+        Post: model_Post.attributes(() => ({
           uniques: [],
         })).sql(({ cols, constraints }) => ({
           table: 'post',
@@ -133,27 +133,27 @@ export const contract = defineContract(
             constraints.index([cols.authorId, cols.status], { map: 'post_author_status' }),
           ],
           foreignKeys: [
-            constraints.foreignKey(cols.authorId, User.refs.id, { index: false, onDelete: 'setNull' }),
-            constraints.foreignKey(cols.categoryId, Category.refs.id, { index: false }),
+            constraints.foreignKey(cols.authorId, model_User.refs.id, { index: false, onDelete: 'setNull' }),
+            constraints.foreignKey(cols.categoryId, model_Category.refs.id, { index: false }),
           ],
         })),
-        Category: Category.attributes(() => ({
+        Category: model_Category.attributes(() => ({
           uniques: [],
         })).sql(() => ({
           indexes: [],
           foreignKeys: [],
         })),
-        AuditEntry: AuditEntry.attributes(() => ({
+        AuditEntry: model_AuditEntry.attributes(() => ({
           uniques: [],
         })).sql(({ cols, constraints }) => ({
           indexes: [
             constraints.index([cols.actorId]),
           ],
           foreignKeys: [
-            constraints.foreignKey(cols.actorId, User.refs.id, { index: false }),
+            constraints.foreignKey(cols.actorId, model_User.refs.id, { index: false }),
           ],
         })),
-        Settings: Settings.attributes(() => ({
+        Settings: model_Settings.attributes(() => ({
           uniques: [],
         })).sql(() => ({
           indexes: [],
