@@ -3,7 +3,11 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import type { ContractData } from '@opensaas/stack-core'
-import { seedExtensionContractSpaces, ExtensionSubpathError } from './extension-spaces.js'
+import {
+  seedExtensionContractSpaces,
+  ExtensionSubpathError,
+  ExtensionDescriptorError,
+} from './extension-spaces.js'
 
 const PGVECTOR_HASH = '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8'
 const PGVECTOR_PACKAGE = '20260601T0000_install_vector_extension'
@@ -31,6 +35,23 @@ function contract(extensions: ContractData['extensions'] = []): ContractData {
 }
 
 const pgvector = { name: 'pgvector', from: '@prisma/orm-extension-pgvector' }
+
+function fakePack(
+  cwd: string,
+  name: string,
+  manifest: Record<string, unknown>,
+  files: Record<string, string>,
+): void {
+  const packageDir = path.join(cwd, 'node_modules', ...name.split('/'))
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name, version: '1.0.0', type: 'module', ...manifest }),
+  )
+  for (const [file, contents] of Object.entries(files)) {
+    fs.writeFileSync(path.join(packageDir, file), contents)
+  }
+}
 
 function readSpaceFiles(cwd: string): string[] {
   const root = path.join(cwd, 'migrations')
@@ -155,11 +176,112 @@ describe('seedExtensionContractSpaces', () => {
     expect(fs.existsSync(path.join(cwd, 'migrations'))).toBe(false)
   })
 
+  it('refuses a pack that does not publish /runtime, naming both', async () => {
+    const cwd = scratchProject()
+    fakePack(
+      cwd,
+      '@fake/no-runtime',
+      { exports: { './pack': './pack.mjs', './control': './control.mjs' } },
+      { 'pack.mjs': 'export default {}\n', 'control.mjs': 'export default { id: "x" }\n' },
+    )
+
+    await expect(
+      seedExtensionContractSpaces(cwd, contract([{ name: 'stub', from: '@fake/no-runtime' }])),
+    ).rejects.toThrow(/"stub".*"@fake\/no-runtime\/runtime"/s)
+  })
+
   it('refuses a pack that is not installed at all', async () => {
     const cwd = scratchProject()
 
     await expect(
       seedExtensionContractSpaces(cwd, contract([{ name: 'ghost', from: '@fake/not-installed' }])),
     ).rejects.toThrow(ExtensionSubpathError)
+  })
+
+  // The generated prisma.config.ts and Contract module reach these subpaths
+  // with `import`, so a pack publishing them only under the `import` condition
+  // is valid and must not be refused.
+  it('accepts a pack that publishes its subpaths only under the import condition', async () => {
+    const cwd = scratchProject()
+    fakePack(
+      cwd,
+      '@fake/esm-only',
+      {
+        exports: {
+          './pack': { import: './pack.mjs' },
+          './control': { import: './control.mjs' },
+          './runtime': { import: './runtime.mjs' },
+        },
+      },
+      {
+        'pack.mjs': 'export default {}\n',
+        'control.mjs': 'export default { id: "esm-only" }\n',
+        'runtime.mjs': 'export default {}\n',
+      },
+    )
+
+    const result = await seedExtensionContractSpaces(
+      cwd,
+      contract([{ name: 'esmOnly', from: '@fake/esm-only' }]),
+    )
+
+    expect(result.seeded).toEqual([])
+  })
+
+  // A dual publish must load the same half the rest of the pipeline imports:
+  // the CJS build here throws, so reaching it fails the test loudly.
+  it('loads the import half of a dual-published pack', async () => {
+    const cwd = scratchProject()
+    fakePack(
+      cwd,
+      '@fake/dual',
+      {
+        exports: {
+          './pack': { import: './pack.mjs', require: './pack.cjs' },
+          './control': { import: './control.mjs', require: './control.cjs' },
+          './runtime': { import: './runtime.mjs', require: './runtime.cjs' },
+        },
+      },
+      {
+        'pack.mjs': 'export default {}\n',
+        'pack.cjs': 'throw new Error("the require half was loaded")\n',
+        'control.mjs': 'export default { id: "dual" }\n',
+        'control.cjs': 'throw new Error("the require half was loaded")\n',
+        'runtime.mjs': 'export default {}\n',
+        'runtime.cjs': 'throw new Error("the require half was loaded")\n',
+      },
+    )
+
+    const result = await seedExtensionContractSpaces(
+      cwd,
+      contract([{ name: 'dual', from: '@fake/dual' }]),
+    )
+
+    expect(result.seeded).toEqual([])
+  })
+
+  it('refuses a /control that default-exports no descriptor, naming the pack', async () => {
+    const cwd = scratchProject()
+    fakePack(
+      cwd,
+      '@fake/named-only',
+      {
+        exports: { './pack': './pack.mjs', './control': './control.mjs', './runtime': './rt.mjs' },
+      },
+      {
+        'pack.mjs': 'export default {}\n',
+        'control.mjs': 'export const descriptor = { id: "named-only" }\n',
+        'rt.mjs': 'export default {}\n',
+      },
+    )
+
+    const declaration = contract([{ name: 'namedOnly', from: '@fake/named-only' }])
+
+    await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
+      ExtensionDescriptorError,
+    )
+    await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
+      /"namedOnly".*"@fake\/named-only\/control"/s,
+    )
   })
 })

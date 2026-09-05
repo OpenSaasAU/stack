@@ -1,6 +1,11 @@
 export { renderContractModule, writeContractModule } from './contract-module.js'
 export { emitContract, resolvePrismaBinary, ContractEmitError } from './contract-emit.js'
-export { seedExtensionContractSpaces, ExtensionSubpathError } from './extension-spaces.js'
+export {
+  seedExtensionContractSpaces,
+  verifyExtensionSubpaths,
+  ExtensionSubpathError,
+  ExtensionDescriptorError,
+} from './extension-spaces.js'
 export type { SeededExtensionSpaces, SeededExtensionSpace } from './extension-spaces.js'
 export { generatePrismaConfig, writePrismaConfig } from './prisma-config.js'
 export { generateTypes, writeTypes } from './types.js'

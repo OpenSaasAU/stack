@@ -33,4 +33,4 @@ migrations/snapshots/<hash>/contract.d.ts
 
 Commit these files. A second `generate` leaves them byte-identical and reports the space `unchanged`; upgrading the pack to a version shipping a new migration package rewrites the head ref, so the upgrade surfaces as a generate diff rather than a silent drift. Prisma then runs `CREATE EXTENSION IF NOT EXISTS` from the committed space on `db init`, `db update` and `db migrate` — there is no hand-run DDL step.
 
-A pack that does not publish one of the three subpaths fails generation naming the pack and the exact missing subpath.
+A pack that does not publish one of the three subpaths fails generation naming the pack and the exact missing subpath, and it fails before anything is written — `prisma.config.ts` is never left carrying an import that cannot resolve. Subpaths are resolved under the `import` condition, the same way the generated artifacts reach them, so an ESM-only pack is accepted and a dual-published pack is loaded from its ESM build.

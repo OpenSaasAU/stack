@@ -6,6 +6,7 @@ import { createJiti } from 'jiti'
 import {
   emitContract,
   seedExtensionContractSpaces,
+  verifyExtensionSubpaths,
   writeContractModule,
   writePrismaConfig,
   writeTypes,
@@ -175,6 +176,19 @@ export async function generateCommand() {
       process.exit(1)
     }
 
+    // Ahead of the writes: prisma.config.ts and the Contract module both
+    // import a declared pack's subpaths, so a refusal after them would leave
+    // the project carrying an unresolvable import.
+    const packSpinner = ora('Resolving declared extension packs...').start()
+    try {
+      verifyExtensionSubpaths(cwd, contractData)
+      packSpinner.succeed(chalk.green('Declared extension packs resolved'))
+    } catch (err) {
+      packSpinner.fail(chalk.red('Declared extension pack unresolvable'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
     // Captured here so the (optional) Node build step, which runs after
     // emission outside this try block, knows where the bundle lives.
     let opensaasDir = ''
@@ -270,19 +284,17 @@ export async function generateCommand() {
     // emission (ADR-0065), so `contract emit` and every later `db` command
     // read a migrations directory that already carries each declared pack's
     // space.
-    if (contractData.extensions.length > 0) {
-      const seedSpinner = ora('Seeding extension contract spaces...').start()
-      try {
-        const { seeded } = await seedExtensionContractSpaces(cwd, contractData)
-        seedSpinner.succeed(chalk.green('Extension contract spaces seeded'))
-        for (const space of seeded) {
-          console.log(chalk.green(`✅ ${space.pack}: migrations/${space.spaceId} ${space.action}`))
-        }
-      } catch (err) {
-        seedSpinner.fail(chalk.red('Failed to seed extension contract spaces'))
-        console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-        process.exit(1)
+    const seedSpinner = ora('Seeding extension contract spaces...').start()
+    try {
+      const { seeded } = await seedExtensionContractSpaces(cwd, contractData)
+      seedSpinner.succeed(chalk.green('Extension contract spaces seeded'))
+      for (const space of seeded) {
+        console.log(chalk.green(`✅ ${space.pack}: migrations/${space.spaceId} ${space.action}`))
       }
+    } catch (err) {
+      seedSpinner.fail(chalk.red('Failed to seed extension contract spaces'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
     }
 
     // Emission runs after `afterGenerate`, so a plugin's rewrite of the
