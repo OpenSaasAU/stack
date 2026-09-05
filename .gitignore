@@ -10,7 +10,6 @@ out/
 
 # Generated files
 .opensaas/
-prisma/migrations/
 __generated__/
 *.db
 *.db-journal

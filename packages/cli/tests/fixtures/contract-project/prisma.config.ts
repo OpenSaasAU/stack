@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { definePrismaConfig } from 'prisma/config'
 import { defineConfig } from '@prisma/orm-postgres/config'
 import { findDatabaseUrl } from '@opensaas/stack-core'
+import pgvector from '@prisma/orm-extension-pgvector/control'
 
 // The Prisma CLI evaluates this file without loading a .env of its own, and
 // `process.loadEnvFile` throws when the file is absent.
@@ -16,7 +17,7 @@ export default definePrismaConfig({
   orm: defineConfig({
     contract: './prisma/contract.ts',
     output: './prisma',
-    extensions: [],
+    extensions: [pgvector],
     db: { connection: findDatabaseUrl() },
   }),
 })
