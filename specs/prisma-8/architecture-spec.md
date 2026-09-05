@@ -207,7 +207,7 @@ The execution inventory the map accumulated, regrouped by package. Every item is
 
 - All twelve database-backed examples convert to Postgres under `opensaas dev` (`plain-css-theming` has no database and is in the sweep for the query-surface and field-builder changes only); every `dev` script becomes `opensaas dev`; every README drops its `db:push`/`db:update` pre-step; every `.env.example` stops shipping a default `DATABASE_URL`; every seed reseeds under new ids; every `context.db` call site moves to the query-value surface with PascalCase keys and `{ connect: { id } }` on the owning side; every `post.author`-style dereference compiles against `| null`.
 - `examples/rag-openai-chatbot/scripts/install-pgvector.ts` and `PGVECTOR_SETUP.md` deleted; both RAG examples declare pgvector through the plugin and reseed their embeddings; their README/QUICKSTART pgvector sections become provisioning.
-- `examples/starter-auth/scripts/node-build-create-user.mjs` re-targets at `.opensaas/context.ts`; `examples/composable-dashboard/app/posts/page.tsx` is already inside the Where vocabulary and survives unchanged.
+- `examples/starter-auth/scripts/node-build-create-user.mjs` was deleted by [#1138](https://github.com/OpenSaasAU/stack/issues/1138) rather than re-targeted (ADR-0054 and ADR-0060 carry the amendment); a better-auth-shaped plain-Node anchor returns with this conversion, tracked on [#1178](https://github.com/OpenSaasAU/stack/issues/1178). `examples/composable-dashboard/app/posts/page.tsx` is already inside the Where vocabulary and survives unchanged.
 
 **Documentation and agent guidance**
 
@@ -216,7 +216,7 @@ The execution inventory the map accumulated, regrouped by package. Every item is
 
 **CI, e2e and repository hygiene**
 
-- `DATABASE_URL` set on every CI job; service-container images move to a pgvector-capable Postgres 17; the nightly cold-clone job exercises `create` then `dev`; `e2e/global-setup.ts` and `e2e/utils/db.ts` seed through the lookup; `e2e/starter-auth/04-node-build.spec.ts` re-targets; per-package Vitest setup for instance-per-file/truncate-per-test; the root `.gitignore` drops `prisma/migrations/`; the `P####` grep or lint rule; ADR-0002's coverage ratchet re-baselined once.
+- `DATABASE_URL` set on every CI job; service-container images move to a pgvector-capable Postgres 17; the nightly cold-clone job exercises `create` then `dev`; `e2e/global-setup.ts` and `e2e/utils/db.ts` seed through the lookup; `e2e/starter-auth/04-node-build.spec.ts` was deleted by [#1138](https://github.com/OpenSaasAU/stack/issues/1138) rather than re-targeted, with the plain-Node property now held by `packages/cli/tests/bundle-node-load.test.ts` and a better-auth anchor owed back on [#1178](https://github.com/OpenSaasAU/stack/issues/1178); per-package Vitest setup for instance-per-file/truncate-per-test; the root `.gitignore` drops `prisma/migrations/`; the `P####` grep or lint rule; ADR-0002's coverage ratchet re-baselined once.
 
 ## 12. Left to the build effort
 

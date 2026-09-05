@@ -25,25 +25,15 @@ npm create opensaas-app@latest my-app
 ### With Flags
 
 ```bash
-# Basic starter (SQLite — zero setup)
+# Basic starter
 npm create opensaas-app@latest my-app
 
 # With authentication
 npm create opensaas-app@latest my-app --with-auth
-
-# PostgreSQL-ready (pg driver adapter, Postgres .env, migrate scripts)
-npm create opensaas-app@latest my-app --db postgres
-
-# Force SQLite and skip the database prompt
-npm create opensaas-app@latest my-app --db sqlite
 ```
 
-The `--db postgres` flag scaffolds a production-ready PostgreSQL project from the
-start: it emits the `PrismaPg` driver adapter in `opensaas.config.ts`, writes a
-`.env` / `.env.example` with `DATABASE_URL` (pooled) and `DIRECT_DATABASE_URL`
-(direct) placeholders, and keeps the `migrate` / `migrate:deploy` scripts. Set
-your real connection strings in `.env`, then run `pnpm migrate`. Without the
-flag, SQLite remains the zero-setup default.
+The scaffolded project uses the database its template declares. Change it by
+editing `db` in the generated `opensaas.config.ts`.
 
 ### Using npx
 
