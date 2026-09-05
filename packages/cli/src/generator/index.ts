@@ -1,7 +1,12 @@
 export { renderContractModule, writeContractModule } from './contract-module.js'
 export { emitContract, resolvePrismaBinary, ContractEmitError } from './contract-emit.js'
-export { seedExtensionContractSpaces } from './extension-spaces.js'
-export type { SeededExtensionSpaces } from './extension-spaces.js'
+export {
+  seedExtensionContractSpaces,
+  verifyExtensionSubpaths,
+  ExtensionSubpathError,
+  ExtensionDescriptorError,
+} from './extension-spaces.js'
+export type { SeededExtensionSpaces, SeededExtensionSpace } from './extension-spaces.js'
 export { generatePrismaConfig, writePrismaConfig } from './prisma-config.js'
 export { generateTypes, writeTypes } from './types.js'
 export { generateListsNamespace, writeLists } from './lists.js'
@@ -20,7 +25,5 @@ export type {
   ResolvedWritePaths,
   ResolvedCrossReferences,
 } from './output-paths.js'
-export { buildNodeBundle, formatNodeBuildDiagnostics } from './node-build.js'
-export type { BuildNodeBundleOptions, BuildNodeBundleResult } from './node-build.js'
 export { resolveTsconfigAlias } from './tsconfig-alias.js'
 export type { TsconfigAliasResult } from './tsconfig-alias.js'

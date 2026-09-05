@@ -6,7 +6,9 @@ import { checkbox, relationship, select, text, timestamp } from '@opensaas/stack
  * a second run must leave `prisma/contract.ts`, `prisma.config.ts` and the two
  * emitted artifacts byte-identical. Its lists cover the constructs whose
  * emission is easiest to make unstable — an enum, a named composite index, a
- * one-to-one, a self-reference, a list-only ref and a second namespace.
+ * one-to-one, a self-reference, a list-only ref and a second namespace. Its
+ * declared pgvector pack puts the seeded extension contract space under
+ * `migrations/` inside the same gate (ADR-0065).
  */
 export default config({
   db: {
@@ -14,6 +16,7 @@ export default config({
     idField: 'uuid7',
     timestamps: true,
     schemas: ['public', 'audit'],
+    extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
   },
   lists: {
     User: list({

@@ -3355,39 +3355,6 @@ export interface OutputConfig {
    * @default ".opensaas"
    */
   opensaasDir?: string
-  /**
-   * Opt in to an additional **Node build** of the Generated bundle.
-   *
-   * By default (omitted) the generator emits only the bundler-loadable `.ts`
-   * form (ADR-0008): TypeScript with explicit `.ts` import extensions, traced
-   * and transpiled by the host's bundler. That form cannot execute under plain
-   * Node, so a live module that must run in BOTH a bundled and a bundler-less
-   * runtime (e.g. better-auth's Prisma adapter, imported by the Next server AND
-   * by a Playwright e2e helper or a build-time script) has no Node-loadable
-   * entry to point at.
-   *
-   * Setting `buildTarget: 'node'` additionally compiles the bundle to a
-   * plain-Node-loadable ESM form under `<opensaasDir>/dist/` (`.js` + `.d.ts`,
-   * with a `{"type":"module"}` marker). The compiled entry is
-   * `<opensaasDir>/dist/context.js`; a portable module imports it directly so
-   * the bundler traces it AND plain Node executes it (one specifier, both
-   * runtimes — see ADR-0011). The default `.ts` form is unchanged and still
-   * emitted; the Node build is purely additive.
-   *
-   * `'node'` is the only target today. The field is a string-literal union so
-   * future compiled targets can be added without a breaking change.
-   *
-   * @example
-   * ```typescript
-   * export default config({
-   *   output: { buildTarget: 'node' },
-   *   // ...
-   * })
-   * // Then import the compiled entry from a plain-Node consumer:
-   * //   const { rawOpensaasContext } = await import('./.opensaas/dist/context.js')
-   * ```
-   */
-  buildTarget?: 'node'
 }
 
 /**

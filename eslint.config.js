@@ -26,6 +26,7 @@ export default [
       // projects the contract tests evaluate a rendered module in.
       'packages/cli/tests/fixtures/contract-project/prisma/**',
       'packages/cli/tests/fixtures/contract-project/prisma.config.ts',
+      'packages/cli/tests/fixtures/contract-project/migrations/**',
       'packages/cli/tests/tmp-*/**',
     ],
   },

@@ -6,6 +6,7 @@ import { createJiti } from 'jiti'
 import {
   emitContract,
   seedExtensionContractSpaces,
+  verifyExtensionSubpaths,
   writeContractModule,
   writePrismaConfig,
   writeTypes,
@@ -13,8 +14,6 @@ import {
   writeContext,
   writePluginTypes,
   resolveOutputPaths,
-  buildNodeBundle,
-  formatNodeBuildDiagnostics,
   resolveTsconfigAlias,
 } from '../generator/index.js'
 import {
@@ -175,14 +174,22 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // Captured here so the (optional) Node build step, which runs after
-    // emission outside this try block, knows where the bundle lives.
-    let opensaasDir = ''
+    // Ahead of the writes: prisma.config.ts and the Contract module both
+    // import a declared pack's subpaths, so a refusal after them would leave
+    // the project carrying an unresolvable import.
+    const packSpinner = ora('Resolving declared extension packs...').start()
+    try {
+      verifyExtensionSubpaths(cwd, contractData)
+      packSpinner.succeed(chalk.green('Declared extension packs resolved'))
+    } catch (err) {
+      packSpinner.fail(chalk.red('Declared extension pack unresolvable'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
     const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
     const generatorSpinner = ora('Writing the Contract module and prisma.config.ts...').start()
     try {
-      opensaasDir = paths.opensaasDir
-
       writeContractModule(contractData, paths.contractModule)
       writePrismaConfig(contractData, paths.prismaConfig, {
         contractModule: crossReferences.prismaConfigContract,
@@ -267,8 +274,21 @@ export async function generateCommand() {
     }
 
     // Extension contract spaces are seeded between the Contract module and
-    // emission (ADR-0065). #1135 fills this in; today it is a no-op.
-    seedExtensionContractSpaces(cwd, contractData)
+    // emission (ADR-0065), so `contract emit` and every later `db` command
+    // read a migrations directory that already carries each declared pack's
+    // space.
+    const seedSpinner = ora('Seeding extension contract spaces...').start()
+    try {
+      const { seeded } = await seedExtensionContractSpaces(cwd, contractData)
+      seedSpinner.succeed(chalk.green('Extension contract spaces seeded'))
+      for (const space of seeded) {
+        console.log(chalk.green(`✅ ${space.pack}: migrations/${space.spaceId} ${space.action}`))
+      }
+    } catch (err) {
+      seedSpinner.fail(chalk.red('Failed to seed extension contract spaces'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
 
     // Emission runs after `afterGenerate`, so a plugin's rewrite of the
     // Contract module is what the artifacts and the agreement gate below
@@ -316,34 +336,6 @@ export async function generateCommand() {
       agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
       process.exit(1)
-    }
-
-    // Optional Node build (ADR-0011): when `output.buildTarget === 'node'`,
-    // additionally compile the `.ts` bundle to a plain-Node-loadable ESM form
-    // under `<opensaasDir>/dist/` so a live module (e.g. better-auth's adapter)
-    // can be imported in a bundler-less runtime. Purely additive — the default
-    // `.ts` form is untouched.
-    if (config.output?.buildTarget === 'node') {
-      const nodeBuildSpinner = ora('Building Node-loadable bundle...').start()
-      try {
-        const result = buildNodeBundle({ opensaasDir, configPath })
-        nodeBuildSpinner.succeed(chalk.green('Node-loadable bundle built'))
-        console.log(chalk.green(`✅ Node build emitted to ${path.relative(cwd, result.distDir)}`))
-
-        // The Node build is best-effort (`noEmitOnError: false`): emit proceeds
-        // even with stray type errors (e.g. the host's type-only `@/*` config
-        // alias). Surface any errors as a warning rather than failing.
-        const formattedErrors = formatNodeBuildDiagnostics(result.diagnostics)
-        if (formattedErrors.trim().length > 0) {
-          console.log(chalk.yellow('⚠️  Node build completed with type diagnostic(s) (non-fatal):'))
-          console.log(chalk.gray(formattedErrors))
-        }
-      } catch (err) {
-        nodeBuildSpinner.fail(chalk.red('Failed to build Node-loadable bundle'))
-        const message = err instanceof Error ? err.message : String(err)
-        console.error(chalk.red('\n❌ Error:'), message)
-        process.exit(1)
-      }
     }
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))
