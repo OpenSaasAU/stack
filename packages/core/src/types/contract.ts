@@ -66,8 +66,18 @@ export type ColumnInputTypes<C, K extends string> = {
 export type RelationsOf<C, K extends string> =
   ModelEntry<C, K> extends { readonly relations: infer R } ? R : never
 
-/** Every relation the contract's graph hangs off list `K`. */
-export type RelationKey<C, K extends string> = keyof RelationsOf<C, K> & string
+/**
+ * Every relation the contract's graph hangs off list `K`.
+ *
+ * A model with no relations emits `relations: Record<string, never>`, whose
+ * `keyof` is `string` — so the entries are filtered on having a value rather
+ * than taken straight off `keyof`, or a relation-less list would pick up a
+ * string index signature.
+ */
+export type RelationKey<C, K extends string> = {
+  [Rel in keyof RelationsOf<C, K>]: [RelationsOf<C, K>[Rel]] extends [never] ? never : Rel
+}[keyof RelationsOf<C, K>] &
+  string
 
 export type RelationTarget<C, K extends string, Rel> = Rel extends keyof RelationsOf<C, K>
   ? RelationsOf<C, K>[Rel] extends { readonly to: { readonly model: infer M } }
@@ -86,9 +96,8 @@ type Cardinality<C, K extends string, Rel> = Rel extends keyof RelationsOf<C, K>
  * and `1:1` are to-one, everything else to-many. The foreign key's own
  * nullability is never consulted.
  */
-export type IsToOne<C, K extends string, Rel> = Cardinality<C, K, Rel> extends 'N:1' | '1:1'
-  ? true
-  : false
+export type IsToOne<C, K extends string, Rel> =
+  Cardinality<C, K, Rel> extends 'N:1' | '1:1' ? true : false
 
 /**
  * A relation whose foreign key this side owns. Prisma spells that `N:1` on
@@ -130,18 +139,19 @@ type PhysicalColumn<C, K extends string, F> =
       : never
     : never
 
-type TableColumns<C, K extends string> =
-  C extends { readonly storage: { readonly namespaces: infer NSs } }
-    ? NamespaceIdOf<C, K> extends keyof NSs
-      ? NSs[NamespaceIdOf<C, K>] extends { readonly entries: { readonly table: infer T } }
-        ? TableOf<C, K> extends keyof T
-          ? T[TableOf<C, K>] extends { columns: infer Cols }
-            ? Cols
-            : never
+type TableColumns<C, K extends string> = C extends {
+  readonly storage: { readonly namespaces: infer NSs }
+}
+  ? NamespaceIdOf<C, K> extends keyof NSs
+    ? NSs[NamespaceIdOf<C, K>] extends { readonly entries: { readonly table: infer T } }
+      ? TableOf<C, K> extends keyof T
+        ? T[TableOf<C, K>] extends { columns: infer Cols }
+          ? Cols
           : never
         : never
       : never
     : never
+  : never
 
 type ColumnEntry<C, K extends string, F> =
   PhysicalColumn<C, K, F> extends keyof TableColumns<C, K>

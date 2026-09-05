@@ -1926,7 +1926,9 @@ export function json<
  * 2. Import string: "import('decimal.js').Decimal" -> returned as-is
  * 3. Type object: { value: Decimal, from: 'decimal.js' } -> "import('decimal.js').Decimal"
  */
-function typeDescriptorToString(descriptor: import('../config/types.js').TypeDescriptor): string {
+export function typeDescriptorToTypeString(
+  descriptor: import('../config/types.js').TypeDescriptor,
+): string {
   if (typeof descriptor === 'string') {
     return descriptor
   }
@@ -2046,7 +2048,7 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     )
   }
 
-  const outputType = typeDescriptorToString(options.type)
+  const outputType = typeDescriptorToTypeString(options.type)
   const imports = typeDescriptorToImports(options.type)
 
   const { type: _, ...rest } = options

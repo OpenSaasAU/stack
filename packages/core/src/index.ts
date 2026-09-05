@@ -50,6 +50,13 @@ export type {
   Session,
   AccessContext,
   PrismaFilter,
+  // The ORM client `context.prisma` exposes, and the delegate `ormModel()`
+  // narrows one model to. Unsecured: reaching a model through it bypasses
+  // access control and hooks.
+  OrmClient,
+  OrmModelDelegate,
+  OrmOperationArgs,
+  OrmRow,
 } from './access/index.js'
 
 // Context factory
@@ -87,6 +94,7 @@ export type {
   ListSelect,
   ListInclude,
   SubArgs,
+  ListFilterArgs,
   FindUniqueArgs,
   FindManyArgs,
   CountArgs,

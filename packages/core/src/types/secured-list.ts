@@ -77,9 +77,7 @@ export type ListSelect<C, R extends RemainderBase, K extends keyof R & string> =
 
 /** What a caller may `include`: any relation in the contract's graph. */
 export type ListInclude<C, R extends RemainderBase, K extends keyof R & string> = {
-  [Rel in RelationKey<C, K>]?:
-    | boolean
-    | SubArgs<C, R, RelationTarget<C, K, Rel> & keyof R & string>
+  [Rel in RelationKey<C, K>]?: boolean | SubArgs<C, R, RelationTarget<C, K, Rel> & keyof R & string>
 }
 
 type SubResult<C, R extends RemainderBase, K extends keyof R & string, Rel, A> =
@@ -93,34 +91,40 @@ type SubResult<C, R extends RemainderBase, K extends keyof R & string, Rel, A> =
       : never
     : never
 
-type Arity<C, K extends string, Rel, Value> = IsToOne<C, K, Rel> extends true
-  ? Value | null
-  : Value[]
+type Arity<C, K extends string, Rel, Value> =
+  IsToOne<C, K, Rel> extends true ? Value | null : Value[]
 
 type SelectResult<C, R extends RemainderBase, K extends keyof R & string, S> = {
-  -readonly [F in keyof S & keyof Row<C, R, K> as S[F] extends false | undefined
-    ? never
-    : F]-?: F extends RelationKey<C, K> ? SubResult<C, R, K, F, S[F]> : Row<C, R, K>[F]
+  -readonly [
+    F in keyof S & keyof Row<C, R, K> as S[F] extends false | undefined ? never : F
+  ]-?: F extends RelationKey<C, K> ? SubResult<C, R, K, F, S[F]> : Row<C, R, K>[F]
 }
 
 type IncludeMembers<C, R extends RemainderBase, K extends keyof R & string, I> = {
-  -readonly [Rel in keyof I & RelationKey<C, K> as I[Rel] extends false | undefined
-    ? never
-    : Rel]-?: SubResult<C, R, K, Rel, I[Rel]>
+  -readonly [
+    Rel in keyof I & RelationKey<C, K> as I[Rel] extends false | undefined ? never : Rel
+  ]-?: SubResult<C, R, K, Rel, I[Rel]>
 }
 
 /**
  * A terminal's result, narrowed by what the caller asked for: `select` picks
  * exactly the named keys, `include` keeps the whole row and makes the named
  * relations present, and a bare read is the row's scalars and computed fields.
+ *
+ * `S` and `I` are inferred from the `select` / `include` members alone, each
+ * defaulting to `never` when the caller passed neither. Inferring them
+ * separately — rather than one type parameter over the whole argument — is
+ * what keeps `data` and `where` checked as concrete types: a parameter that
+ * is itself a type variable loses object-literal freshness, so an unknown key
+ * would slip through.
  */
-export type QueryResult<C, R extends RemainderBase, K extends keyof R & string, A> = A extends {
-  select: infer S
-}
-  ? SelectResult<C, R, K, S>
-  : A extends { include: infer I }
-    ? Row<C, R, K> & IncludeMembers<C, R, K, I>
-    : Row<C, R, K>
+export type QueryResult<C, R extends RemainderBase, K extends keyof R & string, S, I> = [
+  S,
+] extends [never]
+  ? [I] extends [never]
+    ? Row<C, R, K>
+    : Row<C, R, K> & IncludeMembers<C, R, K, I>
+  : SelectResult<C, R, K, S>
 
 // ── operation arguments ───────────────────────────────────────────────────
 
@@ -129,19 +133,8 @@ type Selection<C, R extends RemainderBase, K extends keyof R & string> = {
   include?: ListInclude<C, R, K>
 }
 
-export type FindUniqueArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & {
-  where: ListUniqueWhere<C, R, K>
-}
-
-export type FindManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & {
+/** Filtering, ordering and paging — everything a many-read takes but selection. */
+export type ListFilterArgs<C, R extends RemainderBase, K extends keyof R & string> = {
   where?: ListWhere<C, R, K>
   orderBy?: ListOrderBy<C, R, K> | ListOrderBy<C, R, K>[]
   take?: number
@@ -149,6 +142,19 @@ export type FindManyArgs<C, R extends RemainderBase, K extends keyof R & string>
   cursor?: ListUniqueWhere<C, R, K>
   distinct?: (keyof StoredRow<C, R, K> & string) | (keyof StoredRow<C, R, K> & string)[]
 }
+
+export type FindUniqueArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
+  C,
+  R,
+  K
+> & { where: ListUniqueWhere<C, R, K> }
+
+export type FindManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
+  C,
+  R,
+  K
+> &
+  ListFilterArgs<C, R, K>
 
 export type CountArgs<C, R extends RemainderBase, K extends keyof R & string> = {
   where?: ListWhere<C, R, K>
@@ -160,43 +166,31 @@ export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> =
   C,
   R,
   K
-> & {
-  data: CreateInput<C, R, K>
-}
+> & { data: CreateInput<C, R, K> }
 
 export type CreateManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
-> & {
-  data: CreateInput<C, R, K>[]
-}
+> & { data: CreateInput<C, R, K>[] }
 
 export type UpdateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
-> & {
-  where: ListUniqueWhere<C, R, K>
-  data: UpdateInput<C, R, K>
-}
+> & { where: ListUniqueWhere<C, R, K>; data: UpdateInput<C, R, K> }
 
 export type UpdateManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
-> & {
-  where?: ListWhere<C, R, K>
-  data: UpdateInput<C, R, K>
-}
+> & { where?: ListWhere<C, R, K>; data: UpdateInput<C, R, K> }
 
 export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
-> & {
-  where: ListUniqueWhere<C, R, K>
-}
+> & { where: ListUniqueWhere<C, R, K> }
 
 export type GetArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<C, R, K>
 
@@ -213,22 +207,71 @@ type SingletonOpKey<R extends RemainderBase, K extends keyof R & string> = R[K] 
   : never
 
 type SingletonOps<C, R extends RemainderBase, K extends keyof R & string> = {
-  [Op in SingletonOpKey<R, K>]: <A extends GetArgs<C, R, K>>(
-    args?: A,
-  ) => Promise<QueryResult<C, R, K, A> | null>
+  [Op in SingletonOpKey<R, K>]: <
+    S extends ListSelect<C, R, K> = never,
+    I extends ListInclude<C, R, K> = never,
+  >(args?: {
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I> | null>
 }
 
 type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
-  findUnique: <A extends FindUniqueArgs<C, R, K>>(
-    args: A,
-  ) => Promise<QueryResult<C, R, K, A> | null>
-  findFirst: <A extends FindManyArgs<C, R, K>>(args?: A) => Promise<QueryResult<C, R, K, A> | null>
-  findMany: <A extends FindManyArgs<C, R, K>>(args?: A) => Promise<QueryResult<C, R, K, A>[]>
-  create: <A extends CreateArgs<C, R, K>>(args: A) => Promise<QueryResult<C, R, K, A>>
-  createMany: <A extends CreateManyArgs<C, R, K>>(args: A) => Promise<QueryResult<C, R, K, A>[]>
-  update: <A extends UpdateArgs<C, R, K>>(args: A) => Promise<QueryResult<C, R, K, A> | null>
-  updateMany: <A extends UpdateManyArgs<C, R, K>>(args: A) => Promise<QueryResult<C, R, K, A>[]>
-  delete: <A extends DeleteArgs<C, R, K>>(args: A) => Promise<QueryResult<C, R, K, A> | null>
+  findUnique: <
+    S extends ListSelect<C, R, K> = never,
+    I extends ListInclude<C, R, K> = never,
+  >(args: {
+    where: ListUniqueWhere<C, R, K>
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I> | null>
+
+  findFirst: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(
+    args?: ListFilterArgs<C, R, K> & { select?: S; include?: I },
+  ) => Promise<QueryResult<C, R, K, S, I> | null>
+
+  findMany: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(
+    args?: ListFilterArgs<C, R, K> & { select?: S; include?: I },
+  ) => Promise<QueryResult<C, R, K, S, I>[]>
+
+  create: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
+    data: CreateInput<C, R, K>
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I>>
+
+  createMany: <
+    S extends ListSelect<C, R, K> = never,
+    I extends ListInclude<C, R, K> = never,
+  >(args: {
+    data: CreateInput<C, R, K>[]
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I>[]>
+
+  update: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
+    where: ListUniqueWhere<C, R, K>
+    data: UpdateInput<C, R, K>
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I> | null>
+
+  updateMany: <
+    S extends ListSelect<C, R, K> = never,
+    I extends ListInclude<C, R, K> = never,
+  >(args: {
+    where?: ListWhere<C, R, K>
+    data: UpdateInput<C, R, K>
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I>[]>
+
+  delete: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
+    where: ListUniqueWhere<C, R, K>
+    select?: S
+    include?: I
+  }) => Promise<QueryResult<C, R, K, S, I> | null>
+
   count: (args?: CountArgs<C, R, K>) => Promise<number>
 }
 

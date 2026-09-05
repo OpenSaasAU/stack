@@ -20,9 +20,19 @@ const DEFAULT_REFERENCES: ContextReferences = {
   contractJsonImport: '../prisma/contract.json',
 }
 
-/** The `contract.d.ts` beside a `contract.json`, as a type-only specifier. */
+/**
+ * The `contract.d.ts` beside a `contract.json`, as a type-only specifier.
+ *
+ * Spelled `.d.js`, not `.d.ts`: the Contract module (`prisma/contract.ts`)
+ * sits in the same directory, and TypeScript resolves `./contract.d.ts` to
+ * THAT file, so the import lands on the builder module and `Contract` is not
+ * among its exports. `./contract.d.js` takes the standard `.js` -> `.d.ts`
+ * mapping and reaches the emitted declarations. The import is type-only and
+ * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
+ * about value imports.
+ */
 function contractTypesImport(contractJsonImport: string): string {
-  return contractJsonImport.replace(/contract\.json$/, 'contract.d.ts')
+  return contractJsonImport.replace(/contract\.json$/, 'contract.d.js')
 }
 
 function storageUtilities(config: OpenSaasConfig): string {
@@ -130,6 +140,7 @@ export function generateContext(
  */
 
 import { getContext as getOpensaasContext, resolveDatabaseUrl } from '@opensaas/stack-core'
+import type { OrmClient } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 ${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
@@ -175,6 +186,17 @@ async function getConfig() {
   }
   return resolvedConfig
 }
+
+/**
+ * The engine still reaches a model by key (\`client.post.findMany\`) — the Prisma 7
+ * shape — while a Prisma 8 client exposes its collections at
+ * \`db.orm.<namespace>.<Model>\`. Reconciling the two is the runtime spec's
+ * (ADR-0041, ADR-0039); until then the client crosses into the engine here, in
+ * one named place, rather than at every call site.
+ */
+function asOrmClient(value: ReturnType<typeof createClient>): OrmClient {
+  return value as unknown as OrmClient
+}
 ${storageUtilities(config)}
 /**
  * Get OpenSaas context with optional session
@@ -195,7 +217,7 @@ ${storageUtilities(config)}
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, db, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext(config, asOrmClient(db), session ?? null, storage) as unknown as Context<TSession>
 }
 
 /**
@@ -207,7 +229,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, db, null, storage) as unknown as Context
+  return getOpensaasContext(config, asOrmClient(db), null, storage) as unknown as Context
 })()
 
 /**

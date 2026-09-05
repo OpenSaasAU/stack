@@ -21,12 +21,16 @@ export type WritableColumn<C, K extends string> = Exclude<
   SystemFilledColumn<C, K>
 >
 
-type ColumnInput<C, R extends RemainderBase, K extends keyof R & string, F> =
-  F extends keyof R[K]['input']
-    ? R[K]['input'][F]
-    : F extends keyof ColumnInputTypes<C, K>
-      ? ColumnInputTypes<C, K>[F]
-      : never
+type ColumnInput<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  F,
+> = F extends keyof R[K]['input']
+  ? R[K]['input'][F]
+  : F extends keyof ColumnInputTypes<C, K>
+    ? ColumnInputTypes<C, K>[F]
+    : never
 
 /**
  * A column required on create: non-nullable with no default of any kind.
@@ -60,11 +64,7 @@ type ForeignKeyOf<C, K extends string, Rel> = Rel extends keyof RelationsOf<C, K
  * nullable to read).
  */
 type RequiredCreateRelation<C, K extends string> = {
-  [Rel in OwnedRelationKey<C, K>]: null extends ColumnInputTypes<C, K>[ForeignKeyOf<
-    C,
-    K,
-    Rel
-  > &
+  [Rel in OwnedRelationKey<C, K>]: null extends ColumnInputTypes<C, K>[ForeignKeyOf<C, K, Rel> &
     keyof ColumnInputTypes<C, K>]
     ? never
     : HasColumnDefault<C, K, ForeignKeyOf<C, K, Rel>> extends true

@@ -1,12 +1,13 @@
-import type { OrmClient, Session, StorageUtils } from '../access/types.js'
+import type { AccessControlledDB, OrmClient, Session, StorageUtils } from '../access/types.js'
 import type { ServerActionProps, TransactionOptions } from '../context/index.js'
 
 /**
  * The `db` surface a generated context carries: one member per list, each its
- * own named `SecuredList` interface. The bundle declares this; core only needs
- * to know it is an object keyed by list name.
+ * own named `SecuredList` interface. The generated `DB` is an `interface`
+ * (ADR-0032), which has no implicit index signature, so the bound is
+ * `object` — core needs to know nothing more about it than that.
  */
-export type StackDb = Record<string, unknown>
+export type StackDb = object
 
 /**
  * The context a hook, an access rule and a plugin service all see: the secured
@@ -26,7 +27,7 @@ export type StackDb = Record<string, unknown>
  * @typeParam P - the app's plugin services, from `.opensaas/plugin-types.ts`.
  */
 export interface StackBaseContext<
-  DB extends StackDb = StackDb,
+  DB extends StackDb = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
 > {
@@ -54,7 +55,7 @@ export interface StackBaseContext<
  * ```
  */
 export interface StackContext<
-  DB extends StackDb = StackDb,
+  DB extends StackDb = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
 > extends StackBaseContext<DB, S, P> {
@@ -89,8 +90,8 @@ export interface StackContext<
  * fact rather than a type difference — the separate name is what lets a
  * signature say which side of the boundary it expects.
  */
-export interface StackTransactionContext<
-  DB extends StackDb = StackDb,
+export type StackTransactionContext<
+  DB extends StackDb = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
-> extends StackContext<DB, S, P> {}
+> = StackContext<DB, S, P>

@@ -19,7 +19,9 @@ describe('generateContext', () => {
     expect(context).toContain(
       "import contractJson from '../prisma/contract.json' with { type: 'json' }",
     )
-    expect(context).toContain("import type { Contract } from '../prisma/contract.d.ts'")
+    // `.d.js`, not `.d.ts`: the Contract module sits in the same directory and
+    // `./contract.d.ts` resolves to IT, not to the emitted declarations.
+    expect(context).toContain("import type { Contract } from '../prisma/contract.d.js'")
     expect(context).toContain('postgres<Contract>({')
     expect(context).toContain('contractJson,')
   })
@@ -69,13 +71,20 @@ describe('generateContext', () => {
     expect(context).toContain('export const config = getConfig()')
   })
 
-  it('carries .ts extensions on every relative import (ADR-0054)', () => {
+  it('carries .ts extensions on every relative VALUE import (ADR-0054)', () => {
     const context = generateContext(config, data)
 
     for (const line of context.split('\n')) {
       if (!line.startsWith('import ')) continue
       const relative = line.match(/from '(\.[^']*)'/)
       if (!relative) continue
+      // A type-only import is erased, so no loader ever sees its specifier;
+      // `contract.d.js` is the spelling that reaches the emitted declarations
+      // past the Contract module beside them.
+      if (line.startsWith('import type ')) {
+        expect(relative[1]).toMatch(/\.(ts|d\.js)$/)
+        continue
+      }
       expect(relative[1]).toMatch(/\.(ts|json)$/)
     }
   })
@@ -88,7 +97,7 @@ describe('generateContext', () => {
 
     expect(context).toContain("from '../../opensaas.config.ts'")
     expect(context).toContain("from '../../db/contract.json'")
-    expect(context).toContain("from '../../db/contract.d.ts'")
+    expect(context).toContain("from '../../db/contract.d.js'")
   })
 
   it('throws from every storage helper when no provider is configured', () => {

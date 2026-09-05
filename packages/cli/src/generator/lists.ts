@@ -1,6 +1,11 @@
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { collectNeeds } from './types.js'
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
 
 /**
  * Map a field type string to the TypeScript field-config type and the
@@ -96,7 +101,9 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     )
     lines.push('')
     lines.push(`  namespace ${listName} {`)
-    lines.push(`    export type Item = import('./types.ts').${listName}`)
+    // A hook's \`item\` is the STORED row: it runs before \`resolveOutput\`, so a
+    // type carrying computed keys would promise a value it never sees (ADR-0027).
+    lines.push(`    export type Item = import('./types.ts').${listName}StoredRow`)
     lines.push('')
 
     lines.push(`    /**`)
@@ -111,10 +118,26 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push(`    }`)
     lines.push('')
 
+    lines.push(`    /**`)
+    lines.push(`     * Per-field declared-dependency facts (ADR-0051). \`needs\` is what the`)
+    lines.push(`     * field declared; \`item\` is that set resolved against the contract —`)
+    lines.push(`     * exactly what its \`resolveOutput\` hook is handed.`)
+    lines.push(`     */`)
+    lines.push(`    export type Needs = {`)
+    for (const [fieldName, keys] of collectNeeds(listConfig.fields)) {
+      const union = keys.map((key) => `'${key}'`).join(' | ')
+      const itemType = `import('./types.ts').${listName}${capitalize(fieldName)}NeedsItem`
+      lines.push(`      ${fieldName}: { needs: ${union}; item: ${itemType} }`)
+    }
+    lines.push(`    }`)
+    lines.push('')
+
     lines.push(`    export type TypeInfo = {`)
     lines.push(`      key: '${listName}'`)
     lines.push(`      fields: Fields`)
+    lines.push(`      needs: Needs`)
     lines.push(`      item: Item`)
+    lines.push(`      output: import('./types.ts').${listName}`)
     lines.push(`      inputs: {`)
     lines.push(`        create: import('./types.ts').${listName}CreateInput`)
     lines.push(`        update: import('./types.ts').${listName}UpdateInput`)

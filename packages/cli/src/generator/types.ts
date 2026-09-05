@@ -1,1220 +1,170 @@
-import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
-import { resolveListTimestamps } from '@opensaas/stack-core'
-import type { RelationshipField } from '@opensaas/stack-core/fields'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { getDbKey } from '@opensaas/stack-core'
+import type { TypeDescriptor } from '@opensaas/stack-core/extend'
+import { typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
 import * as path from 'path'
 
-function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
-  if (field.type === 'relationship') {
-    return null
-  }
+/**
+ * The empty member of a `Remainder` entry. `Record<never, never>` rather than
+ * an index-signature type: `keyof` it is `never`, so an empty `output` map
+ * cannot accidentally `Omit` every column off the row.
+ */
+const EMPTY = 'Record<never, never>'
 
-  if (field.getTypeScriptType) {
-    const result = field.getTypeScriptType()
-    return result.type
-  }
-
-  throw new Error(`Field type "${field.type}" does not implement getTypeScriptType method`)
+/**
+ * Resolve the TypeScript type a field reads as, when it differs from its
+ * column's codec type. A virtual field's `outputType` is already a resolved
+ * string; a stored field's may be a descriptor. `resultExtension.outputType`
+ * is the pre-ADR-0052 spelling, still honoured by the field packages that
+ * have not moved yet (#1139).
+ */
+function readOutputType(field: FieldConfig): string | null {
+  const declared: TypeDescriptor | undefined = field.outputType
+  if (declared !== undefined) return typeDescriptorToTypeString(declared)
+  if (field.resultExtension?.outputType) return field.resultExtension.outputType
+  return null
 }
 
-function isFieldOptional(field: FieldConfig): boolean {
-  // Relationships are always nullable
-  if (field.type === 'relationship') {
-    return true
-  }
-
-  if (field.getTypeScriptType) {
-    const result = field.getTypeScriptType()
-    return result.optional
-  }
-
-  return true
+function readInputType(field: FieldConfig): string | null {
+  const declared: TypeDescriptor | undefined = field.inputType
+  return declared === undefined ? null : typeDescriptorToTypeString(declared)
 }
 
-function getVirtualFieldNames(fields: Record<string, FieldConfig>): string[] {
-  return Object.entries(fields)
-    .filter(([_, config]) => config.type === 'virtual')
-    .map(([name, _]) => name)
+function isVirtual(field: FieldConfig): boolean {
+  return field.type === 'virtual' || field.virtual === true
 }
 
 /**
- * Intersected with Prisma's GetPayload to add virtual fields to query results.
+ * Render `{ a: T; b: U }`, or the empty marker when there is nothing to say.
  */
-function generateVirtualFieldsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const lines: string[] = []
-  const virtualFields = Object.entries(fields).filter(([_, config]) => config.type === 'virtual')
-
-  lines.push(`/**`)
-  lines.push(` * Virtual fields for ${listName} - computed fields not in database`)
-  lines.push(` * These are added to query results via resolveOutput hooks`)
-  lines.push(` */`)
-  lines.push(`export type ${listName}VirtualFields = {`)
-
-  for (const [fieldName, fieldConfig] of virtualFields) {
-    const tsType = mapFieldTypeToTypeScript(fieldConfig)
-    if (!tsType) continue
-
-    const optional = isFieldOptional(fieldConfig)
-    const nullability = optional ? ' | null' : ''
-    lines.push(`  ${fieldName}: ${tsType}${nullability}`)
-  }
-
-  if (virtualFields.length === 0) {
-    lines.push('  // No virtual fields defined')
-  }
-
-  lines.push('}')
-
-  return lines.join('\n')
+function renderMembers(members: string[], indent: string): string {
+  if (members.length === 0) return EMPTY
+  return `{\n${members.map((m) => `${indent}  ${m}`).join('\n')}\n${indent}}`
 }
 
 /**
- * Replaces Prisma's base types with transformed types (e.g., string -> HashedPassword).
+ * One list's contract remainder: the facts the emitted Contract artifacts
+ * cannot carry (ADR-0052). Everything else about the list — scalar types,
+ * nullability, relation arity, foreign-key ownership, column defaults — is
+ * read from the contract by core's generics and is never written here.
  */
-function generateTransformedFieldsType(
+function generateRemainderEntry(
   listName: string,
   fields: Record<string, FieldConfig>,
-): string {
-  const lines: string[] = []
-  const transformedFields = Object.entries(fields).filter(([_, config]) => config.resultExtension)
-
-  lines.push(`/**`)
-  lines.push(` * Transformed fields for ${listName} - fields with resultExtension transformations`)
-  lines.push(` * These override Prisma's base types with transformed types via result extensions`)
-  lines.push(` */`)
-  lines.push(`export type ${listName}TransformedFields = {`)
-
-  for (const [fieldName, fieldConfig] of transformedFields) {
-    if (fieldConfig.resultExtension) {
-      const optional = isFieldOptional(fieldConfig)
-      const nullability = optional ? ' | undefined' : ''
-      lines.push(`  ${fieldName}: ${fieldConfig.resultExtension.outputType}${nullability}`)
-    }
-  }
-
-  if (transformedFields.length === 0) {
-    lines.push('  // No transformed fields defined')
-  }
-
-  lines.push('}')
-
-  return lines.join('\n')
-}
-
-/**
- * Kept for backwards compatibility — `CustomDB` itself uses Prisma's
- * GetPayload + VirtualFields instead.
- */
-function generateModelOutputType(
-  listName: string,
-  // ListConfig is generic over per-list TypeInfo; we only read `db`/`fields`, which are
-  // invariant across that generic, so the permissive default arg is intentional.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  listConfig: ListConfig<any>,
-  dbConfig: DatabaseConfig,
   isSingleton: boolean,
 ): string {
-  const fields = listConfig.fields
-  const lines: string[] = []
+  const computed: string[] = []
+  const output: string[] = []
+  const input: string[] = []
 
-  lines.push(`export type ${listName}Output = {`)
-  // Singleton lists use an Int id (bare `id Int @id`, see ADR-0004) matching
-  // Keystone 6, so the TypeScript id type is `number` rather than `string`.
-  lines.push(isSingleton ? '  id: number' : '  id: string')
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (fieldConfig.type === 'virtual') continue
-
-    if (fieldConfig.type === 'relationship') {
-      const relField = fieldConfig as RelationshipField
-      const [targetList] = relField.ref.split('.')
-
-      if (relField.many) {
-        lines.push(`  ${fieldName}?: ${targetList}Output[]`) // Optional since only present with include
-      } else {
-        lines.push(`  ${fieldName}Id: string | null`)
-        lines.push(`  ${fieldName}?: ${targetList}Output | null`) // Optional since only present with include
-      }
-    } else {
-      const tsType = mapFieldTypeToTypeScript(fieldConfig)
-      if (!tsType) continue
-
-      const optional = isFieldOptional(fieldConfig)
-      const nullability = optional ? ' | null' : ''
-      lines.push(`  ${fieldName}: ${tsType}${nullability}`)
-    }
-  }
-
-  // Auto-timestamp columns mirror the Prisma schema: only emitted when timestamps are
-  // enabled (off by default — ADR-0004) and not already declared as a field above.
-  const timestamps = resolveListTimestamps(listConfig, dbConfig)
-  if (timestamps.createdAt) {
-    lines.push('  createdAt: Date')
-  }
-  if (timestamps.updatedAt) {
-    lines.push('  updatedAt: Date')
-  }
-  lines.push('} & ' + listName + 'VirtualFields')
-
-  return lines.join('\n')
-}
-
-function generateModelTypeAlias(listName: string): string {
-  return `export type ${listName} = ${listName}Output`
-}
-
-/**
- * Render a single scalar create/update input member line — the SINGLE source of
- * truth for a scalar field's member shape (name, `?` optionality, TypeScript
- * type, and `| null` nullability).
- *
- * Both the standalone `{List}CreateInput`/`{List}UpdateInput` exports and the
- * call-site write-`data` override (`buildScalarOverrideMembers`) render their
- * scalar members through this helper so the two cannot drift on how a nullable
- * scalar is represented (#608).
- *
- * Nullability: a nullable scalar (`getTypeScriptType().optional`) gets `| null`,
- * matching Prisma's nullable-column input. A required scalar gets neither `?`
- * nor `| null`.
- *
- * Optionality:
- *  - create: optional (`?`) when nullable OR it has a default value. The
- *    `defaultValue === undefined` check is explicit (not truthiness) so a
- *    falsy-but-present default such as `checkbox({ defaultValue: false })` is
- *    still treated as having a default. See #599.
- *  - update: always optional (partial update).
- *
- * Returns `null` for fields whose `getTypeScriptType()` yields no type, so
- * callers can skip them.
- *
- * @param indent - Leading whitespace for the emitted line (call sites differ:
- *   standalone inputs use 2 spaces, the `data` override uses 4).
- */
-function renderScalarInputMember(
-  fieldName: string,
-  fieldConfig: FieldConfig,
-  forCreate: boolean,
-  indent: string,
-): string | null {
-  const tsType = mapFieldTypeToTypeScript(fieldConfig)
-  if (!tsType) return null
-
-  const nullable = isFieldOptional(fieldConfig)
-  const nullability = nullable ? ' | null' : ''
-
-  let optional: string
-  if (forCreate) {
-    const required = !nullable && fieldConfig.defaultValue === undefined
-    optional = required ? '' : '?'
-  } else {
-    optional = '?'
-  }
-
-  return `${indent}${fieldName}${optional}: ${tsType}${nullability}`
-}
-
-function generateCreateInputType(listName: string, fields: Record<string, FieldConfig>): string {
-  const lines: string[] = []
-
-  lines.push(`export type ${listName}CreateInput = {`)
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Virtual fields with resolveInput hooks can handle side effects but don't store data.
-    if (fieldConfig.virtual) {
+  for (const [fieldName, field] of Object.entries(fields)) {
+    const outputType = readOutputType(field)
+    if (isVirtual(field)) {
+      // A virtual field has no column, so the contract has no type for it.
+      computed.push(`${fieldName}: ${outputType ?? 'unknown'}`)
       continue
     }
-
-    if (fieldConfig.type === 'relationship') {
-      const relField = fieldConfig as RelationshipField
-
-      if (relField.many) {
-        lines.push(`  ${fieldName}?: { connect: Array<{ id: string }> }`)
-      } else {
-        lines.push(`  ${fieldName}?: { connect: { id: string } }`)
-      }
-    } else {
-      // Shared source of truth with the write-`data` override (#608): same
-      // optionality + `| null` nullability for nullable scalars.
-      const member = renderScalarInputMember(fieldName, fieldConfig, true, '  ')
-      if (!member) continue
-      lines.push(member)
-    }
+    if (outputType !== null) output.push(`${fieldName}: ${outputType}`)
+    const inputType = readInputType(field)
+    if (inputType !== null) input.push(`${fieldName}: ${inputType}`)
   }
 
-  lines.push('}')
-
-  return lines.join('\n')
-}
-
-/**
- * Decide whether a scalar field should have its write-path `data` type narrowed
- * to the OpenSaaS `getTypeScriptType()` type, or left as Prisma's input type.
- *
- * Most scalar fields are narrowed so that field-level narrowing (e.g.
- * `calendarDay` -> `string`) is a genuine compile error to violate at the
- * `context.db.<list>.create()/update()` call site (#599). Three field shapes are
- * deliberately left on Prisma's input type to avoid regressing valid writes:
- *
- * - `decimal`: OpenSaaS narrows to `Decimal`, but Prisma accepts
- *   `Decimal | number | string`. A strict override would wrongly reject valid
- *   `number`/`string` decimal writes.
- * - `bigInt`: OpenSaaS narrows to `bigint` (issue #907), but Prisma accepts
- *   `bigint | number`. A strict override would wrongly reject a valid `number`
- *   write, the same failure mode as `decimal` above. (`bigInt()`'s own
- *   `getZodSchema` additionally accepts a numeric `string`, coerced to
- *   `bigint` at the access-control boundary — wider than this narrowly-typed
- *   `context.db` call site, which is fine: the boundary is TypeScript's, not
- *   the field's.)
- * - `json`: OpenSaaS narrows to `unknown`, but Prisma's input type carries the
- *   `JsonNull`/`DbNull` sentinels. Overriding to `unknown` would drop them.
- *
- * Multi-column / `resultExtension` storage fields (`getColumnNames`) are also
- * left to Prisma: they back several raw columns rather than a single scalar
- * column, so there is no single OpenSaaS scalar to narrow to. Their raw backing
- * columns are still stripped from the override (see `getScalarOverrideOmitKeys`)
- * so no dangling Prisma keys are left behind — mirroring `generateGetPayload`.
- */
-function shouldNarrowScalarWrite(fieldConfig: FieldConfig): boolean {
-  if (fieldConfig.type === 'relationship') return false
-  if (fieldConfig.virtual) return false
-  if (!fieldConfig.getTypeScriptType) return false
-  // Keep Prisma's input type for decimal/bigInt/json (see doc comment above).
-  if (
-    fieldConfig.type === 'decimal' ||
-    fieldConfig.type === 'bigInt' ||
-    fieldConfig.type === 'json'
-  )
-    return false
-  // Multi-column / storage fields back raw columns, not a single scalar.
-  if (typeof fieldConfig.getColumnNames === 'function') return false
-  return true
-}
-
-/**
- * The base `data` keys to omit before re-adding narrowed scalar members.
- * Includes each narrowed scalar field name plus any raw backing columns of
- * multi-column fields (so no dangling keys remain after the Omit).
- */
-function getScalarOverrideOmitKeys(fields: Record<string, FieldConfig>): string[] {
-  const keys: string[] = []
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (shouldNarrowScalarWrite(fieldConfig)) {
-      keys.push(fieldName)
-    }
-    // Strip raw backing columns of multi-column fields regardless of narrowing:
-    // they are assembled from a logical field and must not leak Prisma keys.
-    if (typeof fieldConfig.getColumnNames === 'function') {
-      keys.push(...fieldConfig.getColumnNames(fieldName))
-    }
-  }
-  return keys
-}
-
-/**
- * Build the narrowed scalar member lines for a write `data` override.
- * Each narrowed scalar field uses its OpenSaaS `getTypeScriptType()` type with
- * correct optionality/nullability.
- *
- * @param forCreate - create uses required/optional + default semantics; update
- *   makes every field optional (partial update).
- */
-function buildScalarOverrideMembers(
-  fields: Record<string, FieldConfig>,
-  forCreate: boolean,
-): string[] {
-  const members: string[] = []
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (!shouldNarrowScalarWrite(fieldConfig)) continue
-
-    // Shared source of truth with generateCreateInputType / generateUpdateInputType
-    // (#608): identical optionality + `| null` nullability rendering. The override
-    // uses 4-space indentation since it is nested inside the `data: ... & { ... }`.
-    const member = renderScalarInputMember(fieldName, fieldConfig, forCreate, '    ')
-    if (!member) continue
-    members.push(member)
-  }
-  return members
-}
-
-/**
- * The base every write-path `data` type is layered over.
- *
- * Prisma's own `{List}{Create|Update}Input` used to fill this slot. Nothing in
- * the bundle can reconstruct it now the generated client is gone (#1134): it
- * carries nested relation writes, unchecked FK columns, atomic number
- * operations and the JSON null sentinels, none of which the config describes.
- * Claiming the narrower config-derived `{List}CreateInput` here would reject
- * writes that are valid, so the unnarrowed placeholder stands in and only the
- * scalars OpenSaaS itself narrows (#599) are checked. #1136 replaces it with
- * the contract-derived input.
- */
-const WRITE_DATA_BASE = 'OpensaasUnnarrowed'
-
-/**
- * Build a narrowed write input type over a base input type expression.
- * Scalars are narrowed to OpenSaaS types while relationship nested writes,
- * unchecked FK fields, and decimal/bigInt/json are left to the base.
- *
- * Shape: `Omit<<base>, <omitKeys>> & { <narrowed scalars> }`
- */
-function buildWriteInputOverride(
-  prismaBase: string,
-  fields: Record<string, FieldConfig>,
-  forCreate: boolean,
-): string {
-  const omitKeys = getScalarOverrideOmitKeys(fields)
-  const members = buildScalarOverrideMembers(fields, forCreate)
-
-  if (omitKeys.length === 0 && members.length === 0) {
-    return prismaBase
-  }
-
-  const omitUnion = omitKeys.map((k) => `'${k}'`).join(' | ')
-  const base = omitKeys.length > 0 ? `Omit<${prismaBase}, ${omitUnion}>` : prismaBase
-
-  if (members.length === 0) {
-    return base
-  }
-
-  return `${base} & {\n${members.join('\n')}\n  }`
-}
-
-function generateUpdateInputType(listName: string, fields: Record<string, FieldConfig>): string {
-  const lines: string[] = []
-
-  lines.push(`export type ${listName}UpdateInput = {`)
-
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    // Virtual fields with resolveInput hooks can accept input for side effects
-    // but we still skip them in the input type since they don't store data
-    if (fieldConfig.virtual) {
-      continue
-    }
-
-    if (fieldConfig.type === 'relationship') {
-      const relField = fieldConfig as RelationshipField
-
-      if (relField.many) {
-        lines.push(
-          `  ${fieldName}?: { connect: Array<{ id: string }>, disconnect: Array<{ id: string }> }`,
-        )
-      } else {
-        lines.push(`  ${fieldName}?: { connect: { id: string } } | { disconnect: true }`)
-      }
-    } else {
-      // Shared source of truth with the write-`data` override (#608): partial
-      // update (always optional) with `| null` nullability for nullable scalars.
-      const member = renderScalarInputMember(fieldName, fieldConfig, false, '  ')
-      if (!member) continue
-      lines.push(member)
-    }
-  }
-
-  lines.push('}')
-
-  return lines.join('\n')
-}
-
-function generateWhereInputType(listName: string, _fields: Record<string, FieldConfig>): string {
-  return `export type ${listName}WhereInput = OpensaasUnnarrowed`
-}
-
-function generateHookTypes(listName: string): string {
-  const lines: string[] = []
-
-  lines.push(`/**`)
-  lines.push(` * Hook types for ${listName} list`)
-  lines.push(` * Typed against the generated ${listName}CreateInput / ${listName}UpdateInput`)
-  lines.push(` */`)
-  lines.push(`export type ${listName}Hooks = {`)
-  lines.push(`  resolveInput?: (args:`)
-  lines.push(`    | {`)
-  lines.push(`        operation: 'create'`)
-  lines.push(`        resolvedData: ${listName}CreateInput`)
-  lines.push(`        item: undefined`)
-  lines.push(`        context: BaseContext`)
-  lines.push(`      }`)
-  lines.push(`    | {`)
-  lines.push(`        operation: 'update'`)
-  lines.push(`        resolvedData: ${listName}UpdateInput`)
-  lines.push(`        item: ${listName}`)
-  lines.push(`        context: BaseContext`)
-  lines.push(`      }`)
-  lines.push(`  ) => Promise<${listName}CreateInput | ${listName}UpdateInput>`)
-  lines.push(`  validateInput?: (args: {`)
-  lines.push(`    operation: 'create' | 'update'`)
-  lines.push(`    resolvedData: ${listName}CreateInput | ${listName}UpdateInput`)
-  lines.push(`    item?: ${listName}`)
-  lines.push(`    context: BaseContext`)
-  lines.push(`    addValidationError: (msg: string) => void`)
-  lines.push(`  }) => Promise<void>`)
-  lines.push(`  beforeOperation?: (args: {`)
-  lines.push(`    operation: 'create' | 'update' | 'delete'`)
-  lines.push(`    resolvedData?: ${listName}CreateInput | ${listName}UpdateInput`)
-  lines.push(`    item?: ${listName}`)
-  lines.push(`    context: BaseContext`)
-  lines.push(`  }) => Promise<void>`)
-  lines.push(`  afterOperation?: (args: {`)
-  lines.push(`    operation: 'create' | 'update' | 'delete'`)
-  lines.push(`    resolvedData?: ${listName}CreateInput | ${listName}UpdateInput`)
-  lines.push(`    item?: ${listName}`)
-  lines.push(`    context: BaseContext`)
-  lines.push(`  }) => Promise<void>`)
-  lines.push(`}`)
-
-  return lines.join('\n')
-}
-
-function generateSelectType(listName: string, fields: Record<string, FieldConfig>): string {
-  const virtualFields = getVirtualFieldNames(fields)
-  const relationshipFields = Object.entries(fields)
-    .filter(([_, config]) => config.type === 'relationship')
-    .map(([name, config]) => ({
-      name,
-      targetList: (config as RelationshipField).ref.split('.')[0],
-    }))
-
-  if (virtualFields.length === 0 && relationshipFields.length === 0) {
-    return `/**
- * Select type for ${listName}
- * No virtual fields defined, uses Prisma's Select type directly
- */
-export type ${listName}Select = OpensaasUnnarrowed`
-  }
-
-  const lines: string[] = []
-
-  if (virtualFields.length > 0) {
-    virtualFields.forEach((name) => {
-      lines.push(`  ${name}?: boolean`)
-    })
-  }
-
-  if (relationshipFields.length > 0) {
-    relationshipFields.forEach(({ name, targetList }) => {
-      lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
-    })
-  }
-
-  if (lines.length === 0) {
-    return `/**
- * Select type for ${listName}
- * Uses Prisma's Select type directly
- */
-export type ${listName}Select = OpensaasUnnarrowed`
-  }
-
-  const exampleLines: string[] = []
-  if (virtualFields.length > 0) {
-    exampleLines.push(...virtualFields.map((name) => ` *   ${name}: true, // Virtual field`))
-  }
-
-  return `/**
- * Select type for ${listName} with virtual field support
- * Extends Prisma's Select type to include virtual fields
- * and supports custom Select types in nested relationships
- * Use this type when selecting fields to enable virtual field selection
- *
- * @example
- * const select = {
- *   id: true,
- *   name: true,
-${exampleLines.join('\n')}
- * } satisfies ${listName}Select
- */
-export type ${listName}Select = OpensaasUnnarrowed & {
-${lines.join('\n')}
-}`
-}
-
-/**
- * Only generates an Include type if the list has relationship fields — Prisma
- * itself only generates Include types for models with relations.
- */
-function generateIncludeType(listName: string, fields: Record<string, FieldConfig>): string | null {
-  const relationshipFields = Object.entries(fields)
-    .filter(([_, config]) => config.type === 'relationship')
-    .map(([name, config]) => ({
-      name,
-      targetList: (config as RelationshipField).ref.split('.')[0],
-    }))
-
-  if (relationshipFields.length === 0) {
-    return null
-  }
-
-  const virtualFields = getVirtualFieldNames(fields)
-
-  const lines: string[] = []
-
-  if (virtualFields.length > 0) {
-    virtualFields.forEach((name) => {
-      lines.push(`  ${name}?: boolean`)
-    })
-  }
-
-  relationshipFields.forEach(({ name, targetList }) => {
-    lines.push(`  ${name}?: boolean | ${targetList}DefaultArgs`)
-  })
-
-  if (lines.length === 0) {
-    return `/**
- * Include type for ${listName}
- * No virtual fields defined, uses Prisma's Include type directly
- */
-export type ${listName}Include = OpensaasUnnarrowed`
-  }
-
-  const exampleLines: string[] = []
-  if (virtualFields.length > 0) {
-    exampleLines.push(...virtualFields.map((name) => ` *   ${name}: true, // Virtual field`))
-  }
-
-  return `/**
- * Include type for ${listName} with virtual field support
- * Extends Prisma's Include type to include virtual fields
- * and supports custom Include types in nested relationships
- * Use this type when including relationships to enable virtual field selection
- *
- * @example
- * const include = {
- *   author: true,
-${exampleLines.join('\n')}
- * } satisfies ${listName}Include
- */
-export type ${listName}Include = OpensaasUnnarrowed & {
-${lines.join('\n')}
-}`
-}
-
-/**
- * Always generated, even for lists without virtual fields — CustomDB type
- * signatures stay consistent, and lists without their own virtual fields
- * still need this to support nested relations that have them.
- */
-function generateGetPayloadType(listName: string, fields: Record<string, FieldConfig>): string {
-  const virtualFields = getVirtualFieldNames(fields)
-  const transformedFieldNames = Object.entries(fields)
-    .filter(([_, config]) => config.resultExtension)
-    .map(([name, _]) => name)
-
-  // Multi-column fields (e.g. storage image()/file() in Keystone-parity mode)
-  // back several raw Prisma columns that must be stripped from the public
-  // payload: only the assembled logical field (added back via TransformedFields)
-  // is exposed. Collect those raw column names for omission. See ADR-0006.
-  const multiColumnRawNames = Object.entries(fields).flatMap(([name, config]) =>
-    config.getColumnNames ? config.getColumnNames(name) : [],
+  const needs = collectNeeds(fields).map(
+    ([fieldName, keys]) => `${fieldName}: ${keys.map((k) => `'${k}'`).join(' | ')}`,
   )
 
-  const relationshipFields = Object.entries(fields)
-    .filter(([_, config]) => config.type === 'relationship')
-    .map(([name, config]) => ({
-      name,
-      targetList: (config as RelationshipField).ref.split('.')[0],
-      many: !!(config as RelationshipField).many,
-    }))
-
-  const lines: string[] = []
-
-  lines.push(`/**`)
-  if (virtualFields.length > 0 || transformedFieldNames.length > 0) {
-    lines.push(` * GetPayload type for ${listName} with virtual and transformed field support`)
-    lines.push(` * Extends Prisma's GetPayload to include virtual and transformed fields`)
-  } else {
-    lines.push(` * GetPayload type for ${listName}`)
-    lines.push(` * Wraps Prisma's GetPayload to ensure nested relations support virtual fields`)
-  }
-  lines.push(` * Use this type to get properly typed results with virtual fields`)
-  lines.push(` *`)
-  lines.push(` * @example`)
-  lines.push(` * const select = {`)
-  lines.push(` *   id: true,`)
-  if (virtualFields.length > 0) {
-    virtualFields.forEach((fieldName) => {
-      lines.push(` *   ${fieldName}: true, // Virtual field`)
-    })
-  } else {
-    lines.push(` *   // Relations can include virtual fields from related lists`)
-  }
-  lines.push(` * } satisfies ${listName}Select`)
-  lines.push(` *`)
-  lines.push(` * type Result = ${listName}GetPayload<{ select: typeof select }>`)
-  lines.push(` */`)
-
-  lines.push(`export type ${listName}GetPayload<T extends { select?: any; include?: any } = {}> =`)
-
-  // Build the base type (Prisma's GetPayload minus relationship and transformed fields)
-  // When virtual fields exist, strip them from T before passing to Prisma so Prisma never
-  // tries to resolve a virtual field name (which would produce `never` in its payload type).
-  const fieldsToOmit = [
-    ...transformedFieldNames,
-    ...relationshipFields.map((r) => r.name),
-    ...multiColumnRawNames,
+  const lines = [
+    `  ${listName}: {`,
+    `    computed: ${renderMembers(computed, '    ')}`,
+    `    output: ${renderMembers(output, '    ')}`,
+    `    input: ${renderMembers(input, '    ')}`,
+    `    needs: ${renderMembers(needs, '    ')}`,
   ]
-  const prismaT =
-    virtualFields.length > 0 ? `StripVirtualFromArgs<T, keyof ${listName}VirtualFields>` : 'T'
-  if (fieldsToOmit.length > 0) {
-    lines.push(
-      `  Omit<OpensaasPayload<${listName}Output, ${prismaT}>, ${fieldsToOmit.map((n) => `'${n}'`).join(' | ')}> &`,
-    )
-  } else {
-    lines.push(`  OpensaasPayload<${listName}Output, ${prismaT}> &`)
-  }
-
-  if (transformedFieldNames.length > 0) {
-    lines.push(`  ${listName}TransformedFields &`)
-  }
-
-  if (relationshipFields.length > 0) {
-    lines.push(`  {`)
-    for (const rel of relationshipFields) {
-      lines.push(`    ${rel.name}?:`)
-      lines.push(`      T extends { select: any }`)
-      lines.push(`        ? '${rel.name}' extends keyof T['select']`)
-      lines.push(`          ? T['select']['${rel.name}'] extends true`)
-      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`            : T['select']['${rel.name}'] extends { select: any }`)
-      lines.push(
-        `              ? ${rel.targetList}GetPayload<{ select: T['select']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
-      )
-      lines.push(`              : T['select']['${rel.name}'] extends { include: any }`)
-      lines.push(
-        `                ? ${rel.targetList}GetPayload<{ include: T['select']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
-      )
-      lines.push(`                : ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`          : never`)
-      lines.push(`        : T extends { include: any }`)
-      lines.push(`          ? T['include'] extends true`)
-      lines.push(`            ? ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`            : '${rel.name}' extends keyof T['include']`)
-      lines.push(`              ? T['include']['${rel.name}'] extends true`)
-      lines.push(`                ? ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`                : T['include']['${rel.name}'] extends { select: any }`)
-      lines.push(
-        `                  ? ${rel.targetList}GetPayload<{ select: T['include']['${rel.name}']['select'] }>${rel.many ? '[]' : ''}`,
-      )
-      lines.push(`                  : T['include']['${rel.name}'] extends { include: any }`)
-      lines.push(
-        `                    ? ${rel.targetList}GetPayload<{ include: T['include']['${rel.name}']['include'] }>${rel.many ? '[]' : ''}`,
-      )
-      lines.push(`                    : ${rel.targetList}${rel.many ? '[]' : ''}`)
-      lines.push(`              : never`)
-      lines.push(`          : ${rel.targetList}${rel.many ? '[]' : ''}`)
-    }
-    lines.push(`  } &`)
-  }
-
-  if (virtualFields.length > 0) {
-    lines.push(`  (`)
-    lines.push(`    T extends { select: any }`)
-    lines.push(`      ? T['select'] extends true`)
-    lines.push(`        ? ${listName}VirtualFields`)
-    lines.push(`        : {`)
-    lines.push(`            [K in keyof ${listName}VirtualFields as K extends keyof T['select']`)
-    lines.push(`              ? T['select'][K] extends true`)
-    lines.push(`                ? K`)
-    lines.push(`                : never`)
-    lines.push(`              : never]: ${listName}VirtualFields[K]`)
-    lines.push(`          }`)
-    lines.push(`      : T extends { include: any }`)
-    lines.push(`        ? T['include'] extends true`)
-    lines.push(`          ? ${listName}VirtualFields`)
-    lines.push(`          : {`)
-    lines.push(`              [K in keyof ${listName}VirtualFields as K extends keyof T['include']`)
-    lines.push(`                ? T['include'][K] extends true`)
-    lines.push(`                  ? K`)
-    lines.push(`                  : never`)
-    lines.push(`                : never]: ${listName}VirtualFields[K]`)
-    lines.push(`            }`)
-    lines.push(`        : ${listName}VirtualFields`)
-    lines.push(`  )`)
-  } else {
-    lines.push(`  {}`)
-  }
-
-  return lines.join('\n')
-}
-
-function generateDefaultArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Default args type for ${listName} with custom Select/Include support
- * Used in nested relationship selections to support virtual fields
- */
-export type ${listName}DefaultArgs = {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-}`
-  } else {
-    return `/**
- * Default args type for ${listName} with custom Select support
- * Used in nested relationship selections to support virtual fields
- */
-export type ${listName}DefaultArgs = {
-  select?: ${listName}Select | null
-}`
-  }
-}
-
-function generateFindUniqueArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Custom FindUniqueArgs for ${listName} with virtual field support in nested relationships
- */
-export type ${listName}FindUniqueArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  } else {
-    return `/**
- * Custom FindUniqueArgs for ${listName} with virtual field support
- */
-export type ${listName}FindUniqueArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  }
-}
-
-function generateFindManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Custom FindManyArgs for ${listName} with virtual field support in nested relationships
- */
-export type ${listName}FindManyArgs = OpensaasFilterArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  } else {
-    return `/**
- * Custom FindManyArgs for ${listName} with virtual field support
- */
-export type ${listName}FindManyArgs = OpensaasFilterArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  }
-}
-
-function generateFindFirstArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Custom FindFirstArgs for ${listName} with virtual field support in nested relationships
- */
-export type ${listName}FindFirstArgs = OpensaasFilterArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  } else {
-    return `/**
- * Custom FindFirstArgs for ${listName} with virtual field support
- */
-export type ${listName}FindFirstArgs = OpensaasFilterArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  }
-}
-
-/**
- * The same include/query narrowing as FindUniqueArgs, minus `where` (a
- * singleton has no unique selector; there is exactly one row).
- */
-function generateGetArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Custom Args for ${listName}.get() with virtual field support in nested relationships
- */
-export type ${listName}GetArgs = {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  } else {
-    return `/**
- * Custom Args for ${listName}.get() with virtual field support
- */
-export type ${listName}GetArgs = {
-  select?: ${listName}Select | null
-  query?: Fragment<${listName}Output, FieldSelection<${listName}Output>>
-}`
-  }
-}
-
-function generateCreateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-  // Narrow scalar `data` members to OpenSaaS types so field-level narrowing
-  // (e.g. calendarDay -> string) is a compile error at the call site (#599),
-  // while relationship nested writes / decimal / json keep Prisma's shape.
-  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, true)
-
-  if (hasRelationships) {
-    return `/**
- * Custom CreateArgs for ${listName} with virtual field support in nested relationships
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}CreateArgs = {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  data: ${dataType}
-}`
-  } else {
-    return `/**
- * Custom CreateArgs for ${listName} with virtual field support
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}CreateArgs = {
-  select?: ${listName}Select | null
-  data: ${dataType}
-}`
-  }
-}
-
-function generateUpdateArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-  // See generateCreateArgsType: narrow scalar `data` members (#599).
-  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, false)
-
-  if (hasRelationships) {
-    return `/**
- * Custom UpdateArgs for ${listName} with virtual field support in nested relationships
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}UpdateArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-  data: ${dataType}
-}`
-  } else {
-    return `/**
- * Custom UpdateArgs for ${listName} with virtual field support
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}UpdateArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  data: ${dataType}
-}`
-  }
-}
-
-function generateDeleteArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-
-  if (hasRelationships) {
-    return `/**
- * Custom DeleteArgs for ${listName} with virtual field support in nested relationships
- */
-export type ${listName}DeleteArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-}`
-  } else {
-    return `/**
- * Custom DeleteArgs for ${listName} with virtual field support
- */
-export type ${listName}DeleteArgs = OpensaasUniqueArgs<${listName}WhereInput> & {
-  select?: ${listName}Select | null
-}`
-  }
-}
-
-function generateCreateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-  // createMany `data` is an array of scalar inputs; narrow each element (#599).
-  const dataElement = buildWriteInputOverride(WRITE_DATA_BASE, fields, true)
-
-  if (hasRelationships) {
-    return `/**
- * Custom CreateManyArgs for ${listName} with virtual field support in nested relationships
- * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}CreateManyArgs = {
-  data: Array<${dataElement}>
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-}`
-  } else {
-    return `/**
- * Custom CreateManyArgs for ${listName} with virtual field support
- * Each \`data\` element narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}CreateManyArgs = {
-  data: Array<${dataElement}>
-  select?: ${listName}Select | null
-}`
-  }
-}
-
-function generateUpdateManyArgsType(listName: string, fields: Record<string, FieldConfig>): string {
-  const hasRelationships = Object.values(fields).some((field) => field.type === 'relationship')
-  // updateMany `data` is a single partial scalar input; narrow it (#599).
-  const dataType = buildWriteInputOverride(WRITE_DATA_BASE, fields, false)
-
-  if (hasRelationships) {
-    return `/**
- * Custom UpdateManyArgs for ${listName} with virtual field support in nested relationships
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}UpdateManyArgs = {
-  where?: ${listName}WhereInput
-  data: ${dataType}
-  select?: ${listName}Select | null
-  include?: ${listName}Include | null
-}`
-  } else {
-    return `/**
- * Custom UpdateManyArgs for ${listName} with virtual field support
- * The \`data\` member narrows scalar fields to their OpenSaaS types (#599).
- */
-export type ${listName}UpdateManyArgs = {
-  where?: ${listName}WhereInput
-  data: ${dataType}
-  select?: ${listName}Select | null
-}`
-  }
-}
-
-/**
- * Generate the named CRUD interface for a single list — extracted out of
- * `CustomDB` (rather than inlined as an anonymous object-literal member) so
- * TypeScript resolves it as its own lazily-checked symbol. See #952 / ADR-0032:
- * an anonymous per-list block inlined directly into one large `CustomDB`
- * intersection, combined with the self-referential `Context.sudo(): Context`
- * return type, hit `TS2589: Type instantiation is excessively deep` once a
- * schema grew past ~7-8 lists.
- *
- * Every method below is generic over its own `*Args` type, to preserve
- * Prisma's conditional return type together with the virtual-field-aware
- * `GetPayload` — `count` is the only exception, since it returns a plain number.
- */
-function generateListCrudInterface(listName: string, isSingleton: boolean): string {
-  const lines: string[] = []
-
-  lines.push(`/**`)
-  lines.push(` * Access-controlled CRUD methods for ${listName}, with virtual field support.`)
-  lines.push(` */`)
-  lines.push(`export interface ${listName}Crud {`)
-
-  lines.push(`  findUnique: <T extends ${listName}FindUniqueArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}FindUniqueArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
-
-  lines.push(`  findFirst: <T extends ${listName}FindFirstArgs>(`)
-  lines.push(`    args?: OpensaasSelectSubset<T, ${listName}FindFirstArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
-
-  lines.push(`  findMany: <T extends ${listName}FindManyArgs>(`)
-  lines.push(`    args?: OpensaasSelectSubset<T, ${listName}FindManyArgs>`)
-  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-  lines.push(`  create: <T extends ${listName}CreateArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}CreateArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T>>`)
-
-  lines.push(`  update: <T extends ${listName}UpdateArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}UpdateArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
-
-  lines.push(`  delete: <T extends ${listName}DeleteArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}DeleteArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
-
-  lines.push(`  count: (args?: OpensaasFilterArgs<${listName}WhereInput>) => Promise<number>`)
-
-  lines.push(`  createMany: <T extends ${listName}CreateManyArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}CreateManyArgs>`)
-  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-  lines.push(`  updateMany: <T extends ${listName}UpdateManyArgs>(`)
-  lines.push(`    args: OpensaasSelectSubset<T, ${listName}UpdateManyArgs>`)
-  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
-
-  // get - only for singleton lists; accepts the same include/query narrowing
-  // as findUnique (minus `where` — a singleton has exactly one row).
-  if (isSingleton) {
-    lines.push(`  get: <T extends ${listName}GetArgs>(`)
-    lines.push(`    args?: OpensaasSelectSubset<T, ${listName}GetArgs>`)
-    lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
-  }
-
-  lines.push(`}`)
-
+  if (isSingleton) lines.push('    singleton: true')
+  lines.push('  }')
   return lines.join('\n')
 }
 
 /**
- * Generate the custom DB interface that uses Prisma's conditional types with
- * virtual and transformed fields. This leverages Prisma's GetPayload utility
- * to get correct types based on select/include.
- *
- * `CustomDB` is declared as an `interface` referencing each list's own named
- * `{List}Crud` interface (see `generateListCrudInterface`) rather than as a
- * `type` alias with N per-list object literals hand-unrolled into one
- * intersection — see #952 / ADR-0032.
+ * Each computed field's declared dependency set. `pnpm generate` resolves the
+ * set once and emits it twice — as data for the engine (#1137) and as the
+ * type below — so the two cannot drift.
  */
-function generateCustomDBType(config: OpenSaasConfig): string {
+export function collectNeeds(fields: Record<string, FieldConfig>): Array<[string, string[]]> {
+  const entries: Array<[string, string[]]> = []
+  for (const [fieldName, field] of Object.entries(fields)) {
+    const declared = field.needs
+    if (!declared || declared.length === 0) continue
+    entries.push([fieldName, [...declared]])
+  }
+  return entries
+}
+
+/**
+ * The named interfaces one list contributes. Each is a `interface X extends
+ * Generic<Contract, Remainder, 'X'> {}` line, so TypeScript resolves it as its
+ * own lazily-checked symbol (ADR-0032).
+ */
+function generateListInterfaces(listName: string): string {
+  const key = `<Contract, Remainder, '${listName}'>`
+  return [
+    `export interface ${listName} extends Row${key} {}`,
+    `export interface ${listName}StoredRow extends StoredRow${key} {}`,
+    `export interface ${listName}CreateInput extends CreateInput${key} {}`,
+    `export interface ${listName}UpdateInput extends UpdateInput${key} {}`,
+    `export interface ${listName}List extends SecuredList${key} {}`,
+  ].join('\n')
+}
+
+function generateDbType(config: OpenSaasConfig): string {
   const lines: string[] = []
-
-  // db keys to omit from AccessControlledDB before re-adding each list's own {List}Crud.
-  const dbKeys = Object.keys(config.lists).map((listName) => {
-    const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
-    return `'${dbKey}'`
-  })
-
+  lines.push('/**')
+  lines.push(' * The access-controlled `db` surface, one member per list.')
+  lines.push(' */')
+  lines.push('export interface DB {')
   for (const listName of Object.keys(config.lists)) {
-    const isSingleton = !!config.lists[listName]?.isSingleton
-    lines.push(generateListCrudInterface(listName, isSingleton))
-    lines.push('')
+    lines.push(`  ${getDbKey(listName)}: ${listName}List`)
   }
-
-  lines.push('/**')
-  lines.push(
-    " * Custom DB type that uses Prisma's conditional types with virtual and transformed field support",
-  )
-  lines.push(
-    ' * Types change based on select/include - relationships only present when explicitly included',
-  )
-  lines.push(' * Virtual fields and transformed fields are added to the base model type')
-  lines.push(' */')
-  lines.push('export interface CustomDB extends Omit<AccessControlledDB<PrismaClientLike>, ')
-  lines.push(`  ${dbKeys.join(' | ')}`)
-  lines.push('> {')
-
-  for (const listName of Object.keys(config.lists)) {
-    const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1) // camelCase
-    lines.push(`  ${dbKey}: ${listName}Crud`)
-  }
-
   lines.push('}')
-
   return lines.join('\n')
 }
 
-/**
- * Generate BaseContext and Context types that are compatible with AccessContext.
- *
- * Both are declared as `interface`s rather than `type` aliases. `Context`'s
- * `sudo(): Context` return type is self-referential, and a self-referential
- * `type` alias is eagerly expanded wherever it's checked — the same pattern
- * already found (and removed) on the core `AccessContext` interface for
- * breaking TypeScript's structural checking of unrelated generated Prisma
- * types (see `packages/core/CLAUDE.md`). An `interface` is resolved lazily by
- * TypeScript instead, so the self-reference no longer forces eager expansion
- * of the (already large) `CustomDB` it embeds. See #952 / ADR-0032.
+function generateContextTypes(): string {
+  return `/**
+ * The context a hook, an access rule and a plugin service see: the secured
+ * \`db\`, the session and the ambient plumbing, with nothing that can start a
+ * transaction or change who is asking.
  */
-function generateContextType(_config: OpenSaasConfig): string {
-  const lines: string[] = []
+export interface BaseContext<TSession extends OpensaasSession = OpensaasSession>
+  extends StackBaseContext<DB, TSession, PluginServices> {}
 
-  lines.push('/**')
-  lines.push(' * Base context type for services that only need database and session access')
-  lines.push(' * Compatible with both AccessContext (from hooks) and Context (from server actions)')
-  lines.push(' * Use this type for services that should work in both contexts')
-  lines.push(' */')
-  lines.push(
-    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext, 'db' | 'session'> {",
-  )
-  lines.push('  db: CustomDB')
-  lines.push('  session: TSession')
-  lines.push('}')
-  lines.push('')
+/**
+ * The full context a server action or page component holds — everything
+ * \`BaseContext\` carries plus \`sudo()\`, \`withSession()\` and \`transaction()\`.
+ */
+export interface Context<TSession extends OpensaasSession = OpensaasSession>
+  extends StackContext<DB, TSession, PluginServices> {}
 
-  lines.push('/**')
-  lines.push(' * Full context type with server action capabilities and virtual field typing')
-  lines.push(' * Extends BaseContext and adds serverAction, sudo, and withSession methods')
-  lines.push(
-    ' * Use this type in server actions and components that need full context capabilities',
-  )
-  lines.push(' */')
-  lines.push(
-    'export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {',
-  )
-  lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
-  lines.push('  sudo: () => Context<TSession>')
-  lines.push('  withSession: (session: TSession | null) => Context<TSession>')
-  lines.push('}')
-
-  return lines.join('\n')
-}
-
-function collectFieldImports(config: OpenSaasConfig): Array<{
-  names: string[]
-  from: string
-  typeOnly: boolean
-}> {
-  const importsMap = new Map<string, { names: Set<string>; typeOnly: boolean }>()
-
-  for (const listConfig of Object.values(config.lists)) {
-    for (const fieldConfig of Object.values(listConfig.fields)) {
-      if (fieldConfig.getTypeScriptImports) {
-        const imports = fieldConfig.getTypeScriptImports()
-        for (const imp of imports) {
-          const existing = importsMap.get(imp.from)
-          if (existing) {
-            imp.names.forEach((name) => existing.names.add(name))
-            if (imp.typeOnly === false) {
-              existing.typeOnly = false
-            }
-          } else {
-            importsMap.set(imp.from, {
-              names: new Set(imp.names),
-              typeOnly: imp.typeOnly ?? true,
-            })
-          }
-        }
-      }
-    }
-  }
-
-  return Array.from(importsMap.entries()).map(([from, { names, typeOnly }]) => ({
-    names: Array.from(names).sort(),
-    from,
-    typeOnly,
-  }))
+/**
+ * The context inside \`context.transaction()\`.
+ */
+export interface TransactionContext<TSession extends OpensaasSession = OpensaasSession>
+  extends StackTransactionContext<DB, TSession, PluginServices> {}`
 }
 
 /**
- * Emit the stand-ins for the per-model types the bundle used to import from
- * the generated `./prisma-client/` subtree.
+ * The relative specifier of the emitted `contract.d.ts` from `.opensaas/`.
  *
- * `opensaas generate` no longer runs `prisma generate`, so that subtree is
- * never written (#1134): the emitted artifacts are `prisma/contract.json` and
- * `prisma/contract.d.ts`. These placeholders keep the bundle compiling on its
- * own until #1136 rewrites this generator against `contract.d.ts`. They carry
- * no column-level narrowing — a `where`, `select`, `include` or `orderBy` is
- * accepted structurally rather than checked against the model's columns.
+ * Spelled `.d.js`, not `.d.ts`: the Contract module (`prisma/contract.ts`)
+ * sits in the same directory, and TypeScript resolves `./contract.d.ts` to
+ * THAT file, so the import lands on the builder module and `Contract` is not
+ * among its exports. `./contract.d.js` takes the standard `.js` -> `.d.ts`
+ * mapping and reaches the emitted declarations. The import is type-only and
+ * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
+ * about value imports.
  */
-function generatePlaceholderTypes(): string {
-  return `// Stand-ins for the per-model shapes the generated Prisma client used to
-// supply. \`opensaas generate\` emits prisma/contract.json + contract.d.ts
-// instead of a client subtree, so these keep this file self-contained until
-// #1136 rewrites it against the emitted contract. They carry no column-level
-// narrowing.
-type OpensaasUnnarrowed = Record<string, unknown>
-type OpensaasSelectSubset<T, _Constraint> = T
-type OpensaasPayload<TModel, _Args> = TModel
-type OpensaasUniqueArgs<TWhere> = { where: TWhere }
-type OpensaasFilterArgs<TWhere> = {
-  where?: TWhere
-  orderBy?: OpensaasUnnarrowed | OpensaasUnnarrowed[]
-  cursor?: TWhere
-  take?: number
-  skip?: number
-  distinct?: string | string[]
-}`
-}
+const CONTRACT_IMPORT = '../prisma/contract.d.js'
 
 export function generateTypes(config: OpenSaasConfig): string {
   const lines: string[] = []
@@ -1222,104 +172,83 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push('/**')
   lines.push(' * Generated types from OpenSaas configuration')
   lines.push(' * DO NOT EDIT - This file is automatically generated')
+  lines.push(' *')
+  lines.push(' * This file declares the CONTRACT REMAINDER — the per-list facts the')
+  lines.push(' * emitted Contract artifacts cannot carry — and instantiates the generics')
+  lines.push(' * `@opensaas/stack-core` exports, keyed by the emitted `Contract`. Scalar')
+  lines.push(' * types, nullability, relation arity and column defaults are read from the')
+  lines.push(' * contract and are never written here. See ADR-0052.')
   lines.push(' */')
   lines.push('')
 
-  // Use alias for Session to avoid conflicts if user has a list named "Session".
-  // Session and AccessContext stay on the public root entry point (Session is the
-  // module-augmentation target); the rest are unstable runtime plumbing on /internal.
-  lines.push(
-    "import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'",
-  )
-  lines.push(
-    "import type { StorageUtils, ServerActionProps, AccessControlledDB, PrismaClientLike, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
-  )
-  // Relative imports carry an explicit `.ts` extension (see ./extension.ts) so
-  // the bundle resolves under a host bundler / plain Node without an
-  // `extensionAlias`. See ADR-0008.
+  lines.push(`import type { Contract } from '${CONTRACT_IMPORT}'`)
+  // `Session` is aliased so an app with a list named "Session" still resolves.
+  lines.push('import type {')
+  lines.push('  CreateInput,')
+  lines.push('  NeedsRow,')
+  lines.push('  Row,')
+  lines.push('  SecuredList,')
+  lines.push('  Session as OpensaasSession,')
+  lines.push('  StackBaseContext,')
+  lines.push('  StackContext,')
+  lines.push('  StackTransactionContext,')
+  lines.push('  StoredRow,')
+  lines.push('  UpdateInput,')
+  lines.push("} from '@opensaas/stack-core'")
   lines.push("import type { PluginServices } from './plugin-types.ts'")
-
-  const fieldImports = collectFieldImports(config)
-  for (const imp of fieldImports) {
-    const typePrefix = imp.typeOnly ? 'type ' : ''
-    const names = imp.names.join(', ')
-    lines.push(`import ${typePrefix}{ ${names} } from '${imp.from}'`)
-  }
-
   lines.push('')
 
-  lines.push(generatePlaceholderTypes())
-  lines.push('')
-
-  lines.push(
-    '// Utility: strips virtual field keys from select/include so Prisma GetPayload never sees them',
+  lines.push('/**')
+  lines.push(' * The contract remainder, one entry per list:')
+  lines.push(' *')
+  lines.push(' * - `computed` — a virtual field, which has no column to type it from')
+  lines.push(' * - `output` / `input` — a stored field whose TypeScript face differs')
+  lines.push(' *   from its codec (`password` reads as `HashedPassword`)')
+  lines.push(' * - `needs` — each computed field’s declared dependency set')
+  lines.push(' * - `singleton` — a config fact the contract cannot see')
+  lines.push(' */')
+  lines.push('export type Remainder = {')
+  const remainderEntries = Object.entries(config.lists).map(([listName, listConfig]) =>
+    generateRemainderEntry(listName, listConfig.fields, !!listConfig.isSingleton),
   )
-  lines.push('type StripVirtualFromArgs<T, VirtualKeys extends string> =')
-  lines.push('  T extends { select: infer S extends object }')
-  lines.push("    ? Omit<T, 'select'> & { select: Omit<S, VirtualKeys> }")
-  lines.push('    : T extends { include: infer I extends object }')
-  lines.push("      ? Omit<T, 'include'> & { include: Omit<I, VirtualKeys> }")
-  lines.push('      : T')
+  lines.push(remainderEntries.join('\n'))
+  lines.push('}')
   lines.push('')
 
-  for (const [listName, listConfig] of Object.entries(config.lists)) {
-    // VirtualFields first — needed by the Output type and CustomDB.
-    lines.push(generateVirtualFieldsType(listName, listConfig.fields))
-    lines.push('')
-    // TransformedFields — needed by CustomDB.
-    lines.push(generateTransformedFieldsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateModelOutputType(listName, listConfig, config.db, !!listConfig.isSingleton))
-    lines.push('')
-    lines.push(generateModelTypeAlias(listName))
-    lines.push('')
-    lines.push(generateCreateInputType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateUpdateInputType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateWhereInputType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateHookTypes(listName))
-    lines.push('')
-    lines.push(generateSelectType(listName, listConfig.fields))
-    lines.push('')
-    const includeType = generateIncludeType(listName, listConfig.fields)
-    if (includeType) {
-      lines.push(includeType)
-      lines.push('')
-    }
-    lines.push(generateGetPayloadType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateDefaultArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateFindUniqueArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateFindManyArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateFindFirstArgsType(listName, listConfig.fields))
-    lines.push('')
-    if (listConfig.isSingleton) {
-      lines.push(generateGetArgsType(listName, listConfig.fields))
-      lines.push('')
-    }
-    lines.push(generateCreateArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateUpdateArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateDeleteArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateCreateManyArgsType(listName, listConfig.fields))
-    lines.push('')
-    lines.push(generateUpdateManyArgsType(listName, listConfig.fields))
+  for (const listName of Object.keys(config.lists)) {
+    lines.push(generateListInterfaces(listName))
     lines.push('')
   }
 
-  lines.push(generateCustomDBType(config))
-  lines.push('')
+  // The declared-dependency item types `lists.ts` hands each hook. Named here
+  // rather than inlined so `lists.ts` stays a namespace of references.
+  const needsInterfaces: string[] = []
+  for (const [listName, listConfig] of Object.entries(config.lists)) {
+    for (const [fieldName] of collectNeeds(listConfig.fields)) {
+      needsInterfaces.push(
+        `export interface ${listName}${capitalize(fieldName)}NeedsItem` +
+          ` extends NeedsRow<Contract, Remainder, '${listName}', Remainder['${listName}']['needs']['${fieldName}']> {}`,
+      )
+    }
+  }
+  if (needsInterfaces.length > 0) {
+    lines.push('/**')
+    lines.push(' * What each computed field’s `resolveOutput` hook is handed: its declared')
+    lines.push(' * dependency set plus the list’s system fields, and nothing else.')
+    lines.push(' */')
+    lines.push(needsInterfaces.join('\n'))
+    lines.push('')
+  }
 
-  lines.push(generateContextType(config))
+  lines.push(generateDbType(config))
+  lines.push('')
+  lines.push(generateContextTypes())
 
   return lines.join('\n')
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 export function writeTypes(config: OpenSaasConfig, outputPath: string): void {

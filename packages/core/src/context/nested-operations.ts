@@ -24,7 +24,6 @@ import {
   splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
-import { getDbKey } from '../lib/case-utils.js'
 import { applyCreateDefaults } from './apply-defaults.js'
 
 /**

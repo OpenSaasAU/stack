@@ -25,7 +25,6 @@ import {
   type SyntheticRelationTarget,
 } from './query-validation.js'
 import { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
-import { getDbKey } from '../lib/case-utils.js'
 
 /**
  * Access Filter — phase 1 of the two-phase read (pre-query).

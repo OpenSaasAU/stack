@@ -35,6 +35,7 @@ export type {
   ListSelect,
   ListInclude,
   SubArgs,
+  ListFilterArgs,
   FindUniqueArgs,
   FindManyArgs,
   CountArgs,

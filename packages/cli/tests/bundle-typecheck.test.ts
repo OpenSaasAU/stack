@@ -73,7 +73,12 @@ describe('the generated bundle type-checks', () => {
     )
     // The emitted artifacts are committed and CI proves they are current, so
     // this reuses them rather than paying for another `prisma contract emit`.
-    for (const artifact of ['contract.json', 'contract.d.ts']) {
+    //
+    // The Contract MODULE is copied alongside them deliberately: it sits in the
+    // same directory in a real project, and `./contract.d.ts` resolves to it
+    // rather than to the emitted declarations, so a scratch tree missing it
+    // would let that import land on the wrong file and still pass (#1136).
+    for (const artifact of ['contract.json', 'contract.d.ts', 'contract.ts']) {
       fs.copyFileSync(
         path.join(fixtureRoot, 'prisma', artifact),
         path.join(projectDir, 'prisma', artifact),

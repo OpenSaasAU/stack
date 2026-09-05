@@ -22,7 +22,6 @@ import { processNestedOperations, runAfterTasks } from './nested-operations.js'
 import type { AfterTask } from './nested-operations.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
-import { getDbKey } from '../lib/case-utils.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -131,10 +130,7 @@ async function runInTransaction(
 ): Promise<Record<string, unknown> | null> {
   const client = prisma as unknown as TransactionCapable
   if (typeof client.$transaction === 'function') {
-    return (await client.$transaction(async (tx) => fn(tx))) as Record<
-      string,
-      unknown
-    > | null
+    return (await client.$transaction(async (tx) => fn(tx))) as Record<string, unknown> | null
   }
   return fn(prisma)
 }
