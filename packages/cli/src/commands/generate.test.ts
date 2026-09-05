@@ -5,9 +5,9 @@ import * as os from 'os'
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
 import {
   deriveContract,
+  deriveDependencyTable,
   validateConfigFields,
   validateNeedsDeclarations,
-  validateNeedsClosureDepth,
   validateDatabaseConfig,
   validateRelations,
 } from '@opensaas/stack-core'
@@ -393,7 +393,6 @@ describe('Generate Command Integration', () => {
       }
 
       expect(validateNeedsDeclarations(config)).toEqual([])
-      expect(validateNeedsClosureDepth(config)).toEqual([])
     })
 
     it('accepts a `needs` entry naming a stored column (ADR-0051)', () => {
@@ -449,13 +448,13 @@ describe('Generate Command Integration', () => {
       expect(message).toContain('no resolveOutput hook')
     })
 
-    it('reports a cyclic needs declaration closure', () => {
+    it('accepts a mutually recursive needs declaration, which is now one hop each way', () => {
+      // The set is one hop and non-transitive (ADR-0051), so a declaration
+      // that used to form a cycle across two lists has nothing left to cycle
+      // through. `validateNeedsClosureDepth` and its 'cycle'/'depth' refusals
+      // are deleted with the runtime fold that needed them.
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           A: {
             fields: {
@@ -480,12 +479,10 @@ describe('Generate Command Integration', () => {
         },
       }
 
-      const errors = validateNeedsClosureDepth(config)
-      expect(errors.length).toBeGreaterThan(0)
-      expect(errors[0].reason).toBe('cycle')
-
-      const message = formatNeedsClosureErrors(errors)
-      expect(message).toContain('never terminates')
+      expect(validateNeedsDeclarations(config)).toEqual([])
+      const table = deriveDependencyTable(config)
+      expect(table.A.fields.computed.relations).toEqual(['b'])
+      expect(table.B.fields.computed.relations).toEqual(['a'])
     })
   })
 

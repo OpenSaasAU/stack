@@ -13,6 +13,7 @@ import {
   writeLists,
   writeContext,
   writePluginTypes,
+  writeTables,
   resolveOutputPaths,
   resolveTsconfigAlias,
 } from '../generator/index.js'
@@ -20,9 +21,9 @@ import {
   OpenSaasConfig,
   assertRelationGraphAgrees,
   deriveContract,
+  deriveGeneratedTables,
   validateConfigFields,
   validateNeedsDeclarations,
-  validateNeedsClosureDepth,
   validateDatabaseConfig,
   validateRelations,
 } from '@opensaas/stack-core'
@@ -52,8 +53,9 @@ export function formatFieldValidationErrors(errors: FieldConfigValidationError[]
 
 /**
  * Format `needs` declaration errors (ADR-0025) into a friendly, multi-line
- * message — an invalid relation name, a cyclic declaration chain, or a
- * closure too deep to ever be scoped, each naming the offending field.
+ * message — an entry naming nothing on the list or naming a computed field,
+ * or a declaration on a field with no hook to consume it — each naming the
+ * offending field.
  */
 export function formatNeedsClosureErrors(errors: NeedsClosureError[]): string {
   const lines = errors.map((error) => `  • ${error.message}`)
@@ -141,12 +143,11 @@ export async function generateCommand() {
     }
     validationSpinner.succeed(chalk.green('Field configuration valid'))
 
-    // Validate `needs` declarations (ADR-0025) up front too: an invalid
-    // relation name, a cyclic declaration chain, or a closure deeper than
-    // the read-include depth cap can ever scope (from any starting point)
-    // must fail generation rather than silently truncate at runtime.
+    // Validate `needs` declarations (ADR-0025) up front too: an entry naming
+    // nothing on the list, or a declaration nothing can consume, must fail
+    // generation rather than be silently ignored at runtime.
     const needsSpinner = ora('Validating declared dependencies...').start()
-    const needsErrors = [...validateNeedsDeclarations(config), ...validateNeedsClosureDepth(config)]
+    const needsErrors = validateNeedsDeclarations(config)
     if (needsErrors.length > 0) {
       needsSpinner.fail(chalk.red('Declared dependencies invalid'))
       console.error(chalk.red('\n❌ Error:'), formatNeedsClosureErrors(needsErrors))
@@ -209,10 +210,16 @@ export async function generateCommand() {
       process.exit(1)
     }
 
+    // One computation, two consumers: the emitted `tables.ts` and the
+    // `Remainder`'s per-field `needs` type (#1136), which must be the same
+    // arrays or the type and the runtime widening drift (ADR-0051).
+    const generatedTables = deriveGeneratedTables(config, contractData)
+
     const bundleSpinner = ora('Generating the bundle...').start()
     try {
       writeTypes(config, paths.types)
       writeLists(config, paths.lists)
+      writeTables(generatedTables, paths.tables)
       writeContext(config, contractData, paths.context, {
         configImport: crossReferences.configImport,
         contractJsonImport: crossReferences.contractJsonImport,
@@ -222,6 +229,7 @@ export async function generateCommand() {
       bundleSpinner.succeed(chalk.green('Bundle generation complete'))
       console.log(chalk.green('✅ TypeScript types generated'))
       console.log(chalk.green('✅ Lists namespace generated'))
+      console.log(chalk.green('✅ Dependency-set table and constraint map generated'))
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
 

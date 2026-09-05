@@ -4,12 +4,13 @@ import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { createJiti } from 'jiti'
-import { deriveContract } from '../../core/src/contract/index.js'
+import { deriveContract, deriveGeneratedTables } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import { resolveOutputPaths } from '../src/generator/output-paths.js'
 import { writeContext } from '../src/generator/context.js'
 import { writeLists } from '../src/generator/lists.js'
 import { writePluginTypes } from '../src/generator/plugin-types.js'
+import { writeTables } from '../src/generator/tables.js'
 import { writeTypes } from '../src/generator/types.js'
 
 /**
@@ -19,8 +20,8 @@ import { writeTypes } from '../src/generator/types.js'
  * `.opensaas/types.ts` importing a Prisma client tree the pipeline no longer
  * writes could sit on green CI (#1134 review). This runs `tsc --noEmit` over
  * every file `opensaas generate` writes for the contract fixture — `types.ts`,
- * `lists.ts`, `context.ts`, `plugin-types.ts` — against the committed
- * `prisma/contract.d.ts` and `contract.json` they resolve into.
+ * `lists.ts`, `context.ts`, `plugin-types.ts`, `tables.ts` — against the
+ * committed `prisma/contract.d.ts` and `contract.json` they resolve into.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules` for `@opensaas/stack-core` and `@prisma/orm-postgres`.
@@ -95,13 +96,15 @@ describe('the generated bundle type-checks', () => {
       contractJsonImport: crossReferences.contractJsonImport,
     })
     writePluginTypes(config, paths.pluginTypes)
+    writeTables(deriveGeneratedTables(config, contractData), paths.tables)
   }, 120_000)
 
-  test('writes the four bundle files', () => {
+  test('writes the bundle files', () => {
     expect(fs.readdirSync(path.join(projectDir, '.opensaas')).sort()).toEqual([
       'context.ts',
       'lists.ts',
       'plugin-types.ts',
+      'tables.ts',
       'types.ts',
     ])
   })

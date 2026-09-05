@@ -1,4 +1,5 @@
 import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { GeneratedTables } from '../contract/dependencies.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 import type {
@@ -3375,4 +3376,12 @@ export interface OpenSaasConfig {
    * @internal
    */
   _plugins?: Plugin[]
+  /**
+   * The dependency-set table and unique-constraint map `pnpm generate`
+   * emitted (ADR-0051, ADR-0042), supplied by the generated context. Absent
+   * for a config reached without generation, in which case the engine derives
+   * the dependency table from this config through the same computation.
+   * @internal
+   */
+  _tables?: GeneratedTables
 }

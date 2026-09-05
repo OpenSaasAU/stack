@@ -3,6 +3,7 @@ import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, integer, relationship, virtual } from '../src/fields/index.js'
 import { defineFragment } from '../src/query/index.js'
+import { validateNeedsDeclarations } from '../src/validation/needs-closure.js'
 
 /**
  * Coverage for ADR-0025 / issue #850: a computed field may declare (via
@@ -337,14 +338,226 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(callArgs.include).toBeUndefined()
   })
 
-  it("a declaration cycle across two lists terminates via the declaration fold's own cycle guard (ADR-0026 note)", async () => {
+  it('reads the sets from the table the generated bundle emitted, not from the config', async () => {
+    // The same fragment read as above, but the config carries `_tables` the
+    // way the generated context supplies it (ADR-0051). The emitted table is
+    // authoritative: it declares nothing for `doubled`, so `price` is not
+    // carried onto the hook's `item` even though the config's `needs` names
+    // it — proof the engine is reading the emitted fact rather than walking
+    // the config.
+    const productConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Product: list({
+          fields: {
+            name: text(),
+            price: integer(),
+            doubled: virtual({
+              type: 'number',
+              needs: ['price'],
+              hooks: {
+                resolveOutput: ({ item }) => {
+                  const typedItem = item as { price?: number }
+                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
+                },
+              },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+    const mockPrisma = createMockPrisma()
+    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productFragment = defineFragment<any>()({ doubled: true } as const)
+
+    const emptyTables = await getContext(
+      {
+        ...productConfig,
+        _tables: {
+          dependencies: {
+            Product: { systemFields: ['id'], fields: { doubled: { columns: [], relations: [] } } },
+          },
+          constraints: {},
+        },
+      },
+      mockPrisma,
+      null,
+    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+
+    expect(emptyTables?.doubled).toBe('no price')
+
+    // With the emitted table naming the column, the hook sees it again.
+    const withColumn = await getContext(
+      {
+        ...productConfig,
+        _tables: {
+          dependencies: {
+            Product: {
+              systemFields: ['id'],
+              fields: { doubled: { columns: ['price'], relations: [] } },
+            },
+          },
+          constraints: {},
+        },
+      },
+      mockPrisma,
+      null,
+    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+
+    expect(withColumn?.doubled).toBe(20)
+    expect(withColumn).not.toHaveProperty('price')
+  })
+
+  it('falls back to the config for a list a stale emitted table does not describe', async () => {
+    // The bundle predates the list — regenerated for someone else's change, or
+    // not regenerated at all. An empty row would silently stop `price`
+    // reaching the hook; deriving that one list's row keeps the pre-emission
+    // answer instead.
+    const productConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Product: list({
+          fields: {
+            price: integer(),
+            doubled: virtual({
+              type: 'number',
+              needs: ['price'],
+              hooks: {
+                resolveOutput: ({ item }) => {
+                  const typedItem = item as { price?: number }
+                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
+                },
+              },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+
+    const mockPrisma = createMockPrisma()
+    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', price: 10 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productFragment = defineFragment<any>()({ doubled: true } as const)
+
+    const result = await getContext(
+      { ...productConfig, _tables: { dependencies: {}, constraints: {} } },
+      mockPrisma,
+      null,
+    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+
+    expect(result?.doubled).toBe(20)
+    expect(result).not.toHaveProperty('price')
+  })
+
+  it('widens the read for a relation the emitted table names, and strips it again', async () => {
+    const orderConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        Order: list({
+          fields: {
+            title: text(),
+            lineItems: relationship({ ref: 'LineItem.order', many: true }),
+            total: virtual({
+              type: 'number',
+              needs: ['lineItems'],
+              hooks: {
+                resolveOutput: ({ item }) => {
+                  const items = (item.lineItems ?? []) as { price: number }[]
+                  return items.reduce((sum, line) => sum + line.price, 0)
+                },
+              },
+            }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+        LineItem: list({
+          fields: {
+            price: integer(),
+            order: relationship({ ref: 'Order.lineItems' }),
+          },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    })
+
+    const mockPrisma = createMockPrisma()
+    mockPrisma.order.findFirst.mockResolvedValue({
+      id: 'o1',
+      title: 'Order 1',
+      lineItems: [{ id: 'li1', price: 7 }],
+    })
+
+    const context = getContext(
+      {
+        ...orderConfig,
+        _tables: {
+          dependencies: {
+            Order: {
+              systemFields: ['id'],
+              fields: { total: { columns: [], relations: ['lineItems'] } },
+            },
+            LineItem: { systemFields: ['id'], fields: {} },
+          },
+          constraints: {},
+        },
+      },
+      mockPrisma,
+      null,
+    )
+    const result = await context.db.order.findUnique({ where: { id: 'o1' } })
+
+    expect(mockPrisma.order.findFirst.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(result?.total).toBe(7)
+    expect(result).not.toHaveProperty('lineItems')
+  })
+
+  it('runs no computed field on a branch the widening added, even one whose hook would throw (ADR-0051)', async () => {
+    const testConfig = await buildTestConfig()
+    const mockPrisma = createMockPrisma()
+
+    // LineItem.summary's own declaration (`product`) is NOT paid for: the
+    // one-hop set stops at `lineItems`, so the include carries no `product`
+    // and a hook reading `item.product.name` would throw.
+    const ranOnAddedBranch: string[] = []
+    const lineItem = testConfig.lists.LineItem.fields
+    lineItem.summary.hooks = {
+      resolveOutput: ({ item }) => {
+        ranOnAddedBranch.push('LineItem.summary')
+        return `${(item as { product: { name: string } }).product.name} x1`
+      },
+    }
+
+    mockPrisma.order.findMany.mockImplementation((args: { include?: Record<string, unknown> }) => {
+      const included = args.include ?? {}
+      return Promise.resolve([
+        {
+          id: 'o1',
+          title: 'O',
+          ...('lineItems' in included
+            ? { lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }] }
+            : {}),
+        },
+      ])
+    })
+
+    const context = getContext(testConfig, mockPrisma, null)
+    const result = await context.db.order.findMany({})
+
+    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(ranOnAddedBranch).toEqual([])
+    expect(result).toEqual([{ id: 'o1', title: 'O', total: 10 }])
+  })
+
+  it('a declaration cycle across two lists terminates by construction, with no cycle guard (ADR-0051)', async () => {
     // Order.total needs lineItems; LineItem.orderTitle needs order — a
-    // two-list declaration cycle. This must not hang or crash: it rides
-    // `foldDeclaredDependencies`'s own `visitedLists` cycle guard — the same
-    // list-name-path mechanism the pre-ADR-0026 relationship-graph auto-walk
-    // used, re-pointed at the declaration fold now that nothing walks the
-    // relationship graph unprompted (defense in depth; the primary backstop
-    // is `validateNeedsClosureDepth` at generate time, see needs-closure.ts).
+    // two-list declaration cycle. It cannot recurse: the widening never
+    // descends into a branch it added. That is why the runtime `visitedLists`
+    // guard and `validateNeedsClosureDepth` are both deleted.
     const testConfig = await buildTestConfig({ withDeclarationCycle: true })
     const mockPrisma = createMockPrisma()
     mockPrisma.order.findMany.mockResolvedValue([
@@ -367,13 +580,13 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     const context = getContext(testConfig, mockPrisma, null)
     const result = await context.db.order.findMany({})
 
-    expect(result[0].total).toBe(10)
+    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(result).toEqual([{ id: 'o1', title: 'Order 1', total: 10 }])
   })
 })
 
 describe('needs — generate-time validation (ADR-0025)', () => {
   it('accepts a `needs` entry naming a stored column on the same list (ADR-0051)', async () => {
-    const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
     const testConfig = await buildTestConfig()
     // Reach in the way an un-typed (plain JS) config author might — the type
     // constraint only helps when the list is annotated with its generated
@@ -385,7 +598,6 @@ describe('needs — generate-time validation (ADR-0025)', () => {
   })
 
   it('rejects a `needs` entry naming a computed sibling, naming the list and field', async () => {
-    const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
     const computedConfig = await config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
       lists: {
@@ -419,7 +631,6 @@ describe('needs — generate-time validation (ADR-0025)', () => {
   })
 
   it('rejects a `needs` declaration on a field with no resolveOutput hook, naming the list and field', async () => {
-    const { validateNeedsDeclarations } = await import('../src/validation/needs-closure.js')
     const hooklessConfig = await config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
       lists: {
@@ -443,11 +654,13 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     expect(errors[0].message).toContain('no resolveOutput hook')
   })
 
-  it('rejects a needs closure that cannot fit within the read-include depth cap from any starting point', async () => {
-    const { validateNeedsClosureDepth } = await import('../src/validation/needs-closure.js')
+  it('resolves a long needs chain into one-hop sets rather than a closure', async () => {
+    const { deriveDependencyTable } = await import('../src/contract/dependencies.js')
 
-    // A straight-line chain of 6 lists, each needing the next — deeper than
-    // READ_INCLUDE_MAX_DEPTH (5) even starting at List0 itself.
+    // A straight-line chain of 6 lists, each needing the next. Under a
+    // transitive closure this was deeper than READ_INCLUDE_MAX_DEPTH and
+    // refused; the set is one hop, so each list simply names its own
+    // neighbour and generation has nothing to refuse (ADR-0051).
     const listNames = ['List0', 'List1', 'List2', 'List3', 'List4', 'List5', 'List6']
     const lists: Record<string, ReturnType<typeof list>> = {}
     for (let i = 0; i < listNames.length; i++) {
@@ -475,13 +688,14 @@ describe('needs — generate-time validation (ADR-0025)', () => {
       lists,
     })
 
-    const errors = validateNeedsClosureDepth(deepConfig)
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].reason).toBe('depth')
+    expect(validateNeedsDeclarations(deepConfig)).toEqual([])
+    const table = deriveDependencyTable(deepConfig)
+    expect(table.List0.fields.computed).toEqual({ columns: ['nextId'], relations: ['next'] })
+    expect(table.List5.fields.computed).toEqual({ columns: ['nextId'], relations: ['next'] })
   })
 
-  it('rejects a cyclic needs declaration closure', async () => {
-    const { validateNeedsClosureDepth } = await import('../src/validation/needs-closure.js')
+  it('emits a table for a mutually recursive needs declaration instead of refusing it', async () => {
+    const { deriveDependencyTable } = await import('../src/contract/dependencies.js')
 
     const cyclicConfig = await config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -509,23 +723,19 @@ describe('needs — generate-time validation (ADR-0025)', () => {
       },
     })
 
-    const errors = validateNeedsClosureDepth(cyclicConfig)
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors.some((e) => e.reason === 'cycle')).toBe(true)
+    expect(validateNeedsDeclarations(cyclicConfig)).toEqual([])
+    const table = deriveDependencyTable(cyclicConfig)
+    expect(table.A.fields.computed.relations).toEqual(['b'])
+    expect(table.B.fields.computed.relations).toEqual(['a'])
   })
 
-  it('accepts a shallow, acyclic needs closure', async () => {
-    const { validateNeedsDeclarations, validateNeedsClosureDepth } =
-      await import('../src/validation/needs-closure.js')
+  it('accepts a config whose declarations all name something on their own list', async () => {
     const testConfig = await buildTestConfig()
-
     expect(validateNeedsDeclarations(testConfig)).toEqual([])
-    expect(validateNeedsClosureDepth(testConfig)).toEqual([])
   })
 
-  it('handles the edges of closure resolution without crashing: a fieldless list, an unresolvable ref, a needs entry naming a non-relationship field, one naming a field that does not exist at all, and two needs entries with different depths', async () => {
-    const { validateNeedsDeclarations, validateNeedsClosureDepth } =
-      await import('../src/validation/needs-closure.js')
+  it('handles the edges of declaration resolution without crashing: a fieldless list, an unresolvable ref, a needs entry naming a non-relationship field, one naming a field that does not exist at all, and two needs entries', async () => {
+    const { deriveDependencyTable } = await import('../src/contract/dependencies.js')
 
     // Raw config objects (not the `list()` builder) so a list can legitimately
     // have no `fields` key at all — both validators must skip it rather than
@@ -586,7 +796,7 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     }
 
     expect(() => validateNeedsDeclarations(edgeConfig)).not.toThrow()
-    expect(() => validateNeedsClosureDepth(edgeConfig)).not.toThrow()
+    expect(() => deriveDependencyTable(edgeConfig)).not.toThrow()
 
     const declErrors = validateNeedsDeclarations(edgeConfig)
     // A stored column is a legitimate dependency (ADR-0051).
@@ -594,7 +804,11 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     const typoError = declErrors.find((e) => e.fieldKey === 'typo')
     expect(typoError?.message).toContain('has no field named')
 
-    // None of this forms a cycle or an over-deep closure.
-    expect(validateNeedsClosureDepth(edgeConfig)).toEqual([])
+    // An entry naming a field the list does not have contributes nothing to
+    // the set rather than putting a phantom key in it.
+    const table = deriveDependencyTable(edgeConfig)
+    expect(table.Order.fields.typo).toEqual({ columns: [], relations: [] })
+    expect(table.Order.fields.usesNonRelation).toEqual({ columns: ['price'], relations: [] })
+    expect(table.Empty.systemFields).toEqual(['id'])
   })
 })

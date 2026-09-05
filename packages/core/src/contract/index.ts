@@ -6,6 +6,11 @@
 
 export { deriveContract } from './derive.js'
 export {
+  deriveConstraintMap,
+  deriveDependencyTable,
+  deriveGeneratedTables,
+} from './dependencies.js'
+export {
   assertRelationGraphAgrees,
   RelationGraphDivergenceError,
   type EmittedContract,
@@ -17,6 +22,14 @@ export {
   type PrismaContract,
   type PrismaContractPacks,
 } from './prisma.js'
+export type {
+  ConstraintMap,
+  DependencyTable,
+  FieldDependencySet,
+  GeneratedTables,
+  ListDependencies,
+  UniqueConstraint,
+} from './dependencies.js'
 export type {
   ContractColumn,
   ContractData,

@@ -47,6 +47,22 @@ export type {
   ContractTimestamps,
 } from './contract/types.js'
 
+// The dependency-set table and the unique-constraint map the generator emits
+// (ADR-0051, ADR-0042).
+export {
+  deriveConstraintMap,
+  deriveDependencyTable,
+  deriveGeneratedTables,
+} from './contract/dependencies.js'
+export type {
+  ConstraintMap,
+  DependencyTable,
+  FieldDependencySet,
+  GeneratedTables,
+  ListDependencies,
+  UniqueConstraint,
+} from './contract/dependencies.js'
+
 // Filter spec authoring — a field's optional `getFilterSpec` returns these
 // (ADR-0017). Additive: a field without one is simply not filterable.
 export type {

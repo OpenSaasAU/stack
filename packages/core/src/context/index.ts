@@ -7,7 +7,7 @@ import {
   buildAccessScopedInclude,
   buildAccessScopedWhere,
   stripVirtualFieldsFromInclude,
-  foldDeclaredDependencies,
+  widenIncludeForDependencies,
   validateQueryKeys,
   validateQueryFieldReadAccess,
   resolveToOneAccessVisibility,
@@ -15,7 +15,7 @@ import {
   emptyCountAccessDenialTree,
 } from '../access/index.js'
 import type {
-  DeclaredOnlyTree,
+  DependencyAdditions,
   ToOneAccessFilterTree,
   CountAccessDenialTree,
 } from '../access/index.js'
@@ -994,7 +994,7 @@ async function resolveReadInclude(
   config: OpenSaasConfig,
 ): Promise<{
   include: Record<string, unknown> | undefined
-  declaredOnly: DeclaredOnlyTree
+  additions: DependencyAdditions
   selection: FieldSelectionScope | undefined
   toOneAccessFilters: ToOneAccessFilterTree
   countDenials: CountAccessDenialTree
@@ -1002,18 +1002,17 @@ async function resolveReadInclude(
   if (fragmentFields !== undefined) {
     const fragmentInclude = buildInclude(fragmentFields) ?? undefined
     const selection = buildFieldSelectionScope(fragmentFields)
-    const folded = foldDeclaredDependencies(
+    const widened = widenIncludeForDependencies(
       fragmentInclude,
       listConfig.fields,
       config,
       listName,
-      [listName],
       selection,
     )
 
-    if (context._isSudo || !folded.include) {
+    if (context._isSudo || !widened.include) {
       return {
-        ...folded,
+        ...widened,
         selection,
         toOneAccessFilters: emptyToOneAccessFilterTree(),
         countDenials: emptyCountAccessDenialTree(),
@@ -1021,7 +1020,7 @@ async function resolveReadInclude(
     }
 
     const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-      folded.include,
+      widened.include,
       listConfig.fields,
       { session: context.session, context },
       config,
@@ -1029,7 +1028,7 @@ async function resolveReadInclude(
     )
     return {
       include,
-      declaredOnly: folded.declaredOnly,
+      additions: widened.additions,
       selection,
       toOneAccessFilters,
       countDenials,
@@ -1037,19 +1036,19 @@ async function resolveReadInclude(
   }
 
   if (context._isSudo) {
-    const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
+    const widened = widenIncludeForDependencies(callerInclude, listConfig.fields, config, listName)
     return {
-      ...folded,
+      ...widened,
       selection: undefined,
       toOneAccessFilters: emptyToOneAccessFilterTree(),
       countDenials: emptyCountAccessDenialTree(),
     }
   }
 
-  const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
-  if (!folded.include) {
+  const widened = widenIncludeForDependencies(callerInclude, listConfig.fields, config, listName)
+  if (!widened.include) {
     return {
-      ...folded,
+      ...widened,
       selection: undefined,
       toOneAccessFilters: emptyToOneAccessFilterTree(),
       countDenials: emptyCountAccessDenialTree(),
@@ -1057,7 +1056,7 @@ async function resolveReadInclude(
   }
 
   const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-    folded.include,
+    widened.include,
     listConfig.fields,
     { session: context.session, context },
     config,
@@ -1065,7 +1064,7 @@ async function resolveReadInclude(
   )
   return {
     include,
-    declaredOnly: folded.declaredOnly,
+    additions: widened.additions,
     selection: undefined,
     toOneAccessFilters,
     countDenials,
@@ -1126,7 +1125,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+    let { include, additions, selection, toOneAccessFilters, countDenials } =
       await resolveReadInclude(
         args.include,
         fragment ? fragment._fields : undefined,
@@ -1176,7 +1175,7 @@ function createFindUnique<TPrisma extends PrismaClientLike>(
       config,
       0,
       listName,
-      declaredOnly,
+      additions,
       selection,
       toOneVisibility,
       countDenials,
@@ -1289,7 +1288,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+    let { include, additions, selection, toOneAccessFilters, countDenials } =
       await resolveReadInclude(
         args?.include,
         fragment ? fragment._fields : undefined,
@@ -1336,7 +1335,7 @@ function createFindMany<TPrisma extends PrismaClientLike>(
           config,
           0,
           listName,
-          declaredOnly,
+          additions,
           selection,
           toOneVisibility,
           countDenials,
@@ -1624,7 +1623,7 @@ function createGet<TPrisma extends PrismaClientLike>(
     // Resolve `include`, folding any declared dependencies (`needs`,
     // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
     // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
+    let { include, additions, selection, toOneAccessFilters, countDenials } =
       await resolveReadInclude(
         args?.include,
         fragment ? fragment._fields : undefined,
@@ -1660,7 +1659,7 @@ function createGet<TPrisma extends PrismaClientLike>(
         config,
         0,
         listName,
-        declaredOnly,
+        additions,
         selection,
         toOneVisibility,
         countDenials,
