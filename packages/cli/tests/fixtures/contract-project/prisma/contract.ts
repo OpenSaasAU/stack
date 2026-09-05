@@ -4,6 +4,7 @@
 import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
 import type { ScalarFieldBuilder } from '@prisma/orm-postgres/contract-builder'
 import { timestamptzStringColumn } from '@prisma/orm-postgres/adapter/column-types'
+import pgvector from '@prisma/orm-extension-pgvector/pack'
 
 type ModelToken = {
   readonly stageOne: {
@@ -15,7 +16,7 @@ type ModelToken = {
 const enum_PostStatus = nativeEnum('PostStatus', 'draft', 'published')
 
 export const contract = defineContract(
-  { extensions: {}, namespaces: ['audit'] },
+  { extensions: { pgvector }, namespaces: ['audit'] },
   ({ field, model, rel }) => {
     const models: Record<string, ModelToken> = {}
 

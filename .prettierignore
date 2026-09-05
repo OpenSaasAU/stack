@@ -18,6 +18,7 @@ next-env.d.ts
 # would make every `opensaas generate` run report a dirty tree.
 packages/cli/tests/fixtures/contract-project/prisma/
 packages/cli/tests/fixtures/contract-project/prisma.config.ts
+packages/cli/tests/fixtures/contract-project/migrations/
 
 # Misc
 .DS_Store

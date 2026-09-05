@@ -57,6 +57,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8",
     "chalk": "^6.0.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
