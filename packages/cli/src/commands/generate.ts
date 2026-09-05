@@ -1,11 +1,12 @@
 import * as path from 'path'
 import * as fs from 'fs'
-import { execSync } from 'child_process'
 import chalk from 'chalk'
 import ora from 'ora'
 import { createJiti } from 'jiti'
 import {
-  writePrismaSchema,
+  emitContract,
+  seedExtensionContractSpaces,
+  writeContractModule,
   writePrismaConfig,
   writeTypes,
   writeLists,
@@ -18,6 +19,8 @@ import {
 } from '../generator/index.js'
 import {
   OpenSaasConfig,
+  assertRelationGraphAgrees,
+  deriveContract,
   validateConfigFields,
   validateNeedsDeclarations,
   validateNeedsClosureDepth,
@@ -26,6 +29,8 @@ import {
 } from '@opensaas/stack-core'
 import type {
   ConfigRefusal,
+  ContractData,
+  EmittedContract,
   FieldConfigValidationError,
   NeedsClosureError,
 } from '@opensaas/stack-core'
@@ -159,46 +164,85 @@ export async function generateCommand() {
     }
     surfaceSpinner.succeed(chalk.green('Config surface valid'))
 
-    // Captured here so the (optional) Node build step, which runs after
-    // `prisma generate` outside this try block, knows where the bundle lives.
-    let opensaasDir = ''
-    const generatorSpinner = ora('Generating schema and types...').start()
+    const deriveSpinner = ora('Deriving the contract...').start()
+    let contractData: ContractData
     try {
-      // Resolve write paths and the relative cross-references between generated
-      // files from the (optional) `output` config block. The pre-existing
-      // top-level `opensaasPath` option is forwarded as the bundle-directory
-      // fallback so it keeps working through the CLI when `output.opensaasDir`
-      // is not set (precedence: `output.opensaasDir` > `opensaasPath` >
-      // default). With neither set this yields the historical defaults
-      // (`prisma/schema.prisma`, `.opensaas/`) byte-for-byte.
-      const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
+      contractData = deriveContract(config)
+      deriveSpinner.succeed(chalk.green('Contract derived'))
+    } catch (err) {
+      deriveSpinner.fail(chalk.red('Failed to derive the contract'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
+    // Captured here so the (optional) Node build step, which runs after
+    // emission outside this try block, knows where the bundle lives.
+    let opensaasDir = ''
+    const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
+    const generatorSpinner = ora('Writing the Contract module and prisma.config.ts...').start()
+    try {
       opensaasDir = paths.opensaasDir
 
-      const prismaSchemaPath = paths.prismaSchema
-      const prismaConfigPath = paths.prismaConfig
-      const typesPath = paths.types
-      const listsPath = paths.lists
-      const contextPath = paths.context
-      const pluginTypesPath = paths.pluginTypes
+      writeContractModule(contractData, paths.contractModule)
+      writePrismaConfig(contractData, paths.prismaConfig, {
+        contractModule: crossReferences.prismaConfigContract,
+        outputDir: crossReferences.prismaConfigOutput,
+      })
 
-      writePrismaSchema(config, prismaSchemaPath, crossReferences.prismaClientOutput)
-      writePrismaConfig(config, prismaConfigPath, crossReferences.prismaConfigSchema)
-      writeTypes(config, typesPath)
-      writeLists(config, listsPath)
-      writeContext(config, contextPath, crossReferences.configImport)
-      writePluginTypes(config, pluginTypesPath)
-
-      // A project generated before #958 removed the (dead) result-extension
-      // module may still have it on disk — clean it up so it doesn't linger
-      // as an orphaned, unimported file.
-      const stalePrismaExtensionsPath = path.join(paths.opensaasDir, 'prisma-extensions.ts')
-      if (fs.existsSync(stalePrismaExtensionsPath)) {
-        fs.rmSync(stalePrismaExtensionsPath)
-      }
-
-      generatorSpinner.succeed(chalk.green('Schema generation complete'))
-      console.log(chalk.green('✅ Prisma schema generated'))
+      generatorSpinner.succeed(chalk.green('Contract module written'))
+      console.log(chalk.green('✅ Contract module generated'))
       console.log(chalk.green('✅ Prisma config generated'))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      generatorSpinner.fail(chalk.red('Failed to write the Contract module'))
+      console.error(chalk.red('\n❌ Error:'), err.message)
+      if (err.stack) {
+        console.error(chalk.gray('\n' + err.stack))
+      }
+      process.exit(1)
+    }
+
+    // Extension contract spaces are seeded between the Contract module and
+    // emission (ADR-0065). #1135 fills this in; today it is a no-op.
+    seedExtensionContractSpaces(cwd, contractData)
+
+    const emitSpinner = ora('Emitting contract artifacts...').start()
+    try {
+      emitContract(cwd, paths.contractDir)
+      emitSpinner.succeed(chalk.green('Contract artifacts emitted'))
+      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractJson)} emitted`))
+      console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractTypes)} emitted`))
+    } catch (err) {
+      emitSpinner.fail(chalk.red('Failed to emit contract artifacts'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
+    // The emitted contract is the artifact the runtime executes, so the last
+    // gate is that its relation graph is the one the config describes — a
+    // divergence is a build error, not a query-time Prisma rejection.
+    const agreementSpinner = ora('Checking the emitted relation graph...').start()
+    try {
+      const emitted: EmittedContract = JSON.parse(fs.readFileSync(paths.contractJson, 'utf-8'))
+      assertRelationGraphAgrees(contractData, emitted)
+      agreementSpinner.succeed(chalk.green('Emitted relation graph agrees with the config'))
+    } catch (err) {
+      agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
+      console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+
+    const bundleSpinner = ora('Generating the bundle...').start()
+    try {
+      writeTypes(config, paths.types)
+      writeLists(config, paths.lists)
+      writeContext(config, contractData, paths.context, {
+        configImport: crossReferences.configImport,
+        contractJsonImport: crossReferences.contractJsonImport,
+      })
+      writePluginTypes(config, paths.pluginTypes)
+
+      bundleSpinner.succeed(chalk.green('Bundle generation complete'))
       console.log(chalk.green('✅ TypeScript types generated'))
       console.log(chalk.green('✅ Lists namespace generated'))
       console.log(chalk.green('✅ Context factory generated'))
@@ -209,27 +253,27 @@ export async function generateCommand() {
 
         try {
           const generatedFiles = {
-            prismaSchema: fs.readFileSync(prismaSchemaPath, 'utf-8'),
-            types: fs.readFileSync(typesPath, 'utf-8'),
-            context: fs.readFileSync(contextPath, 'utf-8'),
+            contractModule: fs.readFileSync(paths.contractModule, 'utf-8'),
+            types: fs.readFileSync(paths.types, 'utf-8'),
+            context: fs.readFileSync(paths.context, 'utf-8'),
           }
 
           const { executeAfterGenerateHooks } =
             await import('@opensaas/stack-core/config/plugin-engine')
           const modifiedFiles = await executeAfterGenerateHooks(config, generatedFiles)
 
-          if (modifiedFiles.prismaSchema !== generatedFiles.prismaSchema) {
-            fs.writeFileSync(prismaSchemaPath, modifiedFiles.prismaSchema)
+          if (modifiedFiles.contractModule !== generatedFiles.contractModule) {
+            fs.writeFileSync(paths.contractModule, modifiedFiles.contractModule)
           }
           if (modifiedFiles.types !== generatedFiles.types) {
-            fs.writeFileSync(typesPath, modifiedFiles.types)
+            fs.writeFileSync(paths.types, modifiedFiles.types)
           }
           if (modifiedFiles.context !== generatedFiles.context) {
-            fs.writeFileSync(contextPath, modifiedFiles.context)
+            fs.writeFileSync(paths.context, modifiedFiles.context)
           }
 
           for (const [filename, content] of Object.entries(modifiedFiles)) {
-            if (!['prismaSchema', 'types', 'context'].includes(filename)) {
+            if (!['contractModule', 'types', 'context'].includes(filename)) {
               const filePath = path.join(paths.opensaasDir, filename)
               fs.writeFileSync(filePath, content)
               console.log(chalk.green(`✅ Plugin generated: ${filename}`))
@@ -242,27 +286,9 @@ export async function generateCommand() {
           throw err
         }
       }
-
-      const formatSpinner = ora('Formatting Prisma schema...').start()
-      try {
-        execSync('npx prisma format', {
-          cwd,
-          encoding: 'utf-8',
-          stdio: 'pipe',
-        })
-        formatSpinner.succeed(chalk.green('Prisma schema formatted'))
-        console.log(chalk.green('✅ Prisma schema formatted'))
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (_err) {
-        // Formatting is optional - don't fail generation if it doesn't work
-        formatSpinner.warn(chalk.yellow('Prisma schema formatting skipped'))
-        console.log(
-          chalk.yellow('⚠️  Prisma format failed (this is non-critical, continuing generation)'),
-        )
-      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-      generatorSpinner.fail(chalk.red('Failed to generate'))
+      bundleSpinner.fail(chalk.red('Failed to generate the bundle'))
       console.error(chalk.red('\n❌ Error:'), err.message)
       if (err.stack) {
         console.error(chalk.gray('\n' + err.stack))
@@ -270,28 +296,11 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    const prismaSpinner = ora('Generating Prisma client...').start()
-    try {
-      execSync('npx prisma generate', {
-        cwd,
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      })
-      prismaSpinner.succeed(chalk.green('Prisma client generated'))
-      console.log(chalk.green('✅ Prisma client generated'))
-    } catch (err) {
-      prismaSpinner.fail(chalk.red('Failed to generate Prisma client'))
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(chalk.red('\n❌ Error:'), message)
-      process.exit(1)
-    }
-
     // Optional Node build (ADR-0011): when `output.buildTarget === 'node'`,
     // additionally compile the `.ts` bundle to a plain-Node-loadable ESM form
     // under `<opensaasDir>/dist/` so a live module (e.g. better-auth's adapter)
     // can be imported in a bundler-less runtime. Purely additive — the default
-    // `.ts` form is untouched. Runs after `prisma generate` so the compiled
-    // `prisma-client/**` subtree exists to compile in.
+    // `.ts` form is untouched.
     if (config.output?.buildTarget === 'node') {
       const nodeBuildSpinner = ora('Building Node-loadable bundle...').start()
       try {
@@ -317,8 +326,9 @@ export async function generateCommand() {
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))
     console.log(chalk.gray('Next steps:'))
-    console.log(chalk.gray('  1. Run: npx prisma db push'))
-    console.log(chalk.gray('  2. Start using your generated types!\n'))
+    console.log(chalk.gray('  1. Commit prisma/contract.json and prisma/contract.d.ts'))
+    console.log(chalk.gray('  2. Run: npx prisma db update'))
+    console.log(chalk.gray('  3. Start using your generated types!\n'))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     spinner.fail(chalk.red('Generation failed'))

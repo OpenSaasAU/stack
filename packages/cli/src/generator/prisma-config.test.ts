@@ -1,155 +1,118 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import * as fs from 'fs'
-import * as path from 'path'
 import * as os from 'os'
-import {
-  generatePrismaConfig,
-  extractExtraDatasourceLines,
-  writePrismaConfig,
-} from './prisma-config.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
+import * as path from 'path'
+import type { ContractData } from '@opensaas/stack-core'
+import { generatePrismaConfig, writePrismaConfig } from './prisma-config.js'
 
-const config: OpenSaasConfig = {
-  db: {
-    provider: 'sqlite',
-  },
-  lists: {
-    User: {
-      fields: {
-        name: text(),
-      },
-    },
-  },
+function contract(extensions: ContractData['extensions'] = []): ContractData {
+  return { models: [], namespaces: [], enums: [], extensions }
 }
 
-describe('Prisma Config Generator', () => {
-  describe('generatePrismaConfig', () => {
-    it('emits a datasource that prefers DIRECT_DATABASE_URL and falls back to DATABASE_URL', () => {
-      const output = generatePrismaConfig(config)
-      expect(output).toContain("env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL')")
-    })
+const tempDirs: string[] = []
 
-    it('emits a local env helper that returns undefined for missing vars (so the ?? fallback works)', () => {
-      const output = generatePrismaConfig(config)
-      // The upstream `env` from 'prisma/config' throws on missing variables,
-      // which would break the `??` fallback — so we must not import it.
-      expect(output).not.toContain("import { defineConfig, env } from 'prisma/config'")
-      expect(output).toContain("import { defineConfig } from 'prisma/config'")
-      expect(output).toContain(
-        'const env = (name: string): string | undefined => process.env[name]',
-      )
-    })
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
 
-    it('keeps dotenv loading and defineConfig wiring', () => {
-      const output = generatePrismaConfig(config)
-      expect(output).toContain("import 'dotenv/config'")
-      expect(output).toContain('export default defineConfig({')
-      expect(output).toContain("schema: 'prisma',")
-    })
+function tempDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-prisma-config-'))
+  tempDirs.push(dir)
+  return dir
+}
 
-    it('matches the full snapshot', () => {
-      expect(generatePrismaConfig(config)).toMatchSnapshot()
-    })
+describe('generatePrismaConfig', () => {
+  it('wraps the ORM options in the CLI version marker', () => {
+    const output = generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')
 
-    it('re-emits host-added datasource keys after the managed url key', () => {
-      const output = generatePrismaConfig(config, undefined, [
-        "shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),",
-      ])
-      expect(output).toContain(
-        "url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),\n    shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),",
-      )
-    })
+    expect(output).toContain("import { definePrismaConfig } from 'prisma/config'")
+    expect(output).toContain("import { defineConfig } from '@prisma/orm-postgres/config'")
+    expect(output).toContain('export default definePrismaConfig({')
+    expect(output).toContain('  orm: defineConfig({')
   })
 
-  describe('extractExtraDatasourceLines', () => {
-    it('returns host-added keys, excluding the managed url key', () => {
-      const existing = `
-export default defineConfig({
-  schema: 'prisma',
-  datasource: {
-    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),
-    shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),
-  },
-})
-`
-      expect(extractExtraDatasourceLines(existing)).toEqual([
-        "shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),",
-      ])
-    })
+  it('points the contract and output at the resolved locations', () => {
+    const output = generatePrismaConfig(contract(), './db/contract.ts', './db')
 
-    it('returns an empty array when there is no extra key', () => {
-      const existing = `
-export default defineConfig({
-  datasource: {
-    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),
-  },
-})
-`
-      expect(extractExtraDatasourceLines(existing)).toEqual([])
-    })
-
-    it('returns an empty array when there is no datasource block', () => {
-      expect(extractExtraDatasourceLines('export default defineConfig({})\n')).toEqual([])
-    })
+    expect(output).toContain("contract: './db/contract.ts',")
+    expect(output).toContain("output: './db',")
   })
 
-  describe('writePrismaConfig', () => {
-    let tempDir: string
+  it('resolves the connection through the stack URL lookup, never process.env', () => {
+    const output = generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')
 
-    beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-config-test-'))
-    })
+    expect(output).toContain("import { findDatabaseUrl } from '@opensaas/stack-core'")
+    expect(output).toContain('db: { connection: findDatabaseUrl() },')
+    expect(output).not.toContain('process.env')
+  })
 
-    afterEach(() => {
-      fs.rmSync(tempDir, { recursive: true, force: true })
-    })
+  it('never imports the app config', () => {
+    const output = generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')
+    const imports = output.split('\n').filter((line) => line.startsWith('import '))
+    expect(imports.some((line) => line.includes('opensaas.config'))).toBe(false)
+    // Nothing relative either: the file must stand alone from the app's tree.
+    expect(imports.some((line) => /from '\.\.?\//.test(line))).toBe(false)
+  })
 
-    it('preserves a host-added datasource key across a re-generate', () => {
-      const outputPath = path.join(tempDir, 'prisma.config.ts')
-      fs.writeFileSync(
-        outputPath,
-        `import 'dotenv/config'
-import { defineConfig } from 'prisma/config'
+  it('imports each declared pack control façade and lists it in extensions', () => {
+    const output = generatePrismaConfig(
+      contract([
+        { name: 'pgvector', from: '@prisma/orm-extension-pgvector' },
+        { name: 'postgis', from: '@prisma/orm-extension-postgis' },
+      ]),
+      './prisma/contract.ts',
+      './prisma',
+    )
 
-export default defineConfig({
-  schema: 'prisma',
-  datasource: {
-    url: 'file:./stale.db',
-    shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),
-  },
+    expect(output).toContain("import pgvector from '@prisma/orm-extension-pgvector/control'")
+    expect(output).toContain("import postgis from '@prisma/orm-extension-postgis/control'")
+    expect(output).toContain('extensions: [pgvector, postgis],')
+    // The `/pack` flavour belongs to the Contract module, not here.
+    expect(output).not.toContain("/pack'")
+  })
+
+  it('emits an empty extensions list when the config declares no packs', () => {
+    expect(generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')).toContain(
+      'extensions: [],',
+    )
+  })
+
+  it('matches the full snapshot', () => {
+    expect(
+      generatePrismaConfig(
+        contract([{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }]),
+        './prisma/contract.ts',
+        './prisma',
+      ),
+    ).toMatchSnapshot()
+  })
 })
-`,
-        'utf-8',
-      )
 
-      writePrismaConfig(config, outputPath)
+describe('writePrismaConfig', () => {
+  it('writes the file, creating the directory when needed', () => {
+    const dir = tempDir()
+    const target = path.join(dir, 'nested', 'prisma.config.ts')
 
-      const result = fs.readFileSync(outputPath, 'utf-8')
-      expect(result).toContain("shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),")
-      // The managed key is regenerated, not left as the stale on-disk value.
-      expect(result).toContain("url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),")
-      expect(result).not.toContain("'file:./stale.db'")
+    writePrismaConfig(contract(), target, {
+      contractModule: './prisma/contract.ts',
+      outputDir: './prisma',
     })
 
-    it('produces byte-identical output to today when there are no extra datasource keys', () => {
-      const outputPath = path.join(tempDir, 'prisma.config.ts')
-      writePrismaConfig(config, outputPath)
-      const first = fs.readFileSync(outputPath, 'utf-8')
+    expect(fs.readFileSync(target, 'utf-8')).toContain('definePrismaConfig')
+  })
 
-      writePrismaConfig(config, outputPath)
-      const second = fs.readFileSync(outputPath, 'utf-8')
+  it('overwrites a pre-existing file rather than merging into it', () => {
+    const dir = tempDir()
+    const target = path.join(dir, 'prisma.config.ts')
+    fs.writeFileSync(target, '// hand-edited\n')
 
-      expect(second).toBe(first)
-      expect(second).toBe(generatePrismaConfig(config))
+    writePrismaConfig(contract(), target, {
+      contractModule: './prisma/contract.ts',
+      outputDir: './prisma',
     })
 
-    it('writes the file when none exists yet', () => {
-      const outputPath = path.join(tempDir, 'nested', 'prisma.config.ts')
-      writePrismaConfig(config, outputPath)
-
-      expect(fs.existsSync(outputPath)).toBe(true)
-      expect(fs.readFileSync(outputPath, 'utf-8')).toBe(generatePrismaConfig(config))
-    })
+    expect(fs.readFileSync(target, 'utf-8')).not.toContain('hand-edited')
   })
 })

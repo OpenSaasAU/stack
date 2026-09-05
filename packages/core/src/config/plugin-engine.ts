@@ -258,8 +258,8 @@ export async function executeBeforeGenerateHooks(config: OpenSaasConfig): Promis
 
 export async function executeAfterGenerateHooks(
   config: OpenSaasConfig,
-  files: { prismaSchema: string; types: string; context: string; [key: string]: string },
-): Promise<{ prismaSchema: string; types: string; context: string; [key: string]: string }> {
+  files: { contractModule: string; types: string; context: string; [key: string]: string },
+): Promise<{ contractModule: string; types: string; context: string; [key: string]: string }> {
   if (!config.plugins || config.plugins.length === 0) {
     return files
   }

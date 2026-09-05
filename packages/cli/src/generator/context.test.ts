@@ -1,177 +1,109 @@
 import { describe, it, expect } from 'vitest'
-import { generateContext } from './context.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
+import { deriveContract } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
+import { generateContext } from './context.js'
 
-describe('Context Generator', () => {
-  describe('generateContext', () => {
-    it('should generate context factory with default Prisma client', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {
-          User: {
-            fields: {
-              name: text(),
-            },
-          },
-        },
-      }
+const config: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: { User: { fields: { name: text() } } },
+}
 
-      const context = generateContext(config)
+const data: ContractData = deriveContract(config)
 
-      expect(context).toMatchSnapshot()
+describe('generateContext', () => {
+  it('constructs the client from the committed contract artifact', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain("import postgres from '@prisma/orm-postgres/runtime'")
+    expect(context).toContain("import contractJson from '../prisma/contract.json' with { type: 'json' }")
+    expect(context).toContain("import type { Contract } from '../prisma/contract.d.ts'")
+    expect(context).toContain('postgres<Contract>({')
+    expect(context).toContain('contractJson,')
+  })
+
+  it('imports no generated Prisma client tree', () => {
+    const context = generateContext(config, data)
+
+    expect(context).not.toContain('prisma-client')
+    expect(context).not.toContain('PrismaClient')
+    expect(context).not.toContain('prismaClientConstructor')
+  })
+
+  it('binds the pool from db.client, falling back to the stack URL lookup', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain('const binding = config.db.client')
+    expect(context).toContain('const pool = binding?.pg?.()')
+    expect(context).toContain('{ url: resolveDatabaseUrl() }')
+    expect(context).toContain('poolOptions: binding.poolOptions')
+  })
+
+  it('lists each declared pack’s runtime façade', () => {
+    const withPack: ContractData = {
+      ...data,
+      extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+    }
+    const context = generateContext(config, withPack)
+
+    expect(context).toContain(
+      "import pgvectorRuntime from '@prisma/orm-extension-pgvector/runtime'",
+    )
+    expect(context).toContain('extensions: [pgvectorRuntime],')
+  })
+
+  it('keeps the client as a module-level singleton', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain('let client: ReturnType<typeof createClient> | null = null')
+    expect(context).toContain('globalForClient.opensaasClient')
+  })
+
+  it('exports getContext, rawOpensaasContext and config', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain('export async function getContext<')
+    expect(context).toContain('export const rawOpensaasContext = (async () => {')
+    expect(context).toContain('export const config = getConfig()')
+  })
+
+  it('carries .ts extensions on every relative import (ADR-0054)', () => {
+    const context = generateContext(config, data)
+
+    for (const line of context.split('\n')) {
+      if (!line.startsWith('import ')) continue
+      const relative = line.match(/from '(\.[^']*)'/)
+      if (!relative) continue
+      expect(relative[1]).toMatch(/\.(ts|json)$/)
+    }
+  })
+
+  it('follows the resolved cross-references when the bundle is relocated', () => {
+    const context = generateContext(config, data, {
+      configImport: '../../opensaas.config',
+      contractJsonImport: '../../db/contract.json',
     })
 
-    it('should generate context factory with custom Prisma client constructor', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'postgresql',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: ((PrismaClient: any) => new PrismaClient()) as any,
-        },
-        lists: {
-          User: {
-            fields: {
-              name: text(),
-            },
-          },
-        },
-      }
+    expect(context).toContain("from '../../opensaas.config.ts'")
+    expect(context).toContain("from '../../db/contract.json'")
+    expect(context).toContain("from '../../db/contract.d.ts'")
+  })
 
-      const context = generateContext(config)
+  it('throws from every storage helper when no provider is configured', () => {
+    const context = generateContext(config, data)
+    expect(context).toContain('Storage is not configured')
+  })
 
-      expect(context).toMatchSnapshot()
-    })
+  it('lazily loads the storage runtime when providers are configured', () => {
+    const context = generateContext(
+      { ...config, storage: { local: { type: 'local' } } },
+      data,
+    )
 
-    it('should include singleton pattern for Prisma client', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {},
-      }
+    expect(context).toContain("await import('@opensaas/stack-storage/runtime')")
+  })
 
-      const context = generateContext(config)
-
-      expect(context).toContain('const globalForPrisma')
-      expect(context).toContain('globalThis as unknown as { prisma: PrismaClient | null }')
-      expect(context).toContain('globalForPrisma.prisma')
-      expect(context).toContain("if (process.env.NODE_ENV !== 'production')")
-    })
-
-    it('should include JSDoc comments', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {},
-      }
-
-      const context = generateContext(config)
-
-      expect(context).toContain('/**')
-      expect(context).toContain('Auto-generated context factory')
-      expect(context).toContain('DO NOT EDIT')
-      expect(context).toContain('Get OpenSaas context with optional session')
-      expect(context).toContain('@param session')
-      expect(context).toContain('@example')
-    })
-
-    it('should include usage examples in comments', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {},
-      }
-
-      const context = generateContext(config)
-
-      expect(context).toContain('// Anonymous access')
-      expect(context).toContain('const context = await getContext()')
-      expect(context).toContain('// Authenticated access')
-      expect(context).toContain("const context = await getContext({ userId: 'user-123' })")
-    })
-
-    it('should export rawOpensaasContext', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {},
-      }
-
-      const context = generateContext(config)
-
-      expect(context).toMatchSnapshot()
-    })
-
-    it('should type session parameter correctly', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {},
-      }
-
-      const context = generateContext(config)
-
-      expect(context).toContain('session?: TSession')
-      expect(context).toContain('<TSession extends OpensaasSession = OpensaasSession>')
-    })
-
-    // SF-14 / ADR-0008: the Generated bundle must be loadable by the host
-    // bundler (and plain Node) without an `extensionAlias`, so every relative
-    // import the bundle emits carries an explicit `.ts` extension. A bare,
-    // extensionless relative specifier would force a TS-aware loader and break
-    // `next build` file-tracing of the `prisma-client/**` subtree.
-    it('should emit relative imports with explicit .ts extensions', () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
-        lists: {
-          User: {
-            fields: {
-              name: text(),
-            },
-          },
-        },
-      }
-
-      const context = generateContext(config)
-
-      // Every relative import in the bundle entry carries an explicit extension.
-      expect(context).toContain("from './prisma-client/client.ts'")
-      expect(context).toContain("from './types.ts'")
-      expect(context).toContain("from '../opensaas.config.ts'")
-
-      // No extensionless relative import specifiers remain (a host bundler /
-      // plain Node would otherwise fail to resolve them without an alias).
-      const relativeImportSpecifiers = Array.from(
-        context.matchAll(/from\s+'(\.[^']*)'/g),
-        (match) => match[1],
-      )
-      expect(relativeImportSpecifiers.length).toBeGreaterThan(0)
-      for (const specifier of relativeImportSpecifiers) {
-        expect(specifier).toMatch(/\.(ts|tsx|js|jsx|mjs|cjs|json)$/)
-      }
-    })
+  it('matches the full snapshot', () => {
+    expect(generateContext(config, data)).toMatchSnapshot()
   })
 })

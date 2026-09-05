@@ -1548,119 +1548,6 @@ export function shouldHaveForeignKey<TTypeInfo extends import('../config/types.j
   return fieldName.localeCompare(targetField) < 0
 }
 
-function isManyToMany(
-  fieldName: string,
-  field: RelationshipField,
-  config: OpenSaasConfig,
-): boolean {
-  if (!field.many) {
-    return false
-  }
-
-  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
-
-  // List-only ref with many: true is implicitly many-to-many
-  if (!targetField) {
-    return true
-  }
-
-  const targetFieldConfig = config.lists[targetList]?.fields[targetField]
-  if (!targetFieldConfig || targetFieldConfig.type !== 'relationship') {
-    return false
-  }
-
-  return !!(targetFieldConfig as RelationshipField).many
-}
-
-/**
- * The Prisma 7 relationship options the config types no longer carry. The PSL
- * generator that reads them is deleted by #1134; until then it reads a
- * runtime object through this shim.
- */
-type LegacyPrisma7RelationshipDb = NonNullable<RelationshipField['db']> & {
-  relationName?: string
-  extendPrismaSchema?: (lines: { fkLine?: string; relationLine: string }) => {
-    fkLine?: string
-    relationLine: string
-  }
-}
-
-type LegacyPrisma7DatabaseConfig = OpenSaasConfig['db'] & {
-  joinTableNaming?: 'prisma' | 'keystone'
-}
-
-function legacyDb(field: RelationshipField): LegacyPrisma7RelationshipDb | undefined {
-  return field.db
-}
-
-const PSL_REFERENTIAL_ACTIONS: Record<ReferentialAction, string> = {
-  cascade: 'Cascade',
-  restrict: 'Restrict',
-  noAction: 'NoAction',
-  setNull: 'SetNull',
-  setDefault: 'SetDefault',
-}
-
-function pslReferentialArgs(field: RelationshipField): string {
-  const args: string[] = []
-  if (field.db?.onDelete) args.push(`onDelete: ${PSL_REFERENTIAL_ACTIONS[field.db.onDelete]}`)
-  if (field.db?.onUpdate) args.push(`onUpdate: ${PSL_REFERENTIAL_ACTIONS[field.db.onUpdate]}`)
-  return args.map((arg) => `${arg}, `).join('')
-}
-
-/**
- * Compute the explicit relation name for a bidirectional many-to-many relationship,
- * or `undefined` when Prisma's default naming should be used.
- *
- * Honours per-field `db.relationName` (which must match on both sides) and the
- * global `db.joinTableNaming: 'keystone'` setting, picking a deterministic owner
- * for bidirectional relationships so both sides resolve to the same name.
- */
-function computeManyToManyRelationName(
-  listKey: string,
-  fieldName: string,
-  field: RelationshipField,
-  config: OpenSaasConfig,
-): string | undefined {
-  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
-  const db: LegacyPrisma7DatabaseConfig = config.db
-  const joinTableNaming = db.joinTableNaming || 'prisma'
-
-  const sourceRelationName = legacyDb(field)?.relationName
-  let targetRelationName: string | undefined
-  if (targetField) {
-    const targetFieldConfig = config.lists[targetList]?.fields[targetField]
-    if (targetFieldConfig?.type === 'relationship') {
-      targetRelationName = legacyDb(targetFieldConfig as RelationshipField)?.relationName
-    }
-  }
-
-  if (sourceRelationName && targetRelationName && sourceRelationName !== targetRelationName) {
-    throw new Error(
-      `Relation name mismatch: ${listKey}.${fieldName} has relationName "${sourceRelationName}" but ${targetList}.${targetField} has "${targetRelationName}". Both sides must use the same relationName.`,
-    )
-  }
-
-  const explicitRelationName = sourceRelationName || targetRelationName
-  if (explicitRelationName) {
-    return explicitRelationName
-  }
-
-  if (joinTableNaming === 'keystone') {
-    if (targetField) {
-      // Pick a deterministic owner so both sides agree on the relation name
-      const sourceKey = `${listKey}.${fieldName}`
-      const targetKey = `${targetList}.${targetField}`
-      return sourceKey.localeCompare(targetKey) < 0
-        ? `${listKey}_${fieldName}`
-        : `${targetList}_${targetField}`
-    }
-    return `${listKey}_${fieldName}`
-  }
-
-  return undefined
-}
-
 /**
  * The name Prisma generation synthesizes for the back-relation a list-only
  * `ref` (`ref: 'ListName'`, no target field) creates on its target model —
@@ -1700,34 +1587,16 @@ function getPrismaRelation(
   let backRelation: PrismaRelationResult['backRelation']
   if (!targetField) {
     const syntheticFieldName = getSyntheticFieldName(listKey, fieldName)
-    const relationName = legacyDb(field)?.relationName ?? `${listKey}_${fieldName}`
     backRelation = {
       targetList,
-      line: `  ${syntheticFieldName.padEnd(12)} ${listKey}[]  @relation("${relationName}")`,
+      line: `  ${syntheticFieldName.padEnd(12)} ${listKey}[]  @relation("${listKey}_${fieldName}")`,
     }
   }
 
   if (field.many) {
-    let relationLine: string
-
-    if (targetField) {
-      // Bidirectional many side: use explicit relation name only for true many-to-many
-      const m2mName = isManyToMany(fieldName, field, config)
-        ? computeManyToManyRelationName(listKey, fieldName, field, config)
-        : undefined
-      relationLine = m2mName
-        ? `  ${paddedName} ${targetList}[]  @relation("${m2mName}")`
-        : `  ${paddedName} ${targetList}[]`
-    } else {
-      // List-only ref many side: always a named relation paired with the synthetic field
-      const relationName = legacyDb(field)?.relationName ?? `${listKey}_${fieldName}`
-      relationLine = `  ${paddedName} ${targetList}[]  @relation("${relationName}")`
-    }
-
-    const extendPrismaSchema = legacyDb(field)?.extendPrismaSchema
-    if (extendPrismaSchema) {
-      relationLine = extendPrismaSchema({ relationLine }).relationLine
-    }
+    const relationLine = targetField
+      ? `  ${paddedName} ${targetList}[]`
+      : `  ${paddedName} ${targetList}[]  @relation("${listKey}_${fieldName}")`
 
     return { modelLines: [relationLine], backRelation }
   }
@@ -1750,18 +1619,10 @@ function getPrismaRelation(
     const isNullable = field.db?.isNullable ?? true
     const nullModifier = isNullable ? '?' : ''
 
-    const referentialArgs = pslReferentialArgs(field)
-    let fkLine = `  ${fkPaddedName} String${nullModifier}${uniqueModifier}${mapModifier}`
-    let relationLine = targetField
-      ? `  ${paddedName} ${targetList}${nullModifier}  @relation(${referentialArgs}fields: [${foreignKeyField}], references: [id])`
-      : `  ${paddedName} ${targetList}${nullModifier}  @relation("${listKey}_${fieldName}", ${referentialArgs}fields: [${foreignKeyField}], references: [id])`
-
-    const extendPrismaSchema = legacyDb(field)?.extendPrismaSchema
-    if (extendPrismaSchema) {
-      const extended = extendPrismaSchema({ fkLine, relationLine })
-      fkLine = extended.fkLine ?? fkLine
-      relationLine = extended.relationLine
-    }
+    const fkLine = `  ${fkPaddedName} String${nullModifier}${uniqueModifier}${mapModifier}`
+    const relationLine = targetField
+      ? `  ${paddedName} ${targetList}${nullModifier}  @relation(fields: [${foreignKeyField}], references: [id])`
+      : `  ${paddedName} ${targetList}${nullModifier}  @relation("${listKey}_${fieldName}", fields: [${foreignKeyField}], references: [id])`
 
     // Default to indexing foreign keys (matching Keystone behaviour) unless disabled
     const indexType = field.isIndexed ?? true
@@ -1780,13 +1641,7 @@ function getPrismaRelation(
     throw new Error(nullableOnNonOwningSideMessage(listKey, fieldName, targetList, targetField))
   }
 
-  let relationLine = `  ${paddedName} ${targetList}?`
-  const extendPrismaSchema = legacyDb(field)?.extendPrismaSchema
-  if (extendPrismaSchema) {
-    relationLine = extendPrismaSchema({ relationLine }).relationLine
-  }
-
-  return { modelLines: [relationLine], backRelation }
+  return { modelLines: [`  ${paddedName} ${targetList}?`], backRelation }
 }
 
 function getContractRelation<TTypeInfo extends import('../config/types.js').TypeInfo>(

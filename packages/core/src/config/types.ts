@@ -3122,7 +3122,7 @@ export type StorageConfig = Record<string, { type: string; [key: string]: unknow
  * Plugins can modify these during afterGenerate hooks
  */
 export type GeneratedFiles = {
-  prismaSchema: string
+  contractModule: string
   types: string
   context: string
   [key: string]: string // Allow plugins to add custom generated files
@@ -3288,26 +3288,27 @@ export type Plugin = {
 /**
  * Configurable generator output locations.
  *
- * Lets a project relocate the generated Prisma schema and the `.opensaas`
+ * Lets a project relocate the generated Contract module and the `.opensaas`
  * bundle directory. Paths are interpreted relative to the project root.
  *
  * @example
  * ```typescript
  * output: {
- *   prismaSchema: 'prisma-opensaas/schema.prisma',
+ *   contractModule: 'prisma-opensaas/contract.ts',
  *   opensaasDir: '.opensaas',
  * }
  * ```
  */
 export interface OutputConfig {
   /**
-   * Path to the generated Prisma schema file.
-   * @default "prisma/schema.prisma"
+   * Path to the generated Contract module. `contract.json` and `contract.d.ts`
+   * are emitted into its directory, and `prisma.config.ts` points at it.
+   * @default "prisma/contract.ts"
    */
-  prismaSchema?: string
+  contractModule?: string
   /**
-   * Directory for the generated `.opensaas` bundle (types, lists, context,
-   * plugin-types, and the patched Prisma client).
+   * Directory for the generated `.opensaas` bundle (types, lists, context and
+   * plugin types).
    * @default ".opensaas"
    */
   opensaasDir?: string

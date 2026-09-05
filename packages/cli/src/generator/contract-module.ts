@@ -1,3 +1,5 @@
+import * as fs from 'fs'
+import * as path from 'path'
 import type {
   ContractColumn,
   ContractData,
@@ -430,4 +432,15 @@ export function renderContractModule(data: ContractData): string {
   lines.push('')
 
   return lines.join('\n')
+}
+
+export function writeContractModule(data: ContractData, outputPath: string): void {
+  const content = renderContractModule(data)
+
+  const dir = path.dirname(outputPath)
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+
+  fs.writeFileSync(outputPath, content, 'utf-8')
 }

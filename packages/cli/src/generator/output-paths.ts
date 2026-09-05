@@ -4,30 +4,43 @@ import type { OutputConfig } from '@opensaas/stack-core'
 /**
  * Default output locations, relative to the project root. Keeping these here
  * (rather than scattering string literals across the generator) means the
- * "no `output` block" path is byte-identical to the historical behaviour.
+ * "no `output` block" path is one decision in one place.
  */
-export const DEFAULT_PRISMA_SCHEMA = 'prisma/schema.prisma'
+export const DEFAULT_CONTRACT_MODULE = 'prisma/contract.ts'
 export const DEFAULT_OPENSAAS_DIR = '.opensaas'
 
 /**
- * The four files written into the `.opensaas` bundle directory, plus the
- * sub-path of the patched Prisma client. These names are not configurable —
- * only the directory that holds them moves.
+ * The four files written into the `.opensaas` bundle directory. These names
+ * are not configurable — only the directory that holds them moves.
  */
 export const OPENSAAS_FILES = {
   types: 'types.ts',
   lists: 'lists.ts',
   context: 'context.ts',
   pluginTypes: 'plugin-types.ts',
-  prismaClient: 'prisma-client',
 } as const
 
 /**
- * Absolute write paths for every file the generator emits.
+ * The two artifacts `prisma contract emit` writes beside the Contract module.
+ */
+export const CONTRACT_ARTIFACTS = {
+  json: 'contract.json',
+  types: 'contract.d.ts',
+} as const
+
+/**
+ * Absolute write paths for every file the generator emits, plus the two the
+ * Prisma CLI emits on its behalf.
  */
 export interface ResolvedWritePaths {
-  /** Absolute path to the Prisma schema file. */
-  prismaSchema: string
+  /** Absolute path to the generated Contract module (`prisma/contract.ts`). */
+  contractModule: string
+  /** Absolute path to the directory holding the Contract module and its artifacts. */
+  contractDir: string
+  /** Absolute path to `<contractDir>/contract.json`, written by `prisma contract emit`. */
+  contractJson: string
+  /** Absolute path to `<contractDir>/contract.d.ts`, written by `prisma contract emit`. */
+  contractTypes: string
   /** Absolute path to the top-level `prisma.config.ts` (never relocated). */
   prismaConfig: string
   /** Absolute path to the resolved `.opensaas` bundle directory. */
@@ -45,22 +58,27 @@ export interface ResolvedWritePaths {
 /**
  * Relative cross-references baked into the generated files. These follow the
  * configured locations so the emitted code resolves regardless of where the
- * schema and bundle live.
+ * Contract module and bundle live.
  */
 export interface ResolvedCrossReferences {
   /**
-   * Module specifier for `prisma.config.ts`'s `schema` field — the schema
-   * *directory* relative to the project root (Prisma resolves a directory or a
-   * `.prisma` file). POSIX separators so the value is stable across platforms.
-   * @example "prisma" | "prisma-opensaas"
+   * `prisma.config.ts`'s `contract` field — the Contract module relative to the
+   * project root, POSIX-separated and explicitly relative.
+   * @example "./prisma/contract.ts"
    */
-  prismaConfigSchema: string
+  prismaConfigContract: string
   /**
-   * Module specifier for the Prisma client `generator { output }` block — the
-   * patched client directory relative to the schema *file's* directory.
-   * @example "../.opensaas/prisma-client"
+   * `prisma.config.ts`'s `output` field — the directory `contract.json` and
+   * `contract.d.ts` land in, which is the Contract module's own directory.
+   * @example "./prisma"
    */
-  prismaClientOutput: string
+  prismaConfigOutput: string
+  /**
+   * Module specifier for importing the emitted `contract.json` from inside the
+   * bundle (used by `context.ts`) — relative to the `.opensaas` directory.
+   * @example "../prisma/contract.json"
+   */
+  contractJsonImport: string
   /**
    * Module specifier for importing `opensaas.config` from inside the bundle
    * (used by `context.ts`) — relative to the `.opensaas` directory.
@@ -78,20 +96,12 @@ export interface ResolvedOutputPaths {
 }
 
 /**
- * Convert a (possibly Windows) relative path into a POSIX module specifier and
- * ensure it stays explicitly relative where a bare segment would otherwise be
- * read as a bare module specifier.
+ * Convert a (possibly Windows) relative path into a POSIX module specifier,
+ * kept explicitly relative so it is never read as a bare package specifier.
  */
-function toModuleSpecifier(relative: string, { allowBare }: { allowBare: boolean }): string {
+function toModuleSpecifier(relative: string): string {
   const posix = relative.split(path.sep).join('/')
-  if (allowBare) {
-    // A directory reference for prisma.config's `schema` field — bare is fine,
-    // but a schema at the project root yields an empty relative path, which
-    // Prisma would reject; emit `.` instead.
-    return posix === '' ? '.' : posix
-  }
-  // An import specifier — must be explicitly relative so it isn't treated as a
-  // node_modules package.
+  if (posix === '') return '.'
   return posix.startsWith('.') ? posix : `./${posix}`
 }
 
@@ -116,16 +126,18 @@ export function resolveOutputPaths(
   output?: OutputConfig,
   opensaasPathFallback?: string,
 ): ResolvedOutputPaths {
-  const prismaSchemaRel = output?.prismaSchema ?? DEFAULT_PRISMA_SCHEMA
+  const contractModuleRel = output?.contractModule ?? DEFAULT_CONTRACT_MODULE
   const opensaasDirRel = output?.opensaasDir ?? opensaasPathFallback ?? DEFAULT_OPENSAAS_DIR
 
-  const prismaSchemaAbs = path.resolve(cwd, prismaSchemaRel)
+  const contractModuleAbs = path.resolve(cwd, contractModuleRel)
+  const contractDirAbs = path.dirname(contractModuleAbs)
   const opensaasDirAbs = path.resolve(cwd, opensaasDirRel)
-  const schemaDirAbs = path.dirname(prismaSchemaAbs)
-  const prismaClientAbs = path.join(opensaasDirAbs, OPENSAAS_FILES.prismaClient)
 
   const paths: ResolvedWritePaths = {
-    prismaSchema: prismaSchemaAbs,
+    contractModule: contractModuleAbs,
+    contractDir: contractDirAbs,
+    contractJson: path.join(contractDirAbs, CONTRACT_ARTIFACTS.json),
+    contractTypes: path.join(contractDirAbs, CONTRACT_ARTIFACTS.types),
     // prisma.config.ts is always written at the project root (not configurable).
     prismaConfig: path.resolve(cwd, 'prisma.config.ts'),
     opensaasDir: opensaasDirAbs,
@@ -136,15 +148,11 @@ export function resolveOutputPaths(
   }
 
   const crossReferences: ResolvedCrossReferences = {
-    prismaConfigSchema: toModuleSpecifier(path.relative(cwd, schemaDirAbs), { allowBare: true }),
-    prismaClientOutput: toModuleSpecifier(path.relative(schemaDirAbs, prismaClientAbs), {
-      allowBare: false,
-    }),
+    prismaConfigContract: toModuleSpecifier(path.relative(cwd, contractModuleAbs)),
+    prismaConfigOutput: toModuleSpecifier(path.relative(cwd, contractDirAbs)),
+    contractJsonImport: toModuleSpecifier(path.relative(opensaasDirAbs, paths.contractJson)),
     configImport: toModuleSpecifier(
       path.join(path.relative(opensaasDirAbs, cwd), 'opensaas.config'),
-      {
-        allowBare: false,
-      },
     ),
   }
 

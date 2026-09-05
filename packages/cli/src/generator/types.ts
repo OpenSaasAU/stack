@@ -1,8 +1,8 @@
 import type { OpenSaasConfig, ListConfig, DatabaseConfig, FieldConfig } from '@opensaas/stack-core'
+import { resolveListTimestamps } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import * as fs from 'fs'
 import * as path from 'path'
-import { resolveListTimestamps } from './prisma.js'
 
 function mapFieldTypeToTypeScript(field: FieldConfig): string | null {
   if (field.type === 'relationship') {
