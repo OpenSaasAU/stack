@@ -43,9 +43,9 @@ import { getDbKey } from '../lib/case-utils.js'
  *
  * **Caller-directed (ADR-0026).** `buildAccessScopedInclude` walks only the
  * branches `requestedInclude` names — the caller's own `include`, a fragment
- * `query`'s projection, or `foldDeclaredDependencies`'s fold of a field's
- * `needs` (`declared-dependencies.ts`), all resolved before this module ever
- * runs. Naming a relation fetches that relation's own columns and stops
+ * `query`'s projection, or `widenIncludeForDependencies`'s widening for a
+ * field's emitted `needs` set (`declared-dependencies.ts`), all resolved
+ * before this module ever runs. Naming a relation fetches that relation's own columns and stops
  * (the "One hop" rule, see `CONTEXT.md`); reaching further means the request
  * named a nested `include` there too. A relation nobody named never has its
  * list's `query` access evaluated at all — there is no separate "build the
@@ -488,9 +488,9 @@ async function buildAccessScopedCountSelect(
  *   stops: no recursive call, no access evaluation on anything beneath it.
  *
  * **Depth is a cost limit, not a cycle guard (ADR-0026).** A `requestedInclude`
- * is always a finite literal — the caller's own object, or
- * `foldDeclaredDependencies`'s already-cycle-guarded fold — so this recursion
- * cannot loop unboundedly on its own; nothing here walks the relationship
+ * is always a finite literal — the caller's own object, or the one-hop
+ * widening over it (`declared-dependencies.ts`, which never recurses into a
+ * branch it added) — so this recursion cannot loop unboundedly on its own; nothing here walks the relationship
  * graph unprompted. `READ_INCLUDE_MAX_DEPTH` still bounds how deep a request
  * may reach, fail-closed per ADR-0022: a request naming anything at or past
  * the cap throws `AccessScopeDepthExceededError` rather than silently

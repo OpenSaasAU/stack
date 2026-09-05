@@ -13,7 +13,8 @@ import {
   toEmittedContract,
   type PrismaContract,
 } from '../src/contract/index.js'
-import { blogConfig, oneToOneConfig } from './fixtures/contract-configs.js'
+import { deriveConstraintMap } from '../src/contract/dependencies.js'
+import { authConfig, blogConfig, oneToOneConfig } from './fixtures/contract-configs.js'
 
 /**
  * An in-process PGlite reached over pglite-socket (ADR-0057). The socket
@@ -198,4 +199,50 @@ describe('engine: the one-to-one derivation applies SERIAL ids and the owning un
       await orm.close()
     }
   }, 60_000)
+})
+
+/**
+ * Every name in the emitted constraint map is a real unique constraint in
+ * PostgreSQL, and every unique constraint PostgreSQL created is in the map.
+ * Nothing else pins the derived names — they are what PostgreSQL builds from
+ * the physical table and columns, and a violation reaches the runtime under
+ * exactly that name (ADR-0042).
+ */
+describe('engine: the constraint map names the constraints PostgreSQL actually created', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test.each([
+    ['blog', blogConfig],
+    ['auth', authConfig],
+    ['one-to-one', oneToOneConfig],
+  ])(
+    '%s',
+    async (_name, config) => {
+      const data = deriveContract(config)
+      await applyContract(db, buildPrismaContract(data))
+
+      const rows = await db.pglite.query<{ conname: string }>(
+        `select conname from pg_constraint
+       where contype in ('u', 'p')
+         and connamespace = 'public'::regnamespace
+         and conrelid::regclass::text not like 'prisma_%'
+       order by conname`,
+      )
+
+      const emitted = Object.keys(deriveConstraintMap(config, data)).sort()
+      expect(rows.rows.map((row) => row.conname)).toEqual(emitted)
+
+      await db.pglite.exec('drop schema public cascade; create schema public;')
+      await db.pglite.exec('drop schema if exists prisma_contract cascade;')
+    },
+    60_000,
+  )
 })

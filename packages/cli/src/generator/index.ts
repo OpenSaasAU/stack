@@ -8,6 +8,7 @@ export { generateListsNamespace, writeLists } from './lists.js'
 export { generateContext, writeContext } from './context.js'
 export type { ContextReferences } from './context.js'
 export { generatePluginTypes, writePluginTypes } from './plugin-types.js'
+export { generateTables, writeTables } from './tables.js'
 export {
   resolveOutputPaths,
   CONTRACT_ARTIFACTS,

@@ -190,10 +190,10 @@ export function buildInclude(fields: FieldSelection<unknown>): Record<string, un
  * produces a restricted scope, and only as deep as it names).
  *
  * Used to make computed-field evaluation (`filterReadableFields`) and
- * declared-dependency folding (`foldDeclaredDependencies`) projection-aware
- * (ADR-0027): a field not named by the scope at its level is never computed
- * and its `needs` are never folded, because the read is never going to
- * return it.
+ * declared-dependency widening (`widenIncludeForDependencies`)
+ * projection-aware (ADR-0027): a field not named by the scope at its level is
+ * never computed and its `needs` are never fetched, because the read is never
+ * going to return it.
  * @internal
  */
 export type FieldSelectionScope = {

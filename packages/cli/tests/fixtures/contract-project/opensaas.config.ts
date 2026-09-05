@@ -1,12 +1,20 @@
 import { config, list } from '@opensaas/stack-core'
-import { checkbox, relationship, select, text, timestamp } from '@opensaas/stack-core/fields'
+import {
+  checkbox,
+  relationship,
+  select,
+  text,
+  timestamp,
+  virtual,
+} from '@opensaas/stack-core/fields'
 
 /**
  * The project CI regenerates to prove `opensaas generate` is deterministic:
  * a second run must leave `prisma/contract.ts`, `prisma.config.ts` and the two
  * emitted artifacts byte-identical. Its lists cover the constructs whose
  * emission is easiest to make unstable — an enum, a named composite index, a
- * one-to-one, a self-reference, a list-only ref and a second namespace.
+ * one-to-one, a self-reference, a list-only ref, a second namespace, and a
+ * computed field whose `needs` names both a relation and a column.
  */
 export default config({
   db: {
@@ -47,6 +55,11 @@ export default config({
         publishedAt: timestamp(),
         author: relationship({ ref: 'User.posts', db: { onDelete: 'setNull' } }),
         category: relationship({ ref: 'Category' }),
+        byline: virtual({
+          type: 'string',
+          needs: ['author', 'title'],
+          hooks: { resolveOutput: ({ item }) => `${item.title} by ${item.authorId ?? '?'}` },
+        }),
       },
       db: {
         map: 'post',

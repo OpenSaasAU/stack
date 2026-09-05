@@ -4,8 +4,12 @@ import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
-import type { DeclaredOnlyTree } from './declared-dependencies.js'
-import { emptyDeclaredOnlyTree, getDeclaredRelationNames } from './declared-dependencies.js'
+import type { DependencyAdditions } from './declared-dependencies.js'
+import {
+  getDeclaredDependencyNames,
+  getListDependencies,
+  noDependencyAdditions,
+} from './declared-dependencies.js'
 import type { FieldSelectionScope } from '../query/index.js'
 import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
 import {
@@ -226,12 +230,12 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   config?: OpenSaasConfig,
   depth: number = 0,
   listKey?: string,
-  // Relation keys added purely to satisfy a field's `needs` (ADR-0025) at
-  // THIS level, and the same tree for each nested relation reached via a
-  // caller-named branch. Stripped from `filtered` right before it is
-  // returned — after resolveOutput has had a chance to read them — so a
-  // declared dependency never widens what the caller receives.
-  declaredOnly: DeclaredOnlyTree = emptyDeclaredOnlyTree(),
+  // Relation keys the dependency widening added at THIS level (ADR-0051),
+  // and the same tree for each nested relation reached via a caller-named
+  // branch. Stripped from `filtered` right before it is returned — after
+  // resolveOutput has had a chance to read them — so a declared dependency
+  // never widens what the caller receives.
+  additions: DependencyAdditions = noDependencyAdditions(),
   // The fragment scope this level was reached under (ADR-0027, see module doc
   // above), and the same tree one level down for each nested relation.
   selection?: FieldSelectionScope,
@@ -270,19 +274,29 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   }
 
   // Keys denied by field-level read access during the pass below — as opposed
-  // to a key merely skipped by `selection` or held back only for
-  // `declaredOnly` stripping. Tracked separately because a denied key must
-  // stay invisible to a computed field's hook (below), while a declared-only
-  // key must stay VISIBLE to one — that is the entire point of declaring it
-  // (ADR-0025) — even though `selection` above skipped adding it to
-  // `filtered` because the caller's fragment never asked for it.
+  // to a key merely skipped by `selection` or held back only for the
+  // widening's own strip. Tracked separately because a denied key must stay
+  // invisible to a computed field's hook (below), while a declared key must
+  // stay VISIBLE to one — that is the entire point of declaring it (ADR-0025)
+  // — even though `selection` above skipped adding it to `filtered` because
+  // the caller's fragment never asked for it.
   const accessDeniedKeys = new Set<string>()
+
+  // This list's actual system fields, from the emitted table (ADR-0051):
+  // always readable, never field-access-checked, always visible to a hook's
+  // `item`. `id` is universal; the timestamps exist only where the list
+  // carries them, so a fixed triple would name columns a list does not have.
+  const systemFields = new Set(
+    config && listKey
+      ? getListDependencies(config, listKey).systemFields
+      : ['id', 'createdAt', 'updatedAt'],
+  )
 
   // Process existing fields from the database result
   for (const [fieldName, value] of Object.entries(workingItem)) {
     const fieldConfig = fieldConfigs[fieldName]
 
-    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+    if (systemFields.has(fieldName)) {
       filtered[fieldName] = value
       continue
     }
@@ -350,11 +364,10 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
           listConfig: synthetic.sourceListConfig,
         }
       }
-      // The declared-only tree for whatever THIS relation's own list computes,
-      // e.g. a field on the related list that declares its own `needs`. Falls
-      // back to an empty tree when this relation isn't declaration-related at
-      // all — the common case.
-      const nestedDeclaredOnly = declaredOnly.nested[fieldName] ?? emptyDeclaredOnlyTree()
+      // The additions beneath THIS relation, e.g. a field on the related list
+      // that declares its own `needs`. Falls back to an empty tree when the
+      // widening added nothing there — the common case.
+      const nestedAdditions = additions.nested[fieldName] ?? noDependencyAdditions()
       // This relation's own fragment scope, if the caller's fragment named it
       // with a nested Fragment/RelationSelector. `undefined` (a bare `true`
       // selector, or no `selection` at all) means the nested list computes
@@ -387,7 +400,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 config,
                 depth + 1,
                 relatedConfig.listName,
-                nestedDeclaredOnly,
+                nestedAdditions,
                 nestedSelection,
                 nestedToOneVisibility,
                 nestedCountDenials,
@@ -407,7 +420,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 config,
                 depth + 1,
                 relatedConfig.listName,
-                nestedDeclaredOnly,
+                nestedAdditions,
                 nestedSelection,
                 nestedToOneVisibility,
                 nestedCountDenials,
@@ -490,11 +503,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // The item a virtual field's hook sees: stored columns and fetched
   // relations (from `workingItem`, never a resolved value — no hook's output
   // is ever written back into `workingItem`). A key is visible here if it
-  // either survived into `filtered` (selected and allowed) OR is declared via
-  // `needs` by a field this level computes — a relation the fold fetched
-  // (`declaredOnly`) or a stored column the caller's projection skipped but a
-  // hook named (ADR-0025, ADR-0051: that IS the point of declaring it —
-  // carried for a hook, never for the caller). Everything else — field-level
+  // either survived into `filtered` (selected and allowed) OR is in the
+  // emitted dependency set of a field this level computes — a relation the
+  // widening fetched (`additions`) or a stored column the caller's projection
+  // skipped but a hook named (ADR-0025, ADR-0051: that IS the point of
+  // declaring it — carried for a hook, never for the caller). Everything else — field-level
   // denied, or skipped by `selection` and declared by no one — is deleted. A
   // computed field reaches for exactly its own declared dependencies and
   // nothing another field's hook produced (ADR-0027): reaching for a sibling
@@ -503,16 +516,19 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // that DID survive finds its raw stored form, never another hook's resolved
   // value — a virtual field computed earlier in declaration order is exactly
   // as invisible as one computed later.
-  const declaredNames = new Set(getDeclaredRelationNames(fieldConfigs, selection?.fields))
+  const declaredNames =
+    config && listKey
+      ? getDeclaredDependencyNames(config, listKey, selection?.fields)
+      : new Set<string>()
   const computedFieldItem: Record<string, unknown> = { ...workingItem }
   for (const key of Object.keys(workingItem)) {
-    if (['id', 'createdAt', 'updatedAt'].includes(key)) continue
+    if (systemFields.has(key)) continue
     if (accessDeniedKeys.has(key)) {
       delete computedFieldItem[key]
       continue
     }
     if (key in filtered) continue
-    if (declaredOnly.keys.has(key) || declaredNames.has(key)) continue
+    if (additions.keys.has(key) || declaredNames.has(key)) continue
     delete computedFieldItem[key]
   }
 
@@ -563,7 +579,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // declared dependency is read from stored columns, not from another
   // field's resolved output). A declared dependency is private plumbing, not
   // an implicit `include`: it never widens what the caller receives.
-  for (const key of declaredOnly.keys) {
+  for (const key of additions.keys) {
     delete filtered[key]
   }
 
