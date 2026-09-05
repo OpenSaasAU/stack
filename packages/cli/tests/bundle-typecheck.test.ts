@@ -104,14 +104,15 @@ describe('the generated bundle type-checks', () => {
       contractModule: crossReferences.prismaConfigContract,
       outputDir: crossReferences.prismaConfigOutput,
     })
-    writeTypes(config, paths.types)
-    writeLists(config, paths.lists)
+    const generatedTables = deriveGeneratedTables(config, contractData)
+    writeTypes(config, paths.types, generatedTables.dependencies)
+    writeLists(config, paths.lists, generatedTables.dependencies)
     writeContext(config, contractData, paths.context, {
       configImport: crossReferences.configImport,
       contractJsonImport: crossReferences.contractJsonImport,
     })
     writePluginTypes(config, paths.pluginTypes)
-    writeTables(deriveGeneratedTables(config, contractData), paths.tables)
+    writeTables(generatedTables, paths.tables)
   }, 120_000)
 
   test('writes every file generate writes', () => {

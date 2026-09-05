@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
-import { deriveContract } from '../../core/src/contract/index.js'
+import { deriveContract, deriveDependencyTable } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import { emitContract } from '../src/generator/contract-emit.js'
 import { writeContractModule } from '../src/generator/contract-module.js'
@@ -74,8 +74,9 @@ export function emitTypeFixture(name: string, config: OpenSaasConfig): TypeFixtu
   emitContract(projectDir, path.join(projectDir, 'prisma'))
 
   const opensaasDir = path.join(projectDir, '.opensaas')
-  writeTypes(config, path.join(opensaasDir, 'types.ts'))
-  writeLists(config, path.join(opensaasDir, 'lists.ts'))
+  const dependencies = deriveDependencyTable(config)
+  writeTypes(config, path.join(opensaasDir, 'types.ts'), dependencies)
+  writeLists(config, path.join(opensaasDir, 'lists.ts'), dependencies)
   writePluginTypes(config, path.join(opensaasDir, 'plugin-types.ts'))
 
   fs.writeFileSync(

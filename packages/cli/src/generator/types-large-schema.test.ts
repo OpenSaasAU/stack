@@ -14,7 +14,7 @@ import {
  *
  * Its original job (#952 / ADR-0032) was catching `TS2589: Type instantiation
  * is excessively deep` once a schema grew past a handful of lists, and it
- * keeps it: the per-list shapes are now core generics instantiated 21 times
+ * keeps it: the per-list shapes are now core generics instantiated 22 times
  * over a mutually-recursive relation graph, which is exactly the shape that
  * used to blow up. What changed is that the contract is emitted rather than
  * stubbed, so the types being checked are the ones an application gets.
@@ -38,6 +38,22 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
       isSingleton: true,
       fields: {
         siteName: text({ defaultValue: 'Fixture' }),
+      },
+    },
+    // A computed field over a RELATION: ADR-0051 widens the read to the
+    // relation AND the foreign-key column this side owns, so the item type
+    // has to carry both. It sits on a list of its own because `list()` cannot
+    // tell which field a `virtual()` call will be bound to, so a second
+    // computed field here would widen both hooks' `item` to a union.
+    Membership: {
+      fields: {
+        role: text(),
+        tenant: relationship({ ref: 'Tenant' }),
+        owner: virtual({
+          type: 'string',
+          needs: ['tenant'],
+          hooks: { resolveOutput: ({ item }) => `${item.tenantId ?? ''}` },
+        }),
       },
     },
   }
@@ -74,7 +90,7 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
   return { db: { provider: 'postgresql' }, lists }
 }
 
-describe('the generated bundle for a 22-list schema', () => {
+describe('the generated bundle for a 23-list schema', () => {
   let fixture: TypeFixture
 
   beforeAll(() => {
@@ -116,7 +132,7 @@ assertType<Exact<Info['inputs']['create'], Model0CreateInput>>()
 assertType<Exact<Info['inputs']['update'], Model0UpdateInput>>()
 
 async function run() {
-  // The self-referential \`sudo()\` over a 22-list \`DB\` is what used to hit TS2589.
+  // The self-referential \`sudo()\` over a 23-list \`DB\` is what used to hit TS2589.
   const sudoed = context.sudo()
   const one = await sudoed.db.model0.findUnique({ where: { id: '1' } })
   const many = await context.db.model10.findMany({ include: { previous: true, next: true } })
@@ -232,4 +248,58 @@ void undeclared
       expect(output).toBe('')
     },
   )
+
+  it('carries the foreign-key column a declared relation implies', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Lists } from './.opensaas/lists.ts'
+import { list } from '@opensaas/stack-core'
+import { virtual } from '@opensaas/stack-core/fields'
+
+// ADR-0051: \`needs: ['tenant']\` widens the read to the relation and to the
+// foreign-key column Membership owns for it, and the list carries no
+// timestamps, so \`id\` is its only system field. The runtime table and this
+// type are the same rows of one derivation (#1136).
+type OwnerItem = Lists.Membership.Needs['owner']['item']
+assertType<Exact<keyof OwnerItem, 'id' | 'tenantId' | 'tenant'>>()
+
+declare const ownerItem: OwnerItem
+// The foreign-key column, which a type rendered from the declaration alone
+// would have left off entirely.
+const foreignKey: string | null = ownerItem.tenantId
+// The relation one hop deep, \`| null\` because the Access Filter can scope the
+// related row away even though the declaration keeps the key present.
+const tenantName: string | null = ownerItem.tenant === null ? null : ownerItem.tenant.name
+
+const declared = list<Lists.Membership.TypeInfo>({
+  fields: {
+    owner: virtual({
+      type: 'string',
+      needs: ['tenant'],
+      hooks: { resolveOutput: ({ item }) => \`\${item.tenantId ?? ''}\` },
+    }),
+  },
+})
+
+void foreignKey
+void tenantName
+
+const undeclared = list<Lists.Membership.TypeInfo>({
+  fields: {
+    owner: virtual({
+      type: 'string',
+      needs: ['tenant'],
+      hooks: {
+        // @ts-expect-error \`role\` is not in this field's declared dependency set
+        resolveOutput: ({ item }) => item.role,
+      },
+    }),
+  },
+})
+
+void declared
+void undeclared
+`)
+
+    expect(output).toBe('')
+  })
 })

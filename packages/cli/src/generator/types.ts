@@ -1,4 +1,4 @@
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import type { DependencyTable, FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import { getDbKey } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
@@ -52,6 +52,7 @@ function renderMembers(members: string[], indent: string): string {
 function generateRemainderEntry(
   listName: string,
   fields: Record<string, FieldConfig>,
+  dependencies: DependencyTable,
   isSingleton: boolean,
 ): string {
   const computed: string[] = []
@@ -78,8 +79,8 @@ function generateRemainderEntry(
     if (inputType !== null) input.push(`${fieldName}: ${inputType}`)
   }
 
-  const needs = collectNeeds(fields).map(
-    ([fieldName, keys]) => `${fieldName}: ${keys.map((k) => `'${k}'`).join(' | ')}`,
+  const needs = needsEntries(listName, fields, dependencies).map(
+    ([fieldName, keys]) => `${fieldName}: ${keys}`,
   )
 
   const lines = [
@@ -95,18 +96,39 @@ function generateRemainderEntry(
 }
 
 /**
- * Each computed field's declared dependency set. `pnpm generate` resolves the
- * set once and emits it twice — as data for the engine (#1137) and as the
- * type below — so the two cannot drift.
+ * Each computed field's declared dependency set, read off the one table
+ * `deriveDependencyTable` produced (ADR-0051). The runtime widens a read from
+ * that table and the `Remainder` renders the same rows as types, so the two
+ * cannot disagree about which columns a hook is handed — including the
+ * foreign-key column a declared relation implies on the owning side.
+ *
+ * Only a VIRTUAL field's row becomes a type. `field-visibility.ts` builds the
+ * narrowed `computedFieldItem` for a virtual field's `resolveOutput` and hands
+ * a stored field's the whole `workingItem`, which carries the field's own
+ * column — a column `NeedsRow`'s `Pick` does not name. So a `NeedsItem` for a
+ * stored field would reject a read that always succeeds. The table keeps those
+ * rows because the widening still pays for their declarations.
+ *
+ * `never` for a field whose hook declares nothing: `NeedsRow` still adds the
+ * list's system fields, which is exactly what such a hook receives.
  */
-export function collectNeeds(fields: Record<string, FieldConfig>): Array<[string, string[]]> {
-  const entries: Array<[string, string[]]> = []
-  for (const [fieldName, field] of Object.entries(fields)) {
-    const declared = field.needs
-    if (!declared || declared.length === 0) continue
-    entries.push([fieldName, [...declared]])
-  }
-  return entries
+export function needsEntries(
+  listName: string,
+  fields: Record<string, FieldConfig>,
+  dependencies: DependencyTable,
+): Array<[string, string]> {
+  const rows = dependencies[listName]?.fields ?? {}
+  return Object.keys(rows)
+    .sort()
+    .filter((fieldName) => {
+      const field = fields[fieldName]
+      return field !== undefined && isVirtual(field)
+    })
+    .map((fieldName): [string, string] => {
+      const { columns, relations } = rows[fieldName]
+      const keys = [...columns, ...relations]
+      return [fieldName, keys.length === 0 ? 'never' : keys.map((k) => `'${k}'`).join(' | ')]
+    })
 }
 
 /**
@@ -232,11 +254,13 @@ export interface TransactionContext<TSession extends ${session} = ${session}>
  */
 const CONTRACT_IMPORT = '../prisma/contract.d.js'
 
-export function generateTypes(config: OpenSaasConfig): string {
+export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTable): string {
   const listNames = Object.keys(config.lists)
   const needsFields: Array<[string, string]> = Object.entries(config.lists).flatMap(
     ([listName, listConfig]) =>
-      collectNeeds(listConfig.fields).map(([fieldName]): [string, string] => [listName, fieldName]),
+      needsEntries(listName, listConfig.fields, dependencies).map(
+        ([fieldName]): [string, string] => [listName, fieldName],
+      ),
   )
   claimNames(config, needsFields)
 
@@ -283,7 +307,7 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push(' */')
   lines.push('export type Remainder = {')
   const remainderEntries = Object.entries(config.lists).map(([listName, listConfig]) =>
-    generateRemainderEntry(listName, listConfig.fields, !!listConfig.isSingleton),
+    generateRemainderEntry(listName, listConfig.fields, dependencies, !!listConfig.isSingleton),
   )
   lines.push(remainderEntries.join('\n'))
   lines.push('}')
@@ -321,8 +345,12 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-export function writeTypes(config: OpenSaasConfig, outputPath: string): void {
-  const types = generateTypes(config)
+export function writeTypes(
+  config: OpenSaasConfig,
+  outputPath: string,
+  dependencies: DependencyTable,
+): void {
+  const types = generateTypes(config, dependencies)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

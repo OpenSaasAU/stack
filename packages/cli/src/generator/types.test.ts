@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { deriveDependencyTable, type OpenSaasConfig } from '@opensaas/stack-core'
 import {
   calendarDay,
   checkbox,
@@ -10,6 +10,11 @@ import {
   virtual,
 } from '@opensaas/stack-core/fields'
 import { generateTypes } from './types.js'
+
+/** The renderer takes the one derived table the CLI computes, so a test derives it the same way. */
+function render(config: OpenSaasConfig): string {
+  return generateTypes(config, deriveDependencyTable(config))
+}
 
 /**
  * `types.ts` authors the contract remainder and nothing else, so that is what
@@ -52,7 +57,7 @@ const config: OpenSaasConfig = {
 }
 
 describe('the generated types file', () => {
-  const types = generateTypes(config)
+  const types = render(config)
 
   it('keys every shape off the emitted contract', () => {
     expect(types).toContain(
@@ -158,11 +163,132 @@ describe('the generated types file', () => {
   })
 })
 
+/**
+ * The `needs` type and the runtime dependency-set table are the same rows of
+ * one derivation (#1136, ADR-0051). These pin the four places where rendering
+ * the declaration verbatim would have said something the table does not.
+ */
+describe('the needs type reads the derived dependency table', () => {
+  it('adds the foreign-key column a declared relation implies', () => {
+    // The read is widened to `authorId` as well as `author`, so a type naming
+    // only the relation would hide a column the hook is actually handed.
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { name: text(), posts: relationship({ ref: 'Post.author', many: true }) } },
+        Post: {
+          fields: {
+            title: text(),
+            author: relationship({ ref: 'User.posts' }),
+            byline: virtual({
+              type: 'string',
+              needs: ['author'],
+              hooks: { resolveOutput: ({ item }) => `${item.authorId ?? ''}` },
+            }),
+          },
+        },
+      },
+    })
+    expect(types).toContain("needs: {\n      byline: 'authorId' | 'author'\n    }")
+  })
+
+  it('names only the relation where the other side owns the foreign key', () => {
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        User: {
+          fields: {
+            name: text(),
+            posts: relationship({ ref: 'Post.author', many: true }),
+            headline: virtual({
+              type: 'string',
+              needs: ['posts'],
+              hooks: { resolveOutput: () => '' },
+            }),
+          },
+        },
+        Post: { fields: { title: text(), author: relationship({ ref: 'User.posts' }) } },
+      },
+    })
+    expect(types).toContain("needs: {\n      headline: 'posts'\n    }")
+  })
+
+  it('drops a declaration on a field with no resolveOutput hook', () => {
+    // Nothing widens a read for it, so the table has no row and neither does
+    // the type — a `NeedsItem` for it would describe an item never built.
+    // `virtual()` refuses a hookless field, so only a third-party field
+    // setting `virtual` itself can reach this.
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            summary: { type: 'summary', virtual: true, outputType: 'string', needs: ['title'] },
+          },
+        },
+      },
+    })
+    expect(types).toContain('needs: Record<never, never>')
+    expect(types).not.toContain('PostSummaryNeedsItem')
+  })
+
+  it('gives a stored field no needs type, whose hook sees the whole row', () => {
+    // `field-visibility.ts` hands a stored field's `resolveOutput` the whole
+    // `workingItem`, including the field's own column — which `NeedsRow`'s
+    // `Pick` does not name. The table keeps the row for the widening; the
+    // type would only reject reads that succeed.
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: { User: { fields: { name: text(), secret: password() } } },
+    })
+    expect(types).toContain('needs: Record<never, never>')
+    expect(types).not.toContain('UserSecretNeedsItem')
+  })
+
+  it('drops an entry naming a field the list does not have', () => {
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            summary: virtual({
+              type: 'string',
+              needs: ['title', 'gone'],
+              hooks: { resolveOutput: ({ item }) => `${item.title}` },
+            }),
+          },
+        },
+      },
+    })
+    expect(types).toContain("needs: {\n      summary: 'title'\n    }")
+  })
+
+  it('gives a hook that declares nothing an empty set, not no entry', () => {
+    // `never` still resolves through `NeedsRow` to the list's system fields,
+    // which is exactly what the runtime hands such a hook.
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            slug: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+          },
+        },
+      },
+    })
+    expect(types).toContain('needs: {\n      slug: never\n    }')
+    expect(types).toContain('export interface PostSlugNeedsItem')
+  })
+})
+
 describe('what the generated types refuse to emit', () => {
   it('imports NeedsRow only when a field declares dependencies', () => {
-    expect(generateTypes(config)).toContain('NeedsRow as Stack$NeedsRow')
+    expect(render(config)).toContain('NeedsRow as Stack$NeedsRow')
 
-    const withoutNeeds = generateTypes({
+    const withoutNeeds = render({
       db: { provider: 'postgresql' },
       lists: { Post: { fields: { title: text() } } },
     })
@@ -173,7 +299,7 @@ describe('what the generated types refuse to emit', () => {
 
   it('refuses a virtual field with no declared output type', () => {
     expect(() =>
-      generateTypes({
+      render({
         db: { provider: 'postgresql' },
         lists: {
           Post: {
@@ -191,7 +317,7 @@ describe('what the generated types refuse to emit', () => {
 
   it('refuses two lists whose generated names collide', () => {
     expect(() =>
-      generateTypes({
+      render({
         db: { provider: 'postgresql' },
         lists: {
           Post: { fields: { title: text() } },
@@ -203,7 +329,7 @@ describe('what the generated types refuse to emit', () => {
 
   it('refuses a list that collides with the bundle’s own names', () => {
     expect(() =>
-      generateTypes({
+      render({
         db: { provider: 'postgresql' },
         lists: { Context: { fields: { title: text() } } },
       }),
@@ -212,7 +338,7 @@ describe('what the generated types refuse to emit', () => {
 
   it('lets a list take the name of a core generic', () => {
     // The imports are aliased out of reach, so `Row` is the app's own list.
-    const types = generateTypes({
+    const types = render({
       db: { provider: 'postgresql' },
       lists: { Row: { fields: { title: text() } } },
     })

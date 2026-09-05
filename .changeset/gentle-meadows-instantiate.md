@@ -53,9 +53,9 @@ not change. What changes is what they mean:
   alone, whatever the foreign key's nullability. Access control can scope the
   related row away, so code that dereferenced a required relation without a
   check now fails `tsc`.
-- **A `resolveOutput` hook's `item` is exactly its declared `needs` plus the
-  list's system fields.** Reading an undeclared column is a compile error for
-  any hook authored under `list<Lists.Post.TypeInfo>`:
+- **A virtual field's `resolveOutput` hook receives exactly its declared
+  `needs` plus the list's system fields.** Reading an undeclared column is a
+  compile error for any hook authored under `list<Lists.Post.TypeInfo>`:
 
   ```typescript
   excerpt: virtual({
@@ -67,6 +67,29 @@ not change. What changes is what they mean:
     },
   })
   ```
+
+  The set is the one `deriveDependencyTable` resolves for the runtime
+  (ADR-0051), not the declaration as written, so **a `needs` naming a
+  relationship yields a different `item` type than before**: it now carries the
+  foreign-key column this side owns as well as the relation, matching what the
+  widening actually fetches.
+
+  ```typescript
+  byline: virtual({
+    type: 'string',
+    needs: ['author'],
+    hooks: {
+      // `authorId` is now on `item`; previously only `author` was.
+      resolveOutput: ({ item }) => `${item.author?.name ?? '?'} (${item.authorId})`,
+    },
+  })
+  ```
+
+  A `needs` entry naming a field the list does not have is dropped rather than
+  typed, the list's system fields are its actual ones (a list with
+  `db.timestamps: false` carries only `id`), and only a **virtual** field gets
+  this narrowed `item` — a stored field's `resolveOutput` still sees the whole
+  row, which is what the runtime hands it.
 
 - **A write input is checked against the contract's columns.** A system-filled
   column (`id`, `createdAt`, `updatedAt`) is not writable, a non-nullable column

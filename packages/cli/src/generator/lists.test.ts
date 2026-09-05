@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generateListsNamespace } from './lists.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { deriveDependencyTable, type OpenSaasConfig } from '@opensaas/stack-core'
 import {
   text,
   integer,
@@ -30,7 +30,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain('export declare namespace Lists {')
       expect(lists).toContain('export type Post')
@@ -69,7 +69,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check all three lists are present
       expect(lists).toContain('export type User')
@@ -101,7 +101,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain('/**')
       expect(lists).toContain('Generated Lists namespace from OpenSaas configuration')
@@ -126,7 +126,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check ListConfig import
       expect(lists).toContain("import('@opensaas/stack-core').ListConfig")
@@ -153,7 +153,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Verify TypeInfo structure
       expect(lists).toContain('export type TypeInfo = {')
@@ -185,7 +185,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Both lists should be generated
       expect(lists).toContain('export type User')
@@ -214,7 +214,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // TypeInfo should be generated regardless of field types
       expect(lists).toContain('export type Product')
@@ -238,7 +238,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should have closing brace for namespace
       expect(lists).toMatch(/}\s*$/)
@@ -252,7 +252,7 @@ describe('Lists Namespace Generator', () => {
         lists: {},
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should still have namespace declaration
       expect(lists).toContain('export declare namespace Lists {')
@@ -274,7 +274,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check indentation consistency
       expect(lists).toContain('  export type Post')
@@ -307,7 +307,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should preserve exact casing from config
       expect(lists).toContain('export type BlogPost')
@@ -334,7 +334,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Verify the List type uses ListConfig with TypeInfo
       expect(lists).toContain(
@@ -362,7 +362,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Each built-in field type resolves from /fields (not the root barrel),
       // including decimal/calendarDay which were previously missing from the map.
@@ -398,7 +398,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain(
         "embedding: import('@opensaas/stack-core/extend').BaseFieldConfig<Lists.Doc.TypeInfo>",

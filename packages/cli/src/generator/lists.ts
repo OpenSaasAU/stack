@@ -1,7 +1,7 @@
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { DependencyTable, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
-import { collectNeeds } from './types.js'
+import { needsEntries } from './types.js'
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
@@ -63,7 +63,10 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
  * }
  * ```
  */
-export function generateListsNamespace(config: OpenSaasConfig): string {
+export function generateListsNamespace(
+  config: OpenSaasConfig,
+  dependencies: DependencyTable,
+): string {
   const lines: string[] = []
 
   lines.push('/**')
@@ -119,13 +122,12 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
     lines.push('')
 
     lines.push(`    /**`)
-    lines.push(`     * Per-field declared-dependency facts (ADR-0051). \`needs\` is what the`)
-    lines.push(`     * field declared; \`item\` is that set resolved against the contract —`)
-    lines.push(`     * exactly what its \`resolveOutput\` hook is handed.`)
+    lines.push(`     * Per-field declared-dependency facts (ADR-0051). \`needs\` is the set`)
+    lines.push(`     * the runtime widens the read by; \`item\` is that set resolved against`)
+    lines.push(`     * the contract — exactly what its \`resolveOutput\` hook is handed.`)
     lines.push(`     */`)
     lines.push(`    export type Needs = {`)
-    for (const [fieldName, keys] of collectNeeds(listConfig.fields)) {
-      const union = keys.map((key) => `'${key}'`).join(' | ')
+    for (const [fieldName, union] of needsEntries(listName, listConfig.fields, dependencies)) {
       const itemType = `import('./types.ts').${listName}${capitalize(fieldName)}NeedsItem`
       lines.push(`      ${fieldName}: { needs: ${union}; item: ${itemType} }`)
     }
@@ -152,8 +154,12 @@ export function generateListsNamespace(config: OpenSaasConfig): string {
   return lines.join('\n')
 }
 
-export function writeLists(config: OpenSaasConfig, outputPath: string): void {
-  const lists = generateListsNamespace(config)
+export function writeLists(
+  config: OpenSaasConfig,
+  outputPath: string,
+  dependencies: DependencyTable,
+): void {
+  const lists = generateListsNamespace(config, dependencies)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

@@ -210,15 +210,16 @@ export async function generateCommand() {
       process.exit(1)
     }
 
-    // One computation, two consumers: the emitted `tables.ts` and the
-    // `Remainder`'s per-field `needs` type (#1136), which must be the same
-    // arrays or the type and the runtime widening drift (ADR-0051).
+    // One computation, three consumers: the emitted `tables.ts` the runtime
+    // widens a read from, and the `Remainder`'s per-field `needs` type the
+    // bundle renders it as (#1136). Derived once so the type and the runtime
+    // widening cannot disagree (ADR-0051).
     const generatedTables = deriveGeneratedTables(config, contractData)
 
     const bundleSpinner = ora('Generating the bundle...').start()
     try {
-      writeTypes(config, paths.types)
-      writeLists(config, paths.lists)
+      writeTypes(config, paths.types, generatedTables.dependencies)
+      writeLists(config, paths.lists, generatedTables.dependencies)
       writeTables(generatedTables, paths.tables)
       writeContext(config, contractData, paths.context, {
         configImport: crossReferences.configImport,
