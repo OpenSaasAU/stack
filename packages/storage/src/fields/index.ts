@@ -1,5 +1,7 @@
 import type {
   BaseFieldConfig,
+  ContractColumnDescriptor,
+  ContractFieldDescriptor,
   TypeInfo,
   MultiColumnPrismaResult,
 } from '@opensaas/stack-core/extend'
@@ -22,6 +24,7 @@ import {
   type FileColumnMap,
   type FileColumnPart,
   type ImageColumnMap,
+  type MultiColumnDescriptor,
 } from '../utils/multi-column.js'
 
 /**
@@ -76,6 +79,38 @@ export interface FileDbConfig {
 
 function isMultiColumn(columns: ImageDbConfig['columns'] | FileDbConfig['columns']): boolean {
   return columns === 'keystone' || (typeof columns === 'object' && columns?.mode === 'keystone')
+}
+
+/** The metadata blob's single-column backing, honouring the `db` overrides the field documents. */
+function metadataColumn(
+  fieldName: string,
+  db: ImageDbConfig | FileDbConfig | undefined,
+): ContractFieldDescriptor {
+  const descriptor: { kind: 'column' } & ContractColumnDescriptor = {
+    kind: 'column',
+    name: fieldName,
+    type: { pack: 'pg', type: 'jsonb' },
+    nullable: db?.isNullable ?? true,
+  }
+  if (db?.nativeType !== undefined) descriptor.nativeType = db.nativeType
+  if (db?.map !== undefined) descriptor.map = db.map
+  return descriptor
+}
+
+/**
+ * The per-part columns of a multi-column field, as the contract spells them.
+ * The model field name and the physical column are the same string here (see
+ * `imagePartFieldName` in `../utils/multi-column.js`), so no `map` is carried.
+ */
+function partColumns(parts: readonly MultiColumnDescriptor[]): ContractFieldDescriptor {
+  return {
+    kind: 'columns',
+    columns: parts.map((part) => ({
+      name: part.name,
+      type: { pack: 'pg', type: part.type === 'Int' ? 'int' : 'text' },
+      nullable: true,
+    })),
+  }
 }
 
 function imageColumnOverrides(
@@ -206,6 +241,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
 
   const fieldConfig: FileFieldConfig<TTypeInfo> = {
     type: 'file',
+    outputType: "import('@opensaas/stack-storage').FileMetadata | null",
+    inputType: "File | import('@opensaas/stack-storage').FileMetadata | null",
     ...restOptions,
 
     // Override Prisma's Json type with FileMetadata | null in context.db types.
@@ -300,6 +337,9 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
       return { type: 'Json', modifiers: '?' }
     },
 
+    getContractField: (fieldName: string): ContractFieldDescriptor =>
+      metadataColumn(fieldName, options.db),
+
     getTypeScriptType: () => {
       return {
         type: 'FileMetadata | null',
@@ -329,6 +369,8 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
         map: col.map,
       }))
     }
+    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor =>
+      partColumns(fileColumnDescriptors(columnMapFor(fieldName), fileParts))
     fieldConfig.getColumnNames = (fieldName: string): string[] =>
       fileColumnNames(columnMapFor(fieldName), fileParts)
     fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
@@ -374,6 +416,8 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
 
   const fieldConfig: ImageFieldConfig<TTypeInfo> = {
     type: 'image',
+    outputType: "import('@opensaas/stack-storage').ImageMetadata | null",
+    inputType: "File | import('@opensaas/stack-storage').ImageMetadata | null",
     ...restOptions,
 
     // Override Prisma's Json type with ImageMetadata | null in context.db types.
@@ -490,6 +534,9 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
       return { type: 'Json', modifiers: '?' }
     },
 
+    getContractField: (fieldName: string): ContractFieldDescriptor =>
+      metadataColumn(fieldName, options.db),
+
     getTypeScriptType: () => {
       return {
         type: 'ImageMetadata | null',
@@ -519,6 +566,8 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
         map: col.map,
       }))
     }
+    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor =>
+      partColumns(imageColumnDescriptors(columnMapFor(fieldName)))
     fieldConfig.getColumnNames = (fieldName: string): string[] =>
       imageColumnNames(columnMapFor(fieldName))
     fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
