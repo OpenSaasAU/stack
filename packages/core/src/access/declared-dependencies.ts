@@ -2,7 +2,6 @@ import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import type { DependencyTable, ListDependencies } from '../contract/dependencies.js'
 import { deriveDependencyTable } from '../contract/dependencies.js'
 import { getRelatedListConfig } from './engine.js'
-import type { FieldSelectionScope } from '../query/index.js'
 
 /**
  * Declared Dependencies — widening a read for the `needs` of the computed
@@ -22,7 +21,7 @@ import type { FieldSelectionScope } from '../query/index.js'
  * `include` literal, and the `visitedLists` cycle guard the recursive fold
  * needed is deleted along with `validateNeedsClosureDepth` (ADR-0051).
  *
- * A branch the caller or fragment named IS returned, so ADR-0027 has its
+ * A branch the caller named IS returned, so ADR-0027 has its
  * computed fields run and this module widens at that level too — which is why
  * it still descends into caller-named keys.
  *
@@ -42,6 +41,22 @@ export type DependencyAdditions = {
   keys: Set<string>
   /** Per-key additions beneath a relation the caller named for its own reasons. */
   nested: Record<string, DependencyAdditions>
+}
+
+/**
+ * Which field names a level of a read is going to return, and the same tree
+ * one level down for every relation it reaches. `fields: undefined` means
+ * unrestricted — what a read that named no projection at that level means.
+ *
+ * It is what makes computation projection-aware (ADR-0027): a field a level
+ * does not return is never computed, its read access is never evaluated and
+ * its declared dependencies are never fetched. It is also the caller half of
+ * the widen-and-strip difference (ADR-0041) — anything the engine added for
+ * its own reasons is outside it, and Field Visibility strips it back out.
+ */
+export type FieldSelectionScope = {
+  readonly fields: ReadonlySet<string> | undefined
+  readonly nested: Readonly<Record<string, FieldSelectionScope>>
 }
 
 export function noDependencyAdditions(): DependencyAdditions {
@@ -118,10 +133,10 @@ export function getListDependencies(config: OpenSaasConfig, listKey: string): Li
 
 /**
  * The union of the dependency sets of the computed fields this read will
- * return (ADR-0027). `selectedFields`, when given, is the fragment's own
- * selection — a field it did not select is never computed, so its
+ * return (ADR-0027). `selectedFields`, when given, is the read's own
+ * projection — a field it did not select is never computed, so its
  * declarations are not paid for. `undefined` means unrestricted, matching a
- * bare or `include`-based read, which returns every computed field.
+ * read that named no projection, which returns every computed field.
  */
 export function resolveDeclaredDependencies(
   config: OpenSaasConfig,
@@ -138,20 +153,6 @@ export function resolveDeclaredDependencies(
   }
 
   return { columns, relations }
-}
-
-/**
- * Every dependency name — columns and relations alike — the computed fields
- * this read returns declared. `field-visibility.ts` uses it to decide which
- * keys stay visible to a hook's `item` after the caller's projection.
- */
-export function getDeclaredDependencyNames(
-  config: OpenSaasConfig,
-  listKey: string,
-  selectedFields?: ReadonlySet<string>,
-): Set<string> {
-  const { columns, relations } = resolveDeclaredDependencies(config, listKey, selectedFields)
-  return new Set([...columns, ...relations])
 }
 
 /**
@@ -184,7 +185,7 @@ export function widenIncludeForDependencies(
   const merged: Record<string, unknown> = { ...(rawInclude ?? {}) }
 
   for (const name of declared) {
-    if (name in merged) continue // the caller (or fragment) asked for it — not an addition
+    if (name in merged) continue // the caller asked for it — not an addition
     merged[name] = true
     additions.keys.add(name)
   }

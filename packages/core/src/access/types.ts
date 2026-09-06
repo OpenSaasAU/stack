@@ -1,4 +1,3 @@
-import type { Fragment, FieldSelection, ResultOf } from '../query/index.js'
 import type { SecuredQuery } from '../secured/read.js'
 import type { TransactionRegistry } from './transaction-registry.js'
 
@@ -112,118 +111,6 @@ export interface OrmModelDelegate {
   count: (args?: OrmOperationArgs) => Promise<number>
 }
 
-// ─────────────────────────────────────────────────────────────
-// Augmented find operation types — add `query` overload to findMany / findUnique
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Extra query arguments accepted when a `query` Fragment is provided alongside
- * `context.db.<list>.findMany({ query: myFragment, ... })`.
- */
-export type FindManyQueryArgs = {
-  where?: Record<string, unknown>
-  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-  take?: number
-  skip?: number
-}
-
-/**
- * Overloaded `findMany` that accepts an optional `query` Fragment.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns records shaped to `ResultOf<fragment>[]`.
- * - **Without `query`**: behaves exactly like the original Prisma `findMany`.
- *
- * TypeScript resolves the return type from the presence (or absence) of `query`
- * in the argument object — no explicit type annotation is needed.
- *
- * @example
- * ```ts
- * // Narrowed return type from fragment
- * const posts = await context.db.Post.findMany({
- *   query:   postFragment,
- *   where:   { published: true },
- *   orderBy: { createdAt: 'desc' },
- *   take:    10,
- * })
- * // posts: ResultOf<typeof postFragment>[]
- *
- * // Original Prisma behaviour (no fragment)
- * const posts = await context.db.Post.findMany({ where: { published: true } })
- * // posts: Post[]
- * ```
- */
-export interface AugmentedFindMany {
-  <TItem, TFields extends FieldSelection<TItem>>(
-    args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
-  ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
-  (args?: OrmOperationArgs): Promise<OrmRow[]>
-}
-
-/**
- * Extra query arguments accepted when a `query` Fragment is provided alongside
- * `context.db.<list>.findFirst({ query: myFragment, ... })`.
- */
-export type FindFirstQueryArgs = {
-  where?: Record<string, unknown>
-  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-  skip?: number
-}
-
-/**
- * Overloaded `findFirst` that accepts an optional `query` Fragment.
- *
- * `findFirst` is sugar over the access-controlled `findMany` (`take: 1`), so it
- * applies the exact same query-access checks and access-controlled include
- * building, then returns the first matching record or `null`.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
- *   or `null`.
- * - **Without `query`**: behaves exactly like the original Prisma `findFirst`.
- *
- * @example
- * ```ts
- * const post = await context.db.Post.findFirst({
- *   where:   { published: true },
- *   orderBy: { createdAt: 'desc' },
- *   query:   postFragment,
- * })
- * // post: ResultOf<typeof postFragment> | null
- * ```
- */
-export interface AugmentedFindFirst {
-  <TItem, TFields extends FieldSelection<TItem>>(
-    args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
-  ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (args?: OrmOperationArgs): Promise<OrmRow | null>
-}
-
-/**
- * Overloaded `findUnique` that accepts an optional `query` Fragment.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
- *   or `null`.
- * - **Without `query`**: behaves exactly like the original Prisma `findUnique`.
- *
- * @example
- * ```ts
- * const post = await context.db.Post.findUnique({
- *   where: { id: postId },
- *   query: postFragment,
- * })
- * // post: ResultOf<typeof postFragment> | null
- * ```
- */
-export interface AugmentedFindUnique {
-  <TItem, TFields extends FieldSelection<TItem>>(args: {
-    where: Record<string, unknown>
-    query: Fragment<TItem, TFields>
-  }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (args: OrmOperationArgs): Promise<OrmRow | null>
-}
-
 /**
  * One list's access-controlled delegate. Every operation runs the list's
  * access rules and hooks, and denial is silent rather than thrown: a
@@ -235,9 +122,9 @@ export interface AugmentedFindUnique {
  * (ADR-0052). This is the engine's own view of its output.
  */
 export interface AccessControlledDelegate extends SecuredQuery {
-  findUnique: AugmentedFindUnique
-  findFirst: AugmentedFindFirst
-  findMany: AugmentedFindMany
+  findUnique: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  findFirst: (args?: OrmOperationArgs) => Promise<OrmRow | null>
+  findMany: (args?: OrmOperationArgs) => Promise<OrmRow[]>
   create: (args: OrmOperationArgs) => Promise<OrmRow | null>
   update: (args: OrmOperationArgs) => Promise<OrmRow | null>
   delete: (args: OrmOperationArgs) => Promise<OrmRow | null>

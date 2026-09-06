@@ -384,6 +384,7 @@ describe('a composed read is an immutable value', () => {
         'include',
         'nearest',
         'orderBy',
+        'select',
         'where',
       ])
       for (const member of ['state', 'ctx', 'modelName', 'registry', 'tableName']) {

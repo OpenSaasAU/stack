@@ -12,7 +12,10 @@
 //   the database answers `column reference "<name>" is ambiguous`. The schema
 //   change that renames the column is #1236; when it lands,
 //   {@link NestedToOneIncludeError} and the test that asserts it are the
-//   deletions.
+//   deletions. The same collision under a relation the WIDENING added is
+//   left out instead of refused, so a computed field declaring a to-one on a
+//   nested branch sees it absent — the behaviour that predated the widening,
+//   and #1236's to fix.
 // - The pre-query omission is observable. A relation the caller may not read
 //   comes back absent while an undeclared one is refused, so relation NAMES
 //   can be enumerated by a caller who can already read the list. Relation
@@ -43,6 +46,7 @@ import {
   type Where,
   type WherePlan,
 } from './vocabulary.js'
+import { resolveProjection, UNPROJECTED, type ProjectionPlan } from './select.js'
 
 /**
  * A related read, composed the same way the top-level one is. Every method
@@ -58,6 +62,12 @@ export interface SecuredRefinement {
   limit(count: number): SecuredRefinement
   /** Skip this many related rows, per parent row. */
   offset(count: number): SecuredRefinement
+  /**
+   * Return exactly these of the related list's own fields. Replaces any
+   * previous call rather than accumulating, and leaves relations this
+   * refinement includes on the row.
+   */
+  select(...fields: readonly string[]): SecuredRefinement
   /**
    * Reach one hop further. Counts against the read-include depth cap.
    *
@@ -141,6 +151,8 @@ export interface IncludeRequest {
   readonly limit?: number
   readonly offset?: number
   readonly includes: readonly IncludeRequest[]
+  /** The related list's own `.select()`, or `undefined` for its full width. */
+  readonly fields?: readonly string[]
 }
 
 /** A resolved include: every key checked, the Access Filter already folded in. */
@@ -161,6 +173,15 @@ export interface IncludePlan {
   readonly limit?: number
   readonly offset?: number
   readonly includes: readonly IncludePlan[]
+  /** The related read's own projection, already widened (ADR-0041). */
+  readonly projection: ProjectionPlan
+  /**
+   * Whether only the widening asked for this branch. A declared branch
+   * delivers stored columns to the hooks that named it and is stripped from
+   * the caller's result; nothing on it computes, so nothing on it declares
+   * (ADR-0051).
+   */
+  readonly declared: boolean
 }
 
 function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
@@ -187,6 +208,7 @@ function refinement(request: IncludeRequest): SecuredRefinement {
       refinement({ ...request, orders: [...request.orders, ...orderList(order)] }),
     limit: (count) => refinement({ ...request, limit: count }),
     offset: (count) => refinement({ ...request, offset: count }),
+    select: (...fields) => refinement({ ...request, fields }),
     include: (name, refine) =>
       refinement({
         ...request,
@@ -309,9 +331,15 @@ async function resolveInclude(
   request: IncludeRequest,
   ctx: ResolveContext,
   depth: number,
+  declared: boolean,
 ): Promise<IncludePlan | null> {
   const target = resolveIncludeTarget(request.name, ctx)
   if (depth > 0 && target.arity === 'one' && target.foreignKey?.map === request.name) {
+    // A refusal the caller cannot act on is not a refusal worth raising: the
+    // widening is the engine's own, so a declared branch the alias collision
+    // blocks is left out here rather than failing a read whose call site
+    // names nothing wrong. See the `Known limits` note above.
+    if (declared) return null
     throw new NestedToOneIncludeError(ctx.listName, request.name)
   }
   const related: ResolveContext = {
@@ -329,7 +357,20 @@ async function resolveInclude(
     predicates.push(await resolveWhere(predicate, related))
   }
   const orders = await resolveOrderBy(request.orders, related)
-  const includes = await resolveIncludes(request.includes, related, depth + 1)
+  // A declared branch returns to nobody, so nothing on it computes and
+  // nothing on it declares (ADR-0051) — the widening stops here rather than
+  // recursing, and the branch is read at its full stored width because that
+  // is what the declaring hook was promised.
+  const projection = declared
+    ? UNPROJECTED
+    : await resolveProjection(
+        request.fields,
+        request.includes.map((nested) => nested.name),
+        related,
+      )
+  const includes = declared
+    ? []
+    : await resolveIncludes(request.includes, related, depth + 1, projection.caller)
 
   if (await isOmittedBeforeQuery(request.name, target, ctx)) return null
 
@@ -349,6 +390,8 @@ async function resolveInclude(
     limit: request.limit,
     offset: request.offset,
     includes,
+    projection,
+    declared,
   }
 }
 
@@ -370,6 +413,7 @@ export async function resolveIncludes(
   requests: readonly IncludeRequest[],
   ctx: ResolveContext,
   depth: number,
+  selected?: ReadonlySet<string>,
 ): Promise<IncludePlan[]> {
   const plans: IncludePlan[] = []
   const named = new Set<string>()
@@ -379,8 +423,35 @@ export async function resolveIncludes(
     if (depth >= READ_INCLUDE_MAX_DEPTH) {
       throw new AccessScopeDepthExceededError(ctx.listName, request.name, depth)
     }
-    const plan = await resolveInclude(request, ctx, depth)
+    const plan = await resolveInclude(request, ctx, depth, false)
+    if (plan !== null) plans.push(plan)
+  }
+  for (const name of declaredRelations(ctx, selected)) {
+    if (named.has(name)) continue
+    named.add(name)
+    const plan = await resolveInclude(
+      { name, predicates: [], orders: [], includes: [] },
+      ctx,
+      depth,
+      true,
+    )
     if (plan !== null) plans.push(plan)
   }
   return plans
+}
+
+/**
+ * The relations the computed fields this level returns declared (ADR-0025,
+ * ADR-0051), minus anything that is not a relationship field of this list —
+ * a `needs` entry naming a stored column is already on the row, and one
+ * naming nothing is `validateNeedsDeclarations`' refusal rather than an
+ * include this engine invents.
+ */
+function declaredRelations(ctx: ResolveContext, selected?: ReadonlySet<string>): string[] {
+  return [...resolveDeclaredDependencies(ctx.config, ctx.listName, selected).relations].filter(
+    (name) => {
+      const fieldConfig = ctx.listConfig.fields[name]
+      return fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
+    },
+  )
 }

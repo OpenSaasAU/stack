@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { getRelationshipOptions } from './relationship-options.js'
-import type { QueryRunnerContext } from './index.js'
+import type { QueryRunnerContext } from './relationship-options.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 function makeDelegate(rows: Array<Record<string, unknown>>) {

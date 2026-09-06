@@ -1,6 +1,15 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { getLabelFieldName, getItemLabel } from '../config/label.js'
-import { defineFragment, runQuery, type QueryRunnerContext } from './index.js'
+import type { OrmOperationArgs } from '../access/types.js'
+
+/** Compatible with the full `AccessContext` produced by `getContext()`. */
+export interface QueryRunnerContext {
+  db: {
+    [key: string]: {
+      findMany: (args?: OrmOperationArgs) => Promise<unknown[]>
+    }
+  }
+}
 
 const DEFAULT_TAKE = 50
 
@@ -19,11 +28,11 @@ export interface RelationshipOptionsArgs {
 }
 
 /**
- * Bounded, projected fetch of `{ id, label }` options for a relationship
- * editor — the read primitive behind the `relationshipOptions` serverAction
- * op. Selects only `id` and the resolved label field (via
- * {@link getLabelFieldName}), so the fragment carries no relation keys and
- * `buildAccessScopedInclude` never has anything to scope.
+ * Bounded fetch of `{ id, label }` options for a relationship editor — the
+ * read primitive behind the `relationshipOptions` serverAction op. It names
+ * no relations, so `buildAccessScopedInclude` never has anything to scope,
+ * and keeps only `id` and the resolved label field (via
+ * {@link getLabelFieldName}) from each row.
  *
  * Operation-level `query` access on `relatedListKey` still applies — a denied
  * list resolves to `[]` (via the underlying access-controlled `findMany`).
@@ -38,10 +47,6 @@ export async function getRelationshipOptions(
   if (!relatedListConfig) return []
 
   const labelField = getLabelFieldName(relatedListConfig)
-  const fragment = defineFragment<Record<string, unknown>>()({
-    id: true,
-    [labelField]: true,
-  })
 
   const { search, take = DEFAULT_TAKE, selectedIds = [] } = args
   const labelFieldConfig = relatedListConfig.fields[labelField] as
@@ -56,23 +61,23 @@ export async function getRelationshipOptions(
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
   const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
 
-  const primary = await runQuery(context, relatedListKey, fragment, {
-    where,
+  const primary = (await context.db[relatedListKey].findMany({
+    ...(where ? { where } : {}),
     orderBy,
     take,
-  })
+  })) as Record<string, unknown>[]
 
-  const seenIds = new Set(primary.map((item) => (item as { id: string }).id))
+  const seenIds = new Set(primary.map((item) => String(item.id)))
   const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id))
 
   const selected = missingSelectedIds.length
-    ? await runQuery(context, relatedListKey, fragment, {
+    ? ((await context.db[relatedListKey].findMany({
         where: { id: { in: missingSelectedIds } },
-      })
+      })) as Record<string, unknown>[])
     : []
 
   return [...primary, ...selected].map((item) => ({
-    id: (item as { id: string }).id,
-    label: getItemLabel(relatedListConfig, item as Record<string, unknown>),
+    id: String(item.id),
+    label: getItemLabel(relatedListConfig, item),
   }))
 }
