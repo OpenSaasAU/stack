@@ -145,10 +145,11 @@ export default config({
 
 ```bash
 pnpm generate
-pnpm db:push
 ```
 
-This creates the auth tables (User, Session, Account, Verification) in your database.
+`pnpm dev` applies the change, creating the auth tables (User, Session, Account,
+Verification) in your database. If it is already running, it applies them as
+soon as you save the config.
 
 ## Creating Authentication Pages
 

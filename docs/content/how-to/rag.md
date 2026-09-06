@@ -424,8 +424,10 @@ export default config({
 
 ```bash
 pnpm generate
-pnpm db:push
 ```
+
+`pnpm dev` applies the change; if it is already running, it applies as soon as
+you save the config.
 
 ### Create a Semantic Search Function
 

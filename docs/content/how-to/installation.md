@@ -14,13 +14,13 @@ Set up a Stack project — from an empty folder to a running admin UI you can ex
 npm create opensaas-app@latest my-app
 ```
 
-The scaffolder does the setup for you: it installs dependencies, runs the
-generator, and creates a local SQLite database. When it finishes you have a
-complete, runnable Next.js project.
+The scaffolder does the setup for you: it installs dependencies and runs the
+generator. When it finishes you have a complete, runnable Next.js project. It
+reaches no database — the first `pnpm dev` brings one up.
 
 {% callout type="info" %}
 Want authentication out of the box? Add `--with-auth`. To skip the automatic
-install/generate/db:push and run those steps yourself, add `--no-install`.
+install and generate and run them yourself, add `--no-install`.
 {% /callout %}
 
 ## 2. Run the app
@@ -29,6 +29,10 @@ install/generate/db:push and run those steps yourself, add `--no-install`.
 cd my-app
 pnpm dev
 ```
+
+`pnpm dev` is `opensaas dev`: it starts a local Postgres the stack runs
+in-process, applies your schema to it, then starts Next. Nothing to install, no
+connection string to set.
 
 Visit:
 
@@ -53,8 +57,8 @@ UI — staying within the access-control guardrails.
 Your schema lives in `opensaas.config.ts`. Running the generator (which the
 scaffolder did for you, and which you re-run with `pnpm generate`) produces:
 
-- **`prisma/schema.prisma`** — the Prisma schema
-- **`prisma.config.ts`** — Prisma CLI configuration (datasource URL for db push/migrations)
+- **`prisma/contract.json`** and **`prisma/contract.d.ts`** — the emitted schema contract; commit both
+- **`prisma.config.ts`** — Prisma CLI configuration
 - **`.opensaas/types.ts`** — TypeScript types for your lists
 - **`.opensaas/context.ts`** — the access-controlled context factory
 
@@ -81,22 +85,24 @@ if (!post) {
 
 ## The development loop
 
-When you change `opensaas.config.ts` by hand:
+Leave `pnpm dev` running. It watches `opensaas.config.ts`, and on a change it
+regenerates and applies the new schema for you — an added field or list is live
+without a restart.
+
+A change that would drop data stops short of applying: the loop prints the plan
+and leaves both the database and the running app on the old schema. Approve it
+in a second terminal, while `pnpm dev` is still running:
 
 ```bash
-pnpm generate   # regenerate schema, types, and context
-pnpm db:push    # apply schema changes to the database
+pnpm db:update
 ```
 
-Use `pnpm db:studio` to browse and edit data in Prisma Studio.
+## Using your own Postgres
 
-## Switching to PostgreSQL
-
-The starter uses SQLite for zero-setup local development. To move to Postgres,
-set `DATABASE_URL` in `.env`, change `provider` to `'postgresql'` in
-`opensaas.config.ts`, swap the adapter to `@prisma/adapter-pg`, then re-run
-`pnpm generate && pnpm db:push`. See the [Config System](/docs/concepts/config)
-for adapter examples.
+Set `DATABASE_URL` and the stack starts no database of its own — it uses the one
+you named. That is the route to a Postgres you manage: a shared development
+database, a container, or anything with an extension you install yourself.
+Leave it unset and you get the local one back.
 
 ## Next steps
 

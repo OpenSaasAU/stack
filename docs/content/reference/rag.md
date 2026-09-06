@@ -75,12 +75,13 @@ export default config({
 3. Embeddings are auto-generated whenever `content` changes
 4. All searches respect your existing access control rules
 
-Generate schema and push to database:
+Generate the schema contract:
 
 ```bash
 pnpm generate
-pnpm db:push
 ```
+
+`pnpm dev` applies it to the database.
 
 Now create content (embeddings generated automatically):
 
