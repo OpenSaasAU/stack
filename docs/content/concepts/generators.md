@@ -2,6 +2,13 @@
 
 Generators transform your `opensaas.config.ts` into Prisma schemas and TypeScript types.
 
+{% callout type="warning" %}
+This page still describes the older emitted artifacts and the `pnpm db:push`
+loop. What `opensaas generate` writes today, and how `pnpm dev` applies it, is in
+[Installation](/docs/how-to/installation#what-just-got-generated). This page is
+converted in [#1129](https://github.com/OpenSaasAU/stack/issues/1129).
+{% /callout %}
+
 ## Overview
 
 The generator system reads your declarative config and creates:

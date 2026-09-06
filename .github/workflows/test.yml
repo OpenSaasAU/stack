@@ -155,6 +155,13 @@ jobs:
     # (ADR-0063). Naming one here would take the escape branch instead, so the
     # sidecar this job exists to exercise would never start — and a SQLite URL
     # is a value the Prisma 8 toolchain cannot use at all.
+    #
+    # Story 25 of #1125 also wants this job on a Postgres service container in
+    # CI. It cannot be added here yet and stay honest: the gate above is the
+    # only condition this job runs under, so any expression keyed on the same
+    # condition resolves one way, and a service container plus a URL nothing
+    # dials is cost that reads as coverage. It belongs in the commit that lifts
+    # the gate, which is #1129.
     env:
       BETTER_AUTH_URL: 'http://localhost:3000'
       BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
