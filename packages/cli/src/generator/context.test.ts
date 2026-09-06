@@ -39,7 +39,7 @@ describe('generateContext', () => {
 
     expect(context).toContain('const binding = config.db.client')
     expect(context).toContain('const pool = binding?.pg?.()')
-    expect(context).toContain('{ url: resolveDatabaseUrl() }')
+    expect(context).toContain('{ url: resolveDatabaseUrl().url }')
     expect(context).toContain('poolOptions: binding.poolOptions')
   })
 

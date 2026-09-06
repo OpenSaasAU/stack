@@ -29,6 +29,10 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
+    "./dev-database": {
+      "types": "./dist/db/dev-database.d.ts",
+      "default": "./dist/db/dev-database.js"
+    },
     "./contract": {
       "types": "./dist/contract/index.d.ts",
       "default": "./dist/contract/index.js"

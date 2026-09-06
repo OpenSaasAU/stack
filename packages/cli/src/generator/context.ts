@@ -168,7 +168,7 @@ function createClient(config: OpenSaasConfig) {
   return postgres<Contract>({
     contractJson,
     extensions: [${runtimeExtensions}],
-    ...(pool !== undefined ? { pg: pool } : { url: resolveDatabaseUrl() }),
+    ...(pool !== undefined ? { pg: pool } : { url: resolveDatabaseUrl().url }),
     ...(binding?.poolOptions !== undefined ? { poolOptions: binding.poolOptions } : {}),
   })
 }

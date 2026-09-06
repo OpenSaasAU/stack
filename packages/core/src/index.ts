@@ -189,9 +189,15 @@ export { validateFieldNames } from './validation/field-names.js'
 export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
 
 // The stack's database URL lookup — the single place a connection string is
-// read from the environment, emitted into `prisma.config.ts` and the generated
-// context.
+// chosen, emitted into `prisma.config.ts` and the generated context. The Dev
+// database it can resolve to lives on `@opensaas/stack-core/dev-database`, so
+// the root stays free of PGlite.
 export { resolveDatabaseUrl, findDatabaseUrl, DatabaseUrlUnresolvedError } from './db/url.js'
+export type {
+  DatabaseUrlLookupOptions,
+  DatabaseUrlProvenance,
+  ResolvedDatabaseUrl,
+} from './db/url.js'
 
 // Contract derivation (ADR-0057) — `deriveContract(config)` is the data the
 // generator renders into the Contract module; `assertRelationGraphAgrees`
