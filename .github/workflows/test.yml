@@ -70,12 +70,17 @@ jobs:
       # every examples/* package. On the prisma-8 integration branch the
       # examples cannot build until they are converted (#1121, build spec 9),
       # so PRs into any base other than main run the published packages only.
+      #
+      # These two steps deliberately omit the `DATABASE_URL: 'file:./dev.db'`
+      # their `main` counterparts above still set: SQLite was removed from the
+      # integration branch in #1130, and a set-but-unusable connection string is
+      # read by `resolveDatabaseUrl` as a real database the suite should dial.
+      # A Postgres for CI arrives with the test harness (#1143, spec #1122).
       - name: Run package tests (integration branch — examples convert in spec 9)
         if: github.base_ref != 'main'
         run: turbo run test --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
 
       - name: Run tests with coverage
         if: github.base_ref == 'main'
@@ -89,7 +94,6 @@ jobs:
         run: turbo run test:coverage --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
 
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright

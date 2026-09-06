@@ -240,19 +240,56 @@ describe('startDevDatabase', () => {
   )
 })
 
+const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
+
+type Escape =
+  | { kind: 'absent' }
+  | { kind: 'postgres'; name: string; url: string }
+  | { kind: 'unusable'; name: string; url: string; fault: string }
+
 /**
- * The escape: with `DATABASE_URL` set this suite exercises whatever Postgres it
- * names, so CI runs on a real server while a developer machine runs with
- * nothing installed.
+ * `pg` parses any string it is handed, defaulting whatever it cannot read to
+ * `localhost:5432`, so a connection string that names no Postgres surfaces as a
+ * refused connection several frames from its cause. Classifying it here keeps
+ * the misconfiguration named where it is made.
+ */
+function readEscape(): Escape {
+  for (const name of ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const) {
+    const url = process.env[name]
+    if (url === undefined || url.length === 0) continue
+    let scheme: string
+    try {
+      scheme = new URL(url).protocol
+    } catch {
+      return { kind: 'unusable', name, url, fault: 'is not a URL' }
+    }
+    if (!POSTGRES_SCHEMES.has(scheme))
+      return { kind: 'unusable', name, url, fault: `names the \`${scheme}\` scheme, not Postgres` }
+    return { kind: 'postgres', name, url }
+  }
+  return { kind: 'absent' }
+}
+
+/**
+ * The escape: with a Postgres `DATABASE_URL` set this suite exercises whatever
+ * server it names, so CI can run on a real one while a developer machine runs
+ * with nothing installed. Set to anything else the variable is a
+ * misconfiguration, and this suite says so rather than dialling it.
  */
 describe('the resolved database', () => {
-  const envUrl = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL
+  const escape = readEscape()
   let projectRoot: string
   let database: DevDatabase | undefined
 
   beforeEach(async () => {
     projectRoot = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-'))
-    database = envUrl === undefined ? await startDevDatabase({ cwd: projectRoot }) : undefined
+    if (escape.kind === 'unusable')
+      throw new Error(
+        `${escape.name} is set to \`${escape.url}\`, which ${escape.fault}. This suite dials the ` +
+          `URL the lookup reports, so leave the variable unset to exercise the dev database or ` +
+          `point it at a Postgres server.`,
+      )
+    database = escape.kind === 'absent' ? await startDevDatabase({ cwd: projectRoot }) : undefined
   }, BOOT_TIMEOUT)
 
   afterEach(async () => {
@@ -265,7 +302,7 @@ describe('the resolved database', () => {
     'answers select 1 over the URL the lookup reports',
     async () => {
       const resolved = resolveDatabaseUrl({ cwd: projectRoot })
-      expect(resolved.provenance).toBe(envUrl === undefined ? 'dev-database' : 'env')
+      expect(resolved.provenance).toBe(escape.kind === 'absent' ? 'dev-database' : 'env')
       expect((await ask(resolved.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
     },
     BOOT_TIMEOUT,
