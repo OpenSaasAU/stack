@@ -26,6 +26,8 @@ const stats = await context.unsafe.execute(
 )
 ```
 
-`sql` and `raw` are Prisma's builders untouched. Neither the bare client nor `prepare()`/`runtime()` is reachable, in the type or in the runtime value: either would execute a statement the tripwire never sees. Inside `context.transaction(...)`, the transaction context's `unsafe` runs its plans through the transaction's own executor while keeping the client's contract-scoped raw lane, so a script no longer has to close over the outer client.
+`sql` and `raw` are Prisma's builders untouched. The surface hands out neither the bare client nor `prepare()`/`runtime()` — they are not among its own members, in the type or in the runtime value — because either would execute a statement the tripwire never sees.
+
+Inside `context.transaction(...)`, the transaction context's `unsafe` runs its plans through the transaction's own executor while keeping the client's contract-scoped raw lane, so a script no longer has to close over the outer client. The engine's own ORM handle is rebound to the transaction's collections at the same time: a Prisma 8 transaction holds one pooled connection for the whole callback, so a `db` left on the outer handle would commit outside the open transaction, or wait for a second connection the dev database's single-connection pool never frees. Transaction `options` a Prisma 8 client cannot honour — `isolationLevel` most of all — are refused with `TransactionOptionsUnsupportedError` rather than silently downgraded.
 
 Core exports the surface and its builders from `@opensaas/stack-core` and `@opensaas/stack-core/unsafe`; the generated context hands the client to `getContext` so it can build one.

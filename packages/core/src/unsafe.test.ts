@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig } from './config/types.js'
 import { checkbox, relationship, text } from './fields/index.js'
+import { TransactionOptionsUnsupportedError } from './context/index.js'
 import { UnmarkedQueryError, withOrigin } from './origin.js'
 import { createTestDatabase, type TestDatabase } from './testing/context.js'
 import { createPlanRecorder, type PlanRecorder, type RecordedPlan } from './testing/plans.js'
@@ -331,6 +332,62 @@ describe('the Unsafe surface', () => {
     )
   })
 
+  describe('what the proxy hands back', () => {
+    /**
+     * A stand-in client that reaches the real lanes, with an `orm` shaped to
+     * the case under test. Nothing about the surface's construction changes.
+     */
+    function surfaceOver(orm: object): UnsafeSurface {
+      return createUnsafeSurface({
+        sql: database.client.sql,
+        raw: database.client.raw,
+        orm,
+        runtime: () => database.client.runtime(),
+        transaction: <R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R> =>
+          database.client.transaction((tx: UnsafeTransactionScope) => fn(tx)),
+      })
+    }
+
+    test(
+      'a method that returns a callable is marked when the callable runs',
+      async () => {
+        const id = await author()
+        await post(id)
+        recorder.clear()
+
+        const surface = surfaceOver({
+          deferred: () => () =>
+            call(
+              chain(at(at(database.client.orm, 'public'), 'Post'), 'where', { authorId: id }),
+              'first',
+            ),
+        })
+
+        const later = call(asBag(surface.orm), 'deferred')
+        if (typeof later !== 'function') throw new Error('expected a returned callable')
+        await Reflect.apply(later, undefined, [])
+
+        expect(origins(recorder)).toEqual(['unsafe'])
+      },
+      BOOT,
+    )
+
+    test(
+      'a non-writable, non-configurable own property is handed back untouched',
+      () => {
+        const namespace = at(database.client.orm, 'public')
+        const frozen = Object.defineProperty({}, 'public', {
+          value: namespace,
+          writable: false,
+          configurable: false,
+        })
+
+        expect(Reflect.get(surfaceOver(frozen).orm, 'public')).toBe(namespace)
+      },
+      BOOT,
+    )
+  })
+
   describe('what is refused, and what is not', () => {
     test(
       'a foreign query — the client reached directly — throws',
@@ -479,6 +536,36 @@ describe('the Unsafe surface', () => {
 
         expect(recorder.plans.length).toBe(3)
         expect(new Set(origins(recorder))).toEqual(new Set(['unsafe']))
+      },
+      BOOT,
+    )
+
+    test(
+      'a write in a callback that then throws leaves no committed row',
+      async () => {
+        const email = 'rolled-back@example.test'
+
+        await expect(
+          database.context().transaction(async (tx) => {
+            await call(model(tx.unsafe, 'User'), 'create', { name: 'Rolled back', email })
+            throw new Error('boom')
+          }),
+        ).rejects.toThrow('boom')
+
+        const found = await call(chain(model(unsafe, 'User'), 'where', { email }), 'first')
+        expect(found).toBeNull()
+      },
+      BOOT,
+    )
+
+    test(
+      'options it cannot honour are refused rather than downgraded',
+      async () => {
+        await expect(
+          database
+            .context()
+            .transaction(async () => 'unreached', { isolationLevel: 'Serializable' }),
+        ).rejects.toBeInstanceOf(TransactionOptionsUnsupportedError)
       },
       BOOT,
     )

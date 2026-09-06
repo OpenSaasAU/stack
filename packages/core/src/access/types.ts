@@ -309,8 +309,9 @@ export interface AccessContext {
   session: Session | null
   /**
    * The engine's own ORM handle, reached through {@link ormModel}. Internal
-   * plumbing rather than the application's escape hatch — that is
-   * {@link AccessContext.unsafe}.
+   * plumbing rather than the application's escape hatch, which is `unsafe` on
+   * the request context (`StackBaseContext.unsafe`) and is not a member of
+   * this type.
    */
   prisma: OrmClient
   db: AccessControlledDB

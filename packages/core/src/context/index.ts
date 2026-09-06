@@ -289,8 +289,10 @@ export type TransactionIsolationLevel =
   'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
 
 /**
- * Options for {@link StackContext.transaction}, forwarded verbatim to the
- * underlying Prisma interactive transaction.
+ * Options for {@link StackContext.transaction}, forwarded verbatim to a Prisma
+ * 7 interactive transaction. A Prisma 8 client's transaction takes none of
+ * them, and refuses the call rather than downgrading it silently — see
+ * {@link TransactionOptionsUnsupportedError}.
  */
 export interface TransactionOptions {
   /** Max ms to wait to acquire a transaction from the pool. */
@@ -312,6 +314,90 @@ interface TransactionCapable {
     fn: (tx: OrmClient) => Promise<unknown>,
     options?: TransactionOptions,
   ) => Promise<unknown>
+}
+
+/**
+ * Thrown when `transaction()` is given options it cannot honour.
+ *
+ * Prisma 8's `transaction()` takes the callback and nothing else, so an
+ * isolation level asked for here would be accepted and then run at the
+ * server's default — a lost update the caller believed was closed. Refusing is
+ * the alternative to that silence; ADR-0042 removes the options from the
+ * signature, at which point this stops being reachable.
+ */
+export class TransactionOptionsUnsupportedError extends Error {
+  constructor(readonly options: readonly string[]) {
+    super(
+      `context.transaction() cannot honour ${options.join(', ')} on a Prisma 8 client: its ` +
+        `transaction takes the callback and nothing else. Running anyway would silently use the ` +
+        `server's default isolation level, so the call is refused instead. Express the ` +
+        `constraint in the statements themselves — a row lock on the contended parent — or ` +
+        `drop the options.`,
+    )
+    this.name = 'TransactionOptionsUnsupportedError'
+  }
+}
+
+/**
+ * Thrown when the transaction's own collections cannot be resolved for every
+ * list the config declares, after the client's could be.
+ *
+ * The two roots have the same shape, so this is an ORM surprise rather than a
+ * wiring fault — and the alternative to reporting it is binding `db` to a
+ * half-built handle whose writes land outside the open transaction.
+ */
+export class TransactionOrmHandleError extends Error {
+  constructor() {
+    super(
+      `context.transaction() opened a transaction whose ORM collections could not be resolved, ` +
+        `though the client's could. The engine's handle must be bound to the transaction or its ` +
+        `writes would commit outside it, so the transaction is rolled back rather than run ` +
+        `unbound.`,
+    )
+    this.name = 'TransactionOrmHandleError'
+  }
+}
+
+const DEFAULT_NAMESPACE = 'public'
+
+function reachable(container: unknown, key: string): unknown {
+  if (container === null || (typeof container !== 'object' && typeof container !== 'function')) {
+    return undefined
+  }
+  return Reflect.get(container, key)
+}
+
+/**
+ * The engine's ORM handle, resolved off a Prisma 8 `orm` root.
+ *
+ * A Prisma 8 client exposes its collections at `orm.<namespace>.<Model>` while
+ * the engine reaches a model by db key, so a handle bound to a transaction has
+ * to be rebuilt rather than reused — the same reconciliation the test harness
+ * performs, over the config's lists rather than the derived contract's models
+ * (both spell the model name as the list key and the namespace as `db.schema`).
+ *
+ * Returns `undefined` when any declared list is unreachable, which is how a
+ * caller distinguishes a Prisma 8 client from a hand-built double: the double
+ * has no collections to bind and no transaction should be opened over it.
+ *
+ * Reads go through `Reflect.get`: `orm` and its namespaces are Proxies with a
+ * `get` trap and no `has` trap, so `key in namespace` reports false for a
+ * collection that is right there.
+ */
+function ormHandleFor(config: OpenSaasConfig, orm: unknown): OrmClient | undefined {
+  const models: Record<string, unknown> = {}
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const namespace = reachable(orm, listConfig.db?.schema ?? DEFAULT_NAMESPACE)
+    const collection = reachable(namespace, listKey)
+    if (
+      collection === null ||
+      (typeof collection !== 'object' && typeof collection !== 'function')
+    ) {
+      return undefined
+    }
+    models[getDbKey(listKey)] = collection
+  }
+  return models
 }
 
 /**
@@ -827,17 +913,34 @@ export function getContext<TConfig extends OpenSaasConfig>(
         unsafeTransaction,
       )
 
+    // Known limits: this branch hands `fn` a context whose `unsafe` is built
+    // over the outer client, because a Prisma 7 transaction client carries no
+    // `sql`/`orm` lanes to derive an `UnsafeTransactionScope` from. It is
+    // unreachable while `$transaction` is a name no Prisma 8 object carries;
+    // the moment the engine's handle becomes transaction-capable and takes
+    // this branch, the scope has to be derived here too or `tx.unsafe` starts
+    // executing outside the transaction it opened.
     if (typeof ormClient.$transaction === 'function') {
       return ormClient.$transaction((tx) => fn(child(tx)), options) as Promise<T>
     }
 
-    // The engine's own delegates are not on Prisma 8's transaction yet
-    // (spec 3), so the ORM handle stays the outer one and only the Unsafe
-    // surface is transaction-bound — enough for a script inside
-    // `context.transaction` to reach `tx` without closing over the client
-    // (ADR-0056).
-    if (client !== undefined && _unsafeTransaction === undefined) {
-      return client.transaction((tx) => fn(child(prisma, tx)))
+    // Prisma 8's transaction holds a pooled connection for the whole callback,
+    // so the engine's handle is rebound to the transaction's own collections:
+    // a `db` left on the outer handle would auto-commit outside the open
+    // transaction, or wait forever for a second connection the dev database's
+    // single-connection pool never frees (ADR-0056, ADR-0063).
+    const bindable =
+      client !== undefined && _unsafeTransaction === undefined
+        ? ormHandleFor(config, client.orm)
+        : undefined
+    if (client !== undefined && bindable !== undefined) {
+      const asked = options === undefined ? [] : Object.keys(options)
+      if (asked.length > 0) return Promise.reject(new TransactionOptionsUnsupportedError(asked))
+      return client.transaction(async (tx) => {
+        const bound = ormHandleFor(config, tx.orm)
+        if (bound === undefined) throw new TransactionOrmHandleError()
+        return await fn(child(bound, tx))
+      })
     }
 
     // Nothing can open an interactive transaction here: a hand-built double,

@@ -3,28 +3,34 @@
 /**
  * Install pgvector extension in PostgreSQL database
  * Run with: npx tsx scripts/install-pgvector.ts
+ *
+ * Runs on its own `pg` connection rather than through the stack context: this
+ * is a bootstrap step for the database the context is later built over, and
+ * `CREATE EXTENSION` is DDL that neither `context.db` nor the typed lanes of
+ * `context.unsafe` express.
  */
 
-import { rawOpensaasContext } from '@/.opensaas/context'
+import pg from 'pg'
 
 async function main() {
-  const prisma = (await rawOpensaasContext).prisma
-  if (!prisma) throw new Error('Prisma client not found in context')
+  const connectionString = process.env.DATABASE_URL
+  if (!connectionString) throw new Error('DATABASE_URL is not set')
+
+  const client = new pg.Client({ connectionString })
+  await client.connect()
 
   try {
     console.log('Installing pgvector extension...')
 
-    // Install pgvector extension
-    await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;')
+    await client.query('CREATE EXTENSION IF NOT EXISTS vector;')
 
     console.log('✅ pgvector extension installed successfully!')
 
-    // Verify installation
-    const result = await prisma.$queryRawUnsafe<Array<{ extname: string }>>(
+    const result = await client.query<{ extname: string }>(
       "SELECT extname FROM pg_extension WHERE extname = 'vector';"
     )
 
-    if (result.length > 0) {
+    if (result.rows.length > 0) {
       console.log('✅ Verified: pgvector extension is active')
     } else {
       console.warn('⚠️  Warning: Could not verify pgvector installation')
@@ -44,7 +50,7 @@ async function main() {
     console.error('   - Change storage config to: jsonStorage()')
     process.exit(1)
   } finally {
-    await prisma.$disconnect()
+    await client.end()
   }
 }
 

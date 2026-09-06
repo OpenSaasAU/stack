@@ -52,12 +52,18 @@ export interface UnsafeTransactionScope<
  *   marked, and a returned collection is re-proxied, so a chain built here and
  *   run later is still marked.
  *
- * Neither the bare client nor `prepare()`/`runtime()` is reachable: a prepared
- * statement runs `beforeCompile` once at `prepare()` and never per execution,
- * and an already-compiled plan handed to `runtime()` bypasses the middleware
- * chain entirely, so either would execute unobserved (ADR-0059).
+ * The surface hands out neither the bare client nor `prepare()`/`runtime()`:
+ * they are not among its own members, in the type or in the runtime value. A
+ * prepared statement runs `beforeCompile` once at `prepare()` and never per
+ * execution, and an already-compiled plan handed to `runtime()` bypasses the
+ * middleware chain entirely, so either would execute unobserved (ADR-0059).
  *
  * Known limits:
+ * - That is a statement about this surface's own members, not a claim that
+ *   nothing reachable through the ORM lane can prepare. The lane is Prisma's
+ *   collections, whole; a `prepare`-shaped member on one of them is proxied
+ *   like any other call, which marks the preparation and not the executions
+ *   that follow. Closing that needs Prisma's own middleware, not this proxy.
  * - Prisma's raw guardrails (`lints()`, `budgets()`) are opt-in middleware and
  *   the stack installs none, here or on the client. A statement this surface
  *   runs meets whatever an application armed, and nothing else (ADR-0062).
@@ -120,7 +126,9 @@ function isThenable(value: unknown): boolean {
 /**
  * A property the proxy must hand back untouched: a proxy whose `get` returns
  * anything other than the target's own value for a non-writable,
- * non-configurable data property is a `TypeError`.
+ * non-configurable data property is a `TypeError`. Consulted only where the
+ * trap would otherwise substitute, so an ordinary read never pays for a
+ * descriptor lookup.
  */
 function isInvariantProperty(target: object, key: string | symbol): boolean {
   const descriptor = Object.getOwnPropertyDescriptor(target, key)
@@ -132,9 +140,22 @@ function isInvariantProperty(target: object, key: string | symbol): boolean {
   )
 }
 
+/**
+ * Wrap one application so it runs in the unsafe origin and its result is
+ * marked the same way. Takes the application rather than the function so the
+ * receiver stays the caller's business — the `get` trap applies against the
+ * target, a returned callable against nothing.
+ */
+function markApply(apply: (args: unknown[]) => unknown): (...args: unknown[]) => unknown {
+  return (...args: unknown[]): unknown => markResult(originStore.run('unsafe', () => apply(args)))
+}
+
 function markResult(value: unknown): unknown {
   if (isLazyResult(value)) return preserveOrigin('unsafe', value)
   if (isThenable(value)) return value
+  if (typeof value === 'function') {
+    return markApply((args) => Reflect.apply(value, undefined, args))
+  }
   if (typeof value === 'object' && value !== null) return markCalls(value)
   return value
 }
@@ -152,17 +173,26 @@ function markResult(value: unknown): unknown {
  * Reads go through `Reflect.get(target, key)` with the target as receiver, not
  * the proxy: Prisma's collections are class instances with private fields, and
  * a private read against the proxy would throw.
+ *
+ * Known limits:
+ * - A collection exposed as a non-writable, non-configurable OWN property is
+ *   handed back unwrapped: returning anything else from a `get` trap for such
+ *   a property is a `TypeError`, so the Proxy invariant wins over marking. If
+ *   a future ORM release freezes its namespaces (`Object.freeze({ Post })`),
+ *   calls reached through them carry no origin and the tripwire refuses them.
+ *   rc.8's namespaces are Proxies with a `get` trap and no own properties, so
+ *   nothing on the lane hits this today.
  */
 function markCalls<T extends object>(target: T): T {
   return new Proxy(target, {
     get(receiverTarget: T, key: string | symbol): unknown {
       const value = Reflect.get(receiverTarget, key)
-      if (isInvariantProperty(receiverTarget, key)) return value
-      if (typeof value === 'function') {
-        return (...args: unknown[]): unknown =>
-          markResult(originStore.run('unsafe', () => Reflect.apply(value, receiverTarget, args)))
-      }
-      return markResult(value)
+      const marked =
+        typeof value === 'function'
+          ? markApply((args) => Reflect.apply(value, receiverTarget, args))
+          : markResult(value)
+      if (marked !== value && isInvariantProperty(receiverTarget, key)) return value
+      return marked
     },
   })
 }
