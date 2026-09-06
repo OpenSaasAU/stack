@@ -229,6 +229,16 @@ describe('Access Control', () => {
     })
   })
 
+  describe('the public entry (#1145)', () => {
+    it('exports the same builder a consumer would otherwise copy', async () => {
+      const entry = await import('../src/index.js')
+
+      expect(entry.checkAccess).toBe(checkAccess)
+      expect(entry.mergeFilters).toBe(mergeFilters)
+      expect(entry.checkCreateAccess).toBe(checkCreateAccess)
+    })
+  })
+
   describe('checkFieldAccess', () => {
     it('should allow access when no field access is defined', async () => {
       const result = await checkFieldAccess(undefined, 'read', {

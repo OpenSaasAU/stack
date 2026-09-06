@@ -1,45 +1,6 @@
-import type { AccessContext, PrismaFilter, AccessControl } from '@opensaas/stack-core'
+import { checkAccess, mergeFilters } from '@opensaas/stack-core'
+import type { AccessContext, PrismaFilter } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-
-// Copied from `checkAccess` in @opensaas/stack-core/access.
-async function checkAccess<T = Record<string, unknown>>(
-  accessControl: AccessControl<T> | undefined,
-  args: {
-    session: AccessContext['session']
-    item?: T
-    context: AccessContext
-  },
-): Promise<boolean | PrismaFilter<T>> {
-  if (!accessControl) {
-    return false
-  }
-
-  const result = await accessControl(args)
-
-  return result
-}
-
-// Copied from `mergeFilters` in @opensaas/stack-core/access.
-function mergeFilters(
-  userFilter: PrismaFilter | undefined,
-  accessFilter: boolean | PrismaFilter,
-): PrismaFilter | null {
-  if (accessFilter === false) {
-    return null
-  }
-
-  if (accessFilter === true) {
-    return userFilter || {}
-  }
-
-  if (!userFilter) {
-    return accessFilter
-  }
-
-  return {
-    AND: [accessFilter, userFilter],
-  }
-}
 
 export async function buildAccessControlFilter(
   listKey: string,

@@ -71,8 +71,11 @@ export type PrismaModelDelegate = {
  */
 export interface OrmClient {
   /**
-   * Present on a real client and absent on a plain test double. The Write
-   * Pipeline probes for it rather than requiring it (ADR-0010).
+   * Prisma 7's interactive-transaction opener. Optional because the Write
+   * Pipeline and `context.transaction()` probe for it rather than requiring it
+   * (ADR-0010) — and because no Prisma 8 client carries it at all: their opener
+   * is named `transaction`, so both probes are constant-false on `prisma-8`
+   * until #1124 rewires them.
    */
   $transaction?: unknown
   [modelKey: string]: unknown
