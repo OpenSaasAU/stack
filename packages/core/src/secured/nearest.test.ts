@@ -260,6 +260,36 @@ describe.skipIf(!available)(
         expect(operations(ast.orderBy)).toContain('nearest')
       })
 
+      test('excludes rows from an inner-product search, inside the query', async () => {
+        // `<#>` is negative for aligned vectors, so the bound this lowers to
+        // is negative too: scores are long 3, unit 1, tilt 0.6, and a bound of
+        // 0.8 has to keep the first two and drop the third.
+        for (const row of SEED) await seed('Inner', row)
+
+        const matches = await database
+          .context(anonymous)
+          .db.Inner.nearest('embedding', QUERY, { minScore: 0.8 })
+        expect(titles(matches)).toEqual(['long', 'unit'])
+        expect(operations(lastSelect().where)).toContain('nearest')
+
+        const tighter = await database
+          .context(anonymous)
+          .db.Inner.nearest('embedding', QUERY, { minScore: 2 })
+        expect(titles(tighter)).toEqual(['long'])
+      })
+
+      test('a cosine score at or below minus one bounds nothing', async () => {
+        // Cosine distance is bounded on [0, 2], so a score of -1 admits every
+        // row and the predicate is left out — the rule l2 already follows.
+        for (const row of SEED) await seed('Cosine', row)
+
+        const matches = await database
+          .context(anonymous)
+          .db.Cosine.nearest('embedding', QUERY, { minScore: -1 })
+        expect(titles(matches)).toEqual(['unit', 'long', 'tilt'])
+        expect(operations(lastSelect().where)).not.toContain('nearest')
+      })
+
       test('an l2 score at or below zero bounds nothing', async () => {
         for (const row of SEED) await seed('L2', row)
 

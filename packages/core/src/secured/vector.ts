@@ -10,7 +10,17 @@ export type { VectorColumnDescriptor, VectorDistanceFunction } from '../config/t
 /** Every distance function a vector column may declare. */
 export const VECTOR_DISTANCE_FUNCTIONS = ['cosine', 'l2', 'inner_product'] as const
 
-export const VECTOR_DISTANCE_FUNCTION_SET: ReadonlySet<string> = new Set(VECTOR_DISTANCE_FUNCTIONS)
+const VECTOR_DISTANCE_FUNCTION_SET: ReadonlySet<string> = new Set(VECTOR_DISTANCE_FUNCTIONS)
+
+/**
+ * Whether a descriptor's declared distance function is one this engine
+ * measures. `getVectorColumn` is a public extension point, so a third-party
+ * field builder can name anything; an unrecognised value is refused at the
+ * boundary rather than reaching the lowering as an absent template.
+ */
+export function isVectorDistanceFunction(value: unknown): value is VectorDistanceFunction {
+  return typeof value === 'string' && VECTOR_DISTANCE_FUNCTION_SET.has(value)
+}
 
 /**
  * A raw distance as the caller-facing score. Each function's distance runs the
@@ -35,8 +45,10 @@ export function distanceToScore(fn: VectorDistanceFunction, distance: number): n
  * bound rather than a post-filter — which is what keeps top-K computed over the
  * rows the session may see (ADR-0045, spec #1123 story 32).
  *
- * `null` means the score bounds nothing: an `l2` score at or below zero is
- * satisfied by every distance, so adding a predicate would be noise.
+ * `null` means the score bounds nothing, and each function has its own such
+ * floor: an `l2` score is positive, and a cosine distance is bounded on
+ * `[0, 2]` so a cosine score at or below `-1` admits every row. Adding a
+ * predicate there would be noise.
  */
 export function minScoreToDistanceBound(
   fn: VectorDistanceFunction,
@@ -44,7 +56,7 @@ export function minScoreToDistanceBound(
 ): number | null {
   switch (fn) {
     case 'cosine':
-      return 1 - minScore
+      return minScore <= -1 ? null : 1 - minScore
     case 'l2':
       return minScore <= 0 ? null : 1 / minScore - 1
     case 'inner_product':
@@ -88,8 +100,31 @@ export function vectorDistance(
   }
 }
 
-/** A row's vector, as a read returns it, or `null` when the column is empty. */
-export function readVector(value: unknown): readonly number[] | null {
-  if (!Array.isArray(value)) return null
-  return value.every((entry) => typeof entry === 'number') ? value : null
+/**
+ * Thrown when a row's vector column does not read back as an array of numbers
+ * — a codec or projection mismatch in the engine rather than a data condition,
+ * since the search only scores rows whose column the query proved present.
+ */
+export class VectorDecodeError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly column: string,
+  ) {
+    super(
+      `The vector column "${listName}"."${column}" did not read back as an array of numbers. ` +
+        `The row matched a search that requires the column to be present, so this is a codec or ` +
+        `projection mismatch rather than a missing value.`,
+    )
+    this.name = 'VectorDecodeError'
+  }
+}
+
+/**
+ * A row's vector, as a read returns it. Raises rather than yielding a score of
+ * `NaN`: a wrong score is silently wrong ranking output the caller has no way
+ * to detect.
+ */
+export function requireVector(value: unknown, listName: string, column: string): readonly number[] {
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'number')) return value
+  throw new VectorDecodeError(listName, column)
 }

@@ -28,7 +28,7 @@ import {
   type Where,
   type WherePlan,
 } from './vocabulary.js'
-import { distanceToScore, readVector, vectorDistance } from './vector.js'
+import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
@@ -43,6 +43,7 @@ export type {
   WhereValue,
 } from './vocabulary.js'
 export type { VectorColumnDescriptor, VectorDistanceFunction } from './vector.js'
+export { VectorDecodeError } from './vector.js'
 
 /**
  * A composed read: an immutable value carrying the list, the predicates and
@@ -88,7 +89,14 @@ export interface SecuredQuery<TRow = OrmRow> {
 export interface NearestMatch<TRow = OrmRow> {
   /** The row, through Field Visibility like any other read. */
   item: TRow
-  /** Similarity in the field's own terms; the raw distance is not exposed. */
+  /**
+   * Similarity in the field's own terms; the raw distance is not exposed.
+   *
+   * The database owns the ordering. This number is the same function
+   * recomputed here from the row's own vector, in float64 over a float4
+   * column, so at a tie two rows can arrive in an order their scores do not
+   * reproduce — do not treat it as the sort key.
+   */
   score: number
 }
 
@@ -329,13 +337,11 @@ async function runNearest(
 }
 
 function score(near: NearestPlan, row: OrmRow): number {
-  const stored = readVector(row[near.column])
-  return stored === null
-    ? Number.NaN
-    : distanceToScore(
-        near.distanceFunction,
-        vectorDistance(near.distanceFunction, stored, near.vector),
-      )
+  const stored = requireVector(row[near.column], near.listName, near.column)
+  return distanceToScore(
+    near.distanceFunction,
+    vectorDistance(near.distanceFunction, stored, near.vector),
+  )
 }
 
 function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {

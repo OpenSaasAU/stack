@@ -24,9 +24,16 @@ for (const { item, score } of hits) {
 }
 ```
 
+The database owns the ordering. `score` is the same distance function recomputed
+from the row's own vector, in float64 over a float4 column, so two tied rows can
+arrive in an order their scores do not reproduce — read it as the similarity, not
+as the sort key. A column that does not read back as a vector raises
+`VectorDecodeError` naming the list and field, rather than scoring `NaN`.
+
 A field declares its vector column through the new `getVectorColumn` member of
 `BaseFieldConfig`, which core reads to know the column, its dimension and the
-distance function (`cosine`, `l2` or `inner_product`):
+distance function (`cosine`, `l2` or `inner_product`) — a descriptor naming any
+other distance function is refused:
 
 ```typescript
 getVectorColumn: (fieldName) => ({

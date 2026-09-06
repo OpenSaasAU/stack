@@ -15,7 +15,11 @@ import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
-import { minScoreToDistanceBound } from './vector.js'
+import {
+  VECTOR_DISTANCE_FUNCTIONS,
+  isVectorDistanceFunction,
+  minScoreToDistanceBound,
+} from './vector.js'
 import {
   RELATION_QUANTIFIERS,
   RELATION_QUANTIFIER_SET,
@@ -619,6 +623,14 @@ export async function resolveNearest(
   if (descriptor === undefined) {
     throw malformedSearch(ctx.listName, `"${fieldKey}" is not a vector column`)
   }
+  const distanceFunction: unknown = descriptor.distanceFunction
+  if (!isVectorDistanceFunction(distanceFunction)) {
+    throw malformedSearch(
+      ctx.listName,
+      `"${fieldKey}" declares the distance function "${String(distanceFunction)}", which is not ` +
+        `one of ${VECTOR_DISTANCE_FUNCTIONS.join(', ')}`,
+    )
+  }
 
   const limit = options.limit ?? NEAREST_DEFAULT_LIMIT
   if (!Number.isInteger(limit) || limit < 1) {
@@ -631,7 +643,7 @@ export async function resolveNearest(
   return {
     listName: ctx.listName,
     column: descriptor.column,
-    distanceFunction: descriptor.distanceFunction,
+    distanceFunction,
     vector: queryVector(fieldKey, descriptor, vector, ctx),
     limit,
     distanceBound:

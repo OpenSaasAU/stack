@@ -138,7 +138,7 @@ export { SecuredCollectionMissingError } from './secured/read.js'
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/read.js'
 // The vector-search terminal: how many rows it returns by default, and the
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
-export { NEAREST_DEFAULT_LIMIT } from './secured/read.js'
+export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 export type {
   SecuredQuery,
   NearestMatch,
