@@ -24,6 +24,14 @@ import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { uniqueConstraintOf } from '../lib/prisma-errors.js'
 import type { OrmClient } from '../access/types.js'
+import {
+  createUnsafeSurface,
+  createUnsafeTransactionSurface,
+  unavailableUnsafeSurface,
+  type UnsafeCapableClient,
+  type UnsafeSurface,
+  type UnsafeTransactionScope,
+} from '../unsafe.js'
 import type { StackContext } from '../types/context.js'
 import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
 import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
@@ -281,8 +289,10 @@ export type TransactionIsolationLevel =
   'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
 
 /**
- * Options for {@link StackContext.transaction}, forwarded verbatim to the
- * underlying Prisma interactive transaction.
+ * Options for {@link StackContext.transaction}, forwarded verbatim to a Prisma
+ * 7 interactive transaction. A Prisma 8 client's transaction takes none of
+ * them, and refuses the call rather than downgrading it silently — see
+ * {@link TransactionOptionsUnsupportedError}.
  */
 export interface TransactionOptions {
   /** Max ms to wait to acquire a transaction from the pool. */
@@ -308,6 +318,90 @@ interface TransactionCapable {
     fn: (tx: OrmClient) => Promise<unknown>,
     options?: TransactionOptions,
   ) => Promise<unknown>
+}
+
+/**
+ * Thrown when `transaction()` is given options it cannot honour.
+ *
+ * Prisma 8's `transaction()` takes the callback and nothing else, so an
+ * isolation level asked for here would be accepted and then run at the
+ * server's default — a lost update the caller believed was closed. Refusing is
+ * the alternative to that silence; ADR-0042 removes the options from the
+ * signature, at which point this stops being reachable.
+ */
+export class TransactionOptionsUnsupportedError extends Error {
+  constructor(readonly options: readonly string[]) {
+    super(
+      `context.transaction() cannot honour ${options.join(', ')} on a Prisma 8 client: its ` +
+        `transaction takes the callback and nothing else. Running anyway would silently use the ` +
+        `server's default isolation level, so the call is refused instead. Express the ` +
+        `constraint in the statements themselves — a row lock on the contended parent — or ` +
+        `drop the options.`,
+    )
+    this.name = 'TransactionOptionsUnsupportedError'
+  }
+}
+
+/**
+ * Thrown when the transaction's own collections cannot be resolved for every
+ * list the config declares, after the client's could be.
+ *
+ * The two roots have the same shape, so this is an ORM surprise rather than a
+ * wiring fault — and the alternative to reporting it is binding `db` to a
+ * half-built handle whose writes land outside the open transaction.
+ */
+export class TransactionOrmHandleError extends Error {
+  constructor() {
+    super(
+      `context.transaction() opened a transaction whose ORM collections could not be resolved, ` +
+        `though the client's could. The engine's handle must be bound to the transaction or its ` +
+        `writes would commit outside it, so the transaction is rolled back rather than run ` +
+        `unbound.`,
+    )
+    this.name = 'TransactionOrmHandleError'
+  }
+}
+
+const DEFAULT_NAMESPACE = 'public'
+
+function reachable(container: unknown, key: string): unknown {
+  if (container === null || (typeof container !== 'object' && typeof container !== 'function')) {
+    return undefined
+  }
+  return Reflect.get(container, key)
+}
+
+/**
+ * The engine's ORM handle, resolved off a Prisma 8 `orm` root.
+ *
+ * A Prisma 8 client exposes its collections at `orm.<namespace>.<Model>` while
+ * the engine reaches a model by db key, so a handle bound to a transaction has
+ * to be rebuilt rather than reused — the same reconciliation the test harness
+ * performs, over the config's lists rather than the derived contract's models
+ * (both spell the model name as the list key and the namespace as `db.schema`).
+ *
+ * Returns `undefined` when any declared list is unreachable, which is how a
+ * caller distinguishes a Prisma 8 client from a hand-built double: the double
+ * has no collections to bind and no transaction should be opened over it.
+ *
+ * Reads go through `Reflect.get`: `orm` and its namespaces are Proxies with a
+ * `get` trap and no `has` trap, so `key in namespace` reports false for a
+ * collection that is right there.
+ */
+function ormHandleFor(config: OpenSaasConfig, orm: unknown): OrmClient | undefined {
+  const models: Record<string, unknown> = {}
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const namespace = reachable(orm, listConfig.db?.schema ?? DEFAULT_NAMESPACE)
+    const collection = reachable(namespace, listKey)
+    if (
+      collection === null ||
+      (typeof collection !== 'object' && typeof collection !== 'function')
+    ) {
+      return undefined
+    }
+    models[getDbKey(listKey)] = collection
+  }
+  return models
 }
 
 /**
@@ -352,9 +446,23 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // owner's callback body, carry the deferral registry so writes reached
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
+  // The Prisma 8 client the Unsafe surface is built over. Omitted by a caller
+  // that assembles a context from a hand-built ORM double, whose
+  // `context.unsafe` then refuses rather than being typed as absent.
+  client?: UnsafeCapableClient,
+  // Internal: the transaction the Unsafe surface binds its executors to, set
+  // when rebuilding the context inside `transaction()` (ADR-0056).
+  _unsafeTransaction?: UnsafeTransactionScope,
 ): StackContext<AccessControlledDB> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
+
+  const unsafe: UnsafeSurface =
+    client === undefined
+      ? unavailableUnsafeSurface()
+      : _unsafeTransaction === undefined
+        ? createUnsafeSurface(client)
+        : createUnsafeTransactionSurface(client, _unsafeTransaction)
 
   const context: AccessContext = {
     session,
@@ -737,6 +845,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
       // `tx.sudo().db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      client,
+      _unsafeTransaction,
     )
   }
 
@@ -753,6 +863,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       // ADR-0028: a write issued from inside an owned transaction (e.g.
       // `tx.withSession(s).db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      client,
+      _unsafeTransaction,
     )
   }
 
@@ -776,47 +888,76 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     const registry = new TransactionRegistry()
-    const client = prisma as unknown as TransactionCapable
+    const ormClient = prisma as unknown as TransactionCapable
 
-    const settled =
-      typeof client.$transaction !== 'function'
-        ? // The probe failed — see `TransactionCapable` above. Run directly:
-          // hook and access semantics are identical, but atomicity holds only
-          // where an enclosing transaction supplies it.
-          fn(
-            getContext(
-              config,
-              prisma,
-              session,
-              context.storage,
-              _isSudo,
-              context.plugins,
-              registry,
-            ),
-          )
-        : (client.$transaction(
-            (tx) =>
-              fn(
-                getContext(
-                  config,
-                  tx,
-                  session,
-                  context.storage,
-                  _isSudo,
-                  context.plugins,
-                  registry,
-                ),
-              ),
-            options,
-          ) as Promise<T>)
+    const settled = runTransactionBody(fn, registry, ormClient, options)
 
     return settleTransactionOwner(settled, registry)
+  }
+
+  function runTransactionBody<T>(
+    fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
+    registry: TransactionRegistry,
+    ormClient: TransactionCapable,
+    options?: TransactionOptions,
+  ): Promise<T> {
+    const child = (
+      ormHandle: OrmClient,
+      unsafeTransaction?: UnsafeTransactionScope,
+    ): StackContext<AccessControlledDB> =>
+      getContext(
+        config,
+        ormHandle,
+        session,
+        context.storage,
+        _isSudo,
+        context.plugins,
+        registry,
+        client,
+        unsafeTransaction,
+      )
+
+    // Known limits: this branch hands `fn` a context whose `unsafe` is built
+    // over the outer client, because a Prisma 7 transaction client carries no
+    // `sql`/`orm` lanes to derive an `UnsafeTransactionScope` from. It is
+    // unreachable while `$transaction` is a name no Prisma 8 object carries;
+    // the moment the engine's handle becomes transaction-capable and takes
+    // this branch, the scope has to be derived here too or `tx.unsafe` starts
+    // executing outside the transaction it opened.
+    if (typeof ormClient.$transaction === 'function') {
+      return ormClient.$transaction((tx) => fn(child(tx)), options) as Promise<T>
+    }
+
+    // Prisma 8's transaction holds a pooled connection for the whole callback,
+    // so the engine's handle is rebound to the transaction's own collections:
+    // a `db` left on the outer handle would auto-commit outside the open
+    // transaction, or wait forever for a second connection the dev database's
+    // single-connection pool never frees (ADR-0056, ADR-0063).
+    const bindable =
+      client !== undefined && _unsafeTransaction === undefined
+        ? ormHandleFor(config, client.orm)
+        : undefined
+    if (client !== undefined && bindable !== undefined) {
+      const asked = options === undefined ? [] : Object.keys(options)
+      if (asked.length > 0) return Promise.reject(new TransactionOptionsUnsupportedError(asked))
+      return client.transaction(async (tx) => {
+        const bound = ormHandleFor(config, tx.orm)
+        if (bound === undefined) throw new TransactionOrmHandleError()
+        return await fn(child(bound, tx))
+      })
+    }
+
+    // Nothing can open an interactive transaction here: a hand-built double,
+    // or a context already inside one. Run directly — hook and access
+    // semantics are identical and atomicity comes from the enclosing
+    // transaction.
+    return fn(child(prisma, _unsafeTransaction))
   }
 
   const returned: StackContext<AccessControlledDB> = {
     db: db as AccessControlledDB,
     session,
-    prisma,
+    unsafe,
     storage: context.storage,
     plugins: context.plugins,
     serverAction,

@@ -1,11 +1,6 @@
-import type {
-  AccessControlledDB,
-  OrmClient,
-  Session,
-  StackDb,
-  StorageUtils,
-} from '../access/types.js'
+import type { AccessControlledDB, Session, StackDb, StorageUtils } from '../access/types.js'
 import type { ServerActionProps, TransactionOptions } from '../context/index.js'
+import type { UnsafeSurface } from '../unsafe.js'
 
 export type { StackDb }
 
@@ -34,11 +29,12 @@ export interface StackBaseContext<
   db: DB
   session: S | null
   /**
-   * The ORM client, unsecured. Reaching a model through it bypasses access
-   * control and hooks entirely; it is the documented escape hatch for the
-   * cases the secured surface cannot express, and every use should say why.
+   * The {@link UnsafeSurface}: Prisma's own query lanes, bypassing access
+   * control, Field Visibility, hooks and error normalisation entirely. It is
+   * the documented escape hatch for the cases the secured surface cannot
+   * express, and every use should say why.
    */
-  prisma: OrmClient
+  unsafe: UnsafeSurface
   storage: StorageUtils
   plugins: P
   _isSudo: boolean
@@ -76,6 +72,16 @@ export interface StackContext<
    * is access-checked and hook-firing exactly as this one is, but persists
    * against the transaction client, so a throw anywhere rolls the whole
    * transaction back (ADR-0012).
+   *
+   * The transaction holds one pooled connection for the whole callback. Work
+   * reached through the transaction context — its `db` and its `unsafe` —
+   * runs on that connection; work reached through the OUTER context inside
+   * the callback asks the pool for a second one, and on a single-connection
+   * pool (the dev database's, ADR-0063) waits for one that will not come.
+   *
+   * `options` is refused rather than ignored on a Prisma 8 client, whose
+   * transaction takes the callback and nothing else — see
+   * `TransactionOptionsUnsupportedError`.
    */
   transaction: <T>(
     fn: (txContext: StackTransactionContext<DB, S, P>) => Promise<T>,

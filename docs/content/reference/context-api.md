@@ -174,20 +174,39 @@ if (context.session?.userId) {
 }
 ```
 
-##### `prisma`
+##### `unsafe`
 
-Raw Prisma client (bypasses access control - use with caution).
+The Unsafe surface: Prisma's own query lanes, named so that reaching for it is a visible act.
 
-**Type:** `TPrisma`
+**Type:** `UnsafeSurface`
 
-**Warning:** Using `context.prisma` directly bypasses all access control. Only use when necessary and ensure proper authorization.
+**Warning:** Everything the secured surface does, this one skips — no access filter, no field-level visibility, no `resolveOutput`, no computed fields, no hooks, and no error normalisation. A failure arrives as the raw driver error. Scoping a query is yours alone. Say why at the call site.
+
+It carries four lanes:
+
+- `unsafe.orm` — Prisma's collections, behind a transparent proxy.
+- `unsafe.sql` — Prisma's typed SQL builder, untouched.
+- `unsafe.raw` — Prisma's raw tag, untouched.
+- `unsafe.query(plan)` / `unsafe.execute(plan)` — the executors. `query` returns Prisma's streaming result, so a bulk read can be consumed with a cursor; `execute` returns statement statistics.
+
+Neither the bare client nor `prepare()`/`runtime()` is reachable: either would execute a statement the stack cannot observe.
 
 **Example:**
 
 ```typescript
-// Direct Prisma access (bypasses access control)
-const count = await context.prisma.post.count()
+// Rows, streamed, with no access control applied
+const rows = context.unsafe.query(context.unsafe.sql.public.Post.select('id', 'title').build())
+for await (const row of rows) {
+  // …
+}
+
+// Statistics from a raw statement
+const stats = await context.unsafe.execute(
+  context.unsafe.raw.sql`UPDATE "public"."Post" SET "published" = true`.affectedCount().build(),
+)
 ```
+
+Inside `context.transaction(...)`, the transaction context's `unsafe` runs through the transaction's own executor, so a script does not have to close over the outer client.
 
 ##### `storage`
 
@@ -878,14 +897,14 @@ const context = getContext<typeof config, typeof prisma>(config, prisma, session
 
 ## Best Practices
 
-### 1. Always Use Context (Not Raw Prisma)
+### 1. Always Use the Secured Surface
 
 ```typescript
-// ✅ Good: Uses context (access control enforced)
+// ✅ Good: Uses context.db (access control enforced)
 const posts = await context.db.post.findMany()
 
 // ❌ Bad: Bypasses access control
-const posts = await context.prisma.post.findMany()
+const posts = await context.unsafe.orm.public.Post.all()
 ```
 
 ### 2. Check for Null/Empty Results

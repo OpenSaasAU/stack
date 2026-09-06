@@ -356,11 +356,11 @@ describe('Sudo Context', () => {
       expect(sudoContext.session).toBe(context.session)
     })
 
-    it('should maintain the same prisma client', async () => {
+    it('should carry the same Unsafe surface shape', async () => {
       const context = getContext(testConfig, mockPrisma, null)
       const sudoContext = context.sudo()
 
-      expect(sudoContext.prisma).toBe(context.prisma)
+      expect(Object.keys(sudoContext.unsafe).sort()).toEqual(Object.keys(context.unsafe).sort())
     })
 
     it('should maintain the same storage utilities', async () => {

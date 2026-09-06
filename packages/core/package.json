@@ -45,6 +45,10 @@
       "types": "./dist/origin.d.ts",
       "default": "./dist/origin.js"
     },
+    "./unsafe": {
+      "types": "./dist/unsafe.d.ts",
+      "default": "./dist/unsafe.js"
+    },
     "./config/plugin-engine": {
       "types": "./dist/config/plugin-engine.d.ts",
       "default": "./dist/config/plugin-engine.js"

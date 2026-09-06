@@ -56,8 +56,9 @@ export type PrismaModelDelegate = {
  * generated bundle, which instantiates them from the emitted contract
  * (ADR-0052).
  *
- * `context.prisma` is this type: unsecured, and honest about how little the
- * engine assumes of it.
+ * This is the engine's internal handle, not the application's escape hatch:
+ * unsecured, and honest about how little the engine assumes of it. An
+ * application reaches Prisma through `context.unsafe`.
  *
  * The index signature's `unknown` is deliberate, and is the one place the
  * repo's "never expose `unknown` externally" rule is relaxed. It replaced
@@ -309,6 +310,12 @@ export type StorageUtils = {
 // Uses `interface` rather than `type` so consumers can extend it via module augmentation.
 export interface AccessContext {
   session: Session | null
+  /**
+   * The engine's own ORM handle, reached through {@link ormModel}. Internal
+   * plumbing rather than the application's escape hatch, which is `unsafe` on
+   * the request context (`StackBaseContext.unsafe`) and is not a member of
+   * this type.
+   */
   prisma: OrmClient
   db: AccessControlledDB
   storage: StorageUtils

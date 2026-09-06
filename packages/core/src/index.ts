@@ -50,14 +50,23 @@ export type {
   Session,
   AccessContext,
   PrismaFilter,
-  // The ORM client `context.prisma` exposes, and the delegate `ormModel()`
-  // narrows one model to. Unsecured: reaching a model through it bypasses
-  // access control and hooks.
+  // The engine's internal ORM handle, and the delegate `ormModel()` narrows
+  // one model to. Unsecured; an application reaches Prisma through
+  // `context.unsafe`.
   OrmClient,
   OrmModelDelegate,
   OrmOperationArgs,
   OrmRow,
 } from './access/index.js'
+
+// The Unsafe surface (ADR-0056, ADR-0059)
+export {
+  createUnsafeSurface,
+  createUnsafeTransactionSurface,
+  unavailableUnsafeSurface,
+  UnsafeSurfaceUnavailableError,
+} from './unsafe.js'
+export type { UnsafeCapableClient, UnsafeSurface, UnsafeTransactionScope } from './unsafe.js'
 
 // The access-filter builder — supported API (ADR-0038, ADR-0057). Evaluate a
 // list's operation-level rule, fold its result into the caller's `where`, and
@@ -71,6 +80,7 @@ export { checkAccess, checkCreateAccess, mergeFilters } from './access/index.js'
 // Context factory
 export { getContext } from './context/index.js'
 export type { TransactionOptions, TransactionIsolationLevel } from './context/index.js'
+export { TransactionOptionsUnsupportedError, TransactionOrmHandleError } from './context/index.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).
 // The bundle names one interface per list extending each of these, keyed by
