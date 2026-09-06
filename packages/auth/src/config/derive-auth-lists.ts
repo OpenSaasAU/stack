@@ -56,6 +56,12 @@ export type DerivedAuthLists = {
   /** The derived list configs, keyed by their derived list keys — base models and plugin tables alike. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   lists: Record<string, ListConfig<any>>
+  /**
+   * Every better-auth model key — base models and plugin tables alike — mapped
+   * to the list key it was derived under. The Auth adapter resolves a model
+   * through this rather than re-deriving the naming rules (ADR-0060).
+   */
+  registry: Record<string, string>
 }
 
 /** better-auth's own fixed base model keys — independent of the stack's list-key overrides (`modelName`). Every other key `getAuthTables` returns is a plugin table. */
@@ -789,5 +795,5 @@ export function deriveAuthLists(
     })
   }
 
-  return { keys, lists }
+  return { keys, lists, registry: Object.fromEntries(registry) }
 }

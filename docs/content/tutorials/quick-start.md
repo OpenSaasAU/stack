@@ -2,6 +2,13 @@
 
 Get up and running with Stack in 5 minutes. Deploy to production in 30 minutes.
 
+{% callout type="warning" %}
+This page still describes the older `pnpm generate` + `pnpm db:push` loop. The
+shipped one is `pnpm dev` — see
+[Installation](/docs/how-to/installation#the-development-loop) for it. This page
+is converted in [#1129](https://github.com/OpenSaasAU/stack/issues/1129).
+{% /callout %}
+
 ## Prerequisites
 
 - Node.js 18+ installed

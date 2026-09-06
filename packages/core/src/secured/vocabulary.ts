@@ -15,6 +15,7 @@ import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
+import { likeContainsPattern } from '../where/like.js'
 import {
   VECTOR_DISTANCE_FUNCTIONS,
   isVectorDistanceFunction,
@@ -240,15 +241,6 @@ function isWhereValue(value: unknown): value is WhereValue {
   )
 }
 
-/**
- * Prisma 8 ships `like`/`ilike` with no `contains` and renders no `ESCAPE`
- * clause, so the pattern is bound verbatim and the engine escapes the
- * wildcards itself against Postgres's default backslash escape (ADR-0055).
- */
-export function containsPattern(value: string): string {
-  return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
-}
-
 function comparison(
   listName: string,
   key: string,
@@ -312,7 +304,7 @@ function resolveScalar(listName: string, key: string, condition: unknown): Scala
         if (typeof raw !== 'string') {
           throw malformedCondition(listName, key, 'takes a string for "contains"')
         }
-        steps.push({ op: 'contains', pattern: containsPattern(raw) })
+        steps.push({ op: 'contains', pattern: likeContainsPattern(raw) })
         break
     }
   }
@@ -545,6 +537,60 @@ export async function resolveOrderBy(
       }
       plans.push({ listName: ctx.listName, column: key, direction })
     }
+  }
+  return plans
+}
+
+/** One of the list's own scalar columns, resolved from a caller's key. */
+export interface ColumnPlan {
+  listName: string
+  column: string
+}
+
+/**
+ * Resolve a bare list of the caller's keys to scalar columns — what
+ * `distinct`, `distinctOn` and a cursor's keys name.
+ *
+ * The read gate runs before the relationship refusal for the reason
+ * {@link resolveOrderBy} states: a read-denied key must be indistinguishable
+ * from one the list does not declare (ADR-0031).
+ */
+export async function resolveColumns(
+  keys: readonly string[],
+  ctx: ResolveContext,
+  member: string,
+): Promise<ColumnPlan[]> {
+  if (keys.length === 0) {
+    throw new ValidationError([
+      `Cannot ${member} "${ctx.listName}" by no columns — name at least one.`,
+    ])
+  }
+  const plans: ColumnPlan[] = []
+  for (const key of keys) {
+    const resolved = resolveQueryField(key, ctx.listConfig.fields)
+    if (!resolved) throw unqueryableKey(ctx.listName, key)
+    if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
+      const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
+        session: ctx.session,
+        context: ctx.context,
+      })
+      if (!readable) throw unqueryableKey(ctx.listName, key)
+    }
+    if (resolved.isRelationship) {
+      throw new ValidationError([
+        `Cannot ${member} "${ctx.listName}" by "${key}" — ${member} takes scalar columns only.`,
+      ])
+    }
+    // A declared field is not yet a stored column: a virtual field resolves,
+    // and so does the logical name of a field that owns several columns. A
+    // predicate and an order both catch that where they lower onto the ORM
+    // accessor, but a bare column list never lowers — so the field's own
+    // contract descriptor is asked here, and answers with the same refusal.
+    const descriptor = resolved.fieldConfig?.getContractField?.(key, ctx.listName, ctx.config)
+    if (descriptor !== undefined && descriptor.kind !== 'column') {
+      throw unqueryableKey(ctx.listName, key)
+    }
+    plans.push({ listName: ctx.listName, column: key })
   }
   return plans
 }

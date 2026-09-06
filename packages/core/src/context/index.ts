@@ -1017,9 +1017,13 @@ export function populateDbDelegate(
       operations.include = read.include
       operations.select = read.select
       operations.limit = read.limit
+      operations.distinct = read.distinct
+      operations.distinctOn = read.distinctOn
+      operations.cursor = read.cursor
       operations.all = read.all
       operations.first = read.first
       operations.nearest = read.nearest
+      operations.aggregate = read.aggregate
     }
 
     target[listName] = operations

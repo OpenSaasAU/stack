@@ -93,12 +93,13 @@ export default config({
 
 ### 4. Generate Schema
 
-Run the generator to create your Prisma schema:
+Run the generator to emit the schema contract:
 
 ```bash
 pnpm generate
-pnpm db:push
 ```
+
+`pnpm dev` applies it to the database.
 
 This creates a `Json` field in your database:
 
@@ -420,8 +421,6 @@ Run the example:
 ```bash
 cd examples/tiptap-demo
 pnpm install
-pnpm generate
-pnpm db:push
 pnpm dev
 ```
 

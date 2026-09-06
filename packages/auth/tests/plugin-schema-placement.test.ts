@@ -32,7 +32,7 @@ describe('authPlugin - schema placement (greenfield default)', () => {
 
     // Default keys, no @@schema, no @@map. Auth lists still opt into
     // auto-timestamps (ADR-0004), so db carries only `timestamps: true`.
-    expect(result.lists.User.db).toEqual({ timestamps: true })
+    expect(result.lists.User.db).toEqual({ timestamps: true, idField: 'uuid7' })
     expect(result.lists.User.db?.schema).toBeUndefined()
     expect(result.lists.User.db?.map).toBeUndefined()
     expect(result.lists.Session.db?.schema).toBeUndefined()
@@ -67,21 +67,29 @@ describe('authPlugin - schema placement (adopt existing auth-schema install)', (
 
     // Auth lists land in the `auth` schema, pinned to their live table names.
     // Auto-timestamps stay enabled (ADR-0004) alongside the @@map + @@schema.
-    expect(result.lists.AuthUser.db).toEqual({ timestamps: true, map: 'AuthUser', schema: 'auth' })
+    expect(result.lists.AuthUser.db).toEqual({
+      timestamps: true,
+      map: 'AuthUser',
+      schema: 'auth',
+      idField: 'uuid7',
+    })
     expect(result.lists.AuthSession.db).toEqual({
       timestamps: true,
       map: 'AuthSession',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthAccount.db).toEqual({
       timestamps: true,
       map: 'AuthAccount',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthVerification.db).toEqual({
       timestamps: true,
       map: 'AuthVerification',
       schema: 'auth',
+      idField: 'uuid7',
     })
 
     // The app's own User is left in `public` (not extended/overwritten, not in `auth`)
@@ -133,7 +141,11 @@ describe('authPlugin - RateLimit list schema placement', () => {
       lists: {},
     })
 
-    expect(result.lists.AuthRateLimit.db).toEqual({ map: 'AuthRateLimit', schema: 'auth' })
+    expect(result.lists.AuthRateLimit.db).toEqual({
+      map: 'AuthRateLimit',
+      schema: 'auth',
+      idField: 'uuid7',
+    })
     expect(result.db.schemas).toContain('auth')
   })
 
