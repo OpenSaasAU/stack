@@ -11,10 +11,10 @@ import { fileURLToPath } from 'node:url'
  *
  * Unlike the old in-place smoke test, this never touches `examples/starter`: it
  * invokes the **real built `create-opensaas-app` binary** to scaffold a project
- * into an OS temp dir (`os.tmpdir()`), then drives the two documented setup
- * steps — `generate` and `db:push` — and asserts the project reaches a working
- * SQLite database. This guards the onboarding promise (scaffold → generate →
- * db:push works with no manual edits) end-to-end. See ADR-0002.
+ * into an OS temp dir (`os.tmpdir()`), then runs `generate` and asserts the
+ * project reaches a Generated bundle. This guards the onboarding promise —
+ * scaffolding needs no database, and reaches `pnpm dev` with no manual edits —
+ * end-to-end. See ADR-0002 and ADR-0063.
  *
  * ## How the toolchain is resolved offline (no networked install)
  *
@@ -24,9 +24,9 @@ import { fileURLToPath } from 'node:url'
  * `node_modules`** (`examples/starter/node_modules`, populated by the repo's own
  * `pnpm install` during CI setup) into the temp project. That gives the project
  * the exact toolchain the working example resolves — the `opensaas` CLI,
- * Prisma, the SQLite adapter, `jiti`, `dotenv` — entirely from deps that are
- * already on disk. We then run `generate`/`db:push` via the project's
- * `node_modules/.bin`, so no registry round-trip happens.
+ * Prisma, `jiti`, `dotenv` — entirely from deps that are already on disk. We
+ * then run `generate` via the project's `node_modules/.bin`, so no registry
+ * round-trip happens.
  *
  * The guard is skipped when its prerequisites aren't present — the built CLI
  * binary, the built `opensaas` CLI the scaffolded project's `generate` script
@@ -77,7 +77,7 @@ async function gitPorcelain(): Promise<string> {
   return stdout.trim()
 }
 
-describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated, SQLite)', () => {
+describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated)', () => {
   let tmpRoot = ''
   let projectDir = ''
   let treeBefore = ''
@@ -92,10 +92,10 @@ describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated, SQLi
     // `examples/starter` or anything tracked.
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'opensaas-scaffold-'))
 
-    // Scaffold the basic (SQLite, no-auth) template fully non-interactively:
+    // Scaffold the basic (no-auth) template fully non-interactively:
     // `--no-auth`/`--no-ai` skip the auth/AI prompts (and `--no-ai` its networked
-    // MCP install); `--no-install` skips the CLI's auto install → generate →
-    // db:push so we drive those steps ourselves against the workspace toolchain.
+    // MCP install); `--no-install` skips the CLI's auto install → generate so we
+    // drive that step ourselves against the workspace toolchain.
     await run('node', [createCli, 'myapp', '--no-auth', '--no-ai', '--no-install'], {
       cwd: tmpRoot,
     })
@@ -122,23 +122,28 @@ describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated, SQLi
     }
   })
 
-  it('scaffolds into a temp dir and reaches a working database with no manual edits', async () => {
-    // The CLI produced a project outside the repo tree, with a runnable SQLite
-    // `.env` — no PostgreSQL connection string, no manual setup required.
+  it('scaffolds into a temp dir and generates with no database and no manual edits', async () => {
+    // The CLI produced a project outside the repo tree whose `.env` sets no
+    // DATABASE_URL, so the first `pnpm dev` starts the Dev database for it.
     expect(projectDir.startsWith(os.tmpdir())).toBe(true)
     const env = await fs.readFile(path.join(projectDir, '.env'), 'utf-8')
-    expect(env).toContain('DATABASE_URL="file:./dev.db"')
+    const activeEnv = env
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n')
+    expect(activeEnv).not.toContain('DATABASE_URL')
 
+    // The documented setup step, run via the borrowed toolchain with no
+    // DATABASE_URL and no database anywhere.
     const binDir = path.join(projectDir, 'node_modules', '.bin')
-    const setupEnv = { ...process.env, DATABASE_URL: 'file:./dev.db' }
-
-    // The two documented setup steps, run via the borrowed toolchain.
+    const setupEnv = { ...process.env }
+    delete setupEnv.DATABASE_URL
     await run(path.join(binDir, 'opensaas'), ['generate'], { cwd: projectDir, env: setupEnv })
-    await run(path.join(binDir, 'prisma'), ['db', 'push'], { cwd: projectDir, env: setupEnv })
 
-    // The onboarding promise: generated context + a created SQLite database.
+    // The onboarding promise: a Generated bundle, and nothing that needed a
+    // database to produce it.
     expect(await fs.pathExists(path.join(projectDir, '.opensaas/context.ts'))).toBe(true)
-    expect(await fs.pathExists(path.join(projectDir, 'dev.db'))).toBe(true)
+    expect(await fs.pathExists(path.join(projectDir, '.opensaas/dev-db'))).toBe(false)
   }, 180_000)
 
   it('never mutates the repo working tree', async () => {

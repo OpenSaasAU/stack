@@ -96,21 +96,23 @@ cp .env.example .env
 Edit `.env` and add your credentials:
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/rag_chatbot?schema=public"
 OPENAI_API_KEY="sk-..."
 ```
 
-### 6. Generate Schema and Push to Database
+Leave `DATABASE_URL` unset to develop on the Dev database, or set it to reach a
+Postgres of your own.
+
+### 6. Generate Schema
 
 ```bash
-# Generate Prisma schema and TypeScript types from opensaas.config.ts
 pnpm generate
-
-# Push schema to database
-pnpm db:push
 ```
 
+`pnpm dev` runs this for you and reconciles the database with what it emits.
+
 ### 7. Seed the Database
+
+With `pnpm dev` running in another terminal:
 
 ```bash
 pnpm db:seed

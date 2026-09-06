@@ -79,15 +79,7 @@ This creates:
 - `.opensaas/types.ts` - TypeScript types for your lists
 - `.opensaas/context.ts` - Context factory with access control
 
-### 4. Create Database
-
-```bash
-pnpm db:push
-```
-
-This creates the SQLite database (`dev.db`) with your schema.
-
-### 5. Run the Test Script
+### 4. Run the Test Script
 
 ```bash
 pnpm test
@@ -130,7 +122,7 @@ Top 3 Results:
   3. Natural Language Processing (similarity: 0.7456)
 ```
 
-### 6. Start the Admin UI
+### 5. Start the Admin UI
 
 ```bash
 pnpm dev

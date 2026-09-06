@@ -7,7 +7,7 @@ import prompts from 'prompts'
 import chalk from 'chalk'
 import ora from 'ora'
 import { validateProjectName } from './lib/project-name.js'
-import { generateEnvFiles, type DbProvider } from './lib/env.js'
+import { generateEnvFiles } from './lib/env.js'
 import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 import { removedDbFlagMessage } from './lib/args.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
@@ -15,18 +15,11 @@ import { removeAiTooling } from './lib/ai-tooling.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-/**
- * The scaffolded project's database, fixed by the templates it copies from
- * `examples/starter` / `examples/starter-auth`. The scaffolder no longer
- * transforms it, so this follows the templates rather than a user choice.
- */
-const TEMPLATE_DB_PROVIDER: DbProvider = 'sqlite'
-
 interface TemplateOptions {
   projectName: string
   withAuth: boolean
   enableMCP: boolean
-  /** Skip the automatic install → generate → db:push after scaffolding. */
+  /** Skip the automatic install → generate after scaffolding. */
   skipInstall: boolean
 }
 
@@ -153,8 +146,7 @@ async function createProject(options: TemplateOptions) {
       await fs.writeFile(readmePath, rewriteReadmeHeading(readme, projectName))
     }
 
-    // Write a runnable .env so `pnpm generate` / `pnpm db:push` work with no
-    // manual setup.
+    // Write a runnable .env so `pnpm generate` works with no manual setup.
     await writeEnvFile(targetDir, projectName, withAuth)
 
     // Templates ship a Claude Code AI bundle (project CLAUDE.md + .claude/).
@@ -167,17 +159,13 @@ async function createProject(options: TemplateOptions) {
       await installMCPServer()
     }
 
-    // Auto-run install → generate → db:push so the project is ready for
-    // `pnpm dev` immediately. Opt out entirely with --no-install.
+    // Auto-run install → generate so the project is ready for `pnpm dev`
+    // immediately. Opt out entirely with --no-install.
     const autoRan = skipInstall ? false : await runSetup(targetDir, projectName)
 
     console.log(chalk.green('\n✅ Your project is ready!\n'))
     console.log(chalk.bold('Next steps:\n'))
-    for (const command of nextStepCommands({
-      projectName,
-      autoRan,
-      provider: TEMPLATE_DB_PROVIDER,
-    })) {
+    for (const command of nextStepCommands({ projectName, autoRan })) {
       console.log(chalk.cyan(`  ${command}`))
     }
 
@@ -226,21 +214,18 @@ async function writeEnvFile(
     return
   }
 
-  const { env, envExample } = generateEnvFiles({
-    provider: TEMPLATE_DB_PROVIDER,
-    projectName,
-  })
+  const { env, envExample } = generateEnvFiles({ projectName })
   await fs.writeFile(envPath, env)
   await fs.writeFile(envExamplePath, envExample)
 }
 
 /**
- * Run install → generate → db:push in the new project so `pnpm dev` works
- * immediately. Stops at the first failure and prints a recoverable message
- * naming the failed step. Returns whether every step succeeded.
+ * Run install → generate in the new project so `pnpm dev` works immediately.
+ * Stops at the first failure and prints a recoverable message naming the
+ * failed step. Returns whether every step succeeded.
  */
 async function runSetup(targetDir: string, projectName: string): Promise<boolean> {
-  for (const step of planSetupSteps(TEMPLATE_DB_PROVIDER)) {
+  for (const step of planSetupSteps()) {
     console.log(chalk.cyan(`\n▶ ${step.title}...`))
     const ok = await runStep(step, targetDir)
     if (!ok) {

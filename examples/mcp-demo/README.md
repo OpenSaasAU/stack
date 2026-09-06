@@ -40,13 +40,7 @@ This generates:
 
 (MCP tools are not generated to disk — they are derived from the config at request time by `createMcpHandlers`.)
 
-### 4. Push Schema to Database
-
-```bash
-pnpm db:push
-```
-
-### 5. Start Development Server
+### 4. Start Development Server
 
 ```bash
 pnpm dev

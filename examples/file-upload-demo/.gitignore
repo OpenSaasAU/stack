@@ -39,7 +39,6 @@ next-env.d.ts
 
 # OpenSaas generated files
 .opensaas/
-prisma/migrations/
 
 # Database
 *.db

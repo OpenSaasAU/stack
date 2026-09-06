@@ -31,19 +31,15 @@ This creates:
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
-### 3. Set Up Database
-
-```bash
-pnpm db:push
-```
-
-This creates your SQLite database file.
-
-### 4. Start Development Server
+### 3. Start Development Server
 
 ```bash
 pnpm dev
 ```
+
+`opensaas dev` starts the Dev database for this project, generates, reconciles
+the database with what it emits, and then runs `next dev`. Step 2 is what it
+does for you on every start and on every edit to `opensaas.config.ts`.
 
 Visit:
 
@@ -86,12 +82,9 @@ export default config({
 })
 ```
 
-Then regenerate:
-
-```bash
-pnpm generate
-pnpm db:push
-```
+`pnpm dev` picks the edit up: it regenerates and reconciles the database
+before the app reloads. A change that would destroy data is not applied — the
+plan is printed and the app keeps serving until you run `pnpm db:update`.
 
 ## Available Scripts
 
@@ -99,33 +92,20 @@ pnpm db:push
 - `pnpm build` - Build for production
 - `pnpm start` - Start production server
 - `pnpm generate` - Generate Prisma schema and types
-- `pnpm db:push` - Push schema to database
+- `pnpm db:update` - Apply a staged schema change through the running dev loop
 - `pnpm db:studio` - Open Prisma Studio
 - `pnpm clean` - Remove build artifacts
 
-## Switching to PostgreSQL
+## Using Your Own Postgres
 
-1. Update `.env`:
+`DATABASE_URL` set means no Dev database starts and everything — the app, the
+generator and `db update` — talks to the server you point it at:
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
 ```
 
-2. Update `opensaas.config.ts`:
-
-```typescript
-db: {
-  provider: 'postgresql',
-  url: process.env.DATABASE_URL!,
-}
-```
-
-3. Regenerate and push:
-
-```bash
-pnpm generate
-pnpm db:push
-```
+Unset it again and `pnpm dev` goes back to running the Dev database.
 
 ## Deploy to Production
 

@@ -95,13 +95,7 @@ cp .env.example .env
 pnpm generate
 ```
 
-### 4. Setup Database
-
-```bash
-pnpm db:push
-```
-
-### 5. Seed Some Data (Optional)
+### 4. Seed Some Data (Optional)
 
 ```bash
 npx tsx seed.ts
@@ -115,7 +109,7 @@ pnpm db:studio
 
 Create a few users and posts to see the dashboard in action.
 
-### 6. Run Development Server
+### 5. Run Development Server
 
 ```bash
 pnpm dev

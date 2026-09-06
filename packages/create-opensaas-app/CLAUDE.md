@@ -142,7 +142,7 @@ npm create opensaas-app@latest my-app --with-auth    # Auth template
 npm create opensaas-app@latest my-app --no-auth      # Basic template, skip the auth prompt
 npm create opensaas-app@latest my-app --with-ai      # Install AI dev tools (MCP)
 npm create opensaas-app@latest my-app --no-ai        # Skip the AI-tooling prompt (and its MCP install)
-npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate/db:push
+npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate
 ```
 
 Passing `--no-auth`/`--with-auth` and `--no-ai`/`--with-ai` (plus `--no-install`)
@@ -158,15 +158,14 @@ generated `opensaas.config.ts`.
 
 ### Auto-run setup (three-step flow)
 
-After scaffolding, the CLI runs `install` → `generate` → `db:push` for the user
-(see `runSetup` / `planSetupSteps`), so the documented flow collapses to three
-steps: **scaffold → `pnpm dev` → build with Claude Code**. The provider is fixed
-at `TEMPLATE_DB_PROVIDER` (`src/index.ts`), which is what the templates declare;
-`planSetupSteps` and `nextStepCommands` still take a provider and still omit
-`db:push` for `postgresql`, but no scaffold reaches that arm today. If a step
-fails the CLI stops and prints a recoverable message naming the failed step and
-its retry command (`formatStepFailure`). Pass `--no-install` to skip the auto-run
-and get the full manual command list instead (`nextStepCommands`).
+After scaffolding, the CLI runs `install` → `generate` for the user (see
+`runSetup` / `planSetupSteps`), so the documented flow collapses to three steps:
+**scaffold → `pnpm dev` → build with Claude Code**. There is no schema-apply
+step: scaffolding reaches no database, and the first `pnpm dev` starts the Dev
+database and reconciles it (ADR-0063). If a step fails the CLI stops and prints
+a recoverable message naming the failed step and its retry command
+(`formatStepFailure`). Pass `--no-install` to skip the auto-run and get the full
+manual command list instead (`nextStepCommands`).
 
 ## Template Customization
 
@@ -174,11 +173,12 @@ After copying the template, the CLI customizes:
 
 1. **package.json**: Updates `name` field to project name (`applyProjectName`)
 2. **README.md**: Replaces first h1 with project name (`rewriteReadmeHeading`)
-3. **`.env`**: Writes a **runnable** environment file so `pnpm generate` /
-   `pnpm db:push` work with no manual setup. The basic (SQLite) template gets a
-   canonical `.env` + `.env.example` from `generateEnvFiles` (default
-   `DATABASE_URL="file:./dev.db"`); the with-auth template seeds `.env` from its
-   own `.env.example` so the Better-auth variables are preserved.
+3. **`.env`**: Writes a **runnable** environment file so `pnpm generate` works
+   with no manual setup. It sets no `DATABASE_URL` — the first `pnpm dev` starts
+   the Dev database, and a variable set here would be the Database escape
+   instead. The basic template gets `.env` + `.env.example` from
+   `generateEnvFiles`; the with-auth template seeds `.env` from its own
+   `.env.example` so the Better-auth variables are preserved.
 
 There is no database transform. The scaffolder copies the template's database as
 it stands; a project that wants another one edits `db` in its generated
