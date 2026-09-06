@@ -19,7 +19,7 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
    pnpm install
    ```
 
-2. Set up environment (SQLite by default):
+2. Set up environment:
 
    ```bash
    cp .env.example .env
@@ -31,19 +31,13 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
    pnpm generate
    ```
 
-4. Push schema to database:
-
-   ```bash
-   pnpm db:push
-   ```
-
-5. Start development server:
+4. Start development server:
 
    ```bash
    pnpm dev
    ```
 
-6. Visit http://localhost:3002/admin
+5. Visit http://localhost:3002/admin
 
 ## Key Files
 

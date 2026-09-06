@@ -75,14 +75,6 @@ This generates:
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
-### Push to Database
-
-```bash
-pnpm db:push
-```
-
-Creates SQLite database at `prisma/dev.db`.
-
 ### Run Development Server
 
 ```bash
@@ -427,7 +419,7 @@ async function test() {
 test()
 ```
 
-Run with:
+Run it with `pnpm dev` running in another terminal:
 
 ```bash
 npx tsx test.ts

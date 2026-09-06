@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "opensaas dev",
     "build": "pnpm generate && next build",
     "clean": "rm -rf .turbo .next .opensaas",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
+    "db:update": "opensaas db update",
     "db:studio": "prisma studio",
     "test:rag": "tsx test.ts"
   },

@@ -35,10 +35,13 @@ Claude edits `opensaas.config.ts`, runs `pnpm generate`, and updates any UI/serv
 After changing `opensaas.config.ts`:
 
 ```bash
-pnpm generate   # regenerate schema, types, context
-pnpm db:push    # apply to the database
-pnpm dev        # run the app + admin UI
+pnpm dev        # regenerates, reconciles the database, runs the app + admin UI
 ```
+
+`pnpm dev` watches `opensaas.config.ts`, so an edit regenerates and reconciles
+on its own. A change that would destroy data is not applied: the plan is
+printed, the app keeps serving the previous schema, and `pnpm db:update` in a
+second terminal applies it.
 
 ## Get more help from the plugin
 

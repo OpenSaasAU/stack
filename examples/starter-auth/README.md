@@ -38,23 +38,21 @@ openssl rand -base64 32
 Update `.env`:
 
 ```env
-DATABASE_URL="file:./dev.db"
 BETTER_AUTH_SECRET="your-generated-secret-here"
 BETTER_AUTH_URL="http://localhost:3000"
 ```
 
-### 3. Generate Schema and Database
+Leave `DATABASE_URL` unset: `pnpm dev` runs the Dev database for this project.
 
-```bash
-pnpm generate
-pnpm db:push
-```
-
-### 4. Start Development Server
+### 3. Start Development Server
 
 ```bash
 pnpm dev
 ```
+
+`opensaas dev` starts the Dev database, generates the schema and types
+(including the auth tables), reconciles the database with them, and then runs
+`next dev`.
 
 Visit:
 

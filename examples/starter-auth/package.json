@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "opensaas dev",
     "build": "pnpm generate && next build",
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
-    "migrate": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
+    "db:update": "opensaas db update",
+    "migrate": "prisma migration plan",
+    "migrate:deploy": "prisma db migrate",
     "db:studio": "prisma studio"
   },
   "dependencies": {

@@ -51,7 +51,7 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 pnpm install
 ```
 
-2. Set up environment (SQLite by default):
+2. Set up environment:
 
 ```bash
 cp .env.example .env
@@ -63,19 +63,13 @@ cp .env.example .env
 pnpm generate
 ```
 
-4. Create the database:
-
-```bash
-pnpm db:push
-```
-
-5. Start the development server:
+4. Start the development server:
 
 ```bash
 pnpm dev
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000)
+5. Open [http://localhost:3000](http://localhost:3000)
 
 ## Pages
 

@@ -32,18 +32,13 @@ Generate a secret key and add it to `.env`:
 openssl rand -base64 32
 ```
 
-### 3. Generate Schema and Create Database
-
-```bash
-pnpm generate  # Generates Prisma schema with auth tables
-pnpm db:push   # Creates SQLite database
-```
-
-### 4. Run Development Server
+### 3. Run Development Server
 
 ```bash
 pnpm dev
 ```
+
+`opensaas dev` starts the Dev database for this project, generates the schema and types (including the auth tables), reconciles the database with them, and then runs `next dev`.
 
 Open [http://localhost:3003/sign-up](http://localhost:3003/sign-up) to create an account!
 
@@ -117,7 +112,7 @@ cd examples/blog
 cp .env.example .env
 ```
 
-The example uses SQLite by default for simplicity. The database file will be created at `dev.db`.
+`DATABASE_URL` is left unset, so `pnpm dev` runs the Dev database for this project.
 
 ### 3. Generate Schema and Types
 
@@ -130,19 +125,7 @@ This reads `opensaas.config.ts` and generates:
 - `prisma/schema.prisma` - Prisma schema
 - `.opensaas/types.ts` - TypeScript types for your models and context
 
-### 4. Create Database
-
-```bash
-pnpm db:push
-```
-
-This creates the SQLite database and tables.
-
-### 5. Generate Prisma Client
-
-```bash
-npx prisma generate
-```
+`pnpm dev` runs this for you, and reconciles the database with what it emits.
 
 ## Testing Access Control
 
@@ -212,7 +195,7 @@ test()
   .finally(() => prisma.$disconnect())
 ```
 
-Run with:
+Run it with `pnpm dev` running in another terminal:
 
 ```bash
 npx tsx test.ts
@@ -359,9 +342,8 @@ View your data with Prisma Studio:
 pnpm db:studio
 ```
 
-Reset the database:
+Reset the database (stop `pnpm dev` first — the data directory is open while it runs):
 
 ```bash
-rm dev.db
-pnpm db:push
+rm -rf .opensaas/dev-db
 ```
