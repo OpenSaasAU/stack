@@ -29,6 +29,10 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
+    "./client": {
+      "types": "./dist/db/client.d.ts",
+      "default": "./dist/db/client.js"
+    },
     "./dev-database": {
       "types": "./dist/db/dev-database.d.ts",
       "default": "./dist/db/dev-database.js"
@@ -102,6 +106,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "pg": "^8.22.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -115,7 +120,6 @@
     "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "pg": "^8.22.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"
   }
