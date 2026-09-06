@@ -7,7 +7,7 @@ import type {
   VectorDistanceFunction,
 } from '../config/types.js'
 import type { Session } from '../access/types.js'
-import { text } from '../fields/index.js'
+import { relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
@@ -95,6 +95,23 @@ const config: OpenSaasConfig = {
         embedding: embedding(3, 'cosine', { read: () => false }),
       },
       access: { operation: { query: () => true } },
+    },
+    // `nearest()` is a terminal on the same composed value `include()` builds,
+    // so a search that names a relation has to reach it through the same Field
+    // Visibility and foreign-key repair `all()` does (#1148, #1234).
+    Composed: {
+      fields: {
+        title: text(),
+        writer: relationship({ ref: 'Writer' }),
+        embedding: embedding(3, 'cosine'),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Writer: {
+      fields: { name: text(), secret: text({ access: { read: () => false } }) },
+      access: {
+        operation: { query: ({ session }) => ({ name: { equals: session?.userId ?? '' } }) },
+      },
     },
     // Declares no rule, so `query` is denied by default.
     Locked: {
@@ -334,6 +351,31 @@ describe.skipIf(!available)(
         const [match] = await database.context(mine).db.Scoped.nearest('embedding', QUERY)
         expect(match.item.title).toBe('mine')
         expect(match.item).not.toHaveProperty('editorNotes')
+      })
+
+      test('an included relation is scoped, stripped and its foreign key repaired', async () => {
+        const mineId = '00000000-0000-7000-8000-000000000001'
+        const theirsId = '00000000-0000-7000-8000-000000000002'
+        await seed('Writer', { id: mineId, name: 'me', secret: 'private' })
+        await seed('Writer', { id: theirsId, name: 'other', secret: 'private' })
+        await seed('Composed', { title: 'mine', writerId: mineId, embedding: [1, 0, 0] })
+        await seed('Composed', { title: 'theirs', writerId: theirsId, embedding: [0.99, 0.1, 0] })
+
+        const matches = await database
+          .context(mine)
+          .db.Composed.include('writer')
+          .nearest('embedding', QUERY)
+        expect(titles(matches)).toEqual(['mine', 'theirs'])
+
+        const [own, other] = matches
+        expect(own.item.writer).toMatchObject({ name: 'me' })
+        expect(own.item.writer).not.toHaveProperty('secret')
+        expect(own.item.writerId).toBe(mineId)
+
+        // The Access Filter scoped this writer away, so the relation is `null`
+        // and the foreign key must not survive as the invisible row's id.
+        expect(other.item.writer).toBeNull()
+        expect(other.item.writerId).toBeNull()
       })
     })
 

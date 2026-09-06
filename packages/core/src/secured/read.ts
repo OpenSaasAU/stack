@@ -28,10 +28,24 @@ import {
   type Where,
   type WherePlan,
 } from './vocabulary.js'
+import {
+  buildIncludeRequest,
+  orderList,
+  resolveIncludes,
+  type IncludePlan,
+  type IncludeRequest,
+  type Refinement,
+} from './include.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
+export {
+  DuplicateIncludeError,
+  InvalidRefinementError,
+  NestedToOneIncludeError,
+} from './include.js'
+export type { Refinement, SecuredRefinement } from './include.js'
 export type {
   NearestOptions,
   OrderBy,
@@ -59,6 +73,13 @@ export interface SecuredQuery<TRow = OrmRow> {
   where(predicate: Where): SecuredQuery<TRow>
   /** Sort the read by the list's own scalar columns. */
   orderBy(order: OrderBy | readonly OrderBy[]): SecuredQuery<TRow>
+  /**
+   * Reach one hop into a relation, optionally refining the related read. The
+   * related list's `query` access rides in as a refinement `where`, so a
+   * scoped-away to-one comes back `null` and a to-many `[]` with the key
+   * present and the parent row kept.
+   */
+  include(name: string, refine?: Refinement): SecuredQuery<TRow>
   /** Every row this session may see. `[]` when the read is denied. */
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
@@ -120,20 +141,39 @@ export class SecuredCollectionMissingError extends Error {
  * `where` appends a predicate — repeated calls are AND-combined by the ORM,
  * which is what makes the Access Filter a second entry rather than a merge.
  */
-interface ReadableCollection {
+interface RefinableCollection {
+  where(predicate: (model: PredicateAccessor) => AnyExpression): RefinableCollection
+  orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): RefinableCollection
+  limit(count: number): RefinableCollection
+  offset(count: number): RefinableCollection
+  include(
+    name: string,
+    refine: (child: RefinableCollection) => RefinableCollection,
+  ): RefinableCollection
+}
+
+interface ReadableCollection extends RefinableCollection {
   where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
+  include(
+    name: string,
+    refine: (child: RefinableCollection) => RefinableCollection,
+  ): ReadableCollection
   limit(rows: number): ReadableCollection
   all(): PromiseLike<OrmRow[]>
   first(): Promise<OrmRow | null>
 }
 
+/**
+ * Presence, not completeness — the same rule `isDelegate` states in
+ * `access/orm-client.ts`, and for the same reason. A test double implements
+ * only the operations its test reaches, so requiring the full set would refuse
+ * a client the engine can drive, and would refuse it with advice ("re-run
+ * `opensaas generate`") that does not describe what is actually wrong. A
+ * member that is genuinely absent surfaces at its own call site.
+ */
 function isReadableCollection(value: unknown): value is ReadableCollection {
-  if (typeof value !== 'object' || value === null) return false
-  for (const member of ['where', 'orderBy', 'limit', 'all', 'first']) {
-    if (typeof Reflect.get(value, member) !== 'function') return false
-  }
-  return true
+  return typeof value === 'object' && value !== null
 }
 
 function collectionFor(ormHandle: OrmClient, listName: string): ReadableCollection {
@@ -153,12 +193,14 @@ interface ReadBinding {
 interface QueryState {
   readonly predicates: readonly Where[]
   readonly orders: readonly OrderBy[]
+  readonly includes: readonly IncludeRequest[]
 }
 
-/** A resolved read: the predicates to AND, and the sort to apply. */
+/** A resolved read: the predicates to AND, the sort to apply, the tree to reach. */
 interface ReadPlan {
   readonly predicates: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
+  readonly includes: readonly IncludePlan[]
 }
 
 function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
@@ -202,6 +244,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     predicates.push(await resolveWhere(predicate, ctx))
   }
   const orders = await resolveOrderBy(state.orders, ctx)
+  const includes = await resolveIncludes(state.includes, ctx, 0)
 
   if (access !== true) {
     const filter: PrismaFilter = access
@@ -217,7 +260,36 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     )
   }
 
-  return { predicates, orders }
+  return { predicates, orders, includes }
+}
+
+/**
+ * Apply one resolved include to the refinement collection Prisma hands the
+ * callback. Every predicate is a separate `where` for the same reason the
+ * top-level ones are: the ORM ANDs them natively, so the Access Filter stays
+ * a filter entry beside the caller's rather than something hand-merged into
+ * it (ADR-0044).
+ */
+function refine(
+  collection: RefinableCollection,
+  plan: IncludePlan,
+  ops: WhereCombinators,
+): RefinableCollection {
+  let refined = collection
+  for (const predicate of plan.predicates) {
+    refined = refined.where((model) => lowerWhere(predicate, model, ops))
+  }
+  if (plan.orders.length > 0) {
+    refined = refined.orderBy(
+      plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+    )
+  }
+  if (plan.offset !== undefined) refined = refined.offset(plan.offset)
+  if (plan.limit !== undefined) refined = refined.limit(plan.limit)
+  for (const nested of plan.includes) {
+    refined = refined.include(nested.relation, (child) => refine(child, nested, ops))
+  }
+  return refined
 }
 
 function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): ReadableCollection {
@@ -230,12 +302,55 @@ function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): Rea
       plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
     )
   }
+  for (const include of plan.includes) {
+    collection = collection.include(include.relation, (child) => refine(child, include, ops))
+  }
   return collection
 }
 
-function visible(binding: ReadBinding, row: OrmRow): Promise<OrmRow> {
+function isRow(value: unknown): value is OrmRow {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Rewrite the foreign-key column of every included to-one to the value the
+ * relation itself came back as.
+ *
+ * Two things make this necessary, and each on its own would be enough. Prisma
+ * 8 aliases an include by the relation's name and a scalar column by its
+ * physical name, and the contract maps a to-one's foreign key onto the
+ * relation's own name (`contract/derive.ts`), so the two aliases collide and
+ * the decoder writes the include's payload into the foreign-key key. And
+ * independently of any collision, the foreign key is a second name for the
+ * related row's identity: a relation the Access Filter scoped away or Field
+ * Visibility stripped would otherwise survive under it as the invisible row's
+ * id.
+ *
+ * So the pass is driven by the contract's own foreign-key member
+ * (`IncludePlan.foreignKey`) rather than by the shape of whatever is stored,
+ * which makes it independent of `db: { foreignKey: { map } }`; and it runs
+ * AFTER Field Visibility, which makes visibility authoritative over the
+ * column. The value written is the one the caller may see: the related row's
+ * id when the relation is visible, `null` when it is not — denied, scoped away
+ * and stripped alike, which is what a to-one the caller may not see means
+ * everywhere else (ADR-0058).
+ */
+function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
+  for (const plan of plans) {
+    const value = row[plan.relation]
+    if (plan.arity === 'one' && plan.foreignKey !== undefined && plan.foreignKey in row) {
+      row[plan.foreignKey] = isRow(value) ? value.id : null
+    }
+    if (plan.includes.length === 0) continue
+    for (const related of Array.isArray(value) ? value : [value]) {
+      if (isRow(related)) applyForeignKeys(related, plan.includes)
+    }
+  }
+}
+
+async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
-  return filterReadableFields(
+  const filtered = await filterReadableFields(
     row,
     listConfig.fields,
     { session: context.session, context },
@@ -243,6 +358,8 @@ function visible(binding: ReadBinding, row: OrmRow): Promise<OrmRow> {
     0,
     listName,
   )
+  applyForeignKeys(filtered, plan.includes)
+  return filtered
 }
 
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
@@ -250,7 +367,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]
   if (plan === null) return []
   const collection = scope(binding, plan, await whereCombinators())
   const rows = await withOrigin('engine', () => collection.all())
-  return await Promise.all(rows.map((row) => visible(binding, row)))
+  return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
 
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow | null> {
@@ -258,7 +375,7 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow
   if (plan === null) return null
   const collection = scope(binding, plan, await whereCombinators())
   const row = await withOrigin('engine', () => collection.first())
-  return row === null ? null : await visible(binding, row)
+  return row === null ? null : await visible(binding, row, plan)
 }
 
 /**
@@ -317,7 +434,7 @@ async function runNearest(
   // becomes the tiebreak rather than competing with the ranking.
   let collection = scope(
     binding,
-    { predicates: [...plan.predicates, present(near)], orders: [] },
+    { predicates: [...plan.predicates, present(near)], orders: [], includes: plan.includes },
     ops,
   ).orderBy([
     (model) => vectors.order(near, model),
@@ -330,7 +447,7 @@ async function runNearest(
   const rows = await withOrigin('engine', () => collection.limit(near.limit).all())
   return await Promise.all(
     rows.map(async (row) => ({
-      item: await visible(binding, row),
+      item: await visible(binding, row, plan),
       score: score(near, row),
     })),
   )
@@ -344,20 +461,17 @@ function score(near: NearestPlan, row: OrmRow): number {
   )
 }
 
-function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
-  return Array.isArray(order)
-}
-
-function orderList(order: OrderBy | readonly OrderBy[]): readonly OrderBy[] {
-  return isOrderList(order) ? order : [order]
-}
-
 function query(binding: ReadBinding, state: QueryState): SecuredQuery {
   return {
     where: (predicate: Where) =>
       query(binding, { ...state, predicates: [...state.predicates, predicate] }),
     orderBy: (order: OrderBy | readonly OrderBy[]) =>
       query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
+    include: (name: string, refinement?: Refinement) =>
+      query(binding, {
+        ...state,
+        includes: [...state.includes, buildIncludeRequest(name, refinement)],
+      }),
     all: () => runAll(binding, state),
     first: () => runFirst(binding, state),
     nearest: (field: string, vector: readonly number[], options: NearestOptions = {}) =>
@@ -372,5 +486,5 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
  * or its type (ADR-0041, ADR-0057).
  */
 export function createSecuredRead(binding: ReadBinding): SecuredQuery {
-  return query(binding, { predicates: [], orders: [] })
+  return query(binding, { predicates: [], orders: [], includes: [] })
 }

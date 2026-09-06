@@ -346,7 +346,13 @@ async function resolveBranches(
   return plans
 }
 
-async function relatedAccessPlan(
+/**
+ * The related list's `query` access, as a plan to AND into whatever names it:
+ * a relation quantifier's `EXISTS`, or an include refinement's `where`
+ * (ADR-0044). `{ kind: 'false' }` is the never-matching predicate an outright
+ * denial lowers to — the empty set, not an error and not an absent key.
+ */
+export async function resolveRelatedAccessPlan(
   related: { listName: string; listConfig: ListConfig<TypeInfo> },
   ctx: ResolveContext,
 ): Promise<WherePlan> {
@@ -395,7 +401,7 @@ async function resolveRelation(
     )
   }
 
-  const access = await relatedAccessPlan(related, ctx)
+  const access = await resolveRelatedAccessPlan(related, ctx)
   const nodes: WherePlan[] = []
   for (const [quantifier, nested] of entries) {
     if (!RELATION_QUANTIFIER_SET.has(quantifier))

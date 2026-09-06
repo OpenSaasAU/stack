@@ -136,11 +136,21 @@ export { SecuredCollectionMissingError } from './secured/read.js'
 // directly or through another list's filter. Loud rather than truncated: a
 // truncated Access Filter is a widened read (#1147).
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/read.js'
+// Thrown when an include refinement callback returns something other than the
+// refinement it was handed — dropping it would run the include unscoped by
+// everything the caller wrote (#1148).
+export { InvalidRefinementError } from './secured/read.js'
+// Thrown when one read names the same relation twice, and when a nested
+// include names a to-one whose foreign-key column carries the relation's own
+// name — the collision #1236 removes (#1148).
+export { DuplicateIncludeError, NestedToOneIncludeError } from './secured/read.js'
 // The vector-search terminal: how many rows it returns by default, and the
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
 export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 export type {
   SecuredQuery,
+  SecuredRefinement,
+  Refinement,
   NearestMatch,
   NearestOptions,
   OrderBy,

@@ -269,17 +269,72 @@ export type ListSort<C, R extends RemainderBase, K extends keyof R & string> = {
   [F in keyof StoredRow<C, R, K>]?: 'asc' | 'desc'
 }
 
+/** The list an include's relation points at, when the remainder describes it. */
+type IncludeTargetOf<C, R extends RemainderBase, K extends keyof R & string, Rel> =
+  RelationTarget<C, K, Rel> extends infer Target
+    ? Target extends keyof R & string
+      ? Target
+      : never
+    : never
+
 /**
- * A composed read: an immutable value carrying the list, its predicates and
- * its sort. `where`/`orderBy` return a new value and enforce nothing; the
- * terminals resolve access, scope the query and materialise (ADR-0041,
- * ADR-0046).
+ * What one include adds to the row.
+ *
+ * Arity alone decides, off the contract's relation graph: a to-one is
+ * `| null` whatever its foreign key's nullability, because the Access Filter
+ * can scope it away for one session and not another and the result shape must
+ * not vary (ADR-0058). Prisma's own `IncludeRelationValue` is never consulted.
  */
-export type ListQuery<C, R extends RemainderBase, K extends keyof R & string> = {
-  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K>
-  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListQuery<C, R, K>
-  all: () => Promise<Row<C, R, K>[]>
-  first: () => Promise<Row<C, R, K> | null>
+type IncludedRelation<C, R extends RemainderBase, K extends keyof R & string, Rel> = {
+  [P in Rel & string]: IsToOne<C, K, Rel> extends true
+    ? Row<C, R, IncludeTargetOf<C, R, K, Rel>> | null
+    : Row<C, R, IncludeTargetOf<C, R, K, Rel>>[]
+}
+
+/**
+ * A related read composed inside `.include()`. It carries no terminal: the
+ * parent's terminal is the only thing that runs, and `limit`/`offset` here
+ * page the related rows per parent row.
+ */
+export type ListRefinement<C, R extends RemainderBase, K extends keyof R & string> = {
+  where: (predicate: ListPredicate<C, R, K>) => ListRefinement<C, R, K>
+  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListRefinement<C, R, K>
+  limit: (count: number) => ListRefinement<C, R, K>
+  offset: (count: number) => ListRefinement<C, R, K>
+  include: <Rel extends RelationKey<C, K>>(
+    name: Rel,
+    refine?: (
+      refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
+    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
+  ) => ListRefinement<C, R, K>
+}
+
+/**
+ * A composed read: an immutable value carrying the list, its predicates, its
+ * sort and the relations it reaches. `where`/`orderBy`/`include` return a new
+ * value and enforce nothing; the terminals resolve access, scope the query
+ * and materialise (ADR-0041, ADR-0046).
+ *
+ * `Included` accumulates one include's contribution to the row per call, so
+ * the terminal's type is read off the call site rather than off a separate
+ * argument object.
+ */
+export type ListQuery<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Included = unknown,
+> = {
+  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K, Included>
+  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListQuery<C, R, K, Included>
+  include: <Rel extends RelationKey<C, K>>(
+    name: Rel,
+    refine?: (
+      refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
+    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
+  ) => ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel>>
+  all: () => Promise<(Row<C, R, K> & Included)[]>
+  first: () => Promise<(Row<C, R, K> & Included) | null>
 }
 
 type ListOps<C, R extends RemainderBase, K extends keyof R & string> = ListQuery<C, R, K> & {
