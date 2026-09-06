@@ -33,6 +33,10 @@
       "types": "./dist/contract/index.d.ts",
       "default": "./dist/contract/index.js"
     },
+    "./origin": {
+      "types": "./dist/origin.d.ts",
+      "default": "./dist/origin.js"
+    },
     "./config/plugin-engine": {
       "types": "./dist/config/plugin-engine.d.ts",
       "default": "./dist/config/plugin-engine.js"
