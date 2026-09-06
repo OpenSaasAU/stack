@@ -23,8 +23,10 @@ passes through untouched. The project's `.env` is loaded before that decision is
 file the generated `prisma.config.ts` and `next dev` load, so a `DATABASE_URL` written there is
 honoured rather than shadowed by a sidecar nothing uses; a shell variable still outranks the file.
 The database dies with the process; `opensaas.config.ts` is still watched, and the loop shuts the
-database down on every exit path — a failed reconcile, a Prisma CLI that will not run, and Ctrl-C
-at the consent prompt included.
+database down on every path that unwinds — a failed reconcile, a Prisma CLI that will not run, and
+Ctrl-C at the consent prompt included. A `generate` that refuses ends the process outright, past
+the reach of an async shutdown, so that path is covered synchronously instead: the app child is
+killed and the run's state file removed.
 
 Every Prisma CLI spawn is asynchronous now (a `spawnSync` deadlocks the socket server the Dev
 database is served on), with stdin closed for `contract emit` and the terminal inherited for the
