@@ -27,7 +27,6 @@ import { hashPassword, isHashedPassword, HashedPassword } from '../utils/passwor
 import { formatPrismaDefault } from './format-prisma-default.js'
 import { getLabelFieldName } from '../config/label.js'
 import type { FilterOperator, FilterSpec } from '../filter/types.js'
-import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 
 /** Operators shared by numeric/date fields' `getFilterSpec`. */
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
@@ -1735,17 +1734,16 @@ export function relationship<
   field.getContractField = (fieldName: string, listKey: string, config: OpenSaasConfig) =>
     getContractRelation(field, fieldName, listKey, config)
 
-  // Relationships filter differently by cardinality (issue #732):
+  // Relationships filter differently by cardinality (issue #732, ADR-0055):
   //  • to-one filters by the related Item's label — `author:"Ada Lovelace"`
-  //    becomes a nested `is` `contains` on the target list's Label field.
-  //  • to-many filters by the access-visible related COUNT with numeric
-  //    comparisons — `orders:>5`. Prisma cannot compare a relation count in a
-  //    `where`, so the mapper emits a structured count marker
-  //    (RELATIONSHIP_COUNT_FILTER_KEY) that `resolveRelationshipCountFilters`
-  //    later turns into an access-scoped `{ id: { in } }`.
-  // The mapper stays pure in both cases (no DB lookup). Suggestions point a
-  // to-one at the target list's label lookup; a to-many exposes no value source
-  // (a numeric compare, like an integer field).
+  //    becomes a `some` over the target list's Label field. Prisma 8 has no
+  //    to-one predicate form: every relation predicate is an EXISTS, and its
+  //    accessor is the same for both cardinalities.
+  //  • to-many filters by PRESENCE. Prisma 8 cannot compare a relation count
+  //    in a `where`, so `orders:0` is `none`, `orders:>0`/`orders:>=1` are
+  //    `some`, and any other comparison degrades to free text.
+  // The mapper stays pure in both cases (no DB lookup); the engine ANDs the
+  // related list's own `query` access inside the EXISTS when it lowers this.
   field.getFilterSpec = (
     _fieldName: string,
     _listKey: string,
@@ -1760,12 +1758,12 @@ export function relationship<
         operators: COMPARISON_OPERATORS,
         toCondition: (operator, value) => {
           const trimmed = value.trim()
-          // A non-integer count comparison can't be interpreted → degrade to
-          // free text (matching the integer field's behaviour).
           if (!/^-?\d+$/.test(trimmed)) return null
-          return {
-            [_fieldName]: { [RELATIONSHIP_COUNT_FILTER_KEY]: { operator, value: Number(trimmed) } },
-          }
+          const count = Number(trimmed)
+          if (operator === 'eq' && count === 0) return { [_fieldName]: { none: {} } }
+          if (operator === 'gt' && count === 0) return { [_fieldName]: { some: {} } }
+          if (operator === 'gte' && count === 1) return { [_fieldName]: { some: {} } }
+          return null
         },
         suggestions: { valueSource: { kind: 'none' } },
       }
@@ -1781,7 +1779,7 @@ export function relationship<
       operators: ['eq'],
       toCondition: (operator, value) => {
         if (operator !== 'eq') return null
-        return { [_fieldName]: { is: { [labelField]: { contains: value } } } }
+        return { [_fieldName]: { some: { [labelField]: { contains: value } } } }
       },
       suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many: false } },
     }

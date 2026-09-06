@@ -1,37 +1,45 @@
 // The secured read surface: `context.db.<List>` as an opaque wrapper over a
-// Prisma 8 collection, its `where` composition, and the `all()`/`first()`
-// terminals the engine owns. See ADR-0041, ADR-0044, ADR-0046 and ADR-0058.
+// Prisma 8 collection, its `where`/`orderBy` composition, and the
+// `all()`/`first()` terminals the engine owns. See ADR-0041, ADR-0044,
+// ADR-0046, ADR-0055 and ADR-0058.
 
+import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
-import {
-  checkAccess,
-  filterReadableFields,
-  validateQueryKeys,
-  validateQueryFieldReadAccess,
-} from '../access/index.js'
+import { checkAccess, filterReadableFields } from '../access/index.js'
 import { withOrigin } from '../origin.js'
+import {
+  lowerOrder,
+  lowerWhere,
+  whereCombinators,
+  type PredicateAccessor,
+  type WhereCombinators,
+} from './lower.js'
+import {
+  resolveOrderBy,
+  resolveWhere,
+  type OrderBy,
+  type OrderPlan,
+  type ResolveContext,
+  type Where,
+  type WherePlan,
+} from './vocabulary.js'
 
-/** A value a predicate compares a column against. */
-export type WhereValue = string | number | boolean | bigint | Date | null
-
-/** One column's condition: the value itself, or an explicit `equals`. */
-export type WhereCondition = WhereValue | { equals: WhereValue }
-
-/**
- * A predicate over a list's own columns.
- *
- * Equality only. The closed Where vocabulary — `in`, `not`, the comparisons,
- * `contains`, the logical combinators and the relation quantifiers — is
- * ADR-0055's, and {@link lowerPredicate} refuses everything it does not yet
- * lower rather than passing it to the ORM unscoped.
- */
-export type Where = { [column: string]: WhereCondition }
+export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
+export type {
+  OrderBy,
+  OrderDirection,
+  RelationCondition,
+  ScalarOperators,
+  Where,
+  WhereCondition,
+  WhereValue,
+} from './vocabulary.js'
 
 /**
  * A composed read: an immutable value carrying the list, the predicates and
- * nothing that can execute unscoped. `where` returns a new value; the
- * terminals are the only way to reach the database.
+ * nothing that can execute unscoped. `where` and `orderBy` return a new value;
+ * the terminals are the only way to reach the database.
  *
  * Rows are untyped here for the same reason the rest of the engine's own view
  * is: the per-list shapes live in the generated bundle, which instantiates
@@ -40,30 +48,12 @@ export type Where = { [column: string]: WhereCondition }
 export interface SecuredQuery<TRow = OrmRow> {
   /** Narrow the read. Composes; nothing is enforced until a terminal runs. */
   where(predicate: Where): SecuredQuery<TRow>
+  /** Sort the read by the list's own scalar columns. */
+  orderBy(order: OrderBy | readonly OrderBy[]): SecuredQuery<TRow>
   /** Every row this session may see. `[]` when the read is denied. */
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
   first(): Promise<TRow | null>
-}
-
-/**
- * Thrown when a predicate names an operator the engine does not lower.
- *
- * A predicate can only ever narrow, so an unrecognised operator is refused
- * rather than dropped: dropping it would widen the read (ADR-0055).
- */
-export class UnsupportedPredicateError extends Error {
-  constructor(
-    readonly listName: string,
-    readonly column: string,
-    readonly detail: string,
-  ) {
-    super(
-      `Cannot lower the predicate on "${listName}.${column}": ${detail}. The secured surface ` +
-        `takes an equality predicate — \`{ ${column}: value }\` or \`{ ${column}: { equals: value } }\`.`,
-    )
-    this.name = 'UnsupportedPredicateError'
-  }
 }
 
 /**
@@ -81,26 +71,22 @@ export class SecuredCollectionMissingError extends Error {
   }
 }
 
-/** A filter list entry, as the collection's shorthand `where` takes it. */
-type FilterEntry = Record<string, WhereValue>
-
 /**
  * The part of a Prisma 8 collection the read path drives, structurally.
- * `where` appends a filter entry — repeated calls are AND-combined by the ORM,
+ * `where` appends a predicate — repeated calls are AND-combined by the ORM,
  * which is what makes the Access Filter a second entry rather than a merge.
  */
 interface ReadableCollection {
-  where(filter: FilterEntry): ReadableCollection
+  where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
+  orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
   all(): PromiseLike<OrmRow[]>
   first(): Promise<OrmRow | null>
 }
 
 function isReadableCollection(value: unknown): value is ReadableCollection {
   if (typeof value !== 'object' || value === null) return false
-  const candidate: Record<string, unknown> = Object.create(null)
-  for (const member of ['where', 'all', 'first']) {
-    candidate[member] = Reflect.get(value, member)
-    if (typeof candidate[member] !== 'function') return false
+  for (const member of ['where', 'orderBy', 'all', 'first']) {
+    if (typeof Reflect.get(value, member) !== 'function') return false
   }
   return true
 }
@@ -109,58 +95,6 @@ function collectionFor(ormHandle: OrmClient, listName: string): ReadableCollecti
   const collection = ormHandle[listName]
   if (!isReadableCollection(collection)) throw new SecuredCollectionMissingError(listName)
   return collection
-}
-
-function isWhereValue(value: unknown): value is WhereValue {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    typeof value === 'bigint' ||
-    value instanceof Date
-  )
-}
-
-function lowerCondition(listName: string, column: string, condition: unknown): WhereValue {
-  if (isWhereValue(condition)) return condition
-  if (typeof condition !== 'object') {
-    throw new UnsupportedPredicateError(listName, column, 'the condition is not a value')
-  }
-  const keys = Object.keys(condition)
-  if (keys.length !== 1 || keys[0] !== 'equals') {
-    throw new UnsupportedPredicateError(
-      listName,
-      column,
-      `\`${keys.join(', ')}\` is not an operator the engine lowers yet`,
-    )
-  }
-  const value: unknown = Reflect.get(condition, 'equals')
-  if (!isWhereValue(value)) {
-    throw new UnsupportedPredicateError(listName, column, '`equals` takes a scalar value')
-  }
-  return value
-}
-
-/**
- * Lower one predicate to a single filter entry. An operator the engine does
- * not lower throws rather than being dropped, `sudo` included — the Access
- * Filter passes through here too.
- *
- * Known limit: an `undefined` condition is skipped, matching Prisma's
- * `undefined`-means-omitted semantics. A filter rule spelled
- * `({ session }) => ({ authorId: session?.userId })` therefore lowers to `{}`
- * for an anonymous caller and constrains nothing, while the explicit
- * `{ equals: undefined }` spelling of the same rule is refused. Totality
- * arrives with the closed Where vocabulary (#1147).
- */
-export function lowerPredicate(listName: string, predicate: Record<string, unknown>): FilterEntry {
-  const entry: FilterEntry = {}
-  for (const [column, condition] of Object.entries(predicate)) {
-    if (condition === undefined) continue
-    entry[column] = lowerCondition(listName, column, condition)
-  }
-  return entry
 }
 
 interface ReadBinding {
@@ -173,46 +107,84 @@ interface ReadBinding {
 
 interface QueryState {
   readonly predicates: readonly Where[]
+  readonly orders: readonly OrderBy[]
 }
 
-async function resolveAccessFilter(
-  binding: ReadBinding,
-  state: QueryState,
-): Promise<FilterEntry[] | null> {
-  const { listName, listConfig, context, config } = binding
+/** A resolved read: the predicates to AND, and the sort to apply. */
+interface ReadPlan {
+  readonly predicates: readonly WherePlan[]
+  readonly orders: readonly OrderPlan[]
+}
+
+function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
+  return {
+    listName: binding.listName,
+    listConfig: binding.listConfig,
+    config: binding.config,
+    session: binding.context.session,
+    context: binding.context,
+    checkFieldRead: secured,
+    applyRelationAccess: secured,
+    accessFilterPath: [],
+  }
+}
+
+/**
+ * Resolve the read: operation access first, then the vocabulary.
+ *
+ * The order matters. Resolution names the offending key, so running it before
+ * the access check would tell a caller with no access at all that a field
+ * exists and whether it is read-gated (#912, #915). A denied caller gets the
+ * Silent failure and never sees a validation error.
+ *
+ * `sudo` skips access but not the vocabulary: an unknown key or operator is a
+ * bug rather than a permission, and letting it through would widen the read
+ * with a flag on it (ADR-0022, ADR-0055).
+ */
+async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<ReadPlan | null> {
+  const { listConfig, context } = binding
   const session: Session | null = context.session
-  const lower = (): FilterEntry[] =>
-    state.predicates.map((predicate) => lowerPredicate(listName, predicate))
+  const secured = context._isSudo !== true
+  const ctx = resolveContext(binding, secured)
 
-  if (context._isSudo) return lower()
-
-  const access = await checkAccess(listConfig.access?.operation?.query, { session, context })
+  const access = secured
+    ? await checkAccess(listConfig.access?.operation?.query, { session, context })
+    : true
   if (access === false) return null
 
-  // Runs only once the caller is known to have SOME access to the list: these
-  // errors name the offending key, so running them first would tell a caller
-  // with no access at all that a field exists and whether it is read-gated
-  // (#912, #915).
+  const predicates: WherePlan[] = []
   for (const predicate of state.predicates) {
-    validateQueryKeys({ where: predicate, listConfig, listName, config, isSudo: false })
-    await validateQueryFieldReadAccess({
-      where: predicate,
-      listConfig,
-      listName,
-      session,
-      context,
-      isSudo: false,
-    })
+    predicates.push(await resolveWhere(predicate, ctx))
+  }
+  const orders = await resolveOrderBy(state.orders, ctx)
+
+  if (access !== true) {
+    const filter: PrismaFilter = access
+    // The Access Filter is trusted config, so its keys are not read-gated —
+    // but it is lowered through the same total seam, which is what stops a
+    // rule that resolved to `undefined` from matching every row.
+    predicates.push(
+      await resolveWhere(filter, {
+        ...resolveContext(binding, true),
+        checkFieldRead: false,
+        accessFilterPath: [binding.listName],
+      }),
+    )
   }
 
-  if (access === true) return lower()
-  const filter: PrismaFilter = access
-  return [...lower(), lowerPredicate(listName, filter)]
+  return { predicates, orders }
 }
 
-function scope(binding: ReadBinding, entries: readonly FilterEntry[]): ReadableCollection {
+function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): ReadableCollection {
   let collection = collectionFor(binding.ormHandle, binding.listName)
-  for (const entry of entries) collection = collection.where(entry)
+  for (const predicate of plan.predicates) {
+    collection = collection.where((model) => lowerWhere(predicate, model, ops))
+  }
+  if (plan.orders.length > 0) {
+    collection = collection.orderBy(
+      plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+    )
+  }
   return collection
 }
 
@@ -229,24 +201,35 @@ function visible(binding: ReadBinding, row: OrmRow): Promise<OrmRow> {
 }
 
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
-  const entries = await resolveAccessFilter(binding, state)
-  if (entries === null) return []
-  const collection = scope(binding, entries)
+  const plan = await resolvePlan(binding, state)
+  if (plan === null) return []
+  const collection = scope(binding, plan, await whereCombinators())
   const rows = await withOrigin('engine', () => collection.all())
   return await Promise.all(rows.map((row) => visible(binding, row)))
 }
 
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow | null> {
-  const entries = await resolveAccessFilter(binding, state)
-  if (entries === null) return null
-  const collection = scope(binding, entries)
+  const plan = await resolvePlan(binding, state)
+  if (plan === null) return null
+  const collection = scope(binding, plan, await whereCombinators())
   const row = await withOrigin('engine', () => collection.first())
   return row === null ? null : await visible(binding, row)
 }
 
+function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
+  return Array.isArray(order)
+}
+
+function orderList(order: OrderBy | readonly OrderBy[]): readonly OrderBy[] {
+  return isOrderList(order) ? order : [order]
+}
+
 function query(binding: ReadBinding, state: QueryState): SecuredQuery {
   return {
-    where: (predicate: Where) => query(binding, { predicates: [...state.predicates, predicate] }),
+    where: (predicate: Where) =>
+      query(binding, { ...state, predicates: [...state.predicates, predicate] }),
+    orderBy: (order: OrderBy | readonly OrderBy[]) =>
+      query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
     all: () => runAll(binding, state),
     first: () => runFirst(binding, state),
   }
@@ -259,5 +242,5 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
  * or its type (ADR-0041, ADR-0057).
  */
 export function createSecuredRead(binding: ReadBinding): SecuredQuery {
-  return query(binding, { predicates: [] })
+  return query(binding, { predicates: [], orders: [] })
 }

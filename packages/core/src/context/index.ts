@@ -1014,6 +1014,7 @@ export function populateDbDelegate(
     } else {
       const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
       operations.where = read.where
+      operations.orderBy = read.orderBy
       operations.all = read.all
       operations.first = read.first
     }

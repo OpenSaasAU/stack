@@ -502,10 +502,11 @@ query: ({ session }) => !!session
 // Filter: Users can only update their own posts
 update: ({ session, item }) => session?.userId === item.authorId
 
-// Filter object: Scope access to specific records
-query: ({ session }) => ({
-  authorId: { equals: session?.userId },
-})
+// Filter object: Scope access to specific records. Deny outright when there is
+// no session to scope to — the engine refuses a predicate that resolved to
+// `undefined` rather than dropping it, so `{ authorId: session?.userId }` is
+// an error for an anonymous caller, not a match-everything read.
+query: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
 
 // Boolean only — create cannot be scoped by a filter
 create: ({ session }) => !!session

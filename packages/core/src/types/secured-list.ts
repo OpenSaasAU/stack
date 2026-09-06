@@ -217,24 +217,67 @@ type SingletonOps<C, R extends RemainderBase, K extends keyof R & string> = {
 }
 
 /**
- * One column's condition in a composed read's predicate. Equality only, which
- * is what the engine lowers today; ADR-0055's closed vocabulary widens this in
- * its own spec.
+ * One column's condition in a composed read's predicate: a bare value for
+ * equality, or the closed Where vocabulary's scalar operators (ADR-0055).
+ * Several operators on one column are ANDed. `equals: null` is `IS NULL` and
+ * `not: null` is `IS NOT NULL`; `contains` is case-insensitive and matches its
+ * value literally.
  */
-export type ColumnEquality<V> = V | { equals: V }
+export type ColumnCondition<V> =
+  | V
+  | {
+      equals?: V
+      not?: V
+      in?: readonly V[]
+      notIn?: readonly V[]
+      lt?: V
+      lte?: V
+      gt?: V
+      gte?: V
+      contains?: string
+    }
 
-/** What `.where()` takes: the list's own columns, compared for equality. */
+/**
+ * One relation's condition. Every relation takes the same three quantifiers
+ * regardless of cardinality: Prisma 8 lowers each to an `EXISTS`, and the
+ * engine ANDs the related list's own `query` access inside it.
+ */
+type RelationPredicate<C, R extends RemainderBase, K extends keyof R & string, Rel> =
+  RelationTarget<C, K, Rel> extends infer Target
+    ? Target extends keyof R & string
+      ? {
+          some?: ListPredicate<C, R, Target>
+          every?: ListPredicate<C, R, Target>
+          none?: ListPredicate<C, R, Target>
+        }
+      : never
+    : never
+
+/** What `.where()` takes: the Where vocabulary over this list. */
 export type ListPredicate<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in keyof StoredRow<C, R, K>]?: ColumnEquality<StoredRow<C, R, K>[F]>
+  [F in keyof StoredRow<C, R, K>]?: ColumnCondition<StoredRow<C, R, K>[F]>
+} & {
+  [Rel in RelationKey<C, K>]?: RelationPredicate<C, R, K, Rel>
+} & {
+  AND?: ListPredicate<C, R, K> | readonly ListPredicate<C, R, K>[]
+  OR?: readonly ListPredicate<C, R, K>[]
+  NOT?: ListPredicate<C, R, K> | readonly ListPredicate<C, R, K>[]
+}
+
+/** What `.orderBy()` takes: the list's own scalar columns and a direction. */
+export type ListSort<C, R extends RemainderBase, K extends keyof R & string> = {
+  [F in keyof StoredRow<C, R, K>]?: 'asc' | 'desc'
 }
 
 /**
- * A composed read: an immutable value carrying the list and its predicates.
- * `where` returns a new value and enforces nothing; the terminals resolve
- * access, scope the query and materialise (ADR-0041, ADR-0046).
+ * A composed read: an immutable value carrying the list, its predicates and
+ * its sort. `where`/`orderBy` return a new value and enforce nothing; the
+ * terminals resolve access, scope the query and materialise (ADR-0041,
+ * ADR-0046).
  */
 export type ListQuery<C, R extends RemainderBase, K extends keyof R & string> = {
   where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K>
+  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListQuery<C, R, K>
   all: () => Promise<Row<C, R, K>[]>
   first: () => Promise<Row<C, R, K> | null>
 }

@@ -1596,14 +1596,14 @@ describe('getContext', () => {
         expect(backRelationPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
-      it('never mistakes a Prisma filter operator (equals/contains/startsWith/in/is/isNot) for a field name', async () => {
+      it('never mistakes a Where operator (equals/contains/in/is/isNot) for a field name', async () => {
         mockPrisma.Post.findMany.mockResolvedValue([
           { id: '1', title: 'Test Post', content: 'x', authorId: 'u1' },
         ])
 
         const context = await getContext(config, mockPrisma, null)
         const where = {
-          title: { equals: 'Test Post', contains: 'Test', startsWith: 'T', in: ['Test Post'] },
+          title: { equals: 'Test Post', contains: 'Test', in: ['Test Post'] },
           author: { is: { name: 'John' }, isNot: null },
         }
 
@@ -2014,12 +2014,12 @@ describe('getContext', () => {
 
         await expect(
           context.db.Organisation.findMany({
-            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+            where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
           }),
         ).rejects.toThrow(/Document/)
         await expect(
           context.db.Organisation.count({
-            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+            where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
           }),
         ).rejects.toThrow(/Document/)
 
@@ -2034,10 +2034,10 @@ describe('getContext', () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         const matching = context.db.Organisation.count({
-          where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
         }).catch((err: Error) => err.message)
         const nonMatching = context.db.Organisation.count({
-          where: { documents: { some: { billingAddress: { startsWith: '99 ' } } } },
+          where: { documents: { some: { billingAddress: { contains: '99 ' } } } },
         }).catch((err: Error) => err.message)
 
         expect(await matching).toEqual(await nonMatching)
@@ -2092,7 +2092,7 @@ describe('getContext', () => {
 
         const context = await getContext(scopedConfig, orgPrisma, null)
         await context.db.Organisation.findMany({
-          where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+          where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
         })
 
         expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
@@ -2100,7 +2100,7 @@ describe('getContext', () => {
             where: {
               documents: {
                 some: {
-                  AND: [{ published: { equals: true } }, { billingAddress: { startsWith: '12 ' } }],
+                  AND: [{ published: { equals: true } }, { billingAddress: { contains: '12 ' } }],
                 },
               },
             },
@@ -2157,12 +2157,12 @@ describe('getContext', () => {
 
         await expect(
           context.db.Organisation.findMany({
-            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+            where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
           }),
         ).resolves.toEqual([])
         await expect(
           context.db.Organisation.count({
-            where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+            where: { documents: { some: { billingAddress: { contains: '12 ' } } } },
           }),
         ).resolves.toBe(0)
 
