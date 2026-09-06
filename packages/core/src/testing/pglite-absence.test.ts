@@ -10,10 +10,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(HERE, '..', '..', 'dist', 'testing')
 
 /**
- * Every package this subpath may reach only through a dynamic `import()`:
- * the optional peers, plus the dev database module that pulls them in. A
- * static import of any of them makes `@opensaas/stack-core` unloadable for a
- * production install that carries none of them.
+ * Every package this subpath may reach only through a dynamic `import()`: the
+ * optional peers, the dev database module that pulls them in, and `pg` — a real
+ * dependency of core elsewhere, but one this subpath must not drag into a
+ * production install's module graph. A static import of any of them makes
+ * `@opensaas/stack-core` unloadable for an install that carries none of them.
  */
 const LAZY_ONLY = [
   '@electric-sql/pglite',

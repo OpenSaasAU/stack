@@ -84,8 +84,7 @@
     "@electric-sql/pglite-pgvector": "0.0.9",
     "@electric-sql/pglite-socket": "0.2.11",
     "@prisma/orm-postgres": "8.0.0-rc.8",
-    "@prisma/orm-toolchain": "8.0.0-rc.8",
-    "pg": "^8.22.0"
+    "@prisma/orm-toolchain": "8.0.0-rc.8"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
@@ -98,9 +97,6 @@
       "optional": true
     },
     "@prisma/orm-toolchain": {
-      "optional": true
-    },
-    "pg": {
       "optional": true
     }
   },

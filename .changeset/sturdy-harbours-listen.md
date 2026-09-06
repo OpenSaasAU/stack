@@ -41,6 +41,8 @@ identifiable by age and sweepable; set to anything else the variable is refused 
 rather than dialled. `readDatabaseEscape()` lets a test whose guarantee PGlite cannot
 exercise skip visibly when the escape is unset.
 
-PGlite, `@electric-sql/pglite-socket`, `@electric-sql/pglite-pgvector`, `pg` and
-`@prisma/orm-toolchain` are optional peer dependencies imported lazily by this subpath
-only, so a production install carries no WASM Postgres.
+PGlite, `@electric-sql/pglite-socket`, `@electric-sql/pglite-pgvector` and
+`@prisma/orm-toolchain` are optional peer dependencies, and `pg` — a real dependency of
+core, for `@opensaas/stack-core/client` — is imported lazily here too. Every one of them
+is loaded on demand by this subpath only, so a production install carries no WASM
+Postgres.
