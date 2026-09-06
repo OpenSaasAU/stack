@@ -235,6 +235,7 @@ describe('Access Control', () => {
 
       expect(entry.checkAccess).toBe(checkAccess)
       expect(entry.mergeFilters).toBe(mergeFilters)
+      expect(entry.checkCreateAccess).toBe(checkCreateAccess)
     })
   })
 

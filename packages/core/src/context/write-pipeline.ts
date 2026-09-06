@@ -111,11 +111,23 @@ interface TransactionCapable {
  * Run `fn` inside ONE interactive transaction, used as the persistence target
  * for the parent and all nested writes (ADR-0010).
  *
- * A client exposing no way to open one is already inside a transaction it did
- * not open — a Prisma transaction handle carries no `$transaction`, and Prisma
- * 8's `PostgresTransactionContext` carries no `transaction` either — so `fn`
- * runs directly against it as a Joined write. Where the enclosing transaction
- * is the application's own, that write is an Unowned join (ADR-0028).
+ * When the probe below fails, `fn` runs directly against the client. Hook
+ * ordering and arguments are identical either way, but only a real transaction
+ * provides the rollback guarantee: on the direct path a hook that throws after
+ * the database call leaves the row committed.
+ *
+ * Known limits — the probe does not discriminate on `prisma-8`:
+ * it tests `$transaction`, the Prisma 7 name, which no Prisma 8 object carries.
+ * Not `PostgresTransactionContext` (`@prisma/orm-postgres@8` declares `sql`,
+ * `orm`, `enums`, `nativeEnums` on it and nothing else), and not `PostgresClient`
+ * either, whose transaction opener is named `transaction`. So under Prisma 8 the
+ * guard is constant-false and every write takes the direct path, including one
+ * through a client that could have opened a transaction. It therefore cannot
+ * currently tell a Joined write — a hook writing through a context handed to it
+ * inside an enclosing transaction, the Unowned join of ADR-0028 — from a write
+ * that simply lost its rollback guarantee. #1124 rewires this so every write
+ * opens a transaction, and ADR-0057 retires the heuristic in favour of the
+ * explicit `ctx.scope` signal (#1036).
  */
 async function runInTransaction(
   prisma: OrmClient,
