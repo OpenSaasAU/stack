@@ -12,6 +12,8 @@
  * `parse → tokens` and `tokens + specs → conditions` seam is unit-testable.
  */
 
+import type { Where } from '../secured/vocabulary.js'
+
 /**
  * A Filter operator. `eq` is the default operator for a plain `field:value`
  * token (each field's spec decides what equality means — `contains` for text,
@@ -39,12 +41,15 @@ export interface FilterToken {
 }
 
 /**
- * A Prisma `where` fragment produced by a Filter spec's `toCondition` mapper.
- * Kept as an opaque record so this module carries no Prisma type dependency;
- * the secured context ANDs it with the access filter when the fragment reaches
- * `context.db.*`.
+ * A predicate in the secured surface's Where vocabulary, produced by a Filter
+ * spec's `toCondition` mapper (ADR-0055). The vocabulary is data, declared in
+ * a module that imports nothing from the ORM, which is what keeps this seam —
+ * and the URL grammar built on it — unit-testable.
+ *
+ * The secured context ANDs it with the Access Filter when it reaches
+ * `context.db.<List>.where(...)`, so a filter can only ever narrow.
  */
-export type FilterCondition = Record<string, unknown>
+export type FilterCondition = Where
 
 /**
  * Serializable description of what the suggestion dropdown may offer for a
@@ -57,26 +62,6 @@ export type FilterValueSource =
   | { kind: 'none' }
   | { kind: 'enum'; options: Array<{ value: string; label: string }> }
   | { kind: 'relationship'; listKey: string; many: boolean }
-
-/**
- * Marker key a to-many relationship's Filter spec emits for a count comparison
- * (`orders:>5`). Prisma cannot express a relation-count comparison in a `where`
- * (there is no `{ orders: { _count: { gt: 5 } } }`), so the pure spec can only
- * emit a structured marker; `resolveRelationshipCountFilters` later turns each
- * marker into an access-scoped `{ id: { in | notIn } }` before the query runs.
- * Kept here (the pure boundary) so the field builder and the resolver agree on
- * the shape without depending on each other.
- */
-export const RELATIONSHIP_COUNT_FILTER_KEY = '_countFilter' as const
-
-/**
- * The payload a {@link RELATIONSHIP_COUNT_FILTER_KEY} marker carries: the
- * numeric comparison to apply to a to-many relationship's access-visible count.
- */
-export interface RelationshipCountFilterMarker {
-  operator: FilterOperator
-  value: number
-}
 
 /**
  * A field's self-declared filtering capability. Returned by the optional

@@ -164,7 +164,9 @@ unconditionally is the mistake to avoid:
 ```typescript
 // ❌ Looks equivalent, isn't. Every access rule reasons about the shape of
 // its OWN filter — nothing evaluates `session.userId` for you and swaps in
-// `false` when it's missing.
+// `false` when it's missing. The engine refuses the read rather than running
+// it: lowering a predicate is total, so a condition that resolved to
+// `undefined` is an error, never a dropped clause.
 query: ({ session }) => ({ owner: { id: { equals: session?.userId } } })
 
 // ✅ Deny outright when there's no session to scope to.

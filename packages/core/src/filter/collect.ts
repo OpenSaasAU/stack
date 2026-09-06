@@ -7,8 +7,7 @@ import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types
 
 /**
  * The session/context a field's `read` access is evaluated against — the same
- * shape every other access-scoped admin-UI helper takes (e.g.
- * `resolveRelationshipCountFilters`, `resolveRelationshipLabelFilters`).
+ * shape every other access-scoped admin-UI helper takes.
  */
 export type FilterAccessArgs = {
   session: Session | null

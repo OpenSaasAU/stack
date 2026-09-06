@@ -17,12 +17,27 @@ importers:
       '@changesets/cli':
         specifier: ^3.0.0
         version: 3.0.0
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@electric-sql/pglite-pgvector':
+        specifier: 0.0.9
+        version: 0.0.9(@electric-sql/pglite@0.5.8)
+      '@electric-sql/pglite-socket':
+        specifier: 0.2.11
+        version: 0.2.11(@electric-sql/pglite-age@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_hashids@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_ivm@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_textsearch@0.0.10(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_uuidv7@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgtap@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgvector@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite@0.5.8)
       '@eslint/js':
         specifier: ^9.39.5
         version: 9.39.5
       '@manypkg/cli':
         specifier: ^0.25.1
         version: 0.25.1
+      '@opensaas/stack-cli':
+        specifier: workspace:*
+        version: link:packages/cli
+      '@opensaas/stack-core':
+        specifier: workspace:*
+        version: link:packages/core
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1

@@ -33,7 +33,7 @@ test.describe('To-many relationship count columns', () => {
     await page.fill('input[name="slug"]', slug)
     await page.fill('textarea[name="content"]', 'Body content for the post.')
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
   async function createPosts(page: Page, count: number, prefix: string) {

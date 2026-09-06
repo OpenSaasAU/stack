@@ -323,7 +323,7 @@ access: {
     delete: isOwner,
   },
   filter: {
-    query: ({ session }) => ({ userId: { equals: session?.userId } }),
+    query: ({ session }) => (session ? { userId: { equals: session.userId } } : false),
   },
 }
 

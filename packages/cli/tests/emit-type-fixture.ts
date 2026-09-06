@@ -60,7 +60,7 @@ export type TypeFixture = {
  * (a `prisma contract emit` subprocess), so a caller checks many consumers
  * against one fixture rather than building one per assertion.
  */
-export function emitTypeFixture(name: string, config: OpenSaasConfig): TypeFixture {
+export async function emitTypeFixture(name: string, config: OpenSaasConfig): Promise<TypeFixture> {
   const scratchRoot = fs.mkdtempSync(path.join(packageRoot, 'tests', `tmp-${name}-`))
   const projectDir = path.join(scratchRoot, 'project')
   fs.mkdirSync(path.join(projectDir, 'prisma'), { recursive: true })
@@ -71,7 +71,7 @@ export function emitTypeFixture(name: string, config: OpenSaasConfig): TypeFixtu
     contractModule: './prisma/contract.ts',
     outputDir: './prisma',
   })
-  emitContract(projectDir, path.join(projectDir, 'prisma'))
+  await emitContract(projectDir, path.join(projectDir, 'prisma'))
 
   const opensaasDir = path.join(projectDir, '.opensaas')
   const dependencies = deriveDependencyTable(config)

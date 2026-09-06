@@ -2,7 +2,7 @@
 
 This guide walks you through deploying your Stack application to production using Vercel and Neon PostgreSQL.
 
-Locally you develop on SQLite with `prisma db push` for a zero-setup loop. Production runs on **PostgreSQL** with versioned **`prisma migrate`** migrations — these are deliberately two different workflows (see [ADR-0003](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0003-deployment-uses-postgres-and-prisma-migrate.md)). This guide covers the one-time switch and the production loop.
+Locally, `pnpm dev` runs the **Dev database** — a Postgres the stack starts for your project — and reconciles it with your config as you edit. Production runs on a PostgreSQL server you provision, migrated from a committed `migrations/` directory with **`prisma db migrate`**. These are deliberately two different workflows (see [ADR-0003](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0003-deployment-uses-postgres-and-prisma-migrate.md) and [ADR-0063](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0063-the-dev-database-is-a-stack-run-in-process-postgres-shared-with-the-test-harness.md)). This guide covers the production loop.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Before deploying, make sure you have:
 The deployment process involves:
 
 1. Setting up a production database (Neon PostgreSQL)
-2. Switching your config from SQLite to PostgreSQL (provider + driver adapter)
+2. Pointing your config at it (provider + driver adapter)
 3. Configuring environment variables (pooled app URL + direct migration URL)
 4. Deploying to Vercel
 5. Applying database migrations
@@ -31,9 +31,15 @@ The deployment process involves:
 Stack uses Prisma 7, which requires a **driver adapter** at runtime. There are two distinct places a database URL is consumed, and on serverless Postgres they intentionally point at different connection strings:
 
 - **The running app** connects through a driver adapter built in your `prismaClientConstructor` (in `opensaas.config.ts`). On serverless platforms like Vercel this must use the **pooled** `DATABASE_URL` to avoid exhausting connection limits.
-- **The Prisma CLI** (migrations, `db push`, Studio) reads the datasource from the generated `prisma.config.ts`. That file prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so migrations run over a **direct** (non-pooled) connection.
+- **The Prisma CLI** (migrations, Studio) reads the datasource from the generated `prisma.config.ts`. That file prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so migrations run over a **direct** (non-pooled) connection.
 
-This is the **pooled-app / direct-CLI split**: set `DATABASE_URL` to Neon's pooled URL (used by the app) and `DIRECT_DATABASE_URL` to Neon's direct URL (used by migrations). Locally on SQLite you set neither extra var — the CLI's `DIRECT_DATABASE_URL ?? DATABASE_URL` fallback resolves to `DATABASE_URL` and nothing changes.
+This is the **pooled-app / direct-CLI split**: set `DATABASE_URL` to Neon's pooled URL (used by the app) and `DIRECT_DATABASE_URL` to Neon's direct URL (used by migrations). The lookup prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so setting only the latter is fine where there is no pooler.
+
+### The Database escape
+
+Setting either variable **is** the escape: the lookup takes the environment branch, and no Dev database starts. In production that is the only branch there is — a deployment with neither variable set gets an error naming both remedies, never a silent in-process database. Locally you set neither, and `pnpm dev` runs the Dev database instead; set one to develop against a Postgres of your own for parity or contention.
+
+**Provisioning an extension your config declares.** A declared extension pack (pgvector, for instance) is a committed **Extension contract space** in `migrations/`, and Prisma runs `CREATE EXTENSION IF NOT EXISTS` from it on every path — the Dev database, CI, and `prisma db migrate` in production. Your job is provisioning, not DDL: make the extension available on the server, and either let the migrating role create it or pre-create it. An extension that is already installed is detected and skipped, so a DBA who runs `CREATE EXTENSION vector` once is not in conflict with the migration. This matters because pgvector is **not** a trusted extension: creating it needs superuser or a provider grant (Neon, Supabase and RDS grant it to the app role; a locked-down Postgres does not). Where the server does not have it available at all, the migration fails with Prisma's own error naming the failing space, the missing control file and SQL state `58P01`, and the app's own migration is untouched — every apply runs in one transaction. See [ADR-0065](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0065-the-extension-contract-space-is-a-generator-emission-and-prisma-runs-create-extension.md).
 
 ## Step 1: Create Production Database
 
@@ -183,7 +189,7 @@ DIRECT_DATABASE_URL="postgresql://user:pass@ep-xxx.region.aws.neon.tech/dbname?s
 **Why two URLs?**
 
 - `DATABASE_URL` (pooled): the connection your **app** uses at runtime, via the driver adapter. Pooling lets serverless functions share connections instead of exhausting the database's limit.
-- `DIRECT_DATABASE_URL` (direct): the connection the **Prisma CLI** uses for `migrate dev` / `migrate deploy`. Migrations need a direct, non-pooled connection. The generated `prisma.config.ts` reads it as `DIRECT_DATABASE_URL ?? DATABASE_URL`.
+- `DIRECT_DATABASE_URL` (direct): the connection the **Prisma CLI** uses for `migration plan` / `db migrate`. Migrations need a direct, non-pooled connection. The generated `prisma.config.ts` reads it as `DIRECT_DATABASE_URL ?? DATABASE_URL`.
 
 ### Environment Variables for Better Auth (If Using)
 
@@ -230,17 +236,19 @@ openssl rand -base64 32
 
 ## Step 4: Author the First Migration
 
-Before your first deploy, create the initial migration locally against the production database (or a disposable Postgres) using the **direct** connection.
+Before your first deploy, plan the initial migration from your config and commit it.
+
+Planning needs a database to plan against, and this step runs outside the dev loop, so take the Database escape for it: set `DIRECT_DATABASE_URL` (or `DATABASE_URL`) at a Postgres you are willing to have a planning connection opened against — the Neon project from Step 1, a local Docker Postgres, or a throwaway Neon branch. Do not point it at production data you cannot replace.
 
 ```bash
-# Ensure DATABASE_URL + DIRECT_DATABASE_URL are set (e.g. via .env.production.local)
+export DIRECT_DATABASE_URL="postgresql://..."
 pnpm generate
-pnpm migrate -- --name init
+pnpm migrate
 ```
 
-`pnpm migrate` runs `prisma migrate dev`, which creates a versioned migration in `prisma/migrations/` and applies it. Commit the generated migration files to Git — they are your schema history, and the production release step replays them with `prisma migrate deploy`.
+`pnpm migrate` runs `prisma migration plan`, which writes a migration package into the `migrations/` directory at your project root. Commit that whole directory to Git. It is your schema history, and it holds more than your app's own space: `pnpm generate` seeds an **Extension contract space** into it for every extension pack your config declares, and the production release step replays all of them together.
 
-> **Local dev vs production.** `prisma db push` (`pnpm db:push`) stays the fast, disposable loop for local SQLite. It has **no migration history** and can drop data on schema changes, so it is **not** a supported path to production. Production always uses `prisma migrate`.
+> **Local dev vs production.** `pnpm dev` reconciles the Dev database with your config directly. That has **no migration history** and can drop data on a schema change, so it is **not** a supported path to production. Production always migrates from the committed directory.
 
 ## Step 5: Deploy to Vercel
 
@@ -336,22 +344,22 @@ git push origin main
 
 ## Step 6: Apply Migrations to Production
 
-Run your committed migrations against the production database. Because `prisma.config.ts` resolves `DIRECT_DATABASE_URL ?? DATABASE_URL`, `prisma migrate deploy` automatically uses the **direct** connection.
+Run your committed migrations against the production database. Because `prisma.config.ts` resolves `DIRECT_DATABASE_URL ?? DATABASE_URL`, `prisma db migrate` automatically uses the **direct** connection.
 
 ```bash
 pnpm migrate:deploy
 ```
 
-`pnpm migrate:deploy` runs `prisma migrate deploy`, applying every committed migration in order without prompting. It never generates new migrations, so it's safe to run repeatedly and in CI.
+`pnpm migrate:deploy` runs `prisma db migrate`, applying every committed package in order — your app's space and each extension space — without prompting. It never plans new migrations, so it's safe to run repeatedly and in CI.
 
 ### Running migrations as part of the build (recommended)
 
-To apply migrations automatically on every Vercel deploy, add `prisma migrate deploy` to the build command. The starter templates' `build` script is `pnpm generate && next build`; extend it to:
+To apply migrations automatically on every Vercel deploy, add `prisma db migrate` to the build command. The starter templates' `build` script is `pnpm generate && next build`; extend it to:
 
 ```json
 {
   "scripts": {
-    "build": "pnpm generate && prisma migrate deploy && next build"
+    "build": "pnpm generate && prisma db migrate && next build"
   }
 }
 ```
@@ -415,92 +423,50 @@ Once connected to Git, Vercel automatically deploys:
 ### Deploy Workflow
 
 ```bash
-# Make changes locally (SQLite + db push for the fast loop)
+# Make changes locally; `pnpm dev` regenerates and reconciles the Dev database
 pnpm dev
 
-# Generate updated schema if config changed
-pnpm generate
+# When you change the schema, plan a migration to ship
+pnpm migrate
 
-# When you change the schema, author a migration to ship
-pnpm migrate -- --name describe_your_change
-
-# Commit and push (including the new migration files)
+# Commit and push (including the new migrations/ packages)
 git add .
 git commit -m "Add new feature"
 git push
 
-# Vercel deploys; the build step runs `prisma migrate deploy`
+# Vercel deploys; the build step runs `prisma db migrate`
 # (if you added it to the build command) using DIRECT_DATABASE_URL
 ```
 
 ### Database Migrations in CI/CD
 
-For schema changes, migrations are applied via `prisma migrate deploy` — either in the Vercel build command (see [Step 6](#running-migrations-as-part-of-the-build-recommended)) or as an explicit step before deploy:
+For schema changes, migrations are applied via `prisma db migrate` — either in the Vercel build command (see [Step 6](#running-migrations-as-part-of-the-build-recommended)) or as an explicit step before deploy:
 
 ```bash
 # In CI, against the production DB (DIRECT_DATABASE_URL set)
 pnpm migrate:deploy
 ```
 
-`migrate deploy` only applies existing committed migrations; it never edits your schema, which makes it safe to run in an automated pipeline.
+`db migrate` only applies existing committed packages; it never plans new ones, which makes it safe to run in an automated pipeline.
 
 ### Authoring Migrations in CI / Agent Environments
 
-The above covers _applying_ migrations, which `migrate deploy` already does non-interactively. _Authoring_ a new migration (`migrate dev`) in a CI runner or a sandboxed coding agent is a different question, and the requirement is a **database to diff against, not a TTY**.
-
-**Primary path — `prisma migrate dev --name <name>` against a real database**
-
-`migrate dev` only prompts when it needs a decision it can't make on its own: the migration name (supplied via `--name`), or how to handle detected drift/reset. On a clean, in-sync migration history, supplying `--name` is enough — the command runs headless:
+Applying migrations is what `prisma db migrate` already does non-interactively. _Planning_ a new one needs a database to plan against — `prisma migration plan` resolves its origin through the `db` ref in the committed `migrations/` directory and the connection `prisma.config.ts` gives it — so point `DIRECT_DATABASE_URL` at a disposable Postgres (a CI service container, Docker, or a throwaway Neon branch) and run:
 
 ```bash
-# Point DATABASE_URL / DIRECT_DATABASE_URL at a disposable database first
-# (a CI Postgres service container, Docker, or a throwaway Neon branch — SQLite needs no extra setup)
 pnpm generate
-pnpm migrate -- --name add_status_field
+pnpm migrate
 ```
 
-This is the same command used in [Step 4](#step-4-author-the-first-migration) above — it produces a correctly named, timestamped migration directory (`migration.sql` + updated `migration_lock.toml`), identical to what an interactive local run would produce.
-
-Requirements:
-
-- A reachable database. Any disposable Postgres works for CI (a `postgres:16` service container is the common choice).
-- Postgres additionally needs a **shadow database**, which Prisma creates and drops automatically using the same connection — this requires the connecting role to have `CREATEDB`, or a separate database with `shadowDatabaseUrl` set on the `datasource` block in `prisma.config.ts` (alongside `url`). See [Prisma's shadow database docs](https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/shadow-database) if the CI role can't create databases.
-- The existing migration history must apply cleanly against that database — if it's drifted, `migrate dev` falls back to its reset-confirmation prompt (see below).
-
-**Fallback — `prisma migrate diff` against a throwaway database**
-
-Where authoring against your actual project database isn't possible or desirable (e.g. a sandboxed agent that can't reach it), `prisma migrate diff` computes the same migration SQL without ever touching your project's database — it only needs somewhere disposable to replay the existing migration history:
-
-```bash
-pnpm generate # regenerate prisma/schema.prisma from opensaas.config.ts
-
-DIR="prisma/migrations/$(date +%Y%m%d%H%M%S)_add_status_field"
-mkdir -p "$DIR"
-
-npx prisma migrate diff \
-  --from-migrations prisma/migrations \
-  --to-schema prisma/schema.prisma \
-  --script > "$DIR/migration.sql"
-```
-
-- **SQLite:** this is genuinely database-less — Prisma creates and discards a temporary file automatically, no extra config needed.
-- **PostgreSQL / MySQL:** `--from-migrations` still needs somewhere to replay the migration history into, via `shadowDatabaseUrl` set on the `datasource` block in `prisma.config.ts` (alongside `url`). It can be any empty, disposable database of the right provider — it doesn't need to be reachable from your app, match your project's current state, or grant `CREATEDB` on your real connection, unlike `migrate dev`'s auto-managed shadow database (which piggybacks on the same connection as your target DB).
-
-`migration_lock.toml` (just the provider name) is created once per project by the first migration and doesn't need to be recreated by hand for subsequent ones.
-
-> **Fidelity caveat.** `migrate diff` never connects to your actual deployed database — it only replays your committed migration history onto the disposable shadow database and diffs the result against the target schema file. So it won't catch drift between what's actually deployed and what your migration history says should be deployed (e.g. a manual hotfix applied outside migrations). Treat its output as a starting point to review, and prefer the primary `migrate dev` path — which does check against your real target database — whenever that's available.
-
-**Why the "non-interactive...not supported" error appears**
-
-If you've hit `Prisma Migrate has detected that the environment is non-interactive, which is not supported`, it isn't because `migrate dev` requires a TTY in general — it's the **reset/confirmation path**: either there's no reachable database/shadow database to diff against, or the migration history has drifted from it, and Prisma needs to ask "reset the database?" with no way to answer non-interactively. Point the command at a clean, reachable database (and pass `--name`) and it runs headless.
+Commit everything the command writes under `migrations/`, the refs included. It is the same output an interactive local run produces.
 
 ## Production Considerations
 
 ### Bundling the Generated `.opensaas` bundle
 
-`opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `lists.ts`, and the `prisma-client/**` tree — that your app imports through `getContext`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
+`opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `lists.ts` and the rest — that your app imports through `getContext`, alongside the Contract module and its emitted `contract.json`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.
 
-**1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions (e.g. `import { PrismaClient } from './prisma-client/client.ts'`), so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no generator flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
+**1. The bundle is loadable by your bundler out of the box.** The generator emits relative imports with explicit `.ts` extensions, so the bundle resolves identically under `tsx`, `vitest`, a plain Node process, and a bundler — without you adding a `resolve.extensionAlias`. This is the default output; there is no generator flag (see [ADR-0008](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md)).
 
 The one consumer requirement is a single tsconfig line: because the bundle's relative imports carry `.ts` extensions, the project that type-checks it must set **`allowImportingTsExtensions: true`** in its `compilerOptions`. This is compatible with Next's `noEmit` (TypeScript only allows the flag when it isn't emitting, which Next apps already satisfy), so `next build`'s type-check step accepts the `.ts` specifiers instead of failing with [TS5097](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0008-generated-bundle-is-bundler-loadable.md) (`An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled`):
 
@@ -517,31 +483,18 @@ The one consumer requirement is a single tsconfig line: because the bundle's rel
 
 Projects scaffolded with `create-opensaas-app` already have this flag set, so newly-created apps build without any extra step.
 
-**2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles it and traces its `prisma-client/**` subtree into the function bundle:
+**2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles and traces it:
 
 ```typescript
 // Supported: a static import the host build can compile + file-trace
 import { getContext } from '@/.opensaas/context'
 ```
 
-Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the `prisma-client/**` files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module './prisma-client/...'" on Vercel even though local dev works):
+Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the bundle's files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module" on Vercel even though local dev works):
 
 ```typescript
-// Avoid: the tracer can't follow this, so prisma-client/** is dropped from the build
+// Avoid: the tracer can't follow this, so the bundle is dropped from the build
 const { getContext } = await import(/* webpackIgnore: true */ './.opensaas/context')
-```
-
-**Tracing note (Next.js / Vercel).** Static imports are traced automatically. If your serverless functions reach the bundle indirectly (for example through a generated route or a helper the tracer can't statically see), pin the subtree explicitly in `next.config.js` so the `prisma-client/**` files ship with every function:
-
-```javascript
-// next.config.js
-/** @type {import('next').NextConfig} */
-module.exports = {
-  outputFileTracingIncludes: {
-    // Apply to every route ('/**'), or scope to the routes that use the context
-    '/**': ['./.opensaas/prisma-client/**/*'],
-  },
-}
 ```
 
 > **Scope.** The stack only owns "emit a bundler-loadable context entry." What your own `opensaas.config.ts` pulls in is your app's architecture — if it lazily `import()`s workflow modules that reach heavy deps (e.g. `xero-node`, `twilio`), trace or externalize those yourself the same way.
@@ -654,13 +607,14 @@ Before going live:
 
 ### "Migration failed"
 
-**Symptoms:** `prisma migrate deploy` errors
+**Symptoms:** `prisma db migrate` errors
 
 **Solutions:**
 
 - Ensure `DIRECT_DATABASE_URL` is set to the **direct** (non-pooled) connection — migrations must not run over the pooler
-- Check migration files in `prisma/migrations/` are committed and correct
-- Run `npx prisma migrate resolve` to mark a failed migration
+- Check that the migration packages under `migrations/` at your project root are committed and correct — the refs and every extension contract space, not only the app space
+- There is no failed-migration state to clear by hand, and no `migrate resolve` to run: an apply runs in one transaction, so a failed `prisma db migrate` leaves the database where it started. Fix the cause, re-plan with `pnpm migrate` if the packages themselves need to change, commit, and run `pnpm migrate:deploy` again
+- If the error names an extension contract space and SQL state `58P01`, the extension is not available on the server — see [The Database escape](#the-database-escape) for provisioning and the privilege the migrating role needs
 - For destructive changes, back up data first
 
 ### "Authentication not working"
@@ -684,7 +638,7 @@ Before going live:
 
 - Check the Vercel build logs for the specific error
 - Ensure `pnpm generate` runs successfully locally
-- If the build runs `prisma migrate deploy`, confirm `DIRECT_DATABASE_URL` is set in Vercel
+- If the build runs `prisma db migrate`, confirm `DIRECT_DATABASE_URL` is set in Vercel
 - Verify all dependencies are in `package.json` (not just devDependencies)
 - Check the Node.js version matches Vercel (use `.nvmrc` or `package.json` engines field)
 
@@ -779,7 +733,7 @@ You've successfully deployed your Stack application! Here's what you accomplishe
 - Switched your config to the PostgreSQL driver adapter (pooled `DATABASE_URL`)
 - Configured the pooled-app / direct-CLI environment variable split
 - Deployed to Vercel with automatic deployments
-- Applied versioned migrations with `prisma migrate deploy`
+- Applied versioned migrations with `prisma db migrate`
 - Verified your deployment and access control are working
 
 Your app is now live and ready for users. Any pushes to your main branch will automatically deploy to production.

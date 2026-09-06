@@ -70,7 +70,8 @@ export function findDatabaseUrl(options: DatabaseUrlLookupOptions = {}): string 
 
 /**
  * {@link resolveDatabaseUrl}'s lookup, provenance and all, without the throw.
- * Package-internal — it is not re-exported from the package root; the public
+ * Stack-internal — it reaches sibling packages through
+ * `@opensaas/stack-core/internal`, never the package root; the public
  * non-throwing accessor is {@link findDatabaseUrl}.
  */
 export function findDatabaseConnection(

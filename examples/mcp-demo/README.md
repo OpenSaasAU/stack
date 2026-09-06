@@ -40,13 +40,7 @@ This generates:
 
 (MCP tools are not generated to disk — they are derived from the config at request time by `createMcpHandlers`.)
 
-### 4. Push Schema to Database
-
-```bash
-pnpm db:push
-```
-
-### 5. Start Development Server
+### 4. Start Development Server
 
 ```bash
 pnpm dev
@@ -313,7 +307,7 @@ examples/mcp-demo/
 ## Next Steps
 
 1. **Customize Access Control** - Add more granular rules (a sign-in page ships at `app/sign-in/`)
-2. **Seed a Test User** - Run `npx tsx create-user.ts`
+2. **Seed a Test User** - Run `npx tsx create-user.ts`, with `pnpm dev` running in another terminal
 3. **Add More Custom Tools** - Extend MCP capabilities
 4. **Deploy** - Deploy to production with proper OAuth setup
 

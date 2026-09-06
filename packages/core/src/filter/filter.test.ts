@@ -332,10 +332,13 @@ describe('core field Filter specs', () => {
     expect(spec.toCondition('gt', 'not-a-date')).toBeNull()
   })
 
-  it('relationship maps to a nested label filter (is for to-one)', () => {
+  it('relationship maps to a nested label filter (some, for either cardinality)', () => {
     const spec = postConfig.fields.author.getFilterSpec!('author', 'Post', config)!
-    // User's label field falls back to `name`.
-    expect(spec.toCondition('eq', 'Ada')).toEqual({ author: { is: { name: { contains: 'Ada' } } } })
+    // User's label field falls back to `name`. Prisma 8 has no to-one
+    // predicate form, so a label match is a `some` (ADR-0055).
+    expect(spec.toCondition('eq', 'Ada')).toEqual({
+      author: { some: { name: { contains: 'Ada' } } },
+    })
     expect(spec.suggestions.valueSource).toEqual({
       kind: 'relationship',
       listKey: 'User',
@@ -410,7 +413,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       AND: [
         { status: { equals: 'published' } },
         { views: { gt: 10 } },
-        { author: { is: { name: { contains: 'Ada' } } } },
+        { author: { some: { name: { contains: 'Ada' } } } },
         // `hello` is free text over the two text fields (title only — status is
         // not free-text) → but title is the only free-text field here.
         { title: { contains: 'hello' } },
@@ -450,7 +453,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
   })
 })
 
-describe('to-many relationship Filter spec (count comparisons — issue #732)', () => {
+describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)', () => {
   function countConfig(): OpenSaasConfig {
     return {
       db: { provider: 'postgresql' },
@@ -469,32 +472,30 @@ describe('to-many relationship Filter spec (count comparisons — issue #732)', 
     } as OpenSaasConfig
   }
 
-  it('supports numeric comparisons and emits a count marker (not a label filter)', () => {
+  it('shrinks a count comparison to presence, and degrades the rest', () => {
     const config = countConfig()
     const spec = config.lists.User.fields.posts.getFilterSpec!('posts', 'User', config)!
     expect(spec.operators).toEqual(['eq', 'gt', 'gte', 'lt', 'lte'])
-    expect(spec.toCondition('gt', '5')).toEqual({
-      posts: { _countFilter: { operator: 'gt', value: 5 } },
-    })
-    expect(spec.toCondition('eq', '0')).toEqual({
-      posts: { _countFilter: { operator: 'eq', value: 0 } },
-    })
-    // A non-integer count degrades to free text (like an integer field).
+    expect(spec.toCondition('eq', '0')).toEqual({ posts: { none: {} } })
+    expect(spec.toCondition('gt', '0')).toEqual({ posts: { some: {} } })
+    expect(spec.toCondition('gte', '1')).toEqual({ posts: { some: {} } })
+    // Prisma 8 cannot compare a relation count in a `where`, so a bookmarked
+    // `posts:>5` stops filtering rather than erroring — it degrades to free
+    // text under ADR-0017's own degradation rule.
+    expect(spec.toCondition('gt', '5')).toBeNull()
+    expect(spec.toCondition('lt', '3')).toBeNull()
     expect(spec.toCondition('gt', 'lots')).toBeNull()
-    // No enumerated value source — a count is a plain numeric compare.
     expect(spec.suggestions.valueSource).toEqual({ kind: 'none' })
   })
 
-  it('end-to-end: buildListFilterWhere carries a count marker for `posts:>5`', async () => {
+  it('end-to-end: `posts:>0` becomes a presence filter and `posts:>5` degrades', async () => {
     const config = countConfig()
-    const where = await buildListFilterWhere(
-      'posts:>5',
-      config.lists.User,
-      'User',
-      config,
-      noAccessArgs,
-    )
-    expect(where).toEqual({ posts: { _countFilter: { operator: 'gt', value: 5 } } })
+    expect(
+      await buildListFilterWhere('posts:>0', config.lists.User, 'User', config, noAccessArgs),
+    ).toEqual({ posts: { some: {} } })
+    expect(
+      await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, noAccessArgs),
+    ).toEqual({ name: { contains: '5' } })
   })
 })
 

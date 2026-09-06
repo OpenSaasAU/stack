@@ -76,7 +76,7 @@ test.describe('Admin UI', () => {
       await page.fill('input[name="slug"]', 'test-post')
       await page.fill('textarea[name="content"]', 'Test content')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Should see post in table
       await expect(page.locator('text=Test Post')).toBeVisible({ timeout: 5000 })
@@ -96,7 +96,7 @@ test.describe('Admin UI', () => {
       await page.getByLabel('Status').click()
       await page.getByRole('option', { name: 'published' }).click()
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Check table has columns
       const table = page.locator('table')
@@ -124,7 +124,7 @@ test.describe('Admin UI', () => {
       await page.getByLabel('Status').click()
       await page.getByRole('option', { name: 'published' }).click()
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // The status cell renders through the select Cell → a Badge (Slot
       // `cell-select`) coloured by the option's `ui.variant` (success → the
@@ -203,7 +203,7 @@ test.describe('Admin UI', () => {
       await page.fill('textarea[name="content"]', 'Original content')
       await page.fill('textarea[name="internalNotes"]', 'Original notes')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Click to edit - use the Edit link in the Actions column
       await page.locator('tr:has-text("Edit Test Post")').locator('a:has-text("Edit")').click()

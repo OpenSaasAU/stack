@@ -81,6 +81,8 @@ export { ResolveOutputCycleError } from './errors.js'
 export { InvalidFieldAccessResultError } from './errors.js'
 // Thrown when operation-level `create` access control returns a non-boolean result (#1009).
 export { InvalidCreateAccessResultError } from './errors.js'
+// Thrown when an access rule returns a filter carrying an `undefined` condition (#1147).
+export { UndefinedAccessFilterError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
 export { RelationFilterAccessDeniedError } from './errors.js'
 // Thrown when a caller `include` names a key that is neither declared, synthetic, nor `_count` (#1082).

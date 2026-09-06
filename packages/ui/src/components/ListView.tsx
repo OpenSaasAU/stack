@@ -21,7 +21,6 @@ import {
   getUrlKey,
   isToManyRelationshipField,
   OpenSaasConfig,
-  resolveRelationshipCountFilters,
 } from '@opensaas/stack-core'
 import type { FieldConfig } from '@opensaas/stack-core'
 import { isFieldReadableForPredicate } from '@opensaas/stack-core/internal'
@@ -221,20 +220,7 @@ export async function ListView({
           })
         : undefined
 
-    // Resolve any to-many relationship count-filter markers (`orders:>5`) into
-    // access-scoped `{ id: { in } }` fragments. Prisma cannot compare a relation
-    // count in a `where`, so the filter engine emits a marker the secured
-    // resolver turns into an id constraint — counting only rows the session may
-    // see (issue #732).
-    const whereWithCountFilters = await resolveRelationshipCountFilters(
-      parsedWhere,
-      listConfig,
-      listKey,
-      { session: context.session, context },
-      config,
-    )
-
-    const where = whereWithCountFilters
+    const where = parsedWhere
 
     // Build the include: to-one relationships fetch the related row (for its
     // Item label), while to-many relationships fetch only an access-scoped

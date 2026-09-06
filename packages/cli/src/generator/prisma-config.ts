@@ -10,6 +10,30 @@ function controlSubpath(from: string): string {
   return `${from}/control`
 }
 
+/** A single-quoted TypeScript string literal — Windows path separators included. */
+function quote(value: string): string {
+  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`
+}
+
+/**
+ * What a config written somewhere other than the project root has to say
+ * outright, because its own directory no longer answers it: which migrations
+ * graph it shares, and whose `.env` it loads.
+ */
+export interface PrismaConfigLocationOverrides {
+  /**
+   * The migrations directory. Omitted, the CLI takes its own default beside
+   * the config file — right for the project-root config, wrong for a staged
+   * one, which must share the project's graph rather than start a private one.
+   */
+  migrationsDir?: string
+  /**
+   * The directory whose `.env` is loaded. Defaults to the config file's own
+   * directory.
+   */
+  envDir?: string
+}
+
 /**
  * Render the project-root `prisma.config.ts` the Prisma 8 CLI reads.
  *
@@ -46,6 +70,7 @@ export function generatePrismaConfig(
   data: ContractData,
   contractModule: string,
   outputDir: string,
+  overrides: PrismaConfigLocationOverrides = {},
 ): string {
   const lines: string[] = []
 
@@ -63,15 +88,19 @@ export function generatePrismaConfig(
   lines.push('')
   lines.push('// The Prisma CLI evaluates this file without loading a .env of its own, and')
   lines.push('// `process.loadEnvFile` throws when the file is absent.')
-  lines.push("const envFile = join(import.meta.dirname, '.env')")
+  const envDir = overrides.envDir === undefined ? 'import.meta.dirname' : quote(overrides.envDir)
+  lines.push(`const envFile = join(${envDir}, '.env')`)
   lines.push('if (existsSync(envFile)) process.loadEnvFile(envFile)')
   lines.push('')
   lines.push('export default definePrismaConfig({')
   lines.push('  orm: defineConfig({')
-  lines.push(`    contract: '${contractModule}',`)
-  lines.push(`    output: '${outputDir}',`)
+  lines.push(`    contract: ${quote(contractModule)},`)
+  lines.push(`    output: ${quote(outputDir)},`)
   const packs = data.extensions.map((extension) => extension.name).join(', ')
   lines.push(`    extensions: [${packs}],`)
+  if (overrides.migrationsDir !== undefined) {
+    lines.push(`    migrations: { dir: ${quote(overrides.migrationsDir)} },`)
+  }
   lines.push('    db: { connection: findDatabaseUrl() },')
   lines.push('  }),')
   lines.push('})')
@@ -83,9 +112,12 @@ export function generatePrismaConfig(
 export function writePrismaConfig(
   data: ContractData,
   outputPath: string,
-  references: { contractModule: string; outputDir: string },
+  references: { contractModule: string; outputDir: string } & PrismaConfigLocationOverrides,
 ): void {
-  const content = generatePrismaConfig(data, references.contractModule, references.outputDir)
+  const content = generatePrismaConfig(data, references.contractModule, references.outputDir, {
+    migrationsDir: references.migrationsDir,
+    envDir: references.envDir,
+  })
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "opensaas dev",
     "build": "pnpm generate && next build",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
+    "db:update": "opensaas db update",
     "db:studio": "prisma studio"
   },
   "dependencies": {
