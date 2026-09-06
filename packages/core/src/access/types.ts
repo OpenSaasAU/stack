@@ -140,7 +140,7 @@ export type FindManyQueryArgs = {
  * @example
  * ```ts
  * // Narrowed return type from fragment
- * const posts = await context.db.post.findMany({
+ * const posts = await context.db.Post.findMany({
  *   query:   postFragment,
  *   where:   { published: true },
  *   orderBy: { createdAt: 'desc' },
@@ -149,7 +149,7 @@ export type FindManyQueryArgs = {
  * // posts: ResultOf<typeof postFragment>[]
  *
  * // Original Prisma behaviour (no fragment)
- * const posts = await context.db.post.findMany({ where: { published: true } })
+ * const posts = await context.db.Post.findMany({ where: { published: true } })
  * // posts: Post[]
  * ```
  */
@@ -184,7 +184,7 @@ export type FindFirstQueryArgs = {
  *
  * @example
  * ```ts
- * const post = await context.db.post.findFirst({
+ * const post = await context.db.Post.findFirst({
  *   where:   { published: true },
  *   orderBy: { createdAt: 'desc' },
  *   query:   postFragment,
@@ -209,7 +209,7 @@ export interface AugmentedFindFirst {
  *
  * @example
  * ```ts
- * const post = await context.db.post.findUnique({
+ * const post = await context.db.Post.findUnique({
  *   where: { id: postId },
  *   query: postFragment,
  * })

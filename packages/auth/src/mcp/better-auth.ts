@@ -81,7 +81,7 @@ export function withMcpAuth(
  * ```typescript
  * const mcpSession = await auth.api.getMcpSession({ headers: req.headers })
  * const context = await getContext(mcpSessionToContextSession(mcpSession))
- * const posts = await context.db.post.findMany()
+ * const posts = await context.db.Post.findMany()
  * ```
  */
 export function mcpSessionToContextSession(mcpSession: McpSession): { userId: string } {

@@ -34,3 +34,18 @@ const first = await context.db.Post.where({ authorId: session.userId }).first()
 
 `where` takes an equality predicate (`{ column: value }` or `{ column: { equals: value } }`); an
 operator the engine does not lower yet is refused rather than passed through.
+
+The three read members belong to a list you can query for many rows, so a singleton list does not
+carry them — `get()` stays the way to read one. That matches the type the generator has always
+emitted for a singleton.
+
+Code the CLI writes into your project moves to the list key with everything else: the feature
+generator's blog and auth pages (`context.db.Post.findMany(…)`), and the Keystone migration guide,
+which now says list names are PascalCase.
+
+A predicate whose condition is `undefined` is still skipped rather than refused, matching Prisma's
+`undefined`-means-omitted semantics — so an access filter spelled `({ session }) => ({ authorId:
+session?.userId })` constrains nothing for an anonymous caller, while the explicit `{ equals:
+undefined }` spelling of the same rule is refused. Making the lowering total is the closed Where
+vocabulary's job (#1147). Relation-valued `needs` are likewise not yet widened on `all()`/`first()`
+the way `findMany` widens them (#1149).

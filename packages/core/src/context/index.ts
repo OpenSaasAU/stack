@@ -989,11 +989,7 @@ export function populateDbDelegate(
     const createOp = createCreate(listName, listConfig, ormHandle, context, config)
     const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
     const updateOp = createUpdate(listName, listConfig, ormHandle, context, config)
-    const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
     const operations: Record<string, unknown> = {
-      where: read.where,
-      all: read.all,
-      first: read.first,
       findUnique: createFindUnique(listName, listConfig, ormHandle, context, config),
       findMany: findManyOp,
       findFirst: createFindFirst(findManyOp),
@@ -1015,6 +1011,11 @@ export function populateDbDelegate(
 
     if (isSingletonList(listConfig)) {
       operations.get = createGet(listName, listConfig, ormHandle, context, config, createOp)
+    } else {
+      const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
+      operations.where = read.where
+      operations.all = read.all
+      operations.first = read.first
     }
 
     target[listName] = operations

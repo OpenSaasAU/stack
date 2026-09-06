@@ -2,7 +2,7 @@
 // Prisma 8 collection, its `where` composition, and the `all()`/`first()`
 // terminals the engine owns. See ADR-0041, ADR-0044, ADR-0046 and ADR-0058.
 
-import type { OpenSaasConfig, ListConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
 import {
   checkAccess,
@@ -124,7 +124,7 @@ function isWhereValue(value: unknown): value is WhereValue {
 
 function lowerCondition(listName: string, column: string, condition: unknown): WhereValue {
   if (isWhereValue(condition)) return condition
-  if (typeof condition !== 'object' || condition === undefined) {
+  if (typeof condition !== 'object') {
     throw new UnsupportedPredicateError(listName, column, 'the condition is not a value')
   }
   const keys = Object.keys(condition)
@@ -143,9 +143,16 @@ function lowerCondition(listName: string, column: string, condition: unknown): W
 }
 
 /**
- * Lower one predicate to a single filter entry. Total or throwing, `sudo`
- * included: the Access Filter passes through this too, so a rule the engine
- * cannot lower fails loudly instead of silently widening the read.
+ * Lower one predicate to a single filter entry. An operator the engine does
+ * not lower throws rather than being dropped, `sudo` included — the Access
+ * Filter passes through here too.
+ *
+ * Known limit: an `undefined` condition is skipped, matching Prisma's
+ * `undefined`-means-omitted semantics. A filter rule spelled
+ * `({ session }) => ({ authorId: session?.userId })` therefore lowers to `{}`
+ * for an anonymous caller and constrains nothing, while the explicit
+ * `{ equals: undefined }` spelling of the same rule is refused. Totality
+ * arrives with the closed Where vocabulary (#1147).
  */
 export function lowerPredicate(listName: string, predicate: Record<string, unknown>): FilterEntry {
   const entry: FilterEntry = {}
@@ -158,8 +165,7 @@ export function lowerPredicate(listName: string, predicate: Record<string, unkno
 
 interface ReadBinding {
   listName: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>
+  listConfig: ListConfig<TypeInfo>
   ormHandle: OrmClient
   context: AccessContext
   config: OpenSaasConfig

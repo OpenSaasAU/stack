@@ -356,6 +356,24 @@ describe('Singleton Lists', () => {
     })
   })
 
+  describe('the secured read surface', () => {
+    it('is absent on a singleton list, matching the emitted type', () => {
+      const context = getContext(config, mockPrisma, null)
+
+      expect(Reflect.get(context.db.Settings, 'where')).toBeUndefined()
+      expect(Reflect.get(context.db.Settings, 'all')).toBeUndefined()
+      expect(Reflect.get(context.db.Settings, 'first')).toBeUndefined()
+    })
+
+    it('is present on a non-singleton list', () => {
+      const context = getContext(config, mockPrisma, null)
+
+      expect(typeof Reflect.get(context.db.Post, 'where')).toBe('function')
+      expect(typeof Reflect.get(context.db.Post, 'all')).toBe('function')
+      expect(typeof Reflect.get(context.db.Post, 'first')).toBe('function')
+    })
+  })
+
   describe('update operation', () => {
     it('should allow updating the singleton record', async () => {
       mockPrisma.Settings.findUnique.mockResolvedValue({

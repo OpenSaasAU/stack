@@ -5,7 +5,7 @@ import { checkbox, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
-import { UnsupportedPredicateError } from './read.js'
+import { lowerPredicate, UnsupportedPredicateError } from './read.js'
 
 const BOOT = 120_000
 
@@ -50,6 +50,13 @@ const blogConfig: OpenSaasConfig = {
     Empty: {
       fields: { title: text({ validation: { isRequired: true } }) },
       access: { operation: { query: () => true } },
+    },
+    Widened: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        owner: text(),
+      },
+      access: { operation: { query: ({ session }) => ({ owner: session?.userId }) } },
     },
   },
 }
@@ -399,6 +406,37 @@ describe('every terminal runs inside the engine origin', () => {
   )
 })
 
+// The two spellings behave oppositely today: `lowerPredicate` skips an
+// `undefined` condition (Prisma's `undefined`-means-omitted semantics) and
+// refuses the explicit `{ equals: undefined }`. #1147 makes the lowering total;
+// these tests are what makes that a visible change rather than a silent one.
+describe('an undefined condition, pending the total Where vocabulary (#1147)', () => {
+  test('a bare `undefined` is skipped, so the entry constrains nothing', () => {
+    expect(lowerPredicate('Post', { authorId: undefined })).toEqual({})
+    expect(lowerPredicate('Post', { published: true, authorId: undefined })).toEqual({
+      published: true,
+    })
+  })
+
+  test('the same rule spelled `{ equals: undefined }` is refused', () => {
+    expect(() => lowerPredicate('Post', { authorId: { equals: undefined } })).toThrow(
+      UnsupportedPredicateError,
+    )
+  })
+
+  test(
+    'an Access Filter that yields undefined therefore widens the read to every row',
+    async () => {
+      await seed('Widened', { title: "ada's", owner: 'ada' })
+      await seed('Widened', { title: "bob's", owner: 'bob' })
+
+      const anonymous = await database.context(null).db.Widened.all()
+      expect(titles(anonymous)).toEqual(["ada's", "bob's"])
+    },
+    BOOT,
+  )
+})
+
 describe('context.db is keyed by the PascalCase list name', () => {
   test(
     'the list key is the config spelling and the camelCase key is absent',
@@ -406,7 +444,7 @@ describe('context.db is keyed by the PascalCase list name', () => {
       const context = database.context(null)
       expect(typeof context.db.Post.all).toBe('function')
       expect(Reflect.get(context.db, 'post')).toBeUndefined()
-      expect(Object.keys(context.db).sort()).toEqual(['Draft', 'Empty', 'Post', 'User'])
+      expect(Object.keys(context.db).sort()).toEqual(['Draft', 'Empty', 'Post', 'User', 'Widened'])
     },
     BOOT,
   )

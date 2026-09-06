@@ -389,7 +389,7 @@ export function integer<
  * }
  *
  * // Creating with decimal values
- * const product = await context.db.product.create({
+ * const product = await context.db.Product.create({
  *   data: {
  *     price: '19.99', // Can use string
  *     // price: 19.99,  // or number (converted to Decimal)
@@ -892,7 +892,7 @@ export function timestamp<
  * }
  *
  * // Creating with date values — pass YYYY-MM-DD strings (NOT Date objects)
- * const event = await context.db.event.create({
+ * const event = await context.db.Event.create({
  *   data: {
  *     startDate: '2025-01-15',
  *     endDate: '2025-01-20'
@@ -900,7 +900,7 @@ export function timestamp<
  * })
  *
  * // Reading — values come back as YYYY-MM-DD strings
- * const e = await context.db.event.findUnique({ where: { id } })
+ * const e = await context.db.Event.findUnique({ where: { id } })
  * e?.startDate // => '2025-01-15' (a string, not a Date)
  * ```
  *
@@ -1083,7 +1083,7 @@ function formatCalendarDay(value: unknown): string | null | undefined {
  * }
  *
  * // Creating a user - password is automatically hashed
- * const user = await context.db.user.create({
+ * const user = await context.db.User.create({
  *   data: {
  *     email: 'user@example.com',
  *     password: 'plaintextPassword' // Automatically hashed before storage
@@ -1091,7 +1091,7 @@ function formatCalendarDay(value: unknown): string | null | undefined {
  * })
  *
  * // Authenticating - use the compare() method
- * const user = await context.db.user.findUnique({
+ * const user = await context.db.User.findUnique({
  *   where: { email: 'user@example.com' }
  * })
  *
@@ -1817,14 +1817,14 @@ export function relationship<
  * }
  *
  * // Creating with JSON data
- * const item = await context.db.item.create({
+ * const item = await context.db.Item.create({
  *   data: {
  *     metadata: { key: 'value', nested: { data: [1, 2, 3] } }
  *   }
  * })
  *
  * // Querying returns parsed JSON
- * const item = await context.db.item.findUnique({
+ * const item = await context.db.Item.findUnique({
  *   where: { id: '...' }
  * })
  * console.log(item.metadata.key) // 'value'
