@@ -65,7 +65,18 @@ function lookupDatabaseUrl(options: DatabaseUrlLookupOptions): ResolvedDatabaseU
  * ```
  */
 export function findDatabaseUrl(options: DatabaseUrlLookupOptions = {}): string | undefined {
-  return lookupDatabaseUrl(options)?.url
+  return findDatabaseConnection(options)?.url
+}
+
+/**
+ * {@link resolveDatabaseUrl}'s lookup, provenance and all, without the throw.
+ * Package-internal — it is not re-exported from the package root; the public
+ * non-throwing accessor is {@link findDatabaseUrl}.
+ */
+export function findDatabaseConnection(
+  options: DatabaseUrlLookupOptions = {},
+): ResolvedDatabaseUrl | undefined {
+  return lookupDatabaseUrl(options)
 }
 
 /**

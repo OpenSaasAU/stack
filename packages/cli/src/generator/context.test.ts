@@ -34,13 +34,25 @@ describe('generateContext', () => {
     expect(context).not.toContain('prismaClientConstructor')
   })
 
-  it('binds the pool from db.client, falling back to the stack URL lookup', () => {
+  it('delegates the connection to core, binding db.client after the config resolves', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain('const binding = config.db.client')
-    expect(context).toContain('const pool = binding?.pg?.()')
-    expect(context).toContain('{ url: resolveDatabaseUrl().url }')
-    expect(context).toContain('poolOptions: binding.poolOptions')
+    expect(context).toContain(
+      "import { resolveRuntimeConnection } from '@opensaas/stack-core/client'",
+    )
+    expect(context).toContain('...resolveRuntimeConnection(config.db.client),')
+    // The factory may only run under the client singleton, so the sole call to
+    // it sits behind the resolved config.
+    expect(context.match(/createClient\(config\)/g)).toHaveLength(1)
+    expect(context).toMatch(/const config = await getConfig\(\)\s[\s\S]*?createClient\(config\)/)
+    expect(context).not.toContain('binding?.pg?.()')
+  })
+
+  it('installs the stack-owned tripwire as the client’s middleware', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain("import { originTripwire } from '@opensaas/stack-core/origin'")
+    expect(context).toContain('middleware: [originTripwire],')
   })
 
   it('lists each declared pack’s runtime façade', () => {
@@ -56,11 +68,25 @@ describe('generateContext', () => {
     expect(context).toContain('extensions: [pgvectorRuntime],')
   })
 
-  it('keeps the client as a module-level singleton', () => {
+  it('keeps the client as a module-level singleton, memoised as a promise', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain('let client: ReturnType<typeof createClient> | null = null')
+    expect(context).toContain(
+      'let clientPromise: Promise<ReturnType<typeof createClient>> | null = null',
+    )
     expect(context).toContain('globalForClient.opensaasClient')
+  })
+
+  it('drops the memo when a construction fails, so the next caller retries', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toMatch(/if \(clientPromise === attempt\) clientPromise = null\s+throw error/)
+  })
+
+  it('marks the eager context handled, so a failed first pull is not fatal', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain('void rawOpensaasContext.catch(() => {})')
   })
 
   it('exports getContext, rawOpensaasContext and config', () => {
