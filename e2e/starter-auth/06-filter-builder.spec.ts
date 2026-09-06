@@ -35,7 +35,7 @@ test.describe('Filter builder input UI', () => {
       await page.getByRole('option', { name: 'published' }).click()
     }
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
   /** A table cell whose exact text is the given title (the title column). */

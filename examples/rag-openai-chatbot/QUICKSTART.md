@@ -16,17 +16,17 @@ pnpm install
 
 # 2. Setup environment
 cp .env.example .env
-# Edit .env and add your DATABASE_URL and OPENAI_API_KEY
+# Edit .env and add your OPENAI_API_KEY
 
-# 3. Generate schema and create database
-pnpm generate
-pnpm db:push
-
-# 4. Seed the knowledge base
-pnpm db:seed
-
-# 5. Start the development server
+# 3. Start the development server — it brings the database up, generates
+#    and reconciles before running the app
 pnpm dev
+```
+
+`pnpm dev` keeps running. In a second terminal, seed the knowledge base:
+
+```bash
+pnpm db:seed
 ```
 
 ## Visit the App

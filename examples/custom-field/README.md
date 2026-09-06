@@ -63,16 +63,11 @@ fields: {
 # Install dependencies
 pnpm install
 
-# Set up environment (SQLite by default)
+# Set up environment
 cp .env.example .env
 
-# Generate Prisma schema and types
-pnpm generate
-
-# Push schema to database
-pnpm db:push
-
 # Start development server (runs on port 3001)
+# `opensaas dev` starts the Dev database, generates and reconciles first
 pnpm dev
 ```
 

@@ -82,9 +82,7 @@ A fully configured Next.js application with:
 ```bash
 cd my-app
 pnpm install        # Install dependencies
-pnpm generate       # Generate Prisma schema and types
-pnpm db:push        # Create database
-pnpm dev            # Start development server
+pnpm dev            # Start the Dev database, generate, reconcile, run the app
 ```
 
 Visit:

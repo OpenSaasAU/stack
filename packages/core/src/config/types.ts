@@ -824,6 +824,25 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     config: OpenSaasConfig,
   ) => ContractFieldDescriptor
   /**
+   * Describe this field's stored vector column, when it has one: the column
+   * `nearest()` measures against and the distance function that measurement
+   * is made with (ADR-0045). A field that does not answer this is not
+   * searchable, which is what makes `nearest('title', …)` a refusal rather
+   * than a query the database rejects.
+   *
+   * @param fieldName - The field's config key
+   *
+   * @example
+   * ```typescript
+   * getVectorColumn: (fieldName) => ({
+   *   column: fieldName,
+   *   dimensions: 1536,
+   *   distanceFunction: 'cosine',
+   * })
+   * ```
+   */
+  getVectorColumn?: (fieldName: string) => VectorColumnDescriptor
+  /**
    * The TypeScript type a read returns for this field, when it differs from
    * the column's codec type (ADR-0052). Required on a virtual field, where it
    * is the contract remainder's computed entry; on a stored field it is an
@@ -1027,6 +1046,29 @@ export type ContractFieldDescriptor =
   | { kind: 'columns'; columns: ContractColumnDescriptor[] }
   | ContractRelationDescriptor
   | { kind: 'computed' }
+
+/**
+ * How similarity is measured over a vector column. The three pgvector
+ * supports, in the spelling the RAG field builder already used: `cosine`
+ * (`<=>`), `l2` (`<->`) and `inner_product` (`<#>`, which yields the
+ * *negative* inner product — the direction `distanceToScore` hides).
+ */
+export type VectorDistanceFunction = 'cosine' | 'l2' | 'inner_product'
+
+/**
+ * A field's stored vector column, as `nearest()` needs to see it
+ * (ADR-0045). The field owns the column, its dimension and the distance
+ * function together, because the index's operator class must agree with all
+ * three.
+ */
+export type VectorColumnDescriptor = {
+  /** The model field name of the vector column. */
+  column: string
+  /** The column's declared dimension. A query vector of another length is refused. */
+  dimensions: number
+  /** How a distance over this column is measured. */
+  distanceFunction: VectorDistanceFunction
+}
 
 export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'text'

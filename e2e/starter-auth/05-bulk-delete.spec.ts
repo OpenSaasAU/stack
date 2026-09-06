@@ -24,7 +24,7 @@ test.describe('Bulk delete', () => {
     await page.fill('input[name="slug"]', slug)
     await page.fill('textarea[name="content"]', 'content')
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
   test('select across pages, delete, and report N of M with a refreshed table', async ({

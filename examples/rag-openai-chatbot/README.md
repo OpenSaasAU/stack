@@ -96,29 +96,21 @@ cp .env.example .env
 Edit `.env` and add your credentials:
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/rag_chatbot?schema=public"
 OPENAI_API_KEY="sk-..."
 ```
 
-### 6. Generate Schema and Push to Database
+Leave `DATABASE_URL` unset to develop on the Dev database, or set it to reach a
+Postgres of your own.
+
+### 6. Generate Schema
 
 ```bash
-# Generate Prisma schema and TypeScript types from opensaas.config.ts
 pnpm generate
-
-# Push schema to database
-pnpm db:push
 ```
 
-### 7. Seed the Database
+`pnpm dev` runs this for you and reconciles the database with what it emits.
 
-```bash
-pnpm db:seed
-```
-
-This creates 18 articles about OpenSaas Stack. Embeddings are generated automatically via the RAG plugin hooks.
-
-### 8. Run Development Server
+### 7. Run Development Server
 
 ```bash
 pnpm dev
@@ -130,6 +122,16 @@ Visit:
 - **Chatbot:** [http://localhost:3000/chat](http://localhost:3000/chat)
 - **Search:** [http://localhost:3000/search](http://localhost:3000/search)
 - **Admin:** [http://localhost:3000/admin](http://localhost:3000/admin)
+
+### 8. Seed the Database
+
+With `pnpm dev` running in another terminal:
+
+```bash
+pnpm db:seed
+```
+
+This creates 18 articles about OpenSaas Stack. Embeddings are generated automatically via the RAG plugin hooks.
 
 ## Usage
 

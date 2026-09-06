@@ -70,6 +70,8 @@ describe('the pure boundary', () => {
     ...sources(here),
     path.join(src, 'secured', 'vocabulary.ts'),
     path.join(src, 'secured', 'operators.ts'),
+    path.join(src, 'secured', 'vector.ts'),
+    path.join(src, 'secured', 'include.ts'),
   ]
 
   it('imports nothing from the ORM, anywhere in its real import graph', () => {

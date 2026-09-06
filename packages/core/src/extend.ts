@@ -23,6 +23,8 @@ export type {
   ContractForeignKeyDescriptor,
   ContractRelationDescriptor,
   ContractFieldDescriptor,
+  VectorColumnDescriptor,
+  VectorDistanceFunction,
 } from './config/index.js'
 
 // Resolves a `TypeDescriptor` to the TypeScript type expression the generated

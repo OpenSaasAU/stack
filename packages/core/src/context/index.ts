@@ -1018,6 +1018,7 @@ export function populateDbDelegate(
       operations.include = read.include
       operations.all = read.all
       operations.first = read.first
+      operations.nearest = read.nearest
     }
 
     target[listName] = operations

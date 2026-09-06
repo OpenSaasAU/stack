@@ -1,66 +1,49 @@
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { FullConfig } from '@playwright/test'
 import { setupDatabase } from './utils/db.js'
-import * as path from 'path'
-import * as fs from 'fs'
+
+const REQUIRED_ENV: readonly (readonly [string, string])[] = [
+  ['BETTER_AUTH_SECRET', 'test-secret-key-for-e2e-tests-only-not-for-production-use'],
+  ['BETTER_AUTH_URL', 'http://localhost:3000'],
+  ['NEXT_PUBLIC_APP_URL', 'http://localhost:3000'],
+]
+
+/**
+ * Adds the variables the app needs to serve, without touching anything already
+ * in the file — a contributor's `.env` can hold real OAuth secrets.
+ *
+ * No `DATABASE_URL` is added: setting one is the Database escape, and the app
+ * would then take the `'env'` branch of the lookup rather than finding the Dev
+ * database this run starts (ADR-0063). One a contributor put there themselves
+ * is left alone, because that escape is theirs to take. In CI the variable is
+ * on the job, which is exactly how the container is chosen.
+ */
+function writeEnvFile(exampleDir: string): void {
+  const envPath = path.join(exampleDir, '.env')
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const missing = REQUIRED_ENV.filter(
+    ([key]) => !new RegExp(`^\\s*(export\\s+)?${key}\\s*=`, 'm').test(existing),
+  )
+  if (missing.length === 0) return
+
+  const prefix = existing === '' || existing.endsWith('\n') ? existing : `${existing}\n`
+  const added = missing.map(([key, value]) => `${key}="${value}"`).join('\n')
+  fs.writeFileSync(envPath, `${prefix}${added}\n`, 'utf8')
+}
 
 async function globalSetup(_config: FullConfig) {
   console.log('=== Global Setup for E2E Tests ===')
 
   const exampleDir = path.join(process.cwd(), 'examples/starter-auth')
+  writeEnvFile(exampleDir)
 
-  // Ensure .env file exists
-  const envPath = path.join(exampleDir, '.env')
-  const envExamplePath = path.join(exampleDir, '.env.example')
-
-  if (!fs.existsSync(envPath)) {
-    console.log('Creating .env file from .env.example...')
-    if (fs.existsSync(envExamplePath)) {
-      let envContent = fs.readFileSync(envExamplePath, 'utf-8')
-
-      // Set default values for testing
-      envContent = envContent.replace(
-        /BETTER_AUTH_SECRET=.*/,
-        'BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"',
-      )
-      envContent = envContent.replace(
-        /BETTER_AUTH_URL=.*/,
-        'BETTER_AUTH_URL="http://localhost:3000"',
-      )
-      envContent = envContent.replace(/DATABASE_URL=.*/, 'DATABASE_URL="file:./dev.db"')
-
-      fs.writeFileSync(envPath, envContent)
-      console.log('.env file created successfully')
-    } else {
-      console.warn('.env.example not found, creating minimal .env')
-      const minimalEnv = `DATABASE_URL="file:./dev.db"
-BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"
-BETTER_AUTH_URL="http://localhost:3000"
-`
-      fs.writeFileSync(envPath, minimalEnv)
-    }
-  }
-
-  // Setup database
-  console.log('Setting up database...')
-  try {
-    setupDatabase(exampleDir)
-    console.log('Database setup complete')
-  } catch (error) {
-    console.error('Database setup failed:', error)
-    if (error instanceof Error) {
-      console.error('Error details:', error.message)
-      console.error('Stack trace:', error.stack)
-    }
-    throw error
-  }
+  const { url, provenance } = await setupDatabase(exampleDir)
+  console.log(
+    `Database ready (${provenance}): ${provenance === 'dev-database' ? url : 'the DATABASE_URL server'}`,
+  )
 
   console.log('=== Global Setup Complete ===\n')
-  console.log('Next.js dev server will start shortly...')
-  console.log('If server startup fails, check that:')
-  console.log('  1. All packages are built (pnpm build)')
-  console.log('  2. Dependencies are installed (pnpm install)')
-  console.log('  3. Database is set up (pnpm generate && pnpm db:push)')
-  console.log('')
 }
 
 export default globalSetup
