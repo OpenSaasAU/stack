@@ -1,14 +1,43 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createServer } from 'node:net'
+import { networkInterfaces, tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import pg from 'pg'
 import type { QueryResult } from 'pg'
 import { startDevDatabase, type DevDatabase } from './dev-database.js'
-import { readDevDatabaseState, writeDevDatabaseState } from './state-file.js'
+import { readDevDatabaseState, writeDevDatabaseState, type DevDatabaseState } from './state-file.js'
 import { resolveDatabaseUrl } from './url.js'
 
+const stateFileHook = vi.hoisted(() => {
+  const hook: { onWrite?: (state: DevDatabaseState) => void } = {}
+  return hook
+})
+
+vi.mock('./state-file.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./state-file.js')>()
+  return {
+    ...actual,
+    writeDevDatabaseState: (filePath: string, state: DevDatabaseState): void => {
+      stateFileHook.onWrite?.(state)
+      actual.writeDevDatabaseState(filePath, state)
+    },
+  }
+})
+
 const BOOT_TIMEOUT = 60_000
+
+const hasIpv6Loopback = Object.values(networkInterfaces()).some((addresses) =>
+  addresses?.some(({ address }) => address === '::1'),
+)
+
+async function isPortFree(port: number, host: string): Promise<boolean> {
+  return await new Promise((resolve) => {
+    const probe = createServer()
+    probe.once('error', () => resolve(false))
+    probe.listen(port, host, () => probe.close(() => resolve(true)))
+  })
+}
 
 /**
  * A single connection, which is all the socket server's multiplexed session
@@ -39,6 +68,7 @@ describe('startDevDatabase', () => {
   })
 
   afterEach(async () => {
+    stateFileHook.onWrite = undefined
     for (const database of started) await database.stop()
     for (const name of CONNECTION_VARIABLES) {
       const value = saved[name]
@@ -104,14 +134,91 @@ describe('startDevDatabase', () => {
     async () => {
       const first = await start()
       await first.stop()
-      started = started.filter((database) => database !== first)
       expect(existsSync(first.stateFile)).toBe(false)
 
       const second = await start()
       writeDevDatabaseState(second.stateFile, { url: 'postgres://other', pid: process.pid })
       await second.stop()
-      started = started.filter((database) => database !== second)
       expect(readDevDatabaseState({ cwd: projectRoot })?.url).toBe('postgres://other')
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'stopping releases the port, and stopping again is a quiet no-op',
+    async () => {
+      const database = await start()
+      expect(await isPortFree(database.port, database.host)).toBe(false)
+
+      await database.stop()
+      expect(await isPortFree(database.port, database.host)).toBe(true)
+
+      await expect(database.stop()).resolves.toBeUndefined()
+      await expect(database.stop()).resolves.toBeUndefined()
+      expect(await isPortFree(database.port, database.host)).toBe(true)
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a failure after the socket server has started leaves no port bound',
+    async () => {
+      let reported: string | undefined
+      stateFileHook.onWrite = (state) => {
+        reported = state.url
+        throw new Error('the state file could not be written')
+      }
+
+      await expect(startDevDatabase({ cwd: projectRoot })).rejects.toThrow(
+        'the state file could not be written',
+      )
+
+      if (reported === undefined) throw new Error('the socket server never reported a URL')
+      const { port, hostname } = new URL(reported)
+      expect(await isPortFree(Number(port), hostname)).toBe(true)
+      expect(existsSync(path.join(projectRoot, '.opensaas', 'dev-db.json'))).toBe(false)
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'an explicit host and connection ceiling are honoured',
+    async () => {
+      const database = await startDevDatabase({
+        cwd: projectRoot,
+        host: '127.0.0.1',
+        maxConnections: 1,
+      })
+      started.push(database)
+
+      expect(database.host).toBe('127.0.0.1')
+      expect(database.url).toBe(`postgres://postgres@127.0.0.1:${database.port}/postgres`)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test.skipIf(!hasIpv6Loopback)(
+    'an IPv6 host is bracketed into a parseable URL and listens on that address',
+    async () => {
+      const database = await startDevDatabase({ cwd: projectRoot, host: '::1' })
+      started.push(database)
+
+      expect(database.url).toBe(`postgres://postgres@[::1]:${database.port}/postgres`)
+      expect(new URL(database.url).port).toBe(String(database.port))
+
+      const client = new pg.Client({
+        host: '::1',
+        port: database.port,
+        user: 'postgres',
+        database: 'postgres',
+      })
+      await client.connect()
+      try {
+        expect((await client.query('select 1 as one')).rows).toEqual([{ one: 1 }])
+      } finally {
+        await client.end()
+      }
     },
     BOOT_TIMEOUT,
   )

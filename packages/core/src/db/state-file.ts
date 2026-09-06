@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { z } from 'zod'
 
@@ -69,10 +69,23 @@ export function readDevDatabaseState(
   return state.data
 }
 
-/** Writes the state file, creating the Generated bundle directory if needed. */
+/**
+ * Writes the state file, creating the Generated bundle directory if needed.
+ * The write goes to a sibling temp file and is renamed into place, so a reader
+ * never observes a half-written record.
+ */
 export function writeDevDatabaseState(filePath: string, state: DevDatabaseState): void {
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, `${JSON.stringify(stateSchema.parse(state), null, 2)}\n`, 'utf8')
+  const directory = path.dirname(filePath)
+  mkdirSync(directory, { recursive: true })
+  const contents = `${JSON.stringify(stateSchema.parse(state), null, 2)}\n`
+  const temporary = path.join(directory, `${path.basename(filePath)}.${process.pid}.tmp`)
+  try {
+    writeFileSync(temporary, contents, 'utf8')
+    renameSync(temporary, filePath)
+  } catch (error) {
+    rmSync(temporary, { force: true })
+    throw error
+  }
 }
 
 /**

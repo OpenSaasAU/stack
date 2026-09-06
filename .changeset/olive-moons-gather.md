@@ -23,6 +23,11 @@ const database = await startDevDatabase({
 await database.stop()
 ```
 
+`stop()` is idempotent — a `SIGINT` handler and a `finally` may both call it — and drops
+the state file only once the socket server and PGlite are actually released. A failure
+anywhere in startup tears down whatever was already constructed, so no port is left
+bound. An IPv6 `host` is bracketed into the published URL.
+
 `resolveDatabaseUrl()` now returns `{ url, provenance }` rather than a bare string,
 and consults the dev database state file when the environment names no connection.
 `provenance` is `'env'` for `DATABASE_URL`/`DIRECT_DATABASE_URL` and `'dev-database'`

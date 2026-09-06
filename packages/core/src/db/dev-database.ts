@@ -14,6 +14,10 @@
  * - There is no daemon, registry or cross-process lookup: the database dies
  *   with the process that started it, and other processes find it through the
  *   state file.
+ * - An IPv6 `host` is bracketed into the published URL, which is the RFC 3986
+ *   form; node-postgres does not strip those brackets when it parses a
+ *   connection string, so such a client takes `host` and `port` off the handle
+ *   instead of the URL.
  * - `PGLiteSocketServer` reports the port it bound only through the
  *   `host:port` string of `getServerConn()`, so the port is parsed back out of
  *   it rather than read from a field.
@@ -65,7 +69,10 @@ export interface DevDatabase {
   readonly dataDir: string | undefined
   /** Absolute path to the state file this instance wrote. */
   readonly stateFile: string
-  /** Stops the socket server, closes PGlite and drops this instance's state file. */
+  /**
+   * Stops the socket server, closes PGlite, then drops this instance's state
+   * file. Idempotent: a second call resolves without touching anything.
+   */
   stop(): Promise<void>
 }
 
@@ -90,6 +97,25 @@ async function loadExtensions(
     loaded[name] = await EXTENSION_LOADERS[name]()
   }
   return loaded
+}
+
+async function release(steps: readonly (() => Promise<void>)[]): Promise<void> {
+  const failures: unknown[] = []
+  for (const step of steps) {
+    try {
+      await step()
+    } catch (failure) {
+      failures.push(failure)
+    }
+  }
+  if (failures.length === 1) throw failures[0]
+  if (failures.length > 1) {
+    throw new AggregateError(failures, 'The dev database did not shut down cleanly.')
+  }
+}
+
+function authorityOf(host: string): string {
+  return host.includes(':') ? `[${host}]` : host
 }
 
 function portOf(connection: string): number {
@@ -150,32 +176,37 @@ export async function startDevDatabase(
     port: 0,
     maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
   })
+  const teardown: (() => Promise<void>)[] = [() => pglite.close()]
+
   try {
     await server.start()
+    teardown.unshift(() => server.stop())
+
+    const port = portOf(server.getServerConn())
+    const url = `postgres://${DATABASE_NAME}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
+    const location: DevDatabaseStateLocation = {
+      ...(options.cwd !== undefined && { cwd: options.cwd }),
+      ...(options.stateFile !== undefined && { stateFile: options.stateFile }),
+    }
+    const stateFile = devDatabaseStatePath(location)
+    writeDevDatabaseState(stateFile, { url, pid: process.pid })
+
+    let stopped = false
+    return {
+      url,
+      host,
+      port,
+      dataDir: options.dataDir,
+      stateFile,
+      stop: async () => {
+        if (stopped) return
+        stopped = true
+        await release(teardown)
+        clearDevDatabaseState(stateFile, url)
+      },
+    }
   } catch (error) {
-    await pglite.close()
+    await release(teardown).catch(() => {})
     throw error
-  }
-
-  const port = portOf(server.getServerConn())
-  const url = `postgres://${DATABASE_NAME}@${host}:${port}/${DATABASE_NAME}`
-  const location: DevDatabaseStateLocation = {
-    ...(options.cwd !== undefined && { cwd: options.cwd }),
-    ...(options.stateFile !== undefined && { stateFile: options.stateFile }),
-  }
-  const stateFile = devDatabaseStatePath(location)
-  writeDevDatabaseState(stateFile, { url, pid: process.pid })
-
-  return {
-    url,
-    host,
-    port,
-    dataDir: options.dataDir,
-    stateFile,
-    stop: async () => {
-      clearDevDatabaseState(stateFile, url)
-      await server.stop()
-      await pglite.close()
-    },
   }
 }
