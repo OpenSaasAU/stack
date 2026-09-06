@@ -34,6 +34,22 @@ import {
  */
 const DEV_DATABASE_EXTENSIONS: Record<string, 'vector'> = { pgvector: 'vector' }
 
+/**
+ * The prefix every database the escape path creates carries, followed by a
+ * UTC `YYYYMMDDHHMMSS` stamp and a UUID. A run killed before `close()` leaves
+ * one behind, and the stamp is what makes the leftovers sweepable by age
+ * rather than only greppable — see the `Known limits` note on
+ * {@link createTestDatabase} for the statement.
+ */
+export const ESCAPE_DATABASE_PREFIX = 'opensaas_test_'
+
+function stamp(): string {
+  return new Date()
+    .toISOString()
+    .replaceAll(/[^0-9]/g, '')
+    .slice(0, 14)
+}
+
 /** Options for {@link createTestDatabase} and {@link createTestContext}. */
 export interface TestDatabaseOptions {
   /**
@@ -85,8 +101,53 @@ function isCollection(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isReachable(value: unknown): boolean {
+  return value !== null && (typeof value === 'object' || typeof value === 'function')
+}
+
+/**
+ * `client.orm` and its namespaces are Proxies with a `get` trap and no `has`
+ * trap, so `key in container` reports false for a collection that is right
+ * there. Reads go through `Reflect.get` and the result is checked instead.
+ */
 function reach(container: unknown, key: string): unknown {
-  return isCollection(container) && key in container ? Reflect.get(container, key) : undefined
+  if (container === null || (typeof container !== 'object' && typeof container !== 'function')) {
+    return undefined
+  }
+  return Reflect.get(container, key)
+}
+
+function keysOf(container: unknown): string[] {
+  return isCollection(container) ? Object.keys(container) : []
+}
+
+function listed(keys: readonly string[]): string {
+  return keys.length === 0 ? '(none)' : keys.join(', ')
+}
+
+/**
+ * Thrown when the client exposes no collection for a model the contract
+ * declares. The engine reaches every model through this map, so an entry that
+ * resolved to `undefined` would build a context that refuses every operation
+ * with `OrmModelMissingError` — advice to re-run `opensaas generate`, which a
+ * harness user cannot act on. This is the assertion that the client's shape is
+ * the one the harness derives from.
+ */
+export class OrmCollectionMissingError extends Error {
+  constructor(
+    readonly model: string,
+    readonly namespace: string,
+    readonly namespaces: readonly string[],
+    readonly collections: readonly string[],
+  ) {
+    super(
+      `The test harness built a client with no collection for model "${model}" at ` +
+        `orm."${namespace}". The client's namespaces are: ${listed(namespaces)}; that ` +
+        `namespace holds: ${listed(collections)}. A context over this client would refuse ` +
+        `every operation, so the harness refuses to build one.`,
+    )
+    this.name = 'OrmCollectionMissingError'
+  }
 }
 
 /**
@@ -97,11 +158,16 @@ function reach(container: unknown, key: string): unknown {
  * generated context performs, in one place, until the runtime spec makes it
  * unnecessary.
  */
-function ormClientFor(data: ContractData, client: PostgresClient<PrismaContract>): OrmClient {
+export function ormClientFor(data: ContractData, orm: unknown): OrmClient {
   const models: Record<string, unknown> = {}
   for (const model of data.models) {
-    const namespace = reach(client.orm, model.namespace ?? 'public')
-    models[getDbKey(model.name)] = reach(namespace, model.name)
+    const namespaceName = model.namespace ?? 'public'
+    const namespace = reach(orm, namespaceName)
+    const collection = reach(namespace, model.name)
+    if (!isReachable(collection)) {
+      throw new OrmCollectionMissingError(model.name, namespaceName, keysOf(orm), keysOf(namespace))
+    }
+    models[getDbKey(model.name)] = collection
   }
   return models
 }
@@ -234,7 +300,7 @@ async function startInstance(
   extensions: readonly string[],
 ): Promise<Instance> {
   if (escape !== undefined) {
-    const name = `opensaas_test_${randomUUID().replaceAll('-', '')}`
+    const name = `${ESCAPE_DATABASE_PREFIX}${stamp()}_${randomUUID().replaceAll('-', '')}`
     await onClient(escape, `create database "${name}"`)
     return {
       url: withDatabase(escape, name),
@@ -304,9 +370,22 @@ async function startInstance(
  *   `options.packs`.
  * - The escape path issues `CREATE DATABASE` and `DROP DATABASE`, so the role
  *   `DATABASE_URL` names needs `CREATEDB`. A superuser — CI's container, a
- *   local install — has it.
+ *   local install — has it. `DROP DATABASE … WITH (FORCE)` needs PostgreSQL
+ *   13 or newer.
+ * - `close()` runs from `afterAll`, so a killed worker or a `Ctrl-C` leaves
+ *   its database on the escape server. Each is named
+ *   `opensaas_test_<YYYYMMDDHHMMSS>_<uuid>` in UTC, so a sweep is:
+ *   `select 'drop database ' || quote_ident(datname) || ' with (force);'
+ *   from pg_database where datname like 'opensaas_test\_%'` — filter on the
+ *   stamp to spare a run in flight, then execute what it returns.
  * - `truncate()` empties the tables the contract declares. It does not touch
- *   Prisma's own marker tables, which the schema apply owns.
+ *   Prisma's own marker tables, which the schema apply owns. A contract
+ *   declaring no model has nothing to empty and `truncate()` is a no-op.
+ * - Until the secured terminals land, a test seeds and reads through
+ *   {@link TestDatabase.client} — the raw Prisma collections, which carry
+ *   none of the engine's access control or hooks. That is the construction
+ *   option, not a seam on the secured wrapper, and it is the reason the
+ *   round-trip below proves the database rather than the engine.
  *
  * @example
  * ```typescript
@@ -352,7 +431,7 @@ export async function createTestDatabase(
       middleware: [originTripwire, ...(options.middleware ?? [])],
       extensions: runtimes,
     })
-    const orm = ormClientFor(data, client)
+    const orm = ormClientFor(data, client.orm)
     const tables = qualified(data)
 
     let closed = false

@@ -21,7 +21,10 @@ jobs:
     # DATABASE_URL, so this container simply goes unused there.
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
+        # would change CI's database with no commit here. Resolved from
+        # pgvector/pgvector:pg17 on 2026-09-06; bump both together.
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
         env:
           POSTGRES_PASSWORD: postgres
         ports:

@@ -3,7 +3,14 @@ import pg from 'pg'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { checkbox, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
-import { createTestContext, createTestDatabase, type TestDatabase } from './context.js'
+import { deriveContract } from '../contract/derive.js'
+import {
+  createTestContext,
+  createTestDatabase,
+  ormClientFor,
+  OrmCollectionMissingError,
+  type TestDatabase,
+} from './context.js'
 import { ESCAPE_VARIABLE, readDatabaseEscape } from './escape.js'
 import { ExtensionPackUnavailableError, loadExtensionPacks } from './extensions.js'
 import { createPlanRecorder } from './plans.js'
@@ -275,6 +282,41 @@ describe('the DATABASE_URL escape', () => {
     },
     BOOT,
   )
+})
+
+describe('the map the engine reaches models through is checked at construction', () => {
+  const data = deriveContract(blogConfig)
+
+  test('a client keyed the way Prisma keys one yields a collection per model', () => {
+    const orm = { public: { User: { create: () => {} }, Post: { create: () => {} } } }
+    const built = ormClientFor(data, orm)
+
+    expect(Object.keys(built).sort()).toEqual(['post', 'user'])
+    for (const value of Object.values(built)) expect(typeof value).toBe('object')
+  })
+
+  test('a client keyed some other way is refused, naming the model and what is there', () => {
+    const orm = { public: { users: {}, posts: {} } }
+
+    expect(() => ormClientFor(data, orm)).toThrow(OrmCollectionMissingError)
+    try {
+      ormClientFor(data, orm)
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrmCollectionMissingError)
+      if (!(error instanceof OrmCollectionMissingError)) return
+      expect(error.model).toBe('User')
+      expect(error.namespace).toBe('public')
+      expect(error.namespaces).toEqual(['public'])
+      expect(error.collections).toEqual(['users', 'posts'])
+      expect(error.message).toContain('User')
+      expect(error.message).toContain('users, posts')
+    }
+  })
+
+  test('a namespace that is absent altogether is refused too', () => {
+    expect(() => ormClientFor(data, { app: {} })).toThrow(OrmCollectionMissingError)
+  })
 })
 
 describe('extension packs load lazily', () => {

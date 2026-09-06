@@ -9,6 +9,8 @@ export {
   createTestContext,
   createTestDatabase,
   DevDatabaseUnavailableError,
+  ESCAPE_DATABASE_PREFIX,
+  OrmCollectionMissingError,
   SchemaApplyError,
   type TestContext,
   type TestDatabase,

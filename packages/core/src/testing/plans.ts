@@ -13,10 +13,10 @@ export type DraftPlan = Parameters<BeforeCompile>[0]
 
 /** One plan a {@link PlanRecorder} saw, and the origin it compiled under. */
 export interface RecordedPlan {
-  /** The plan's lane, as Prisma reports it: `orm`, `dsl` or `raw`. */
-  readonly lane: string
-  /** The AST's root kind: `select`, `insert`, `update`, `delete`, … */
-  readonly kind: string
+  /** The plan's lane, as Prisma reports it on {@link DraftPlan.meta}. */
+  readonly lane: DraftPlan['meta']['lane']
+  /** The AST's root kind — `'select' | 'insert' | 'update' | 'delete' | …`. */
+  readonly kind: DraftPlan['ast']['kind']
   /** The whole typed AST, for asserting on the query the engine built. */
   readonly ast: DraftPlan['ast']
   /** The plan metadata, including the annotations Prisma carries. */

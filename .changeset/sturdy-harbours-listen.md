@@ -29,10 +29,17 @@ test('the engine scopes the read', async () => {
 })
 ```
 
+The map the engine reaches models through is checked as the harness builds it: a client
+exposing no collection for a model the contract declares throws
+`OrmCollectionMissingError`, naming the model, the namespace and the keys actually
+present, rather than building a context that would refuse every operation later.
+
 Set `DATABASE_URL` to a Postgres server and the identical suite runs there, each file in a
-database of its own; set to anything else the variable is refused by name rather than
-dialled. `readDatabaseEscape()` lets a test whose guarantee PGlite cannot exercise skip
-visibly when the escape is unset.
+database of its own, named `opensaas_test_<YYYYMMDDHHMMSS>_<uuid>` after the exported
+`ESCAPE_DATABASE_PREFIX` so a run killed before `close()` leaves orphans that are
+identifiable by age and sweepable; set to anything else the variable is refused by name
+rather than dialled. `readDatabaseEscape()` lets a test whose guarantee PGlite cannot
+exercise skip visibly when the escape is unset.
 
 PGlite, `@electric-sql/pglite-socket`, `@electric-sql/pglite-pgvector`, `pg` and
 `@prisma/orm-toolchain` are optional peer dependencies imported lazily by this subpath
