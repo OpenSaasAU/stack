@@ -33,4 +33,12 @@ restarts the app child after a destructive promote — a client cached across a 
 would otherwise keep querying the dropped column. The reconcile itself runs inside the
 running loop, which owns the Dev database and the migrations refs, so a second terminal
 opens no connection of its own. With no loop listening, the command fails naming
-`opensaas dev`.
+`opensaas dev`. If the loop goes away part-way through an exchange, the command says so
+rather than claiming no loop is running.
+
+Staging covers the whole generation: the project-root `prisma.config.ts` is held back
+with the rest and promoted with it, so a discarded `db.extensions` change leaves no
+config describing extensions the contract does not carry. Promotion moves the entire
+staged bundle directory — including files a plugin's `afterGenerate` wrote — and swaps
+each file into place through a rename, so the running app never reads a half-written
+one.

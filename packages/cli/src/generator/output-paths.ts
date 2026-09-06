@@ -22,6 +22,14 @@ export const OPENSAAS_FILES = {
 } as const
 
 /**
+ * Inside a staging directory: the project-root-shaped `prisma.config.ts` a
+ * staged generation holds back. The staged run's own `prisma.config.ts` names
+ * absolute staged paths and cannot stand in for it, so the two are separate
+ * files and only this one is promoted.
+ */
+export const STAGED_ROOT_PRISMA_CONFIG = 'prisma.config.root.ts'
+
+/**
  * The two artifacts `prisma contract emit` writes beside the Contract module.
  */
 export const CONTRACT_ARTIFACTS = {

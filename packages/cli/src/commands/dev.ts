@@ -156,6 +156,10 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
    * this refuses — a half-saved config must not take the loop down with it.
    */
   const stage = async (say: (message: string) => void): Promise<GenerationResult | undefined> => {
+    // `staged` only ever names files inside `stagingDir`, so it has to be
+    // dropped with them — a pointer left behind names the bytes of whatever
+    // generation runs next, including one this loop refused.
+    staged = undefined
     fs.rmSync(stagingDir, { recursive: true, force: true })
     try {
       return await generateCommand({ stagingDir, throwOnFailure: true })
@@ -185,10 +189,15 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     console.log(chalk.yellow('\nConfig changed: staging the new contract...\n'))
     const say = (message: string): void => console.log(chalk.gray(message))
 
+    // Before staging, not after: generation seeds each declared pack's
+    // extension contract space into the project's own `migrations/`, so a
+    // snapshot taken afterwards restores the post-seed refs rather than the
+    // ones the loop found.
+    const refs = snapshotMigrationRefs(cwd)
+
     const generation = await stage(say)
     if (generation === undefined) return
 
-    const refs = snapshotMigrationRefs(cwd)
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
       restoreMigrationRefs(cwd, refs)
@@ -230,13 +239,15 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       reply.log(message)
     }
 
+    const refs = snapshotMigrationRefs(cwd)
+
     const generation = staged ?? (await stage(say))
     if (generation === undefined) {
+      restoreMigrationRefs(cwd, refs)
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
       return
     }
 
-    const refs = snapshotMigrationRefs(cwd)
     const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, { confirm })
     if (!applied.ok) {
       restoreMigrationRefs(cwd, refs)
@@ -278,6 +289,16 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     fs.rmSync(stagingDir, { recursive: true, force: true })
 
+    await generateCommand()
+
+    if (!(await reconcile(cwd)) || interrupted) {
+      process.exitCode = 1
+      return
+    }
+
+    // Armed only now: `queue` serialises reconciles against each other, not
+    // against this startup generate and reconcile, so a save landing earlier
+    // would run a second `db update` against the same database concurrently.
     watcher = chokidar.watch(configPath, { persistent: true, ignoreInitial: true })
     watcher.on('change', () => {
       queue = queue.then(onConfigChange).catch((error: unknown) => {
@@ -287,13 +308,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     watcher.on('error', (error) => {
       console.error(chalk.red('\nWatcher error:'), error)
     })
-
-    await generateCommand()
-
-    if (!(await reconcile(cwd)) || interrupted) {
-      process.exitCode = 1
-      return
-    }
 
     control = await startControlChannel(cwd, async (request, reply) => {
       await new Promise<void>((resolve) => {

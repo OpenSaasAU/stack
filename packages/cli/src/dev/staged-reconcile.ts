@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
-import { runPrismaCli } from '../generator/index.js'
+import { runPrismaCli, STAGED_ROOT_PRISMA_CONFIG } from '../generator/index.js'
 import type { ResolvedWritePaths } from '../generator/index.js'
 
 /** Where a staged generation lives, inside the Generated bundle. */
@@ -117,7 +117,7 @@ export async function planDatabaseUpdate(
 /** A `refs/*.json` file and the bytes it held before the loop planned anything. */
 interface RefSnapshot {
   readonly file: string
-  readonly contents: string | undefined
+  readonly contents: string
 }
 
 /**
@@ -152,37 +152,94 @@ export function restoreMigrationRefs(cwd: string, snapshots: readonly RefSnapsho
     if (!known.has(snapshot.file)) fs.rmSync(snapshot.file, { force: true })
   }
   for (const snapshot of snapshots) {
-    if (snapshot.contents === undefined) continue
     fs.mkdirSync(path.dirname(snapshot.file), { recursive: true })
     fs.writeFileSync(snapshot.file, snapshot.contents, 'utf-8')
   }
 }
 
+/** Thrown when promotion stopped part-way, leaving the live bundle split. */
+export class PartialPromotionError extends Error {
+  /** The live files that already carry the staged generation. */
+  readonly promoted: readonly string[]
+  /** The live file the failure stopped on, still carrying the previous generation. */
+  readonly failedOn: string
+
+  constructor(promoted: readonly string[], failedOn: string, cause: unknown) {
+    super(
+      `The database was updated, but promoting the staged generation stopped at ${failedOn}. ` +
+        `${promoted.length} file(s) already carry the new contract, so the project is split ` +
+        'across two contracts. Re-run `opensaas generate` to rewrite the whole bundle from ' +
+        `the current config. Underlying failure: ${cause instanceof Error ? cause.message : String(cause)}`,
+    )
+    this.name = 'PartialPromotionError'
+    this.promoted = promoted
+    this.failedOn = failedOn
+  }
+}
+
+/**
+ * Copies through a sibling temp name and renames into place, so the app's dev
+ * server never reads a half-written file: a rename within one filesystem is
+ * atomic, a `copyFileSync` onto a watched path is not.
+ */
+function swapIntoPlace(from: string, to: string): void {
+  fs.mkdirSync(path.dirname(to), { recursive: true })
+  const staging = `${to}.promoting-${process.pid}`
+  try {
+    fs.copyFileSync(from, staging)
+    fs.renameSync(staging, to)
+  } catch (error) {
+    fs.rmSync(staging, { force: true })
+    throw error
+  }
+}
+
 /**
  * Move a staged generation into the places the app reads: the Contract module
- * and its emitted artifacts, then the bundle. Called only once the database
- * carries the schema they describe.
+ * and its emitted artifacts, then the whole bundle directory — enumerating the
+ * bundle would strand the extra files a plugin's `afterGenerate` writes there.
+ * Called only once the database carries the schema they describe.
+ *
+ * Each file lands atomically. The set of them does not: the filesystem offers
+ * no multi-file commit, so a failure part-way through throws
+ * {@link PartialPromotionError} naming the split rather than a bare copy error.
+ *
+ * @throws {PartialPromotionError} when promotion stops after the first file.
  */
 export function promoteStagedGeneration(
   staged: ResolvedWritePaths,
   live: ResolvedWritePaths,
   stagingDir: string,
 ): void {
-  const moves: readonly (readonly [string, string])[] = [
+  const moves: [string, string][] = [
     [staged.contractModule, live.contractModule],
     [staged.contractJson, live.contractJson],
     [staged.contractTypes, live.contractTypes],
-    [staged.types, live.types],
-    [staged.lists, live.lists],
-    [staged.context, live.context],
-    [staged.pluginTypes, live.pluginTypes],
-    [staged.tables, live.tables],
   ]
 
+  if (fs.existsSync(staged.opensaasDir)) {
+    for (const entry of fs.readdirSync(staged.opensaasDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      moves.push([
+        path.join(staged.opensaasDir, entry.name),
+        path.join(live.opensaasDir, entry.name),
+      ])
+    }
+  }
+
+  const rootPrismaConfig = path.join(stagingDir, STAGED_ROOT_PRISMA_CONFIG)
+  if (fs.existsSync(rootPrismaConfig)) moves.push([rootPrismaConfig, live.prismaConfig])
+
+  const promoted: string[] = []
   for (const [from, to] of moves) {
     if (!fs.existsSync(from)) continue
-    fs.mkdirSync(path.dirname(to), { recursive: true })
-    fs.copyFileSync(from, to)
+    try {
+      swapIntoPlace(from, to)
+    } catch (error) {
+      if (promoted.length === 0) throw error
+      throw new PartialPromotionError(promoted, to, error)
+    }
+    promoted.push(to)
   }
 
   fs.rmSync(stagingDir, { recursive: true, force: true })

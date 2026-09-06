@@ -1,9 +1,11 @@
 import * as fs from 'fs'
 import * as os from 'os'
+import * as net from 'net'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   CONTROL_FILE,
+  DevLoopUnreachableError,
   NoDevLoopError,
   requestDatabaseUpdate,
   startControlChannel,
@@ -82,6 +84,77 @@ describe('the dev loop control channel', () => {
     )
 
     await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow(NoDevLoopError)
+  })
+
+  it('publishes the control file 0600 over one pre-created world-readable', async () => {
+    const file = path.join(projectDir, CONTROL_FILE)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, '{}', 'utf-8')
+    fs.chmodSync(file, 0o666)
+
+    channel = await startControlChannel(projectDir, async () => {})
+
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+  })
+
+  it('does not follow a symlink planted at the control file path', async () => {
+    const file = path.join(projectDir, CONTROL_FILE)
+    const decoy = path.join(projectDir, 'harvested.json')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(decoy, 'nothing yet', 'utf-8')
+    fs.symlinkSync(decoy, file)
+
+    channel = await startControlChannel(projectDir, async () => {})
+
+    expect(fs.lstatSync(file).isSymbolicLink()).toBe(false)
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+    expect(fs.readFileSync(decoy, 'utf-8')).toBe('nothing yet')
+  })
+
+  it('reports a drop mid-exchange as the loop stopping, not as no loop running', async () => {
+    channel = await startControlChannel(projectDir, async () => {
+      await new Promise(() => {})
+    })
+
+    const closing = channel
+    channel = undefined
+    setTimeout(() => {
+      void closing.close()
+    }, 50)
+
+    await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow(
+      DevLoopUnreachableError,
+    )
+  })
+
+  it('closes without waiting on a connection the loop is still serving', async () => {
+    let serving!: () => void
+    channel = await startControlChannel(projectDir, async () => {
+      await new Promise<void>((resolve) => {
+        serving = resolve
+      })
+    })
+    const published = JSON.parse(fs.readFileSync(path.join(projectDir, CONTROL_FILE), 'utf-8'))
+
+    const parked = net.createConnection({ host: '127.0.0.1', port: published.port })
+    await new Promise<void>((resolve) => parked.once('connect', () => resolve()))
+    parked.on('error', () => {})
+    parked.write(
+      `${JSON.stringify({ token: published.token, command: 'db-update', confirm: [] })}\n`,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const closing = channel
+    channel = undefined
+    await expect(
+      Promise.race([
+        closing.close(),
+        new Promise((_resolve, reject) => setTimeout(() => reject(new Error('hung')), 2000)),
+      ]),
+    ).resolves.toBeUndefined()
+
+    serving()
+    parked.destroy()
   })
 
   it('takes the control file down with the channel', async () => {

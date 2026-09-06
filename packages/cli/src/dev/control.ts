@@ -84,7 +84,11 @@ export async function startControlChannel(
 ): Promise<ControlChannel> {
   const token = randomBytes(24).toString('hex')
 
+  const sockets = new Set<net.Socket>()
+
   const server = net.createServer((socket) => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
     socket.setEncoding('utf-8')
     let buffered = ''
     let handled = false
@@ -154,6 +158,11 @@ export async function startControlChannel(
 
   const file = controlFilePath(cwd)
   fs.mkdirSync(path.dirname(file), { recursive: true })
+  // `mode` reaches open(2) and so applies only to a file this call creates,
+  // and writeFileSync follows symlinks. Removing whatever is there first is
+  // what makes 0600 hold over a pre-created world-readable file, and stops a
+  // planted symlink redirecting the token somewhere readable.
+  fs.rmSync(file, { force: true })
   fs.writeFileSync(
     file,
     `${JSON.stringify({ pid: process.pid, port: address.port, token }, null, 2)}\n`,
@@ -173,7 +182,10 @@ export async function startControlChannel(
     clearFile,
     async close() {
       clearFile()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+      for (const socket of sockets) socket.destroy()
+      sockets.clear()
+      await closed
     },
   }
 }
@@ -190,11 +202,23 @@ export class NoDevLoopError extends Error {
   }
 }
 
+/** Thrown when the loop was reached but the exchange broke off part-way. */
+export class DevLoopUnreachableError extends Error {
+  constructor() {
+    super(
+      'The `opensaas dev` loop stopped responding while applying the schema change. It may ' +
+        'have applied part of it, so check that terminal\u2019s output before retrying.',
+    )
+    this.name = 'DevLoopUnreachableError'
+  }
+}
+
 /**
  * Asks the running loop to reconcile and promote, printing what it reports.
  *
  * @returns whether the loop reported success.
  * @throws {NoDevLoopError} when no loop is listening.
+ * @throws {DevLoopUnreachableError} when the connection drops mid-exchange.
  */
 export async function requestDatabaseUpdate(
   cwd: string,
@@ -215,6 +239,7 @@ export async function requestDatabaseUpdate(
 
     let buffered = ''
     let settled = false
+    let connected = false
     const settle = (outcome: boolean): void => {
       if (settled) return
       settled = true
@@ -223,6 +248,7 @@ export async function requestDatabaseUpdate(
     }
 
     socket.once('connect', () => {
+      connected = true
       socket.write(
         `${JSON.stringify({ token: published.token, command: 'db-update', confirm: [...confirm] })}\n`,
       )
@@ -250,9 +276,16 @@ export async function requestDatabaseUpdate(
       }
     })
 
-    socket.once('error', () => {
-      if (!settled) reject(new NoDevLoopError())
-    })
-    socket.once('close', () => settle(false))
+    // Ending without a result line is the loop going away mid-exchange, which
+    // is not the same as finding no listener at all: the schema change may be
+    // half applied, so this must not send the user off to start a second loop.
+    const abandon = (): void => {
+      if (settled) return
+      settled = true
+      reject(connected ? new DevLoopUnreachableError() : new NoDevLoopError())
+    }
+
+    socket.once('error', abandon)
+    socket.once('close', abandon)
   })
 }

@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
-import { NoDevLoopError, requestDatabaseUpdate } from '../dev/control.js'
+import { DevLoopUnreachableError, NoDevLoopError, requestDatabaseUpdate } from '../dev/control.js'
 
 /** Options for {@link dbUpdateCommand}. */
 export interface DbUpdateCommandOptions {
@@ -32,7 +32,8 @@ export async function dbUpdateCommand(options: DbUpdateCommandOptions = {}): Pro
     })
     if (!ok) process.exitCode = 1
   } catch (error) {
-    if (!(error instanceof NoDevLoopError)) throw error
+    if (!(error instanceof NoDevLoopError) && !(error instanceof DevLoopUnreachableError))
+      throw error
     console.error(chalk.red(error.message))
     process.exitCode = 1
   }

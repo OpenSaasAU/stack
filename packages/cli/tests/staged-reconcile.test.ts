@@ -238,8 +238,19 @@ describe('staged reconcile under opensaas dev', () => {
     )
     expect(promoted.pid, 'an additive promote must not restart the app').toBe(booted.pid)
 
+    // Stamped so the next assertion can tell "left alone" from "rewritten
+    // with the same bytes": the root config is contract-derived, and a change
+    // the loop parks must not reach it.
+    const rootPrismaConfig = path.join(projectDir, 'prisma.config.ts')
+    fs.appendFileSync(rootPrismaConfig, '\n// held back until promotion\n', 'utf-8')
+
     writeConfig(projectDir, '')
     await waitForOutput(loop, 'pnpm db:update')
+
+    expect(
+      fs.readFileSync(rootPrismaConfig, 'utf-8'),
+      'a parked generation must not rewrite the live root config',
+    ).toContain('// held back until promotion')
 
     const serving = await waitForState(projectDir, loop, () => true, 'the app to answer')
     expect(serving.columns, 'the old schema keeps serving').toContain('note')
@@ -256,6 +267,10 @@ describe('staged reconcile under opensaas dev', () => {
       'the destructive change to be applied and promoted',
     )
     expect(dropped.pid, 'a destructive promote restarts the app').not.toBe(booted.pid)
+    expect(
+      fs.readFileSync(rootPrismaConfig, 'utf-8'),
+      'promotion moves the held-back root config into place',
+    ).not.toContain('// held back until promotion')
 
     const starts = fs.readFileSync(path.join(projectDir, 'starts.log'), 'utf-8').trim().split('\n')
     expect(starts).toHaveLength(2)

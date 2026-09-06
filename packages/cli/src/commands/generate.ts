@@ -15,6 +15,7 @@ import {
   writeTables,
   resolveOutputPaths,
   stageWritePaths,
+  STAGED_ROOT_PRISMA_CONFIG,
   loadOpenSaasConfig,
 } from '../generator/index.js'
 import type { ResolvedWritePaths } from '../generator/index.js'
@@ -95,8 +96,8 @@ export interface GenerateCommandOptions {
    * Write the Contract module, its emitted artifacts and the bundle under this
    * directory instead of their resolved homes, so a generation can be planned
    * against the database before the app is allowed to load it (ADR-0063). The
-   * project-root `prisma.config.ts` is written in place either way — nothing
-   * the app loads reads it.
+   * project-root `prisma.config.ts` is held back with them, and promoted with
+   * them.
    */
   stagingDir?: string
   /**
@@ -237,11 +238,21 @@ async function runGeneration(options: GenerateCommandOptions): Promise<Generatio
     const generatorSpinner = ora('Writing the Contract module and prisma.config.ts...').start()
     try {
       writeContractModule(contractData, paths.contractModule)
-      writePrismaConfig(contractData, resolved.prismaConfig, {
-        contractModule: crossReferences.prismaConfigContract,
-        outputDir: crossReferences.prismaConfigOutput,
-      })
-      if (staging !== undefined) {
+      if (staging === undefined) {
+        writePrismaConfig(contractData, resolved.prismaConfig, {
+          contractModule: crossReferences.prismaConfigContract,
+          outputDir: crossReferences.prismaConfigOutput,
+        })
+      } else {
+        // Held back rather than written: the root config's contract-derived
+        // content is the extension import list, so writing it now would leave
+        // the project describing extensions a discarded plan never applied.
+        // Promotion moves this file into place with the rest.
+        writePrismaConfig(contractData, path.join(staging, STAGED_ROOT_PRISMA_CONFIG), {
+          contractModule: crossReferences.prismaConfigContract,
+          outputDir: crossReferences.prismaConfigOutput,
+        })
+
         // The staged config names absolute paths and the project's own
         // migrations directory: `db update --to` takes a ref or a migration
         // directory rather than a contract file, so pointing the CLI at a

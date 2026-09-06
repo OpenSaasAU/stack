@@ -82,6 +82,10 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
     isRunning,
 
     kill(signal) {
+      // Cancels a restart the loop asked for and the child has not answered
+      // yet: without this the pending `exit` respawns the app instead of
+      // resolving `run()`, and the loop never reaches its shutdown.
+      restarting = false
       if (isRunning()) child?.kill(signal)
     },
 
