@@ -25,7 +25,7 @@ describe('getRelationshipOptions (stack-ui re-export)', () => {
       { id: 'u1', name: 'Ada Lovelace' },
       { id: 'u2', name: 'Alan Turing' },
     ])
-    const context = makeContext({ user: { findMany, findFirst: vi.fn() } })
+    const context = makeContext({ User: { findMany, findFirst: vi.fn() } })
 
     const config: OpenSaasConfig = {
       db: { provider: 'sqlite', url: 'file:./test.db' },

@@ -152,7 +152,7 @@ describe('the test database stands a blog-shaped config up', () => {
     expect(anonymous.session).toBeNull()
     expect(authenticated.session).toEqual({ userId: 'user-1' })
     expect(typeof anonymous.transaction).toBe('function')
-    expect(Object.keys(anonymous.db)).toEqual(expect.arrayContaining(['user', 'post']))
+    expect(Object.keys(anonymous.db)).toEqual(expect.arrayContaining(['User', 'Post']))
   })
 
   test(
@@ -291,7 +291,7 @@ describe('the map the engine reaches models through is checked at construction',
     const orm = { public: { User: { create: () => {} }, Post: { create: () => {} } } }
     const built = ormClientFor(data, orm)
 
-    expect(Object.keys(built).sort()).toEqual(['post', 'user'])
+    expect(Object.keys(built).sort()).toEqual(['Post', 'User'])
     for (const value of Object.values(built)) expect(typeof value).toBe('object')
   })
 

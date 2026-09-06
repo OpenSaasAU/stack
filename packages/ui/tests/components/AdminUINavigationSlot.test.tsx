@@ -89,7 +89,7 @@ describe('AdminUI navigation slot (ADR-0021)', () => {
         }),
       },
     }
-    const context = makeContext({ post: { count } })
+    const context = makeContext({ Post: { count } })
 
     const tree = await AdminUI({
       context,
@@ -130,7 +130,7 @@ describe('AdminUI navigation slot (ADR-0021)', () => {
         }),
       },
     }
-    const context = makeContext({ post: { count } })
+    const context = makeContext({ Post: { count } })
 
     await AdminUI({
       context,
@@ -146,7 +146,7 @@ describe('AdminUI navigation slot (ADR-0021)', () => {
 
   it('renders routed content for every route when `navigation` is supplied', async () => {
     const context = makeContext({
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     for (const params of [[], ['post'], ['post', 'create'], ['post', '1']]) {

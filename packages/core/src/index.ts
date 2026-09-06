@@ -129,8 +129,14 @@ export type {
 } from './types/index.js'
 export type { StackContext } from './types/context.js'
 
-// Naming utilities (documented public helpers; used for URLs and db keys)
-export { getDbKey, getUrlKey, getListKeyFromUrl, resolveListKeyFromUrl } from './lib/case-utils.js'
+// The secured read surface: the composed query value `context.db.<List>` is,
+// its predicate vocabulary, and the refusal a predicate the engine cannot
+// lower raises (ADR-0041, ADR-0055).
+export { UnsupportedPredicateError, SecuredCollectionMissingError } from './secured/read.js'
+export type { SecuredQuery, Where, WhereCondition, WhereValue } from './secured/read.js'
+
+// Naming utilities (documented public helpers; used for URLs)
+export { getUrlKey, getListKeyFromUrl, resolveListKeyFromUrl } from './lib/case-utils.js'
 
 // Label seam — resolves the field that represents a row as a single label
 // (projection) and reads it off a row (render). Used by the admin UI for

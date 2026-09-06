@@ -82,7 +82,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Naming Conventions',
-    content: `OpenSaas Stack uses consistent case conventions across contexts. List names in config must be PascalCase (e.g., User, BlogPost, AuthUser). The stack automatically converts these: Prisma models use PascalCase, Prisma Client properties use camelCase (prisma.blogPost), context DB properties use camelCase (context.db.blogPost), and admin UI URLs use kebab-case (/admin/blog-post). Utility functions help with conversion: getDbKey('BlogPost') returns 'blogPost' for database access, getUrlKey('BlogPost') returns 'blog-post' for URLs, and getListKeyFromUrl('blog-post') returns 'BlogPost' for parsing. Following these conventions ensures the code generation and admin UI work correctly. Never use lowercase or snake_case for list names.`,
+    content: `OpenSaas Stack uses consistent case conventions across contexts. List names in config must be PascalCase (e.g., User, BlogPost, AuthUser). The stack automatically converts these: Prisma models use PascalCase, Prisma Client properties use camelCase (prisma.blogPost), context DB properties use the list name (context.db.BlogPost), and admin UI URLs use kebab-case (/admin/blog-post). Utility functions help with conversion: getUrlKey('BlogPost') returns 'blog-post' for URLs, and getListKeyFromUrl('blog-post') returns 'BlogPost' for parsing. Following these conventions ensures the code generation and admin UI work correctly. Never use lowercase or snake_case for list names.`,
     category: 'web-dev',
     published: true,
   },

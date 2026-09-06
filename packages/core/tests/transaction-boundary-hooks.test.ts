@@ -20,9 +20,9 @@ import { enumerateInvolvedLists } from '../src/context/transaction-boundary.js'
 
 function createTxPrisma(extraTables: string[] = []) {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    post: new Map(),
-    user: new Map(),
-    comment: new Map(),
+    Post: new Map(),
+    User: new Map(),
+    Comment: new Map(),
   }
   for (const table of extraTables) tables[table] = new Map()
   let idCounter = 0
@@ -38,7 +38,14 @@ function createTxPrisma(extraTables: string[] = []) {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const nested = value as Record<string, unknown>
         if (nested.create || nested.update || nested.delete || nested.connect) {
-          const relTable = key === 'author' ? 'user' : key === 'comments' ? 'comment' : key
+          const relTable =
+            key === 'author'
+              ? 'User'
+              : key === 'comments'
+                ? 'Comment'
+                : /^l\d+$/.test(key)
+                  ? key.toUpperCase()
+                  : key
           const linkField = `${key}Link`
           if (nested.create) {
             const created = doCreate(relTable, nested.create as Record<string, unknown>)
@@ -109,9 +116,9 @@ function createTxPrisma(extraTables: string[] = []) {
   }
 
   const client: Record<string, unknown> = {
-    post: makeModel('post'),
-    user: makeModel('user'),
-    comment: makeModel('comment'),
+    Post: makeModel('Post'),
+    User: makeModel('User'),
+    Comment: makeModel('Comment'),
   }
   for (const table of extraTables) client[table] = makeModel(table)
 
@@ -157,7 +164,7 @@ describe('#590 transaction-boundary hooks', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    const created = await context.db.user.create({ data: { name: 'jane' } })
+    const created = await context.db.User.create({ data: { name: 'jane' } })
 
     expect(created).toBeTruthy()
     expect(before).toHaveBeenCalledWith(
@@ -181,10 +188,10 @@ describe('#590 transaction-boundary hooks', () => {
           hooks: {
             beforeTransaction: () => {
               // No rows persisted at this point.
-              order.push(`before:size=${mock.tables.user.size}`)
+              order.push(`before:size=${mock.tables.User.size}`)
             },
             afterTransaction: () => {
-              order.push(`after:size=${mock.tables.user.size}`)
+              order.push(`after:size=${mock.tables.User.size}`)
             },
           },
         }),
@@ -192,7 +199,7 @@ describe('#590 transaction-boundary hooks', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    await context.db.user.create({ data: { name: 'jane' } })
+    await context.db.User.create({ data: { name: 'jane' } })
 
     expect(order).toEqual(['before:size=0', 'after:size=1'])
   })
@@ -219,7 +226,7 @@ describe('#590 transaction-boundary hooks', () => {
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
-    await expect(context.db.user.create({ data: { name: 'jane' } })).rejects.toThrow('in-tx boom')
+    await expect(context.db.User.create({ data: { name: 'jane' } })).rejects.toThrow('in-tx boom')
 
     expect(after).toHaveBeenCalledTimes(1)
     const arg = after.mock.calls[0][0]
@@ -229,7 +236,7 @@ describe('#590 transaction-boundary hooks', () => {
     expect(arg.item).toBeUndefined()
     expect(arg.inputData).toEqual(expect.objectContaining({ name: 'jane' }))
     // Nothing persisted.
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
   })
 
   it('a thrown beforeTransaction aborts the write and fires afterTransaction only for already-run lists', async () => {
@@ -278,7 +285,7 @@ describe('#590 transaction-boundary hooks', () => {
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.create({ data: { title: 'T', author: { create: { name: 'x' } } } }),
+      context.db.Post.create({ data: { title: 'T', author: { create: { name: 'x' } } } }),
     ).rejects.toThrow('user before boom')
 
     // Post (top-level) beforeTransaction ran, then User's threw. Both ran-lists
@@ -290,8 +297,8 @@ describe('#590 transaction-boundary hooks', () => {
     expect(events).toContain('user:after:rolled-back')
     expect(events).not.toContain('comment:before')
     expect(events).not.toContain('comment:after')
-    expect(mock.tables.post.size).toBe(0)
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.Post.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
   })
 
   it('fires per list across a nested write (parent + nested list both bracketed)', async () => {
@@ -314,10 +321,10 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    mock.tables.post.set('p1', { id: 'p1', title: 'Original' })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    await context.db.post.update({
+    await context.db.Post.update({
       where: { id: 'p1' },
       data: { title: 'Updated', author: { create: { name: 'john' } } },
     })
@@ -371,13 +378,13 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    mock.tables.post.set('p1', { id: 'p1', title: 'Original' })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
     // The write itself committed; surfaced error is the afterTransaction failure.
     await expect(
-      context.db.post.update({
+      context.db.Post.update({
         where: { id: 'p1' },
         data: { title: 'Updated', author: { create: { name: 'john' } } },
       }),
@@ -386,7 +393,7 @@ describe('#590 transaction-boundary hooks', () => {
     // Both compensators fired even though one threw.
     expect(fired).toEqual(expect.arrayContaining(['post', 'user']))
     // DB state is final (the write committed).
-    expect((mock.tables.post.get('p1') as Record<string, unknown>).title).toBe('Updated')
+    expect((mock.tables.Post.get('p1') as Record<string, unknown>).title).toBe('Updated')
   })
 
   it('field-level beforeTransaction / afterTransaction variants fire', async () => {
@@ -408,7 +415,7 @@ describe('#590 transaction-boundary hooks', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    await context.db.user.create({ data: { name: 'jane' } })
+    await context.db.User.create({ data: { name: 'jane' } })
 
     expect(fieldBefore).toHaveBeenCalledWith(
       expect.objectContaining({ operation: 'create', fieldKey: 'name' }),
@@ -435,7 +442,7 @@ describe('#590 transaction-boundary hooks', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
-    const created = await context.db.user.create({ data: { name: 'sudo-made' } })
+    const created = await context.db.User.create({ data: { name: 'sudo-made' } })
 
     expect(created).toBeTruthy()
     expect(before).toHaveBeenCalledTimes(1)
@@ -458,7 +465,7 @@ describe('#590 transaction-boundary hooks', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    const created = await context.db.user.create({ data: { name: 'jane' } })
+    const created = await context.db.User.create({ data: { name: 'jane' } })
 
     // Silent failure: a denied create returns null and takes no external action.
     expect(created).toBeNull()
@@ -657,7 +664,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
   }
 
   it('throws when a nested create 6 levels deep is denied, even though 6 is past the old enumeration depth cap', async () => {
-    const tables = Array.from({ length: 8 }, (_, i) => `l${i + 1}`)
+    const tables = Array.from({ length: 8 }, (_, i) => `L${i + 1}`)
     const mock = createTxPrisma(tables)
 
     const testConfig = config({
@@ -667,7 +674,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
-    await expect(context.db.l1.create({ data: chainInputData(8) })).rejects.toThrow(
+    await expect(context.db.L1.create({ data: chainInputData(8) })).rejects.toThrow(
       /access denied/i,
     )
 
@@ -678,7 +685,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
   })
 
   it('fires beforeTransaction/afterTransaction for every list in an 8-list chain, including the deepest', async () => {
-    const tables = Array.from({ length: 8 }, (_, i) => `l${i + 1}`)
+    const tables = Array.from({ length: 8 }, (_, i) => `L${i + 1}`)
     const mock = createTxPrisma(tables)
 
     const fired: string[] = []
@@ -700,7 +707,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
     })
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
-    await context.db.l1.create({ data: chainInputData(8) })
+    await context.db.L1.create({ data: chainInputData(8) })
 
     for (let i = 1; i <= 8; i++) {
       expect(fired).toContain(`before:L${i}`)

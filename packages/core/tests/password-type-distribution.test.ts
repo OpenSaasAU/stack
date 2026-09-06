@@ -9,7 +9,7 @@ import type { HashedPassword } from '../src/utils/password.js'
  */
 describe('Password Field Type Distribution Bug Fix', () => {
   const mockPrismaClient = {
-    user: {
+    User: {
       findUnique: async () => ({
         id: '1',
         name: 'John Doe',
@@ -32,7 +32,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
         },
       ],
     },
-    post: {
+    Post: {
       findMany: async () => [],
     },
   }
@@ -62,7 +62,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   it('should NOT make all fields a union of string | HashedPassword', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.findUnique({ where: { id: '1' } })
+    const user = await context.db.User.findUnique({ where: { id: '1' } })
 
     if (user) {
       // Type assertions that should compile correctly
@@ -94,7 +94,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   it('should preserve types with included relationships', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const users = await context.db.user.findMany({
+    const users = await context.db.User.findMany({
       include: {
         posts: true,
       },
@@ -128,7 +128,7 @@ describe('Password Field Type Distribution Bug Fix', () => {
   it('should verify TypeScript narrowing works correctly', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.findUnique({ where: { id: '1' } })
+    const user = await context.db.User.findUnique({ where: { id: '1' } })
 
     if (user) {
       // This is the key test: if all fields were string | HashedPassword,

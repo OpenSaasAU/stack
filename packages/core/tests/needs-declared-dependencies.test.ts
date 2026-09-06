@@ -26,10 +26,10 @@ function createMockPrisma(): any {
     count: vi.fn(),
   })
   return {
-    order: model(),
-    lineItem: model(),
-    product: model(),
-    tag: model(),
+    Order: model(),
+    LineItem: model(),
+    Product: model(),
+    Tag: model(),
   }
 }
 
@@ -121,7 +121,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
   it('is available to resolveOutput on a bare read (no caller include), and absent from the result', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([
+    mockPrisma.Order.findMany.mockResolvedValue([
       {
         id: 'o1',
         title: 'Order 1',
@@ -133,11 +133,11 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     ])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
     // The declared relation WAS fetched (folded into the include even though
     // the caller asked for nothing).
-    expect(mockPrisma.order.findMany).toHaveBeenCalledWith(
+    expect(mockPrisma.Order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({ lineItems: expect.anything() }),
       }),
@@ -152,14 +152,14 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
   it('a caller include naming the same relation still receives it, unchanged', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
     })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({
+    const result = await context.db.Order.findUnique({
       where: { id: 'o1' },
       include: { lineItems: true },
     })
@@ -176,7 +176,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     // Simulates what Prisma would actually return given the fold: `tag`
     // (caller-named) AND `product` (declaration-added) both present on the
     // fetched row.
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [
@@ -191,14 +191,14 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({
+    const result = await context.db.Order.findUnique({
       where: { id: 'o1' },
       include: { lineItems: { include: { tag: true } } },
     })
 
     // The Prisma call's nested include for `lineItems` folds `product` in
     // alongside the caller's own `tag` selection.
-    expect(mockPrisma.order.findFirst).toHaveBeenCalledWith(
+    expect(mockPrisma.Order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
           lineItems: { include: { tag: true, product: true } },
@@ -218,7 +218,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     // Only line items priced >= 10 are visible to this session.
     const testConfig = await buildTestConfig({ lineItemQuery: () => ({ price: { gte: 10 } }) })
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([
+    mockPrisma.Order.findMany.mockResolvedValue([
       {
         id: 'o1',
         title: 'Order 1',
@@ -229,10 +229,10 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     ])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
     // The access filter's `where` rode along on the declaration-added relation.
-    expect(mockPrisma.order.findMany).toHaveBeenCalledWith(
+    expect(mockPrisma.Order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
           lineItems: expect.objectContaining({ where: { price: { gte: 10 } } }),
@@ -247,10 +247,10 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
   it('a field whose declared dependency is entirely denied still computes, and is not withheld', async () => {
     const testConfig = await buildTestConfig({ lineItemQuery: () => false })
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([{ id: 'o1', title: 'Order 1' }])
+    mockPrisma.Order.findMany.mockResolvedValue([{ id: 'o1', title: 'Order 1' }])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
     // The field is present with a value computed over nothing, not withheld.
     expect(result[0]).toHaveProperty('total')
@@ -261,12 +261,12 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
   it('a field-level read denial on the declared relation also still lets the field compute', async () => {
     const testConfig = await buildTestConfig({ lineItemsFieldAccess: () => false })
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([
+    mockPrisma.Order.findMany.mockResolvedValue([
       { id: 'o1', title: 'Order 1', lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }] },
     ])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
     expect(result[0].total).toBe(0)
     expect(result[0]).not.toHaveProperty('lineItems')
@@ -275,7 +275,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
   it('holds for fragment (query) reads too: the fold feeds the hook, the fragment projection still governs what returns', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
@@ -285,7 +285,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     const orderFragment = defineFragment<any>()({ title: true, total: true } as const)
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({
+    const result = await context.db.Order.findUnique({
       where: { id: 'o1' },
       query: orderFragment,
     })
@@ -319,13 +319,13 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       },
     })
     const mockPrisma = createMockPrisma()
-    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
+    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const productFragment = defineFragment<any>()({ doubled: true } as const)
 
     const context = getContext(productConfig, mockPrisma, null)
-    const result = await context.db.product.findUnique({
+    const result = await context.db.Product.findUnique({
       where: { id: 'p1' },
       query: productFragment,
     })
@@ -334,7 +334,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(result).not.toHaveProperty('price')
     expect(result).not.toHaveProperty('name')
     // A column is already on every row — nothing to include for it.
-    const callArgs = mockPrisma.product.findFirst.mock.calls[0][0]
+    const callArgs = mockPrisma.Product.findFirst.mock.calls[0][0]
     expect(callArgs.include).toBeUndefined()
   })
 
@@ -368,7 +368,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       },
     })
     const mockPrisma = createMockPrisma()
-    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
+    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const productFragment = defineFragment<any>()({ doubled: true } as const)
@@ -385,7 +385,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       },
       mockPrisma,
       null,
-    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
 
     expect(emptyTables?.doubled).toBe('no price')
 
@@ -405,7 +405,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       },
       mockPrisma,
       null,
-    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
 
     expect(withColumn?.doubled).toBe(20)
     expect(withColumn).not.toHaveProperty('price')
@@ -439,7 +439,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     })
 
     const mockPrisma = createMockPrisma()
-    mockPrisma.product.findFirst.mockResolvedValue({ id: 'p1', price: 10 })
+    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', price: 10 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const productFragment = defineFragment<any>()({ doubled: true } as const)
@@ -448,7 +448,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       { ...productConfig, _tables: { dependencies: {}, constraints: {} } },
       mockPrisma,
       null,
-    ).db.product.findUnique({ where: { id: 'p1' }, query: productFragment })
+    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
 
     expect(result?.doubled).toBe(20)
     expect(result).not.toHaveProperty('price')
@@ -486,7 +486,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     })
 
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 7 }],
@@ -509,9 +509,9 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       mockPrisma,
       null,
     )
-    const result = await context.db.order.findUnique({ where: { id: 'o1' } })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' } })
 
-    expect(mockPrisma.order.findFirst.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(mockPrisma.Order.findFirst.mock.calls[0][0].include).toEqual({ lineItems: true })
     expect(result?.total).toBe(7)
     expect(result).not.toHaveProperty('lineItems')
   })
@@ -532,7 +532,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
       },
     }
 
-    mockPrisma.order.findMany.mockImplementation((args: { include?: Record<string, unknown> }) => {
+    mockPrisma.Order.findMany.mockImplementation((args: { include?: Record<string, unknown> }) => {
       const included = args.include ?? {}
       return Promise.resolve([
         {
@@ -546,9 +546,9 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
-    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(mockPrisma.Order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
     expect(ranOnAddedBranch).toEqual([])
     expect(result).toEqual([{ id: 'o1', title: 'O', total: 10 }])
   })
@@ -560,7 +560,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     // guard and `validateNeedsClosureDepth` are both deleted.
     const testConfig = await buildTestConfig({ withDeclarationCycle: true })
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([
+    mockPrisma.Order.findMany.mockResolvedValue([
       {
         id: 'o1',
         title: 'Order 1',
@@ -578,9 +578,9 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     ])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
-    expect(mockPrisma.order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
+    expect(mockPrisma.Order.findMany.mock.calls[0][0].include).toEqual({ lineItems: true })
     expect(result).toEqual([{ id: 'o1', title: 'Order 1', total: 10 }])
   })
 })

@@ -3,7 +3,6 @@ import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js
 import type { FilterOperator, RelationshipCountFilterMarker } from '../filter/types.js'
 import { RELATIONSHIP_COUNT_FILTER_KEY } from '../filter/types.js'
 import { checkAccess, getRelatedListConfig } from './engine.js'
-import { getDbKey } from '../lib/case-utils.js'
 
 /**
  * Access-scoped to-many relationship counts for the admin list view (issue
@@ -201,7 +200,7 @@ async function resolveOneCountFilter(
     return matchesCount(0, marker.operator, marker.value) ? {} : { id: { in: [] } }
   }
 
-  const delegate = asCountDelegate(args.context.db[getDbKey(listKey)])
+  const delegate = asCountDelegate(args.context.db[listKey])
   if (!delegate) return {}
 
   const countSelect = entry.kind === 'scoped' ? { where: entry.where } : true

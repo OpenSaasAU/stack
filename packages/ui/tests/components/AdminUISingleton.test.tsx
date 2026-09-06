@@ -101,8 +101,8 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
 describe('AdminUI singleton routing', () => {
   it('routes a singleton bare [list] to SingletonView, a non-singleton to ListView', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const singletonTree = await AdminUI({
@@ -126,7 +126,7 @@ describe('AdminUI singleton routing', () => {
 
   it('renders a single-record editor for a singleton list (SingletonView)', async () => {
     const singletonGet = vi.fn(async () => ({ id: '1', siteName: 'My Site' }))
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -171,7 +171,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -215,7 +215,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -256,7 +256,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -278,7 +278,7 @@ describe('AdminUI singleton routing', () => {
       { id: '2', title: 'Second Post' },
     ])
     const count = vi.fn(async () => 2)
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     const element = await ListView({
       context,

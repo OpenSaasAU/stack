@@ -26,7 +26,7 @@ function createMockPrisma(): any {
     update: vi.fn(),
     delete: vi.fn(),
   })
-  return { user: model(), comment: model(), post: model() }
+  return { User: model(), Comment: model(), Post: model() }
 }
 
 async function buildTestConfig() {
@@ -122,12 +122,12 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
   it('nulls a to-one relation whose related row fails the related list access filter', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findMany.mockResolvedValue([
+    mockPrisma.Post.findMany.mockResolvedValue([
       { id: 'p1', title: 'Hi', author: { id: 'u2', name: 'Bob' } },
     ])
     // The batched existence check queries the RAW ORM handle for ids
     // matching the access filter — "u2" doesn't, so it comes back empty.
-    mockPrisma.user.findMany.mockResolvedValue([])
+    mockPrisma.User.findMany.mockResolvedValue([])
 
     const data = await callPostQuery(testConfig, mockPrisma, {
       fields: { title: true, author: { fields: { name: true } } },
@@ -140,7 +140,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
   it('AND-combines a nested to-many where with the related list’s own access filter', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findMany.mockResolvedValue([
+    mockPrisma.Post.findMany.mockResolvedValue([
       { id: 'p1', title: 'Hi', comments: [{ id: 'c1', text: 'nice' }] },
     ])
 
@@ -148,7 +148,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
       fields: { comments: { fields: { text: true }, where: { text: { contains: 'nice' } } } },
     })
 
-    expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+    expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
           comments: {
@@ -163,7 +163,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
   it('still drops a field-level-denied field even when named in fields', async () => {
     const testConfig = await buildTestConfig()
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findMany.mockResolvedValue([{ id: 'p1', title: 'Hi', secret: 'shh' }])
+    mockPrisma.Post.findMany.mockResolvedValue([{ id: 'p1', title: 'Hi', secret: 'shh' }])
 
     const data = await callPostQuery(testConfig, mockPrisma, {
       fields: { title: true, secret: true },
@@ -179,7 +179,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // The engine fetches `comments` unscoped by our projection (folded via
     // `needs`) and access-scopes it exactly like any other named relation —
     // only the approved one should count.
-    mockPrisma.post.findMany.mockResolvedValue([
+    mockPrisma.Post.findMany.mockResolvedValue([
       { id: 'p1', title: 'Hi', comments: [{ id: 'c1', approved: true }] },
     ])
 
@@ -192,7 +192,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
 
     // `needs` folded `comments` into the include even though the caller's
     // own `fields` never named it.
-    const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
+    const callArgs = mockPrisma.Post.findMany.mock.calls[0][0]
     expect(callArgs.include.comments).toBeDefined()
   })
 
@@ -204,7 +204,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // `access.read` against the TRUE raw row below and strips the key
     // entirely (denied), so `_count.restrictedComments` survives in the raw
     // Prisma row but the relation key itself does not.
-    mockPrisma.post.findMany.mockResolvedValue([
+    mockPrisma.Post.findMany.mockResolvedValue([
       { id: 'p1', title: 'Hi', restrictedComments: [], _count: { restrictedComments: 4 } },
     ])
 
@@ -224,7 +224,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // field-visibility see an empty array regardless of the truth and
     // wrongly GRANT access here — asserting the count is suppressed proves
     // the real (non-empty) rows reached the access check.
-    mockPrisma.post.findMany.mockResolvedValue([
+    mockPrisma.Post.findMany.mockResolvedValue([
       {
         id: 'p1',
         title: 'Hi',
@@ -243,7 +243,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     // Real rows were fetched (access-scoped by Comment's own operation-level
     // query access, folded in the same way any other named relation is) —
     // never a synthetic `take: 0` placeholder.
-    const callArgs = mockPrisma.post.findMany.mock.calls[0][0]
+    const callArgs = mockPrisma.Post.findMany.mock.calls[0][0]
     expect(callArgs.include.commentsVisibleIfEmpty).toMatchObject({ take: 5 })
     expect(callArgs.include.commentsVisibleIfEmpty.take).not.toBe(0)
   })

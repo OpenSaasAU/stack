@@ -1,7 +1,7 @@
 import Link from 'next/link.js'
 import { ArrowRight, LayoutDashboard, Package, Plus, Settings, Table2, Zap } from 'lucide-react'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
@@ -24,7 +24,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
       try {
-        const delegate = context.db[getDbKey(listKey)]
+        const delegate = context.db[listKey]
         const count = delegate?.count ? await delegate.count() : 0
         return { listKey, count }
       } catch (error) {

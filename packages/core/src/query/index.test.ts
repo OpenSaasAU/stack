@@ -188,7 +188,7 @@ describe('runQuery', () => {
 
   it('calls context.db[dbKey].findMany with no args when none supplied', async () => {
     const delegate = makeDelegate(rawUsers)
-    const ctx = makeContext({ user: delegate })
+    const ctx = makeContext({ User: delegate })
 
     await runQuery(ctx, 'User', userFrag)
 
@@ -196,7 +196,7 @@ describe('runQuery', () => {
   })
 
   it('returns only the fields specified in the fragment', async () => {
-    const ctx = makeContext({ user: makeDelegate(rawUsers) })
+    const ctx = makeContext({ User: makeDelegate(rawUsers) })
     const results = await runQuery(ctx, 'User', userFrag)
 
     expect(results).toHaveLength(2)
@@ -209,7 +209,7 @@ describe('runQuery', () => {
 
   it('passes where, orderBy, take, skip to findMany', async () => {
     const delegate = makeDelegate(rawUsers)
-    const ctx = makeContext({ user: delegate })
+    const ctx = makeContext({ User: delegate })
 
     await runQuery(ctx, 'User', userFrag, {
       where: { role: 'admin' },
@@ -226,9 +226,9 @@ describe('runQuery', () => {
     })
   })
 
-  it('converts PascalCase listKey to camelCase for db access', async () => {
+  it('reaches the db surface by the PascalCase list key', async () => {
     const delegate = makeDelegate([])
-    const ctx = makeContext({ blogPost: delegate })
+    const ctx = makeContext({ BlogPost: delegate })
 
     await runQuery(ctx, 'BlogPost', defineFragment<Post>()({ id: true } as const))
 
@@ -236,7 +236,7 @@ describe('runQuery', () => {
   })
 
   it('returns an empty array when findMany returns nothing', async () => {
-    const ctx = makeContext({ user: makeDelegate([]) })
+    const ctx = makeContext({ User: makeDelegate([]) })
     const results = await runQuery(ctx, 'User', userFrag)
     expect(results).toEqual([])
   })
@@ -274,7 +274,7 @@ describe('runQuery', () => {
 
     it('passes include for relationship fields to findMany', async () => {
       const delegate = makeDelegate(rawPosts)
-      const ctx = makeContext({ post: delegate })
+      const ctx = makeContext({ Post: delegate })
 
       await runQuery(ctx, 'Post', postFrag)
 
@@ -286,7 +286,7 @@ describe('runQuery', () => {
     })
 
     it('picks only the selected nested fields', async () => {
-      const ctx = makeContext({ post: makeDelegate(rawPosts) })
+      const ctx = makeContext({ Post: makeDelegate(rawPosts) })
       const results = await runQuery(ctx, 'Post', postFrag)
 
       expect(results[0].author).toEqual({ id: 'u1', name: 'Alice', email: 'alice@test.com' })
@@ -296,7 +296,7 @@ describe('runQuery', () => {
     })
 
     it('maps tag arrays and strips unselected fields', async () => {
-      const ctx = makeContext({ post: makeDelegate(rawPosts) })
+      const ctx = makeContext({ Post: makeDelegate(rawPosts) })
       const results = await runQuery(ctx, 'Post', postFrag)
 
       // slug is not in tagFrag, so it must be absent
@@ -322,7 +322,7 @@ describe('runQuery', () => {
         tags: [],
       }
 
-      const ctx = makeContext({ post: makeDelegate([rawPost]) })
+      const ctx = makeContext({ Post: makeDelegate([rawPost]) })
       const results = await runQuery(ctx, 'Post', postFrag)
 
       expect(results[0].author).toBeNull()
@@ -362,7 +362,7 @@ describe('runQuery', () => {
       ]
 
       const delegate = makeDelegate(raw)
-      const ctx = makeContext({ comment: delegate })
+      const ctx = makeContext({ Comment: delegate })
 
       const results = await runQuery(ctx, 'Comment', commentFrag)
 
@@ -406,7 +406,7 @@ describe('runQueryOne', () => {
 
   it('calls context.db[dbKey].findFirst with the where clause', async () => {
     const delegate = makeDelegate([rawUser], rawUser)
-    const ctx = makeContext({ user: delegate })
+    const ctx = makeContext({ User: delegate })
 
     await runQueryOne(ctx, 'User', userFrag, { id: 'u1' })
 
@@ -414,7 +414,7 @@ describe('runQueryOne', () => {
   })
 
   it('returns only the fields specified in the fragment', async () => {
-    const ctx = makeContext({ user: makeDelegate([rawUser], rawUser) })
+    const ctx = makeContext({ User: makeDelegate([rawUser], rawUser) })
     const result = await runQueryOne(ctx, 'User', userFrag, { id: 'u1' })
 
     expect(result).toEqual({ id: 'u1', name: 'Alice', email: 'alice@test.com' })
@@ -424,7 +424,7 @@ describe('runQueryOne', () => {
 
   it('returns null when findFirst returns null', async () => {
     const delegate = makeDelegate([], null)
-    const ctx = makeContext({ user: delegate })
+    const ctx = makeContext({ User: delegate })
 
     const result = await runQueryOne(ctx, 'User', userFrag, { id: 'nope' })
 
@@ -436,7 +436,7 @@ describe('runQueryOne', () => {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
     }
-    const ctx = makeContext({ user: delegate })
+    const ctx = makeContext({ User: delegate })
 
     const result = await runQueryOne(ctx, 'User', userFrag, { id: 'nope' })
 
@@ -459,7 +459,7 @@ describe('runQueryOne', () => {
     }
 
     const delegate = makeDelegate([rawPost], rawPost)
-    const ctx = makeContext({ post: delegate })
+    const ctx = makeContext({ Post: delegate })
 
     const result = await runQueryOne(ctx, 'Post', postFrag, { id: 'p1' })
 
@@ -474,9 +474,9 @@ describe('runQueryOne', () => {
     })
   })
 
-  it('converts PascalCase listKey to camelCase', async () => {
+  it('reaches the db surface by the PascalCase list key', async () => {
     const delegate = makeDelegate([], null)
-    const ctx = makeContext({ blogPost: delegate })
+    const ctx = makeContext({ BlogPost: delegate })
 
     await runQueryOne(ctx, 'BlogPost', defineFragment<Post>()({ id: true } as const), {
       id: 'p1',
@@ -735,7 +735,7 @@ describe('runQuery with RelationSelector', () => {
     ]
 
     const delegate = makeDelegate(rawPosts)
-    const ctx = makeContext({ postWithComments: delegate })
+    const ctx = makeContext({ PostWithComments: delegate })
 
     await runQuery(ctx, 'PostWithComments', postFrag)
 
@@ -766,7 +766,7 @@ describe('runQuery with RelationSelector', () => {
       },
     ]
 
-    const ctx = makeContext({ postWithComments: makeDelegate(rawPosts) })
+    const ctx = makeContext({ PostWithComments: makeDelegate(rawPosts) })
     const results = await runQuery(ctx, 'PostWithComments', postFrag)
 
     expect(results[0]).toEqual({

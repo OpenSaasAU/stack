@@ -12,7 +12,7 @@ import { text } from '../src/fields/index.js'
 
 describe('withSession', () => {
   const mockPrisma = {
-    post: {
+    Post: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -65,9 +65,9 @@ describe('withSession', () => {
     const original = getContext(testConfig, mockPrisma, { userId: '1', role: 'user' })
     const derived = original.withSession({ userId: '2', role: 'admin' })
 
-    mockPrisma.post.create.mockResolvedValue({ id: '1', title: 'Hi' })
+    mockPrisma.Post.create.mockResolvedValue({ id: '1', title: 'Hi' })
 
-    await derived.db.post.create({ data: { title: 'Hi' } })
+    await derived.db.Post.create({ data: { title: 'Hi' } })
 
     expect(seenSessions).toEqual([{ userId: '2', role: 'admin' }])
   })
@@ -79,10 +79,10 @@ describe('withSession', () => {
     )
     const direct = getContext(testConfig, mockPrisma, adminSession)
 
-    mockPrisma.post.create.mockResolvedValue({ id: '1', title: 'Hi' })
+    mockPrisma.Post.create.mockResolvedValue({ id: '1', title: 'Hi' })
 
-    const derivedResult = await derived.db.post.create({ data: { title: 'Hi' } })
-    const directResult = await direct.db.post.create({ data: { title: 'Hi' } })
+    const derivedResult = await derived.db.Post.create({ data: { title: 'Hi' } })
+    const directResult = await direct.db.Post.create({ data: { title: 'Hi' } })
 
     expect(derivedResult).toMatchObject({ title: 'Hi' })
     expect(directResult).toMatchObject({ title: 'Hi' })
@@ -93,8 +93,8 @@ describe('withSession', () => {
     const derivedDenied = getContext(testConfig, mockPrisma, adminSession).withSession(userSession)
     const directDenied = getContext(testConfig, mockPrisma, userSession)
 
-    expect(await derivedDenied.db.post.create({ data: { title: 'Nope' } })).toBeNull()
-    expect(await directDenied.db.post.create({ data: { title: 'Nope' } })).toBeNull()
+    expect(await derivedDenied.db.Post.create({ data: { title: 'Nope' } })).toBeNull()
+    expect(await directDenied.db.Post.create({ data: { title: 'Nope' } })).toBeNull()
   })
 
   it('withSession(null) yields an anonymous context and access rules treat it as such', async () => {
@@ -104,7 +104,7 @@ describe('withSession', () => {
 
     expect(derived.session).toBeNull()
 
-    const result = await derived.db.post.create({ data: { title: 'Nope' } })
+    const result = await derived.db.Post.create({ data: { title: 'Nope' } })
     expect(result).toBeNull()
   })
 
@@ -147,9 +147,9 @@ describe('withSession', () => {
     const original = getContext(testConfig, mockPrisma, { userId: '1', role: 'admin' })
     const derived = original.withSession({ userId: '2', role: 'admin' })
 
-    mockPrisma.post.create.mockResolvedValue({ id: '1', title: 'Hi' })
+    mockPrisma.Post.create.mockResolvedValue({ id: '1', title: 'Hi' })
 
-    await derived.db.post.create({ data: { title: 'Hi' } })
+    await derived.db.Post.create({ data: { title: 'Hi' } })
 
     expect(seenSessions).toHaveLength(1)
   })
@@ -157,7 +157,7 @@ describe('withSession', () => {
 
 describe('withSession inside context.transaction (#614/#980)', () => {
   function createTxPrisma() {
-    const tables: Record<string, Map<string, Record<string, unknown>>> = { post: new Map() }
+    const tables: Record<string, Map<string, Record<string, unknown>>> = { Post: new Map() }
     let idCounter = 0
     const nextId = () => `id-${++idCounter}`
 
@@ -178,7 +178,7 @@ describe('withSession inside context.transaction (#614/#980)', () => {
       }
     }
 
-    const client: Record<string, unknown> = { post: makeModel('post') }
+    const client: Record<string, unknown> = { Post: makeModel('Post') }
 
     client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
       const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
@@ -212,20 +212,20 @@ describe('withSession inside context.transaction (#614/#980)', () => {
 
     // Commits: the substituted-session write is inside the callback's transaction.
     const created = await context.transaction((tx) =>
-      tx.withSession({ userId: '2' }).db.post.create({ data: { title: 'committed' } }),
+      tx.withSession({ userId: '2' }).db.Post.create({ data: { title: 'committed' } }),
     )
     expect(created).toMatchObject({ title: 'committed' })
-    expect(mock.tables.post.size).toBe(1)
+    expect(mock.tables.Post.size).toBe(1)
 
     // Rolls back: a throw after the substituted-session write undoes it too,
     // proving the write joined the same transaction rather than a separate one.
     await expect(
       context.transaction(async (tx) => {
-        await tx.withSession({ userId: '3' }).db.post.create({ data: { title: 'rollback-me' } })
+        await tx.withSession({ userId: '3' }).db.Post.create({ data: { title: 'rollback-me' } })
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
-    expect(mock.tables.post.size).toBe(1)
+    expect(mock.tables.Post.size).toBe(1)
   })
 
   it('tx.withSession(s) carries the substituted session', async () => {

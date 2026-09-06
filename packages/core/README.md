@@ -370,9 +370,8 @@ writeTypes(config, './.opensaas/types.ts')
 ### Utility Functions
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
+import { getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
 
-getDbKey('BlogPost') // 'blogPost' - for context.db access
 getUrlKey('BlogPost') // 'blog-post' - for URLs
 getListKeyFromUrl('blog-post') // 'BlogPost' - parse from URLs
 ```

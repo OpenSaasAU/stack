@@ -31,8 +31,8 @@ const SYNTHETIC_FIELD = 'from_ChargeRequest_account'
  */
 function createAccountPrisma() {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    account: new Map(),
-    chargeRequest: new Map(),
+    Account: new Map(),
+    ChargeRequest: new Map(),
   }
   const chargeToAccount = new Map<string, string>()
   let idCounter = 0
@@ -42,7 +42,7 @@ function createAccountPrisma() {
     const rows: Array<Record<string, unknown>> = []
     for (const [crId, owner] of chargeToAccount.entries()) {
       if (owner === accountId) {
-        const row = tables.chargeRequest.get(crId)
+        const row = tables.ChargeRequest.get(crId)
         if (row) rows.push(row)
       }
     }
@@ -54,21 +54,21 @@ function createAccountPrisma() {
       const creates = Array.isArray(ops.create) ? ops.create : [ops.create]
       for (const data of creates as Array<Record<string, unknown>>) {
         const id = (data.id as string) ?? nextId()
-        tables.chargeRequest.set(id, { id, ...data })
+        tables.ChargeRequest.set(id, { id, ...data })
         chargeToAccount.set(id, accountId)
       }
     }
     if (ops.update) {
       const updates = Array.isArray(ops.update) ? ops.update : [ops.update]
       for (const u of updates as Array<{ where: { id: string }; data: Record<string, unknown> }>) {
-        const existing = tables.chargeRequest.get(u.where.id) ?? { id: u.where.id }
-        tables.chargeRequest.set(u.where.id, { ...existing, ...u.data })
+        const existing = tables.ChargeRequest.get(u.where.id) ?? { id: u.where.id }
+        tables.ChargeRequest.set(u.where.id, { ...existing, ...u.data })
       }
     }
     if (ops.delete) {
       const deletes = Array.isArray(ops.delete) ? ops.delete : [ops.delete]
       for (const d of deletes as Array<{ id: string }>) {
-        tables.chargeRequest.delete(d.id)
+        tables.ChargeRequest.delete(d.id)
         chargeToAccount.delete(d.id)
       }
     }
@@ -78,7 +78,7 @@ function createAccountPrisma() {
     accountId: string,
     include?: Record<string, unknown>,
   ): Record<string, unknown> {
-    const base = tables.account.get(accountId) ?? { id: accountId }
+    const base = tables.Account.get(accountId) ?? { id: accountId }
     if (include?.[SYNTHETIC_FIELD]) {
       return { ...base, [SYNTHETIC_FIELD]: linkedChargeRequests(accountId) }
     }
@@ -88,16 +88,16 @@ function createAccountPrisma() {
   const accountModel = {
     findUnique: vi.fn(
       async ({ where, include }: { where: { id: string }; include?: Record<string, unknown> }) => {
-        if (!tables.account.has(where.id)) return null
+        if (!tables.Account.has(where.id)) return null
         return buildAccountResult(where.id, include)
       },
     ),
     findFirst: vi.fn(async ({ where }: { where?: { id?: string } }) => {
-      if (where?.id) return tables.account.get(where.id) ?? null
-      return tables.account.values().next().value ?? null
+      if (where?.id) return tables.Account.get(where.id) ?? null
+      return tables.Account.values().next().value ?? null
     }),
-    findMany: vi.fn(async () => Array.from(tables.account.values())),
-    count: vi.fn(async () => tables.account.size),
+    findMany: vi.fn(async () => Array.from(tables.Account.values())),
+    count: vi.fn(async () => tables.Account.size),
     create: vi.fn(
       async ({
         data,
@@ -108,7 +108,7 @@ function createAccountPrisma() {
       }) => {
         const id = (data.id as string) ?? `a-${++idCounter}`
         const { [SYNTHETIC_FIELD]: nested, ...scalars } = data
-        tables.account.set(id, { id, ...scalars })
+        tables.Account.set(id, { id, ...scalars })
         if (nested) applyChargeRequestOps(id, nested as Record<string, unknown>)
         return buildAccountResult(id, include)
       },
@@ -123,16 +123,16 @@ function createAccountPrisma() {
         data: Record<string, unknown>
         include?: Record<string, unknown>
       }) => {
-        const existing = tables.account.get(where.id) ?? { id: where.id }
+        const existing = tables.Account.get(where.id) ?? { id: where.id }
         const { [SYNTHETIC_FIELD]: nested, ...scalars } = data
-        tables.account.set(where.id, { ...existing, ...scalars })
+        tables.Account.set(where.id, { ...existing, ...scalars })
         if (nested) applyChargeRequestOps(where.id, nested as Record<string, unknown>)
         return buildAccountResult(where.id, include)
       },
     ),
     delete: vi.fn(async ({ where }: { where: { id: string } }) => {
-      const existing = tables.account.get(where.id) ?? { id: where.id }
-      tables.account.delete(where.id)
+      const existing = tables.Account.get(where.id) ?? { id: where.id }
+      tables.Account.delete(where.id)
       return existing
     }),
   }
@@ -140,28 +140,28 @@ function createAccountPrisma() {
   function makeChargeRequestModel() {
     return {
       findUnique: vi.fn(
-        async ({ where }: { where: { id: string } }) => tables.chargeRequest.get(where.id) ?? null,
+        async ({ where }: { where: { id: string } }) => tables.ChargeRequest.get(where.id) ?? null,
       ),
-      findFirst: vi.fn(async () => tables.chargeRequest.values().next().value ?? null),
-      findMany: vi.fn(async () => Array.from(tables.chargeRequest.values())),
-      count: vi.fn(async () => tables.chargeRequest.size),
+      findFirst: vi.fn(async () => tables.ChargeRequest.values().next().value ?? null),
+      findMany: vi.fn(async () => Array.from(tables.ChargeRequest.values())),
+      count: vi.fn(async () => tables.ChargeRequest.size),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const id = (data.id as string) ?? nextId()
         const row = { id, ...data }
-        tables.chargeRequest.set(id, row)
+        tables.ChargeRequest.set(id, row)
         return row
       }),
       update: vi.fn(
         async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-          const existing = tables.chargeRequest.get(where.id) ?? { id: where.id }
+          const existing = tables.ChargeRequest.get(where.id) ?? { id: where.id }
           const updated = { ...existing, ...data }
-          tables.chargeRequest.set(where.id, updated)
+          tables.ChargeRequest.set(where.id, updated)
           return updated
         },
       ),
       delete: vi.fn(async ({ where }: { where: { id: string } }) => {
-        const existing = tables.chargeRequest.get(where.id) ?? { id: where.id }
-        tables.chargeRequest.delete(where.id)
+        const existing = tables.ChargeRequest.get(where.id) ?? { id: where.id }
+        tables.ChargeRequest.delete(where.id)
         chargeToAccount.delete(where.id)
         return existing
       }),
@@ -169,21 +169,21 @@ function createAccountPrisma() {
   }
 
   const client: Record<string, unknown> = {
-    account: accountModel,
-    chargeRequest: makeChargeRequestModel(),
+    Account: accountModel,
+    ChargeRequest: makeChargeRequestModel(),
   }
 
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
     const snapshot = {
-      account: new Map(tables.account),
-      chargeRequest: new Map(tables.chargeRequest),
+      account: new Map(tables.Account),
+      chargeRequest: new Map(tables.ChargeRequest),
       links: new Map(chargeToAccount),
     }
     try {
       return await fn(client)
     } catch (err) {
-      tables.account = snapshot.account
-      tables.chargeRequest = snapshot.chargeRequest
+      tables.Account = snapshot.account
+      tables.ChargeRequest = snapshot.chargeRequest
       chargeToAccount.clear()
       for (const [k, v] of snapshot.links) chargeToAccount.set(k, v)
       throw err
@@ -191,7 +191,7 @@ function createAccountPrisma() {
   }
 
   function seedChargeRequest(accountId: string, row: Record<string, unknown>) {
-    tables.chargeRequest.set(row.id as string, row)
+    tables.ChargeRequest.set(row.id as string, row)
     chargeToAccount.set(row.id as string, accountId)
   }
 
@@ -237,11 +237,11 @@ function buildConfig(hooks: Parameters<typeof list>[0]['hooks'] = {}) {
 describe('#978 nested writes through a synthetic reverse relation', () => {
   it('a non-sudo write through the synthetic key is still refused — unchanged', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
     const context = getContext(await buildConfig(), mock.client, { userId: '1' })
 
     await expect(
-      context.db.account.update({
+      context.db.Account.update({
         where: { id: 'a1' },
         data: { [SYNTHETIC_FIELD]: { create: { kind: 'DEPOSIT' } } },
       }),
@@ -250,7 +250,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
   it('sudo nested create through the synthetic key runs the target list validate hook and refuses an invalid row', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
 
     const testConfig = buildConfig({
       validate: ({ resolvedData, addValidationError }) => {
@@ -262,7 +262,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
     await expect(
-      context.db.account.update({
+      context.db.Account.update({
         where: { id: 'a1' },
         data: { [SYNTHETIC_FIELD]: { create: { kind: 'INCOHERENT' } } },
       }),
@@ -270,12 +270,12 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
     // Refused before commit — nothing persisted, matching the atomic write
     // pipeline's "throw rolls back the whole transaction" contract.
-    expect(mock.tables.chargeRequest.size).toBe(0)
+    expect(mock.tables.ChargeRequest.size).toBe(0)
   })
 
   it('sudo nested create through the synthetic key runs resolveInput, beforeOperation, and afterOperation', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
 
     const events: string[] = []
     const testConfig = buildConfig({
@@ -294,13 +294,13 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     })
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
-    await context.db.account.update({
+    await context.db.Account.update({
       where: { id: 'a1' },
       data: { [SYNTHETIC_FIELD]: { create: { kind: 'deposit' } } },
     })
 
     expect(events).toEqual(['resolveInput', 'beforeOperation:create', 'afterOperation:create'])
-    const created = Array.from(mock.tables.chargeRequest.values())
+    const created = Array.from(mock.tables.ChargeRequest.values())
     expect(created).toHaveLength(1)
     // resolveInput's transform actually landed in the persisted row.
     expect(created[0].kind).toBe('DEPOSIT')
@@ -308,7 +308,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
   it('created-row recovery works for a synthetic-relation nested create, like the declared path', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
     mock.seedChargeRequest('a1', { id: 'pre-1', kind: 'PRE_EXISTING' })
 
     const createdItems: Array<Record<string, unknown>> = []
@@ -319,7 +319,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     })
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
-    await context.db.account.update({
+    await context.db.Account.update({
       where: { id: 'a1' },
       data: { [SYNTHETIC_FIELD]: { create: [{ kind: 'DEPOSIT' }, { kind: 'WITHDRAW' }] } },
     })
@@ -342,14 +342,14 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
   it('sudo nested update through the synthetic key fires afterOperation with originalItem and the updated item', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
     mock.seedChargeRequest('a1', { id: 'cr-1', kind: 'DEPOSIT' })
 
     const afterOp = vi.fn()
     const testConfig = buildConfig({ afterOperation: afterOp })
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
-    await context.db.account.update({
+    await context.db.Account.update({
       where: { id: 'a1' },
       data: {
         [SYNTHETIC_FIELD]: { update: { where: { id: 'cr-1' }, data: { kind: 'WITHDRAW' } } },
@@ -367,7 +367,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
   it('sudo nested delete through the synthetic key fires before/afterOperation with originalItem', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
     mock.seedChargeRequest('a1', { id: 'cr-1', kind: 'DEPOSIT' })
 
     const listBefore = vi.fn()
@@ -375,7 +375,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     const testConfig = buildConfig({ beforeOperation: listBefore, afterOperation: listAfter })
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
-    await context.db.account.update({
+    await context.db.Account.update({
       where: { id: 'a1' },
       data: { [SYNTHETIC_FIELD]: { delete: { id: 'cr-1' } } },
     })
@@ -392,12 +392,12 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
         originalItem: expect.objectContaining({ id: 'cr-1', kind: 'DEPOSIT' }),
       }),
     )
-    expect(mock.tables.chargeRequest.has('cr-1')).toBe(false)
+    expect(mock.tables.ChargeRequest.has('cr-1')).toBe(false)
   })
 
   it('a throwing nested afterOperation on the synthetic path rolls back the whole write (atomicity)', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
 
     const testConfig = buildConfig({
       afterOperation: ({ operation }) => {
@@ -407,7 +407,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
 
     await expect(
-      context.db.account.update({
+      context.db.Account.update({
         where: { id: 'a1' },
         data: {
           name: 'Should NOT persist',
@@ -416,22 +416,22 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
       }),
     ).rejects.toThrow('synthetic afterOperation boom')
 
-    expect(mock.tables.account.get('a1')?.name).toBe('Acme')
-    expect(mock.tables.chargeRequest.size).toBe(0)
+    expect(mock.tables.Account.get('a1')?.name).toBe('Acme')
+    expect(mock.tables.ChargeRequest.size).toBe(0)
   })
 
   it('a genuinely unknown key (not a synthetic reverse relation) is refused even under sudo', async () => {
     const mock = createAccountPrisma()
-    mock.tables.account.set('a1', { id: 'a1', name: 'Acme' })
+    mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
     const context = getContext(await buildConfig(), mock.client, { userId: '1' }).sudo()
 
     await expect(
-      context.db.account.update({
+      context.db.Account.update({
         where: { id: 'a1' },
         data: { totallyBogusKey: { create: { kind: 'DEPOSIT' } } },
       }),
     ).rejects.toThrow(/totallyBogusKey/)
 
-    expect(mock.tables.account.get('a1')?.name).toBe('Acme')
+    expect(mock.tables.Account.get('a1')?.name).toBe('Acme')
   })
 })

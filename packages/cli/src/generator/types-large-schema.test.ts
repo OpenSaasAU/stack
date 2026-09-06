@@ -134,9 +134,9 @@ assertType<Exact<Info['inputs']['update'], Model0UpdateInput>>()
 async function run() {
   // The self-referential \`sudo()\` over a 23-list \`DB\` is what used to hit TS2589.
   const sudoed = context.sudo()
-  const one = await sudoed.db.model0.findUnique({ where: { id: '1' } })
-  const many = await context.db.model10.findMany({ include: { previous: true, next: true } })
-  const made = await context.db.model5.create({
+  const one = await sudoed.db.Model0.findUnique({ where: { id: '1' } })
+  const many = await context.db.Model10.findMany({ include: { previous: true, next: true } })
+  const made = await context.db.Model5.create({
     data: { title: 't', code: 'c', tenant: { connect: { id: 't1' } } },
   })
   void one
@@ -163,21 +163,21 @@ import type { Context, Model0, Model1, Tenant } from './.opensaas/types.ts'
 declare const context: Context
 
 async function run() {
-  const rows = await context.db.model1.findMany({ include: { previous: true, tenant: true } })
+  const rows = await context.db.Model1.findMany({ include: { previous: true, tenant: true } })
   // ADR-0058: arity decides, not the column. \`tenant\` and \`previous\` are both
   // to-one, so both read \`| null\` however their foreign key is declared.
   assertType<Exact<(typeof rows)[number]['previous'], Model0 | null>>()
   assertType<Exact<(typeof rows)[number]['tenant'], Tenant | null>>()
 
-  const withMany = await context.db.model0.findMany({ include: { next: true } })
+  const withMany = await context.db.Model0.findMany({ include: { next: true } })
   assertType<Exact<(typeof withMany)[number]['next'], Model1[]>>()
 
   // A relation the caller did not name is optional, not present (ADR-0024).
-  const bare = await context.db.model1.findMany()
+  const bare = await context.db.Model1.findMany()
   assertType<Exact<(typeof bare)[number]['previous'], Model0 | null | undefined>>()
 
   // A nested include narrows one hop further and keeps the same arity rule.
-  const nested = await context.db.model1.findMany({
+  const nested = await context.db.Model1.findMany({
     include: { previous: { include: { next: true } } },
   })
   const nestedToOne: Model0 | null = nested[0].previous

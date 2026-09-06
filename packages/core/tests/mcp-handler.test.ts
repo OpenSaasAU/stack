@@ -20,7 +20,7 @@ describe('MCP Handler', () => {
   beforeEach(() => {
     // Mock Prisma client
     mockPrisma = {
-      post: {
+      Post: {
         findMany: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
@@ -294,7 +294,7 @@ describe('MCP Handler', () => {
         { id: '1', title: 'Post 1', content: 'Content 1' },
         { id: '2', title: 'Post 2', content: 'Content 2' },
       ]
-      mockPrisma.post.findMany.mockResolvedValue(mockResults)
+      mockPrisma.Post.findMany.mockResolvedValue(mockResults)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -324,7 +324,7 @@ describe('MCP Handler', () => {
       const result = JSON.parse(data.result.content[0].text)
       expect(result.items).toEqual(mockResults)
       expect(result.count).toBe(2)
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith({
         where: {},
         take: 10,
         skip: undefined,
@@ -338,7 +338,7 @@ describe('MCP Handler', () => {
     // string — the field's MCP wire representation.
     it('should serialize a bigint field value as a decimal string instead of throwing', async () => {
       const mockResults = [{ id: '1', title: 'Post 1', occurredAtMs: 9007199254740993n }]
-      mockPrisma.post.findMany.mockResolvedValue(mockResults)
+      mockPrisma.Post.findMany.mockResolvedValue(mockResults)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -372,7 +372,7 @@ describe('MCP Handler', () => {
     it('should not leak a bcrypt hash for a password field in the query response', async () => {
       const hash = '$2b$04$q5yvruv7NaUYCQvV.UGzf.92.dpteicGq5MoSHYNWqzIm.bsIIJrW'
       const mockResults = [{ id: '1', title: 'Post 1', password: new HashedPassword(hash) }]
-      mockPrisma.post.findMany.mockResolvedValue(mockResults)
+      mockPrisma.Post.findMany.mockResolvedValue(mockResults)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -403,7 +403,7 @@ describe('MCP Handler', () => {
 
     it('should execute create operation', async () => {
       const mockResult = { id: '1', title: 'New Post', content: 'New Content' }
-      mockPrisma.post.create.mockResolvedValue(mockResult)
+      mockPrisma.Post.create.mockResolvedValue(mockResult)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -430,14 +430,14 @@ describe('MCP Handler', () => {
       const result = JSON.parse(data.result.content[0].text)
       expect(result.success).toBe(true)
       expect(result.item).toEqual(mockResult)
-      expect(mockPrisma.post.create).toHaveBeenCalledWith({
+      expect(mockPrisma.Post.create).toHaveBeenCalledWith({
         data: { title: 'New Post', content: 'New Content' },
       })
     })
 
     it('should execute update operation', async () => {
       const mockResult = { id: '1', title: 'Updated Post', content: 'Updated Content' }
-      mockPrisma.post.update.mockResolvedValue(mockResult)
+      mockPrisma.Post.update.mockResolvedValue(mockResult)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -469,7 +469,7 @@ describe('MCP Handler', () => {
 
     it('should execute delete operation', async () => {
       const mockResult = { id: '1', title: 'Deleted Post', content: 'Deleted Content' }
-      mockPrisma.post.delete.mockResolvedValue(mockResult)
+      mockPrisma.Post.delete.mockResolvedValue(mockResult)
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -499,7 +499,7 @@ describe('MCP Handler', () => {
     })
 
     it('should limit query results to max 100', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([])
+      mockPrisma.Post.findMany.mockResolvedValue([])
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -521,7 +521,7 @@ describe('MCP Handler', () => {
 
       await handlers.POST(request)
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith({
         where: undefined,
         take: 100, // Should be limited to 100
         skip: undefined,
@@ -530,7 +530,7 @@ describe('MCP Handler', () => {
     })
 
     it('should handle access denied by returning error', async () => {
-      mockPrisma.post.create.mockResolvedValue(null) // Simulates access denial
+      mockPrisma.Post.create.mockResolvedValue(null) // Simulates access denial
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -795,7 +795,7 @@ describe('MCP Handler', () => {
     })
 
     it('should handle operation errors gracefully', async () => {
-      mockPrisma.post.findMany.mockRejectedValue(new Error('Database error'))
+      mockPrisma.Post.findMany.mockRejectedValue(new Error('Database error'))
 
       const handlers = createMcpHandlers({ config, getSession: mockGetSession, getContext })
 
@@ -823,7 +823,7 @@ describe('MCP Handler', () => {
     })
 
     it('should return a relation-filter access-denial error as a tool result naming the relation and related list', async () => {
-      mockPrisma.post.findMany.mockRejectedValue(
+      mockPrisma.Post.findMany.mockRejectedValue(
         new RelationFilterAccessDeniedError('Post', 'author', 'User'),
       )
 
@@ -854,7 +854,7 @@ describe('MCP Handler', () => {
     })
 
     it('should return a depth-exceeded error as a tool result worded as a cost refusal', async () => {
-      mockPrisma.post.findMany.mockRejectedValue(
+      mockPrisma.Post.findMany.mockRejectedValue(
         new AccessScopeDepthExceededError('Post', 'author', 3),
       )
 
@@ -900,7 +900,7 @@ describe('MCP Handler', () => {
         ormHandle: mockPrisma,
       }))
 
-      mockPrisma.post.findMany.mockResolvedValue([])
+      mockPrisma.Post.findMany.mockResolvedValue([])
 
       const handlers = createMcpHandlers({
         config,
@@ -945,12 +945,12 @@ describe('MCP Handler — fields projection (#851)', () => {
 
   beforeEach(() => {
     mockPrisma = {
-      user: { findMany: vi.fn() },
-      comment: { findMany: vi.fn() },
-      post: { findMany: vi.fn() },
-      secret: { findMany: vi.fn() },
-      draft: { findMany: vi.fn() },
-      category: { findMany: vi.fn() },
+      User: { findMany: vi.fn() },
+      Comment: { findMany: vi.fn() },
+      Post: { findMany: vi.fn() },
+      Secret: { findMany: vi.fn() },
+      Draft: { findMany: vi.fn() },
+      Category: { findMany: vi.fn() },
     }
 
     config = {
@@ -1148,11 +1148,11 @@ describe('MCP Handler — fields projection (#851)', () => {
 
   describe('query dispatch with `fields`', () => {
     it('selects only scalar fields, issuing no `include`', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Hello', content: 'World' }])
+      mockPrisma.Post.findMany.mockResolvedValue([{ id: '1', title: 'Hello', content: 'World' }])
 
       const data = await callQuery('list_post_query', { fields: { title: true } })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.not.objectContaining({ include: expect.anything() }),
       )
       const result = JSON.parse(data.result.content[0].text)
@@ -1160,7 +1160,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('selects a to-one relation with nested fields', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'Hello', author: { id: 'u1', name: 'Ada', email: 'ada@example.com' } },
       ])
 
@@ -1168,7 +1168,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         fields: { title: true, author: { fields: { name: true } } },
       })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ include: { author: true } }),
       )
       const result = JSON.parse(data.result.content[0].text)
@@ -1176,7 +1176,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('honours nested where/orderBy/take/skip on a to-many relation, applying the default take ceiling when omitted', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
+      mockPrisma.Post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
 
       await callQuery('list_post_query', {
         fields: {
@@ -1189,7 +1189,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         },
       })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           include: {
             comments: {
@@ -1204,13 +1204,13 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('clamps a nested take above the hard cap', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
+      mockPrisma.Post.findMany.mockResolvedValue([{ id: '1', comments: [] }])
 
       await callQuery('list_post_query', {
         fields: { comments: { fields: { text: true }, take: 9999 } },
       })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           include: { comments: { take: 50 } },
         }),
@@ -1224,7 +1224,7 @@ describe('MCP Handler — fields projection (#851)', () => {
       // check see a permanently-empty relation) — see projectMcpResult's doc
       // comment. The rows themselves are simply never added to
       // `fieldSelection`, so they never reach the projected output.
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', comments: [{ text: 'hi' }], _count: { comments: 7 } },
       ])
 
@@ -1232,7 +1232,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         fields: { comments: { count: true } },
       })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           include: { comments: { take: 5 }, _count: { select: { comments: true } } },
         }),
@@ -1242,7 +1242,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('requests a to-many count alongside its rows', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', comments: [{ text: 'hi' }], _count: { comments: 7 } },
       ])
 
@@ -1250,7 +1250,7 @@ describe('MCP Handler — fields projection (#851)', () => {
         fields: { comments: { fields: { text: true }, count: true } },
       })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           include: {
             comments: { take: 5 },
@@ -1301,7 +1301,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('always returns id, even when the projection never names it', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Hello' }])
+      mockPrisma.Post.findMany.mockResolvedValue([{ id: '1', title: 'Hello' }])
 
       const data = await callQuery('list_post_query', { fields: { title: true } })
 
@@ -1310,7 +1310,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('accepts id/createdAt/updatedAt as explicitly selectable system fields', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'Hello', createdAt: 't1', updatedAt: 't2' },
       ])
 
@@ -1349,7 +1349,7 @@ describe('MCP Handler — fields projection (#851)', () => {
 
       expect(data.result.isError).toBe(true)
       expect(data.result.content[0].text).toContain('take')
-      expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
     })
 
     it('refuses a nested where naming a field-level-denied field on the related list', async () => {
@@ -1361,7 +1361,7 @@ describe('MCP Handler — fields projection (#851)', () => {
 
       expect(data.result.isError).toBe(true)
       expect(data.result.content[0].text).toContain('internalNote')
-      expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+      expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
     })
 
     it('refuses a nested orderBy naming an undeclared field on the related list', async () => {
@@ -1376,13 +1376,13 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
 
     it('names a count-only relation in the include with real rows (never a synthetic take: 0) so field-visibility can evaluate its own read access against the true value', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', restrictedComments: [{ text: 'hi' }], _count: { restrictedComments: 3 } },
       ])
 
       await callQuery('list_post_query', { fields: { restrictedComments: { count: true } } })
 
-      expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.objectContaining({ restrictedComments: { take: 5 } }),
         }),
@@ -1396,7 +1396,7 @@ describe('MCP Handler — fields projection (#851)', () => {
     // "suppresses a relation count denied by the relationship field's own
     // access" for the end-to-end version through the real pipeline.
     it('suppresses a count whose relation key is absent from the row (what a field-visibility denial produces)', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', _count: { restrictedComments: 3 } }, // no `restrictedComments` key
       ])
 

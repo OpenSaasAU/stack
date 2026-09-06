@@ -1,5 +1,4 @@
 import type { DependencyTable, FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import { getDbKey } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
@@ -210,7 +209,7 @@ function generateDbType(config: OpenSaasConfig): string {
   lines.push(' */')
   lines.push('export interface DB {')
   for (const listName of Object.keys(config.lists)) {
-    lines.push(`  ${getDbKey(listName)}: ${listName}List`)
+    lines.push(`  ${listName}: ${listName}List`)
   }
   lines.push('}')
   return lines.join('\n')

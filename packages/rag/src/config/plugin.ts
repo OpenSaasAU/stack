@@ -198,8 +198,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                 // Simplified: computes similarity in JS over every item rather
                 // than delegating to the configured VectorStorage backend.
-                const dbKey = listName.charAt(0).toLowerCase() + listName.slice(1)
-                const allItems = await context.db[dbKey].findMany()
+                const allItems = await context.db[listName].findMany()
 
                 const scored: { item: Record<string, unknown>; score: number }[] = []
                 for (const item of allItems) {

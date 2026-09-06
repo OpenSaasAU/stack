@@ -76,15 +76,15 @@ describe('resolveNavCounts', () => {
         Tag: makeList({ queryAccess: true }), // no ui.navCount at all
       },
     }
-    const { context, spies } = makeContext({ post: 3, comment: 9, tag: 2 })
+    const { context, spies } = makeContext({ Post: 3, Comment: 9, Tag: 2 })
 
     const counts = await resolveNavCounts(context, config)
 
     expect(counts).toEqual({ Post: 3 })
     // No count query runs for lists that didn't opt in.
-    expect(spies.post).toHaveBeenCalledTimes(1)
-    expect(spies.comment).not.toHaveBeenCalled()
-    expect(spies.tag).not.toHaveBeenCalled()
+    expect(spies.Post).toHaveBeenCalledTimes(1)
+    expect(spies.Comment).not.toHaveBeenCalled()
+    expect(spies.Tag).not.toHaveBeenCalled()
   })
 
   it('omits an opted-in list whose query access is statically denied (no misleading zero, no query)', async () => {
@@ -95,13 +95,13 @@ describe('resolveNavCounts', () => {
         Missing: makeList({ queryAccess: undefined, navCount: true }),
       },
     }
-    const { context, spies } = makeContext({ secret: 5, missing: 5 })
+    const { context, spies } = makeContext({ Secret: 5, Missing: 5 })
 
     const counts = await resolveNavCounts(context, config)
 
     expect(counts).toEqual({})
-    expect(spies.secret).not.toHaveBeenCalled()
-    expect(spies.missing).not.toHaveBeenCalled()
+    expect(spies.Secret).not.toHaveBeenCalled()
+    expect(spies.Missing).not.toHaveBeenCalled()
   })
 
   it('counts a list with function query access through the secured context', async () => {
@@ -111,12 +111,12 @@ describe('resolveNavCounts', () => {
         Post: makeList({ queryAccess: () => true, navCount: true }),
       },
     }
-    const { context, spies } = makeContext({ post: 7 })
+    const { context, spies } = makeContext({ Post: 7 })
 
     const counts = await resolveNavCounts(context, config)
 
     expect(counts).toEqual({ Post: 7 })
-    expect(spies.post).toHaveBeenCalledTimes(1)
+    expect(spies.Post).toHaveBeenCalledTimes(1)
   })
 
   it('reports an access-scoped count of zero (session sees none) as 0, not omitted', async () => {
@@ -126,7 +126,7 @@ describe('resolveNavCounts', () => {
         Post: makeList({ queryAccess: () => true, navCount: true }),
       },
     }
-    const { context } = makeContext({ post: 0 })
+    const { context } = makeContext({ Post: 0 })
 
     const counts = await resolveNavCounts(context, config)
 
@@ -140,12 +140,12 @@ describe('resolveNavCounts', () => {
         SiteSettings: makeList({ queryAccess: true, navCount: true, isSingleton: true }),
       },
     }
-    const { context, spies } = makeContext({ siteSettings: 1 })
+    const { context, spies } = makeContext({ SiteSettings: 1 })
 
     const counts = await resolveNavCounts(context, config)
 
     expect(counts).toEqual({})
-    expect(spies.siteSettings).not.toHaveBeenCalled()
+    expect(spies.SiteSettings).not.toHaveBeenCalled()
   })
 
   it("degrades gracefully when one list's count rejects — omits that badge, keeps the rest, never throws", async () => {
@@ -160,8 +160,8 @@ describe('resolveNavCounts', () => {
     // Comment's succeeds. The whole admin chrome must still render.
     const context = {
       db: {
-        post: { count: async () => Promise.reject(new Error('db exploded')) },
-        comment: { count: async () => 4 },
+        Post: { count: async () => Promise.reject(new Error('db exploded')) },
+        Comment: { count: async () => 4 },
       },
       session: null,
       ormHandle: {},

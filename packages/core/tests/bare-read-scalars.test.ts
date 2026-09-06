@@ -17,7 +17,7 @@ import { text, relationship, virtual } from '../src/fields/index.js'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function createMockPrisma(): any {
   return {
-    author: {
+    Author: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
@@ -25,7 +25,7 @@ function createMockPrisma(): any {
       delete: vi.fn(),
       count: vi.fn(),
     },
-    post: {
+    Post: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
@@ -70,12 +70,12 @@ describe('a bare read fetches scalars, not relations (#848, ADR-0024)', () => {
     const authorQuerySpy = vi.fn(() => true)
     const testConfig = await buildTestConfig(authorQuerySpy)
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findFirst.mockResolvedValue({ id: '1', title: 'Hello', authorId: 'a1' })
+    mockPrisma.Post.findFirst.mockResolvedValue({ id: '1', title: 'Hello', authorId: 'a1' })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.post.findUnique({ where: { id: '1' } })
+    const result = await context.db.Post.findUnique({ where: { id: '1' } })
 
-    expect(mockPrisma.post.findFirst).toHaveBeenCalledWith({
+    expect(mockPrisma.Post.findFirst).toHaveBeenCalledWith({
       where: { id: '1' },
       include: undefined,
     })
@@ -93,12 +93,12 @@ describe('a bare read fetches scalars, not relations (#848, ADR-0024)', () => {
     const authorQuerySpy = vi.fn(() => true)
     const testConfig = await buildTestConfig(authorQuerySpy)
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findMany.mockResolvedValue([{ id: '1', title: 'Hello', authorId: 'a1' }])
+    mockPrisma.Post.findMany.mockResolvedValue([{ id: '1', title: 'Hello', authorId: 'a1' }])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.post.findMany({})
+    const result = await context.db.Post.findMany({})
 
-    expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+    expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ include: undefined }),
     )
     expect(authorQuerySpy).not.toHaveBeenCalled()
@@ -111,7 +111,7 @@ describe('a bare read fetches scalars, not relations (#848, ADR-0024)', () => {
     const authorQuerySpy = vi.fn(() => true)
     const testConfig = await buildTestConfig(authorQuerySpy)
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findFirst.mockResolvedValue({
+    mockPrisma.Post.findFirst.mockResolvedValue({
       id: '1',
       title: 'Hello',
       authorId: 'a1',
@@ -119,7 +119,7 @@ describe('a bare read fetches scalars, not relations (#848, ADR-0024)', () => {
     })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.post.findUnique({
+    const result = await context.db.Post.findUnique({
       where: { id: '1' },
       include: { author: true },
     })
@@ -132,12 +132,12 @@ describe('a bare read fetches scalars, not relations (#848, ADR-0024)', () => {
     const authorQuerySpy = vi.fn(() => true)
     const testConfig = await buildTestConfig(authorQuerySpy)
     const mockPrisma = createMockPrisma()
-    mockPrisma.post.findFirst.mockResolvedValue({ id: '1', title: 'Hello', authorId: 'a1' })
+    mockPrisma.Post.findFirst.mockResolvedValue({ id: '1', title: 'Hello', authorId: 'a1' })
 
     const context = getContext(testConfig, mockPrisma, null).sudo()
-    const result = await context.db.post.findUnique({ where: { id: '1' } })
+    const result = await context.db.Post.findUnique({ where: { id: '1' } })
 
-    expect(mockPrisma.post.findFirst).toHaveBeenCalledWith({
+    expect(mockPrisma.Post.findFirst).toHaveBeenCalledWith({
       where: { id: '1' },
       include: undefined,
     })

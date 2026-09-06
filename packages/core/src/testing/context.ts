@@ -14,7 +14,6 @@ import { buildPrismaContract, toEmittedContract, type PrismaContract } from '../
 import { deriveContract } from '../contract/derive.js'
 import type { ContractData } from '../contract/types.js'
 import { getContext } from '../context/index.js'
-import { getDbKey } from '../lib/case-utils.js'
 import { originTripwire } from '../origin.js'
 import type { StackContext } from '../types/context.js'
 import { ESCAPE_VARIABLE, requireUsableDatabaseEscape } from './escape.js'
@@ -167,7 +166,7 @@ export function ormClientFor(data: ContractData, orm: unknown): OrmClient {
     if (!isReachable(collection)) {
       throw new OrmCollectionMissingError(model.name, namespaceName, keysOf(orm), keysOf(namespace))
     }
-    models[getDbKey(model.name)] = collection
+    models[model.name] = collection
   }
   return models
 }

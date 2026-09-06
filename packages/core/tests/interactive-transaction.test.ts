@@ -40,8 +40,8 @@ function isSerializationError(err: unknown): boolean {
  */
 function createTxPrisma() {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    user: new Map(),
-    post: new Map(),
+    User: new Map(),
+    Post: new Map(),
   }
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
@@ -77,8 +77,8 @@ function createTxPrisma() {
   }
 
   const client: Record<string, unknown> = {
-    user: makeModel('user'),
-    post: makeModel('post'),
+    User: makeModel('User'),
+    Post: makeModel('Post'),
   }
 
   const capturedOptions: unknown[] = []
@@ -138,15 +138,15 @@ describe('#614 context.transaction (interactive transaction)', () => {
     const context = getContext(await baseConfig(), mock.client, { userId: '1' })
 
     const result = await context.transaction(async (tx) => {
-      const user = await tx.db.user.create({ data: { name: 'jane' } })
-      const post = await tx.db.post.create({ data: { title: 'hello' } })
+      const user = await tx.db.User.create({ data: { name: 'jane' } })
+      const post = await tx.db.Post.create({ data: { title: 'hello' } })
       return { user, post }
     })
 
     expect(result.user).toEqual(expect.objectContaining({ name: 'jane' }))
     expect(result.post).toEqual(expect.objectContaining({ title: 'hello' }))
-    expect(mock.tables.user.size).toBe(1)
-    expect(mock.tables.post.size).toBe(1)
+    expect(mock.tables.User.size).toBe(1)
+    expect(mock.tables.Post.size).toBe(1)
   })
 
   it('is atomic: a throw inside the callback rolls back every write', async () => {
@@ -154,14 +154,14 @@ describe('#614 context.transaction (interactive transaction)', () => {
 
     await expect(
       context.transaction(async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
-        await tx.db.post.create({ data: { title: 'hello' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
+        await tx.db.Post.create({ data: { title: 'hello' } })
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
 
-    expect(mock.tables.user.size).toBe(0)
-    expect(mock.tables.post.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
+    expect(mock.tables.Post.size).toBe(0)
   })
 
   it('passes transaction options (isolationLevel) through to the underlying client', async () => {
@@ -169,7 +169,7 @@ describe('#614 context.transaction (interactive transaction)', () => {
 
     await context.transaction(
       async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
       },
       { isolationLevel: 'Serializable' },
     )
@@ -191,10 +191,10 @@ describe('#614 context.transaction (interactive transaction)', () => {
     })
     const context = getContext(denyConfig, mock.client, { userId: '1' })
 
-    const created = await context.transaction((tx) => tx.db.user.create({ data: { name: 'jane' } }))
+    const created = await context.transaction((tx) => tx.db.User.create({ data: { name: 'jane' } }))
 
     expect(created).toBeNull()
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
   })
 
   it('fires list hooks inside the transaction', async () => {
@@ -211,7 +211,7 @@ describe('#614 context.transaction (interactive transaction)', () => {
     })
     const context = getContext(hookConfig, mock.client, { userId: '1' })
 
-    const created = await context.transaction((tx) => tx.db.user.create({ data: { name: 'jane' } }))
+    const created = await context.transaction((tx) => tx.db.User.create({ data: { name: 'jane' } }))
 
     expect(resolveInput).toHaveBeenCalledTimes(1)
     expect(created).toEqual(expect.objectContaining({ name: 'transformed' }))
@@ -245,27 +245,27 @@ describe('#614 context.transaction (interactive transaction)', () => {
 
     // A sudo write persists when the transaction commits.
     const created = await context.transaction((tx) =>
-      tx.sudo().db.user.create({ data: { name: 'jane' } }),
+      tx.sudo().db.User.create({ data: { name: 'jane' } }),
     )
     expect(created).toEqual(expect.objectContaining({ name: 'jane' }))
-    expect(mock.tables.user.size).toBe(1)
+    expect(mock.tables.User.size).toBe(1)
 
     // A sudo write rolls back when the transaction throws (it is bound to `tx`,
     // not the original client).
     await expect(
       context.transaction(async (tx) => {
-        await tx.sudo().db.user.create({ data: { name: 'rollback-me' } })
+        await tx.sudo().db.User.create({ data: { name: 'rollback-me' } })
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
-    expect(mock.tables.user.size).toBe(1)
+    expect(mock.tables.User.size).toBe(1)
   })
 
   it('falls back to running directly when the client has no $transaction', async () => {
     // A client without `$transaction` (e.g. a plain mock or an already-open tx).
     const tables = new Map<string, Record<string, unknown>>()
     const plainClient: Record<string, unknown> = {
-      user: {
+      User: {
         findUnique: vi.fn(
           async ({ where }: { where: { id: string } }) => tables.get(where.id) ?? null,
         ),
@@ -282,7 +282,7 @@ describe('#614 context.transaction (interactive transaction)', () => {
 
     const created = await context.transaction(async (tx) => {
       expect(tx.db).toBeDefined()
-      return tx.db.user.create({ data: { name: 'jane' } })
+      return tx.db.User.create({ data: { name: 'jane' } })
     })
 
     expect(created).toEqual(expect.objectContaining({ name: 'jane' }))
@@ -314,7 +314,7 @@ function createSerializablePrisma() {
   const client: Record<string, unknown> = {
     // Direct (non-tx) access is not used by these tests, but keep a booking model
     // so getContext can build a delegate.
-    booking: {
+    Booking: {
       findUnique: vi.fn(async () => null),
       findMany: vi.fn(async () => Array.from(committed.booking.values())),
       count: vi.fn(async () => committed.booking.size),
@@ -330,7 +330,7 @@ function createSerializablePrisma() {
     const writeTables = new Set<string>()
 
     const tx: Record<string, unknown> = {
-      booking: {
+      Booking: {
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
           readTables.add('booking')
           return buffer.get(where.id) ?? view.booking.get(where.id) ?? null
@@ -419,10 +419,10 @@ describe('#614 capacity gate under Serializable contention', () => {
         try {
           return await context.transaction(
             async (tx) => {
-              const count = await tx.db.booking.count({ where: { slotId } })
+              const count = await tx.db.Booking.count({ where: { slotId } })
               if (attempt === 0) await barrier()
               if (count >= capacity) return false
-              await tx.db.booking.create({ data: { slotId } })
+              await tx.db.Booking.create({ data: { slotId } })
               return true
             },
             { isolationLevel: 'Serializable' },

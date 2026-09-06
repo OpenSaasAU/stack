@@ -21,9 +21,9 @@ import { text, relationship } from '../src/fields/index.js'
 
 function createFaithfulTxPrisma(extraTables: string[] = []) {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    post: new Map(),
-    user: new Map(),
-    comment: new Map(),
+    Post: new Map(),
+    User: new Map(),
+    Comment: new Map(),
   }
   for (const table of extraTables) tables[table] = new Map()
   let idCounter = 0
@@ -39,7 +39,7 @@ function createFaithfulTxPrisma(extraTables: string[] = []) {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const nested = value as Record<string, unknown>
         if (nested.create || nested.update || nested.delete || nested.connect) {
-          const relTable = key === 'author' ? 'user' : key === 'comments' ? 'comment' : key
+          const relTable = key === 'author' ? 'User' : key === 'comments' ? 'Comment' : key
           if (nested.create) {
             const created = doCreate(relTable, nested.create as Record<string, unknown>)
             result[key] = created
@@ -106,9 +106,9 @@ function createFaithfulTxPrisma(extraTables: string[] = []) {
   }
 
   const client: Record<string, unknown> = {
-    post: makeModel('post'),
-    user: makeModel('user'),
-    comment: makeModel('comment'),
+    Post: makeModel('Post'),
+    User: makeModel('User'),
+    Comment: makeModel('Comment'),
   }
   for (const table of extraTables) client[table] = makeModel(table)
 
@@ -177,7 +177,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     const context = getContext(testConfig, mock.client, { userId: '1' })
 
     const result = await context.transaction(async (tx) => {
-      const user = await tx.db.user.create({ data: { name: 'jane' } })
+      const user = await tx.db.User.create({ data: { name: 'jane' } })
       events.push('callback-write-done')
       // afterTransaction must NOT have fired yet — the outer transaction has
       // not settled while the callback is still running.
@@ -200,7 +200,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
 
     await expect(
       context.transaction(async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
         throw new Error('callback boom')
       }),
     ).rejects.toThrow('callback boom')
@@ -211,7 +211,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     expect(arg.error).toBeInstanceOf(Error)
     expect((arg.error as Error).message).toBe('callback boom')
     expect(arg.item).toBeUndefined()
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
   })
 
   it('beforeTransaction stays eager: runs during the callback, before the write settles', async () => {
@@ -226,7 +226,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
 
     await context.transaction(async (tx) => {
       order.push('callback-start')
-      await tx.db.user.create({ data: { name: 'jane' } })
+      await tx.db.User.create({ data: { name: 'jane' } })
       order.push('callback-end')
     })
 
@@ -244,9 +244,9 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     const context = getContext(testConfig, mock.client, { userId: '1' })
 
     await context.transaction(async (tx) => {
-      await tx.db.user.create({ data: { name: 'a' } })
-      await tx.db.user.create({ data: { name: 'b' } })
-      await tx.db.user.create({ data: { name: 'c' } })
+      await tx.db.User.create({ data: { name: 'a' } })
+      await tx.db.User.create({ data: { name: 'b' } })
+      await tx.db.User.create({ data: { name: 'c' } })
     })
 
     expect(order).toEqual(['before:a', 'before:b', 'before:c', 'after:a', 'after:b', 'after:c'])
@@ -280,16 +280,16 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
       try {
         // Missing the required `name` — throws ValidationError, the write's
         // OWN failure, independent of the enclosing transaction's fate.
-        await tx.db.user.create({ data: {} })
+        await tx.db.User.create({ data: {} })
       } catch (err) {
         userError = err
       }
-      await tx.db.post.create({ data: { title: 'ok' } })
+      await tx.db.Post.create({ data: { title: 'ok' } })
       return { userError: userError instanceof Error ? userError.message : undefined }
     })
 
     // The transaction committed overall (Post persisted)...
-    expect(mock.tables.post.size).toBe(1)
+    expect(mock.tables.Post.size).toBe(1)
     expect(postAfter).toHaveBeenCalledWith(expect.objectContaining({ status: 'committed' }))
     // ...but the User write's OWN failure is what its afterTransaction reports,
     // not the transaction's (otherwise committed) outcome.
@@ -318,15 +318,15 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
 
     await expect(
       context.transaction(async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
-        await tx.db.post.create({ data: { title: 'ok' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
+        await tx.db.Post.create({ data: { title: 'ok' } })
       }),
     ).rejects.toThrow(/afterTransaction hook\(s\) failed/)
 
     expect(fired).toEqual(expect.arrayContaining(['user', 'post']))
     // DB state is final — the underlying transaction already committed.
-    expect(mock.tables.user.size).toBe(1)
-    expect(mock.tables.post.size).toBe(1)
+    expect(mock.tables.User.size).toBe(1)
+    expect(mock.tables.Post.size).toBe(1)
   })
 
   it('a nested context.transaction() joins the outer owner instead of creating a second registry', async () => {
@@ -338,11 +338,11 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     const context = getContext(testConfig, mock.client, { userId: '1' })
 
     await context.transaction(async (tx) => {
-      await tx.db.user.create({ data: { name: 'jane' } })
+      await tx.db.User.create({ data: { name: 'jane' } })
       // Nested call: same underlying tx client (no $transaction), so it runs
       // directly — and per ADR-0028 must join the OUTER owner's queue.
       await tx.transaction(async (inner) => {
-        await inner.db.post.create({ data: { title: 'nested' } })
+        await inner.db.Post.create({ data: { title: 'nested' } })
         order.push('inner-callback-done')
       })
       order.push('outer-callback-done')
@@ -364,7 +364,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
           if (status === 'rolled-back') {
             // Compensating write: NOT part of the (already rolled-back)
             // transaction — it must succeed and persist independently.
-            await hookContext.db.comment.create({ data: { body: 'compensated' } })
+            await hookContext.db.Comment.create({ data: { body: 'compensated' } })
           }
         },
       },
@@ -373,17 +373,17 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
 
     await expect(
       context.transaction(async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
 
     // The original transaction rolled back (no user persisted)...
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
     // ...but the compensator's own write, issued from the deferred hook,
     // persisted — proving it ran against the base client, not the closed tx.
-    expect(mock.tables.comment.size).toBe(1)
-    expect(Array.from(mock.tables.comment.values())[0].body).toBe('compensated')
+    expect(mock.tables.Comment.size).toBe(1)
+    expect(Array.from(mock.tables.Comment.values())[0].body).toBe('compensated')
   })
 })
 
@@ -393,7 +393,7 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
   // order — and each nested list's own `afterOperation` fires as a DEFERRED
   // "after task" once the top-level write's own before/after-hooks are done,
   // in that same order (see `runAfterTasks`). So User's afterOperation (which
-  // issues the hook's own separate `context.db.audit.create()` write — the
+  // issues the hook's own separate `context.db.Audit.create()` write — the
   // JOINED write under test) always runs, and completes, BEFORE Comment's own
   // afterOperation gets a chance to fail the whole transaction — letting each
   // test control whether the ENCLOSING write settles by commit or rollback
@@ -408,7 +408,7 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
           hooks: {
             afterOperation: async ({ operation, context: hookContext }) => {
               if (operation === 'create') {
-                await hookContext.db.audit.create({ data: { note: 'audit' } })
+                await hookContext.db.Audit.create({ data: { note: 'audit' } })
               }
             },
           },
@@ -444,18 +444,18 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
   let mock: ReturnType<typeof createFaithfulTxPrisma>
 
   beforeEach(() => {
-    mock = createFaithfulTxPrisma(['audit'])
+    mock = createFaithfulTxPrisma(['Audit'])
     vi.clearAllMocks()
   })
 
   it('defers and reports rolled-back when the enclosing (non-interactive) write later rolls back', async () => {
     const auditAfter = vi.fn()
     const testConfig = await makeConfig({ commentThrows: true, auditAfter })
-    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
     const context = getContext(testConfig, mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.update({
+      context.db.Post.update({
         where: { id: 'p1' },
         data: {
           title: 'x',
@@ -467,8 +467,8 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
 
     // Nothing persisted — the whole write, including the hook's own Audit
     // write, rolled back together (ADR-0010 atomicity).
-    expect(mock.tables.user.size).toBe(0)
-    expect(mock.tables.audit.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
+    expect(mock.tables.Audit.size).toBe(0)
 
     // The Audit write itself succeeded (no error of its own) — its
     // afterTransaction must still report the OWNER's real (rolled-back)
@@ -483,10 +483,10 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
   it('defers and reports committed with the persisted item when the enclosing write commits', async () => {
     const auditAfter = vi.fn()
     const testConfig = await makeConfig({ commentThrows: false, auditAfter })
-    mock.tables.post.set('p1', { id: 'p1', title: 'P' })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
     const context = getContext(testConfig, mock.client, { userId: '1' })
 
-    await context.db.post.update({
+    await context.db.Post.update({
       where: { id: 'p1' },
       data: {
         title: 'x',
@@ -495,7 +495,7 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
       },
     })
 
-    expect(mock.tables.audit.size).toBe(1)
+    expect(mock.tables.Audit.size).toBe(1)
     expect(auditAfter).toHaveBeenCalledTimes(1)
     const arg = auditAfter.mock.calls[0][0]
     expect(arg.status).toBe('committed')
@@ -516,7 +516,7 @@ describe('ADR-0028 / #899: a serialization failure still propagates unwrapped, w
 
     await expect(
       context.transaction(async (tx) => {
-        await tx.db.user.create({ data: { name: 'jane' } })
+        await tx.db.User.create({ data: { name: 'jane' } })
         throw serializationError
       }),
     ).rejects.toMatchObject({ code: 'P2034' })
@@ -525,6 +525,6 @@ describe('ADR-0028 / #899: a serialization failure still propagates unwrapped, w
     // errors keep precedence over hook errors, so a P2034 retry loop still works.
     expect(after).toHaveBeenCalledTimes(1)
     expect(after.mock.calls[0][0].status).toBe('rolled-back')
-    expect(mock.tables.user.size).toBe(0)
+    expect(mock.tables.User.size).toBe(0)
   })
 })

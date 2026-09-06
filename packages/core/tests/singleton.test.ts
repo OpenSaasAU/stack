@@ -11,7 +11,7 @@ describe('Singleton Lists', () => {
   beforeEach(() => {
     // Mock Prisma client
     mockPrisma = {
-      settings: {
+      Settings: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -20,7 +20,7 @@ describe('Singleton Lists', () => {
         delete: vi.fn(),
         count: vi.fn(),
       },
-      post: {
+      Post: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -76,8 +76,8 @@ describe('Singleton Lists', () => {
 
   describe('create operation', () => {
     it('should allow creating the first record', async () => {
-      mockPrisma.settings.count.mockResolvedValue(0)
-      mockPrisma.settings.create.mockResolvedValue({
+      mockPrisma.Settings.count.mockResolvedValue(0)
+      mockPrisma.Settings.create.mockResolvedValue({
         id: 1,
         siteName: 'Test Site',
         maintenanceMode: false,
@@ -88,41 +88,41 @@ describe('Singleton Lists', () => {
 
       const context = getContext(config, mockPrisma, null)
 
-      const result = await context.db.settings.create({
+      const result = await context.db.Settings.create({
         data: { siteName: 'Test Site' },
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.settings.count).toHaveBeenCalled()
-      expect(mockPrisma.settings.create).toHaveBeenCalled()
+      expect(mockPrisma.Settings.count).toHaveBeenCalled()
+      expect(mockPrisma.Settings.create).toHaveBeenCalled()
     })
 
     it('should prevent creating a second record', async () => {
-      mockPrisma.settings.count.mockResolvedValue(1)
+      mockPrisma.Settings.count.mockResolvedValue(1)
 
       const context = getContext(config, mockPrisma, null)
 
       await expect(
-        context.db.settings.create({
+        context.db.Settings.create({
           data: { siteName: 'Second Site' },
         }),
       ).rejects.toThrow(ValidationError)
 
       await expect(
-        context.db.settings.create({
+        context.db.Settings.create({
           data: { siteName: 'Second Site' },
         }),
       ).rejects.toThrow('singleton list with an existing record')
     })
 
     it('should enforce singleton even in sudo mode', async () => {
-      mockPrisma.settings.count.mockResolvedValue(1)
+      mockPrisma.Settings.count.mockResolvedValue(1)
 
       const context = getContext(config, mockPrisma, null)
       const sudoContext = context.sudo()
 
       await expect(
-        sudoContext.db.settings.create({
+        sudoContext.db.Settings.create({
           data: { siteName: 'Second Site' },
         }),
       ).rejects.toThrow(ValidationError)
@@ -133,15 +133,15 @@ describe('Singleton Lists', () => {
     it('should have get() method for singleton lists', () => {
       const context = getContext(config, mockPrisma, null)
 
-      expect(context.db.settings.get).toBeDefined()
-      expect(typeof context.db.settings.get).toBe('function')
+      expect(context.db.Settings.get).toBeDefined()
+      expect(typeof context.db.Settings.get).toBe('function')
     })
 
     it('should not have get() method for non-singleton lists', () => {
       const context = getContext(config, mockPrisma, null)
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((context.db.post as any).get).toBeUndefined()
+      expect((context.db.Post as any).get).toBeUndefined()
     })
 
     it('should return existing record on get()', async () => {
@@ -154,20 +154,20 @@ describe('Singleton Lists', () => {
         updatedAt: new Date(),
       }
 
-      mockPrisma.settings.findFirst.mockResolvedValue(mockSettings)
+      mockPrisma.Settings.findFirst.mockResolvedValue(mockSettings)
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.get()
+      const result = await context.db.Settings.get()
 
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('My Site')
-      expect(mockPrisma.settings.findFirst).toHaveBeenCalled()
+      expect(mockPrisma.Settings.findFirst).toHaveBeenCalled()
     })
 
     it('should auto-create record with defaults when none exists (autoCreate: true by default)', async () => {
-      mockPrisma.settings.findFirst.mockResolvedValue(null)
-      mockPrisma.settings.count.mockResolvedValue(0)
-      mockPrisma.settings.create.mockResolvedValue({
+      mockPrisma.Settings.findFirst.mockResolvedValue(null)
+      mockPrisma.Settings.count.mockResolvedValue(0)
+      mockPrisma.Settings.create.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -177,11 +177,11 @@ describe('Singleton Lists', () => {
       })
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.get()
+      const result = await context.db.Settings.get()
 
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('My Site')
-      expect(mockPrisma.settings.create).toHaveBeenCalledWith({
+      expect(mockPrisma.Settings.create).toHaveBeenCalledWith({
         data: {
           id: 1,
           siteName: 'My Site',
@@ -195,13 +195,13 @@ describe('Singleton Lists', () => {
       // Update config to disable auto-create
       config.lists.Settings.isSingleton = { autoCreate: false }
 
-      mockPrisma.settings.findFirst.mockResolvedValue(null)
+      mockPrisma.Settings.findFirst.mockResolvedValue(null)
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.get()
+      const result = await context.db.Settings.get()
 
       expect(result).toBeNull()
-      expect(mockPrisma.settings.create).not.toHaveBeenCalled()
+      expect(mockPrisma.Settings.create).not.toHaveBeenCalled()
     })
   })
 
@@ -230,19 +230,19 @@ describe('Singleton Lists', () => {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const relPrisma: any = {
-        homePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
-        author: { findFirst: vi.fn(), findMany: vi.fn() },
+        HomePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+        Author: { findFirst: vi.fn(), findMany: vi.fn() },
       }
-      relPrisma.homePage.findFirst.mockResolvedValue({
+      relPrisma.HomePage.findFirst.mockResolvedValue({
         id: 1,
         title: 'Home',
         featuredAuthorId: 'a1',
       })
 
       const context = getContext(relConfig, relPrisma, null)
-      const result = await context.db.homePage.get()
+      const result = await context.db.HomePage.get()
 
-      expect(relPrisma.homePage.findFirst).toHaveBeenCalledWith({ where: {}, include: undefined })
+      expect(relPrisma.HomePage.findFirst).toHaveBeenCalledWith({ where: {}, include: undefined })
       expect(homeAuthorQuerySpy).not.toHaveBeenCalled()
       expect(result).toEqual({ id: 1, title: 'Home', featuredAuthorId: 'a1' })
       expect(result).not.toHaveProperty('featuredAuthor')
@@ -269,10 +269,10 @@ describe('Singleton Lists', () => {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const relPrisma: any = {
-        homePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
-        author: { findFirst: vi.fn(), findMany: vi.fn() },
+        HomePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+        Author: { findFirst: vi.fn(), findMany: vi.fn() },
       }
-      relPrisma.homePage.findFirst.mockResolvedValue({
+      relPrisma.HomePage.findFirst.mockResolvedValue({
         id: 1,
         title: 'Home',
         featuredAuthorId: 'a1',
@@ -281,14 +281,14 @@ describe('Singleton Lists', () => {
       // `featuredAuthor` is to-one, so Prisma cannot scope it with a nested
       // `where` (#974) — it's fetched unscoped, then this batched existence
       // check decides whether it survives.
-      relPrisma.author.findMany.mockResolvedValue([{ id: 'a1' }])
+      relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1' }])
 
       const context = getContext(relConfig, relPrisma, null)
-      const result = await context.db.homePage.get({ include: { featuredAuthor: true } })
+      const result = await context.db.HomePage.get({ include: { featuredAuthor: true } })
 
-      const call = relPrisma.homePage.findFirst.mock.calls[0][0]
+      const call = relPrisma.HomePage.findFirst.mock.calls[0][0]
       expect(call.include.featuredAuthor).toBe(true)
-      expect(relPrisma.author.findMany).toHaveBeenCalledWith({
+      expect(relPrisma.Author.findMany).toHaveBeenCalledWith({
         where: { AND: [{ published: { equals: true } }, { id: { in: ['a1'] } }] },
         select: { id: true },
       })
@@ -298,7 +298,7 @@ describe('Singleton Lists', () => {
 
   describe('delete operation', () => {
     it('should block delete on singleton lists', async () => {
-      mockPrisma.settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.findUnique.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -307,17 +307,17 @@ describe('Singleton Lists', () => {
 
       const context = getContext(config, mockPrisma, null)
 
-      await expect(context.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
+      await expect(context.db.Settings.delete({ where: { id: 1 } })).rejects.toThrow(
         ValidationError,
       )
 
-      await expect(context.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
+      await expect(context.db.Settings.delete({ where: { id: 1 } })).rejects.toThrow(
         'singleton list',
       )
     })
 
     it('should block delete even in sudo mode', async () => {
-      mockPrisma.settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.findUnique.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -327,7 +327,7 @@ describe('Singleton Lists', () => {
       const context = getContext(config, mockPrisma, null)
       const sudoContext = context.sudo()
 
-      await expect(sudoContext.db.settings.delete({ where: { id: 1 } })).rejects.toThrow(
+      await expect(sudoContext.db.Settings.delete({ where: { id: 1 } })).rejects.toThrow(
         ValidationError,
       )
     })
@@ -337,35 +337,35 @@ describe('Singleton Lists', () => {
     it('should block findMany on singleton lists', async () => {
       const context = getContext(config, mockPrisma, null)
 
-      await expect(context.db.settings.findMany()).rejects.toThrow(ValidationError)
+      await expect(context.db.Settings.findMany()).rejects.toThrow(ValidationError)
 
-      await expect(context.db.settings.findMany()).rejects.toThrow('Cannot use findMany')
+      await expect(context.db.Settings.findMany()).rejects.toThrow('Cannot use findMany')
     })
 
     it('should allow findMany on non-singleton lists', async () => {
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'Post 1', content: 'Content 1' },
       ])
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.post.findMany()
+      const result = await context.db.Post.findMany()
 
       expect(result).toBeDefined()
       expect(result).toHaveLength(1)
-      expect(mockPrisma.post.findMany).toHaveBeenCalled()
+      expect(mockPrisma.Post.findMany).toHaveBeenCalled()
     })
   })
 
   describe('update operation', () => {
     it('should allow updating the singleton record', async () => {
-      mockPrisma.settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.findUnique.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
         maxUploadSize: 10,
       })
 
-      mockPrisma.settings.update.mockResolvedValue({
+      mockPrisma.Settings.update.mockResolvedValue({
         id: 1,
         siteName: 'Updated Site',
         maintenanceMode: true,
@@ -376,20 +376,20 @@ describe('Singleton Lists', () => {
 
       const context = getContext(config, mockPrisma, null)
 
-      const result = await context.db.settings.update({
+      const result = await context.db.Settings.update({
         where: { id: 1 },
         data: { siteName: 'Updated Site', maintenanceMode: true, maxUploadSize: 20 },
       })
 
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('Updated Site')
-      expect(mockPrisma.settings.update).toHaveBeenCalled()
+      expect(mockPrisma.Settings.update).toHaveBeenCalled()
     })
   })
 
   describe('findUnique operation', () => {
     it('should allow findUnique on singleton lists', async () => {
-      mockPrisma.settings.findFirst.mockResolvedValue({
+      mockPrisma.Settings.findFirst.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -399,23 +399,23 @@ describe('Singleton Lists', () => {
       })
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.findUnique({ where: { id: 1 } })
+      const result = await context.db.Settings.findUnique({ where: { id: 1 } })
 
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('My Site')
-      expect(mockPrisma.settings.findFirst).toHaveBeenCalled()
+      expect(mockPrisma.Settings.findFirst).toHaveBeenCalled()
     })
   })
 
   describe('count operation', () => {
     it('should allow count on singleton lists', async () => {
-      mockPrisma.settings.count.mockResolvedValue(1)
+      mockPrisma.Settings.count.mockResolvedValue(1)
 
       const context = getContext(config, mockPrisma, null)
-      const result = await context.db.settings.count()
+      const result = await context.db.Settings.count()
 
       expect(result).toBe(1)
-      expect(mockPrisma.settings.count).toHaveBeenCalled()
+      expect(mockPrisma.Settings.count).toHaveBeenCalled()
     })
   })
 })

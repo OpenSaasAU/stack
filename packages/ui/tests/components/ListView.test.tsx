@@ -67,7 +67,7 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     }
 
     const context = makeContext({
-      post: {
+      Post: {
         findMany: vi.fn(async () => [
           { id: '1', title: 'Post 1', author: { id: 'user-1', name: 'Ada Lovelace' } },
         ]),
@@ -99,7 +99,7 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     }
 
     const context = makeContext({
-      post: {
+      Post: {
         findMany: vi.fn(async () => [
           {
             id: '1',
@@ -139,7 +139,7 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     // `_count` payload is dropped before crossing to the client.
     const findMany = vi.fn(async () => [{ id: '1', title: 'Post 1', _count: { tags: 2 } }])
     const context = makeContext({
-      post: { findMany, count: vi.fn(async () => 1) },
+      Post: { findMany, count: vi.fn(async () => 1) },
     })
 
     const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
@@ -169,7 +169,7 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     }
 
     const context = makeContext({
-      post: {
+      Post: {
         findMany: vi.fn(async () => [{ id: '1', title: 'Post 1', author: { id: 'user-1' } }]),
         count: vi.fn(async () => 1),
       },
@@ -196,7 +196,7 @@ describe('ListView relationship label resolution (shared label seam)', () => {
     }
 
     const context = makeContext({
-      post: {
+      Post: {
         findMany: vi.fn(async () => [{ id: '1', title: 'Post 1', author: null }]),
         count: vi.fn(async () => 1),
       },
@@ -230,7 +230,7 @@ describe('ListView server-side filtering (filter engine, secured context)', () =
   it('passes a field-token filter (status:Published) to context.db.findMany/count as a where', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     // The URL filter query is the ListView `search` prop.
     await ListView({
@@ -252,7 +252,7 @@ describe('ListView server-side filtering (filter engine, secured context)', () =
   it('maps a bare word to a free-text contains over text fields', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({ context, config, listKey: 'Post', basePath: '/admin', search: 'hello' })
 
@@ -265,7 +265,7 @@ describe('ListView server-side filtering (filter engine, secured context)', () =
   it('passes where: undefined when there is no filter query', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
 
@@ -290,7 +290,7 @@ describe('ListView excludes read-denied fields from filtering/sorting (#915)', (
   it('drops a read-denied field from the collected filter suggestions', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ organisation: { findMany, count } })
+    const context = makeContext({ Organisation: { findMany, count } })
 
     const tree = await ListView({ context, config, listKey: 'Organisation', basePath: '/admin' })
     const props = findListViewClientProps(tree)
@@ -301,7 +301,7 @@ describe('ListView excludes read-denied fields from filtering/sorting (#915)', (
   it('a `field:value` token for a read-denied field degrades to free text (never reaches context.db)', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ organisation: { findMany, count } })
+    const context = makeContext({ Organisation: { findMany, count } })
 
     await ListView({
       context,
@@ -321,7 +321,7 @@ describe('ListView excludes read-denied fields from filtering/sorting (#915)', (
   it('ignores a sort request naming a read-denied field (no orderBy, never reaches Prisma)', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ organisation: { findMany, count } })
+    const context = makeContext({ Organisation: { findMany, count } })
 
     await ListView({
       context,
@@ -337,7 +337,7 @@ describe('ListView excludes read-denied fields from filtering/sorting (#915)', (
   it('leaves a readable field filterable and sortable (no regression)', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ organisation: { findMany, count } })
+    const context = makeContext({ Organisation: { findMany, count } })
 
     const tree = await ListView({
       context,
@@ -383,7 +383,7 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
 
   it('sorts a to-many column by its relation _count', async () => {
     const findMany = vi.fn(async () => [])
-    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+    const context = makeContext({ User: { findMany, count: vi.fn(async () => 0) } })
 
     await ListView({
       context,
@@ -400,7 +400,7 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
 
   it('sorts a scalar column by its own value', async () => {
     const findMany = vi.fn(async () => [])
-    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+    const context = makeContext({ User: { findMany, count: vi.fn(async () => 0) } })
 
     await ListView({
       context,
@@ -415,7 +415,7 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
 
   it('ignores a sort on a virtual field (no orderBy, never reaches Prisma)', async () => {
     const findMany = vi.fn(async () => [])
-    const context = makeContext({ user: { findMany, count: vi.fn(async () => 0) } })
+    const context = makeContext({ User: { findMany, count: vi.fn(async () => 0) } })
 
     await ListView({
       context,
@@ -435,7 +435,7 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
     ]
     const findMany = vi.fn(async () => rows)
     const count = vi.fn(async () => 0)
-    const context = makeContext({ user: { findMany, count } })
+    const context = makeContext({ User: { findMany, count } })
 
     await ListView({
       context,
@@ -481,7 +481,7 @@ describe('ListView to-one relationship label filter (issue #749 / #916)', () => 
   it('passes a relationship label filter (author:Ada) through to context.db unscoped', async () => {
     const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({
       context,
@@ -508,7 +508,7 @@ describe('ListView default-column curation (issue #1018)', () => {
       },
     }
     const context = makeContext({
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })
@@ -527,7 +527,7 @@ describe('ListView default-column curation (issue #1018)', () => {
       },
     }
     const context = makeContext({
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const tree = await ListView({ context, config, listKey: 'Post', basePath: '/admin' })

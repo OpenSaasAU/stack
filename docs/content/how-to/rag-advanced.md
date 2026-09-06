@@ -165,8 +165,7 @@ All searches go through the access-controlled context, ensuring users only see c
 ```typescript
 async search(listKey, fieldName, queryVector, options) {
   const { context, where = {}, limit, minScore } = options
-  const dbKey = getDbKey(listKey)
-  const model = context.db[dbKey] // Uses access-controlled context
+  const model = context.db[listKey] // Uses access-controlled context
 
   // Fetch items (access control applied automatically)
   const items = await model.findMany({
@@ -369,7 +368,6 @@ interface SearchResult<T> {
 // lib/storage/pinecone.ts
 import { Pinecone } from '@pinecone-database/pinecone'
 import { registerVectorStorage } from '@opensaas/stack-rag/storage'
-import { getDbKey } from '@opensaas/stack-core'
 
 interface PineconeConfig {
   type: 'pinecone'
@@ -393,7 +391,6 @@ class PineconeVectorStorage {
 
   async search(listKey, fieldName, queryVector, options) {
     const { context, limit = 10, minScore = 0, where = {} } = options
-    const dbKey = getDbKey(listKey)
 
     // Query Pinecone
     const index = this.client.index(this.indexName)
@@ -406,7 +403,7 @@ class PineconeVectorStorage {
 
     // Fetch actual items from database with access control
     const ids = queryResponse.matches.map((m) => m.id)
-    const items = await context.db[dbKey].findMany({
+    const items = await context.db[listKey].findMany({
       where: {
         id: { in: ids },
         ...where,

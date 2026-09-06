@@ -71,8 +71,8 @@ describe('prepareItemForm', () => {
     ])
     const tagFindMany = vi.fn(async () => [{ id: 't1', name: 'engineering' }])
     const context = makeContext({
-      author: { findMany: authorFindMany, findFirst: vi.fn() },
-      tag: { findMany: tagFindMany, findFirst: vi.fn() },
+      Author: { findMany: authorFindMany, findFirst: vi.fn() },
+      Tag: { findMany: tagFindMany, findFirst: vi.fn() },
     })
     const config = makeConfig()
 
@@ -99,8 +99,8 @@ describe('prepareItemForm', () => {
       .mockResolvedValueOnce([{ id: 'a1', name: 'Ada Lovelace' }])
       .mockResolvedValueOnce([{ id: 'a9', name: 'Currently Selected' }])
     const context = makeContext({
-      author: { findMany: authorFindMany, findFirst: vi.fn() },
-      tag: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
+      Author: { findMany: authorFindMany, findFirst: vi.fn() },
+      Tag: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
     })
     const config = makeConfig()
 
@@ -120,8 +120,8 @@ describe('prepareItemForm', () => {
       .mockResolvedValueOnce([{ id: 't1', name: 'engineering' }])
       .mockResolvedValueOnce([{ id: 't9', name: 'design' }])
     const context = makeContext({
-      author: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
-      tag: { findMany: tagFindMany, findFirst: vi.fn() },
+      Author: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
+      Tag: { findMany: tagFindMany, findFirst: vi.fn() },
     })
     const config = makeConfig()
 
@@ -169,8 +169,8 @@ describe('prepareItemForm', () => {
       })
     })
     const context = makeContext({
-      author: { findMany: authorFindMany, findFirst: vi.fn() },
-      tag: { findMany: tagFindMany, findFirst: vi.fn() },
+      Author: { findMany: authorFindMany, findFirst: vi.fn() },
+      Tag: { findMany: tagFindMany, findFirst: vi.fn() },
     })
     const config = makeConfig()
 
@@ -187,8 +187,8 @@ describe('prepareItemForm', () => {
   it('passes no selectedIds when the relationship is empty (create mode)', async () => {
     const authorFindMany = vi.fn(async () => [])
     const context = makeContext({
-      author: { findMany: authorFindMany, findFirst: vi.fn() },
-      tag: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
+      Author: { findMany: authorFindMany, findFirst: vi.fn() },
+      Tag: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
     })
     const config = makeConfig()
 

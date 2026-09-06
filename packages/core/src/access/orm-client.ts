@@ -1,5 +1,4 @@
 import type { OrmClient, OrmModelDelegate } from './types.js'
-import { getDbKey } from '../lib/case-utils.js'
 
 /**
  * Thrown when the ORM client carries no delegate for a list the config
@@ -10,7 +9,7 @@ import { getDbKey } from '../lib/case-utils.js'
 export class OrmModelMissingError extends Error {
   constructor(readonly listName: string) {
     super(
-      `The ORM client has no model for list "${listName}" (expected key "${getDbKey(listName)}"). ` +
+      `The ORM client has no model for list "${listName}". ` +
         `Re-run \`opensaas generate\` so the emitted contract matches the config.`,
     )
     this.name = 'OrmModelMissingError'
@@ -33,7 +32,7 @@ function isDelegate(value: unknown): value is OrmModelDelegate {
  * reason {@link OrmClient} needs no per-model type.
  */
 export function ormModel(ormHandle: OrmClient, listName: string): OrmModelDelegate {
-  const delegate = ormHandle[getDbKey(listName)]
+  const delegate = ormHandle[listName]
   if (!isDelegate(delegate)) {
     throw new OrmModelMissingError(listName)
   }

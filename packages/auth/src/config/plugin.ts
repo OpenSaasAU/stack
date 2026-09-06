@@ -1,5 +1,4 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
-import { getDbKey } from '@opensaas/stack-core'
 import type { AuthConfig, NormalizedAuthConfig } from './types.js'
 import { normalizeAuthConfig } from './index.js'
 import { getAuthLists } from '../lists/index.js'
@@ -119,7 +118,7 @@ export function authPlugin(config: AuthConfig): Plugin {
     },
 
     runtime: (context, sudo) => {
-      const userDbKey = getDbKey(normalized.models.user.modelName)
+      const userDbKey = normalized.models.user.modelName
 
       return {
         /**

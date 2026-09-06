@@ -53,7 +53,7 @@ function makeConfig(): OpenSaasConfig {
 describe('getRelationshipOptions', () => {
   it('returns { id, label }[] via a scalar-only fragment with no nested include', async () => {
     const delegate = makeDelegate(authors)
-    const context = makeContext({ author: delegate })
+    const context = makeContext({ Author: delegate })
     const config = makeConfig()
 
     const result = await getRelationshipOptions(context, config, 'Author', {})
@@ -70,7 +70,7 @@ describe('getRelationshipOptions', () => {
 
   it('bounds the result by take', async () => {
     const delegate = makeDelegate(authors.slice(0, 2))
-    const context = makeContext({ author: delegate })
+    const context = makeContext({ Author: delegate })
     const config = makeConfig()
 
     await getRelationshipOptions(context, config, 'Author', { take: 2 })
@@ -80,7 +80,7 @@ describe('getRelationshipOptions', () => {
 
   it('orders by the label field ascending and filters via contains on a text label field', async () => {
     const delegate = makeDelegate([authors[0]])
-    const context = makeContext({ author: delegate })
+    const context = makeContext({ Author: delegate })
     const config = makeConfig()
 
     await getRelationshipOptions(context, config, 'Author', { search: 'Ada' })
@@ -96,7 +96,7 @@ describe('getRelationshipOptions', () => {
   it('does not filter (first-N) when the label field is not a text field', async () => {
     const rows = [{ id: 'n1', rank: 1 }]
     const delegate = makeDelegate(rows)
-    const context = makeContext({ numericLabel: delegate })
+    const context = makeContext({ NumericLabel: delegate })
     const config = makeConfig()
 
     await getRelationshipOptions(context, config, 'NumericLabel', { search: '1' })
@@ -109,7 +109,7 @@ describe('getRelationshipOptions', () => {
   it('falls back to ordering by id when the label field is virtual (no backing column)', async () => {
     const rows = [{ id: 'v1', displayName: 'Computed One' }]
     const delegate = makeDelegate(rows)
-    const context = makeContext({ virtualLabel: delegate })
+    const context = makeContext({ VirtualLabel: delegate })
     const config = makeConfig()
 
     const result = await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
@@ -128,7 +128,7 @@ describe('getRelationshipOptions', () => {
     // discriminator against future refactors.
     ;(config.lists.VirtualLabel.fields.displayName as { virtual?: boolean }).virtual = undefined
     const delegate = makeDelegate([{ id: 'v1', displayName: 'Computed One' }])
-    const context = makeContext({ virtualLabel: delegate })
+    const context = makeContext({ VirtualLabel: delegate })
 
     await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
 
@@ -139,7 +139,7 @@ describe('getRelationshipOptions', () => {
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
     // The bounded/search-scoped query only returns a1 (mimicking take:1 + search).
     const primaryDelegate = makeDelegate([authors[0]])
-    const context = makeContext({ author: primaryDelegate })
+    const context = makeContext({ Author: primaryDelegate })
     const config = makeConfig()
 
     // The selected-ids query (a separate findMany call) resolves a3, which fell
@@ -163,7 +163,7 @@ describe('getRelationshipOptions', () => {
 
   it('does not re-query when the selected id is already within the primary window', async () => {
     const delegate = makeDelegate([authors[0]])
-    const context = makeContext({ author: delegate })
+    const context = makeContext({ Author: delegate })
     const config = makeConfig()
 
     await getRelationshipOptions(context, config, 'Author', { selectedIds: ['a1'] })
@@ -173,7 +173,7 @@ describe('getRelationshipOptions', () => {
 
   it('returns [] when the related list query access is denied (findMany returns [])', async () => {
     const delegate = makeDelegate([])
-    const context = makeContext({ author: delegate })
+    const context = makeContext({ Author: delegate })
     const config = makeConfig()
 
     const result = await getRelationshipOptions(context, config, 'Author', {

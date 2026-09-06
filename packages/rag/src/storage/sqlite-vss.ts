@@ -2,7 +2,6 @@ import type { VectorStorage, SearchOptions } from './types.js'
 import type { SearchResult } from '../config/types.js'
 import type { SqliteVssStorageConfig } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
-import { getDbKey } from '@opensaas/stack-core'
 
 /**
  * SQLite storage backend for vector search.
@@ -36,8 +35,7 @@ export class SqliteVssStorage implements VectorStorage {
   ): Promise<SearchResult<T>[]> {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
-    const dbKey = getDbKey(listKey)
-    const model = context.db[dbKey]
+    const model = context.db[listKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)

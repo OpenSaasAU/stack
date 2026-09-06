@@ -1,7 +1,6 @@
 import type { VectorStorage, SearchOptions } from './types.js'
 import type { SearchResult, StoredEmbedding } from '../config/types.js'
 import { cosineSimilarity as calculateCosineSimilarity } from './types.js'
-import { getDbKey } from '@opensaas/stack-core'
 
 export class JsonVectorStorage implements VectorStorage {
   readonly type = 'json'
@@ -14,8 +13,7 @@ export class JsonVectorStorage implements VectorStorage {
   ): Promise<SearchResult<T>[]> {
     const { limit = 10, minScore = 0.0, context, where = {} } = options
 
-    const dbKey = getDbKey(listKey)
-    const model = context.db[dbKey]
+    const model = context.db[listKey]
 
     if (!model) {
       throw new Error(`List '${listKey}' not found in context.db`)

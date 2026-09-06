@@ -10,7 +10,7 @@ import { InvalidCreateAccessResultError } from '../src/access/errors.js'
  */
 function createMockPrisma() {
   const db = {
-    post: {
+    Post: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -19,7 +19,7 @@ function createMockPrisma() {
       delete: vi.fn(),
       count: vi.fn(),
     },
-    user: {
+    User: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -28,7 +28,7 @@ function createMockPrisma() {
       delete: vi.fn(),
       count: vi.fn(),
     },
-    comment: {
+    Comment: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -105,13 +105,13 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       // Mock the database to return existing post
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
       // Mock the update to return the updated post
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'Updated Title',
         authorId: '2',
@@ -119,7 +119,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = await getContext(testConfig, mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: {
           title: 'Updated Title',
@@ -193,7 +193,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
@@ -201,7 +201,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             title: 'Updated Title',
@@ -257,7 +257,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
@@ -265,7 +265,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             title: 'Updated Title',
@@ -319,12 +319,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'Updated Title',
         authorId: '2',
@@ -337,7 +337,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       // writes flow through the same `filterWritableFields` gate, so the denied
       // `role` field rejects the whole write.
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             title: 'Updated Title',
@@ -353,7 +353,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       ).rejects.toThrow(/role/)
 
       // The denied field must abort the write, not let it proceed.
-      expect(mockPrisma.post.update).not.toHaveBeenCalled()
+      expect(mockPrisma.Post.update).not.toHaveBeenCalled()
     })
 
     it('should run field validation on nested create', async () => {
@@ -390,7 +390,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
@@ -398,7 +398,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             title: 'Updated Title',
@@ -450,7 +450,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.user.findFirst.mockResolvedValue({
+      mockPrisma.User.findFirst.mockResolvedValue({
         id: '1',
         name: 'John Doe',
         email: 'john@example.com',
@@ -465,13 +465,13 @@ describe('Nested Operations - Access Control and Hooks', () => {
       // A caller-supplied `include` is required to fetch `posts` at all — a
       // bare read returns scalars only (ADR-0024) — so name it explicitly to
       // exercise the per-relation access `where` merge.
-      await context.db.user.findUnique({
+      await context.db.User.findUnique({
         where: { id: '1' },
         include: { posts: true },
       })
 
       // Verify findFirst was called with access filter
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+      expect(mockPrisma.User.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.objectContaining({
             posts: expect.objectContaining({
@@ -525,7 +525,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findFirst.mockResolvedValue({
+      mockPrisma.Post.findFirst.mockResolvedValue({
         id: '1',
         title: 'Test Post',
         author: {
@@ -540,7 +540,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       // `author` must be named explicitly — a bare read returns scalars only
       // (ADR-0024).
-      const result = await context.db.post.findUnique({
+      const result = await context.db.Post.findUnique({
         where: { id: '1' },
         include: { author: true },
       })
@@ -586,7 +586,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findFirst.mockResolvedValue({
+      mockPrisma.Post.findFirst.mockResolvedValue({
         id: '1',
         title: 'Test Post',
         // Author should not be included due to access control
@@ -596,13 +596,13 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       // `author` must be named explicitly to exercise the access-denied drop —
       // a bare read never requests it at all (ADR-0024).
-      await context.db.post.findUnique({
+      await context.db.Post.findUnique({
         where: { id: '1' },
         include: { author: true },
       })
 
       // Verify include does NOT include author (access denied)
-      expect(mockPrisma.post.findFirst).toHaveBeenCalledWith(
+      expect(mockPrisma.Post.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.not.objectContaining({
             author: expect.anything(),
@@ -640,14 +640,14 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
         content: 'Original Content',
         internalNotes: 'Old notes',
       })
 
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'Updated Title',
         content: 'Updated Content',
@@ -656,7 +656,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           title: 'Updated Title',
@@ -698,19 +698,19 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'updated title',
       })
 
       const context = getContext(await testConfig, mockPrisma, null)
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           title: 'updated title',
@@ -760,12 +760,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'Updated Title',
         authorId: '2',
@@ -773,7 +773,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, null)
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           title: 'Updated Title',
@@ -827,18 +827,18 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
       // User 2 is NOT reachable under { id: { equals: '1' } } → findFirst returns null.
-      mockPrisma.user.findFirst.mockResolvedValue(null)
+      mockPrisma.User.findFirst.mockResolvedValue(null)
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             author: {
@@ -849,7 +849,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       ).rejects.toThrow('Access denied: Cannot connect to this item')
 
       // Reachability must be evaluated in the DB, AND-combining connection + filter.
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+      expect(mockPrisma.User.findFirst).toHaveBeenCalledWith({
         where: { AND: [{ id: '2' }, { id: { equals: '1' } }] },
       })
     })
@@ -887,17 +887,17 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
-      mockPrisma.user.findUnique.mockResolvedValue({
+      mockPrisma.User.findUnique.mockResolvedValue({
         id: '2',
         name: 'John Doe',
       })
 
-      mockPrisma.post.update.mockResolvedValue({
+      mockPrisma.Post.update.mockResolvedValue({
         id: '1',
         title: 'Original Title',
         authorId: '2',
@@ -905,7 +905,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           author: {
@@ -915,9 +915,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.post.update).toHaveBeenCalled()
+      expect(mockPrisma.Post.update).toHaveBeenCalled()
       // Boolean-true access must not run a reachability re-check.
-      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
     })
 
     it('connect requires READ access, not target UPDATE (read-not-update repro)', async () => {
@@ -956,7 +956,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.enrolment = {
+      mockPrisma.Enrolment = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue({ id: 'e1', title: 'Term 1 Enrolment' }),
@@ -965,7 +965,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.lessonTerm = {
+      mockPrisma.LessonTerm = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue({ id: 't1', name: 'Term 1' }),
@@ -977,7 +977,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: 'student-1' })
 
-      const result = await context.db.enrolment.update({
+      const result = await context.db.Enrolment.update({
         where: { id: 'e1' },
         data: {
           term: {
@@ -987,10 +987,10 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.enrolment.update).toHaveBeenCalled()
+      expect(mockPrisma.Enrolment.update).toHaveBeenCalled()
       // query=true → existence check via findUnique, no reachability re-check.
-      expect(mockPrisma.lessonTerm.findUnique).toHaveBeenCalledWith({ where: { id: 't1' } })
-      expect(mockPrisma.lessonTerm.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.LessonTerm.findUnique).toHaveBeenCalledWith({ where: { id: 't1' } })
+      expect(mockPrisma.LessonTerm.findFirst).not.toHaveBeenCalled()
     })
 
     it('allows nested connect when a NESTED-RELATION filter is reachable (account-holder self-connect)', async () => {
@@ -1029,7 +1029,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1038,7 +1038,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1050,7 +1050,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
-      const result = await context.db.student.create({
+      const result = await context.db.Student.create({
         data: {
           name: 'Kid',
           account: { connect: { id: 'acc-1' } },
@@ -1058,9 +1058,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.student.create).toHaveBeenCalled()
+      expect(mockPrisma.Student.create).toHaveBeenCalled()
       // Reachability check evaluated the nested-relation filter in the DB.
-      expect(mockPrisma.account.findFirst).toHaveBeenCalledWith({
+      expect(mockPrisma.Account.findFirst).toHaveBeenCalledWith({
         where: {
           AND: [{ id: 'acc-1' }, { user: { id: { equals: 'user-1' } } }],
         },
@@ -1100,7 +1100,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         // Not reachable for this caller → findFirst returns null.
         findFirst: vi.fn().mockResolvedValue(null),
         findMany: vi.fn(),
@@ -1110,7 +1110,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1123,14 +1123,14 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, { userId: 'attacker' })
 
       await expect(
-        context.db.student.create({
+        context.db.Student.create({
           data: {
             name: 'Kid',
             account: { connect: { id: 'someone-elses-account' } },
           },
         }),
       ).rejects.toThrow('Access denied: Cannot connect to this item')
-      expect(mockPrisma.student.create).not.toHaveBeenCalled()
+      expect(mockPrisma.Student.create).not.toHaveBeenCalled()
     })
 
     it('evaluates AND/OR/some/none/not boolean-combinator filters via DB reachability', async () => {
@@ -1173,7 +1173,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.team = {
+      mockPrisma.Team = {
         findFirst: vi.fn().mockResolvedValue({ id: 'team-1', name: 'Team A' }),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1182,7 +1182,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.project = {
+      mockPrisma.Project = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1194,7 +1194,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
-      const result = await context.db.project.create({
+      const result = await context.db.Project.create({
         data: {
           title: 'P1',
           team: { connect: { id: 'team-1' } },
@@ -1204,7 +1204,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       expect(result).toBeDefined()
       // The full boolean-combinator filter is AND-combined with the connection
       // and handed to the DB — no in-memory walk, no false denial.
-      expect(mockPrisma.team.findFirst).toHaveBeenCalledWith({
+      expect(mockPrisma.Team.findFirst).toHaveBeenCalledWith({
         where: { AND: [{ id: 'team-1' }, complexFilter] },
       })
     })
@@ -1244,12 +1244,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
+      mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+      mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' }).sudo()
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           author: { connect: { id: '2' } },
@@ -1257,11 +1257,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.post.update).toHaveBeenCalled()
+      expect(mockPrisma.Post.update).toHaveBeenCalled()
       // Sudo skips access evaluation: neither the access fn nor reachability run.
       expect(queryAccess).not.toHaveBeenCalled()
-      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
-      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findUnique).not.toHaveBeenCalled()
     })
 
     it("connectOrCreate's connect branch uses read-access + DB reachability and denies unreachable rows", async () => {
@@ -1298,7 +1298,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         // Row exists ...
         findUnique: vi.fn().mockResolvedValue({ id: 'acc-x', name: 'Other Account' }),
         // ... but is NOT reachable under the access filter for this caller.
@@ -1309,7 +1309,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1322,7 +1322,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
       await expect(
-        context.db.student.create({
+        context.db.Student.create({
           data: {
             name: 'Kid',
             account: {
@@ -1335,10 +1335,10 @@ describe('Nested Operations - Access Control and Hooks', () => {
         }),
       ).rejects.toThrow('Access denied: Cannot connect to existing item')
 
-      expect(mockPrisma.account.findFirst).toHaveBeenCalledWith({
+      expect(mockPrisma.Account.findFirst).toHaveBeenCalledWith({
         where: { AND: [{ id: 'acc-x' }, { user: { id: { equals: 'user-1' } } }] },
       })
-      expect(mockPrisma.student.create).not.toHaveBeenCalled()
+      expect(mockPrisma.Student.create).not.toHaveBeenCalled()
     })
 
     it("connectOrCreate's connect branch allows a reachable existing row", async () => {
@@ -1375,7 +1375,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         findUnique: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findMany: vi.fn(),
@@ -1384,7 +1384,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1396,7 +1396,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
-      const result = await context.db.student.create({
+      const result = await context.db.Student.create({
         data: {
           name: 'Kid',
           account: {
@@ -1409,7 +1409,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.student.create).toHaveBeenCalled()
+      expect(mockPrisma.Student.create).toHaveBeenCalled()
     })
 
     it('should deny nested update when update access is denied on related item', async () => {
@@ -1445,12 +1445,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
       })
 
-      mockPrisma.user.findUnique.mockResolvedValue({
+      mockPrisma.User.findUnique.mockResolvedValue({
         id: '2',
         name: 'John Doe',
       })
@@ -1458,7 +1458,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, null)
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             author: {
@@ -1506,16 +1506,16 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
         // The target row exists ...
-        mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
         // ... but is NOT reachable under { id: { equals: '1' } } for this caller.
-        mockPrisma.user.findFirst.mockResolvedValue(null)
+        mockPrisma.User.findFirst.mockResolvedValue(null)
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
         await expect(
-          context.db.post.update({
+          context.db.Post.update({
             where: { id: '1' },
             data: {
               author: {
@@ -1527,11 +1527,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
         // Reachability re-checked in the DB, AND-combining the target `where`
         // with the returned filter — not an in-memory test.
-        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        expect(mockPrisma.User.findFirst).toHaveBeenCalledWith({
           where: { AND: [{ id: { equals: '1' } }, { id: '2' }] },
         })
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
-        expect(mockPrisma.user.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.User.update).not.toHaveBeenCalled()
         // Denied before any of the target list's hooks fire.
         expect(userResolveInput).not.toHaveBeenCalled()
       })
@@ -1561,11 +1561,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-        mockPrisma.user.findUnique.mockResolvedValue({ id: '1', name: 'John Doe' })
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: '1', name: 'John Doe' })
         // Reachable: the target IS the caller's own row.
-        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John Doe' })
-        mockPrisma.post.update.mockResolvedValue({
+        mockPrisma.User.findFirst.mockResolvedValue({ id: '1', name: 'John Doe' })
+        mockPrisma.Post.update.mockResolvedValue({
           id: '1',
           title: 'Original Title',
           authorId: '1',
@@ -1573,7 +1573,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
-        const result = await context.db.post.update({
+        const result = await context.db.Post.update({
           where: { id: '1' },
           data: {
             author: {
@@ -1586,7 +1586,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         // The re-check matched, so the nested write reaches Prisma's own
         // nested-update syntax on the PARENT's `update` call (Prisma persists
         // it, not a separate `user.update` call).
-        expect(mockPrisma.post.update).toHaveBeenCalledWith(
+        expect(mockPrisma.Post.update).toHaveBeenCalledWith(
           expect.objectContaining({
             data: expect.objectContaining({
               author: { update: { where: { id: '1' }, data: { name: 'Jane Doe' } } },
@@ -1620,18 +1620,18 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-        mockPrisma.comment.findUnique.mockResolvedValue({
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Comment.findUnique.mockResolvedValue({
           id: 'c1',
           body: 'hi',
           authorId: 'someone-else',
         })
-        mockPrisma.comment.findFirst.mockResolvedValue(null)
+        mockPrisma.Comment.findFirst.mockResolvedValue(null)
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
         await expect(
-          context.db.post.update({
+          context.db.Post.update({
             where: { id: '1' },
             data: {
               comments: {
@@ -1641,10 +1641,10 @@ describe('Nested Operations - Access Control and Hooks', () => {
           }),
         ).rejects.toThrow('Access denied: Cannot update related item')
 
-        expect(mockPrisma.comment.findFirst).toHaveBeenCalledWith({
+        expect(mockPrisma.Comment.findFirst).toHaveBeenCalledWith({
           where: { AND: [{ authorId: { equals: '1' } }, { id: 'c1' }] },
         })
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
       })
 
       it('denies nested delete when the delete access filter does not match the target row', async () => {
@@ -1675,18 +1675,18 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-        mockPrisma.comment.findUnique.mockResolvedValue({
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Comment.findUnique.mockResolvedValue({
           id: 'c1',
           body: 'hi',
           authorId: 'someone-else',
         })
-        mockPrisma.comment.findFirst.mockResolvedValue(null)
+        mockPrisma.Comment.findFirst.mockResolvedValue(null)
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
         await expect(
-          context.db.post.update({
+          context.db.Post.update({
             where: { id: '1' },
             data: {
               comments: { delete: { id: 'c1' } },
@@ -1694,10 +1694,10 @@ describe('Nested Operations - Access Control and Hooks', () => {
           }),
         ).rejects.toThrow('Access denied: Cannot delete related item')
 
-        expect(mockPrisma.comment.findFirst).toHaveBeenCalledWith({
+        expect(mockPrisma.Comment.findFirst).toHaveBeenCalledWith({
           where: { AND: [{ authorId: { equals: '1' } }, { id: 'c1' }] },
         })
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
         expect(commentBeforeOperation).not.toHaveBeenCalled()
       })
 
@@ -1726,14 +1726,14 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-        mockPrisma.comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
-        mockPrisma.comment.findFirst.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
-        mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
+        mockPrisma.Comment.findFirst.mockResolvedValue({ id: 'c1', body: 'hi', authorId: '1' })
+        mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
-        const result = await context.db.post.update({
+        const result = await context.db.Post.update({
           where: { id: '1' },
           data: {
             comments: { delete: { id: 'c1' } },
@@ -1741,7 +1741,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         })
 
         expect(result).toBeDefined()
-        expect(mockPrisma.post.update).toHaveBeenCalled()
+        expect(mockPrisma.Post.update).toHaveBeenCalled()
       })
 
       it('sudo bypasses the reachability re-check for both nested update and nested delete', async () => {
@@ -1772,14 +1772,14 @@ describe('Nested Operations - Access Control and Hooks', () => {
           },
         })
 
-        mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-        mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
-        mockPrisma.comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi' })
-        mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+        mockPrisma.Comment.findUnique.mockResolvedValue({ id: 'c1', body: 'hi' })
+        mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original Title' })
 
         const context = getContext(await testConfig, mockPrisma, { userId: '1' }).sudo()
 
-        const result = await context.db.post.update({
+        const result = await context.db.Post.update({
           where: { id: '1' },
           data: {
             author: { update: { where: { id: '2' }, data: { name: 'Jane Doe' } } },
@@ -1788,11 +1788,11 @@ describe('Nested Operations - Access Control and Hooks', () => {
         })
 
         expect(result).toBeDefined()
-        expect(mockPrisma.post.update).toHaveBeenCalled()
+        expect(mockPrisma.Post.update).toHaveBeenCalled()
         expect(updateAccess).not.toHaveBeenCalled()
         expect(deleteAccess).not.toHaveBeenCalled()
-        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
-        expect(mockPrisma.comment.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.Comment.findFirst).not.toHaveBeenCalled()
       })
     })
   })
@@ -1854,14 +1854,14 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+      mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
       // Target row is readable (query=true) and exists.
-      mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+      mockPrisma.User.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
       await expect(
-        context.db.post.update({
+        context.db.Post.update({
           where: { id: '1' },
           data: {
             author: { connect: { id: '2' } },
@@ -1869,9 +1869,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
         }),
       ).rejects.toThrow(OWNING_FIELD_DENIES)
 
-      expect(mockPrisma.post.update).not.toHaveBeenCalled()
+      expect(mockPrisma.Post.update).not.toHaveBeenCalled()
       // Denied owning field short-circuits before the target row is touched.
-      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findUnique).not.toHaveBeenCalled()
     })
 
     it('denies connect (enclosing CREATE) when the owning field create access is denied, even though target is readable/reachable', async () => {
@@ -1913,7 +1913,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
@@ -1922,7 +1922,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -1935,7 +1935,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
       await expect(
-        context.db.student.create({
+        context.db.Student.create({
           data: {
             name: 'Kid',
             account: { connect: { id: 'acc-1' } },
@@ -1943,8 +1943,8 @@ describe('Nested Operations - Access Control and Hooks', () => {
         }),
       ).rejects.toThrow(OWNING_FIELD_DENIES)
 
-      expect(mockPrisma.student.create).not.toHaveBeenCalled()
-      expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
+      expect(mockPrisma.Student.create).not.toHaveBeenCalled()
+      expect(mockPrisma.Account.findUnique).not.toHaveBeenCalled()
     })
 
     it('allows connect when the owning field access permits and the target row is reachable (enclosing UPDATE)', async () => {
@@ -1985,13 +1985,13 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-      mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
-      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
+      mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+      mockPrisma.User.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+      mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           author: { connect: { id: '2' } },
@@ -1999,9 +1999,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.post.update).toHaveBeenCalled()
+      expect(mockPrisma.Post.update).toHaveBeenCalled()
       // Owning field allowed → fall through to the #578 target existence check.
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { id: '2' } })
+      expect(mockPrisma.User.findUnique).toHaveBeenCalledWith({ where: { id: '2' } })
     })
 
     it('sudo bypasses the owning-field gate (denied owning field, connect still succeeds)', async () => {
@@ -2044,12 +2044,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
-      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
+      mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original Title' })
+      mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original Title', authorId: '2' })
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' }).sudo()
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           author: { connect: { id: '2' } },
@@ -2057,12 +2057,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.post.update).toHaveBeenCalled()
+      expect(mockPrisma.Post.update).toHaveBeenCalled()
       // Sudo skips the whole connect check: neither the owning-field access fn
       // nor the target reachability/existence read run.
       expect(owningFieldUpdate).not.toHaveBeenCalled()
-      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
-      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.User.findUnique).not.toHaveBeenCalled()
     })
 
     it("connectOrCreate's connect branch is gated by the owning field access (denied → throws, existing row)", async () => {
@@ -2104,7 +2104,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         // Row exists and is reachable, but the owning field gate must still deny.
         findUnique: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
@@ -2114,7 +2114,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -2127,7 +2127,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
       await expect(
-        context.db.student.create({
+        context.db.Student.create({
           data: {
             name: 'Kid',
             account: {
@@ -2140,9 +2140,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
         }),
       ).rejects.toThrow(OWNING_FIELD_DENIES)
 
-      expect(mockPrisma.student.create).not.toHaveBeenCalled()
+      expect(mockPrisma.Student.create).not.toHaveBeenCalled()
       // Denied owning field short-circuits before the target reachability re-check.
-      expect(mockPrisma.account.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.Account.findFirst).not.toHaveBeenCalled()
     })
 
     it("connectOrCreate's connect branch succeeds when the owning field access permits a reachable existing row", async () => {
@@ -2184,7 +2184,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.account = {
+      mockPrisma.Account = {
         findUnique: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findFirst: vi.fn().mockResolvedValue({ id: 'acc-1', name: 'My Account' }),
         findMany: vi.fn(),
@@ -2193,7 +2193,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         delete: vi.fn(),
         count: vi.fn(),
       }
-      mockPrisma.student = {
+      mockPrisma.Student = {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
@@ -2205,7 +2205,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       const context = getContext(await testConfig, mockPrisma, { userId: 'user-1' })
 
-      const result = await context.db.student.create({
+      const result = await context.db.Student.create({
         data: {
           name: 'Kid',
           account: {
@@ -2218,7 +2218,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.student.create).toHaveBeenCalled()
+      expect(mockPrisma.Student.create).toHaveBeenCalled()
     })
 
     // #588 finding — the connect-site owning-field gate must receive the SAME
@@ -2280,17 +2280,17 @@ describe('Nested Operations - Access Control and Hooks', () => {
       })
 
       // Existing row is a draft → the item-dependent rule allows.
-      mockPrisma.post.findUnique.mockResolvedValue({
+      mockPrisma.Post.findUnique.mockResolvedValue({
         id: '1',
         title: 'Original Title',
         status: 'draft',
       })
-      mockPrisma.user.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
-      mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Updated', authorId: '2' })
+      mockPrisma.User.findUnique.mockResolvedValue({ id: '2', name: 'John Doe' })
+      mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Updated', authorId: '2' })
 
       const context = getContext(await testConfig, mockPrisma, { userId: '1' })
 
-      const result = await context.db.post.update({
+      const result = await context.db.Post.update({
         where: { id: '1' },
         data: {
           title: 'Updated',
@@ -2300,9 +2300,9 @@ describe('Nested Operations - Access Control and Hooks', () => {
 
       // No spurious denial: the connect succeeded.
       expect(result).toBeDefined()
-      expect(mockPrisma.post.update).toHaveBeenCalled()
+      expect(mockPrisma.Post.update).toHaveBeenCalled()
       // Owning field allowed → fall through to the #578 target existence check.
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { id: '2' } })
+      expect(mockPrisma.User.findUnique).toHaveBeenCalledWith({ where: { id: '2' } })
 
       // The gate was evaluated with the enclosing write's `item` (the draft
       // originalItem) and `inputData` (the update payload) — the same values
@@ -2412,12 +2412,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'Hello World', createdAt: new Date(), updatedAt: new Date() },
       ])
 
       const context = getContext(testConfig, mockPrisma, null)
-      const results = await context.db.post.findMany()
+      const results = await context.db.Post.findMany()
 
       // The resolved value should be the async result, not a Promise object
       expect(results[0].title).toBe('async:Hello World')
@@ -2460,7 +2460,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.user.findMany.mockResolvedValue([
+      mockPrisma.User.findMany.mockResolvedValue([
         {
           id: '1',
           firstName: 'John',
@@ -2471,7 +2471,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
       ])
 
       const context = getContext(testConfig, mockPrisma, null)
-      const results = await context.db.user.findMany()
+      const results = await context.db.User.findMany()
 
       // The resolved value should be the async result, not a Promise object
       expect(results[0].fullName).toBe('computed:John-Doe')
@@ -2508,12 +2508,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'hello world', createdAt: new Date(), updatedAt: new Date() },
       ])
 
       const context = getContext(testConfig, mockPrisma, null)
-      const results = await context.db.post.findMany()
+      const results = await context.db.Post.findMany()
 
       // Sync hooks should still work as before
       expect(results[0].title).toBe('HELLO WORLD')
@@ -2552,12 +2552,12 @@ describe('Nested Operations - Access Control and Hooks', () => {
         },
       })
 
-      mockPrisma.post.findMany.mockResolvedValue([
+      mockPrisma.Post.findMany.mockResolvedValue([
         { id: '1', title: 'Test', createdAt: new Date(), updatedAt: new Date() },
       ])
 
       const context = getContext(testConfig, mockPrisma, { userId: 'user-123' })
-      const results = await context.db.post.findMany()
+      const results = await context.db.Post.findMany()
 
       expect(results[0].title).toBe('Test:user-123')
       expect(asyncHookWithContext).toHaveBeenCalled()

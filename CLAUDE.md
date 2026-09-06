@@ -656,15 +656,14 @@ lists: {
 
 - **Prisma Models:** PascalCase (e.g., `AuthUser`, `BlogPost`)
 - **Prisma Client Properties:** camelCase (e.g., `prisma.authUser`, `prisma.blogPost`)
-- **Context DB Properties:** camelCase (e.g., `context.db.authUser`, `context.db.blogPost`)
+- **Context DB Properties:** PascalCase, the config spelling (e.g., `context.db.AuthUser`, `context.db.BlogPost`)
 - **Admin UI URLs:** kebab-case (e.g., `/admin/auth-user`, `/admin/blog-post`)
 
 **Utility Functions:**
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
+import { getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
 
-getDbKey('AuthUser') // 'authUser' - for accessing context.db and prisma
 getUrlKey('AuthUser') // 'auth-user' - for constructing URLs
 getListKeyFromUrl('auth-user') // 'AuthUser' - for parsing URLs
 ```
@@ -679,11 +678,11 @@ import { getContext } from '@/.opensaas/context'
 
 // Anonymous access
 const context = await getContext()
-const posts = await context.db.post.findMany()
+const posts = await context.db.Post.all()
 
 // Authenticated access
 const context = await getContext({ userId: 'user-123' })
-const myPosts = await context.db.post.findMany()
+const myPosts = await context.db.Post.where({ authorId: 'user-123' }).all()
 ```
 
 **Interactive transactions:** Use `context.transaction(async (txContext) => { … })` to run several access-checked, hook-firing `context.db.*` operations atomically in one transaction. Unlike a raw transaction on the unsafe surface (which bypasses access control and hooks), `txContext.db.*` keeps the security/validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant (e.g. a capacity gate) is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.

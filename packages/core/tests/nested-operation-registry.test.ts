@@ -14,7 +14,7 @@ import { text, relationship } from '../src/fields/index.js'
 
 function createMockPrisma() {
   return {
-    post: {
+    Post: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -23,7 +23,7 @@ function createMockPrisma() {
       delete: vi.fn(),
       count: vi.fn(),
     },
-    user: {
+    User: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -32,7 +32,7 @@ function createMockPrisma() {
       delete: vi.fn(),
       count: vi.fn(),
     },
-    tag: {
+    Tag: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -101,20 +101,20 @@ describe('Nested Operation Handler Registry', () => {
   beforeEach(() => {
     mockPrisma = createMockPrisma()
     vi.clearAllMocks()
-    mockPrisma.post.findUnique.mockResolvedValue({ id: '1', title: 'Original' })
-    mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original' })
+    mockPrisma.Post.findUnique.mockResolvedValue({ id: '1', title: 'Original' })
+    mockPrisma.Post.update.mockResolvedValue({ id: '1', title: 'Original' })
   })
 
   describe('pass-through kinds', () => {
     it('passes disconnect through unchanged', async () => {
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: { author: { disconnect: true } },
       })
 
-      const passedData = mockPrisma.post.update.mock.calls[0][0].data
+      const passedData = mockPrisma.Post.update.mock.calls[0][0].data
       expect(passedData.author).toEqual({ disconnect: true })
     })
 
@@ -126,7 +126,7 @@ describe('Nested Operation Handler Registry', () => {
       // unchanged.
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: {
           tags: {
@@ -137,7 +137,7 @@ describe('Nested Operation Handler Registry', () => {
         },
       })
 
-      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      const passedTags = mockPrisma.Post.update.mock.calls[0][0].data.tags
       expect(passedTags).toEqual({
         deleteMany: { label: { contains: 'x' } },
         set: [{ id: 'b' }],
@@ -148,10 +148,10 @@ describe('Nested Operation Handler Registry', () => {
     it('runs the delete hook pipeline for nested delete then hands the payload to Prisma', async () => {
       // Nested `delete` now resolves the target row (access + hooks), then the
       // identifying payload is still handed to Prisma's nested write unchanged.
-      mockPrisma.tag.findUnique.mockResolvedValue({ id: 'a', label: 'doomed' })
+      mockPrisma.Tag.findUnique.mockResolvedValue({ id: 'a', label: 'doomed' })
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: {
           tags: {
@@ -161,9 +161,9 @@ describe('Nested Operation Handler Registry', () => {
       })
 
       // The target row was resolved for access/hooks.
-      expect(mockPrisma.tag.findUnique).toHaveBeenCalledWith({ where: { id: 'a' } })
+      expect(mockPrisma.Tag.findUnique).toHaveBeenCalledWith({ where: { id: 'a' } })
       // The delete payload reaches Prisma unchanged.
-      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      const passedTags = mockPrisma.Post.update.mock.calls[0][0].data.tags
       expect(passedTags).toEqual({ delete: { id: 'a' } })
     })
   })
@@ -172,7 +172,7 @@ describe('Nested Operation Handler Registry', () => {
     it('dispatches create and disconnect together, preserving both', async () => {
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: {
           tags: {
@@ -182,7 +182,7 @@ describe('Nested Operation Handler Registry', () => {
         },
       })
 
-      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      const passedTags = mockPrisma.Post.update.mock.calls[0][0].data.tags
       // create is processed through hooks/access (object preserved)
       expect(passedTags.create).toEqual({ label: 'new-tag' })
       // disconnect is passed through untouched
@@ -192,10 +192,10 @@ describe('Nested Operation Handler Registry', () => {
 
   describe('connectOrCreate kind', () => {
     it('produces a { where, create } payload via the registry', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null)
+      mockPrisma.User.findUnique.mockResolvedValue(null)
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: {
           author: {
@@ -207,7 +207,7 @@ describe('Nested Operation Handler Registry', () => {
         },
       })
 
-      const passedAuthor = mockPrisma.post.update.mock.calls[0][0].data.author
+      const passedAuthor = mockPrisma.Post.update.mock.calls[0][0].data.author
       expect(passedAuthor.connectOrCreate).toEqual({
         where: { id: '99' },
         create: { name: 'Created Author' },
@@ -219,12 +219,12 @@ describe('Nested Operation Handler Registry', () => {
     it('leaves scalar field values untouched', async () => {
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
-      await context.db.post.update({
+      await context.db.Post.update({
         where: { id: '1' },
         data: { title: 'Updated Title' },
       })
 
-      const passedData = mockPrisma.post.update.mock.calls[0][0].data
+      const passedData = mockPrisma.Post.update.mock.calls[0][0].data
       expect(passedData.title).toBe('Updated Title')
     })
   })
