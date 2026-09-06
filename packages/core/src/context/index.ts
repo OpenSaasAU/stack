@@ -305,9 +305,13 @@ export interface TransactionOptions {
 
 /**
  * Minimal shape of a Prisma client that can open an interactive transaction.
- * A Prisma transaction client (the `tx` handed to the callback) intentionally
- * does NOT expose `$transaction`, which is how nested writes detect they are
- * already inside a transaction and join it rather than opening another.
+ * A Prisma 7 transaction client (the `tx` handed to the callback) does NOT
+ * expose `$transaction`, which is how a nested `transaction()` detects it is
+ * already inside one and joins it rather than opening another.
+ *
+ * Known limits: `$transaction` is the Prisma 7 name and no Prisma 8 client
+ * carries it, so the probe below is constant-false on `prisma-8` — see the
+ * matching note on `runInTransaction` in `write-pipeline.ts` (#1124).
  */
 interface TransactionCapable {
   $transaction?: (

@@ -122,6 +122,35 @@ export function listSyntheticReverseRelationNames(
   return names
 }
 
+/**
+ * Evaluate one operation-level access rule (`query`, `update` or `delete`).
+ *
+ * Returns what the rule returned: `true` (allow every row), `false` (deny), or
+ * a `PrismaFilter` scoping which rows the session may reach. An **absent** rule
+ * denies — access is opt-in, so a list that declares nothing is closed rather
+ * than open.
+ *
+ * A filter result is not a decision on its own. Pass it to {@link mergeFilters}
+ * to fold it into the caller's `where`, then check for `null` before querying.
+ * Gate a `create` with {@link checkCreateAccess} instead: create has no row to
+ * test a filter against, so a rule that returns one must be refused rather than
+ * read as an allow (ADR-0030). `checkCreateAccess` calls this and enforces that.
+ *
+ * @param accessControl - The rule from `access.operation[...]`, or `undefined`.
+ * @param args - The session, the existing row (update/delete), and the context
+ * the rule may read through.
+ *
+ * @example
+ * ```ts
+ * const result = await checkAccess(config.lists.Post.access?.operation?.query, {
+ *   session: context.session,
+ *   context,
+ * })
+ * const where = mergeFilters(callerWhere, result)
+ * if (where === null) return [] // denied — Silent failure
+ * const rows = await prisma.post.findMany({ where })
+ * ```
+ */
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
@@ -171,6 +200,30 @@ export async function checkCreateAccess<T = Record<string, unknown>>(
   throw new InvalidCreateAccessResultError(listKey, result)
 }
 
+/**
+ * Fold a {@link checkAccess} result into a caller's `where`, producing the
+ * clause to hand the database — or `null` when access is denied.
+ *
+ * `null` is the Silent failure signal, not an empty filter: a caller that
+ * receives it returns `null`/`[]` without querying, so a denial is
+ * indistinguishable from a miss and leaks no existence information. An empty
+ * object (`{}`) means the opposite — allowed, unscoped.
+ *
+ * The two filters are combined with `AND`, never merged key-by-key, so the
+ * access filter can only ever narrow what the caller asked for. A caller
+ * cannot widen its own visibility by naming the same field.
+ *
+ * Deliberately not generic, where {@link checkAccess} is: `checkAccess`'s `T`
+ * types the row a rule inspects (`item`), while this returns a clause in Prisma
+ * *operator* space — `AND` is not a `keyof T`, so `PrismaFilter<T>` cannot
+ * describe the result. Typing it as one would be a claim the value does not
+ * satisfy. A `PrismaFilter<Post>` from `checkAccess<Post>` is accepted here
+ * unchanged; only the merged clause is untyped.
+ *
+ * @param userFilter - The caller's own `where`, if any.
+ * @param accessFilter - What {@link checkAccess} returned.
+ * @returns The clause to query with, or `null` when denied.
+ */
 export function mergeFilters(
   userFilter: PrismaFilter | undefined,
   accessFilter: boolean | PrismaFilter,
