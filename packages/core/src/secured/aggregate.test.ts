@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { Session } from '../access/types.js'
-import { checkbox, integer, relationship, text } from '../fields/index.js'
+import { checkbox, integer, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
@@ -54,6 +54,12 @@ const blogConfig: OpenSaasConfig = {
         views: integer({ defaultValue: 0 }),
         kind: text(),
         editorNotes: text({ access: { read: () => false } }),
+        // Declared and readable, but stored nowhere: the hole a read gate and
+        // a relationship refusal both leave open.
+        shout: virtual({
+          type: 'string',
+          hooks: { resolveOutput: ({ item }) => String(item.title).toUpperCase() },
+        }),
         author: relationship({ ref: 'User.posts' }),
         watcher: relationship({ ref: 'User.watched' }),
         reviewer: relationship({ ref: 'User.reviewed' }),
@@ -616,6 +622,79 @@ describe('distinct, distinctOn and cursor', () => {
       const db = database.context(ada).db
       await expect(db.Post.distinctOn('kind').all()).rejects.toBeInstanceOf(ValidationError)
       await expect(db.Post.cursor({ views: 1 }).all()).rejects.toBeInstanceOf(ValidationError)
+    },
+    BOOT,
+  )
+
+  test(
+    'distinctOn refuses an orderBy that does not lead with its columns',
+    async () => {
+      const db = database.context(ada).db
+      // Postgres answers this pair with 42P10; the engine has to answer first.
+      await expect(
+        db.Post.orderBy({ views: 'asc' }).distinctOn('kind').all(),
+      ).rejects.toBeInstanceOf(ValidationError)
+      await expect(
+        db.Post.orderBy([{ views: 'asc' }, { kind: 'asc' }])
+          .distinctOn('kind')
+          .all(),
+      ).rejects.toBeInstanceOf(ValidationError)
+      // The leading group is a set, not a sequence — Postgres does not care
+      // which of the two comes first, so neither does the refusal.
+      expect(
+        await db.Post.orderBy([{ views: 'desc' }, { kind: 'asc' }])
+          .distinctOn('kind', 'views')
+          .all(),
+      ).toHaveLength(3)
+    },
+    BOOT,
+  )
+
+  test(
+    'distinct and distinctOn refuse an empty column list',
+    async () => {
+      const db = database.context(ada).db
+      await expect(db.Post.distinct().all()).rejects.toBeInstanceOf(ValidationError)
+      await expect(db.Post.orderBy({ kind: 'asc' }).distinctOn().all()).rejects.toBeInstanceOf(
+        ValidationError,
+      )
+    },
+    BOOT,
+  )
+
+  test(
+    'distinct refuses a declared field that is not a stored column',
+    async () => {
+      const db = database.context(ada).db
+      const computed = await db.Post.distinct('shout')
+        .all()
+        .catch((error: unknown) => error)
+      const absent = await db.Post.distinct('nope')
+        .all()
+        .catch((error: unknown) => error)
+
+      expect(computed).toBeInstanceOf(ValidationError)
+      // The same refusal a key the list does not declare gets, rather than
+      // whatever the ORM would have said about a column that is not there.
+      expect(messageOf(computed)).toBe(messageOf(absent).replaceAll('nope', 'shout'))
+    },
+    BOOT,
+  )
+
+  test(
+    'a second distinct is refused rather than replacing the first',
+    async () => {
+      const db = database.context(ada).db
+      await expect(db.Post.distinct('kind').distinct('views').all()).rejects.toBeInstanceOf(
+        ValidationError,
+      )
+      await expect(db.Post.distinct('kind').distinctOn('views').all()).rejects.toBeInstanceOf(
+        ValidationError,
+      )
+      // Access resolves first, so a denied caller never sees the refusal.
+      expect(
+        await database.context(ada).db.Draft.distinct('title').distinct('title').all(),
+      ).toEqual([])
     },
     BOOT,
   )

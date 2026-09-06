@@ -24,6 +24,8 @@ const users = await context.db.User.include('posts', (posts) =>
 // each row: { …user, posts: { published: number; total: number } }
 ```
 
-`distinct(...fields)`, `distinctOn(...fields)` and `cursor(values)` join the read subset. Every column they name goes through the same read gate a `where` key does, so a field this session cannot read is refused exactly as an undeclared one is; `distinctOn` and `cursor` require a prior `orderBy`.
+`distinct(...fields)`, `distinctOn(...fields)` and `cursor(values)` join the read subset. Every column they name goes through the same read gate a `where` key does, so a field this session cannot read is refused exactly as an undeclared one is — as is one that is declared but stored nowhere, such as a `virtual()` field. `cursor` requires a prior `orderBy`, and `distinctOn` requires one that leads with its own columns, so a pair Postgres would reject with `42P10` is refused by name instead. An empty column list, and a second `distinct` or `distinctOn` on the same read, are both refused rather than silently answering a different question.
+
+`nearest()` refuses a read that composed `distinct` or a cursor, as `aggregate` does: the ranking is that query's leading order, so a cursor has no axis left to resume along and a distinct would collapse rows the limit is already counted over.
 
 `groupBy`, the `*All` family, `*AndCount` and `upsert` remain absent from the surface: a method appears only where the engine knows how to scope it.

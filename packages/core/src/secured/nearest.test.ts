@@ -441,6 +441,29 @@ describe.skipIf(!available)(
         ).rejects.toThrow(/3-dimension column and the query vector has 2/)
       })
 
+      test('a composed distinct or cursor is refused rather than dropped', async () => {
+        const context = database.context(anonymous)
+
+        await expect(
+          context.db.Cosine.distinct('title').nearest('embedding', QUERY),
+        ).rejects.toThrow(/composed distinct or cursor/)
+        await expect(
+          context.db.Cosine.orderBy({ title: 'asc' })
+            .cursor({ title: 'unit' })
+            .nearest('embedding', QUERY),
+        ).rejects.toThrow(/composed distinct or cursor/)
+      })
+
+      test('a denied read still answers [] rather than that refusal', async () => {
+        expect(
+          await database
+            .context(anonymous)
+            .db.Locked.orderBy({ title: 'asc' })
+            .cursor({ title: 'unit' })
+            .nearest('embedding', QUERY),
+        ).toEqual([])
+      })
+
       test('a limit that is not a positive whole number is refused', async () => {
         await expect(
           database.context(anonymous).db.Cosine.nearest('embedding', QUERY, { limit: 0 }),

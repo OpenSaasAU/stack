@@ -568,6 +568,11 @@ export async function resolveColumns(
   ctx: ResolveContext,
   member: string,
 ): Promise<ColumnPlan[]> {
+  if (keys.length === 0) {
+    throw new ValidationError([
+      `Cannot ${member} "${ctx.listName}" by no columns — name at least one.`,
+    ])
+  }
   const plans: ColumnPlan[] = []
   for (const key of keys) {
     const resolved = resolveQueryField(key, ctx.listConfig.fields)
@@ -583,6 +588,15 @@ export async function resolveColumns(
       throw new ValidationError([
         `Cannot ${member} "${ctx.listName}" by "${key}" — ${member} takes scalar columns only.`,
       ])
+    }
+    // A declared field is not yet a stored column: a virtual field resolves,
+    // and so does the logical name of a field that owns several columns. A
+    // predicate and an order both catch that where they lower onto the ORM
+    // accessor, but a bare column list never lowers — so the field's own
+    // contract descriptor is asked here, and answers with the same refusal.
+    const descriptor = resolved.fieldConfig?.getContractField?.(key, ctx.listName, ctx.config)
+    if (descriptor !== undefined && descriptor.kind !== 'column') {
+      throw unqueryableKey(ctx.listName, key)
     }
     plans.push({ listName: ctx.listName, column: key })
   }
