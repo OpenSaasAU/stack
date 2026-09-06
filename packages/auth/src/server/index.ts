@@ -1,9 +1,10 @@
 import { betterAuth } from 'better-auth'
-import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
-import type { DatabaseConfig } from '@opensaas/stack-core/internal'
+import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
+import { opensaasAuthAdapter } from '../adapter/index.js'
+import { getAuthListRegistry } from '../lists/index.js'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
 /**
@@ -49,12 +50,46 @@ function assertPluginTupleMatchesResolved(
   }
 }
 
+/**
+ * Thrown when the context handed to `createAuth` carries no Unsafe surface.
+ *
+ * `AccessContext` deliberately does not name `unsafe` — the engine's own
+ * handle and the application's deliberate bypass are different things under
+ * different names (ADR-0038) — so the surface is read off the running request
+ * context and checked here rather than typed into the signature.
+ */
+export class AuthUnsafeSurfaceMissingError extends Error {
+  constructor() {
+    super(
+      '[@opensaas/stack-auth] The context passed to `createAuth()` / `buildBetterAuthOptions()` ' +
+        "carries no Unsafe surface. The Auth adapter runs on Prisma 8's own query lanes, so " +
+        'pass the generated `rawOpensaasContext` (or a context from `getContext()`), not a ' +
+        'hand-built double.',
+    )
+    this.name = 'AuthUnsafeSurfaceMissingError'
+  }
+}
+
+function isUnsafeSurface(value: unknown): value is UnsafeSurface {
+  if (typeof value !== 'object' || value === null) return false
+  return (
+    typeof Reflect.get(value, 'query') === 'function' &&
+    typeof Reflect.get(value, 'execute') === 'function'
+  )
+}
+
 function getDatabaseConfig(
-  dbConfig: DatabaseConfig,
+  opensaasConfig: OpenSaasConfig,
+  authConfig: NormalizedAuthConfig,
   context: AccessContext,
 ): BetterAuthOptions['database'] {
-  return prismaAdapter(context.ormHandle, {
-    provider: dbConfig.provider,
+  const unsafe = Reflect.get(context, 'unsafe')
+  if (!isUnsafeSurface(unsafe)) throw new AuthUnsafeSurfaceMissingError()
+
+  return opensaasAuthAdapter({
+    config: opensaasConfig,
+    unsafe,
+    registry: getAuthListRegistry(authConfig.models, authConfig.betterAuthPlugins),
   })
 }
 
@@ -100,6 +135,34 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
         'plugins are added through `authPlugin({ betterAuthPlugins: [...] })`, which the stack ' +
         'appends `nextCookies()` after. Use `betterAuthPlugins` instead.',
     )
+  }
+
+  const advanced = betterAuthOptions.advanced
+  const advancedDatabase =
+    advanced && typeof advanced === 'object' && !Array.isArray(advanced)
+      ? Reflect.get(advanced, 'database')
+      : undefined
+  if (
+    advancedDatabase &&
+    typeof advancedDatabase === 'object' &&
+    !Array.isArray(advancedDatabase)
+  ) {
+    if ('generateId' in advancedDatabase) {
+      throw new Error(
+        '[@opensaas/stack-auth] `betterAuthOptions.advanced.database.generateId` is not ' +
+          "supported — the database mints auth ids (`db.idField: 'uuid7'`, pinned on every " +
+          'list the auth plugin injects), so an app-supplied generator would write a non-UUID ' +
+          'into a uuid column. Change the strategy through `db.idField` in `opensaas.config.ts` ' +
+          'instead.',
+      )
+    }
+    if ('joins' in advancedDatabase) {
+      throw new Error(
+        '[@opensaas/stack-auth] `betterAuthOptions.advanced.database.joins` is not supported — ' +
+          'the Auth adapter implements no joins, and better-auth falls back to separate queries ' +
+          'silently, so the flag would claim a capability nothing provides.',
+      )
+    }
   }
 
   const rateLimitOptions = betterAuthOptions.rateLimit
@@ -264,7 +327,7 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
   }
 
   const betterAuthConfig: BetterAuthOptions = {
-    database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
+    database: getDatabaseConfig(resolvedConfig, authConfig, resolvedContext),
 
     user: toBetterAuthModelOptions(authConfig.models.user),
     session: {

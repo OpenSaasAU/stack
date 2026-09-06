@@ -152,21 +152,29 @@ describe('adoptBetterAuthTables - clean-diff adoption with better-auth default t
     // List keys stay prefixed (no collision with the app's own User)...
     expect(result.lists).toHaveProperty('AuthUser')
     // ...but the physical table is better-auth's own default lowercase name.
-    expect(result.lists.AuthUser.db).toEqual({ timestamps: true, map: 'user', schema: 'auth' })
+    expect(result.lists.AuthUser.db).toEqual({
+      timestamps: true,
+      map: 'user',
+      schema: 'auth',
+      idField: 'uuid7',
+    })
     expect(result.lists.AuthSession.db).toEqual({
       timestamps: true,
       map: 'session',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthAccount.db).toEqual({
       timestamps: true,
       map: 'account',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthVerification.db).toEqual({
       timestamps: true,
       map: 'verification',
       schema: 'auth',
+      idField: 'uuid7',
     })
 
     // The app's own domain User is untouched.
@@ -228,21 +236,29 @@ describe('adoptBetterAuthTables - clean-diff adoption (Auth lists ≠ app User)'
     // Each Auth list is pinned to its live table name (@@map) and the `auth`
     // schema (@@schema), with auto-timestamps preserved (ADR-0004) — exactly the
     // shape that diffs CLEAN against a live separate-schema better-auth install.
-    expect(result.lists.AuthUser.db).toEqual({ timestamps: true, map: 'AuthUser', schema: 'auth' })
+    expect(result.lists.AuthUser.db).toEqual({
+      timestamps: true,
+      map: 'AuthUser',
+      schema: 'auth',
+      idField: 'uuid7',
+    })
     expect(result.lists.AuthSession.db).toEqual({
       timestamps: true,
       map: 'AuthSession',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthAccount.db).toEqual({
       timestamps: true,
       map: 'AuthAccount',
       schema: 'auth',
+      idField: 'uuid7',
     })
     expect(result.lists.AuthVerification.db).toEqual({
       timestamps: true,
       map: 'AuthVerification',
       schema: 'auth',
+      idField: 'uuid7',
     })
 
     // The app's own domain User is preserved: its field shape is intact, NOT

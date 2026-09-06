@@ -63,3 +63,14 @@ export type {
   ImageMetadata,
   ImageTransformationResult,
 } from './config/index.js'
+
+// The engine's LIKE-pattern escaping, shared with the packages that lower a
+// substring predicate to `like`/`ilike` (ADR-0055, ADR-0060). One escaper.
+export {
+  LIKE_ESCAPE_CHARACTER,
+  escapeLikeLiteral,
+  likeEqualsPattern,
+  likeContainsPattern,
+  likeStartsWithPattern,
+  likeEndsWithPattern,
+} from './where/like.js'
