@@ -307,7 +307,7 @@ examples/mcp-demo/
 ## Next Steps
 
 1. **Customize Access Control** - Add more granular rules (a sign-in page ships at `app/sign-in/`)
-2. **Seed a Test User** - Run `npx tsx create-user.ts`
+2. **Seed a Test User** - Run `npx tsx create-user.ts`, with `pnpm dev` running in another terminal
 3. **Add More Custom Tools** - Extend MCP capabilities
 4. **Deploy** - Deploy to production with proper OAuth setup
 

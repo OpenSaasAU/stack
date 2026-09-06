@@ -79,7 +79,20 @@ This creates:
 - `.opensaas/types.ts` - TypeScript types for your lists
 - `.opensaas/context.ts` - Context factory with access control
 
-### 4. Run the Test Script
+### 4. Start the Admin UI
+
+```bash
+pnpm dev
+```
+
+Visit:
+
+- **Admin UI**: [http://localhost:3000/admin](http://localhost:3000/admin)
+- **Home**: [http://localhost:3000](http://localhost:3000)
+
+### 5. Run the Test Script
+
+With `pnpm dev` running in another terminal:
 
 ```bash
 pnpm test
@@ -121,17 +134,6 @@ Top 3 Results:
   2. Introduction to Machine Learning (similarity: 0.7891)
   3. Natural Language Processing (similarity: 0.7456)
 ```
-
-### 5. Start the Admin UI
-
-```bash
-pnpm dev
-```
-
-Visit:
-
-- **Admin UI**: [http://localhost:3000/admin](http://localhost:3000/admin)
-- **Home**: [http://localhost:3000](http://localhost:3000)
 
 ## How It Works
 

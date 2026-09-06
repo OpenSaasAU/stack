@@ -21,8 +21,11 @@ cp .env.example .env
 # 3. Start the development server — it brings the database up, generates
 #    and reconciles before running the app
 pnpm dev
+```
 
-# 4. Seed the knowledge base, from a second terminal
+`pnpm dev` keeps running. In a second terminal, seed the knowledge base:
+
+```bash
 pnpm db:seed
 ```
 

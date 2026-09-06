@@ -95,7 +95,17 @@ cp .env.example .env
 pnpm generate
 ```
 
-### 4. Seed Some Data (Optional)
+### 4. Run Development Server
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3002](http://localhost:3002)
+
+### 5. Seed Some Data (Optional)
+
+With `pnpm dev` running in another terminal:
 
 ```bash
 npx tsx seed.ts
@@ -108,14 +118,6 @@ pnpm db:studio
 ```
 
 Create a few users and posts to see the dashboard in action.
-
-### 5. Run Development Server
-
-```bash
-pnpm dev
-```
-
-Open [http://localhost:3002](http://localhost:3002)
 
 ## Features Demonstrated
 

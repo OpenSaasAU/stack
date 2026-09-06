@@ -238,7 +238,10 @@ openssl rand -base64 32
 
 Before your first deploy, plan the initial migration from your config and commit it.
 
+Planning needs a database to plan against, and this step runs outside the dev loop, so take the Database escape for it: set `DIRECT_DATABASE_URL` (or `DATABASE_URL`) at a Postgres you are willing to have a planning connection opened against — the Neon project from Step 1, a local Docker Postgres, or a throwaway Neon branch. Do not point it at production data you cannot replace.
+
 ```bash
+export DIRECT_DATABASE_URL="postgresql://..."
 pnpm generate
 pnpm migrate
 ```
@@ -609,8 +612,9 @@ Before going live:
 **Solutions:**
 
 - Ensure `DIRECT_DATABASE_URL` is set to the **direct** (non-pooled) connection — migrations must not run over the pooler
-- Check migration files in `prisma/migrations/` are committed and correct
-- Run `npx prisma migrate resolve` to mark a failed migration
+- Check that the migration packages under `migrations/` at your project root are committed and correct — the refs and every extension contract space, not only the app space
+- There is no failed-migration state to clear by hand, and no `migrate resolve` to run: an apply runs in one transaction, so a failed `prisma db migrate` leaves the database where it started. Fix the cause, re-plan with `pnpm migrate` if the packages themselves need to change, commit, and run `pnpm migrate:deploy` again
+- If the error names an extension contract space and SQL state `58P01`, the extension is not available on the server — see [The Database escape](#the-database-escape) for provisioning and the privilege the migrating role needs
 - For destructive changes, back up data first
 
 ### "Authentication not working"

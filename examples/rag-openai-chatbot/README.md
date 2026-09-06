@@ -110,17 +110,7 @@ pnpm generate
 
 `pnpm dev` runs this for you and reconciles the database with what it emits.
 
-### 7. Seed the Database
-
-With `pnpm dev` running in another terminal:
-
-```bash
-pnpm db:seed
-```
-
-This creates 18 articles about OpenSaas Stack. Embeddings are generated automatically via the RAG plugin hooks.
-
-### 8. Run Development Server
+### 7. Run Development Server
 
 ```bash
 pnpm dev
@@ -132,6 +122,16 @@ Visit:
 - **Chatbot:** [http://localhost:3000/chat](http://localhost:3000/chat)
 - **Search:** [http://localhost:3000/search](http://localhost:3000/search)
 - **Admin:** [http://localhost:3000/admin](http://localhost:3000/admin)
+
+### 8. Seed the Database
+
+With `pnpm dev` running in another terminal:
+
+```bash
+pnpm db:seed
+```
+
+This creates 18 articles about OpenSaas Stack. Embeddings are generated automatically via the RAG plugin hooks.
 
 ## Usage
 

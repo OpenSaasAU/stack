@@ -195,7 +195,7 @@ test()
   .finally(() => prisma.$disconnect())
 ```
 
-Run with:
+Run it with `pnpm dev` running in another terminal:
 
 ```bash
 npx tsx test.ts

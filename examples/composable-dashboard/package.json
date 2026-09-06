@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "opensaas dev -- next dev --port 3002",
+    "dev": "opensaas dev -- next dev -p 3002",
     "build": "pnpm generate && next build",
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start",
