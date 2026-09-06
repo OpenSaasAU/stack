@@ -1,6 +1,11 @@
 import { createAdapterFactory } from 'better-auth/adapters'
 import { codecOf, param } from '@prisma/orm-postgres/relational-core'
-import type { AdapterFactory, CleanedWhere, CustomAdapter } from 'better-auth/adapters'
+import type {
+  AdapterFactory,
+  AdapterFactoryConfig,
+  CleanedWhere,
+  CustomAdapter,
+} from 'better-auth/adapters'
 import type { BetterAuthOptions } from 'better-auth'
 import type { CodecRef, Expression, ScopeField } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
@@ -55,6 +60,13 @@ interface ModelCoordinate {
   readonly namespace: string
 }
 
+/**
+ * Runs `body` against one lane. The root adapter's is the running context's
+ * own transaction; a transaction-bound adapter's is the identity on the lane
+ * it is already bound to, because Postgres has no nested transaction to open.
+ */
+export type AuthTransactionBracket = <R>(body: (lane: UnsafeSurface) => Promise<R>) => Promise<R>
+
 /** What {@link opensaasAuthAdapter} needs to address the database. */
 export interface OpenSaasAuthAdapterOptions {
   /** The resolved OpenSaaS config, for each derived list's table and schema. */
@@ -65,11 +77,10 @@ export interface OpenSaasAuthAdapterOptions {
   registry: Record<string, string>
   /**
    * Run `body` in one database transaction, against that transaction's own
-   * Unsafe surface. `consumeOne` is the caller: its resolve-then-delete pair
-   * has to commit or roll back as one, or a single-use token can be consumed
-   * twice (ADR-0060).
+   * Unsafe surface. Both the factory's transaction option and `consumeOne`'s
+   * resolve-then-delete pair are carried on this (ADR-0060).
    */
-  transaction: <R>(body: (unsafe: UnsafeSurface) => Promise<R>) => Promise<R>
+  transaction: AuthTransactionBracket
 }
 
 /**
@@ -123,15 +134,18 @@ function renameKeys(
  * Every query runs marked as intentionally unscoped: this is auth's own
  * bookkeeping, outside the Access Filter by construction (ADR-0038, ADR-0049).
  *
+ * The factory's transaction option is implemented by rebinding a second
+ * factory instance to the transaction-bound Unsafe surface, so sign-up's user,
+ * account and session writes commit or roll back as one. ADR-0042's rule
+ * applies unchanged: no isolation level is selectable, and auth transactions
+ * run at Read Committed.
+ *
  * Known limits:
  * - **No joins.** `advanced.database.joins` is refused at config time rather
  *   than left to the factory's silent per-model fallback.
  * - **No `createSchema`.** The Auth lists derive from `getAuthTables` and the
  *   stack's generator emits the contract, so better-auth's CLI (`generate`,
  *   `migrate`) is unsupported against this adapter.
- * - **No transaction option**, so the factory runs a transaction callback
- *   against the plain adapter with no atomicity. `consumeOne` opens its own
- *   transaction regardless — its at-most-one guarantee is not optional.
  * - **No issuer-scoped account uniqueness.** better-auth declares the account
  *   identity key (`providerId` + `accountId`) as a table-level `@@unique`,
  *   which `deriveAuthLists` does not emit yet
@@ -156,291 +170,312 @@ export function opensaasAuthAdapter(
     return { listKey, table: listDb?.map ?? listKey, namespace: listDb?.schema ?? 'public' }
   }
 
-  return createAdapterFactory<BetterAuthOptions>({
-    config: {
-      adapterId: 'opensaas-stack',
-      adapterName: 'OpenSaaS Stack',
-      // The database mints every id: `authPlugin` pins `db.idField: 'uuid7'`
-      // on each list it injects, so the column carries its own default and
-      // better-auth must not send one of its own (ADR-0048, ADR-0060).
-      disableIdGeneration: true,
-      supportsUUIDs: true,
-      supportsNumericIds: false,
-      // Prisma's `timestamptz` codec decodes to a string at 8.0.0-rc.8, so the
-      // factory's own string↔Date conversion is what keeps better-auth's
-      // contract (it hands out `Date`s) true.
-      supportsDates: false,
-      supportsBooleans: true,
-      // better-auth's `json` and array field types derive to `text()` columns,
-      // so the factory serialises them rather than the database.
-      supportsJSON: false,
-      supportsArrays: false,
-      transaction: false,
-    },
-    adapter: ({
-      getDefaultModelName,
-      getDefaultFieldName,
-      getFieldName,
-      getFieldAttributes,
-      schema,
-    }): CustomAdapter => {
-      const at = (model: string): ModelCoordinate => coordinate(model, getDefaultModelName)
+  function factoryOn(
+    surface: UnsafeSurface,
+    bracket: AuthTransactionBracket,
+    factoryTransaction: AdapterFactoryConfig['transaction'],
+  ): AdapterFactory<BetterAuthOptions> {
+    return createAdapterFactory<BetterAuthOptions>({
+      config: {
+        adapterId: 'opensaas-stack',
+        adapterName: 'OpenSaaS Stack',
+        // The database mints every id: `authPlugin` pins `db.idField: 'uuid7'`
+        // on each list it injects, so the column carries its own default and
+        // better-auth must not send one of its own (ADR-0048, ADR-0060).
+        disableIdGeneration: true,
+        supportsUUIDs: true,
+        supportsNumericIds: false,
+        // Prisma's `timestamptz` codec decodes to a string at 8.0.0-rc.8, so the
+        // factory's own string↔Date conversion is what keeps better-auth's
+        // contract (it hands out `Date`s) true.
+        supportsDates: false,
+        supportsBooleans: true,
+        // better-auth's `json` and array field types derive to `text()` columns,
+        // so the factory serialises them rather than the database.
+        supportsJSON: false,
+        supportsArrays: false,
+        transaction: factoryTransaction,
+      },
+      adapter: ({
+        getDefaultModelName,
+        getDefaultFieldName,
+        getFieldName,
+        getFieldAttributes,
+        schema,
+      }): CustomAdapter => {
+        const at = (model: string): ModelCoordinate => coordinate(model, getDefaultModelName)
 
-      const collectionFor = (model: string, lane: UnsafeSurface = unsafe): AuthCollection => {
-        const { namespace, listKey } = at(model)
-        return authCollection(lane, namespace, listKey)
-      }
+        const collectionFor = (model: string, lane: UnsafeSurface = surface): AuthCollection => {
+          const { namespace, listKey } = at(model)
+          return authCollection(lane, namespace, listKey)
+        }
 
-      const toFieldKey =
-        (model: string) =>
-        (column: string): string => {
+        const toFieldKey =
+          (model: string) =>
+          (column: string): string => {
+            try {
+              return getDefaultFieldName({ model, field: column })
+            } catch {
+              return column
+            }
+          }
+
+        const toColumn =
+          (model: string) =>
+          (fieldKey: string): string | undefined => {
+            try {
+              return getFieldName({ model, field: fieldKey })
+            } catch {
+              return undefined
+            }
+          }
+
+        /**
+         * better-auth carries an `int8` column's value as a JS number, which
+         * Prisma's `pg/int8` codec refuses — it takes a `bigint` and nothing
+         * else. The attribute's own `bigint` flag is what says which columns
+         * those are.
+         */
+        const isBigInt = (model: string, fieldKey: string): boolean => {
           try {
-            return getDefaultFieldName({ model, field: column })
+            return getFieldAttributes({ model, field: fieldKey }).bigint === true
           } catch {
-            return column
+            return false
           }
         }
 
-      const toColumn =
-        (model: string) =>
-        (fieldKey: string): string | undefined => {
-          try {
-            return getFieldName({ model, field: fieldKey })
-          } catch {
-            return undefined
+        const resolveField =
+          (model: string) =>
+          (column: string): AuthFieldResolution => {
+            const key = toFieldKey(model)(column)
+            return { key, isBigInt: isBigInt(model, key) }
           }
-        }
 
-      /**
-       * better-auth carries an `int8` column's value as a JS number, which
-       * Prisma's `pg/int8` codec refuses — it takes a `bigint` and nothing
-       * else. The attribute's own `bigint` flag is what says which columns
-       * those are.
-       */
-      const isBigInt = (model: string, fieldKey: string): boolean => {
-        try {
-          return getFieldAttributes({ model, field: fieldKey }).bigint === true
-        } catch {
-          return false
-        }
-      }
+        const narrow = (
+          model: string,
+          where: readonly CleanedWhere[],
+          lane: UnsafeSurface = surface,
+        ): AuthCollection => applyOrmWhere(collectionFor(model, lane), where, resolveField(model))
 
-      const resolveField =
-        (model: string) =>
-        (column: string): AuthFieldResolution => {
-          const key = toFieldKey(model)(column)
-          return { key, isBigInt: isBigInt(model, key) }
-        }
-
-      const narrow = (
-        model: string,
-        where: readonly CleanedWhere[],
-        lane: UnsafeSurface = unsafe,
-      ): AuthCollection => applyOrmWhere(collectionFor(model, lane), where, resolveField(model))
-
-      /**
-       * The mirror of {@link inward}: only a column better-auth declares as
-       * `bigint` is narrowed back to a JS number, because only those were
-       * widened on the way in. Narrowing every `bigint` would silently mangle
-       * an application's own `int8` column above `Number.MAX_SAFE_INTEGER`.
-       */
-      const outward = (model: string, row: AuthRow | null): AuthRow | null => {
-        if (row === null) return null
-        const narrowed: AuthRow = {}
-        for (const [key, value] of Object.entries(row)) {
-          narrowed[key] = typeof value === 'bigint' && isBigInt(model, key) ? Number(value) : value
-        }
-        return renameKeys(narrowed, toColumn(model))
-      }
-
-      const inward = (model: string, data: Record<string, unknown>): AuthRow => {
-        const widened: AuthRow = {}
-        for (const [column, value] of Object.entries(data)) {
-          const field = resolveField(model)(column)
-          widened[field.key] = field.isBigInt && typeof value === 'number' ? BigInt(value) : value
-        }
-        return widened
-      }
-
-      /**
-       * Every column better-auth declares for a model, for a `RETURNING` list.
-       *
-       * Named the way the SQL lane addresses them — by column, not by field
-       * key — which is also the name better-auth expects a returned row to
-       * carry, so the row needs no renaming on the way back.
-       */
-      const columnsOf = (model: string): string[] => {
-        const fields = schema[getDefaultModelName(model)]?.fields ?? {}
-        return ['id', ...Object.keys(fields).map((field) => getFieldName({ model, field }))]
-      }
-
-      const project = (
-        collection: AuthCollection,
-        model: string,
-        select?: string[],
-      ): AuthCollection =>
-        !select || select.length === 0
-          ? collection
-          : collection.select(...select.map(toFieldKey(model)))
-
-      /** A column's own codec, so a raw fragment carries the type the column declares. */
-      const codecFor = (
-        fields: AuthSqlFieldProxy,
-        table: string,
-        column: string,
-      ): { target: Expression<ScopeField>; codec: CodecRef } => {
-        const target = fields[column]
-        const codec = target === undefined ? undefined : codecOf(target)
-        if (target === undefined || codec === undefined) {
-          throw new AuthAdapterError(
-            `the typed-SQL lane exposes no column "${column}" on "${table}".`,
-          )
-        }
-        return { target, codec }
-      }
-
-      return {
-        async create({ model, data, select }) {
-          const created = await project(collectionFor(model), model, select).create(
-            inward(model, data),
-          )
-          return asAdapterResult(outward(model, created))
-        },
-
-        async findOne({ model, where, select }) {
-          const found = await project(narrow(model, where), model, select).first()
-          return asAdapterResult(outward(model, found))
-        },
-
-        async findMany({ model, where, limit, select, sortBy, offset }) {
-          let collection = project(narrow(model, where ?? []), model, select)
-          if (sortBy) {
-            const fieldKey = toFieldKey(model)(sortBy.field)
-            const descending = sortBy.direction === 'desc'
-            collection = collection.orderBy((accessor) => {
-              const field = accessor[fieldKey]
-              if (!field) {
-                throw new AuthAdapterError(
-                  `the ORM lane exposes no field "${fieldKey}" on "${model}" to sort on.`,
-                )
-              }
-              return descending ? field.desc() : field.asc()
-            })
+        /**
+         * The mirror of {@link inward}: only a column better-auth declares as
+         * `bigint` is narrowed back to a JS number, because only those were
+         * widened on the way in. Narrowing every `bigint` would silently mangle
+         * an application's own `int8` column above `Number.MAX_SAFE_INTEGER`.
+         */
+        const outward = (model: string, row: AuthRow | null): AuthRow | null => {
+          if (row === null) return null
+          const narrowed: AuthRow = {}
+          for (const [key, value] of Object.entries(row)) {
+            narrowed[key] =
+              typeof value === 'bigint' && isBigInt(model, key) ? Number(value) : value
           }
-          if (typeof offset === 'number') collection = collection.offset(offset)
-          const rows = await collection.limit(limit).all()
-          return asAdapterResult(rows.map((row) => outward(model, row)))
-        },
+          return renameKeys(narrowed, toColumn(model))
+        }
 
-        async count({ model, where }) {
-          const counted = await narrow(model, where ?? []).aggregate((aggregate) => ({
-            n: aggregate.count(),
-          }))
-          return counted.n
-        },
+        const inward = (model: string, data: Record<string, unknown>): AuthRow => {
+          const widened: AuthRow = {}
+          for (const [column, value] of Object.entries(data)) {
+            const field = resolveField(model)(column)
+            widened[field.key] = field.isBigInt && typeof value === 'number' ? BigInt(value) : value
+          }
+          return widened
+        }
 
-        async update({ model, where, update }) {
-          if (!isColumnValues(update)) {
+        /**
+         * Every column better-auth declares for a model, for a `RETURNING` list.
+         *
+         * Named the way the SQL lane addresses them — by column, not by field
+         * key — which is also the name better-auth expects a returned row to
+         * carry, so the row needs no renaming on the way back.
+         */
+        const columnsOf = (model: string): string[] => {
+          const fields = schema[getDefaultModelName(model)]?.fields ?? {}
+          return ['id', ...Object.keys(fields).map((field) => getFieldName({ model, field }))]
+        }
+
+        const project = (
+          collection: AuthCollection,
+          model: string,
+          select?: string[],
+        ): AuthCollection =>
+          !select || select.length === 0
+            ? collection
+            : collection.select(...select.map(toFieldKey(model)))
+
+        /** A column's own codec, so a raw fragment carries the type the column declares. */
+        const codecFor = (
+          fields: AuthSqlFieldProxy,
+          table: string,
+          column: string,
+        ): { target: Expression<ScopeField>; codec: CodecRef } => {
+          const target = fields[column]
+          const codec = target === undefined ? undefined : codecOf(target)
+          if (target === undefined || codec === undefined) {
             throw new AuthAdapterError(
-              `update on "${model}" expects an object of column values, got ${typeof update}.`,
+              `the typed-SQL lane exposes no column "${column}" on "${table}".`,
             )
           }
-          const updated = await narrow(model, where).update(inward(model, update))
-          return asAdapterResult(outward(model, updated))
-        },
+          return { target, codec }
+        }
 
-        async updateMany({ model, where, update }) {
-          return await narrow(model, where).updateAndCount(inward(model, update))
-        },
+        return {
+          async create({ model, data, select }) {
+            const created = await project(collectionFor(model), model, select).create(
+              inward(model, data),
+            )
+            return asAdapterResult(outward(model, created))
+          },
 
-        async delete({ model, where }) {
-          await narrow(model, where).delete()
-        },
+          async findOne({ model, where, select }) {
+            const found = await project(narrow(model, where), model, select).first()
+            return asAdapterResult(outward(model, found))
+          },
 
-        async deleteMany({ model, where }) {
-          if (where.length > 0) return await narrow(model, where).deleteAndCount()
+          async findMany({ model, where, limit, select, sortBy, offset }) {
+            let collection = project(narrow(model, where ?? []), model, select)
+            if (sortBy) {
+              const fieldKey = toFieldKey(model)(sortBy.field)
+              const descending = sortBy.direction === 'desc'
+              collection = collection.orderBy((accessor) => {
+                const field = accessor[fieldKey]
+                if (!field) {
+                  throw new AuthAdapterError(
+                    `the ORM lane exposes no field "${fieldKey}" on "${model}" to sort on.`,
+                  )
+                }
+                return descending ? field.desc() : field.asc()
+              })
+            }
+            if (typeof offset === 'number') collection = collection.offset(offset)
+            const rows = await collection.limit(limit).all()
+            return asAdapterResult(rows.map((row) => outward(model, row)))
+          },
 
-          // A Collection's `deleteAndCount` is checked against a prior
-          // `.where()`, so the unconditional delete better-auth's own test
-          // cleanup issues has to be the typed-SQL statement instead.
-          const { namespace, table } = at(model)
-          const stats = await unsafe.execute(
-            authSqlTable(unsafe, namespace, table).delete().build(),
-          )
-          return stats.affectedRows
-        },
+          async count({ model, where }) {
+            const counted = await narrow(model, where ?? []).aggregate((aggregate) => ({
+              n: aggregate.count(),
+            }))
+            return counted.n
+          },
 
-        async consumeOne({ model, where }) {
-          // The ORM lane lowers a single-row delete to two statements: a SELECT
-          // that resolves the identity, then the DELETE. Unbracketed, two
-          // racing consumers both resolve the same row and both are answered
-          // it, so a magic-link or OTP token is accepted twice. The pair runs
-          // in one transaction and the row is only handed back when the DELETE
-          // itself claimed it — the shape better-auth's own reference adapter
-          // uses (ADR-0060).
-          return await transaction(async (lane) => {
-            const target = await narrow(model, where, lane).first()
-            if (target === null) return asAdapterResult(null)
-
-            const identity = target.id
-            if (!isIdentity(identity)) {
+          async update({ model, where, update }) {
+            if (!isColumnValues(update)) {
               throw new AuthAdapterError(
-                `consumeOne on "${model}" resolved a row with no string id to delete by.`,
+                `update on "${model}" expects an object of column values, got ${typeof update}.`,
               )
             }
+            const updated = await narrow(model, where).update(inward(model, update))
+            return asAdapterResult(outward(model, updated))
+          },
 
-            const claimed = await narrow(
-              model,
-              [
-                {
-                  field: 'id',
-                  operator: 'eq',
-                  value: identity,
-                  connector: 'AND',
-                  mode: 'sensitive',
-                },
-              ],
-              lane,
-            ).deleteAndCount()
-            return asAdapterResult(claimed > 0 ? outward(model, target) : null)
-          })
-        },
+          async updateMany({ model, where, update }) {
+            return await narrow(model, where).updateAndCount(inward(model, update))
+          },
 
-        async incrementOne({ model, where, increment, set }) {
-          const { namespace, table } = at(model)
-          const plan = authSqlTable(unsafe, namespace, table)
-            .update((fields: AuthSqlFieldProxy, fns: AuthSqlFunctions) => {
-              const assignments: Record<string, Expression<ScopeField>> = {}
-              for (const [column, delta] of Object.entries(increment)) {
-                const field = resolveField(model)(column)
-                const { target, codec } = codecFor(fields, table, column)
-                const widened = field.isBigInt && typeof delta === 'number' ? BigInt(delta) : delta
-                assignments[column] =
-                  fns.raw`${target} + ${param(widened, { codecId: codec.codecId })}`.returns({
-                    codecId: codec.codecId,
-                    nullable: true,
-                  })
+          async delete({ model, where }) {
+            await narrow(model, where).delete()
+          },
+
+          async deleteMany({ model, where }) {
+            if (where.length > 0) return await narrow(model, where).deleteAndCount()
+
+            // A Collection's `deleteAndCount` is checked against a prior
+            // `.where()`, so the unconditional delete better-auth's own test
+            // cleanup issues has to be the typed-SQL statement instead.
+            const { namespace, table } = at(model)
+            const stats = await surface.execute(
+              authSqlTable(surface, namespace, table).delete().build(),
+            )
+            return stats.affectedRows
+          },
+
+          async consumeOne({ model, where }) {
+            // The ORM lane lowers a single-row delete to two statements: a SELECT
+            // that resolves the identity, then the DELETE. Unbracketed, two
+            // racing consumers both resolve the same row and both are answered
+            // it, so a magic-link or OTP token is accepted twice. The pair runs
+            // in one transaction and the row is only handed back when the DELETE
+            // itself claimed it — the shape better-auth's own reference adapter
+            // uses (ADR-0060).
+            return await bracket(async (lane) => {
+              const target = await narrow(model, where, lane).first()
+              if (target === null) return asAdapterResult(null)
+
+              const identity = target.id
+              if (!isIdentity(identity)) {
+                throw new AuthAdapterError(
+                  `consumeOne on "${model}" resolved a row with no string id to delete by.`,
+                )
               }
-              for (const [column, value] of Object.entries(set ?? {})) {
-                const field = resolveField(model)(column)
-                const { codec } = codecFor(fields, table, column)
-                const widened = field.isBigInt && typeof value === 'number' ? BigInt(value) : value
-                assignments[column] =
-                  fns.raw`${param(widened, { codecId: codec.codecId })}`.returns({
-                    codecId: codec.codecId,
-                    nullable: true,
-                  })
-              }
-              return assignments
+
+              const claimed = await narrow(
+                model,
+                [
+                  {
+                    field: 'id',
+                    operator: 'eq',
+                    value: identity,
+                    connector: 'AND',
+                    mode: 'sensitive',
+                  },
+                ],
+                lane,
+              ).deleteAndCount()
+              return asAdapterResult(claimed > 0 ? outward(model, target) : null)
             })
-            .where((fields, fns) => sqlWhere(fields, fns, where, resolveField(model)))
-            .returning(...columnsOf(model))
-            .build()
+          },
 
-          const updated = await unsafe.query<AuthRow>(plan).first()
-          return asAdapterResult(outward(model, updated))
-        },
-      }
-    },
-  })
+          async incrementOne({ model, where, increment, set }) {
+            const { namespace, table } = at(model)
+            const plan = authSqlTable(surface, namespace, table)
+              .update((fields: AuthSqlFieldProxy, fns: AuthSqlFunctions) => {
+                const assignments: Record<string, Expression<ScopeField>> = {}
+                for (const [column, delta] of Object.entries(increment)) {
+                  const field = resolveField(model)(column)
+                  const { target, codec } = codecFor(fields, table, column)
+                  const widened =
+                    field.isBigInt && typeof delta === 'number' ? BigInt(delta) : delta
+                  assignments[column] =
+                    fns.raw`${target} + ${param(widened, { codecId: codec.codecId })}`.returns({
+                      codecId: codec.codecId,
+                      nullable: true,
+                    })
+                }
+                for (const [column, value] of Object.entries(set ?? {})) {
+                  const field = resolveField(model)(column)
+                  const { codec } = codecFor(fields, table, column)
+                  const widened =
+                    field.isBigInt && typeof value === 'number' ? BigInt(value) : value
+                  assignments[column] =
+                    fns.raw`${param(widened, { codecId: codec.codecId })}`.returns({
+                      codecId: codec.codecId,
+                      nullable: true,
+                    })
+                }
+                return assignments
+              })
+              .where((fields, fns) => sqlWhere(fields, fns, where, resolveField(model)))
+              .returning(...columnsOf(model))
+              .build()
+
+            const updated = await surface.query<AuthRow>(plan).first()
+            return asAdapterResult(outward(model, updated))
+          },
+        }
+      },
+    })
+  }
+
+  // A transaction-bound instance ships the factory option off and brackets
+  // `consumeOne` on the lane it already holds: Postgres has no nested
+  // transaction to open, and better-auth never calls `transaction` on the
+  // adapter it hands a callback (`DBTransactionAdapter` omits it).
+  const bound = (lane: UnsafeSurface): AdapterFactory<BetterAuthOptions> =>
+    factoryOn(lane, (body) => body(lane), false)
+
+  return (betterAuthOptions) =>
+    factoryOn(unsafe, transaction, (callback) =>
+      transaction(async (lane) => await callback(bound(lane)(betterAuthOptions))),
+    )(betterAuthOptions)
 }

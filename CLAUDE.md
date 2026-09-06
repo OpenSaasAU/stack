@@ -598,6 +598,7 @@ The stack provides optional Better-auth integration through `@opensaas/stack-aut
 - `packages/auth/src/config/plugin.ts` - `authPlugin()`, the auth configuration entry point
 - `packages/auth/src/lists/index.ts` - Auto-generated auth lists (User, Session, Account, Verification)
 - `packages/auth/src/server/index.ts` - Better-auth server setup
+- `packages/auth/src/adapter/index.ts` - The stack-authored Auth adapter over the Unsafe surface (ADR-0060)
 - `packages/auth/src/client/index.ts` - Client-side auth hooks
 - `packages/auth/src/ui/index.ts` - Pre-built UI components (SignInForm, SignUpForm, etc.)
 
@@ -605,9 +606,10 @@ The stack provides optional Better-auth integration through `@opensaas/stack-aut
 
 1. `authPlugin()` is added to the config's `plugins` array and merges in auth lists (User, Session, Account, Verification) and configures Better-auth plugins and session fields
 2. Generator creates Prisma schema with auth tables
-3. Better-auth handles OAuth flow and session management
-4. Context automatically includes session in all access control functions
-5. Session fields are configurable (e.g., `['userId', 'email', 'name', 'role']`)
+3. Better-auth reaches the database through the stack-authored Auth adapter (`@opensaas/stack-auth/adapter`) over the running context's Unsafe surface — not better-auth's Prisma Client adapter, and not a second client. Its transaction option is implemented, so sign-up's user, account and session writes are atomic; per ADR-0042 no isolation level is selectable and auth transactions run at Read Committed
+4. Better-auth handles OAuth flow and session management
+5. Context automatically includes session in all access control functions
+6. Session fields are configurable (e.g., `['userId', 'email', 'name', 'role']`)
 
 **See:** `packages/auth/CLAUDE.md` for detailed patterns and `examples/auth-demo` for usage.
 
@@ -766,7 +768,7 @@ The generated context will use your custom constructor to instantiate PrismaClie
 **Getting the ORM client outside a request (module-init-time consumers):** There is no synchronous, framework-provided accessor for the configured Prisma client — config resolution is async (plugins can contribute config asynchronously), so the generated context's singleton client cannot be built without an `await`. Depending on what your consumer needs, pick one of:
 
 - **Can `await`:** use `getContext()` / `context.ormHandle` as shown above. This is the framework's singleton — no second connection.
-- **Must construct synchronously at module scope, but only needs to defer method calls** (e.g. a library whose calls you can lazily forward): pass the generated `rawOpensaasContext` promise to a lazy `Proxy` that awaits it on first access, the same pattern `@opensaas/stack-auth`'s `createAuth()` uses for better-auth's Prisma adapter (`packages/auth/src/server/index.ts`):
+- **Must construct synchronously at module scope, but only needs to defer method calls** (e.g. a library whose calls you can lazily forward): pass the generated `rawOpensaasContext` promise to a lazy `Proxy` that awaits it on first access, the same pattern `@opensaas/stack-auth`'s `createAuth()` uses to build better-auth's Auth adapter over the resolved context's Unsafe surface (`packages/auth/src/server/index.ts`):
 
   ```typescript
   // lib/auth.ts

@@ -60,3 +60,4 @@ ds-bundle/
 # Contract-module equivalence test scratch (evaluated inside the package so
 # node resolution reaches its node_modules)
 packages/cli/tests/tmp-*/
+packages/auth/tests/tmp-*/

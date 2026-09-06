@@ -161,6 +161,33 @@ or overwritten when the user model is renamed. The runtime `getUser`/
 configured user `modelName`, and read through the `sudo` argument passed to
 `runtime(context, sudo)` (see below).
 
+### The Auth adapter (ADR-0060)
+
+better-auth is driven by a stack-authored adapter in `src/adapter/`, built with
+better-auth's `createAdapterFactory` over the running context's **Unsafe
+surface** — its ORM lane for the eight methods a `Collection` can express, its
+typed SQL lane for `incrementOne` and an empty-`where` `deleteMany`. There is
+no better-auth Prisma Client adapter in the path, and no second client:
+`getDatabaseConfig` reads `unsafe` and `transaction` off the resolved context
+structurally, because `AccessContext` names neither (ADR-0038).
+
+The factory's `transaction` option is implemented by rebinding a second factory
+instance to the transaction-bound Unsafe surface, so sign-up's user, account
+and session writes commit or roll back as one. A transaction-bound instance
+ships that option off and brackets `consumeOne` on the lane it already holds.
+ADR-0042's rule applies unchanged: **no isolation level is selectable**, and
+auth transactions run at Read Committed.
+
+Known limits, stated on `opensaasAuthAdapter` itself: no joins (the flag is
+refused in `assertNoUnsupportedPassthroughKeys`), no `createSchema` (so
+better-auth's CLI is unsupported — the generator emits the contract), and no
+error normalisation (the Unsafe surface is excluded, ADR-0042).
+
+Conformance is better-auth's own suites — `@better-auth/test-utils`' normal,
+uuid, caseInsensitive, transactions and authFlow — over the Test context in
+`tests/adapter-conformance.test.ts`. numberId and joins are skipped and the
+skip is stated in the file.
+
 ### Access control on Auth lists (ADR-0013)
 
 The four Auth lists ship **closed** — no operation-level access — per
@@ -178,8 +205,8 @@ takes precedence over `access.user` when both are set — `createUserList` in
 `derive-auth-lists.ts` resolves `userConfig.access || accessConfig.user`.
 
 better-auth's own sign-in/sign-up/session flows are unaffected: they write
-through the raw Prisma client (the driver adapter), bypassing access control
-entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through the
+through the Auth adapter over the Unsafe surface (see below), marked as
+intentionally unscoped and bypassing access control entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through the
 `sudo` argument core passes to `plugin.runtime(context, sudo)` for the same
 reason — "who is this session" must not depend on the application's User
 access policy. `sudo` is a plain second argument, not a method on `context`
@@ -343,12 +370,13 @@ existing better-auth installation”) for the end-to-end migrator walkthrough.
 
 ### Session Provider
 
-Better-auth provides session to context via custom `prismaClientConstructor`:
+Better-auth resolves the session, and the generated bundle hands it to the
+context factory:
 
 ```typescript
 // Generated .opensaas/context.ts uses this pattern:
 const session = await auth.api.getSession({ headers })
-const context = createContext(config, prisma, session)
+const context = await getContext({ session })
 ```
 
 ### Session Fields Configuration
