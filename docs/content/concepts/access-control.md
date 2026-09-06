@@ -23,7 +23,7 @@ Two defaults set the tone:
 
 Writes check operation-level access, filter writable fields, then persist. Reads are a **two-phase** pipeline:
 
-1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for, one hop at a time: a read with no `include` (and no fragment `query`) fetches the row's own columns and virtual fields only, matching Prisma's own semantics, and naming a relation fetches that relation's own columns and stops — reaching further means naming further in the `include`. A relation nobody named never has its list's `query` access evaluated at all. See [Queries & Fragments](/docs/concepts/queries).
+1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for, one hop at a time: a read with no `include` fetches the row's own columns and computed fields only, matching Prisma's own semantics, and naming a relation fetches that relation's own columns and stops — reaching further means naming further in the `include`. A relation nobody named never has its list's `query` access evaluated at all. See [Queries & projections](/docs/concepts/queries).
 2. **Field Visibility** (post-query): on the returned rows, fields the session can't read are removed, `resolveOutput` hooks run, and virtual fields are computed.
 
 In order:

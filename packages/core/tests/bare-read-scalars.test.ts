@@ -54,6 +54,7 @@ function buildTestConfig(authorQuerySpy: ReturnType<typeof vi.fn>) {
           author: relationship({ ref: 'Author' }),
           shout: virtual({
             type: 'string',
+            needs: ['title'],
             hooks: {
               resolveOutput: ({ item }) => `${(item as { title?: string }).title}!`,
             },

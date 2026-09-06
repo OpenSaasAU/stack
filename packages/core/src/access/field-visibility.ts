@@ -4,13 +4,8 @@ import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
-import type { DependencyAdditions } from './declared-dependencies.js'
-import {
-  getDeclaredDependencyNames,
-  getListDependencies,
-  noDependencyAdditions,
-} from './declared-dependencies.js'
-import type { FieldSelectionScope } from '../query/index.js'
+import type { DependencyAdditions, FieldSelectionScope } from './declared-dependencies.js'
+import { getListDependencies, noDependencyAdditions } from './declared-dependencies.js'
 import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
 import {
   emptyToOneAccessVisibilityTree,
@@ -36,10 +31,9 @@ import { buildDbDelegate } from '../context/index.js'
  *
  * A computed field — any field carrying a `resolveOutput` hook, virtual or
  * not — is produced only where the read is going to return it (ADR-0027). A
- * fragment `query`'s own field selection is the only thing that restricts a
- * level this way; a bare or `include`-based read, and any relation reached
- * purely to satisfy a `needs` declaration, still compute every field, as
- * before. A field the read is not going to return does no work at all —
+ * `.select()` is the only thing that restricts a level this way; a read that
+ * named none, and any relation reached purely to satisfy a `needs`
+ * declaration, still compute every field. A field the read is not going to return does no work at all —
  * neither its read-access evaluation nor its hook. The projection-aware skip
  * below shows this rule at each of the two places it applies.
  *
@@ -70,8 +64,7 @@ import { buildDbDelegate } from '../context/index.js'
  * from `workingItem` as a denied to-one key, and the fix is the same fixup
  * loop — it now forces the key present using the field's own declared
  * arity: `null` for a to-one relation (unchanged), `[]` for a to-many one,
- * rather than leaving a to-many key silently missing where the fragment
- * API's `ResultOf` type (`query/index.ts`) promises an array.
+ * rather than leaving a to-many key silently missing.
  *
  * **`_count` denial injection (issue #1087).** A caller-supplied `_count.select`
  * key whose related list denies `query` access outright is omitted from the
@@ -146,12 +139,12 @@ function deriveResolveOutputContext(
  * never duplicated. Returns `{ readable: false }` when the field must be omitted
  * from the result.
  *
- * `accessItem` is the row used to evaluate field access; `hookItem` is the
- * object passed to the hook as `item`. For a stored field, both are
- * `workingItem` (the row's own stored/fetched columns). For a virtual field,
- * `hookItem` is `computedFieldItem` instead — the same stored columns with
- * every skipped-or-denied key removed — so it never sees another computed
- * field's resolved value (ADR-0027).
+ * `accessItem` is the row used to evaluate field access — the whole fetched
+ * row, since a rule may reach anywhere in it. `hookItem` is the object passed
+ * to the hook as `item`: exactly the field's own declared dependency set plus
+ * the list's system fields, so a hook never sees another computed field's
+ * resolved value and never sees what some other call site's projection
+ * happened to fetch (ADR-0027, ADR-0051).
  */
 async function resolveReadableFieldValue(params: {
   fieldConfig: FieldConfig | undefined
@@ -273,24 +266,38 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     workingItem[fieldName] = assembled
   }
 
-  // Keys denied by field-level read access during the pass below — as opposed
-  // to a key merely skipped by `selection` or held back only for the
-  // widening's own strip. Tracked separately because a denied key must stay
-  // invisible to a computed field's hook (below), while a declared key must
-  // stay VISIBLE to one — that is the entire point of declaring it (ADR-0025)
-  // — even though `selection` above skipped adding it to `filtered` because
-  // the caller's fragment never asked for it.
-  const accessDeniedKeys = new Set<string>()
-
   // This list's actual system fields, from the emitted table (ADR-0051):
   // always readable, never field-access-checked, always visible to a hook's
   // `item`. `id` is universal; the timestamps exist only where the list
   // carries them, so a fixed triple would name columns a list does not have.
-  const systemFields = new Set(
+  const listDependencies =
     config && listKey
-      ? getListDependencies(config, listKey).systemFields
-      : ['id', 'createdAt', 'updatedAt'],
-  )
+      ? getListDependencies(config, listKey)
+      : { systemFields: ['id', 'createdAt', 'updatedAt'], fields: {} }
+  const systemFields = new Set(listDependencies.systemFields)
+
+  /**
+   * The `item` one computed field's hook is handed: exactly the dependencies
+   * that field declared, plus the list's system fields, read off the row's
+   * own stored values and never off another hook's output (ADR-0027,
+   * ADR-0051). Caller-independent by construction — the same field cannot
+   * compute differently because someone else's projection widened the row —
+   * and independent of a caller-facing `read` denial on a declared key, which
+   * governs what the CALLER receives and is enforced on `filtered` alone.
+   *
+   * A caller that reached this function without a config (a narrow unit test
+   * exercising field access in isolation) has no table to read, so the whole
+   * working row stands in — there is no declaration to honour there.
+   */
+  const hookItemFor = (fieldName: string): Record<string, unknown> => {
+    if (!config || !listKey) return workingItem
+    const declared = listDependencies.fields[fieldName] ?? { columns: [], relations: [] }
+    const item: Record<string, unknown> = {}
+    for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
+      if (key in workingItem) item[key] = workingItem[key]
+    }
+    return item
+  }
 
   // Process existing fields from the database result
   for (const [fieldName, value] of Object.entries(workingItem)) {
@@ -348,14 +355,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
           item: workingItem,
         })
 
-        if (!canRead) {
-          accessDeniedKeys.add(fieldName)
-          continue
-        }
+        // A `read` denial hides the relation from the CALLER and nothing
+        // else: it never reaches `filtered`, while `hookItemFor` still hands
+        // it to any field that declared it. A declaration is what the field
+        // is owed rather than what the caller is owed (ADR-0051).
+        if (!canRead) continue
 
         // A branch the widening added returns to nobody — it is stripped from
-        // `filtered` below, and the declaring hook reads its raw rows off
-        // `computedFieldItem`, never off `filtered`. Descending would run the
+        // `filtered` below, and the declaring hook reads its raw rows off its
+        // own `item`, never off `filtered`. Descending would run the
         // related list's own computed fields over a one-hop set that was
         // never fetched for them, so a hook reading its declared dependency
         // there dereferences `undefined` and fails the whole read. ADR-0051
@@ -450,7 +458,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldName,
       value,
       accessItem: workingItem,
-      hookItem: workingItem,
+      hookItem: hookItemFor(fieldName),
       listKey,
       args,
       config,
@@ -458,8 +466,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
     if (result.readable) {
       filtered[fieldName] = result.value
-    } else {
-      accessDeniedKeys.add(fieldName)
     }
   }
 
@@ -482,10 +488,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       item: workingItem,
     })
 
-    if (!canRead) {
-      accessDeniedKeys.add(fieldName)
-      continue
-    }
+    if (!canRead) continue
 
     const isToMany = !fieldConfig || !isToOneRelationship(fieldConfig)
     filtered[fieldName] = isToMany ? [] : null
@@ -508,38 +511,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       mergedCount[key] = 0
     }
     filtered._count = mergedCount
-  }
-
-  // The item a virtual field's hook sees: stored columns and fetched
-  // relations (from `workingItem`, never a resolved value — no hook's output
-  // is ever written back into `workingItem`). A key is visible here if it
-  // either survived into `filtered` (selected and allowed) OR is in the
-  // emitted dependency set of a field this level computes — a relation the
-  // widening fetched (`additions`) or a stored column the caller's projection
-  // skipped but a hook named (ADR-0025, ADR-0051: that IS the point of
-  // declaring it — carried for a hook, never for the caller). Everything else — field-level
-  // denied, or skipped by `selection` and declared by no one — is deleted. A
-  // computed field reaches for exactly its own declared dependencies and
-  // nothing another field's hook produced (ADR-0027): reaching for a sibling
-  // that was denied or skipped-and-undeclared finds nothing there, the same
-  // as reaching for one never declared at all, and reaching for a sibling
-  // that DID survive finds its raw stored form, never another hook's resolved
-  // value — a virtual field computed earlier in declaration order is exactly
-  // as invisible as one computed later.
-  const declaredNames =
-    config && listKey
-      ? getDeclaredDependencyNames(config, listKey, selection?.fields)
-      : new Set<string>()
-  const computedFieldItem: Record<string, unknown> = { ...workingItem }
-  for (const key of Object.keys(workingItem)) {
-    if (systemFields.has(key)) continue
-    if (accessDeniedKeys.has(key)) {
-      delete computedFieldItem[key]
-      continue
-    }
-    if (key in filtered) continue
-    if (additions.keys.has(key) || declaredNames.has(key)) continue
-    delete computedFieldItem[key]
   }
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
@@ -572,7 +543,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldName,
       value: undefined, // Virtual fields don't have a database value
       accessItem: workingItem,
-      hookItem: computedFieldItem,
+      hookItem: hookItemFor(fieldName),
       listKey,
       args,
       config,
@@ -585,7 +556,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
   // Strip relations that were fetched ONLY to satisfy a `needs` declaration
   // (ADR-0025), now that every resolveOutput hook at this level has had the
-  // chance to see them (via `computedFieldItem`, never `filtered` itself — a
+  // chance to see them (via their own `item`, never `filtered` itself — a
   // declared dependency is read from stored columns, not from another
   // field's resolved output). A declared dependency is private plumbing, not
   // an implicit `include`: it never widens what the caller receives.

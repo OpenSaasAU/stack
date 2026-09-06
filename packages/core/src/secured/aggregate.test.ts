@@ -555,6 +555,45 @@ describe('what a count refuses', () => {
       await expect(
         db.User.include('posts', (posts) => posts.orderBy({ title: 'asc' }).count()).all(),
       ).rejects.toBeInstanceOf(UnreducibleRefinementError)
+      await expect(
+        db.User.include('posts', (posts) => posts.select('title').count()).all(),
+      ).rejects.toBeInstanceOf(UnreducibleRefinementError)
+    },
+    BOOT,
+  )
+
+  test(
+    'a select() on the parent leaves the reduced relation on the row',
+    async () => {
+      const rows = await database
+        .context(ada)
+        .db.User.select('handle')
+        .include('posts', (posts) => posts.count())
+        .all()
+      const users = byHandle(rows)
+      // `select()` narrows this list's own columns; `include()` reaches the
+      // next list, so the count is outside what the projection strips.
+      expect(users.ada).toMatchObject({ handle: 'ada', posts: 3 })
+      expect(Object.keys(users.ada as Record<string, unknown>).sort()).toEqual([
+        'createdAt',
+        'handle',
+        'id',
+        'posts',
+        'updatedAt',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'aggregate over a read that composed select counts the same rows',
+    async () => {
+      const db = database.context(ada).db
+      const projected = await db.Post.select('title').aggregate((rows) => ({
+        total: rows.count(),
+      }))
+      const plain = await db.Post.aggregate((rows) => ({ total: rows.count() }))
+      expect(projected).toEqual(plain)
     },
     BOOT,
   )

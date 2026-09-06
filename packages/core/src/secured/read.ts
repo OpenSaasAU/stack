@@ -39,6 +39,14 @@ import {
   type IncludeRequest,
   type Refinement,
 } from './include.js'
+import {
+  dependencyAdditions,
+  resolveProjection,
+  selectionScope,
+  UNPROJECTED,
+  type ProjectionPlan,
+} from './select.js'
+import type { DependencyAdditions, FieldSelectionScope } from '../access/declared-dependencies.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 import { ValidationError } from '../hooks/index.js'
@@ -59,6 +67,7 @@ export type {
   SecuredRefinement,
   SecuredReduction,
 } from './include.js'
+export { RelationSelectError } from './select.js'
 export type { AggregateBuild, AggregateSpec, Aggregations, CountReduction } from './aggregate.js'
 export type {
   NearestOptions,
@@ -94,6 +103,25 @@ export interface SecuredQuery<TRow = OrmRow> {
    * present and the parent row kept.
    */
   include(name: string, refine?: Refinement): SecuredQuery<TRow>
+  /**
+   * Return exactly these of the list's own fields — including a computed one,
+   * which is produced whether or not the columns it reads were named.
+   *
+   * Replaces any previous call rather than accumulating, and leaves relations
+   * this read includes on the row: `select()` narrows this list's columns and
+   * `include()` reaches the next list, so the two compose. The engine widens
+   * the query behind it — for the declared dependency sets of the computed
+   * fields it will return, and for a `read` rule that has to see a row to
+   * answer — and strips the difference back out, so the result matches what
+   * was named here exactly (ADR-0041, ADR-0051).
+   */
+  select(...fields: readonly string[]): SecuredQuery<TRow>
+  /**
+   * At most this many rows. Replaces any previous call rather than
+   * accumulating. `first()` is bounded by its own terminal and `nearest()`
+   * takes its bound from `options.limit`, so this shapes `all()` alone.
+   */
+  limit(count: number): SecuredQuery<TRow>
   /** Collapse rows that agree on every named column. */
   distinct(...fields: string[]): SecuredQuery<TRow>
   /**
@@ -181,6 +209,7 @@ export class SecuredCollectionMissingError extends Error {
  * which is what makes the Access Filter a second entry rather than a merge.
  */
 interface RefinableCollection {
+  select(...fields: readonly string[]): RefinableCollection
   where(predicate: (model: PredicateAccessor) => AnyExpression): RefinableCollection
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): RefinableCollection
   limit(count: number): RefinableCollection
@@ -213,6 +242,7 @@ interface AggregateReduction {
 }
 
 interface ReadableCollection extends RefinableCollection {
+  select(...fields: readonly string[]): ReadableCollection
   where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
   include(name: string, refine: (child: RefinableCollection) => IncludeBranch): ReadableCollection
@@ -263,6 +293,8 @@ interface QueryState {
   readonly predicates: readonly Where[]
   readonly orders: readonly OrderBy[]
   readonly includes: readonly IncludeRequest[]
+  readonly fields?: readonly string[]
+  readonly limit?: number
   readonly distincts: readonly DistinctRequest[]
   readonly cursor?: Record<string, unknown>
 }
@@ -272,6 +304,14 @@ interface ReadPlan {
   readonly predicates: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
   readonly includes: readonly IncludePlan[]
+  /** The top level's projection, already widened (ADR-0041). */
+  readonly projection: ProjectionPlan
+  /** What the caller may keep, level by level — `undefined` when nothing was projected. */
+  readonly selection: FieldSelectionScope | undefined
+  /** The relation branches only the widening asked for, level by level (ADR-0051). */
+  readonly additions: DependencyAdditions
+  /** The caller's own row bound, applied by `all()` alone. */
+  readonly limit?: number
   readonly distinct?: { readonly kind: 'all' | 'on'; readonly columns: readonly ColumnPlan[] }
   readonly cursor?: Record<string, unknown>
 }
@@ -317,7 +357,12 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     predicates.push(await resolveWhere(predicate, ctx))
   }
   const orders = await resolveOrderBy(state.orders, ctx)
-  const includes = await resolveIncludes(state.includes, ctx, 0)
+  const projection = await resolveProjection(
+    state.fields,
+    state.includes.map((request) => request.name),
+    ctx,
+  )
+  const includes = await resolveIncludes(state.includes, ctx, 0, projection.caller)
   const request = onlyDistinct(binding.listName, state.distincts)
   const distinct =
     request === undefined
@@ -354,6 +399,10 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     predicates,
     orders,
     includes,
+    projection,
+    selection: selectionScope(projection, includes),
+    additions: dependencyAdditions(includes),
+    limit: state.limit,
     ...(distinct ? { distinct } : {}),
     ...(cursor ? { cursor } : {}),
   }
@@ -475,6 +524,9 @@ function refine(
     }
     return refined.combine(spec)
   }
+  if (plan.projection.columns !== undefined) {
+    refined = refined.select(...plan.projection.columns)
+  }
   if (plan.orders.length > 0) {
     refined = refined.orderBy(
       plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
@@ -492,6 +544,9 @@ function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): Rea
   let collection = collectionFor(binding.ormHandle, binding.listName)
   for (const predicate of plan.predicates) {
     collection = collection.where((model) => lowerWhere(predicate, model, ops))
+  }
+  if (plan.projection.columns !== undefined) {
+    collection = collection.select(...plan.projection.columns)
   }
   if (plan.orders.length > 0) {
     collection = collection.orderBy(
@@ -629,6 +684,8 @@ async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promi
     config,
     0,
     listName,
+    plan.additions,
+    plan.selection,
   )
   applyForeignKeys(filtered, plan.includes)
   restoreReductions(filtered, row, plan.includes)
@@ -638,7 +695,8 @@ async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promi
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
-  const collection = scope(binding, plan, await whereCombinators())
+  const scoped = scope(binding, plan, await whereCombinators())
+  const collection = plan.limit === undefined ? scoped : scoped.limit(plan.limit)
   const rows = await withOrigin('engine', () => collection.all())
   return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
@@ -698,7 +756,16 @@ async function runAggregate(
 
   const collection = scope(
     binding,
-    { predicates: plan.predicates, orders: [], includes: [] },
+    {
+      predicates: plan.predicates,
+      orders: [],
+      includes: [],
+      // A count materialises no rows, so there is nothing to project and
+      // nothing for Field Visibility to strip.
+      projection: UNPROJECTED,
+      selection: undefined,
+      additions: dependencyAdditions([]),
+    },
     await whereCombinators(),
   )
   const result = await withOrigin('engine', () =>
@@ -788,7 +855,20 @@ async function runNearest(
   // ranking.
   let collection = scope(
     binding,
-    { ...plan, predicates: [...plan.predicates, present(near)], orders: [] },
+    {
+      ...plan,
+      predicates: [...plan.predicates, present(near)],
+      orders: [],
+      // `options.limit` is this terminal's own bound (ADR-0045).
+      limit: undefined,
+      // The score is recomputed from the row's own vector, so the column has
+      // to survive the projection even when the caller did not name it. It is
+      // outside `projection.caller`, so Field Visibility strips it back out.
+      projection:
+        plan.projection.columns === undefined || plan.projection.columns.includes(near.column)
+          ? plan.projection
+          : { ...plan.projection, columns: [...plan.projection.columns, near.column] },
+    },
     ops,
   ).orderBy([
     (model) => vectors.order(near, model),
@@ -821,6 +901,8 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
       query(binding, { ...state, predicates: [...state.predicates, predicate] }),
     orderBy: (order: OrderBy | readonly OrderBy[]) =>
       query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
+    select: (...fields: readonly string[]) => query(binding, { ...state, fields }),
+    limit: (count: number) => query(binding, { ...state, limit: count }),
     include: (name: string, refinement?: Refinement) =>
       query(binding, {
         ...state,

@@ -15,8 +15,8 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 | Access control          | Functions on the `access` key      | Same shape — operation + filter functions                            |
 | Hooks                   | `resolveInput`, `validateInput`, … | Same names + `resolveOutput`                                         |
 | GraphQL API             | Built-in, always on                | **Not provided** (ADR-0005) — migrate via fragments + `context.db.*` |
-| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.*` with `defineFragment` / `runQuery` / `ResultOf`       |
-| Type generation         | GraphQL codegen                    | Built-in TypeScript inference via `ResultOf` (no codegen step)       |
+| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.<List>` composed reads, narrowed with `.select()`        |
+| Type generation         | GraphQL codegen                    | Built-in TypeScript inference from the generated list types          |
 | Auth                    | `@keystone-6/auth`                 | `@opensaas/stack-auth` (Better Auth)                                 |
 | Image / file fields     | Multi-column metadata              | Multi-column parity mode or single `Json?` column                    |
 | Admin UI                | Auto-generated from schema         | Auto-generated from config                                           |
@@ -293,22 +293,22 @@ Access-controlled operations **fail silently**: a denied read returns `null` (si
 
 ---
 
-## 5. Replacing `context.graphql.run` with `context.db.*` + fragments
+## 5. Replacing `context.graphql.run` with `context.db.*`
 
-This is the largest API change. Stack has **no GraphQL layer** ([ADR-0005](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0005-no-graphql-layer-migrate-via-fragments.md)). It provides first-class TypeScript utilities — `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf` — that give you fragment reuse, composability, and inferred result types **without** GraphQL or a codegen step. Everything still runs through `context.db`, so access control is enforced automatically.
+This is the largest API change. Stack has **no GraphQL layer** ([ADR-0005](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0005-no-graphql-layer-migrate-via-fragments.md)). A read is composed on `context.db.<List>` — an immutable query value — and narrowed with `.select()`, which the engine honours exactly. Composability comes from the value itself, and the result type from the generated list types, so there is no fragment to declare and no codegen step. Everything runs through the secured terminals, so access control is enforced automatically.
 
 ### Concept mapping
 
-| Keystone                                             | Stack                                                              |
-| ---------------------------------------------------- | ------------------------------------------------------------------ |
-| GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
-| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
-| `VariablesOf<typeof query>`                          | Plain function params / `where` args (or a fragment factory)       |
-| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, … })`         |
-| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
-| `context.query.Post.findMany(...)`                   | `context.db.post.findMany(...)`                                    |
-| `context.sudo().graphql.run(...)`                    | `context.sudo().db.post.findMany(...)`                             |
-| Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
+| Keystone                                             | Stack                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| GraphQL fragment string                              | `.select('id', 'title')` on the read itself                       |
+| `ResultOf<typeof query>` (codegen)                   | inferred from the generated list types                            |
+| `VariablesOf<typeof query>`                          | Plain function params / `where` args                              |
+| `context.graphql.run({ query, variables })` — list   | `context.db.Post.where(…).select(…).all()`                        |
+| `context.graphql.run({ query, variables })` — single | `context.db.Post.where({ id: { equals: id } }).select(…).first()` |
+| `context.query.Post.findMany(...)`                   | `context.db.Post.where(…).all()`                                  |
+| `context.sudo().graphql.run(...)`                    | `context.sudo().db.Post.all()`                                    |
+| Nested relationship filtering                        | `.include('comments', (comments) => comments.where(…).select(…))` |
 
 ### Quick before/after
 
@@ -319,27 +319,14 @@ const { posts } = await context.graphql.run({
 })
 
 // After (Stack)
-import type { Post, User } from '.prisma/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
-const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  author: authorFragment, // nested — access-controlled include
-} as const)
-
-type PostData = ResultOf<typeof postFragment>
-// → { id: string; title: string; author: { id: string; name: string } | null }
-
-const posts = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-})
-// posts: PostData[]
+const posts = await context.db.Post.where({ published: { equals: true } })
+  .select('title')
+  .include('author', (author) => author.select('name'))
+  .all()
+// → [{ id, createdAt, updatedAt, title, author: { id, …, name } | null }]
 ```
 
-See [Queries & Fragments](/docs/concepts/queries) for the complete reference on `defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`, nested `RelationSelector` filtering, and fragment factories for runtime variables.
+See [Queries & projections](/docs/concepts/queries) for the complete reference on `.select()`, `.include()` refinements, and what a computed field's hook is handed.
 
 ### The four hard parts — the `migrate-context-calls` skill
 
@@ -347,8 +334,8 @@ Mechanical CRUD is easy; the cases migrators trip on are documented as worked, b
 
 - **Recipe 1 — `where`-shape translation.** Keystone nests relation filters even on a foreign key (`{ author: { id: { equals: $id } } }`); Prisma exposes the scalar FK directly (`{ authorId: { equals: $id } }`). To-many relations use `some` / `every` / `none`, and Keystone's bare enum identifiers (`status: published`) become **string literals** (`status: 'published'`).
 - **Recipe 2 — `connect` / `disconnect` / `set` nested writes.** `data` is passed straight through to Prisma, so use Prisma's relation-operation shapes; `set: []` clears a to-many relation, and you never write the scalar `<field>Id` directly (it is silently stripped).
-- **Recipe 3 — gql.tada typed documents → `defineFragment` + `ResultOf`.** Replace the typed document with a typed fragment; `VariablesOf` has no equivalent (use function params or a fragment factory).
-- **Recipe 4 — fragment → Prisma `include` / `select` + null-on-access-denied.** A fragment maps onto a Prisma `include`; denied nested single relations come back `null`, denied to-many records are dropped from the array. Keep your Keystone null-guards (`post.author?.name`).
+- **Recipe 3 — gql.tada typed documents → a composed read.** Replace the typed document with a read narrowed by `.select()`; `VariablesOf` has no equivalent (use function params).
+- **Recipe 4 — fragment → `.select()` / `.include()` + null-on-access-denied.** A fragment's scalars map onto `.select()` and its relations onto `.include()`; denied nested single relations come back `null`, denied to-many records are dropped from the array. Keep your Keystone null-guards (`post.author?.name`).
 
 Install the plugin and run the skill (see [Tooling](#tooling-cli-agent-plugin)); it searches the project for `context.graphql` / `context.query` and rewrites each call site.
 
@@ -612,7 +599,7 @@ The `opensaas-migration` Claude Code plugin ships the migration skills — inclu
 ## Where to go next
 
 - **[Migration Guide](/docs/how-to/migrate)** — the general AI-assisted walkthrough (Prisma / Next.js / Keystone sources).
-- **[Queries & Fragments](/docs/concepts/queries)** — the `context.graphql.run` replacement in full.
+- **[Queries & projections](/docs/concepts/queries)** — the `context.graphql.run` replacement in full.
 - **[Field Types](/docs/concepts/field-types)** — every built-in field's options.
 - **[Access Control](/docs/concepts/access-control)** and **[Hooks System](/docs/concepts/hooks)** — the patterns shared with Keystone.
 - **[Authentication](/docs/how-to/authentication)** — the auth plugin and Better Auth adoption.

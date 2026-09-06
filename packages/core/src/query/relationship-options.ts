@@ -1,6 +1,26 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { getLabelFieldName, getItemLabel } from '../config/label.js'
-import { defineFragment, runQuery, type QueryRunnerContext } from './index.js'
+import type { OrderBy, Where } from '../secured/vocabulary.js'
+
+/**
+ * The composed-read members this primitive drives. Structural rather than the
+ * generated `SecuredList`, so `getContext()`'s own delegate satisfies it and a
+ * test can stand one in.
+ */
+export interface RelationshipOptionsQuery {
+  where(predicate: Where): RelationshipOptionsQuery
+  orderBy(order: OrderBy): RelationshipOptionsQuery
+  select(...fields: readonly string[]): RelationshipOptionsQuery
+  limit(count: number): RelationshipOptionsQuery
+  all(): Promise<Record<string, unknown>[]>
+}
+
+/** Compatible with the full `AccessContext` produced by `getContext()`. */
+export interface QueryRunnerContext {
+  db: {
+    [key: string]: RelationshipOptionsQuery
+  }
+}
 
 const DEFAULT_TAKE = 50
 
@@ -21,12 +41,13 @@ export interface RelationshipOptionsArgs {
 /**
  * Bounded, projected fetch of `{ id, label }` options for a relationship
  * editor — the read primitive behind the `relationshipOptions` serverAction
- * op. Selects only `id` and the resolved label field (via
- * {@link getLabelFieldName}), so the fragment carries no relation keys and
- * `buildAccessScopedInclude` never has anything to scope.
+ * op. It selects `id` and the resolved label field (via
+ * {@link getLabelFieldName}) and nothing else, so no other field's
+ * `resolveOutput` runs over the window and no `needs` on this list widens the
+ * read into a relation.
  *
  * Operation-level `query` access on `relatedListKey` still applies — a denied
- * list resolves to `[]` (via the underlying access-controlled `findMany`).
+ * list resolves to `[]` (the secured terminal's own Silent failure).
  */
 export async function getRelationshipOptions(
   context: QueryRunnerContext,
@@ -38,10 +59,6 @@ export async function getRelationshipOptions(
   if (!relatedListConfig) return []
 
   const labelField = getLabelFieldName(relatedListConfig)
-  const fragment = defineFragment<Record<string, unknown>>()({
-    id: true,
-    [labelField]: true,
-  })
 
   const { search, take = DEFAULT_TAKE, selectedIds = [] } = args
   const labelFieldConfig = relatedListConfig.fields[labelField] as
@@ -56,23 +73,21 @@ export async function getRelationshipOptions(
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
   const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
 
-  const primary = await runQuery(context, relatedListKey, fragment, {
-    where,
-    orderBy,
-    take,
-  })
+  const options = (query: RelationshipOptionsQuery): RelationshipOptionsQuery =>
+    query.select('id', labelField)
 
-  const seenIds = new Set(primary.map((item) => (item as { id: string }).id))
+  const scoped = where ? context.db[relatedListKey].where(where) : context.db[relatedListKey]
+  const primary = await options(scoped).orderBy(orderBy).limit(take).all()
+
+  const seenIds = new Set(primary.map((item) => String(item.id)))
   const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id))
 
   const selected = missingSelectedIds.length
-    ? await runQuery(context, relatedListKey, fragment, {
-        where: { id: { in: missingSelectedIds } },
-      })
+    ? await options(context.db[relatedListKey].where({ id: { in: missingSelectedIds } })).all()
     : []
 
   return [...primary, ...selected].map((item) => ({
-    id: (item as { id: string }).id,
-    label: getItemLabel(relatedListConfig, item as Record<string, unknown>),
+    id: String(item.id),
+    label: getItemLabel(relatedListConfig, item),
   }))
 }

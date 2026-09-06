@@ -11,9 +11,6 @@ export type {
   OrmOperationArgs,
   OrmRow,
   StorageUtils,
-  AugmentedFindMany,
-  AugmentedFindUnique,
-  FindManyQueryArgs,
 } from './types.js'
 // Operation-level access primitives and shared ref-parsing helper.
 export {
@@ -67,12 +64,11 @@ export { filterReadableFields } from './field-visibility.js'
 export {
   widenIncludeForDependencies,
   resolveDeclaredDependencies,
-  getDeclaredDependencyNames,
   getDependencyTable,
   getListDependencies,
   noDependencyAdditions,
 } from './declared-dependencies.js'
-export type { DependencyAdditions } from './declared-dependencies.js'
+export type { DependencyAdditions, FieldSelectionScope } from './declared-dependencies.js'
 // Thrown when a caller include reaches past the depth the Access Filter can scope.
 export { AccessScopeDepthExceededError } from './errors.js'
 // Thrown when a resolveOutput hook's own resolve chain cycles back into itself.

@@ -339,7 +339,9 @@ describe('the Access Filter rides into the include', () => {
       await database.context(ada).db.Post.include('author').all()
 
       const [plan] = recorder.plans
-      expect(includedRelations(plan)).toEqual(['author'])
+      // `declaredEditor` rides along because `summary` declares it — the
+      // widening, not the caller.
+      expect(includedRelations(plan).sort()).toEqual(['author', 'declaredEditor'])
       expect(JSON.stringify(plan.ast)).toContain('"value":"ada"')
     },
     BOOT,
@@ -367,7 +369,7 @@ describe('Field Visibility is the boundary, not the omission', () => {
     async () => {
       const rows = await database.context(ada).db.Post.include('hiddenEditor').all()
 
-      expect(includedRelations(recorder.plans[0])).toEqual([])
+      expect(includedRelations(recorder.plans[0])).toEqual(['declaredEditor'])
       for (const row of rows) expect(row.hiddenEditor).toBeUndefined()
     },
     BOOT,
@@ -380,7 +382,7 @@ describe('Field Visibility is the boundary, not the omission', () => {
 
       // Row-dependent: it cannot be answered without a row, so the omission
       // declines to answer and the relation is fetched.
-      expect(includedRelations(recorder.plans[0])).toEqual(['reviewer'])
+      expect(includedRelations(recorder.plans[0]).sort()).toEqual(['declaredEditor', 'reviewer'])
       const published = rows.find((row) => row.published === true)
       const draft = rows.find((row) => row.published === false)
       expect(published?.reviewer).toMatchObject({ handle: 'ada' })
@@ -415,7 +417,10 @@ describe('Field Visibility is the boundary, not the omission', () => {
         .include('hiddenEditor')
         .all()
 
-      expect(includedRelations(recorder.plans[0])).toEqual(['hiddenEditor'])
+      expect(includedRelations(recorder.plans[0]).sort()).toEqual([
+        'declaredEditor',
+        'hiddenEditor',
+      ])
       expect(rows[0].hiddenEditor).toMatchObject({ handle: 'bob' })
     },
     BOOT,
@@ -603,7 +608,7 @@ describe('the two read surfaces scope a filtered to-one identically', () => {
 
       // The same rule, in the shape the secured path carries it: inside the
       // include's own subquery rather than in a second round trip.
-      expect(includedRelations(plan)).toEqual(['author'])
+      expect(includedRelations(plan).sort()).toEqual(['author', 'declaredEditor'])
       expect(JSON.stringify(plan.ast)).toContain('"value":"ada"')
       // And the same answer: bob is not a user ada may see, so the relation is
       // absent for her by either route.

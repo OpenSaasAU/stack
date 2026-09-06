@@ -3,7 +3,7 @@
 This guide covers how to migrate your existing Prisma, Next.js, or KeystoneJS projects to Stack using AI-powered tools.
 
 {% callout type="info" %}
-Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & Fragments](/docs/concepts/queries).
+Migrating specifically from KeystoneJS? Start with the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide, then return here for the full step-by-step walkthrough. For the `context.graphql.run` replacement, see [Queries & projections](/docs/concepts/queries).
 {% /callout %}
 
 ## Introduction
@@ -279,7 +279,7 @@ npx @opensaas/stack-cli migrate --type prisma
 - Access control → Access control patterns
 - Hooks → Hooks
 - Authentication → Auth plugin
-- `context.graphql.run` queries → fragment-based query utilities (see [Migrating context.graphql.run](#migrating-contextgraphqlrun) below)
+- `context.graphql.run` queries → composed `context.db` reads (see [Migrating context.graphql.run](#migrating-contextgraphqlrun) below)
 
 **Example:**
 
@@ -881,21 +881,21 @@ export async function getPosts() {
 
 ## Migrating context.graphql.run
 
-If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. Stack has no GraphQL layer — instead it provides **fragment-based query utilities** (`defineFragment`, `runQuery` / `runQueryOne`, `ResultOf`) that give you the same benefits (composability, type inference, fragment reuse) without GraphQL.
+If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. Stack has no GraphQL layer — a read is composed on `context.db.<List>` and narrowed with `.select()`, which the engine honours exactly. There is no fragment to declare and no codegen step: the generated types give each list's surface its own shape.
 
 {% callout type="info" %}
-The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, gql.tada typed documents, and fragment → `include` / `select` with null-on-access-denied) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & Fragments](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
+The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, and gql.tada typed documents) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & projections](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
 {% /callout %}
 
 ### Quick reference
 
-| Keystone                                             | Stack                                                              |
-| ---------------------------------------------------- | ------------------------------------------------------------------ |
-| GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
-| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
-| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, ... })`       |
-| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
-| Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
+| Keystone                                             | Stack                                                                 |
+| ---------------------------------------------------- | --------------------------------------------------------------------- |
+| GraphQL fragment string                              | `.select('id', 'title')` on the read itself                           |
+| `ResultOf<typeof query>` (codegen)                   | inferred from the generated list types — no codegen step              |
+| `context.graphql.run({ query, variables })` — list   | `context.db.Post.where(...).select(...).all()`                        |
+| `context.graphql.run({ query, variables })` — single | `context.db.Post.where({ id: { equals: id } }).select(...).first()`   |
+| Nested relationship filtering                        | `.include('comments', (comments) => comments.where(...).select(...))` |
 
 ### Simple list query
 
@@ -905,124 +905,49 @@ const { posts } = await context.graphql.run({
   query: `query { posts(where: { published: true }) { id title } }`,
 })
 
-// After (Stack) — pass the fragment directly to context.db
-import type { Post } from '.prisma/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const postFragment = defineFragment<Post>()({ id: true, title: true } as const)
-type PostData = ResultOf<typeof postFragment> // { id: string; title: string }
-
-const posts = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-})
-// posts: PostData[]
+// After (Stack)
+const posts = await context.db.Post.where({ published: { equals: true } })
+  .select('title')
+  .all()
 
 // Single record
-const post = await context.db.post.findUnique({
-  where: { id: postId },
-  query: postFragment,
-})
-// post: PostData | null
+const post = await context.db.Post.where({ id: { equals: postId } })
+  .select('title')
+  .first()
 if (!post) return notFound()
 ```
 
-### Nested / related data with reusable fragments
+`.select()` replaces any previous call rather than accumulating, and the result matches it exactly — the engine widens the query for what a computed field declared and strips the difference back out.
 
-The biggest win from fragments is composability — define a fragment once and use it in many queries.
+### Nested / related data
 
-```typescript
-// fragments.ts — define once, import everywhere
-import type { User, Post, Tag } from '.prisma/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-export const authorFragment = defineFragment<User>()({
-  id: true,
-  name: true,
-  email: true,
-} as const)
-
-export const tagFragment = defineFragment<Tag>()({ id: true, name: true } as const)
-
-export const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  publishedAt: true,
-  author: authorFragment, // nested — access-controlled include
-  tags: tagFragment, // many relationship
-} as const)
-
-// Inferred types — no GraphQL codegen required
-export type AuthorData = ResultOf<typeof authorFragment>
-export type PostData = ResultOf<typeof postFragment>
-// PostData → { id: string; title: string; publishedAt: Date | null;
-//              author: { id: string; name: string; email: string } | null;
-//              tags: { id: string; name: string }[] }
-```
+A relation is reached with `.include()`, whose refinement is a read of the related list — it takes its own `where`, `orderBy`, `limit`, `offset` and `.select()`:
 
 ```typescript
-// Usage in a server action or route
-import { postFragment } from './fragments'
-
-// List with pagination
-const posts = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-  orderBy: { publishedAt: 'desc' },
-  take: 10,
-})
-
-// Single record
-const post = await context.db.post.findUnique({ where: { id: postId }, query: postFragment })
-if (!post) return notFound()
+const posts = await context.db.Post.where({ published: { equals: true } })
+  .orderBy({ publishedAt: 'desc' })
+  .select('title', 'publishedAt')
+  .include('author', (author) => author.select('name', 'email'))
+  .include('comments', (comments) =>
+    comments
+      .where({ approved: { equals: true } })
+      .orderBy({ createdAt: 'desc' })
+      .limit(5)
+      .select('body'),
+  )
+  .all()
 ```
 
-### Nested relationship filtering with `RelationSelector`
-
-When you need to filter, sort, or paginate a nested relationship within the same query, use a `RelationSelector` object instead of a plain fragment:
+Composability comes from the query value itself: it is immutable, so a partially composed read can be shared and narrowed at each call site.
 
 ```typescript
-import type { Post, Comment } from '.prisma/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
+const publishedPosts = context.db.Post.where({ published: { equals: true } })
 
-const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
-
-const postWithApprovedComments = defineFragment<Post>()({
-  id: true,
-  title: true,
-  comments: {
-    query: commentFragment, // nested fragment
-    where: { approved: true }, // Prisma filter on the relationship
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-  },
-} as const)
-
-type PostWithComments = ResultOf<typeof postWithApprovedComments>
-// → { id: string; title: string; comments: { id: string; body: string }[] }
-
-const posts = await context.db.post.findMany({ query: postWithApprovedComments })
+const recent = await publishedPosts.orderBy({ publishedAt: 'desc' }).limit(10).all()
+const titles = await publishedPosts.select('title').all()
 ```
 
-For dynamic filter values, use a factory function:
-
-```typescript
-function makePostFrag(status: string) {
-  return defineFragment<Post>()({
-    id: true,
-    comments: { query: commentFragment, where: { status } },
-  } as const)
-}
-
-type PostData = ResultOf<ReturnType<typeof makePostFrag>>
-
-const posts = await context.db.post.findMany({
-  query: makePostFrag('approved'),
-  where: { published: true },
-})
-```
-
-All operations go through `context.db` under the hood, so access control is enforced automatically. For a dedicated reference on `defineFragment`, `runQuery` / `runQueryOne`, and `ResultOf`, see [Queries & Fragments](/docs/concepts/queries). For the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide.
+Every operation runs through the secured terminals, so access control is enforced automatically and a denied read comes back as `[]` or `null` rather than throwing. For the dedicated reference see [Queries & projections](/docs/concepts/queries); for the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide.
 
 ## Best Practices
 

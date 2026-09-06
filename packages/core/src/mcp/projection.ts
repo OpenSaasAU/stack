@@ -2,8 +2,6 @@ import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
-import type { FieldSelection } from '../query/index.js'
-import { pickFields } from '../query/index.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
@@ -17,7 +15,7 @@ function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
  * need their own selector entries at every level a `fields` projection can
  * name fields — a scalar-only loop over `listConfig.fields` would otherwise
  * never advertise or accept them. `id` is additionally forced into every
- * `FieldSelection` this module builds (`withId`, below), never left to the
+ * projection this module builds (`withId`, below), never left to the
  * caller: a record projected down to none of its own identifying columns
  * cannot be the target of a follow-up `update`/`delete` call.
  */
@@ -177,10 +175,45 @@ export async function generateFieldsProjectionSchema(
   }
 }
 
+/**
+ * The nested projection this module builds and {@link projectMcpResult} reads
+ * back. Local to MCP rather than shared: it is the tool vocabulary's own
+ * shape, and the translator that replaces it takes the secured surface's
+ * `.select()` instead (ADR-0053).
+ */
+export type McpFieldSelection = {
+  readonly [key: string]: true | { readonly _fields: McpFieldSelection }
+}
+
+/** Project a raw row down to `fields`, one level at a time. */
+function pickFields(
+  item: Record<string, unknown>,
+  fields: McpFieldSelection,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    const fieldValue = item[key]
+    if (value === true) {
+      result[key] = fieldValue
+      continue
+    }
+    if (Array.isArray(fieldValue)) {
+      result[key] = fieldValue.map((element) =>
+        pickFields(element as Record<string, unknown>, value._fields),
+      )
+    } else if (fieldValue === null || fieldValue === undefined) {
+      result[key] = fieldValue
+    } else if (typeof fieldValue === 'object') {
+      result[key] = pickFields(fieldValue as Record<string, unknown>, value._fields)
+    }
+  }
+  return result
+}
+
 /** What `resolveFieldsProjection` produces: a `context.db` `include` to fetch, the field selection to project the result down to, and which relations asked for a count. */
 export type ResolvedFieldsProjection = {
   include: Record<string, unknown> | undefined
-  fieldSelection: FieldSelection<unknown>
+  fieldSelection: McpFieldSelection
   countRequests: Map<string, 'only' | 'alongside'>
 }
 
@@ -231,7 +264,7 @@ async function accessScopedCountEntry(
  * `generateFieldsProjectionSchema` advertises, and translate it into a
  * `context.db` `include` (so the normal read pipeline — access scoping,
  * `needs` folding, the depth cap — applies exactly as it does for any other
- * caller `include`; no parallel read path) plus a `FieldSelection` for
+ * caller `include`; no parallel read path) plus a projection for
  * projecting the result down to what was asked for. Throws
  * `McpProjectionRefusedError` naming what was asked for and what's
  * available on any mismatch, never serves on a best-effort basis.
@@ -408,7 +441,7 @@ export async function resolveFieldsProjection(
 
       include[fieldName] = buildManyIncludeEntry(many, entry)
       hasIncludeEntries = true
-      fieldSelection[fieldName] = { _type: 'fragment', _fields: withId(nestedSelection) }
+      fieldSelection[fieldName] = { _fields: withId(nestedSelection) as McpFieldSelection }
     } else if (wantsCount) {
       // Count-only (no `fields`): still name the relation in the include,
       // with the SAME rows a `fields`-and-`count` request would fetch —
@@ -454,7 +487,7 @@ export async function resolveFieldsProjection(
 
   return {
     include: hasIncludeEntries ? include : undefined,
-    fieldSelection: fieldSelection as FieldSelection<unknown>,
+    fieldSelection: fieldSelection as McpFieldSelection,
     countRequests,
   }
 }
@@ -481,7 +514,7 @@ export function projectMcpResult(
   rawItem: Record<string, unknown>,
   resolved: ResolvedFieldsProjection,
 ): Record<string, unknown> {
-  const picked = pickFields(rawItem, resolved.fieldSelection) as Record<string, unknown>
+  const picked = pickFields(rawItem, resolved.fieldSelection)
   const rawCounts = rawItem._count
   const counts =
     rawCounts && typeof rawCounts === 'object' ? (rawCounts as Record<string, unknown>) : {}
