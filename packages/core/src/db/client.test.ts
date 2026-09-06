@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { Pool } from 'pg'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { DatabaseClientConfig } from '../config/types.js'
 import { startDevDatabase, type DevDatabase } from './dev-database.js'
 import { writeDevDatabaseState } from './state-file.js'
@@ -74,6 +74,14 @@ describe('resolveRuntimeConnection', () => {
     expect(boundPool(connection.pg).options.max).toBe(1)
   })
 
+  test('the dev pool waits Prisma’s 20 s for a connection, not pg’s forever', () => {
+    runningDevDatabase('postgres://postgres@127.0.0.1:54999/postgres')
+
+    const connection = resolveRuntimeConnection(undefined, { cwd: projectRoot })
+
+    expect(boundPool(connection.pg).options.connectionTimeoutMillis).toBe(20_000)
+  })
+
   test('the same URL from the environment gets neither workaround', () => {
     process.env.DATABASE_URL = 'postgres://postgres@127.0.0.1:54999/postgres'
     runningDevDatabase('postgres://postgres@127.0.0.1:54999/postgres')
@@ -99,6 +107,34 @@ describe('resolveRuntimeConnection', () => {
     expect(connection.pg).toBe(handle)
     expect(connection.url).toBeUndefined()
     expect(connection.verifyMarker).toBeUndefined()
+  })
+
+  test('a supplied pool displacing the dev database’s binding says so', () => {
+    runningDevDatabase('postgres://postgres@127.0.0.1:54999/postgres')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      resolveRuntimeConnection({ pg: () => new Pool({ max: 7 }) }, { cwd: projectRoot })
+
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0]?.[0]).toMatch(/ADR-0063/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test('a supplied pool over an env URL is not warned about', () => {
+    process.env.DATABASE_URL = 'postgres://someone@example.test:5432/app'
+    runningDevDatabase('postgres://postgres@127.0.0.1:54999/postgres')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      resolveRuntimeConnection({ pg: () => new Pool({ max: 7 }) }, { cwd: projectRoot })
+
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('a missing URL throws the lookup’s error, naming both remedies', () => {

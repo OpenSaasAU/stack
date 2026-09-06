@@ -41,9 +41,10 @@ describe('generateContext', () => {
       "import { resolveRuntimeConnection } from '@opensaas/stack-core/client'",
     )
     expect(context).toContain('...resolveRuntimeConnection(config.db.client),')
-    // The factory may only run under the client singleton, so the only call to
+    // The factory may only run under the client singleton, so the sole call to
     // it sits behind the resolved config.
-    expect(context).toContain('const config = await getConfig()\n      const existing =')
+    expect(context.match(/createClient\(config\)/g)).toHaveLength(1)
+    expect(context).toMatch(/const config = await getConfig\(\)\s[\s\S]*?createClient\(config\)/)
     expect(context).not.toContain('binding?.pg?.()')
   })
 
@@ -74,6 +75,18 @@ describe('generateContext', () => {
       'let clientPromise: Promise<ReturnType<typeof createClient>> | null = null',
     )
     expect(context).toContain('globalForClient.opensaasClient')
+  })
+
+  it('drops the memo when a construction fails, so the next caller retries', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toMatch(/if \(clientPromise === attempt\) clientPromise = null\s+throw error/)
+  })
+
+  it('marks the eager context handled, so a failed first pull is not fatal', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain('void rawOpensaasContext.catch(() => {})')
   })
 
   it('exports getContext, rawOpensaasContext and config', () => {

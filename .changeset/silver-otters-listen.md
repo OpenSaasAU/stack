@@ -30,4 +30,11 @@ Three branches, in order:
 - `DATABASE_URL` — the connection string and Prisma's defaults, plus `db.client.poolOptions`.
 
 With neither a connection variable nor a running dev database, the first use throws
-`DatabaseUrlUnresolvedError`, naming both remedies.
+`DatabaseUrlUnresolvedError`, naming both remedies. That failure is not cached: a process that
+starts before its database does drops the memo and builds a client on the next call, so the dev
+server booting ahead of `opensaas dev` recovers on its own rather than serving a stale error for
+the rest of its life.
+
+An explicit `db.client.pg` still wins over a running dev database, but now says so — binding your
+own pool there loses the single connection and `verifyMarker: false` that database requires, and
+`resolveRuntimeConnection` warns rather than rebinding silently.

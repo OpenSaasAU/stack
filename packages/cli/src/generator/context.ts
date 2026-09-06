@@ -121,8 +121,11 @@ const storage = {
  * - `Context` is still the bundle's own type; #1136 rewrites `types.ts` to
  *   instantiate core's contract-keyed generics, and the client's own typed
  *   surface is spec 2's.
- * - Pool lifecycle beyond the module-level singleton — `close()` and the
- *   pooled/direct split — is still unowned.
+ * - Pool lifecycle beyond the module-level singleton — `close()`, the dev
+ *   loop's ephemeral database, the pooled/direct split — is still unowned. The
+ *   pool `resolveRuntimeConnection` builds for that database is bound as `pg`,
+ *   which rc.8 gives no `ownedDispose`, so nothing ends it; it carries a
+ *   connection timeout instead of relying on one.
  */
 export function generateContext(
   config: OpenSaasConfig,
@@ -184,20 +187,25 @@ const globalForClient = globalThis as unknown as { opensaasClient: ReturnType<ty
 let clientPromise: Promise<ReturnType<typeof createClient>> | null = null
 
 function getClient() {
-  if (!clientPromise) {
-    // Memoised as the promise, not the resolved client: two requests racing the
-    // config's own await would otherwise each construct a client, and each call
-    // \`db.client.pg\` a second time.
-    clientPromise = (async () => {
-      const config = await getConfig()
-      const existing = globalForClient.opensaasClient
-      if (existing) return existing
-      const created = createClient(config)
-      if (process.env.NODE_ENV !== 'production') globalForClient.opensaasClient = created
-      return created
-    })()
-  }
-  return clientPromise
+  if (clientPromise) return clientPromise
+  // Memoised as the promise, not the resolved client: two requests racing the
+  // config's own await would otherwise each construct a client, and each call
+  // \`db.client.pg\` a second time. The memo is dropped again on failure, so a
+  // process that starts before its database does can still reach one — the
+  // connection URL is read at construction, not at import.
+  const attempt = (async () => {
+    const config = await getConfig()
+    const existing = globalForClient.opensaasClient
+    if (existing) return existing
+    const created = createClient(config)
+    if (process.env.NODE_ENV !== 'production') globalForClient.opensaasClient = created
+    return created
+  })().catch((error: unknown) => {
+    if (clientPromise === attempt) clientPromise = null
+    throw error
+  })
+  clientPromise = attempt
+  return attempt
 }
 
 /**
@@ -260,6 +268,13 @@ export const rawOpensaasContext = (async () => {
   const db = await getClient()
   return getOpensaasContext(config, asOrmClient(db), null, storage) as unknown as Context
 })()
+
+// This one is pulled during module evaluation, so a database that isn't up yet
+// rejects it before any consumer has attached a handler, and Node's default
+// \`--unhandled-rejections=throw\` would take the process down (Node >= 15) —
+// killing the retry the dropped memo above exists to allow. Marking it handled
+// changes nothing for a real consumer: awaiting it still throws.
+void rawOpensaasContext.catch(() => {})
 
 /**
  * Re-export resolved config for use in admin pages and server actions
