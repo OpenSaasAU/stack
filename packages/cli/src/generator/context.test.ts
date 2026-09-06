@@ -34,13 +34,24 @@ describe('generateContext', () => {
     expect(context).not.toContain('prismaClientConstructor')
   })
 
-  it('binds the pool from db.client, falling back to the stack URL lookup', () => {
+  it('delegates the connection to core, binding db.client after the config resolves', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain('const binding = config.db.client')
-    expect(context).toContain('const pool = binding?.pg?.()')
-    expect(context).toContain('{ url: resolveDatabaseUrl().url }')
-    expect(context).toContain('poolOptions: binding.poolOptions')
+    expect(context).toContain(
+      "import { resolveRuntimeConnection } from '@opensaas/stack-core/client'",
+    )
+    expect(context).toContain('...resolveRuntimeConnection(config.db.client),')
+    // The factory may only run under the client singleton, so the only call to
+    // it sits behind the resolved config.
+    expect(context).toContain('const config = await getConfig()\n      const existing =')
+    expect(context).not.toContain('binding?.pg?.()')
+  })
+
+  it('installs the stack-owned tripwire as the client’s middleware', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain("import { originTripwire } from '@opensaas/stack-core/origin'")
+    expect(context).toContain('middleware: [originTripwire],')
   })
 
   it('lists each declared pack’s runtime façade', () => {
@@ -56,10 +67,12 @@ describe('generateContext', () => {
     expect(context).toContain('extensions: [pgvectorRuntime],')
   })
 
-  it('keeps the client as a module-level singleton', () => {
+  it('keeps the client as a module-level singleton, memoised as a promise', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain('let client: ReturnType<typeof createClient> | null = null')
+    expect(context).toContain(
+      'let clientPromise: Promise<ReturnType<typeof createClient>> | null = null',
+    )
     expect(context).toContain('globalForClient.opensaasClient')
   })
 
